@@ -1,0 +1,144 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, second measurement row of the
+day): JUN-57 -- the ADR-0361 seventeenth amendment's named unmeasured item
+"the residual ~0.015-0.02 of the op ratio (FMNMX vs FADD latency -- a
+throughput microbench, its own row)" takes its microbench branch and is
+PARTIALLY CLOSED: the named pair SPLITs by mode -- the latency half is
+REFUTED (FADD and FMNMX chain latency are EQUAL) and the issue-side half is
+MEASURED (FMNMX costs +6.78% over FADD at issue rate on sm_72). ONE
+measurement slice; HARDWARE RAN: the opcode latency/throughput microbench on
+xavier sm_72 in two runs (v1 2026-10-26T08:51:18Z, v2
+2026-10-26T09:34:43Z). NAMED NOT HIDDEN: this is a PROBE, not a registered
+timing session (no paired samples, no AB/BA), inadmissible under the entry
+criterion BY KIND; same UTC day as the earlier probes -- NOT a cross-day
+replication; it enters nothing. It measures INSTRUCTION costs, not kernels.
+
+WHAT RAN. Per-instruction cost microbench (scratch instrument, never
+staged): 8 opcode arms x 2 modes (latency = one dependent accumulator, 4096
+units; thr = 16 independent accumulators, 1024 units), clock64() timing,
+3 launches x 128 threads per arm, on xavier (Jetson AGX Xavier, L4T
+R35.4.1, nvcc 11.4 V11.4.315, nvdisasm 11.4 V11.4.298). TWO runs, one
+instrument delta between them:
+- v1 (08:51:18Z, instrument sha e065c1f9.., verifier sha 6e98e679..): run
+  complete (48 RESULT lines), but the verifier's function parse matched 0
+  functions (it expected `Function :` headers this nvdisasm build never
+  emits) and the opcode realization was NOT verified in that run. The v1
+  SASS (fetched locally the same tick, 780 lines) is committed verbatim as
+  microbench-sass-v1.txt.
+- v2 (09:34:43Z, instrument sha ed49179c.., verifier sha e5a29b1b..): the
+  stage is v1's with EXACTLY TWO swaps -- (1) the THR macros now SUM all 16
+  accumulators into the output (v1 stored only x0; x1..x15's asm was dead
+  and eliminated -- see integrity findings), (2) the verifier's function
+  parse fixed to this nvdisasm's `//---- .text.NAME` section style. Remote
+  tree /root/gpu-op-microbench-20261026 recreated fresh, transferred
+  COPYFILE_DISABLE=1 (2 files, 0 AppleDouble sidecars; received-file block
+  matched local shas 2/2).
+
+VERIFIED (real runs). v2: OK-build / OK-cubin / OK-sass 1162 lines, every
+diag 0 bytes except the 2190-byte ptxas warning set (unused-variable
+warnings, benign), driver exit 0, stderr 0 bytes; SASS verification found
+16 functions with per-function opcode histograms (commit: the verify blocks
+inside run-log-v2.txt); 48 RESULT lines (16 arms x 2 modes x 3 launches),
+all three launches IDENTICAL medians (deterministic); device name=Xavier
+clockRate_kHz=1377000 multiProcessorCount=8.
+
+THE FINDING (the named pair, v2 valid arms only):
+(1) LATENCY HALF REFUTED: FADD.FTZ 4.4397 cyc vs FMNMX 4.4392 cyc per
+    dependent-chain unit (ratio 0.99989; -2 cycles over 4096 units; -0.0005
+    cyc/op). The two opcodes have EQUAL dependent-chain latency at
+    measurement granularity -- "FMNMX vs FADD LATENCY" cannot be the
+    residual's mechanism.
+(2) ISSUE-SIDE HALF CONFIRMED as a real asymmetry: with 16 independent live
+    accumulator chains per loop iteration (same loop overhead in both arms,
+    timed region = the loop only), fadd = 2.6641 cyc/unit vs fmnmx =
+    2.8447 cyc/unit (ratio 1.06779; +185 cycles over 1024 units;
+    +0.1807 cyc/op over the 16-op body). FMNMX is measurably MORE
+    EXPENSIVE than FADD at issue rate on sm_72.
+(3) DERIVED (marked): the issue-side delta is the right SIGN and ORDER to
+    partially explain the sixteenth amendment's count-model residual
+    (measured/counts = 1.0171/1.0132/1.0040 at W=128/256/512 for max):
+    residual ~= 1 + s*0.0678 implies substituted-op shares s =
+    0.252/0.194/0.059 (min: 0.217/0.193/0.101). The implied share is NOT
+    W-stable, so the single issue-delta does not explain the residual's
+    W-shape; the quantitative attribution (does the hot-loop mix give those
+    shares, what carries the W-shape) is its own analysis row.
+
+INSTRUMENT INTEGRITY (all VERIFIED in the committed SASS census; nvcc 11.4
+/ ptxas at sm_72):
+(a) v1's thr arms measured ONE dependent chain, not throughput: the
+    16-accumulator asm where the accumulator was dead (x1..x15, output
+    unused) was ELIMINATED despite asm volatile (v1 SASS: thr_fadd loop
+    body = 1 FADD.FTZ + counter/ISETP/BRA). v2's anchor fix restores 16
+    live chains (v2 SASS: FADD.FTZ:16 / FMNMX:16 per loop iteration).
+(b) lat iadd3 / lat imad arms: 16 same-iteration asm ops on one accumulator
+    with a constant operand were MERGED value-preservingly into ONE
+    instruction (add.u32 x,x,1 x16 -> IADD3 x,x,0x10; mad.lo x,x,1,c x16 ->
+    one add). Those arms measure loop + SHFL-barrier overhead, NOT the op.
+    inline asm volatile did NOT stop the reassociation.
+(c) lat/thr mov arms: the loop was eliminated entirely (6 cycles = nothing).
+(d) rcp.approx.f32 was realized NOT as bare MUFU.RCP but as an EXPANDED
+    full-precision sequence per unit: MUFU.RCP + 2 FMUL + 2 FSEL + FSETP
+    pairs (both lat and thr). The rcp arm's numbers are the expansion's,
+    raw MUFU.RCP cost stays UNMEASURED.
+(e) mad.hi.u32 x,x,1,c realized as LEA.HI chains; mad.lo with constant 1
+    folded to IADD3. The imadhi arm measures LEA.HI, the imad thr arm
+    measures IADD3 chains (renamed, not the named opcodes).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag, no
+selection answer, no :shapes value and no workgroup row; the landed entries
+stand byte-for-byte. The named item moves PARTIALLY (latency half REFUTED,
+issue-side half MEASURED; the residual's quantitative attribution stays
+DERIVED-incomplete).
+
+STATES. MEASURED (the v2 microbench on xavier -- latency and issue-side
+costs of the valid arms; the only measured thing this row): fadd/fmnmx
+latency EQUAL, fmnmx issue-side +6.78%; cvt pair 15.00 cyc/instr chain /
+8.23 issue; expanded-rcp 39.44 / 11.27. DERIVED (marked): the residual
+attribution sketch (3). IMPLEMENTED: nothing (evidence + ADR amendment
+only). DECIDED: nothing new. ACCEPTED DESIGN ONLY (unchanged): the
+operator-aware contract + pre-registration, the row (ii) routes, the entry
+contract + wiring, ADR-0358, ADR-0373. UNMEASURED, named: the residual's
+quantitative attribution (count-model per-op mix, its own row); raw
+MUFU.RCP cost; per-op integer latency (iadd3/imad) on this toolchain (a
+chain form that survives the toolchain's asm merging is needed); a
+non-eliminated overhead baseline; the baseline W=512 rising step's dynamic
+cause (per-phase instrumentation, its own row); the sum ratio's TRUE side
+at W=256; a cross-day run 3+ (still 2026-10-26 UTC); every per-op verdict
+on non-xavier hardware; the :sum ordering at W=64 on any other device or
+channel; the landed rows on a live CUDA selection path; every workgroup row
+(:arm/:unknown stay provisional :measured? false). Independent-samples
+caveat: the 128 threads run lockstep (one warp-group draw per launch);
+medians identical across 3 launches.
+
+GATES: NOT RUN this slice -- the run-time budget closed before the gate
+step (named, not hidden). The diff touches NO .cljk namespace (evidence +
+ADR prose only); the committed scoped-gate pin from the previous rows is
+123 tests / 12162 assertions and is EXPECTED unchanged -- NOT VERIFIED
+this tick. FULL run-tests.cljk NOT run -- documented RED AT BASE 'Could
+not find namespace: kotoba.form' (ADR-0362), outside this diff -- NO
+green suite claimed. gpu_regime_classify.py --self-test not re-run (no
+classify code touched; standing pin 2649/0).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+start; re-checked immediately before this push (see commit message for the
+re-check result). Chain PR #1455 OPEN, the ONE chain PR.
+
+NAMED NOT HIDDEN: the untracked deps.edn in this worktree (present at tick
+start, not created or touched by this row, not committed); the tar
+transfer's "Ignoring unknown extended header keyword
+'LIBARCHIVE.xattr.com.apple.provenance'" notices (benign macOS metadata --
+the remote tree was measured after extraction: 2 files, 0 AppleDouble
+sidecars, 2/2 sha256 matched); the v1 run's broken verifier and the v1
+instrument's invalid arms (the whole integrity section above); the v2 full
+SASS (sha256 58ed5e7b.., attested in run-log-v2.txt) remains on xavier at
+/root/gpu-op-microbench-20261026/microbench.sass -- only its census verify
+blocks are committed here; microbench-sass-v1.txt is the file the previous
+tick fetched at 17:53 JST from the v1 run tree (that tree has since been
+recreated fresh for v2; provenance named as fetched-file, not re-attested
+against a remote original); the ptxas warning diags (2190 bytes,
+unused-variable warnings).
+
+Evidence (this directory): record.txt (this file) + run-log-v1.txt
+(verbatim v1 transcript) + run-log-v2.txt (verbatim v2 transcript incl.
+the SASS census) + op-cost-table.txt (deterministic analysis output of
+op_cost_analyze.py, scratch, never staged) + microbench-sass-v1.txt (v1
+full SASS verbatim).

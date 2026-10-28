@@ -1,0 +1,102 @@
+JUN-59 session 40 -- THE WANDER-NOISE REPARTITION PROBE (publication)
+(is the within-window block-min wander CONSISTENT WITH
+RUN-EXCHANGEABLE SAMPLING NOISE? ONE observable axis: the range T
+of the 12 block-unit min statistics of one arm at one window vs a
+run-repartition resampling null over the same window's committed
+runs.)
+Produced ONLY by analysis-s40.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3joint4-20261028 = the s39
+window, anv-b3commonmode-20261028 = the s36 window,
+anv-b3joint3-20261028 = the s38 window); protocol.txt was frozen
+BEFORE any statistic of this probe was computed (freeze stamp
+2026-10-28T04:40:07Z). ANALYSIS slice -- NO hardware ran this
+tick; every input quantity was MEASURED on aiueos-6600hs Intel BMG
+G31 ANV in sessions 36/38/39 (run windows 2026-10-28T02:40:49Z,
+03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs; protocol
+   section 4):
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 4): any violation =>
+   letter (c) for that window.
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs; block
+   order A..L; reproduction check vs the published/quote-only
+   vectors of publication-s39.txt section 3 -- mismatch => (c)):
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol section 3): does
+   the s39-window block-min wander EXCEED run-exchangeable
+   sampling noise? (T = range of 12 block-mins; 20000 trials,
+   seed 20261028; p = (1 + count(T* >= T_obs)) / (1 + 20000),
+   one-sided):
+   s39 hi: T_obs = 14 (block-mins 981..995); count 16547 / 20001; p = 0.827359; p <= 0.05: False
+   s39 tw: T_obs = 8 (block-mins 983..991); count 19729 / 20001; p = 0.986451; p <= 0.05: False
+   T1 = (a) NOISE-CONSISTENT
+   NAMED, NOT HIDDEN: (a) does NOT prove 'estimator noise is the
+   mechanism' -- the null is RUN-EXCHANGEABILITY at the fresh-
+   process granularity and a physical driver acting uniformly
+   within the window would also read (a); (b) would implicate
+   block-timescale (~3-run / few-second) structure but NOT name it
+   (thermal/scheduling/memory/driver state all UNMEASURED). L2
+   observational ONLY; NO causal mechanism; direction UNMEASURED;
+   exchangeability of runs is itself an assumption; the three
+   windows are ONE day / ONE host and the comparison below is
+   descriptive only; threshold-artifact-vs-representation STAYS
+   UNRESOLVED under any letter.
+
+5. REPLICATION LETTERS (pre-registered, same rule per (window,
+   arm) at the s36 and s38 windows; NO cross-window joint letter):
+   s36 hi: T_obs = 18; count 12997 / 20001; p = 0.649868; p <= 0.05: False
+   s36 tw: T_obs = 14; count 14791 / 20001; p = 0.739563; p <= 0.05: False
+   s36 letter = (a) NOISE-CONSISTENT
+   s38 hi: T_obs = 25; count 1184 / 20001; p = 0.059247; p <= 0.05: False
+   s38 tw: T_obs = 21; count 6570 / 20001; p = 0.328534; p <= 0.05: False
+   s38 letter = (a) NOISE-CONSISTENT
+
+6. DESCRIPTIVE (not the row question):
+   D1 per-run-unit min ranges (36 points/arm; min over 18 per-cell
+      medians of 25 -- NAMED DIFFERENT UNIT L10, no letter):
+      s39 hi per-run minima 967..995
+      s39 tw per-run minima 969..1002
+      s36 hi per-run minima 966..1023
+      s36 tw per-run minima 971..1001
+      s38 hi per-run minima 967..1010
+      s38 tw per-run minima 969..1001
+   D2 T scoreboard (descriptive only -- three windows are not a
+      rate, variance or distribution):
+      s39: hi T 14, tw T 8
+      s36: hi T 18, tw T 14
+      s38: hi T 25, tw T 21
+
+7. VERDICT SUMMARY:
+   T1 = (a) NOISE-CONSISTENT
+   s39 hi: T_obs 14 count 16547/20001 p 0.827359
+   s39 tw: T_obs 8 count 19729/20001 p 0.986451
+   s36 hi: T_obs 18 count 12997/20001 p 0.649868
+   s36 tw: T_obs 14 count 14791/20001 p 0.739563
+   s38 hi: T_obs 25 count 1184/20001 p 0.059247
+   s38 tw: T_obs 21 count 6570/20001 p 0.328534
+   evaluable inputs: vector reproduction EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger line
+   (NO reading -> NO line -> NO day-slot consumption). Rule 4
+   binds: nothing moves; accelerator-targets defaults remain
+   provisional (:measured? false); NO vendor optimization exists
+   for Intel.

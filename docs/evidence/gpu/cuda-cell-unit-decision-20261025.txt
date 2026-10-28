@@ -1,0 +1,161 @@
+amu-gpu tick 2026-10-25 -- ONE design slice: the cell-level rule-2 unit
+question (the row the subgroup-preference amendment left PROPOSED -- "whether
+a cell-level unit should exist") is DECIDED. Evidence log; no POSIX shell
+files.
+
+WHAT CHANGED (this commit, chain worktree
+/Users/junkawasaki/github/wt/amu-gpu/chain):
+
+docs/adr/0361-gpu-nvidia-subgroup-reduce.md
+  New amendment "whether a cell-level rule-2 unit should exist on this
+  channel is DECIDED". Three parts:
+  (1) ADOPTED: a cell-level rule-2 unit on the CUDA paired-timing channel,
+      by citation of the ADR-0373 flip-cell precedent's unit shape. Cell =
+      (metric, W, pair-type, shape), the reduce shape selected as a whole
+      (:operators #{:sum :max :min} pooled -- ADR-0373's decided shape, "the
+      contract has no per-operator flip"); the cell's own rule-2 verdict =
+      rule 2 at its letter over the cell's pooled per-run ratios (each pair
+      block's paired-median ratio in the named metric, one per operator per
+      session); REGIME-INVARIANT FASTER/SLOWER is the only selection role (a
+      per-W measured-cell flip of the kind :measured-cell records key); any
+      straddle is regime-scoped and no basis either way; metrics classify
+      separately (rule 3); publications are a FULL CENSUS of every cell (no
+      cherry-picking); same-day second session = corroboration only
+      (ADR-0373 same-day rule by citation); the operator pooling is the ONLY
+      cross-stratum roll-up this channel carries (the roll-up the
+      2026-10-25 adoption deferred to its own design row -- named and
+      bounded here). Rule 4 unchanged.
+  (2) REJECTED: per-operator cell units ((op, W) verdicts as selection
+      units) -- grounds: the composed contract's decided position
+      (ADR-0373 "no per-operator flip and none is invented here";
+      apple-w32-note "an operator-split answer at one cell off the two
+      measured shapes would be overfitting") and the selection surface
+      carrying no operator axis (answer cells and :measured-cell records key
+      on device class / channel / W, :operators carried as a whole). NAMED,
+      NOT HIDDEN: the (op :sum, W = 64) interaction is NOT called noise --
+      it replicated 8/8 across both same-day sessions, both shapes, both
+      clocks -- it is ruled inadmissible as a selection unit under this
+      protocol; its admissible home is a separate prospective row
+      (operator-aware selection: its own design + code row, a pre-registered
+      hypothesis, fresh sessions under that registration) -- PROPOSED here,
+      deliberately NOT decided here. Expressible in code (the KIR carries
+      the reduce operator) -- a design refusal, not a structural
+      impossibility.
+  (3) The standing candidate's fate under the adopted unit: it does not
+      qualify. NOTHING MOVES. Reopen condition restated at the adopted
+      unit; the previous row's "(op, W) cell" phrasing superseded, named
+      not hidden.
+
+docs/evidence/gpu/cuda-cell-unit-decision-20261025.txt (this record).
+
+NO CODE MOVED; no test namespace touched. NO HARDWARE RAN this tick; no new
+sample exists. Every number below is a citation of the two committed adopted
+sessions, re-derived through the tool path this tick.
+
+WHAT THE TICK RAN (real tool output):
+
+1. Byte-exact re-derivation of both committed claim-protocol publications
+   from their committed measure logs (the previous rows' tool path):
+
+     python3 scripts/gpu_regime_classify.py --cuda-log \
+       docs/evidence/gpu/cuda-claimprotocol-run1-20261025/measure-log.txt \
+       > scratch/cellunit-run1-pub.txt      # rc=0, stderr 0 bytes, 912 lines
+     diff scratch/cellunit-run1-pub.txt \
+       docs/evidence/gpu/cuda-claimprotocol-run1-20261025/publication.txt
+     # EMPTY (byte-identical)
+     python3 scripts/gpu_regime_classify.py --cuda-log \
+       docs/evidence/gpu/cuda-claimprotocol-run2-20261025/measure-log.txt \
+       > scratch/cellunit-run2-pub.txt      # rc=0, stderr 0 bytes, 912 lines
+     diff scratch/cellunit-run2-pub.txt \
+       docs/evidence/gpu/cuda-claimprotocol-run2-20261025/publication.txt
+     # EMPTY (byte-identical)
+
+2. The W = 64 warp-shuffle/subgroup cell census, parsed from the reproduced
+   publications' own raw per-block ratio tables (scratch/cellunit_census.py,
+   arithmetic only -- no verdict machinery, the classifier has no cell
+   mode). Per-block paired-median ratios (warp-shuffle / :subgroup-reduce;
+   ABOVE 1.0 = :subgroup-reduce faster):
+
+   session op   n          ratio gpu_ns  ratio host_ns
+   run1    max  1000003    0.8901        0.8885
+   run1    max  1048576    0.9081        0.9046
+   run1    min  1000003    0.9073        0.9128
+   run1    min  1048576    0.8970        0.8952
+   run1    sum  1000003    1.0848        1.0874
+   run1    sum  1048576    1.0683        1.0700
+   run2    max  1000003    0.9083        0.9080
+   run2    max  1048576    0.9191        0.9267
+   run2    min  1000003    0.9130        0.9179
+   run2    min  1048576    0.9130        0.9111
+   run2    sum  1000003    1.0813        1.0702
+   run2    sum  1048576    1.0726        1.0701
+
+   Pooled-cell (operators pooled) sign counts, per (session, shape, metric):
+   EVERY slice is 1 above / 2 below (8/8 slices: run1 x 2 shapes x 2
+   metrics, run2 x 2 shapes x 2 metrics); pooled over all 12 blocks per
+   metric: 4 above / 8 below in gpu_ns AND in host_ns.
+
+   CONSEQUENCE (arithmetic, not a verdict): the pooled (W = 64,
+   warp-shuffle/subgroup) cell straddles 1.0 at every slice and every
+   sub-pool, so under the adopted unit it cannot be REGIME-INVARIANT FASTER
+   (rule 2's first condition fails before regimes enter) and cannot be a
+   selection basis in either direction -- under the strictest reading (the
+   cell's own session only: run1 alone is 1/2 at both shapes, both metrics)
+   and the most permissive (both sessions pooled: 4/8) alike.
+
+STATE HONESTY (three states, named):
+
+- DECIDED (this row): the cell-level unit question -- (1) the unit adopted
+  at the code's answer-cell shape with its bounds, (2) per-operator cells
+  rejected with grounds, (3) the (op :sum, W = 64) candidate's fate under
+  it, the restated reopen condition.
+- ACCEPTED DESIGN ONLY: the adopted unit itself (its publication machinery
+  does not exist); the ADR-0361 claim-protocol adoption, ADR-0358 paired
+  statistic, ADR-0373 instrument class (unchanged).
+- IMPLEMENTED: nothing -- no code moves, no tests changed.
+- MEASURED: nothing new -- no hardware ran; the two committed sessions are
+  consumed, not re-measured; no :measured? flag moves (rule 4) and every
+  workgroup row stays provisional (:measured? false; :arm/:unknown
+  unchanged).
+- UNMEASURED, named so no reading upgrades: every cell-level rule-2 verdict
+  including the W = 64 cell's (full-census cell publication machinery is
+  UNIMPLEMENTED -- its own later implementation row; until it lands NO
+  cell-level rule-2 verdict may be published); operator-aware selection
+  (PROPOSED here, its own row); the :sum ordering between the two variants
+  at W = 64 on any device under any unit that could carry it; every
+  three-way sign on non-sm_72 NVIDIA hardware (one device: xavier sm_72);
+  run 3+ cross-run stability (the two sessions are same-day -- per the
+  cited same-day rule run 2 licenses nothing run 1 did not); the full cell
+  census at every other (W, pair-type) cell.
+
+Gates (real runs, this tick):
+
+  python3 scripts/gpu_regime_classify.py --self-test
+    -> TOTAL 2491 assertions passed / 0 failed (no code touched --
+       regression pin; the committed record pins 2491 at b8509f20c).
+
+  Scoped GPU gate (the 8 GPU-owned namespaces; scratch runner
+  gpu_scoped_gate.cljk, never committed), from the chain worktree root:
+
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+    Ran 106 tests containing 11046 assertions.
+    0 failures, 0 errors.
+
+    scoped: 106 tests, 11046 passed, 0 failed, 0 errors
+
+    (glslang 16.6.0 real-spawn line present; counts unchanged from the
+    committed pin -- the diff touches no .cljk namespace, this is a
+    regression pin.)
+
+  FULL run-tests.cljk NOT RUN this slice (docs-only diff, no .cljk
+  namespace touched) -- documented red at base ("Could not find namespace:
+  kotoba.form", ADR-0362) outside this diff, not re-verified here; no green
+  suite is claimed.
+
+  POSIX shell execution files under docs/: 0 (`find docs -name '*.sh'
+  -type f | wc -l` -> 0, this tick).
+
+Evidence hygiene: no POSIX .sh anywhere under docs/; the census script and
+the reproduced publications lived in Hermes scratch and were never staged.

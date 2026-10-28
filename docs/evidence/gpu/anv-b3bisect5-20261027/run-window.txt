@@ -1,0 +1,47 @@
+JUN-59 session 25 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, FIFTH CUT (B=3 at
+n=250,000/252,604/255,208 -- lo/mid/hi + eq3/b2m/c2/c8).
+21 fresh processes (7 arms x 3 runs -- the protocol section 0 arm
+table's 7 rows govern the count). Per-run transcript (host date -u,
+taken immediately BEFORE the run invocation, seconds granular; rc,
+stderr byte count and line counts captured by the driver), verbatim
+from the driver's per-run steps (each run's stdout/stderr preserved
+verbatim in run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-27T21:08:47Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-27T21:08:47Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-27T21:08:48Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r1 rc=0 host-date=2026-10-27T21:08:48Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r2 rc=0 host-date=2026-10-27T21:08:49Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r3 rc=0 host-date=2026-10-27T21:08:49Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r1 rc=0 host-date=2026-10-27T21:08:49Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r2 rc=0 host-date=2026-10-27T21:08:50Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r3 rc=0 host-date=2026-10-27T21:08:50Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r1 rc=0 host-date=2026-10-27T21:08:50Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r2 rc=0 host-date=2026-10-27T21:08:51Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r3 rc=0 host-date=2026-10-27T21:08:51Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-27T21:08:51Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-27T21:08:52Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-27T21:08:52Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r1 rc=0 host-date=2026-10-27T21:08:52Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r2 rc=0 host-date=2026-10-27T21:08:53Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r3 rc=0 host-date=2026-10-27T21:08:53Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-27T21:08:53Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-27T21:08:55Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-27T21:08:56Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+run window: 2026-10-27T21:08:47Z .. 2026-10-27T21:08:56Z (per-run stamps above; seconds
+granularity, named not hidden).
+Every transcript row prints the captured rc token, rc=0 21/21. Independently,
+every one of the 21 stdout logs terminates with the instrument's own
+"# done cells=24" line (tail='...' column, 21/21) and stderr is 0 bytes 21/21.
+TIMESTAMPS CROSS-CHECK (computed here from the host file mtimes): each
+transcript stamp is <= its file mtime (the stamp is taken before the
+invocation; mtime is when the run's stdout closed), every mtime within
+~2 seconds of its stamp: 21/21 (worst delta 2s -- c8-r1 stamp
+21:08:53Z vs mtime 21:08:55Z) -- no contradiction. Host mtime listing
+was captured by the same driver immediately after the run loop.
+Runs are fresh processes: the driver invokes ../anv-bb-<tag> once per
+run from cwd=shaders/.
+Host: aiueos-6600hs-1 (Intel BMG G31 / ANV, device e223, api 1.4.318),
+1 tick = 52.083 ns. Sessions 2-24 all ran on UTC day 2026-10-27; this
+session too (protocol L4: cross-UTC-day replication NOT reachable --
+the tick runs 2026-10-28 JST = 2026-10-27T21:0x UTC).

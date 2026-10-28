@@ -1,0 +1,123 @@
+JUN-58/JUN-59/JUN-60 -- WGSL route reduce arms, first GPU execution (correctness, not measurement)
+run_started=2026-10-24T21:04:54.626Z
+host: darwin 25.4.0 arm64
+node: v26.0.0
+subgroup-corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders
+baseline-corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu-baseline-reduce-wgsl-fix-20261025/shaders
+toolchain: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+adapter-info: {"vendor":"apple","architecture":"metal-3","description":"","device":""}
+adapter-features: bgra8unorm-storage,chromium-experimental-subgroup-matrix,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,shader-f16,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,texture-compression-unaligned,texture-formats-tier1,texture-formats-tier2,timestamp-query
+subgroups-feature: present
+adapter-limits: {"maxComputeWorkgroupSizeX":1024,"maxComputeInvocationsPerWorkgroup":1024,"maxComputeWorkgroupStorageSize":32768,"maxComputeWorkgroupsPerDimension":65535,"maxStorageBufferBindingSize":4294967292}
+cell n=1000003 w=32 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=31251 finite=1
+cell n=1000003 w=32 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=31251 finite=1
+cross n=1000003 w=32 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=32 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=31251 finite=1
+cell n=1000003 w=32 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=31251 finite=1
+cross n=1000003 w=32 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=32 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=31251 finite=1
+cell n=1000003 w=32 op=min arm=baseline       answer=0 ref=0 ok=1 parts=31251 finite=1
+cross n=1000003 w=32 op=min subgroup=0 baseline=0 equal=1
+cell n=1000003 w=64 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=15626 finite=1
+cell n=1000003 w=64 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=15626 finite=1
+cross n=1000003 w=64 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=64 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=15626 finite=1
+cell n=1000003 w=64 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=15626 finite=1
+cross n=1000003 w=64 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=64 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=15626 finite=1
+cell n=1000003 w=64 op=min arm=baseline       answer=0 ref=0 ok=1 parts=15626 finite=1
+cross n=1000003 w=64 op=min subgroup=0 baseline=0 equal=1
+cell n=1000003 w=128 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=7813 finite=1
+cell n=1000003 w=128 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=7813 finite=1
+cross n=1000003 w=128 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=128 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=7813 finite=1
+cell n=1000003 w=128 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=7813 finite=1
+cross n=1000003 w=128 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=128 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=7813 finite=1
+cell n=1000003 w=128 op=min arm=baseline       answer=0 ref=0 ok=1 parts=7813 finite=1
+cross n=1000003 w=128 op=min subgroup=0 baseline=0 equal=1
+cell n=1000003 w=256 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=3907 finite=1
+cell n=1000003 w=256 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=3907 finite=1
+cross n=1000003 w=256 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=256 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=3907 finite=1
+cell n=1000003 w=256 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=3907 finite=1
+cross n=1000003 w=256 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=256 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=3907 finite=1
+cell n=1000003 w=256 op=min arm=baseline       answer=0 ref=0 ok=1 parts=3907 finite=1
+cross n=1000003 w=256 op=min subgroup=0 baseline=0 equal=1
+cell n=1000003 w=512 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=1954 finite=1
+cell n=1000003 w=512 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=1954 finite=1
+cross n=1000003 w=512 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=512 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=1954 finite=1
+cell n=1000003 w=512 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=1954 finite=1
+cross n=1000003 w=512 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=512 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=1954 finite=1
+cell n=1000003 w=512 op=min arm=baseline       answer=0 ref=0 ok=1 parts=1954 finite=1
+cross n=1000003 w=512 op=min subgroup=0 baseline=0 equal=1
+cell n=1000003 w=1024 op=sum arm=subgroup-reduce answer=1500004 ref=1500004 ok=1 parts=977 finite=1
+cell n=1000003 w=1024 op=sum arm=baseline       answer=1500004 ref=1500004 ok=1 parts=977 finite=1
+cross n=1000003 w=1024 op=sum subgroup=1500004 baseline=1500004 equal=1
+cell n=1000003 w=1024 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=977 finite=1
+cell n=1000003 w=1024 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=977 finite=1
+cross n=1000003 w=1024 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1000003 w=1024 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=977 finite=1
+cell n=1000003 w=1024 op=min arm=baseline       answer=0 ref=0 ok=1 parts=977 finite=1
+cross n=1000003 w=1024 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=32 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=32768 finite=1
+cell n=1048576 w=32 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=32768 finite=1
+cross n=1048576 w=32 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=32 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=32768 finite=1
+cell n=1048576 w=32 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=32768 finite=1
+cross n=1048576 w=32 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=32 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=32768 finite=1
+cell n=1048576 w=32 op=min arm=baseline       answer=0 ref=0 ok=1 parts=32768 finite=1
+cross n=1048576 w=32 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=64 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=16384 finite=1
+cell n=1048576 w=64 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=16384 finite=1
+cross n=1048576 w=64 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=64 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=16384 finite=1
+cell n=1048576 w=64 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=16384 finite=1
+cross n=1048576 w=64 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=64 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=16384 finite=1
+cell n=1048576 w=64 op=min arm=baseline       answer=0 ref=0 ok=1 parts=16384 finite=1
+cross n=1048576 w=64 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=128 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=8192 finite=1
+cell n=1048576 w=128 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=8192 finite=1
+cross n=1048576 w=128 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=128 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=8192 finite=1
+cell n=1048576 w=128 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=8192 finite=1
+cross n=1048576 w=128 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=128 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=8192 finite=1
+cell n=1048576 w=128 op=min arm=baseline       answer=0 ref=0 ok=1 parts=8192 finite=1
+cross n=1048576 w=128 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=256 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=4096 finite=1
+cell n=1048576 w=256 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=4096 finite=1
+cross n=1048576 w=256 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=256 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=4096 finite=1
+cell n=1048576 w=256 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=4096 finite=1
+cross n=1048576 w=256 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=256 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=4096 finite=1
+cell n=1048576 w=256 op=min arm=baseline       answer=0 ref=0 ok=1 parts=4096 finite=1
+cross n=1048576 w=256 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=512 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=2048 finite=1
+cell n=1048576 w=512 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=2048 finite=1
+cross n=1048576 w=512 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=512 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=2048 finite=1
+cell n=1048576 w=512 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=2048 finite=1
+cross n=1048576 w=512 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=512 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=2048 finite=1
+cell n=1048576 w=512 op=min arm=baseline       answer=0 ref=0 ok=1 parts=2048 finite=1
+cross n=1048576 w=512 op=min subgroup=0 baseline=0 equal=1
+cell n=1048576 w=1024 op=sum arm=subgroup-reduce answer=1572864 ref=1572864 ok=1 parts=1024 finite=1
+cell n=1048576 w=1024 op=sum arm=baseline       answer=1572864 ref=1572864 ok=1 parts=1024 finite=1
+cross n=1048576 w=1024 op=sum subgroup=1572864 baseline=1572864 equal=1
+cell n=1048576 w=1024 op=max arm=subgroup-reduce answer=4095 ref=4095 ok=1 parts=1024 finite=1
+cell n=1048576 w=1024 op=max arm=baseline       answer=4095 ref=4095 ok=1 parts=1024 finite=1
+cross n=1048576 w=1024 op=max subgroup=4095 baseline=4095 equal=1
+cell n=1048576 w=1024 op=min arm=subgroup-reduce answer=0 ref=0 ok=1 parts=1024 finite=1
+cell n=1048576 w=1024 op=min arm=baseline       answer=0 ref=0 ok=1 parts=1024 finite=1
+cross n=1048576 w=1024 op=min subgroup=0 baseline=0 equal=1
+cells: 72/72 answers exact against the CPU reference
+cross-arm: 36/36 cells equal between the two arms
+run_finished=2026-10-24T21:04:57.200Z
+VERDICT: EXECUTED-CORRECT (correctness only; UNMEASURED -- no timing read, no speed claim)

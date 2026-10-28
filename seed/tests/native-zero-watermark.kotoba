@@ -1,0 +1,22 @@
+(ns seed.zero-watermark-oracle (:export [main]))
+(defn- fill [v :vector-i64 i :i64] :vector-i64
+ (if (= i (vector-count v)) v (recur (vector-assoc! v i (+ 17 i)) (inc i))))
+(defn- zero? [v :vector-i64 i :i64] :bool
+ (if (= i (vector-count v)) true (and (= (vector-at v i) 0) (recur v (inc i)))))
+(defn- dirty [n :i64] :bool
+ (arena-scope (let [v (fill (vector-alloc n) 0)] (= (vector-at v (dec n)) (+ 16 n)))))
+(defn- clean [n :i64] :bool
+ (arena-scope (let [v (vector-alloc n)] (zero? v 0))))
+(defn- pair [n :i64 m :i64] :bool (and (dirty n) (clean m)))
+(defn main [] :i64
+ (let [outer (vector-assoc! (vector-alloc 3) 1 71)
+       fresh (clean 16)
+       reused (and (pair 2048 2048) (pair 2048 8) (pair 8 4096)
+                   (pair 4096 2048) (pair 16384 32768))
+       nested (arena-scope (let [v (fill (vector-alloc 17) 0)
+                  inner (arena-scope (let [w (fill (vector-alloc 1024) 0)] (= (vector-at w 1023) 1040)))
+                  clean-next (clean 4096)]
+                (and inner clean-next (= (vector-at v 16) 33))))
+       repeat (loop [n 0] (if (= n 1000) true (and (pair (+ 1 (rem n 127)) (+ 1 (rem (* n 7) 257))) (recur (inc n)))))
+       final (clean 65536)]
+  (if (and fresh reused nested repeat final (= (vector-at outer 1) 71)) 0 1)))

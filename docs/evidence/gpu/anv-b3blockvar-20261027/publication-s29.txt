@@ -1,0 +1,176 @@
+JUN-59 session 29 -- THE WITHIN-SESSION BLOCK-VARIABILITY READ OF THE
+(1024,4033) ANCHOR (four 3-run blocks of the (1024,4033) knob pair at
+n=253,906 = (1,000,003*1024)//4033, B=3, ONE session, ONE binary --
+blocks A/B/C/D = hi r1-3 / r4-6 / r7-9 / r10-12 -- plus the archived
+controls c2/c8 bracketing the hi window), publication
+Produced ONLY by analysis-s29.py over the 18 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run (freeze stamp 2026-10-27T23:09:19Z). Arms = binary
+compile-time (BATCH, WORK_MUL, NDIV); n = (1,000,003*WORK_MUL)/NDIV
+(integer floor). A BLOCK is 3 fresh processes pooled over 25 rounds
+per cell -- the same estimator unit every cross-session reading used.
+The (1024,4033) pair's three cross-session readings are session 26's
+mid (1,129 CAPTURED, 18-cell min 1,001), session 27's hi (1,132
+INTERMEDIATE/MIXED, min 976) and session 28's hi (1,131
+INTERMEDIATE/MIXED, min 991) at byte-identical rebuilt binaries -- the
+named cross-session class flip at the frozen 1000-tick boundary at a
+0.27% median span. The row question (protocol section 0): AT FIXED
+n=253,906 AND B=3 AND A BYTE-IDENTICAL BINARY, DO FOUR 3-RUN BLOCKS
+MEASURED WITHIN ONE SESSION AGREE ON THE FROZEN CLASS, OR DOES THE
+CLASS FLIP WITHIN THE SESSION? ZERO derivation this session: the
+instrument is session 28's committed NDIV-derived source byte-identical
+(digest a5e539f0... -- derivation-census-s29.txt); the a-set manifest
+runs the ARCHIVED measured spv (16-digest corpus). 1 tick =
+timestampPeriod = 52.083 ns.
+
+1. INTEGRITY (computed over the 18 logs):
+   runs parsed: 18 (c2 3 + hi 12 + c8 3); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,WM,NDIV) and n == (1,000,003*WM)//NDIV; every SAMPLE batch=/work_mul=/ndiv= == (B,WM,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 18/18 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, hi=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 4): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 324/324
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 108 cell-runs (6 per run x 18 runs = 108 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks; a BLOCK = 3 runs x
+   25 rounds per cell; hi-all pools all 12 runs and is a NAMED
+   DIFFERENT ESTIMATOR (12 runs, not the frozen 3-run unit)):
+   each row: (sum,128,S=16) exact value, then min..max over the 18
+   pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   unit      B  WM   NDIV    n        total-nominal  (sum,128,16)  min..max over 18 cells   host_ns
+   c2        2  1     1       1000003      2.000000          31        31..32           673456
+   blk-A     3  1024  4033     253906      0.761716        1130       993..1431         305360
+   blk-B     3  1024  4033     253906      0.761716        1144       979..1432         308976
+   blk-C     3  1024  4033     253906      0.761716        1143       985..1432         309037
+   blk-D     3  1024  4033     253906      0.761716        1151       993..1451         309197
+   hi-all    3  1024  4033     253906      0.761716        1142       988..1424         308129
+   c8        8  1     1       1000003      8.000000       32903     25174..32903       2397240
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED; a BLOCK = 3 fresh processes):
+
+   class c2 (B=2, WM=1, NDIV=1, n=1000003, 2.000000 nominal units): FLOOR
+   class blk-A (runs [1, 2, 3], B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1130  18-cell 993..1431
+   class blk-B (runs [4, 5, 6], B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1144  18-cell 979..1432
+   class blk-C (runs [7, 8, 9], B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1143  18-cell 985..1432
+   class blk-D (runs [10, 11, 12], B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1151  18-cell 993..1451
+   class hi-all (12 runs pooled -- NAMED DIFFERENT ESTIMATOR, not the frozen unit): INTERMEDIATE/MIXED  (sum,128,16) 1142
+   class c8 (B=8, WM=1, NDIV=1, n=1000003, 8.000000 nominal units): CAPTURED
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,WORK_MUL,NDIV) -- the a-set runs the
+   ARCHIVED spv bytes through the byte-identical session-29 instrument,
+   so this pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32903 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the W letters are evaluated against the row question.
+
+   C2 WITHIN-SESSION BLOCK-CLASS STABILITY (the four hi blocks of the
+   (1024,4033) pair at n=253,906, B=3 -- one binary (rebuilt
+   BYTE-IDENTICAL to session 26's anv-bb-mid / sessions 27/28's
+   anv-bb-hi, a6c31b6c... -- build-census-s29.txt), 12 fresh
+   processes; IN-BAND(m) := m within +/-5% of the 12-run pooled
+   median AND within +/-5% of each prior reading 1,129 / 1,132 / 1,131):
+     blk-A: INTERMEDIATE/MIXED   (sum,128,16) 1130  18-cell min 993  IN-BAND True
+     blk-B: INTERMEDIATE/MIXED   (sum,128,16) 1144  18-cell min 979  IN-BAND True
+     blk-C: INTERMEDIATE/MIXED   (sum,128,16) 1143  18-cell min 985  IN-BAND True
+     blk-D: INTERMEDIATE/MIXED   (sum,128,16) 1151  18-cell min 993  IN-BAND True
+     VERDICT: branch (a) -- all four blocks classify the SAME (none
+     FLOOR) and every block median is IN-BAND: the frozen class is
+     STABLE within a session at block granularity, while the three
+     cross-session readings flip at the frozen 1000-tick boundary.
+     NAMED, NOT HIDDEN: four blocks give FOUR readings -- the
+     within-session block-variability of the class is measured HERE; no
+     flip rate is claimed (four blocks do not close a rate) and no
+     causal mechanism (thermal, scheduling, driver) is measured.
+
+   W1 THE ANCHOR-CLASS QUESTION (what the four blocks mean for
+   sessions 26-28's cross-session flip picture and for the frozen flip
+   bracket (252,604, 253,906] -- C1/C2 govern):
+     cross-session readings (quote-only L7): 1129 CAPTURED (min 1001, session 26 mid) /
+       1132 INTERMEDIATE/MIXED (min 976, session 27 hi) /
+       1131 INTERMEDIATE/MIXED (min 991, session 28 hi)
+     this session's four within-session block readings (MEASURED HERE): 1130 INTERMEDIATE/MIXED (min 993) / 1144 INTERMEDIATE/MIXED (min 979) / 1143 INTERMEDIATE/MIXED (min 985) / 1151 INTERMEDIATE/MIXED (min 993)
+     VERDICT: branch (a) -- the anchor's class is STABLE within a
+     session at block granularity while the three cross-session
+     readings flip; the flip is NOT within-session block-level noise
+     at this granularity; the anchor-class settling bar (a
+     cross-session bar -- session 28's W1 residual) is NOT met by
+     same-UTC-day data and NO bracket narrowing is claimed -- the
+     flip location stays inside (252,604, 253,906]. ONE session; L2
+     binds; L5 no interpolation; NO causal mechanism is claimed or
+     measured.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+   WORK ROW: this session adds NO new grid point -- it re-reads
+   253,906 with FOUR within-session block readings placed at that grid
+   alongside the three prior cross-session readings (committed points
+   QUOTE-ONLY L7; NO interpolation (L5); class granularity only;
+   * = the session-26 reading carries its C3 (b) caveat; hi-all below
+   is a NAMED DIFFERENT ESTIMATOR (12 runs pooled) and replaces no
+   reading):
+
+     n          work-unit     ticks  class                source
+     125000     1/8             599  INTERMEDIATE/MIXED   session 18 (quote-only)
+     250000     1/4            1140  INTERMEDIATE/MIXED   session 19 (quote-only)
+     252604     0.2526032      1153  INTERMEDIATE/MIXED   session 25 (quote-only)
+     253255     0.2532542      1136  INTERMEDIATE/MIXED   session 27 (quote-only)
+     253906     0.2539052      1129  CAPTURED*            session 26 (quote-only)
+     253906     0.2539052      1132  INTERMEDIATE/MIXED   session 27 (quote-only)
+     253906     0.2539052      1131  INTERMEDIATE/MIXED   session 28 (quote-only)
+     253906     0.2539052      1130  INTERMEDIATE/MIXED   THIS SESSION blk-A
+     253906     0.2539052      1144  INTERMEDIATE/MIXED   THIS SESSION blk-B
+     253906     0.2539052      1143  INTERMEDIATE/MIXED   THIS SESSION blk-C
+     253906     0.2539052      1151  INTERMEDIATE/MIXED   THIS SESSION blk-D
+     253906     0.2539052      1142  INTERMEDIATE/MIXED   THIS SESSION hi-all (12-run estimator)
+     255208     0.2552072      1166  CAPTURED             session 24 (quote-only)
+     260417     0.2604162      1186  CAPTURED             session 23 (quote-only)
+     270834     0.2708332      1224  CAPTURED             session 22 (quote-only)
+     291667     0.2916657      1330  CAPTURED             session 21 (quote-only)
+     333334     1/3            1578  CAPTURED             session 17 (quote-only)
+     500001     1/2            2739  CAPTURED             session 20 (quote-only)
+     1000003    1.0            5520  CAPTURED             sessions 7/16 (quote-only)
+
+   W3 (pre-registered, descriptive) THE BLOCK COMPARISONS:
+     (i) the four blocks side by side (identical knob triple, one
+         byte-identical binary, one session; differ only in time
+         order -- L9):
+         blk-A (runs [1, 2, 3]): 1130 INTERMEDIATE/MIXED  18-cell 993..1431  host_ns 305360
+         blk-B (runs [4, 5, 6]): 1144 INTERMEDIATE/MIXED  18-cell 979..1432  host_ns 308976
+         blk-C (runs [7, 8, 9]): 1143 INTERMEDIATE/MIXED  18-cell 985..1432  host_ns 309037
+         blk-D (runs [10, 11, 12]): 1151 INTERMEDIATE/MIXED  18-cell 993..1451  host_ns 309197
+     (ii) the four block 18-cell minima against the three
+         cross-session minima (all three within 25 ticks of the frozen
+         1,000 boundary -- quote-only L7): block minima 993/979/985/993; cross-session 1001 / 976 / 991
+     (iii) the 12 per-run (sum,128,16) medians and the 12 per-run
+          18-cell minima (DESCRIPTIVE -- the per-run unit is 25 rounds
+          per cell, NOT the frozen 3-run unit -- L10):
+          run  (sum,128,16)  18-cell min
+          r1         1150         977
+          r2         1135         988
+          r3         1112        1001
+          r4         1149         971
+          r5         1141         990
+          r6         1131         977
+          r7         1138         980
+          r8         1160         985
+          r9         1131         979
+          r10        1150         997
+          r11        1165         974
+          r12        1146         993
+
+   X1 (descriptive, host_ns at (sum,128,S=16)):
+     c2 673456, hi 308129, c8 2397240; hi blocks blk-A 305360, blk-B 308976, blk-C 309037, blk-D 309197
+     c2 673456 = 0.990x session-26's (680,499); 1.001x session-27's (672,684); 0.992x session-28's (678,546) -- session-26 / session-27 / session-28 same-knob
+     hi 308129 = 0.994x session-26's (309,848); 0.994x session-27's (310,008); 0.995x session-28's (309,647) -- session-26 mid / session-27 hi / session-28 hi same-knob
+     c8 2397240 = 1.007x session-26's (2,380,500); 1.000x session-27's (2,397,482); 0.785x session-28's (3,053,605) -- session-26 / session-27 / session-28 same-knob
+     host_ns is the HOST-side proxy (L3), not a C criterion; any
+     excursion is NAMED, NOT HIDDEN and its cause is UNMEASURED.
+
+4. VERDICT SUMMARY: C1 (a)=True; C2 (a); W1 (a).
+   The named-hypothesis discrimination of the row question is as W1
+   states; WHY is UNMEASURED and NO causal mechanism is claimed.

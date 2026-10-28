@@ -1,0 +1,392 @@
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM72 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM72)"
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text._Z8thr_faddPKyPy    --------------------------
+	.section	.text._Z8thr_faddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=29"
+	.align	128
+        .global         _Z8thr_faddPKyPy
+        .type           _Z8thr_faddPKyPy,@function
+        .size           _Z8thr_faddPKyPy,(.L_121 - _Z8thr_faddPKyPy)
+        .other          _Z8thr_faddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z8thr_faddPKyPy:
+.text._Z8thr_faddPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   MOV R2, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R5, [R2+0x10] ;
+        /*0050*/                   CS2R R2, SR_CLOCKLO ;
+        /*0060*/                   MOV R6, 0x3f800000 ;
+        /*0070*/                   MOV R4, RZ ;
+        /*0080*/                   MOV R7, 0x3f800000 ;
+        /*0090*/                   MOV R12, 0x3f800000 ;
+        /*00a0*/                   MOV R13, 0x3f800000 ;
+        /*00b0*/                   MOV R14, 0x3f800000 ;
+        /*00c0*/                   MOV R16, 0x3f800000 ;
+        /*00d0*/                   MOV R18, 0x3f800000 ;
+        /*00e0*/                   MOV R20, 0x3f800000 ;
+        /*00f0*/                   MOV R22, 0x3f800000 ;
+        /*0100*/                   MOV R24, 0x3f800000 ;
+        /*0110*/                   MOV R26, 0x3f800000 ;
+        /*0120*/                   MOV R11, 0x3f800000 ;
+        /*0130*/                   MOV R10, 0x3f800000 ;
+        /*0140*/                   MOV R9, 0x3f800000 ;
+        /*0150*/                   MOV R8, 0x3f800000 ;
+        /*0160*/                   MOV R0, 0x3f800000 ;
+.L_1:
+        /*0170*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0180*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*0190*/                   FADD.FTZ R12, R5.reuse, R12 ;
+        /*01a0*/                   FADD.FTZ R13, R5.reuse, R13 ;
+        /*01b0*/                   ISETP.NE.AND P0, PT, R4, 0x40, PT ;
+        /*01c0*/                   FADD.FTZ R14, R5, R14 ;
+        /*01d0*/                   FADD.FTZ R16, R5.reuse, R16 ;
+        /*01e0*/                   FADD.FTZ R18, R5.reuse, R18 ;
+        /*01f0*/                   FADD.FTZ R20, R5.reuse, R20 ;
+        /*0200*/                   FADD.FTZ R22, R5.reuse, R22 ;
+        /*0210*/                   FADD.FTZ R24, R5.reuse, R24 ;
+        /*0220*/                   FADD.FTZ R26, R5, R26 ;
+        /*0230*/                   FADD.FTZ R11, R5.reuse, R11 ;
+        /*0240*/                   FADD.FTZ R10, R5.reuse, R10 ;
+        /*0250*/                   FADD.FTZ R9, R5.reuse, R9 ;
+        /*0260*/                   FADD.FTZ R8, R5.reuse, R8 ;
+        /*0270*/                   FADD.FTZ R0, R5.reuse, R0 ;
+        /*0280*/                   FADD.FTZ R7, R5, R7 ;
+        /*0290*/                   FADD.FTZ R6, R5, R6 ;
+        /*02a0*/               @P0 BRA `(.L_1) ;
+        /*02b0*/                   CS2R R4, SR_CLOCKLO ;
+        /*02c0*/                   FADD R13, R12, R13 ;
+        /*02d0*/                   IADD3 R2, P0, -R2, R4, RZ ;
+        /*02e0*/                   FADD R13, R14, R13 ;
+        /*02f0*/                   IADD3.X R3, ~R3, R5, RZ, P0, !PT ;
+        /*0300*/                   FADD R13, R16, R13 ;
+        /*0310*/                   FADD R13, R18, R13 ;
+        /*0320*/                   FADD R13, R20, R13 ;
+        /*0330*/                   FADD R13, R22, R13 ;
+        /*0340*/                   FADD R13, R24, R13 ;
+        /*0350*/                   FADD R26, R26, R13 ;
+        /*0360*/                   FADD R11, R11, R26 ;
+        /*0370*/                   FADD R10, R10, R11 ;
+        /*0380*/                   FADD R9, R9, R10 ;
+        /*0390*/                   FADD R9, R8, R9 ;
+        /*03a0*/                   S2R R10, SR_TID.X ;
+        /*03b0*/                   FADD R0, R0, R9 ;
+        /*03c0*/                   FADD R7, R7, R0 ;
+        /*03d0*/                   FADD R8, R6, R7 ;
+        /*03e0*/                   MOV R7, 0x8 ;
+        /*03f0*/                   F2I.U64.TRUNC R8, R8 ;
+        /*0400*/                   IMAD.WIDE.U32 R6, R10, R7, c[0x0][0x168] ;
+        /*0410*/                   STG.E.64.SYS [R6], R2 ;
+        /*0420*/                   STG.E.64.SYS [R6+0x800], R8 ;
+        /*0430*/                   EXIT ;
+.L_2:
+        /*0440*/                   BRA `(.L_2);
+.L_121:
+
+
+//--------------------- .text._Z11thr_pp_imadPKyPy --------------------------
+	.section	.text._Z11thr_pp_imadPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=24"
+	.align	128
+        .global         _Z11thr_pp_imadPKyPy
+        .type           _Z11thr_pp_imadPKyPy,@function
+        .size           _Z11thr_pp_imadPKyPy,(.L_122 - _Z11thr_pp_imadPKyPy)
+        .other          _Z11thr_pp_imadPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z11thr_pp_imadPKyPy:
+.text._Z11thr_pp_imadPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   MOV R2, c[0x0][0x160] ;
+        /*0030*/                   IMAD.MOV.U32 R3, RZ, RZ, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R5, [R2+0x4] ;
+        /*0050*/                   CS2R R2, SR_CLOCKLO ;
+        /*0060*/                   MOV R6, 0x2 ;
+        /*0070*/                   IMAD.MOV.U32 R4, RZ, RZ, RZ ;
+        /*0080*/                   MOV R7, 0x2 ;
+        /*0090*/                   IMAD.MOV.U32 R0, RZ, RZ, 0x2 ;
+        /*00a0*/                   MOV R9, 0x2 ;
+        /*00b0*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x2 ;
+        /*00c0*/                   MOV R10, 0x2 ;
+        /*00d0*/                   IMAD.MOV.U32 R14, RZ, RZ, 0x2 ;
+        /*00e0*/                   MOV R12, 0x2 ;
+        /*00f0*/                   IMAD.MOV.U32 R17, RZ, RZ, 0x2 ;
+        /*0100*/                   MOV R13, 0x2 ;
+        /*0110*/                   IMAD.MOV.U32 R20, RZ, RZ, 0x2 ;
+        /*0120*/                   MOV R15, 0x2 ;
+        /*0130*/                   MOV R16, 0x2 ;
+        /*0140*/                   MOV R18, 0x2 ;
+        /*0150*/                   MOV R19, 0x2 ;
+        /*0160*/                   MOV R21, 0x2 ;
+.L_3:
+        /*0170*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0180*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*0190*/                   IMAD R0, R5.reuse, R0, R9 ;
+        /*01a0*/                   IMAD R10, R5.reuse, R10, R11 ;
+        /*01b0*/                   ISETP.NE.AND P0, PT, R4, 0x40, PT ;
+        /*01c0*/                   IMAD R12, R5, R12, R13 ;
+        /*01d0*/                   IMAD R14, R5.reuse, R14, R15 ;
+        /*01e0*/                   IMAD R16, R5.reuse, R16, R17 ;
+        /*01f0*/                   IMAD R18, R5.reuse, R18, R19 ;
+        /*0200*/                   IMAD R20, R5.reuse, R20, R21 ;
+        /*0210*/                   IMAD R7, R5.reuse, R7, R6 ;
+        /*0220*/                   IMAD R9, R5, R9, R0 ;
+        /*0230*/                   IMAD R11, R5.reuse, R11, R10 ;
+        /*0240*/                   IMAD R13, R5.reuse, R13, R12 ;
+        /*0250*/                   IMAD R15, R5.reuse, R15, R14 ;
+        /*0260*/                   IMAD R17, R5.reuse, R17, R16 ;
+        /*0270*/                   IMAD R19, R5.reuse, R19, R18 ;
+        /*0280*/                   IMAD R21, R5, R21, R20 ;
+        /*0290*/                   IMAD R6, R5, R6, R7 ;
+        /*02a0*/               @P0 BRA `(.L_3) ;
+        /*02b0*/                   CS2R R4, SR_CLOCKLO ;
+        /*02c0*/                   IADD3 R19, R19, R20, R21 ;
+        /*02d0*/                   S2R R8, SR_TID.X ;
+        /*02e0*/                   IADD3 R2, P0, -R2, R4, RZ ;
+        /*02f0*/                   IADD3 R19, R17, R19, R18 ;
+        /*0300*/                   IMAD.X R3, R5, 0x1, ~R3, P0 ;
+        /*0310*/                   IADD3 R19, R15, R19, R16 ;
+        /*0320*/                   IADD3 R19, R13, R19, R14 ;
+        /*0330*/                   IADD3 R19, R11, R19, R12 ;
+        /*0340*/                   MOV R11, 0x8 ;
+        /*0350*/                   IADD3 R19, R9, R19, R10 ;
+        /*0360*/                   IADD3 R7, R7, R19, R0 ;
+        /*0370*/                   IMAD.WIDE.U32 R8, R8, R11, c[0x0][0x168] ;
+        /*0380*/                   IADD3 R6, R6, R7, RZ ;
+        /*0390*/                   MOV R7, RZ ;
+        /*03a0*/                   STG.E.64.SYS [R8], R2 ;
+        /*03b0*/                   STG.E.64.SYS [R8+0x800], R6 ;
+        /*03c0*/                   EXIT ;
+.L_4:
+        /*03d0*/                   BRA `(.L_4);
+.L_122:
+
+
+//--------------------- .text._Z11thr_pp_iaddPKyPy --------------------------
+	.section	.text._Z11thr_pp_iaddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=24"
+	.align	128
+        .global         _Z11thr_pp_iaddPKyPy
+        .type           _Z11thr_pp_iaddPKyPy,@function
+        .size           _Z11thr_pp_iaddPKyPy,(.L_123 - _Z11thr_pp_iaddPKyPy)
+        .other          _Z11thr_pp_iaddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z11thr_pp_iaddPKyPy:
+.text._Z11thr_pp_iaddPKyPy:
+        /*0000*/                   IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   CS2R R2, SR_CLOCKLO ;
+        /*0030*/                   IMAD.MOV.U32 R6, RZ, RZ, 0x2 ;
+        /*0040*/                   MOV R4, RZ ;
+        /*0050*/                   IMAD.MOV.U32 R7, RZ, RZ, 0x2 ;
+        /*0060*/                   MOV R9, 0x2 ;
+        /*0070*/                   IMAD.MOV.U32 R0, RZ, RZ, 0x2 ;
+        /*0080*/                   MOV R12, 0x2 ;
+        /*0090*/                   IMAD.MOV.U32 R10, RZ, RZ, 0x2 ;
+        /*00a0*/                   MOV R15, 0x2 ;
+        /*00b0*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x2 ;
+        /*00c0*/                   MOV R18, 0x2 ;
+        /*00d0*/                   IMAD.MOV.U32 R13, RZ, RZ, 0x2 ;
+        /*00e0*/                   MOV R21, 0x2 ;
+        /*00f0*/                   IMAD.MOV.U32 R14, RZ, RZ, 0x2 ;
+        /*0100*/                   IMAD.MOV.U32 R16, RZ, RZ, 0x2 ;
+        /*0110*/                   IMAD.MOV.U32 R17, RZ, RZ, 0x2 ;
+        /*0120*/                   IMAD.MOV.U32 R19, RZ, RZ, 0x2 ;
+        /*0130*/                   IMAD.MOV.U32 R20, RZ, RZ, 0x2 ;
+.L_5:
+        /*0140*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0150*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*0160*/                   IMAD.IADD R0, R9, 0x1, R0 ;
+        /*0170*/                   IADD3 R10, R11, R10, RZ ;
+        /*0180*/                   IMAD.IADD R12, R13, 0x1, R12 ;
+        /*0190*/                   ISETP.NE.AND P0, PT, R4, 0x40, PT ;
+        /*01a0*/                   IMAD.IADD R16, R17, 0x1, R16 ;
+        /*01b0*/                   IADD3 R14, R15, R14, RZ ;
+        /*01c0*/                   IMAD.IADD R20, R21, 0x1, R20 ;
+        /*01d0*/                   IADD3 R18, R19, R18, RZ ;
+        /*01e0*/                   IMAD.IADD R9, R0, 0x1, R9 ;
+        /*01f0*/                   IADD3 R7, R7, R6, RZ ;
+        /*0200*/                   IMAD.IADD R13, R12, 0x1, R13 ;
+        /*0210*/                   IADD3 R11, R10, R11, RZ ;
+        /*0220*/                   IMAD.IADD R17, R16, 0x1, R17 ;
+        /*0230*/                   IADD3 R15, R14, R15, RZ ;
+        /*0240*/                   IMAD.IADD R21, R20, 0x1, R21 ;
+        /*0250*/                   IADD3 R19, R18, R19, RZ ;
+        /*0260*/                   IADD3 R6, R7, R6, RZ ;
+        /*0270*/               @P0 BRA `(.L_5) ;
+        /*0280*/                   CS2R R4, SR_CLOCKLO ;
+        /*0290*/                   IADD3 R19, R19, R20, R21 ;
+        /*02a0*/                   S2R R8, SR_TID.X ;
+        /*02b0*/                   IADD3 R2, P0, -R2, R4, RZ ;
+        /*02c0*/                   IADD3 R19, R17, R19, R18 ;
+        /*02d0*/                   IADD3.X R3, ~R3, R5, RZ, P0, !PT ;
+        /*02e0*/                   IADD3 R19, R15, R19, R16 ;
+        /*02f0*/                   IADD3 R19, R13, R19, R14 ;
+        /*0300*/                   IADD3 R19, R11, R19, R12 ;
+        /*0310*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x8 ;
+        /*0320*/                   IADD3 R19, R9, R19, R10 ;
+        /*0330*/                   IADD3 R7, R7, R19, R0 ;
+        /*0340*/                   IMAD.WIDE.U32 R8, R8, R11, c[0x0][0x168] ;
+        /*0350*/                   IMAD.IADD R6, R6, 0x1, R7 ;
+        /*0360*/                   MOV R7, RZ ;
+        /*0370*/                   STG.E.64.SYS [R8], R2 ;
+        /*0380*/                   STG.E.64.SYS [R8+0x800], R6 ;
+        /*0390*/                   EXIT ;
+.L_6:
+        /*03a0*/                   BRA `(.L_6);
+.L_123:
+
+
+//--------------------- .text._Z8thr_imadPKyPy    --------------------------
+	.section	.text._Z8thr_imadPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=24"
+	.align	128
+        .global         _Z8thr_imadPKyPy
+        .type           _Z8thr_imadPKyPy,@function
+        .size           _Z8thr_imadPKyPy,(.L_124 - _Z8thr_imadPKyPy)
+        .other          _Z8thr_imadPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z8thr_imadPKyPy:
+.text._Z8thr_imadPKyPy:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   MOV R2, c[0x0][0x160] ;
+        /*0030*/                   IMAD.MOV.U32 R3, RZ, RZ, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R5, [R2] ;
+        /*0050*/                   LDG.E.SYS R4, [R2+0x4] ;
+        /*0060*/                   CS2R R2, SR_CLOCKLO ;
+        /*0070*/                   MOV R6, 0x2 ;
+        /*0080*/                   IMAD.MOV.U32 R8, RZ, RZ, RZ ;
+        /*0090*/                   MOV R7, 0x2 ;
+        /*00a0*/                   IMAD.MOV.U32 R0, RZ, RZ, 0x2 ;
+        /*00b0*/                   MOV R9, 0x2 ;
+        /*00c0*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x2 ;
+        /*00d0*/                   MOV R10, 0x2 ;
+        /*00e0*/                   IMAD.MOV.U32 R14, RZ, RZ, 0x2 ;
+        /*00f0*/                   MOV R12, 0x2 ;
+        /*0100*/                   IMAD.MOV.U32 R17, RZ, RZ, 0x2 ;
+        /*0110*/                   MOV R13, 0x2 ;
+        /*0120*/                   IMAD.MOV.U32 R20, RZ, RZ, 0x2 ;
+        /*0130*/                   MOV R15, 0x2 ;
+        /*0140*/                   MOV R16, 0x2 ;
+        /*0150*/                   MOV R18, 0x2 ;
+        /*0160*/                   MOV R19, 0x2 ;
+        /*0170*/                   MOV R21, 0x2 ;
+.L_7:
+        /*0180*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0190*/                   IADD3 R8, R8, 0x1, RZ ;
+        /*01a0*/                   IMAD R9, R4.reuse, R9, R5.reuse ;
+        /*01b0*/                   IMAD R10, R4, R10, R5.reuse ;
+        /*01c0*/                   ISETP.NE.AND P0, PT, R8, 0x40, PT ;
+        /*01d0*/                   IMAD R11, R4, R11, R5 ;
+        /*01e0*/                   IMAD R12, R4.reuse, R12, R5.reuse ;
+        /*01f0*/                   IMAD R13, R4.reuse, R13, R5.reuse ;
+        /*0200*/                   IMAD R14, R4.reuse, R14, R5.reuse ;
+        /*0210*/                   IMAD R15, R4.reuse, R15, R5.reuse ;
+        /*0220*/                   IMAD R16, R4.reuse, R16, R5.reuse ;
+        /*0230*/                   IMAD R17, R4, R17, R5 ;
+        /*0240*/                   IMAD R18, R4.reuse, R18, R5.reuse ;
+        /*0250*/                   IMAD R19, R4.reuse, R19, R5.reuse ;
+        /*0260*/                   IMAD R20, R4.reuse, R20, R5.reuse ;
+        /*0270*/                   IMAD R21, R4.reuse, R21, R5.reuse ;
+        /*0280*/                   IMAD R0, R4.reuse, R0, R5.reuse ;
+        /*0290*/                   IMAD R7, R4, R7, R5 ;
+        /*02a0*/                   IMAD R6, R4, R6, R5 ;
+        /*02b0*/               @P0 BRA `(.L_7) ;
+        /*02c0*/                   CS2R R4, SR_CLOCKLO ;
+        /*02d0*/                   IADD3 R19, R19, R20, R21 ;
+        /*02e0*/                   S2R R8, SR_TID.X ;
+        /*02f0*/                   IADD3 R2, P0, -R2, R4, RZ ;
+        /*0300*/                   IADD3 R19, R17, R19, R18 ;
+        /*0310*/                   IMAD.X R3, R5, 0x1, ~R3, P0 ;
+        /*0320*/                   IADD3 R19, R15, R19, R16 ;
+        /*0330*/                   IADD3 R19, R13, R19, R14 ;
+        /*0340*/                   IADD3 R19, R11, R19, R12 ;
+        /*0350*/                   MOV R11, 0x8 ;
+        /*0360*/                   IADD3 R19, R9, R19, R10 ;
+        /*0370*/                   IADD3 R7, R7, R19, R0 ;
+        /*0380*/                   IMAD.WIDE.U32 R8, R8, R11, c[0x0][0x168] ;
+        /*0390*/                   IADD3 R6, R6, R7, RZ ;
+        /*03a0*/                   MOV R7, RZ ;
+        /*03b0*/                   STG.E.64.SYS [R8], R2 ;
+        /*03c0*/                   STG.E.64.SYS [R8+0x800], R6 ;
+        /*03d0*/                   EXIT ;
+.L_8:
+        /*03e0*/                   BRA `(.L_8);
+.L_124:
+
+
+//--------------------- .text._Z8thr_iaddPKyPy    --------------------------
+	.section	.text._Z8thr_iaddPKyPy,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=25"
+	.align	128
+        .global         _Z8thr_iaddPKyPy
+        .type           _Z8thr_iaddPKyPy,@function
+        .size           _Z8thr_iaddPKyPy,(.L_125 - _Z8thr_iaddPKyPy)
+        .other          _Z8thr_iaddPKyPy,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z8thr_iaddPKyPy:
+.text._Z8thr_iaddPKyPy:
+        /*0000*/                   IMAD.MOV.U32 R1, RZ, RZ, c[0x0][0x28] ;
+        /*0010*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0020*/                   IMAD.MOV.U32 R2, RZ, RZ, c[0x0][0x160] ;
+        /*0030*/                   MOV R3, c[0x0][0x164] ;
+        /*0040*/                   LDG.E.SYS R5, [R2] ;
+        /*0050*/                   CS2R R2, SR_CLOCKLO ;
+        /*0060*/                   IMAD.MOV.U32 R6, RZ, RZ, 0x2 ;
+        /*0070*/                   MOV R7, 0x2 ;
+        /*0080*/                   IMAD.MOV.U32 R4, RZ, RZ, RZ ;
+        /*0090*/                   MOV R9, 0x2 ;
+        /*00a0*/                   IMAD.MOV.U32 R0, RZ, RZ, 0x2 ;
+        /*00b0*/                   MOV R14, 0x2 ;
+        /*00c0*/                   IMAD.MOV.U32 R10, RZ, RZ, 0x2 ;
+        /*00d0*/                   MOV R15, 0x2 ;
+        /*00e0*/                   IMAD.MOV.U32 R12, RZ, RZ, 0x2 ;
+        /*00f0*/                   MOV R20, 0x2 ;
+        /*0100*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x2 ;
+        /*0110*/                   MOV R22, 0x2 ;
+        /*0120*/                   IMAD.MOV.U32 R13, RZ, RZ, 0x2 ;
+        /*0130*/                   IMAD.MOV.U32 R16, RZ, RZ, 0x2 ;
+        /*0140*/                   IMAD.MOV.U32 R18, RZ, RZ, 0x2 ;
+        /*0150*/                   IMAD.MOV.U32 R17, RZ, RZ, 0x2 ;
+        /*0160*/                   IMAD.MOV.U32 R19, RZ, RZ, 0x2 ;
+.L_9:
+        /*0170*/              @!PT SHFL.IDX PT, RZ, RZ, RZ, RZ ;
+        /*0180*/                   IADD3 R4, R4, 0x1, RZ ;
+        /*0190*/                   IMAD.IADD R10, R5.reuse, 0x1, R10 ;
+        /*01a0*/                   IADD3 R9, R5.reuse, R9, RZ ;
+        /*01b0*/                   IMAD.IADD R12, R5.reuse, 0x1, R12 ;
+        /*01c0*/                   ISETP.NE.AND P0, PT, R4, 0x40, PT ;
+        /*01d0*/                   IMAD.IADD R14, R5.reuse, 0x1, R14 ;
+        /*01e0*/                   IADD3 R11, R5.reuse, R11, RZ ;
+        /*01f0*/                   IMAD.IADD R16, R5.reuse, 0x1, R16 ;
+        /*0200*/                   IADD3 R13, R5.reuse, R13, RZ ;
+        /*0210*/                   IMAD.IADD R18, R5.reuse, 0x1, R18 ;
+        /*0220*/                   IADD3 R15, R5.reuse, R15, RZ ;
+        /*0230*/                   IMAD.IADD R20, R5.reuse, 0x1, R20 ;
+        /*0240*/                   IADD3 R17, R5.reuse, R17, RZ ;
+        /*0250*/                   IMAD.IADD R22, R5.reuse, 0x1, R22 ;
+        /*0260*/                   IADD3 R19, R5.reuse, R19, RZ ;
+        /*0270*/                   IMAD.IADD R7, R5.reuse, 0x1, R7 ;
+        /*0280*/                   IADD3 R0, R5, R0, RZ ;
+        /*0290*/                   IADD3 R6, R5, R6, RZ ;
+        /*02a0*/               @P0 BRA `(.L_9) ;
+        /*02b0*/                   CS2R R4, SR_CLOCKLO ;
+        /*02c0*/                   IADD3 R19, R20, R19, R22 ;
+        /*02d0*/                   S2R R8, SR_TID.X ;
+        /*02e0*/                   IADD3 R2, P0, -R2, R4, RZ ;
+        /*02f0*/                   IADD3 R19, R18, R19, R17 ;
+        /*0300*/                   IADD3.X R3, ~R3, R5, RZ, P0, !PT ;
+        /*0310*/                   IADD3 R19, R16, R19, R15 ;
+        /*0320*/                   IADD3 R19, R14, R19, R13 ;
+        /*0330*/                   IADD3 R19, R12, R19, R11 ;
+        /*0340*/                   IMAD.MOV.U32 R11, RZ, RZ, 0x8 ;
+        /*0350*/                   IADD3 R19, R10, R19, R9 ;
+        /*0360*/                   IADD3 R7, R7, R19, R0 ;
+        /*0370*/                   IMAD.WIDE.U32 R8, R8, R11, c[0x0][0x168] ;
+        /*0380*/                   IMAD.IADD R6, R6, 0x1, R7 ;
+        /*0390*/                   MOV R7, RZ ;
+        /*03a0*/                   STG.E.64.SYS [R8], R2 ;
+        /*03b0*/                   STG.E.64.SYS [R8+0x800], R6 ;
+        /*03c0*/                   EXIT ;
+.L_10:
+        /*03d0*/                   BRA `(.L_10);
+.L_125:

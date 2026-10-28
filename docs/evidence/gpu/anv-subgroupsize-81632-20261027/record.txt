@@ -1,0 +1,204 @@
+JUN-59 subgroup 8/16/32 measurement -- FIRST session, INSTRUMENT
+channel, COMPLETE (two ticks; 2026-10-27). The session's tick-1 record
+("STARTED, NOT FINISHED", session budget exhausted mid-session) is
+preserved BYTE-FOR-BYTE as record-tick1.txt (sha256
+18889dc64472e59640a64d92fae0ef4bccd67893fd7ddac804b50924f474082f) and is
+never rewritten; this file is the completed record and its section 2
+carries the two corrections to tick-1's text (NAMED, NOT HIDDEN). All
+numbers below are real tool output; nothing unmeasured is reported as
+measured.
+
+THE ROW (unchanged from record-tick1.txt): the JUN-59 issue body's named
+question ("subgroup 幅 (8/16/32) を考慮した workgroup 調整") and the
+2026-10-19 record's named next step ("subgroup 8/16/32 の本格計測は次の
+step") -- the FIRST hardware measurement of the :subgroup-reduce GLSL
+arm's sensitivity to forced subgroup size on the fleet's Intel device
+(BMG G31 / ANV, aiueos-6600hs-1). Protocol (protocol.txt) registered
+BEFORE any run and never rewritten; the analysis route is analysis.py
+over run-1/2/3.txt only; the channel is the INSTRUMENT channel (a
+standalone instrument on raw ANV -- neither the removed wire-42 loader
+path nor the ADR-0371 provider). Rule 4 binds in full.
+
+1. DEFECT (c) FIXED (the tick-1 named "next tick's FIRST action"):
+   The instrument's make_buffer persistently maps every buffer's
+   VkDeviceMemory at startup; the probe step then called vkMapMemory on
+   om a SECOND time (double map, invalid usage) and died "FATAL: map o ->
+   VkResult -5" at the second cell's probe-verification step (cell idx=1
+   -- cell idx=0's S=8 probe never runs because its pipeline is refused).
+   CORRECTION 1 to record-tick1.txt: VkResult -5 is
+   VK_ERROR_MEMORY_MAP_FAILED, NOT VK_ERROR_OUT_OF_DEVICE_MEMORY (that is
+   -2) -- the observed value -5 stands, its VkResult NAME is corrected
+   here. A SECOND instance of the SAME defect class existed in the
+   VERIFY path (vkMapMemory on pm, likewise already mapped at startup)
+   and would have killed the run at the first verify even with the probe
+   map fixed -- found by re-reading the source before re-running, not by
+   a crash. Fix (scripts/gpu-subgroup-reduce-anv-subgroupsize.c, 4 hunks
+   in the committed diff): persistent host pointers phost/ohost captured
+   at the startup maps; the probe step and the VERIFY step use them and
+   never map again; the stray vkUnmapMemory(device, pm) removed.
+   CORRECTION 2 to record-tick1.txt: "the S=8 cell's pipeline creation
+   with requiredSubgroupSize=8 FAILED" is imprecise -- the instrument
+   REFUSES creation pre-emptively (forced_ok range check: 8 <
+   minSubgroupSize=16) and never calls vkCreateComputePipelines for that
+   cell; the CELL line's fail-closed state (pipeline=FAIL, void=1,
+   void_reason=pipeline-create-failed) is identical either way. The
+   fail-closed branch behaved exactly as pre-registered.
+   Rebuild on the instrument host (gcc 13.3.0 -O2 -lvulkan) rc=0;
+   sha256 source b409f753a958c3e6a9dcee662b620ad11593ab6bd6cda213fafa93df4579d987,
+   binary aafd0ad8caf2f119c77155c2780a05c9f6b3ceb1049dfa6ee7687875bb3a0c92.
+
+2. THE RUNS (HARDWARE RAN -- MEASURED): THREE fresh processes
+   (run-1/2/3.txt), run window 2026-10-27T08:36:38Z..08:36:39Z (the
+   window is named for identity, wall time is no metric). INSTRUMENT-
+   EXIT=0 3/3, stderr 0 bytes 3/3 (run-1/2/3.stderr.txt). Each log: 507
+   lines = 7 header + 24 CELL + 450 SAMPLE (18 pipeline-ok cells x 25
+   rounds; the 6 named S=8 FAIL cells carry no samples) + 24 VERIFY +
+   "# done cells=24" + "INSTRUMENT-EXIT=0". Headers verified
+   programmatically in every log and byte-identical across runs (device
+   name/vendor/api, subgroupSize=32, min=16 max=32 requiredStages=
+   000000e0 COMPUTE included, timestampPeriod=52.083,
+   timestampComputeAndGraphics=1, n=1000003, rounds=25, warmup=3,
+   seed=20261027). The tick-1 failed stubs are preserved byte-identical
+   as run-failed-1/2/3.txt (sha256 caf40e44a62d5f0dc1562f76ca8815dc27b20d74
+   each) and run-failed-1/2/3.stderr.txt (sha256
+   b83f3f86f747057dd0266dd238d82932f94003c3 each, verbatim "FATAL: map o
+   -> VkResult -5"); ASSEMBLY NAMED: run-failed-N.txt = tick-1's stdout
+   + its appended "INSTRUMENT-EXIT=1" line + the verbatim stderr line
+   appended this tick.
+
+3. THE FINDING (publication.txt is the publication; produced ONLY by
+   analysis.py over run-1/2/3.txt, run TWICE byte-identical -- diff exit
+   0; publication sha256
+   89473fe6f10606f594bca10ebfbd7b44b43a6c18c37218d1e19387b9a1d6d320,
+   analysis.py sha256
+   ab38436f1df2668c46bada1b4d335d846b5228651418f0991de8226f95ce0f2b):
+   a. CORPUS CHAIN OF CUSTODY (emission-census.txt): the committed
+      emitter route (scripts/emit-gpu-subgroup-reduce-glsl.cljk, public
+      route) re-emitted twice this tick, sha256 census before/after
+      both runs diffs EMPTY (the corpus is emitter bytes, never
+      hand-written); the instrument host's shaders/ copies are
+      BYTE-IDENTICAL to the local corpus (8/8 sha256 pairs) and its
+      .spv census re-derived now matches compile-toolchain.txt's
+      recorded census 8/8.
+   b. P2 (forcing reality) HOLDS: 54/54 measured cell-runs (18 cells x 3
+      runs) -- probe gl_SubgroupSize EXACTLY the forced size (16 or 32)
+      at every forced cell, EXACTLY 32 (= device-reported subgroupSize)
+      at every default cell, gl_NumSubgroups EXACTLY W/S (8/4/16/8);
+      zero voids among pipeline-ok cells.
+   c. P3 (correctness) HOLDS: mismatch=0 at every measured cell of every
+      run (7813 workgroups verified at W=128, 3907 at W=256, bit-exact
+      CPU integer reference, 54/54 ok=1).
+   d. FIRST DEVICE-FACT ANSWER (already in tick-1's record, standing):
+      THIS DEVICE'S ADMISSIBLE FORCED SUBGROUP SIZES ARE [16, 32] --
+      minSubgroupSize=16, forced S=8 is NOT REALIZABLE on BMG G31 / ANV.
+      The issue's "8/16/32" question NARROWS to 16 vs 32 (plus the
+      device default, which reports 32) at this host.
+   e. THE TIMING (the first gpu_ns/host_ns samples ever taken on this
+      device): gpu_ns medians PIN AT THE MEASUREMENT FLOOR -- 1614.6 ns
+      (= 31 timestamp ticks x 52.083 ns/tick) at EVERY (op, W, S) cell
+      in all three runs (min 1562.5 = 30 ticks; max 2552.1..2864.6 in
+      run-1, 1666.7..1770.8 in runs 2/3). At n=1000003 the dispatch
+      bracket measures ~30-31 ticks; the S=16-vs-32 timing difference
+      is BELOW the timestamp quantum at this n. NO S=32 advantage is
+      measured; every cell's pooled median is an EQUAL tie.
+   f. P1 (stage/barrier count) at its letter: NOT EVALUABLE (its S=8
+      half has no timing -- fail-closed, named). At the NARROWED letter
+      (S=32's median strictly below S=16's at every (op, W)): REFUTED
+      at all 6 (op, W) cells -- per the protocol's own clause ("any
+      (op, W) where S=32 is not the fastest NAMED refutes P1 at that
+      cell"), all six are ties at the floor and none shows S=32
+      fastest. This is a design-reasoning check at the INSTRUMENT
+      channel, NOT an optimization claim; nothing may move from it.
+   g. P4 (cross-run order): DIFFERS at 2 of 6 cells ((sum, W=128),
+      (max, W=128)); IDENTICAL at the other 4. The differing orders are
+      tie-degenerate (floor medians; ties break lexicographically) --
+      consistent with the session-variability warning the protocol
+      registered IN ADVANCE from the counters-channel precedent. Also
+      named: run-1's max gpu_ns (2552..2865) is visibly above runs
+      2/3's (1667..1771) -- a first-process effect, OBSERVED ONLY, its
+      cause UNMEASURED.
+
+4. CONSEQUENCE -- RULE 4: NOTHING MOVES. No workgroup row (no
+   :measured? flag, no :size, no :shapes), no selection answer -- the
+   :intel row 128 / :measured? true / key "g31" keeps its ADR-0358
+   provenance and flag; :arm/:unknown stay provisional :measured? false
+   (the accelerator-targets defaults remain design assumptions, NOT
+   evidence); this session is NOT the basis-replacing
+   baseline-vs-variant contract of accelerator-subgroup-reduce.cljk (its
+   own future row and channel question); NO vendor optimization exists
+   for Intel and none is claimed here. The UNDECIDED question named at
+   the 2026-10-27 probe row ("is a subgroup 8/16/32 run the :intel
+   row's own channel under the 2026-10-25 rule?") stays UNDECIDED --
+   this session ran on its own named INSTRUMENT channel and moved
+   nothing under rule 4.
+
+5. STATES: IMPLEMENTED (unchanged, code + tests): the :subgroup-reduce
+   GLSL arm's emission, dispatch table, selection rows (the scoped gate
+   covers them). MEASURED (this session, instrument channel, one host,
+   one day, shape 1, W in {128,256}): the admissible forced subgroup
+   sizes [16,32]; probe-verified S=16/32/default realization; bit-exact
+   correctness at 6 (op, W) x 3 S-forcing; the first gpu_ns/host_ns
+   timing samples (floor-quantized, medians tied). IN PLACE AND NOW
+   VALIDATED BY COMPLETE RUNS: the measurement instrument, the emit
+   script, analysis.py. PROPOSED (its own future rows, not decided): a
+   floor-lifting rerun (larger n and/or several dispatches per
+   timestamp bracket) to resolve S=16 vs S=32 above the quantum; the
+   channel question of section 4.
+   UNMEASURED named: the S=16-vs-32 timing ABOVE the floor (the
+   narrowed row question -- UNRESOLSED at median resolution, NOT
+   answered by this session beyond "no measurable difference at this
+   n"); S=8 timing (not realizable on this device); every W outside
+   {128,256}; shape 2; every op-order/data-dependence question; any
+   baseline-vs-variant sign; cross-day replication; anything off
+   aiueos-6600hs-1; the run-1 max-offset's cause; every workgroup-row
+   question.
+
+6. NAMED, NOT HIDDEN: the session spans two ticks (tick 1 built the
+   instrument/corpus/protocol and died at defect (c); this tick fixed
+   it, re-ran, analyzed, gated -- record-tick1.txt preserved verbatim,
+   its two corrections in section 1 above); the analysis.py FIRST DRAFT
+   crashed (KeyError 'void_cell' -- CELL lines name the field "void"),
+   was fixed, its first output was then EMPTY (the output list was
+   built but never printed), fixed, and two analysis-honesty defects
+   (a tie artifact naming "S=16" fastest at an all-equal cell; P4's
+   order printing without tie naming) were fixed BEFORE the recorded
+   publication was produced -- publication.txt section 0's recorded
+   analysis.py sha256 matches the committed file; analysis.py is
+   committed INSIDE the evidence directory so the publication is
+   re-derivable from the committed logs (the protocol letter names
+   "analysis.py"; .py is evidence-legal, POSIX .sh is banned and none
+   exists); kbb '2 dep(s) not :local/root' warning (identical
+   everywhere); the gate/run commands live in Hermes scratch or inline
+   shell and nothing .sh is staged. Gates: real runs this tick,
+   section 7.
+
+7. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions passed / 0 failed (committed pin 2649/0; no
+   classify code touched -- classify-selftest.txt); scoped GPU gate (8
+   GPU-owned namespaces, scratch runner gpu_scoped_gate.cljk, never
+   committed) GREEN 123 tests / 12162 assertions / 0 failures / 0
+   errors on run 1 AND run 2 (gate-run1.txt, gate-run2.txt) -- the diff
+   touches NO src/test namespace (it adds scripts/emit-gpu-subgroup-
+   reduce-glsl.cljk, a measurement emit script outside the gate's
+   namespace list, scripts/gpu-subgroup-reduce-anv-subgroupsize.c, a
+   measurement instrument, and evidence .txt/.py files; the committed
+   123/12162 pin holds); FULL run-tests.cljk RUN LIVE THIS TICK: exit 1,
+   RED AT BASE 'Could not find namespace: kotoba.form' at namespace load
+   (ADR-0362, outside this diff -- full-run-tests.txt) -- NO green full
+   suite claimed; find docs -name '*.sh' -> 0 (the no-POSIX-sh evidence
+   rule).
+
+8. BLOCKER-FIRST + CHAIN: 0 open kotoba-lang/amu PRs with a hermes/ head
+   at tick start and re-checked immediately before the push. CHAIN: the
+   previous chain PR #1628 (bot/amu-gpu-chain-20261027-7) MERGED
+   2026-10-27T08:19:58Z (merge commit 7a7a1a54a); per the chain-branch
+   rule this commit rides the NEXT chain branch
+   bot/amu-gpu-chain-20261027-8, branched from origin/main at 7a7a1a54a,
+   with its ONE fresh chain PR (opening a second chain PR while one is
+   open is a defect; none was open). Evidence:
+   docs/evidence/gpu/anv-subgroupsize-81632-20261027/ (protocol.txt,
+   cases.txt, shaders/ 8 GLSL, compile-toolchain.txt,
+   emission-census.txt, run-failed-1/2/3.txt, run-failed-1/2/3.stderr.txt,
+   run-1/2/3.txt, run-1/2/3.stderr.txt, analysis.py, publication.txt,
+   classify-selftest.txt, gate-run1.txt, gate-run2.txt,
+   full-run-tests.txt, record-tick1.txt, record.txt). (JUN-55, JUN-59)

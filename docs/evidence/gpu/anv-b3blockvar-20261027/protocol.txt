@@ -1,0 +1,298 @@
+JUN-59 -- session 29 protocol: THE WITHIN-SESSION BLOCK-VARIABILITY
+READ OF THE (1024,4033) ANCHOR (FOUR 3-RUN BLOCKS OF THE (1024,4033)
+KNOB PAIR at n=253,906, B=3 WITHIN ONE SESSION, plus the archived
+controls c2/c8). INSTRUMENT channel.
+Frozen BEFORE the first run (freeze stamp 2026-10-27T23:09:19Z, this
+tick; the stamp is printed in record.txt's timeline and in the run
+window). This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE BLOCK-LEVEL CLASS OF THE
+   (1024,4033) KNOB PAIR at FIXED n=253,906 and FIXED dispatch count
+   B=3 -- session 28's named residual "whether the flips and the
+   sessions 24/26 C3 splits are threshold artifacts or representation
+   effects" and "the anchor-class question is settled at a
+   pre-registered bar, which three same-day readings do NOT settle" are
+   taken on their WITHIN-SESSION component: before the settling bar can
+   be designed and before the cross-UTC-day residual is reachable, the
+   frozen class's stability WITHIN one session must be measured. The
+   bisect cut, the NDIV=3,5,6,... columns of L10, the (2048,8066) twin
+   and sessions 15-28's "cross-UTC-day replication" residual stay OPEN
+   and are NOT taken -- the UTC day is still 2026-10-27 at tick time
+   (protocol L4 below, named, not hidden)). The committed picture after
+   session 28: the grid n=253,906 carries THREE cross-session readings
+   of the (1024,4033) pair at byte-identical rebuilt binaries --
+   session 26's mid 1,129 CAPTURED (18-cell min 1,001), session 27's hi
+   1,132 INTERMEDIATE/MIXED (min 976), session 28's hi 1,131
+   INTERMEDIATE/MIXED (min 991) -- at medians spanning 0.27%; the class
+   flips at the frozen 1000-tick boundary while the medians are
+   indistinguishable, and all three minima sit within 25 ticks of the
+   boundary. Whether that flip is a session-level phenomenon or the
+   within-session noise floor of a minimum statistic is UNMEASURED.
+   This session measures the same pair four times IN ONE SESSION at the
+   same estimator unit every cross-session reading used (three fresh
+   processes pooled):
+
+     AT FIXED n=253,906 AND B=3 AND A BYTE-IDENTICAL BINARY, DO FOUR
+     3-RUN BLOCKS MEASURED WITHIN ONE SESSION AGREE ON THE FROZEN
+     CLASS, OR DOES THE CLASS FLIP WITHIN THE SESSION? -- the reading
+     is MEASURED HERE; branch (a) all four blocks same class -> the
+     class is stable within a session at block granularity while the
+     cross-session sequence flips; branch (b) blocks split in class at
+     overlapping medians -> the class flips WITHIN ONE SESSION at a
+     byte-identical binary and identical knob triple (the cross-session
+     flip readings are confounded with within-session block-level
+     variability at the frozen threshold); branch (c) is a pre-named
+     contradiction / out-of-band reading and is not resolved here.
+
+   NAMED, NOT HIDDEN: zero derivation edits this session (the
+   strongest custody position in the chain -- named as such). The
+   instrument is session 28's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0... re-verified local-vs-host). The
+   arms are OLD (BATCH, WORK_MUL, NDIV) triples of the source's
+   existing knobs -- ZERO NEW knob pairs this session (so the
+   session-9 D2 pre-GO compile smoke does NOT apply: its purpose is
+   NEW knob pairs; there are none here -- named, not hidden). The
+   arithmetic N_ELEMENTS = (1,000,003*WORK_MUL)/NDIV is the only
+   place either knob enters (instrument source lines 68-79). The
+   shaders take n from the N uniform, so the shader corpus is used
+   BYTE-IDENTICAL (16-digest corpus). Every run's header and every
+   SAMPLE line print batch=, work_mul= and ndiv= (knob identity).
+
+   ARM TABLE (3 rows = 18 fresh processes; this table governs the run
+   count). RUN ORDER (frozen): c2 r1-3 first, then hi r1-12 (the four
+   blocks, consecutive fresh processes in time order), then c8 r1-3
+   last -- the archived controls bracket the hi window:
+
+     tag  BATCH  WORK_MUL  NDIV   n        runs  role
+     c2   2      1         1      1000003  3     archived control (bracket head)
+     hi   3      1024      4033   253906   12    THE BLOCK-VARIABILITY READ
+     c8   8      1         1      1000003  3     archived control (bracket tail)
+
+   BLOCKS (frozen; a BLOCK is the same estimator unit every
+   cross-session reading used -- 3 fresh processes pooled over 25
+   rounds per cell):
+
+     block A = hi r1, r2, r3
+     block B = hi r4, r5, r6
+     block C = hi r7, r8, r9
+     block D = hi r10, r11, r12
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim. Per-dispatch work at the read
+        grid is 253,906/1,000,003 = 0.2539052 units; total nominal
+        work B*n/1,000,003 is computed programmatically in
+        derivation-census-s29.txt for all 3 arms.
+   (L2) AT FIXED B, THE PER-DISPATCH GRID n AND THE TOTAL NOMINAL
+        WORK CO-VARY BY CONSTRUCTION (total = 3*n/1,000,003 at
+        B=3); more binding here: n, B, THE KNOB PAIR, THE BINARY, THE
+        HOST AND THE UTC DAY ARE FIXED ACROSS ALL FOUR BLOCKS -- the
+        only intended variable is the block (time order of fresh
+        processes). The letters below are observational discriminators
+        among named hypotheses; none is a causal mechanism and none is
+        claimed as one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost
+        (submit+wait); the GPU-side cost inside a B<=2 bracket is
+        unobservable on this instrument (the phenomenon under
+        study) and stays UNMEASURED. No B<=2 arm runs this session
+        (the b2m-class question "B=2 never captures" is not on this
+        tick's axis; its last reading at this family of grids is
+        quote-only).
+   (L4) THIS SESSION IS A NEW SESSION (session 29) ON THE SAME UTC
+        DAY 2026-10-27 as sessions 2-28 (freeze stamp 23:09:19Z; the
+        UTC day has not rolled at tick time). Cross-UTC-day
+        replication is NOT reachable this tick and stays UNMEASURED
+        (named, not hidden) -- so every "cross-session" comparison
+        below is SAME-UTC-DAY cross-session, and this session's four
+        blocks are WITHIN-SESSION readings only.
+   (L5) this session does NOT narrow the flip bracket (252,604,
+        253,906]; it measures the within-session stability of its
+        upper anchor's class. Nothing between grid points is
+        interpolated.
+   (L7) cross-session reference values in section 3 are QUOTE-ONLY
+        (recomputed from prior sessions' committed run logs in the
+        derivation census) and never this session's measurements.
+   (L8) the same-ratio twin (2048,8066) is NOT run this session (its
+        second reading is session 28's tw); the pair-representation
+        scoreboard (s24 (b) SPLIT / s25 (a) AGREE / s26 (b) SPLIT /
+        s27 (a) AGREE / s28 (a) AGREE) is carried as prior content and
+        is NOT advanced here. The threshold-artifact-vs-representation
+        question is therefore only probed on its WITHIN-SESSION /
+        MIN-STATISTIC side (this session's axis); the representation
+        side stays open.
+   (L9) block identity is CONFOUNDED WITH TIME-WITHIN-SESSION by
+        construction (blocks are consecutive fresh processes in time
+        order); any drift (thermal, background load) is INSIDE the
+        block-variability measurement and its cause is UNMEASURED. No
+        other measurement session runs concurrently on the host (named
+        assumption; the host-mtime cross-check below is its evidence).
+   (L10) per-run and per-block statistics beyond the frozen
+        pooled-median criterion are DESCRIPTIVE ONLY (the frozen
+        measurement unit is 3 runs pooled; a per-run median is 25
+        rounds per cell).
+
+1. DERIVATION (chain of custody): ZERO derivation edits this
+   session. The instrument is session 28's committed NDIV-derived
+   source used BYTE-IDENTICAL (digest a5e539f0..., re-verified
+   local-vs-host). Manifest cases-s29-a.txt's 24 cell lines are a
+   BYTE-COPY of session 28's cases-s28-a.txt cell lines (byte-equal
+   to sessions 9-28's a-set -- checked programmatically in the
+   derivation census). expected-corpus.sha256 a byte-copy of session
+   28's.
+
+2. BUILD REPLICATION PINS (declared in advance; prior censuses
+   parsed programmatically -- derivation-census-s29.txt). ALL THREE
+   arms have a prior binary this session (named as such):
+
+     anv-bb-c2  == sessions 13-28's c2 binary digest (e5ed903e...)
+     anv-bb-c8  == sessions 13-28's c8 binary digest (480925e5...)
+     anv-bb-hi  == session 26's anv-bb-mid == session 27's anv-bb-hi
+       == session 28's anv-bb-hi digest (a6c31b6c...) -- hi IS the
+       (1024,4033) pair (3,1024,4033): this session is the pair's
+       THIRD cross-session rebuild (fourth build and, counting the
+       four blocks, the seventh through tenth measurements overall).
+
+3. FROZEN CROSS-SESSION REFERENCE VALUES (QUOTE-ONLY, L7; also
+   embedded as named constants in analysis-s29.py -- never this
+   session's measurements; recomputed from prior sessions' committed
+   run logs in derivation-census-s29.txt):
+
+   committed controls: c2 31 (floor band 31..32), c8 32,915
+     (session 4 pooled median)
+   session-26 mid ((3,1024,4033), this session's hi knob): 1,129
+     CAPTURED (18-cell min 1,001); host_ns 309,848
+   session-27 hi ((3,1024,4033)): 1,132 INTERMEDIATE/MIXED (min 976);
+     host_ns 310,008
+   session-28 hi ((3,1024,4033)): 1,131 INTERMEDIATE/MIXED (min 991);
+     host_ns 309,647
+   the (1024,4033) pair's THREE cross-session readings (the full
+     ledger up to session 28): 1,129 CAPTURED* (s26, min 1,001) /
+     1,132 INTERMEDIATE/MIXED (s27, min 976) / 1,131
+     INTERMEDIATE/MIXED (s28, min 991) -- NAMED, NOT HIDDEN: the class
+     flips at the frozen 1000-tick boundary at a 0.27% median span;
+     the expected class of any within-session block is NOT pre-judged
+     (that is the question); the numeric reference band for a block
+     median is +/-5% of each of 1,129 / 1,132 / 1,131 (all three
+     bands nearly coincide) AND +/-5% of this session's own 12-run
+     pooled median m_all (C2's in-band definition below).
+   session-28 controls: c2 32 host_ns 678,546; c8 32,899 host_ns
+     3,053,605 (a c8 host_ns excursion 1.28x sessions 26/27 carried as
+     prior named content, cause UNMEASURED)
+   session-27 controls: c2 31 host_ns 672,684; c8 32,871 host_ns
+     2,397,482
+   session-26 controls: c2 32 host_ns 680,499; c8 32,714 host_ns
+     2,380,500
+   b2m-class (B=2 at a small grid): FLOOR (sessions 21-28 quote) --
+     NOT run this session (L3)
+   the B=3 class-vs-per-dispatch-work row (quote-only; this session
+     adds NO new grid point -- it re-reads 253,906): 125,000 -> 599
+     INTERMEDIATE/MIXED (s18); 250,000 -> 1,140 INTERMEDIATE/MIXED
+     (s19); 252,604 -> 1,153 INTERMEDIATE/MIXED (s25); 253,255 ->
+     1,136 INTERMEDIATE/MIXED (s27); 253,906 -> 1,129 CAPTURED*
+     (s26) / 1,132 INTERMEDIATE/MIXED (s27) / 1,131
+     INTERMEDIATE/MIXED (s28); 255,208 -> 1,166 CAPTURED (s24);
+     260,417 -> 1,186 CAPTURED (s23); 270,834 -> 1,224 CAPTURED
+     (s22); 291,667 -> 1,330 CAPTURED (s21); 333,334 -> 1,578
+     CAPTURED (s17); 500,001 -> 2,739 CAPTURED (s20); 1,000,003 ->
+     5,520 CAPTURED (s7/16)
+
+4. CLASSIFICATION THRESHOLDS (frozen; identical to sessions 2-28):
+   over the 18 pipeline-ok cells, pooled median gpu_ticks over 3
+   runs x 25 rounds per cell (per BLOCK, for hi): FLOOR = <= 100
+   ticks at ALL 18 cells; CAPTURED = >= 1000 ticks at ALL 18 cells;
+   anything else INTERMEDIATE/MIXED. INVALIDATION CRITERION (frozen):
+   VERIFY mismatch > 0 in any run makes that run DEFECTIVE and the
+   arm INVALID (no letter is evaluable from that arm).
+
+5. PRE-REGISTERED LETTERS:
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; W letters depend
+      on it): (a) both c2 (FLOOR, committed floor band 31..32) and
+      c8 ((sum,128,S=16) pooled median over its 3 runs within +/-5%
+      of committed 32,915) satisfy their criteria; (b) otherwise
+      (replication discrepancy, W interpretation FLAGGED).
+
+   C2 WITHIN-SESSION BLOCK-CLASS STABILITY (the four hi blocks of the
+      (1024,4033) pair at n=253,906, B=3 -- one binary, built once,
+      12 fresh processes; each block classified by the FROZEN
+      section-4 criterion applied to ITS 3 runs x 25 rounds per cell
+      pooled medians over the 18 pipeline-ok cells). Let m_all =
+      (sum,128,S=16) pooled median over ALL 12 hi runs; for block g
+      let m_g = (sum,128,S=16) pooled median over its 3 runs and
+      min_g = the 18-cell minimum of its per-cell pooled medians.
+      IN-BAND (m) := |m - m_all| <= 5% of m_all AND m within +/-5% of
+      EACH of the three prior readings 1,129 / 1,132 / 1,131.
+      (a) all four blocks classify the SAME, none FLOOR, and every
+          m_g is IN-BAND -> the frozen class is STABLE within a
+          session at block granularity (while the cross-session
+          sequence flips);
+      (b) the four blocks' classes are not all identical, every class
+          observed is CAPTURED or INTERMEDIATE/MIXED (no FLOOR), and
+          every m_g is IN-BAND -> the frozen class FLIPS WITHIN ONE
+          SESSION at a byte-identical binary and identical knob triple
+          at overlapping medians;
+      (c) otherwise (any block FLOOR, or any m_g out of band) -- a
+          pre-named contradiction / out-of-band reading, measured
+          content, NOT resolved here.
+      NAMED, NOT HIDDEN: four blocks give FOUR readings -- the
+      within-session block-variability of the class is measured HERE;
+      no flip rate is claimed (four blocks do not close a rate) and
+      no causal mechanism (thermal, scheduling, driver) is measured.
+
+   W1 THE ANCHOR-CLASS QUESTION (C1/C2 govern; what the four blocks
+      mean for sessions 26-28's cross-session flip picture and for
+      the frozen flip bracket (252,604, 253,906]):
+      (a) C2 (a) -> the anchor's class is STABLE within a session at
+          block granularity while the three cross-session readings
+          flip; the flip is NOT within-session block-level noise at
+          this granularity; the anchor-class settling bar (a
+          cross-session bar -- session 28's W1 residual) is NOT met
+          by same-UTC-day data and NO bracket narrowing is claimed
+          -- the flip location stays inside (252,604, 253,906];
+      (b) C2 (b) -> the class flips WITHIN ONE SESSION at a
+          byte-identical binary and identical knob triple: the
+          cross-session flip readings are confounded with
+          within-session block-level variability at the frozen
+          1000-tick threshold (measured content) and the DESIGN of
+          the anchor-class settling bar becomes the named next row
+          (a bar that reads classes at this threshold must first name
+          its block-variability floor); NO bracket narrowing is
+          claimed;
+      (c) C2 (c) -> pre-named contradiction / out-of-band (any block
+          FLOOR at this grid contradicts every prior reading at this
+          pair; a median out of band is an out-of-band session) --
+          NOT resolved here;
+      (d) FLAGGED -- C1 fired (b) or the INVALIDATION criterion
+          fired: no block-variability reading is evaluable.
+      NO BRACKET NARROWING IS CLAIMED IN ANY BRANCH (L5): this
+      session's axis is the within-session block variability of the
+      anchor class, not the cut.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+      WORK ROW: this session adds NO new grid point -- it re-reads
+      253,906 with FOUR within-session block readings placed at that
+      grid alongside the three prior cross-session readings (the
+      committed points QUOTE-ONLY (L7); NO interpolation (L5); class
+      granularity only). The 12-run pooled median m_all is reported
+      as a NAMED DIFFERENT ESTIMATOR (12 runs pooled, not the frozen
+      3-run unit) and does not replace any reading.
+
+   W3 (pre-registered, descriptive) THE BLOCK COMPARISONS: (i) the
+      four blocks' (sum,128,S=16) medians, 18-cell min..max and
+      classes side by side; (ii) the four block 18-cell minima min_g
+      against the three cross-session minima (1,001 / 976 / 991 --
+      all within 25 ticks of the frozen 1000 boundary); (iii) the 12
+      per-run (sum,128,S=16) medians and the 12 per-run 18-cell
+      minima (DESCRIPTIVE: the per-run unit is 25 rounds per cell,
+      NOT the frozen 3-run unit -- L10).
+
+   X1 (descriptive, host_ns): named, not hidden; not a C criterion
+      (L3).
+
+6. ANALYSIS ROUTE (frozen): analysis-s29.py parses ONLY the 18
+   committed run logs in its own directory (run-<tag>-r<R>.txt) and
+   writes publication-s29.txt. No other input. Deterministic: the
+   analysis is run twice and the two publications diffed (exit 0
+   required). The run logs are stdout/stderr of fresh host processes
+   (aiueos-6600hs-1), one per run, invoked as ../anv-bb-<tag> from
+   cwd=shaders/ with manifest ../cases-s29-a.txt.

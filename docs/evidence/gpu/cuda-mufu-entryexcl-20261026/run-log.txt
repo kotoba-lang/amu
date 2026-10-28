@@ -1,0 +1,89 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T16:17:21Z  DATE-LOCAL: 2026-10-27T01:17:21+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+59affad0a4ad1d81d0e4f0e32d32fa1fb6bc02174d571d78caa02251d6ae4161  ./gpu-mufu-entryexcl-microbench.cu
+c980a9a5ec37abbc22568130059bd649f921bac7fe1e23dd91ab9928b3b4baf4  ./mufu_entryexcl_run.sh
+0c6387278219cb513b80121a4f59d89b1c979c67e25d87fe7976b4b34d7c974d  ./mufu_entryexcl_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim)
+diag diag-build.txt 194 bytes
+gpu-mufu-entryexcl-microbench.cu(118): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-entryexcl-microbench.cu(120): warning: variable "cf" was declared but never referenced
+
+diag diag-cubin.txt 194 bytes
+gpu-mufu-entryexcl-microbench.cu(118): warning: variable "cf" was declared but never referenced
+
+gpu-mufu-entryexcl-microbench.cu(120): warning: variable "cf" was declared but never referenced
+
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 374 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+bbcf4e7dd491599d9476a65c1b2fa7a444c8ca9607317479b963678a329af984  microbench.sass
+0d7430256aef5a6aaa0277bdc97f3ea500ebdd5fa5545795be7c4df6f7e6695a  gpu-mufu-entryexcl-microbench.cubin
+5c9a73ebd00e83d5e085d47e29c85adbc5b4185d5cb897171a653d476fefb5f2  gpu-mufu-entryexcl-microbench
+=== SASS verification (python3, loop-body extraction per kernel)
+=== per-function loop-body extraction (nvdisasm -c of the entry-excluded cubin)
+ee_M: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 5, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 1, 'MUFU.RSQ': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_F: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'FADD*': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_MM: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 5, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'MUFU.RSQ': 2, 'LDG.E.SYS': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_FF: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'FADD*': 2, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_MF: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'MUFU.RSQ': 1, 'FADD*': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_FM: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'FADD*': 1, 'MUFU.RSQ': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_MFM: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'MUFU.RSQ': 2, 'FADD*': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+ee_FMF: NO-LOOP (body folded or loop-free) -- realized static histogram: Counter({'IMAD.MOV.U32': 6, 'MOV': 4, 'CS2R': 3, 'IADD3': 3, 'STG.E.64.SYS': 3, '@!PT': 2, 'LDG.E.SYS': 2, 'FADD*': 2, 'MUFU.RSQ': 1, 'ISETP.NE.AND': 1, 'IADD3.X': 1, '@P0': 1, 'S2R': 1, 'IMAD.WIDE.U32': 1, 'EXIT': 1, 'BRA': 1})
+=== non-chain overhead multiset per arm (the common floor's instructions)
+OVERHEAD-VERDICT: NOT IDENTICAL (0 arms compared)
+CHAIN-VERDICT-ALL: NOT 8/8 MATCH
+=== run the microbench (3 launches x 8 arms)
+device name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=M launch=0 n=128 med_acc=2754 med_per_iter=10.757812 mean_per_iter=10.759766 min_per_iter=10.753906 max_per_iter=10.765625 p10_per_iter=10.753906 p90_per_iter=10.765625 accmod_min=193 accmod_max=196
+RESULT arm=M launch=1 n=128 med_acc=3165 med_per_iter=12.363281 mean_per_iter=12.365234 min_per_iter=12.359375 max_per_iter=12.371094 p10_per_iter=12.359375 p90_per_iter=12.371094 accmod_min=92 accmod_max=95
+RESULT arm=M launch=2 n=128 med_acc=2595 med_per_iter=10.136719 mean_per_iter=10.138672 min_per_iter=10.132812 max_per_iter=10.144531 p10_per_iter=10.132812 p90_per_iter=10.144531 accmod_min=34 accmod_max=37
+ANCHOR arm=M xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=4103
+RESULT arm=F launch=0 n=128 med_acc=2594 med_per_iter=10.132812 mean_per_iter=10.133789 min_per_iter=10.128906 max_per_iter=10.136719 p10_per_iter=10.128906 p90_per_iter=10.136719 accmod_min=33 accmod_max=35
+RESULT arm=F launch=1 n=128 med_acc=2600 med_per_iter=10.156250 mean_per_iter=10.157227 min_per_iter=10.152344 max_per_iter=10.160156 p10_per_iter=10.152344 p90_per_iter=10.160156 accmod_min=39 accmod_max=41
+RESULT arm=F launch=2 n=128 med_acc=2597 med_per_iter=10.144531 mean_per_iter=10.145508 min_per_iter=10.140625 max_per_iter=10.148438 p10_per_iter=10.140625 p90_per_iter=10.148438 accmod_min=36 accmod_max=38
+ANCHOR arm=F xbits=1132527616 (0x43810000, no-fold witness only) pad_final=4103
+RESULT arm=MM launch=0 n=128 med_acc=5418 med_per_iter=21.164062 mean_per_iter=21.166016 min_per_iter=21.160156 max_per_iter=21.171875 p10_per_iter=21.160156 p90_per_iter=21.171875 accmod_min=41 accmod_max=44
+RESULT arm=MM launch=1 n=128 med_acc=5418 med_per_iter=21.164062 mean_per_iter=21.166016 min_per_iter=21.160156 max_per_iter=21.171875 p10_per_iter=21.160156 p90_per_iter=21.171875 accmod_min=41 accmod_max=44
+RESULT arm=MM launch=2 n=128 med_acc=5418 med_per_iter=21.164062 mean_per_iter=21.166016 min_per_iter=21.160156 max_per_iter=21.171875 p10_per_iter=21.160156 p90_per_iter=21.171875 accmod_min=41 accmod_max=44
+ANCHOR arm=MM xbits=1065353216 (0x3f800000, no-fold witness only) pad_final=4103
+RESULT arm=FF launch=0 n=128 med_acc=2616 med_per_iter=10.218750 mean_per_iter=10.219727 min_per_iter=10.214844 max_per_iter=10.222656 p10_per_iter=10.214844 p90_per_iter=10.222656 accmod_min=55 accmod_max=57
+RESULT arm=FF launch=1 n=128 med_acc=2600 med_per_iter=10.156250 mean_per_iter=10.157227 min_per_iter=10.152344 max_per_iter=10.160156 p10_per_iter=10.152344 p90_per_iter=10.160156 accmod_min=39 accmod_max=41
+RESULT arm=FF launch=2 n=128 med_acc=2599 med_per_iter=10.152344 mean_per_iter=10.153320 min_per_iter=10.148438 max_per_iter=10.156250 p10_per_iter=10.148438 p90_per_iter=10.156250 accmod_min=38 accmod_max=40
+ANCHOR arm=FF xbits=1140883456 (0x44008000, no-fold witness only) pad_final=4103
+RESULT arm=MF launch=0 n=128 med_acc=6474 med_per_iter=25.289062 mean_per_iter=25.290039 min_per_iter=25.285156 max_per_iter=25.292969 p10_per_iter=25.285156 p90_per_iter=25.292969 accmod_min=73 accmod_max=75
+RESULT arm=MF launch=1 n=128 med_acc=6449 med_per_iter=25.191406 mean_per_iter=25.192383 min_per_iter=25.187500 max_per_iter=25.195312 p10_per_iter=25.187500 p90_per_iter=25.195312 accmod_min=48 accmod_max=50
+RESULT arm=MF launch=2 n=128 med_acc=6443 med_per_iter=25.167969 mean_per_iter=25.168945 min_per_iter=25.164062 max_per_iter=25.171875 p10_per_iter=25.164062 p90_per_iter=25.171875 accmod_min=42 accmod_max=44
+ANCHOR arm=MF xbits=1071685589 (0x3fe09fd5, no-fold witness only) pad_final=4103
+RESULT arm=FM launch=0 n=128 med_acc=3146 med_per_iter=12.289062 mean_per_iter=12.290039 min_per_iter=12.285156 max_per_iter=12.292969 p10_per_iter=12.285156 p90_per_iter=12.292969 accmod_min=73 accmod_max=75
+RESULT arm=FM launch=1 n=128 med_acc=3113 med_per_iter=12.160156 mean_per_iter=12.161133 min_per_iter=12.156250 max_per_iter=12.164062 p10_per_iter=12.156250 p90_per_iter=12.164062 accmod_min=40 accmod_max=42
+RESULT arm=FM launch=2 n=128 med_acc=3112 med_per_iter=12.156250 mean_per_iter=12.157227 min_per_iter=12.152344 max_per_iter=12.160156 p10_per_iter=12.152344 p90_per_iter=12.160156 accmod_min=39 accmod_max=41
+ANCHOR arm=FM xbits=1061240746 (0x3f413faa, no-fold witness only) pad_final=4103
+RESULT arm=MFM launch=0 n=128 med_acc=9527 med_per_iter=37.214844 mean_per_iter=37.215820 min_per_iter=37.210938 max_per_iter=37.218750 p10_per_iter=37.210938 p90_per_iter=37.218750 accmod_min=54 accmod_max=56
+RESULT arm=MFM launch=1 n=128 med_acc=9513 med_per_iter=37.160156 mean_per_iter=37.161133 min_per_iter=37.156250 max_per_iter=37.164062 p10_per_iter=37.156250 p90_per_iter=37.164062 accmod_min=40 accmod_max=42
+RESULT arm=MFM launch=2 n=128 med_acc=9516 med_per_iter=37.171875 mean_per_iter=37.172852 min_per_iter=37.167969 max_per_iter=37.175781 p10_per_iter=37.167969 p90_per_iter=37.175781 accmod_min=43 accmod_max=45
+ANCHOR arm=MFM xbits=1059834243 (0x3f2bc983, no-fold witness only) pad_final=4103
+RESULT arm=FMF launch=0 n=128 med_acc=7994 med_per_iter=31.226562 mean_per_iter=31.227539 min_per_iter=31.222656 max_per_iter=31.230469 p10_per_iter=31.222656 p90_per_iter=31.230469 accmod_min=57 accmod_max=59
+RESULT arm=FMF launch=1 n=128 med_acc=7994 med_per_iter=31.226562 mean_per_iter=31.227539 min_per_iter=31.222656 max_per_iter=31.230469 p10_per_iter=31.222656 p90_per_iter=31.230469 accmod_min=57 accmod_max=59
+RESULT arm=FMF launch=2 n=128 med_acc=7993 med_per_iter=31.222656 mean_per_iter=31.223633 min_per_iter=31.218750 max_per_iter=31.226562 p10_per_iter=31.218750 p90_per_iter=31.226562 accmod_min=56 accmod_max=58
+ANCHOR arm=FMF xbits=1070537661 (0x3fcf1bbd, no-fold witness only) pad_final=4103
+run complete
+=== microbench run complete

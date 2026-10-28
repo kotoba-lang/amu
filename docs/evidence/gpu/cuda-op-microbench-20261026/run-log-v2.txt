@@ -1,0 +1,134 @@
+HOST: xavier USER: root
+DATE-UTC: 2026-10-26T09:34:43Z  DATE-LOCAL: 2026-10-26T18:34:43+0900
+Linux xavier 5.10.120-tegra #1 SMP PREEMPT Tue Aug 1 12:32:50 PDT 2023 aarch64 aarch64 aarch64 GNU/Linux
+=== nvcc --version (verbatim)
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Sun_Oct_23_22:16:07_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.315
+Build cuda_11.4.r11.4/compiler.31964100_0
+=== nvdisasm --version (verbatim)
+nvdisasm: NVIDIA (R) CUDA disassembler
+Copyright (c) 2005-2022 NVIDIA Corporation
+Built on Tue_Sep_13_22:14:23_PDT_2022
+Cuda compilation tools, release 11.4, V11.4.298
+Build cuda_11.4.r11.4/compiler.31809458_0
+=== sha256 of the received files (before any compile)
+ed49179c5398e1be873c9b895271aaa5e6384d693210266ff31c2f576c4d1864  ./gpu-op-microbench.cu
+e5a29b1b3a1f4e781a5e0591d324237f7726cc27ebf28e20575d3e2b5c67beda  ./microbench_verify.py
+=== compile the instrument (run binary + cubin)
+OK-build
+OK-cubin
+=== build diagnostics (verbatim byte counts)
+diag diag-build.txt 2190 bytes
+diag diag-cubin.txt 2190 bytes
+=== disassemble the cubin (nvdisasm -c)
+OK-sass 1162 lines
+diag diag-nvdisasm.txt 0 bytes
+=== sha256 of the generated artifacts
+58ed5e7bfb1b4a270771ddc4c80ee7ff12b0f15a1908084e3aebccf5d6dba4e7  microbench.sass
+09cc4ea92e3e6178b7350d788a1d09dd61becb7e7578fe0f546624aed35d23c2  gpu-op-microbench.cubin
+8310a57dc9a743d4bd1154a1d2ce1c010883db1972955725c233f940eb90f840  gpu-op-microbench
+=== SASS verification (python3, per-kernel opcode histograms)
+VERIFY functions found: 16
+VERIFY-FUNCTION _Z10lat_imadhiPy total_static=37
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:2 IMAD.MOV.U32:6 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LEA.HI:16 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z10thr_imadhiPy total_static=59
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:9 IMAD.IADD:1 IMAD.MOV.U32:20 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 LEA.HI:16 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z7lat_cvtPy total_static=53
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U32.TRUNC.NTZ:16 I2F.U32.RP:16 IADD3:2 IMAD.MOV.U32:3 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 MOV:3 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z7lat_movPy total_static=15
+  OPCODES @!PT:1 BRA:1 CS2R:2 EXIT:1 IADD3:1 IMAD.MOV.U32:1 IMAD.WIDE.U32:1 IMAD.X:1 MOV:3 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=1 ret_exit=1
+VERIFY-FUNCTION _Z7lat_rcpPy total_static=135
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 FMUL:32 FSEL:32 FSETP.GEU.AND:16 FSETP.GT.AND:16 FSETP.NAN.AND:1 IADD3:2 IMAD.MOV.U32:6 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 MUFU.RCP:16 S2R:1 SEL:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z7thr_cvtPy total_static=75
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U32.TRUNC.NTZ:16 I2F.U32.RP:16 IADD3:9 IADD3.X:1 IMAD.IADD:1 IMAD.MOV.U32:13 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:7 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z7thr_movPy total_static=15
+  OPCODES @!PT:1 BRA:1 CS2R:2 EXIT:1 IADD3:1 IMAD.MOV.U32:1 IMAD.WIDE.U32:1 IMAD.X:1 MOV:3 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=1 ret_exit=1
+VERIFY-FUNCTION _Z7thr_rcpPy total_static=163
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U64.TRUNC:1 FADD:15 FMUL:32 FSEL:32 FSETP.GEU.AND:16 FSETP.GT.AND:16 IADD3:2 IMAD.MOV.U32:18 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 MOV:2 MUFU.RCP:16 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z8lat_faddPy total_static=38
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 FADD.FTZ:16 FSETP.NAN.AND:1 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:5 S2R:1 SEL:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z8lat_imadPy total_static=22
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:3 IADD3.X:1 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:2 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z8thr_faddPy total_static=66
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U64.TRUNC:1 FADD:15 FADD.FTZ:16 IADD3:2 IADD3.X:1 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:19 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z8thr_imadPy total_static=59
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:25 IMAD.IADD:1 IMAD.MOV.U32:20 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z9lat_fmnmxPy total_static=38
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 FMNMX:16 FSETP.NAN.AND:1 IADD3:2 IMAD.MOV.U32:5 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 S2R:1 SEL:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z9lat_iadd3Py total_static=22
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:3 IADD3.X:1 IMAD.MOV.U32:4 IMAD.WIDE.U32:1 ISETP.NE.AND:1 MOV:2 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z9thr_fmnmxPy total_static=66
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 F2I.U64.TRUNC:1 FADD:15 FMNMX:16 IADD3:2 IMAD.MOV.U32:10 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 MOV:9 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY-FUNCTION _Z9thr_iadd3Py total_static=59
+  OPCODES @!PT:2 BRA:2 CS2R:2 EXIT:1 IADD3:25 IMAD.IADD:1 IMAD.MOV.U32:20 IMAD.WIDE.U32:1 IMAD.X:1 ISETP.NE.AND:1 S2R:1 STG.E.64.SYS:2
+  LOOPSHAPE bra_brx=2 ret_exit=1
+VERIFY done
+=== run the microbench (3 launches x 16 arm/mode kernels)
+DEVICE name=Xavier clockRate_kHz=1377000 multiProcessorCount=8
+RESULT arm=fadd mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=18185 p10=18185 median=18185 mean=18185.0 p90=18185 max=18185 cyc_per_unit_median=4.4397 cyc_per_instr_median=4.4397
+RESULT arm=fmnmx mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=rcp mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=161542 p10=161542 median=161542 mean=161542.0 p90=161542 max=161542 cyc_per_unit_median=39.4390 cyc_per_instr_median=39.4390
+RESULT arm=cvt mode=latency launch=0 units=4096 instr_per_unit=2 samples=128 min=122884 p10=122884 median=122884 mean=122884.0 p90=122884 max=122884 cyc_per_unit_median=30.0010 cyc_per_instr_median=15.0005
+RESULT arm=iadd3 mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imad mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imadhi mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=mov mode=latency launch=0 units=4096 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0015 cyc_per_instr_median=0.0015
+RESULT arm=fadd mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2724 p10=2724 median=2728 mean=2728.0 p90=2733 max=2733 cyc_per_unit_median=2.6641 cyc_per_instr_median=2.6641
+RESULT arm=fmnmx mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2912 p10=2912 median=2913 mean=2912.5 p90=2913 max=2913 cyc_per_unit_median=2.8447 cyc_per_instr_median=2.8447
+RESULT arm=rcp mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=11542 p10=11542 median=11545 mean=11545.5 p90=11550 max=11550 cyc_per_unit_median=11.2744 cyc_per_instr_median=11.2744
+RESULT arm=cvt mode=thr launch=0 units=1024 instr_per_unit=2 samples=128 min=16852 p10=16852 median=16852 mean=16852.0 p90=16852 max=16852 cyc_per_unit_median=16.4570 cyc_per_instr_median=8.2285
+RESULT arm=iadd3 mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imad mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imadhi mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=mov mode=thr launch=0 units=1024 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0059 cyc_per_instr_median=0.0059
+RESULT arm=fadd mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=18185 p10=18185 median=18185 mean=18185.0 p90=18185 max=18185 cyc_per_unit_median=4.4397 cyc_per_instr_median=4.4397
+RESULT arm=fmnmx mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=rcp mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=161542 p10=161542 median=161542 mean=161542.0 p90=161542 max=161542 cyc_per_unit_median=39.4390 cyc_per_instr_median=39.4390
+RESULT arm=cvt mode=latency launch=1 units=4096 instr_per_unit=2 samples=128 min=122884 p10=122884 median=122884 mean=122884.0 p90=122884 max=122884 cyc_per_unit_median=30.0010 cyc_per_instr_median=15.0005
+RESULT arm=iadd3 mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imad mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imadhi mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=mov mode=latency launch=1 units=4096 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0015 cyc_per_instr_median=0.0015
+RESULT arm=fadd mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2724 p10=2724 median=2728 mean=2728.0 p90=2733 max=2733 cyc_per_unit_median=2.6641 cyc_per_instr_median=2.6641
+RESULT arm=fmnmx mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2912 p10=2912 median=2913 mean=2912.5 p90=2913 max=2913 cyc_per_unit_median=2.8447 cyc_per_instr_median=2.8447
+RESULT arm=rcp mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=11542 p10=11542 median=11545 mean=11545.5 p90=11550 max=11550 cyc_per_unit_median=11.2744 cyc_per_instr_median=11.2744
+RESULT arm=cvt mode=thr launch=1 units=1024 instr_per_unit=2 samples=128 min=16852 p10=16852 median=16852 mean=16852.0 p90=16852 max=16852 cyc_per_unit_median=16.4570 cyc_per_instr_median=8.2285
+RESULT arm=iadd3 mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imad mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imadhi mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=mov mode=thr launch=1 units=1024 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0059 cyc_per_instr_median=0.0059
+RESULT arm=fadd mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=18185 p10=18185 median=18185 mean=18185.0 p90=18185 max=18185 cyc_per_unit_median=4.4397 cyc_per_instr_median=4.4397
+RESULT arm=fmnmx mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=rcp mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=161542 p10=161542 median=161542 mean=161542.0 p90=161542 max=161542 cyc_per_unit_median=39.4390 cyc_per_instr_median=39.4390
+RESULT arm=cvt mode=latency launch=2 units=4096 instr_per_unit=2 samples=128 min=122884 p10=122884 median=122884 mean=122884.0 p90=122884 max=122884 cyc_per_unit_median=30.0010 cyc_per_instr_median=15.0005
+RESULT arm=iadd3 mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imad mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=6663 p10=6663 median=6663 mean=6663.0 p90=6663 max=6663 cyc_per_unit_median=1.6267 cyc_per_instr_median=1.6267
+RESULT arm=imadhi mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=18183 p10=18183 median=18183 mean=18183.0 p90=18183 max=18183 cyc_per_unit_median=4.4392 cyc_per_instr_median=4.4392
+RESULT arm=mov mode=latency launch=2 units=4096 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0015 cyc_per_instr_median=0.0015
+RESULT arm=fadd mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2724 p10=2724 median=2728 mean=2728.0 p90=2733 max=2733 cyc_per_unit_median=2.6641 cyc_per_instr_median=2.6641
+RESULT arm=fmnmx mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2912 p10=2912 median=2913 mean=2912.5 p90=2913 max=2913 cyc_per_unit_median=2.8447 cyc_per_instr_median=2.8447
+RESULT arm=rcp mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=11542 p10=11542 median=11545 mean=11545.5 p90=11550 max=11550 cyc_per_unit_median=11.2744 cyc_per_instr_median=11.2744
+RESULT arm=cvt mode=thr launch=2 units=1024 instr_per_unit=2 samples=128 min=16852 p10=16852 median=16852 mean=16852.0 p90=16852 max=16852 cyc_per_unit_median=16.4570 cyc_per_instr_median=8.2285
+RESULT arm=iadd3 mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imad mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=imadhi mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=2916 p10=2916 median=2917 mean=2917.0 p90=2919 max=2919 cyc_per_unit_median=2.8486 cyc_per_instr_median=2.8486
+RESULT arm=mov mode=thr launch=2 units=1024 instr_per_unit=1 samples=128 min=6 p10=6 median=6 mean=6.0 p90=6 max=6 cyc_per_unit_median=0.0059 cyc_per_instr_median=0.0059
+MICROBENCH run complete
+=== microbench run complete

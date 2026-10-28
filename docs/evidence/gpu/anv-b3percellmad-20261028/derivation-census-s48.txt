@@ -1,0 +1,249 @@
+JUN-59 session 48 DERIVATION CENSUS (independent second parser)
+for publication-s48.txt / analysis-s48.py (THE PER-CELL
+WITHIN-BLOCK ROBUST-SCALE (MAD) REPARTITION PROBE).
+Independent paths: split-based parsing WITHOUT regex;
+observed per-cell within-block MAD via pure-Python
+sorted() order statistics over the explicitly pooled 75
+(median sorted()[37], deviations in plain Python, MAD
+sorted() of the deviations), cross-checked against the
+np.partition kth=[37] path; the resampling's MAD via the
+np.partition kth=[37] path (NOT a sort); the within-window
+repartition resampling and RNG call order re-implemented
+(random.Random(20261028), frozen probe order, one shuffle
+per trial); the publication's section content re-derived;
+gate pins, bar pins and the settle-bar-ledger
+byte-identity checked. Deterministic.
+
+row sec1 s36 runs-parsed: got=78 want=78 match=True
+row sec1 s36 verify-mismatch: got=0 want=0 match=True
+row sec1 s36 counts-ok: got=True want=True match=True
+row sec1 s36 knobs-ok: got=True want=True match=True
+row sec1 s36 fail-closed: got=True want=True match=True
+row sec1 s36 cell-map: got=True want=True match=True
+row sec1 s38 runs-parsed: got=78 want=78 match=True
+row sec1 s38 verify-mismatch: got=0 want=0 match=True
+row sec1 s38 counts-ok: got=True want=True match=True
+row sec1 s38 knobs-ok: got=True want=True match=True
+row sec1 s38 fail-closed: got=True want=True match=True
+row sec1 s38 cell-map: got=True want=True match=True
+row sec1 s39 runs-parsed: got=78 want=78 match=True
+row sec1 s39 verify-mismatch: got=0 want=0 match=True
+row sec1 s39 counts-ok: got=True want=True match=True
+row sec1 s39 knobs-ok: got=True want=True match=True
+row sec1 s39 fail-closed: got=True want=True match=True
+row sec1 s39 cell-map: got=True want=True match=True
+row sec2 c2-class: got=FLOOR want=FLOOR match=True
+row sec2 c8-pooled-median: got=32829 want=32829 match=True
+row sec2 c8-committed: got=32915 want=32915 match=True
+row sec2 c1-branch: got=(a) want=(a) match=True
+row sec3 s36 X-vector: got=[991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982] want=[991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982] match=True
+row sec3 s36 X-ref-exact: got=True want=True match=True
+row sec3 s36 Y-vector: got=[988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981] want=[988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981] match=True
+row sec3 s36 Y-ref-exact: got=True want=True match=True
+row sec3 s38 X-vector: got=[992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997] want=[992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997] match=True
+row sec3 s38 X-ref-exact: got=True want=True match=True
+row sec3 s38 Y-vector: got=[988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992] want=[988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992] match=True
+row sec3 s38 Y-ref-exact: got=True want=True match=True
+row sec3 s39 X-vector: got=[986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981] want=[986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981] match=True
+row sec3 s39 X-ref-exact: got=True want=True match=True
+row sec3 s39 Y-vector: got=[988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986] want=[988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986] match=True
+row sec3 s39 Y-ref-exact: got=True want=True match=True
+row sec3 all-windows-exact: got=True want=True match=True
+row sec3b s36 anchor: got=(1142, 991, 1438) want=(1142, 991, 1438) match=True
+row sec3b s36 anchor-ref-exact: got=True want=True match=True
+row sec3b s38 anchor: got=(1132, 992, 1443) want=(1132, 992, 1443) match=True
+row sec3b s38 anchor-ref-exact: got=True want=True match=True
+row sec3b s39 anchor: got=(1146, 986, 1432) want=(1146, 986, 1432) match=True
+row sec3b s39 anchor-ref-exact: got=True want=True match=True
+row sec3b all-windows-exact: got=True want=True match=True
+row mad-path-crosscheck s39 hi pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s39 hi: got=[14, 46, 24, 14, 31, 20, 18, 32, 28, 19, 25, 25, 26, 22, 24, 24, 25, 21] want=[14, 46, 24, 14, 31, 20, 18, 32, 28, 19, 25, 25, 26, 22, 24, 24, 25, 21] match=True
+row mad-path-crosscheck s39 tw pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s39 tw: got=[20, 39, 31, 19, 39, 19, 19, 26, 18, 30, 20, 26, 27, 30, 12, 24, 10, 30] want=[20, 39, 31, 19, 39, 19, 19, 26, 18, 30, 20, 26, 27, 30, 12, 24, 10, 30] match=True
+row mad-path-crosscheck s36 hi pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s36 hi: got=[20, 26, 27, 14, 36, 29, 11, 18, 30, 32, 37, 35, 30, 20, 26, 31, 35, 41] want=[20, 26, 27, 14, 36, 29, 11, 18, 30, 32, 37, 35, 30, 20, 26, 31, 35, 41] match=True
+row mad-path-crosscheck s36 tw pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s36 tw: got=[18, 28, 33, 25, 29, 39, 20, 34, 37, 33, 21, 28, 29, 18, 26, 26, 24, 20] want=[18, 28, 33, 25, 29, 39, 20, 34, 37, 33, 21, 28, 29, 18, 26, 26, 24, 20] match=True
+row mad-path-crosscheck s38 hi pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s38 hi: got=[24, 17, 44, 17, 13, 27, 17, 28, 37, 45, 32, 22, 27, 24, 26, 30, 22, 25] want=[24, 17, 44, 17, 13, 27, 17, 28, 37, 45, 32, 22, 27, 24, 26, 30, 22, 25] match=True
+row mad-path-crosscheck s38 tw pure-python-vs-nppartition: got=True want=True match=True
+row obs-W s38 tw: got=[13, 23, 27, 15, 28, 27, 19, 25, 33, 32, 17, 24, 26, 22, 22, 33, 30, 22] want=[13, 23, 27, 15, 28, 27, 19, 25, 33, 32, 17, 24, 26, 22, 22, 33, 30, 22] match=True
+row probe s39 hi M_obs: got=46 want=46 match=True
+row probe s39 hi max-cells: got=(sum,128,S=32) want=(sum,128,S=32) match=True
+row probe s39 hi count: got=4374 want=4374 match=True
+row probe s39 hi p: got=0.218739 want=0.218739 match=True
+row probe s39 hi letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s39 hi M/count/p: got=(46, 4374, '0.218739', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(46, 4374, '0.218739', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row probe s39 tw M_obs: got=39 want=39 match=True
+row probe s39 tw max-cells: got=(sum,128,S=32), (max,128,S=32) want=(sum,128,S=32), (max,128,S=32) match=True
+row probe s39 tw count: got=12056 want=12056 match=True
+row probe s39 tw p: got=0.602820 want=0.602820 match=True
+row probe s39 tw letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s39 tw M/count/p: got=(39, 12056, '0.602820', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(39, 12056, '0.602820', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row probe s36 hi M_obs: got=41 want=41 match=True
+row probe s36 hi max-cells: got=(min,256,S=default) want=(min,256,S=default) match=True
+row probe s36 hi count: got=15142 want=15142 match=True
+row probe s36 hi p: got=0.757112 want=0.757112 match=True
+row probe s36 hi letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s36 hi M/count/p: got=(41, 15142, '0.757112', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(41, 15142, '0.757112', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row probe s36 tw M_obs: got=39 want=39 match=True
+row probe s36 tw max-cells: got=(max,128,S=default) want=(max,128,S=default) match=True
+row probe s36 tw count: got=14413 want=14413 match=True
+row probe s36 tw p: got=0.720664 want=0.720664 match=True
+row probe s36 tw letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s36 tw M/count/p: got=(39, 14413, '0.720664', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(39, 14413, '0.720664', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row probe s38 hi M_obs: got=45 want=45 match=True
+row probe s38 hi max-cells: got=(sum,256,S=16) want=(sum,256,S=16) match=True
+row probe s38 hi count: got=6567 want=6567 match=True
+row probe s38 hi p: got=0.328384 want=0.328384 match=True
+row probe s38 hi letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s38 hi M/count/p: got=(45, 6567, '0.328384', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(45, 6567, '0.328384', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row probe s38 tw M_obs: got=33 want=33 match=True
+row probe s38 tw max-cells: got=(min,128,S=default), (min,256,S=16) want=(min,128,S=default), (min,256,S=16) match=True
+row probe s38 tw count: got=19816 want=19816 match=True
+row probe s38 tw p: got=0.990800 want=0.990800 match=True
+row probe s38 tw letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 s38 tw M/count/p: got=(33, 19816, '0.990800', '(a) PER-CELL-MAD-NOISE-CONSISTENT') want=(33, 19816, '0.990800', '(a) PER-CELL-MAD-NOISE-CONSISTENT') match=True
+row sec4 T1: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec5 s36 window-letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec5 s38 window-letter: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row sec7 T1: got=(a) PER-CELL-MAD-NOISE-CONSISTENT want=(a) PER-CELL-MAD-NOISE-CONSISTENT match=True
+row d1 s39 hi cell0: got=('(sum,128,S=16)', 14, 23, 37, '32.0', 17091, '0.854557') want=('(sum,128,S=16)', 14, 23, 37, '32.0', 17091, '0.854557') match=True
+row d1 s39 hi cell1: got=('(sum,128,S=32)', 46, 43, 89, '60.0', 703, '0.035198') want=('(sum,128,S=32)', 46, 43, 89, '60.0', 703, '0.035198') match=True
+row d1 s39 hi cell2: got=('(sum,128,S=default)', 24, 50, 74, '57.0', 14995, '0.749763') want=('(sum,128,S=default)', 24, 50, 74, '57.0', 14995, '0.749763') match=True
+row d1 s39 hi cell3: got=('(max,128,S=16)', 14, 25, 39, '30.5', 17580, '0.879006') want=('(max,128,S=16)', 14, 25, 39, '30.5', 17580, '0.879006') match=True
+row d1 s39 hi cell4: got=('(max,128,S=32)', 31, 42, 73, '58.5', 9229, '0.461477') want=('(max,128,S=32)', 31, 42, 73, '58.5', 9229, '0.461477') match=True
+row d1 s39 hi cell5: got=('(max,128,S=default)', 20, 50, 70, '61.5', 17310, '0.865507') want=('(max,128,S=default)', 20, 50, 70, '61.5', 17310, '0.865507') match=True
+row d1 s39 hi cell6: got=('(min,128,S=16)', 18, 18, 36, '29.0', 4382, '0.219139') want=('(min,128,S=16)', 18, 18, 36, '29.0', 4382, '0.219139') match=True
+row d1 s39 hi cell7: got=('(min,128,S=32)', 32, 40, 72, '58.5', 4347, '0.217389') want=('(min,128,S=32)', 32, 40, 72, '58.5', 4347, '0.217389') match=True
+row d1 s39 hi cell8: got=('(min,128,S=default)', 28, 44, 72, '56.0', 8781, '0.439078') want=('(min,128,S=default)', 28, 44, 72, '56.0', 8781, '0.439078') match=True
+row d1 s39 hi cell9: got=('(sum,256,S=16)', 19, 25, 44, '34.0', 17401, '0.870056') want=('(sum,256,S=16)', 19, 25, 44, '34.0', 17401, '0.870056') match=True
+row d1 s39 hi cell10: got=('(sum,256,S=32)', 25, 51, 76, '68.0', 9021, '0.451077') want=('(sum,256,S=32)', 25, 51, 76, '68.0', 9021, '0.451077') match=True
+row d1 s39 hi cell11: got=('(sum,256,S=default)', 25, 56, 81, '66.0', 9164, '0.458227') want=('(sum,256,S=default)', 25, 56, 81, '66.0', 9164, '0.458227') match=True
+row d1 s39 hi cell12: got=('(max,256,S=16)', 26, 27, 53, '37.5', 18292, '0.914604') want=('(max,256,S=16)', 26, 27, 53, '37.5', 18292, '0.914604') match=True
+row d1 s39 hi cell13: got=('(max,256,S=32)', 22, 59, 81, '68.0', 16587, '0.829359') want=('(max,256,S=32)', 22, 59, 81, '68.0', 16587, '0.829359') match=True
+row d1 s39 hi cell14: got=('(max,256,S=default)', 24, 52, 76, '64.5', 15652, '0.782611') want=('(max,256,S=default)', 24, 52, 76, '64.5', 15652, '0.782611') match=True
+row d1 s39 hi cell15: got=('(min,256,S=16)', 24, 28, 52, '34.0', 8602, '0.430128') want=('(min,256,S=16)', 24, 28, 52, '34.0', 8602, '0.430128') match=True
+row d1 s39 hi cell16: got=('(min,256,S=32)', 25, 55, 80, '64.0', 8604, '0.430228') want=('(min,256,S=32)', 25, 55, 80, '64.0', 8604, '0.430228') match=True
+row d1 s39 hi cell17: got=('(min,256,S=default)', 21, 53, 74, '66.0', 16983, '0.849158') want=('(min,256,S=default)', 21, 53, 74, '66.0', 16983, '0.849158') match=True
+row d2 s39 hi: got=('(sum,128,S=32)', 46, [('(sum,128,S=32)', 46), ('(min,128,S=32)', 32), ('(max,128,S=32)', 31)]) want=('(sum,128,S=32)', 46, [('(sum,128,S=32)', 46), ('(min,128,S=32)', 32), ('(max,128,S=32)', 31)]) match=True
+row d3 s39 hi: got=(197, '0.789211') want=(197, '0.789211') match=True
+row d1 s39 tw cell0: got=('(sum,128,S=16)', 20, 22, 42, '29.0', 5782, '0.289136') want=('(sum,128,S=16)', 20, 22, 42, '29.0', 5782, '0.289136') match=True
+row d1 s39 tw cell1: got=('(sum,128,S=32)', 39, 46, 85, '59.5', 4082, '0.204140') want=('(sum,128,S=32)', 39, 46, 85, '59.5', 4082, '0.204140') match=True
+row d1 s39 tw cell2: got=('(sum,128,S=default)', 31, 50, 81, '61.5', 11081, '0.554072') want=('(sum,128,S=default)', 31, 50, 81, '61.5', 11081, '0.554072') match=True
+row d1 s39 tw cell3: got=('(max,128,S=16)', 19, 23, 42, '31.5', 14781, '0.739063') want=('(max,128,S=16)', 19, 23, 42, '31.5', 14781, '0.739063') match=True
+row d1 s39 tw cell4: got=('(max,128,S=32)', 39, 41, 80, '63.5', 1104, '0.055247') want=('(max,128,S=32)', 39, 41, 80, '63.5', 1104, '0.055247') match=True
+row d1 s39 tw cell5: got=('(max,128,S=default)', 19, 50, 69, '56.5', 14157, '0.707865') want=('(max,128,S=default)', 19, 50, 69, '56.5', 14157, '0.707865') match=True
+row d1 s39 tw cell6: got=('(min,128,S=16)', 19, 24, 43, '29.5', 11373, '0.568672') want=('(min,128,S=16)', 19, 24, 43, '29.5', 11373, '0.568672') match=True
+row d1 s39 tw cell7: got=('(min,128,S=32)', 26, 47, 73, '63.0', 13976, '0.698815') want=('(min,128,S=32)', 26, 47, 73, '63.0', 13976, '0.698815') match=True
+row d1 s39 tw cell8: got=('(min,128,S=default)', 18, 50, 68, '58.0', 17369, '0.868457') want=('(min,128,S=default)', 18, 50, 68, '58.0', 17369, '0.868457') match=True
+row d1 s39 tw cell9: got=('(sum,256,S=16)', 30, 24, 54, '35.5', 15927, '0.796360') want=('(sum,256,S=16)', 30, 24, 54, '35.5', 15927, '0.796360') match=True
+row d1 s39 tw cell10: got=('(sum,256,S=32)', 20, 52, 72, '65.0', 12240, '0.612019') want=('(sum,256,S=32)', 20, 52, 72, '65.0', 12240, '0.612019') match=True
+row d1 s39 tw cell11: got=('(sum,256,S=default)', 26, 53, 79, '67.0', 6815, '0.340783') want=('(sum,256,S=default)', 26, 53, 79, '67.0', 6815, '0.340783') match=True
+row d1 s39 tw cell12: got=('(max,256,S=16)', 27, 27, 54, '33.0', 5662, '0.283136') want=('(max,256,S=16)', 27, 27, 54, '33.0', 5662, '0.283136') match=True
+row d1 s39 tw cell13: got=('(max,256,S=32)', 30, 59, 89, '70.5', 4500, '0.225039') want=('(max,256,S=32)', 30, 59, 89, '70.5', 4500, '0.225039') match=True
+row d1 s39 tw cell14: got=('(max,256,S=default)', 12, 59, 71, '66.0', 19860, '0.993000') want=('(max,256,S=default)', 12, 59, 71, '66.0', 19860, '0.993000') match=True
+row d1 s39 tw cell15: got=('(min,256,S=16)', 24, 28, 52, '34.5', 11822, '0.591120') want=('(min,256,S=16)', 24, 28, 52, '34.5', 11822, '0.591120') match=True
+row d1 s39 tw cell16: got=('(min,256,S=32)', 10, 62, 72, '66.5', 19984, '0.999200') want=('(min,256,S=32)', 10, 62, 72, '66.5', 19984, '0.999200') match=True
+row d1 s39 tw cell17: got=('(min,256,S=default)', 30, 52, 82, '67.5', 988, '0.049448') want=('(min,256,S=default)', 30, 52, 82, '67.5', 988, '0.049448') match=True
+row d2 s39 tw: got=('(sum,128,S=32), (max,128,S=32)', 39, [('(sum,128,S=32)', 39), ('(max,128,S=32)', 39), ('(sum,128,S=default)', 31)]) want=('(sum,128,S=32), (max,128,S=32)', 39, [('(sum,128,S=32)', 39), ('(max,128,S=32)', 39), ('(sum,128,S=default)', 31)]) match=True
+row d3 s39 tw: got=(190, '0.987701') want=(190, '0.987701') match=True
+row d1 s36 hi cell0: got=('(sum,128,S=16)', 20, 20, 40, '31.0', 5143, '0.257187') want=('(sum,128,S=16)', 20, 20, 40, '31.0', 5143, '0.257187') match=True
+row d1 s36 hi cell1: got=('(sum,128,S=32)', 26, 51, 77, '62.0', 13395, '0.669767') want=('(sum,128,S=32)', 26, 51, 77, '62.0', 13395, '0.669767') match=True
+row d1 s36 hi cell2: got=('(sum,128,S=default)', 27, 43, 70, '57.0', 11462, '0.573121') want=('(sum,128,S=default)', 27, 43, 70, '57.0', 11462, '0.573121') match=True
+row d1 s36 hi cell3: got=('(max,128,S=16)', 14, 20, 34, '25.5', 19457, '0.972851') want=('(max,128,S=16)', 14, 20, 34, '25.5', 19457, '0.972851') match=True
+row d1 s36 hi cell4: got=('(max,128,S=32)', 36, 48, 84, '62.5', 553, '0.027699') want=('(max,128,S=32)', 36, 48, 84, '62.5', 553, '0.027699') match=True
+row d1 s36 hi cell5: got=('(max,128,S=default)', 29, 49, 78, '62.5', 7536, '0.376831') want=('(max,128,S=default)', 29, 49, 78, '62.5', 7536, '0.376831') match=True
+row d1 s36 hi cell6: got=('(min,128,S=16)', 11, 24, 35, '28.5', 19430, '0.971501') want=('(min,128,S=16)', 11, 24, 35, '28.5', 19430, '0.971501') match=True
+row d1 s36 hi cell7: got=('(min,128,S=32)', 18, 54, 72, '62.0', 18390, '0.919504') want=('(min,128,S=32)', 18, 54, 72, '62.0', 18390, '0.919504') match=True
+row d1 s36 hi cell8: got=('(min,128,S=default)', 30, 44, 74, '55.5', 7699, '0.384981') want=('(min,128,S=default)', 30, 44, 74, '55.5', 7699, '0.384981') match=True
+row d1 s36 hi cell9: got=('(sum,256,S=16)', 32, 23, 55, '33.0', 6025, '0.301285') want=('(sum,256,S=16)', 32, 23, 55, '33.0', 6025, '0.301285') match=True
+row d1 s36 hi cell10: got=('(sum,256,S=32)', 37, 47, 84, '63.0', 1820, '0.091045') want=('(sum,256,S=32)', 37, 47, 84, '63.0', 1820, '0.091045') match=True
+row d1 s36 hi cell11: got=('(sum,256,S=default)', 35, 55, 90, '69.5', 1531, '0.076596') want=('(sum,256,S=default)', 35, 55, 90, '69.5', 1531, '0.076596') match=True
+row d1 s36 hi cell12: got=('(max,256,S=16)', 30, 25, 55, '38.0', 7832, '0.391630') want=('(max,256,S=16)', 30, 25, 55, '38.0', 7832, '0.391630') match=True
+row d1 s36 hi cell13: got=('(max,256,S=32)', 20, 58, 78, '66.5', 11869, '0.593470') want=('(max,256,S=32)', 20, 58, 78, '66.5', 11869, '0.593470') match=True
+row d1 s36 hi cell14: got=('(max,256,S=default)', 26, 54, 80, '71.5', 13483, '0.674166') want=('(max,256,S=default)', 26, 54, 80, '71.5', 13483, '0.674166') match=True
+row d1 s36 hi cell15: got=('(min,256,S=16)', 31, 29, 60, '44.0', 18581, '0.929054') want=('(min,256,S=16)', 31, 29, 60, '44.0', 18581, '0.929054') match=True
+row d1 s36 hi cell16: got=('(min,256,S=32)', 35, 45, 80, '69.5', 2110, '0.105545') want=('(min,256,S=32)', 35, 45, 80, '69.5', 2110, '0.105545') match=True
+row d1 s36 hi cell17: got=('(min,256,S=default)', 41, 52, 93, '64.5', 1867, '0.093395') want=('(min,256,S=default)', 41, 52, 93, '64.5', 1867, '0.093395') match=True
+row d2 s36 hi: got=('(min,256,S=default)', 41, [('(min,256,S=default)', 41), ('(sum,256,S=32)', 37), ('(max,128,S=32)', 36)]) want=('(min,256,S=default)', 41, [('(min,256,S=default)', 41), ('(sum,256,S=32)', 37), ('(max,128,S=32)', 36)]) match=True
+row d3 s36 hi: got=(213, '0.657217') want=(213, '0.657217') match=True
+row d1 s36 tw cell0: got=('(sum,128,S=16)', 18, 23, 41, '29.5', 10294, '0.514724') want=('(sum,128,S=16)', 18, 23, 41, '29.5', 10294, '0.514724') match=True
+row d1 s36 tw cell1: got=('(sum,128,S=32)', 28, 42, 70, '60.5', 8248, '0.412429') want=('(sum,128,S=32)', 28, 42, 70, '60.5', 8248, '0.412429') match=True
+row d1 s36 tw cell2: got=('(sum,128,S=default)', 33, 49, 82, '56.5', 7661, '0.383081') want=('(sum,128,S=default)', 33, 49, 82, '56.5', 7661, '0.383081') match=True
+row d1 s36 tw cell3: got=('(max,128,S=16)', 25, 22, 47, '27.5', 8061, '0.403080') want=('(max,128,S=16)', 25, 22, 47, '27.5', 8061, '0.403080') match=True
+row d1 s36 tw cell4: got=('(max,128,S=32)', 29, 40, 69, '55.0', 5227, '0.261387') want=('(max,128,S=32)', 29, 40, 69, '55.0', 5227, '0.261387') match=True
+row d1 s36 tw cell5: got=('(max,128,S=default)', 39, 46, 85, '71.5', 2435, '0.121794') want=('(max,128,S=default)', 39, 46, 85, '71.5', 2435, '0.121794') match=True
+row d1 s36 tw cell6: got=('(min,128,S=16)', 20, 23, 43, '30.0', 9028, '0.451427') want=('(min,128,S=16)', 20, 23, 43, '30.0', 9028, '0.451427') match=True
+row d1 s36 tw cell7: got=('(min,128,S=32)', 34, 44, 78, '62.0', 10108, '0.505425') want=('(min,128,S=32)', 34, 44, 78, '62.0', 10108, '0.505425') match=True
+row d1 s36 tw cell8: got=('(min,128,S=default)', 37, 44, 81, '56.5', 5106, '0.255337') want=('(min,128,S=default)', 37, 44, 81, '56.5', 5106, '0.255337') match=True
+row d1 s36 tw cell9: got=('(sum,256,S=16)', 33, 28, 61, '37.0', 3969, '0.198490') want=('(sum,256,S=16)', 33, 28, 61, '37.0', 3969, '0.198490') match=True
+row d1 s36 tw cell10: got=('(sum,256,S=32)', 21, 53, 74, '67.5', 16737, '0.836858') want=('(sum,256,S=32)', 21, 53, 74, '67.5', 16737, '0.836858') match=True
+row d1 s36 tw cell11: got=('(sum,256,S=default)', 28, 50, 78, '62.0', 1596, '0.079846') want=('(sum,256,S=default)', 28, 50, 78, '62.0', 1596, '0.079846') match=True
+row d1 s36 tw cell12: got=('(max,256,S=16)', 29, 24, 53, '35.0', 9676, '0.483826') want=('(max,256,S=16)', 29, 24, 53, '35.0', 9676, '0.483826') match=True
+row d1 s36 tw cell13: got=('(max,256,S=32)', 18, 58, 76, '65.0', 16341, '0.817059') want=('(max,256,S=32)', 18, 58, 76, '65.0', 16341, '0.817059') match=True
+row d1 s36 tw cell14: got=('(max,256,S=default)', 26, 49, 75, '60.5', 13177, '0.658867') want=('(max,256,S=default)', 26, 49, 75, '60.5', 13177, '0.658867') match=True
+row d1 s36 tw cell15: got=('(min,256,S=16)', 26, 23, 49, '36.5', 11770, '0.588521') want=('(min,256,S=16)', 26, 23, 49, '36.5', 11770, '0.588521') match=True
+row d1 s36 tw cell16: got=('(min,256,S=32)', 24, 51, 75, '66.5', 15707, '0.785361') want=('(min,256,S=32)', 24, 51, 75, '66.5', 15707, '0.785361') match=True
+row d1 s36 tw cell17: got=('(min,256,S=default)', 20, 58, 78, '70.0', 16793, '0.839658') want=('(min,256,S=default)', 20, 58, 78, '70.0', 16793, '0.839658') match=True
+row d2 s36 tw: got=('(max,128,S=default)', 39, [('(max,128,S=default)', 39), ('(min,128,S=default)', 37), ('(min,128,S=32)', 34)]) want=('(max,128,S=default)', 39, [('(max,128,S=default)', 39), ('(min,128,S=default)', 37), ('(min,128,S=32)', 34)]) match=True
+row d3 s36 tw: got=(231, '0.573471') want=(231, '0.573471') match=True
+row d1 s38 hi cell0: got=('(sum,128,S=16)', 24, 19, 43, '28.5', 3056, '0.152842') want=('(sum,128,S=16)', 24, 19, 43, '28.5', 3056, '0.152842') match=True
+row d1 s38 hi cell1: got=('(sum,128,S=32)', 17, 54, 71, '60.0', 19744, '0.987201') want=('(sum,128,S=32)', 17, 54, 71, '60.0', 19744, '0.987201') match=True
+row d1 s38 hi cell2: got=('(sum,128,S=default)', 44, 40, 84, '57.5', 1389, '0.069497') want=('(sum,128,S=default)', 44, 40, 84, '57.5', 1389, '0.069497') match=True
+row d1 s38 hi cell3: got=('(max,128,S=16)', 17, 21, 38, '30.0', 8869, '0.443478') want=('(max,128,S=16)', 17, 21, 38, '30.0', 8869, '0.443478') match=True
+row d1 s38 hi cell4: got=('(max,128,S=32)', 13, 54, 67, '61.5', 19738, '0.986901') want=('(max,128,S=32)', 13, 54, 67, '61.5', 19738, '0.986901') match=True
+row d1 s38 hi cell5: got=('(max,128,S=default)', 27, 43, 70, '64.5', 14325, '0.716264') want=('(max,128,S=default)', 27, 43, 70, '64.5', 14325, '0.716264') match=True
+row d1 s38 hi cell6: got=('(min,128,S=16)', 17, 22, 39, '27.0', 13741, '0.687066') want=('(min,128,S=16)', 17, 22, 39, '27.0', 13741, '0.687066') match=True
+row d1 s38 hi cell7: got=('(min,128,S=32)', 28, 43, 71, '55.0', 10859, '0.542973') want=('(min,128,S=32)', 28, 43, 71, '55.0', 10859, '0.542973') match=True
+row d1 s38 hi cell8: got=('(min,128,S=default)', 37, 45, 82, '60.0', 6518, '0.325934') want=('(min,128,S=default)', 37, 45, 82, '60.0', 6518, '0.325934') match=True
+row d1 s38 hi cell9: got=('(sum,256,S=16)', 45, 30, 75, '36.5', 3770, '0.188541') want=('(sum,256,S=16)', 45, 30, 75, '36.5', 3770, '0.188541') match=True
+row d1 s38 hi cell10: got=('(sum,256,S=32)', 32, 52, 84, '64.5', 3417, '0.170891') want=('(sum,256,S=32)', 32, 52, 84, '64.5', 3417, '0.170891') match=True
+row d1 s38 hi cell11: got=('(sum,256,S=default)', 22, 59, 81, '71.5', 14299, '0.714964') want=('(sum,256,S=default)', 22, 59, 81, '71.5', 14299, '0.714964') match=True
+row d1 s38 hi cell12: got=('(max,256,S=16)', 27, 32, 59, '38.0', 11193, '0.559672') want=('(max,256,S=16)', 27, 32, 59, '38.0', 11193, '0.559672') match=True
+row d1 s38 hi cell13: got=('(max,256,S=32)', 24, 54, 78, '65.5', 14753, '0.737663') want=('(max,256,S=32)', 24, 54, 78, '65.5', 14753, '0.737663') match=True
+row d1 s38 hi cell14: got=('(max,256,S=default)', 26, 57, 83, '63.0', 10049, '0.502475') want=('(max,256,S=default)', 26, 57, 83, '63.0', 10049, '0.502475') match=True
+row d1 s38 hi cell15: got=('(min,256,S=16)', 30, 24, 54, '35.5', 5344, '0.267237') want=('(min,256,S=16)', 30, 24, 54, '35.5', 5344, '0.267237') match=True
+row d1 s38 hi cell16: got=('(min,256,S=32)', 22, 54, 76, '62.0', 15460, '0.773011') want=('(min,256,S=32)', 22, 54, 76, '62.0', 15460, '0.773011') match=True
+row d1 s38 hi cell17: got=('(min,256,S=default)', 25, 50, 75, '64.0', 7820, '0.391030') want=('(min,256,S=default)', 25, 50, 75, '64.0', 7820, '0.391030') match=True
+row d2 s38 hi: got=('(sum,256,S=16)', 45, [('(sum,256,S=16)', 45), ('(sum,128,S=default)', 44), ('(min,128,S=default)', 37)]) want=('(sum,256,S=16)', 45, [('(sum,256,S=16)', 45), ('(sum,128,S=default)', 44), ('(min,128,S=default)', 37)]) match=True
+row d3 s38 hi: got=(219, '0.191390') want=(219, '0.191390') match=True
+row d1 s38 tw cell0: got=('(sum,128,S=16)', 13, 23, 36, '28.5', 18347, '0.917354') want=('(sum,128,S=16)', 13, 23, 36, '28.5', 18347, '0.917354') match=True
+row d1 s38 tw cell1: got=('(sum,128,S=32)', 23, 46, 69, '55.5', 14635, '0.731763') want=('(sum,128,S=32)', 23, 46, 69, '55.5', 14635, '0.731763') match=True
+row d1 s38 tw cell2: got=('(sum,128,S=default)', 27, 43, 70, '49.0', 13858, '0.692915') want=('(sum,128,S=default)', 27, 43, 70, '49.0', 13858, '0.692915') match=True
+row d1 s38 tw cell3: got=('(max,128,S=16)', 15, 26, 41, '32.5', 14766, '0.738313') want=('(max,128,S=16)', 15, 26, 41, '32.5', 14766, '0.738313') match=True
+row d1 s38 tw cell4: got=('(max,128,S=32)', 28, 47, 75, '58.0', 6309, '0.315484') want=('(max,128,S=32)', 28, 47, 75, '58.0', 6309, '0.315484') match=True
+row d1 s38 tw cell5: got=('(max,128,S=default)', 27, 44, 71, '55.5', 9536, '0.476826') want=('(max,128,S=default)', 27, 44, 71, '55.5', 9536, '0.476826') match=True
+row d1 s38 tw cell6: got=('(min,128,S=16)', 19, 17, 36, '25.0', 4252, '0.212639') want=('(min,128,S=16)', 19, 17, 36, '25.0', 4252, '0.212639') match=True
+row d1 s38 tw cell7: got=('(min,128,S=32)', 25, 48, 73, '59.0', 13400, '0.670016') want=('(min,128,S=32)', 25, 48, 73, '59.0', 13400, '0.670016') match=True
+row d1 s38 tw cell8: got=('(min,128,S=default)', 33, 45, 78, '60.5', 7378, '0.368932') want=('(min,128,S=default)', 33, 45, 78, '60.5', 7378, '0.368932') match=True
+row d1 s38 tw cell9: got=('(sum,256,S=16)', 32, 30, 62, '42.5', 14690, '0.734513') want=('(sum,256,S=16)', 32, 30, 62, '42.5', 14690, '0.734513') match=True
+row d1 s38 tw cell10: got=('(sum,256,S=32)', 17, 56, 73, '67.0', 15536, '0.776811') want=('(sum,256,S=32)', 17, 56, 73, '67.0', 15536, '0.776811') match=True
+row d1 s38 tw cell11: got=('(sum,256,S=default)', 24, 56, 80, '68.5', 15866, '0.793310') want=('(sum,256,S=default)', 24, 56, 80, '68.5', 15866, '0.793310') match=True
+row d1 s38 tw cell12: got=('(max,256,S=16)', 26, 25, 51, '34.5', 14882, '0.744113') want=('(max,256,S=16)', 26, 25, 51, '34.5', 14882, '0.744113') match=True
+row d1 s38 tw cell13: got=('(max,256,S=32)', 22, 58, 80, '69.5', 15604, '0.780211') want=('(max,256,S=32)', 22, 58, 80, '69.5', 15604, '0.780211') match=True
+row d1 s38 tw cell14: got=('(max,256,S=default)', 22, 56, 78, '65.5', 11919, '0.595970') want=('(max,256,S=default)', 22, 56, 78, '65.5', 11919, '0.595970') match=True
+row d1 s38 tw cell15: got=('(min,256,S=16)', 33, 27, 60, '39.5', 11233, '0.561672') want=('(min,256,S=16)', 33, 27, 60, '39.5', 11233, '0.561672') match=True
+row d1 s38 tw cell16: got=('(min,256,S=32)', 30, 54, 84, '67.0', 5384, '0.269237') want=('(min,256,S=32)', 30, 54, 84, '67.0', 5384, '0.269237') match=True
+row d1 s38 tw cell17: got=('(min,256,S=default)', 22, 55, 77, '66.0', 13550, '0.677516') want=('(min,256,S=default)', 22, 55, 77, '66.0', 13550, '0.677516') match=True
+row d2 s38 tw: got=('(min,128,S=default), (min,256,S=16)', 33, [('(min,128,S=default)', 33), ('(min,256,S=16)', 33), ('(sum,256,S=16)', 32)]) want=('(min,128,S=default), (min,256,S=16)', 33, [('(min,128,S=default)', 33), ('(min,256,S=16)', 33), ('(sum,256,S=16)', 32)]) match=True
+row d3 s38 tw: got=(210, '0.783511') want=(210, '0.783511') match=True
+row freeze-stamp-in-protocol: got=True want=True match=True
+row freeze-stamp-in-publication: got=True want=True match=True
+row pin classify-selftest: got=TOTAL: 2649 assertions passed, 0 failed want=TOTAL: 2649 assertions passed, 0 failed match=True
+row pin gate-run1 ran-line: got=True want=True match=True
+row pin gate-run1 fail-line: got=0 failures, 0 errors. want=0 failures, 0 errors. match=True
+row pin gate-run2 ran-line: got=True want=True match=True
+row pin gate-run2 fail-line: got=0 failures, 0 errors. want=0 failures, 0 errors. match=True
+row pin gate-run1==gate-run2: got=True want=True match=True
+row pin gate-run1==s47-artifact: got=True want=True match=True
+row pin full-suite-red-at-base: got=True want=True match=True
+row pin gate-full==s47-artifact: got=True want=True match=True
+row pin bar-fixture-38-0: got=True want=True match=True
+row pin bar-verdict-pending-1-4: got=2 want=2 match=True
+row pin bar-eval-twice-byte-identical: got=True want=True match=True
+row pin bar-s31-counted: got=True want=True match=True
+row pin ledger-byte-identical-to-HEAD: got=66bab04c597b73a31a4f29bbbfe8109a827a8528 want=66bab04c597b73a31a4f29bbbfe8109a827a8528 match=True
+row pin evidence-no-posix-sh: got= want= match=True
+
+TOTAL: 231 rows, 0 mismatched

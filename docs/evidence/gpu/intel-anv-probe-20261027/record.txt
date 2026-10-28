@@ -1,0 +1,168 @@
+# JUN-59 (Intel) measurement-host feasibility probe -- the ANV/mesa step, 2026-10-27
+
+ONE probe slice. HARDWARE READ (not a timing measurement): aiueos-6600hs-1
+(tailscale 100.98.24.37, hostname aiueos-6600hs, kernel
+7.0.0-31-generic #31~24.04.1-Ubuntu x86_64) read over tailscale SSH as root,
+run window 2026-10-27T07:35Z..07:52Z. MEASURED this row: the host's device and
+driver state only. No kernel ran, no timing sample exists, NO optimization
+claim of any kind rides this row.
+
+## 0. What ran (the named step)
+
+The Intel issue's named first step ("subgroup 8/16/32 の計測前に ANV/mesa
+対応可否の確認が最初の step", AWAI-38 comment 2026-10-18) -- check whether
+ANV/mesa can expose the Intel GPU for measurement at all. Raw outputs:
+host-lspci.txt, userspace-vulkan.txt, vulkaninfo-summary.txt,
+vulkaninfo-compute-facts.txt, vulkaninfo-limits.txt, user-views.txt (all
+probe transcripts, verbatim; probes are read-only shell reads plus one
+open/close of the render node -- nothing was installed or configured on the
+host this row).
+
+## 1. The finding
+
+THE STEP IS ANSWERED: ANV WORKS ON THIS HOST. The 2026-10-18 note's
+"vulkaninfo は llvmpipe のみ (ANV 未対応の疑い)" observation DOES NOT
+REPRODUCE today and the "ANV unsupported" hypothesis is REFUTED at this
+host's current state (vulkaninfo-summary.txt, user-views.txt):
+
+- vulkaninfo --summary enumerates TWO devices: GPU0 = "Intel(R) Graphics
+  (BMG G31)", vendorID 0x8086, deviceID 0xe223,
+  PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, driverID DRIVER_ID_INTEL_OPEN_SOURCE_MESA
+  ("Intel open-source Mesa driver", Mesa 25.2.8-0ubuntu0.24.04.2), apiVersion
+  1.4.318; GPU1 = llvmpipe (LLVM 20.1.2, 256 bits). lspci confirms the PCI
+  device [8086:e223] on 03:00.0, "Kernel driver in use: xe" (host-lspci.txt);
+  /dev/dri/card0 + renderD128 exist; mesa-vulkan-drivers 25.2.8,
+  vulkan-tools 1.3.275, libvulkan1 1.3.275 installed; intel_icd.json ->
+  libvulkan_intel.so (userspace-vulkan.txt).
+- The llvmpipe-ONLY view REPRODUCES EXACTLY as the view of an account with no
+  render-node access (user-views.txt): root and aiueos (member of group
+  render) see both devices; nobody (NOT in render) sees llvmpipe ONLY, and an
+  open of /dev/dri/renderD128 is denied for nobody ("Permission denied",
+  open test) while aiueos opens it (aiueos-open=ok). The 2026-10-18
+  observation is CONSISTENT WITH a probe run from an account outside group
+  render -- named as consistency ONLY; the 2026-10-18 observation's actual
+  cause is UNMEASURED (no probe transcript from that date is committed; the
+  host state at that date is not re-derivable). What this row proves is the
+  current state and the account-dependence of the enumeration, not history.
+
+## 2. Device facts read (for the future ADR-0371 provider's report)
+
+From vulkaninfo on the ANV device (vulkaninfo-compute-facts.txt,
+vulkaninfo-limits.txt) -- raw VkPhysicalDeviceProperties /
+VkPhysicalDeviceSubgroupProperties values, the data `subgroup-answer` and
+`device-from-info` are designed to consume:
+
+- maxComputeWorkGroupSize = 1024, 1024, 1024; maxComputeSharedMemorySize =
+  131072; deviceType = DISCRETE_GPU.
+- subgroupSize = 32; subgroupSupportedStages (count 14) INCLUDES
+  SHADER_STAGE_COMPUTE_BIT; subgroupSupportedOperations = all eight core
+  VkSubgroupFeatureFlagBits (BASIC VOTE ARITHMETIC BALLOT SHUFFLE
+  SHUFFLE_RELATIVE CLUSTERED QUAD), subgroupQuadOperationsInAllStages =
+  true; subgroupSizeControl = true (VK_EXT_subgroup_size_control present).
+- Under the removed loader's documented INFO mapping (ADR-0355:
+  <deviceName>|<apiVersion major.minor.patch>|<maxWgX>|<deviceType==
+  INTEGRATED_GPU>) this probe answers the four fields
+  "Intel(R) Graphics (BMG G31)|1.4.318|1024|0" and the SUBGROUP payload
+  "32|basic vote arithmetic ballot shuffle shuffle-relative clustered quad"
+  -- DERIVED by the documented mapping, NOT a wire reading (the loader
+  brokers are removed, main 36479076; the ADR-0371 provider does not exist
+  yet and must answer the same words). State: PROBED host facts, documented
+  mapping; no wire-42 answer exists to parse.
+
+## 3. What this row does NOT move (rule 4, honestly)
+
+- NO workgroup row moves. The :intel row (128, :measured? true, key "g31")
+  keeps its ADR-0358 provenance ("2026-10-19 BMG G31 / ANV") and its flag;
+  this row ran NO timing and cannot flip or confirm any row. The 2026-10-25
+  channel rule is untouched: row evidence is the row's own channel (the
+  removed wire-42 loader path or its ADR-0371 provider successor once one
+  answers INFO) -- a raw ANV read is a channel of its own.
+- The device name carries the :intel row's uB5G key fragment "g31"
+  (case-insensitive, "Intel(R) Graphics (BMG G31)") -- NAMED as scoping-key
+  context only; `recommend` is not re-run and no dispatch answer changes.
+- NO vendor optimization exists for Intel; :intel/:arm kernel rows stay as
+  designed. Every workgroup-row question stays where the table has it
+  (:arm/:unknown provisional :measured? false).
+
+## 4. States (the three-state rule)
+
+- IMPLEMENTED (unchanged, code + tests): the dispatch table, `device-class`,
+  `subgroup-answer`/`device-from-subgroup`, variant selection. Nothing in
+  src/ or test/ changed this row (diff is docs/evidence + one ADR note).
+- PROBED (this row's evidence): the host facts of section 2 and the
+  account-dependence of section 1.
+- PROPOSED, its own row(s): a subgroup 8/16/32 measurement run on this host
+  under a named channel (the JUN-59 row question); whether such a run is
+  the :intel row's own channel under the 2026-10-25 rule (UNDECIDED -- a
+  row-flip channel decision, proposed here, not decided); the ADR-0371
+  provider's report of these same facts.
+
+## 5. Gates (real runs this tick; the diff touches NO .cljk namespace)
+
+- scripts/gpu_regime_classify.py --self-test: see classify-selftest.txt
+  (committed pin; no classify code touched).
+- scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk, never committed) run twice: see gate-run1.txt /
+  gate-run2.txt.
+- FULL run-tests.cljk run live: see full-run-tests.txt (the workgroup rule:
+  name what is red at base).
+- find docs -name '*.sh' -> 0 (the no-POSIX-sh evidence rule).
+- Blocker-first: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+  start and re-checked before the push (see commit message).
+
+## 7. CORRECTION (2026-10-27, after the push -- NAMED, NOT HIDDEN)
+
+This record's first draft (section 1) said the 2026-10-18 llvmpipe-only
+observation's cause is UNMEASURED and framed the account-dependence as this
+row's discriminating probe. WRONG AS FRAMED, corrected here without
+rewriting the text above: the Linear issue (AWAI-38) carries a LATER
+2026-10-18 comment (23:50Z, comment id 67075311) that already documented
+the mechanism AND the fix -- "ANV は未対応ではなく /dev/dri/renderD128 の
+権限不足だった (Permission denied -> VK_ERROR_INCOMPATIBLE_DRIVER);
+usermod -aG render murakumo-ci で解決" -- and recorded a wire-42 probe
+answer on aiueos-6600hs-1 of exactly "Intel(R) Graphics (BMG
+G31)|1.4.318|1024|0" (hex receipt noted there). So:
+
+- The cause of the 2026-10-18 llvmpipe-only view WAS MEASURED THEN (render
+  node permission denied for the probe account), in the issue channel; this
+  row's account-by-account enumeration (user-views.txt) RE-CONFIRMS that
+  mechanism from committed tool output and adds the exact per-account
+  enumeration (root / aiueos / nobody) -- it is CONFIRMATORY, not a new
+  mechanism discovery. What stays UNMEASURED: nothing about the old
+  observation's mechanism; the only history gap is that no repo-committed
+  transcript of the 2026-10-18 probe exists (the record is the Linear
+  comment).
+- The INFO mapping cross-check PINS: this row's derived four-field INFO
+  string ("Intel(R) Graphics (BMG G31)|1.4.318|1024|0", section 2, derived
+  from raw Vulkan by the documented mapping) is BYTE-IDENTICAL to the
+  loader's actual 2026-10-18 wire-42 answer recorded in the issue -- the
+  mapping is validated against a real loader receipt from this host, and
+  the loader DID execute on this host on 2026-10-18 (before the loader
+  removal). Named as cross-check only; no row moves (rule 4, section 3
+  unchanged).
+- Section 1's "the 'ANV unsupported' hypothesis is REFUTED at this host's
+  current state" stands as this row's own tool-verified reading of today's
+  state; it was already refuted in the issue channel on 2026-10-18 by the
+  comment above. This row re-derives it from fresh probe transcripts
+  committed to the repo.
+
+A correction comment was posted to AWAI-38 with this same content.
+
+## 6. NAMED, NOT HIDDEN
+
+- The probe ran as root over tailscale SSH (the account the fleet's tailnet
+  policy admits); the root/aiueos agreement (user-views.txt) is what keeps
+  the visibility finding from being a root-only artifact.
+- The first user-views capture attempt included `cat /dev/dri/renderD128`,
+  which BLOCKS on a device node; it was killed at the 180s tool timeout and
+  the transcript was re-taken with a non-blocking open/close test. The
+  killed attempt's partial output is not used as evidence; the file was
+  overwritten by the re-run (both transcripts shown in this record's tool
+  session, the committed file is the re-run).
+- A kernel-engine-reset event ("xe 0000:03:00.0: Engine reset ... ccs") is
+  present in dmesg on this host; its frequency and meaning are UNMEASURED
+  and nothing rides on it here.
+- No timing, no dispatch, no compile ran on the Intel device this row; "ANV
+  works" is an enumeration claim (devices + facts visible to the loader),
+  not a compute-execution claim. The first compute execution on this device
+  is its own future row.

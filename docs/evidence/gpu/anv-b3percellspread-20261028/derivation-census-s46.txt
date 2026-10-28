@@ -1,0 +1,141 @@
+JUN-59 session 46 -- derivation census (independent second
+parser; THE PER-CELL WITHIN-BLOCK SPREAD REPARTITION PROBE)
+split-based parsing without regex; observed per-cell
+within-block spread via pure-Python max()/min() over the
+explicitly pooled 75 (cross-checked against sorted()
+first/last); pooled medians via sorted() 38th order
+statistics; resampling spread via the np.sort
+order-statistic path; repartition resampling and RNG call
+order re-implemented. Each row: got = this parser's
+re-derivation (or a pinned artifact fact), want =
+publication-s46.txt / the frozen refs / the established
+artifact.
+
+r001 integrity s36 runs parsed: got=78 want=78 match=True
+r002 integrity s36 verify-mismatch total: got=0 want=0 match=True
+r003 integrity s36 counts ok: got=True want=True match=True
+r004 integrity s36 knobs ok: got=True want=True match=True
+r005 integrity s36 S=8 fail-closed: got=True want=True match=True
+r006 integrity s36 cell map ok: got=True want=True match=True
+r007 integrity s38 runs parsed: got=78 want=78 match=True
+r008 integrity s38 verify-mismatch total: got=0 want=0 match=True
+r009 integrity s38 counts ok: got=True want=True match=True
+r010 integrity s38 knobs ok: got=True want=True match=True
+r011 integrity s38 S=8 fail-closed: got=True want=True match=True
+r012 integrity s38 cell map ok: got=True want=True match=True
+r013 integrity s39 runs parsed: got=78 want=78 match=True
+r014 integrity s39 verify-mismatch total: got=0 want=0 match=True
+r015 integrity s39 counts ok: got=True want=True match=True
+r016 integrity s39 knobs ok: got=True want=True match=True
+r017 integrity s39 S=8 fail-closed: got=True want=True match=True
+r018 integrity s39 cell map ok: got=True want=True match=True
+r019 C1 c2 class (s39): got=FLOOR want=FLOOR match=True
+r020 C1 c8 pooled median within +/-5% (s39): got=True want=True match=True
+r021 C1 branch (s39): got=(a) want=(a) match=True
+r022 block-min vector s36 hi EXACT: got=True want=True match=True
+r023 block-min vector s36 tw EXACT: got=True want=True match=True
+r024 block-min vector s38 hi EXACT: got=True want=True match=True
+r025 block-min vector s38 tw EXACT: got=True want=True match=True
+r026 block-min vector s39 hi EXACT: got=True want=True match=True
+r027 block-min vector s39 tw EXACT: got=True want=True match=True
+r028 block-min vectors all 6/6 EXACT: got=True want=True match=True
+r029 anchor reproduction s36: got=EXACT True want=EXACT True match=True
+r030 anchor reproduction s38: got=EXACT True want=EXACT True match=True
+r031 anchor reproduction s39: got=EXACT True want=EXACT True match=True
+r032 anchor reproduction all 3/3 EXACT: got=True want=True match=True
+r033 probe s39 hi observed W cross-check (max/min vs sorted): got=True want=True match=True
+r034 probe s39 hi M_obs: got=295 want=295 match=True
+r035 probe s39 hi count: got=14383 want=14383 match=True
+r036 probe s39 hi trials+1: got=20001 want=20001 match=True
+r037 probe s39 hi p: got=0.719164 want=0.719164 match=True
+r038 probe s39 hi letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r039 probe s39 hi max cell(s): got=(min,256,S=default) want=(min,256,S=default) match=True
+r040 D1 s39 hi 18 W_c values EXACT: got=[67, 138, 127, 101, 188, 244, 120, 284, 150, 81, 129, 122, 69, 114, 226, 87, 144, 295] want=[67, 138, 127, 101, 188, 244, 120, 284, 150, 81, 129, 122, 69, 114, 226, 87, 144, 295] match=True
+r041 D1 s39 hi 18 block D min..max EXACT: got=['400..467', '465..603', '471..598', '409..510', '368..556', '482..726', '379..499', '416..700', '467..617', '253..334', '348..477', '321..443', '263..332', '326..440', '312..538', '237..324', '338..482', '322..617'] want=['400..467', '465..603', '471..598', '409..510', '368..556', '482..726', '379..499', '416..700', '467..617', '253..334', '348..477', '321..443', '263..332', '326..440', '312..538', '237..324', '338..482', '322..617'] match=True
+r042 D1 s39 hi 18 marginal counts EXACT: got=[4674, 3436, 14855, 12839, 7845, 17559, 5475, 4061, 13935, 6906, 7880, 5964, 14413, 6442, 7129, 938, 8666, 10474] want=[4674, 3436, 14855, 12839, 7845, 17559, 5475, 4061, 13935, 6906, 7880, 5964, 14413, 6442, 7129, 938, 8666, 10474] match=True
+r043 D1 s39 hi cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r044 probe s39 hi marginal p<=0.05 cells vs D1: got=(min,256,S=16) want=(min,256,S=16) match=True
+r045 probe s39 tw observed W cross-check (max/min vs sorted): got=True want=True match=True
+r046 probe s39 tw M_obs: got=360 want=360 match=True
+r047 probe s39 tw count: got=13881 want=13881 match=True
+r048 probe s39 tw trials+1: got=20001 want=20001 match=True
+r049 probe s39 tw p: got=0.694065 want=0.694065 match=True
+r050 probe s39 tw letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r051 probe s39 tw max cell(s): got=(max,128,S=32) want=(max,128,S=32) match=True
+r052 D1 s39 tw 18 W_c values EXACT: got=[115, 203, 297, 83, 360, 124, 113, 316, 138, 64, 136, 312, 72, 80, 72, 50, 134, 179] want=[115, 203, 297, 83, 360, 124, 113, 316, 138, 64, 136, 312, 72, 80, 72, 50, 134, 179] match=True
+r053 D1 s39 tw 18 block D min..max EXACT: got=['373..488', '370..573', '453..750', '411..494', '440..800', '450..574', '403..516', '363..679', '474..612', '268..332', '307..443', '334..646', '274..346', '340..420', '346..418', '260..310', '317..451', '332..511'] want=['373..488', '370..573', '453..750', '411..494', '440..800', '450..574', '403..516', '363..679', '474..612', '268..332', '307..443', '334..646', '274..346', '340..420', '346..418', '260..310', '317..451', '332..511'] match=True
+r054 D1 s39 tw 18 marginal counts EXACT: got=[4662, 4620, 5373, 15029, 13190, 12607, 10015, 2172, 16968, 10903, 7438, 5894, 19098, 18910, 18334, 10561, 11631, 3152] want=[4662, 4620, 5373, 15029, 13190, 12607, 10015, 2172, 16968, 10903, 7438, 5894, 19098, 18910, 18334, 10561, 11631, 3152] match=True
+r055 D1 s39 tw cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r056 probe s39 tw marginal p<=0.05 cells vs D1: got=(none) want=(none) match=True
+r057 probe s36 hi observed W cross-check (max/min vs sorted): got=True want=True match=True
+r058 probe s36 hi M_obs: got=474 want=474 match=True
+r059 probe s36 hi count: got=3926 want=3926 match=True
+r060 probe s36 hi trials+1: got=20001 want=20001 match=True
+r061 probe s36 hi p: got=0.196340 want=0.196340 match=True
+r062 probe s36 hi letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r063 probe s36 hi max cell(s): got=(sum,128,S=default) want=(sum,128,S=default) match=True
+r064 D1 s36 hi 18 W_c values EXACT: got=[313, 293, 474, 89, 356, 340, 353, 323, 289, 334, 358, 240, 299, 310, 211, 210, 226, 279] want=[313, 293, 474, 89, 356, 340, 353, 323, 289, 334, 358, 240, 299, 310, 211, 210, 226, 279] match=True
+r065 D1 s36 hi 18 block D min..max EXACT: got=['384..697', '403..696', '373..847', '410..499', '478..834', '440..780', '401..754', '462..785', '480..769', '244..578', '362..720', '347..587', '274..573', '358..668', '342..553', '261..471', '379..605', '308..587'] want=['384..697', '403..696', '373..847', '410..499', '478..834', '440..780', '401..754', '462..785', '480..769', '244..578', '362..720', '347..587', '274..573', '358..668', '342..553', '261..471', '379..605', '308..587'] match=True
+r066 D1 s36 hi 18 marginal counts EXACT: got=[9937, 5314, 3288, 18895, 9856, 8886, 16686, 7357, 17625, 1289, 9962, 14193, 14678, 7924, 12353, 5379, 17568, 2926] want=[9937, 5314, 3288, 18895, 9856, 8886, 16686, 7357, 17625, 1289, 9962, 14193, 14678, 7924, 12353, 5379, 17568, 2926] match=True
+r067 D1 s36 hi cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r068 probe s36 hi marginal p<=0.05 cells vs D1: got=(none) want=(none) match=True
+r069 probe s36 tw observed W cross-check (max/min vs sorted): got=True want=True match=True
+r070 probe s36 tw M_obs: got=360 want=360 match=True
+r071 probe s36 tw count: got=13653 want=13653 match=True
+r072 probe s36 tw trials+1: got=20001 want=20001 match=True
+r073 probe s36 tw p: got=0.682666 want=0.682666 match=True
+r074 probe s36 tw letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r075 probe s36 tw max cell(s): got=(max,256,S=16) want=(max,256,S=16) match=True
+r076 D1 s36 tw 18 W_c values EXACT: got=[166, 271, 323, 314, 215, 175, 123, 320, 252, 64, 308, 213, 360, 231, 339, 84, 188, 164] want=[166, 271, 323, 314, 215, 175, 123, 320, 252, 64, 308, 213, 360, 231, 339, 84, 188, 164] match=True
+r077 D1 s36 tw 18 block D min..max EXACT: got=['407..573', '296..567', '376..699', '392..706', '410..625', '474..649', '366..489', '404..724', '477..729', '271..335', '322..630', '348..561', '264..624', '370..601', '291..630', '261..345', '354..542', '376..540'] want=['407..573', '296..567', '376..699', '392..706', '410..625', '474..649', '366..489', '404..724', '477..729', '271..335', '322..630', '348..561', '264..624', '370..601', '291..630', '261..345', '354..542', '376..540'] match=True
+r078 D1 s36 tw 18 marginal counts EXACT: got=[14866, 9112, 4743, 7123, 5263, 9358, 200, 4436, 14287, 1895, 3525, 14509, 10563, 18167, 703, 17755, 12768, 13867] want=[14866, 9112, 4743, 7123, 5263, 9358, 200, 4436, 14287, 1895, 3525, 14509, 10563, 18167, 703, 17755, 12768, 13867] match=True
+r079 D1 s36 tw cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r080 probe s36 tw marginal p<=0.05 cells vs D1: got=(min,128,S=16), (max,256,S=default) want=(min,128,S=16), (max,256,S=default) match=True
+r081 probe s38 hi observed W cross-check (max/min vs sorted): got=True want=True match=True
+r082 probe s38 hi M_obs: got=356 want=356 match=True
+r083 probe s38 hi count: got=14563 want=14563 match=True
+r084 probe s38 hi trials+1: got=20001 want=20001 match=True
+r085 probe s38 hi p: got=0.728164 want=0.728164 match=True
+r086 probe s38 hi letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r087 probe s38 hi max cell(s): got=(min,128,S=32) want=(min,128,S=32) match=True
+r088 D1 s38 hi 18 W_c values EXACT: got=[114, 115, 198, 102, 314, 109, 148, 356, 161, 55, 227, 261, 40, 97, 231, 101, 332, 133] want=[114, 115, 198, 102, 314, 109, 148, 356, 161, 55, 227, 261, 40, 97, 231, 101, 332, 133] match=True
+r089 D1 s38 hi 18 block D min..max EXACT: got=['378..492', '452..567', '430..628', '392..494', '305..619', '462..571', '381..529', '474..830', '481..642', '272..327', '308..535', '306..567', '276..316', '332..429', '308..539', '257..358', '270..602', '327..460'] want=['378..492', '452..567', '430..628', '392..494', '305..619', '462..571', '381..529', '474..830', '481..642', '272..327', '308..535', '306..567', '276..316', '332..429', '308..539', '257..358', '270..602', '327..460'] match=True
+r090 D1 s38 hi 18 marginal counts EXACT: got=[4311, 8998, 12380, 8310, 208, 11201, 7161, 14545, 14057, 9857, 5581, 836, 16574, 19717, 3503, 7059, 212, 16408] want=[4311, 8998, 12380, 8310, 208, 11201, 7161, 14545, 14057, 9857, 5581, 836, 16574, 19717, 3503, 7059, 212, 16408] match=True
+r091 D1 s38 hi cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r092 probe s38 hi marginal p<=0.05 cells vs D1: got=(max,128,S=32), (sum,256,S=default), (min,256,S=32) want=(max,128,S=32), (sum,256,S=default), (min,256,S=32) match=True
+r093 probe s38 tw observed W cross-check (max/min vs sorted): got=True want=True match=True
+r094 probe s38 tw M_obs: got=290 want=290 match=True
+r095 probe s38 tw count: got=8069 want=8069 match=True
+r096 probe s38 tw trials+1: got=20001 want=20001 match=True
+r097 probe s38 tw p: got=0.403480 want=0.403480 match=True
+r098 probe s38 tw letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r099 probe s38 tw max cell(s): got=(max,256,S=32) want=(max,256,S=32) match=True
+r100 D1 s38 tw 18 W_c values EXACT: got=[107, 99, 206, 94, 113, 174, 105, 268, 177, 88, 167, 187, 109, 290, 117, 61, 156, 133] want=[107, 99, 206, 94, 113, 174, 105, 268, 177, 88, 167, 187, 109, 290, 117, 61, 156, 133] match=True
+r101 D1 s38 tw 18 block D min..max EXACT: got=['395..502', '468..567', '391..597', '424..518', '436..549', '376..550', '388..493', '378..646', '438..615', '239..327', '336..503', '336..523', '240..349', '321..611', '362..479', '259..320', '337..493', '345..478'] want=['395..502', '468..567', '391..597', '424..518', '436..549', '376..550', '388..493', '378..646', '438..615', '239..327', '336..503', '336..523', '240..349', '321..611', '362..479', '259..320', '337..493', '345..478'] match=True
+r102 D1 s38 tw 18 marginal counts EXACT: got=[9646, 18878, 6024, 19796, 17523, 6085, 5916, 676, 8682, 123, 16871, 3224, 116, 7188, 15591, 4032, 13480, 11539] want=[9646, 18878, 6024, 19796, 17523, 6085, 5916, 676, 8682, 123, 16871, 3224, 116, 7188, 15591, 4032, 13480, 11539] match=True
+r103 D1 s38 tw cell keys EXACT: got=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] want=['(sum,128,S=16)', '(sum,128,S=32)', '(sum,128,S=default)', '(max,128,S=16)', '(max,128,S=32)', '(max,128,S=default)', '(min,128,S=16)', '(min,128,S=32)', '(min,128,S=default)', '(sum,256,S=16)', '(sum,256,S=32)', '(sum,256,S=default)', '(max,256,S=16)', '(max,256,S=32)', '(max,256,S=default)', '(min,256,S=16)', '(min,256,S=32)', '(min,256,S=default)'] match=True
+r104 probe s38 tw marginal p<=0.05 cells vs D1: got=(min,128,S=32), (sum,256,S=16), (max,256,S=16) want=(min,128,S=32), (sum,256,S=16), (max,256,S=16) match=True
+r105 T1 (s39 window letter): got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r106 s36 window letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r107 s38 window letter: got=(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r108 section-7 consistency s39 hi: got=295/14383/0.719164/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=295/14383/0.719164/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r109 section-7 consistency s39 tw: got=360/13881/0.694065/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=360/13881/0.694065/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r110 section-7 consistency s36 hi: got=474/3926/0.196340/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=474/3926/0.196340/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r111 section-7 consistency s36 tw: got=360/13653/0.682666/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=360/13653/0.682666/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r112 section-7 consistency s38 hi: got=356/14563/0.728164/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=356/14563/0.728164/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r113 section-7 consistency s38 tw: got=290/8069/0.403480/(a) PER-CELL-SPREAD-NOISE-CONSISTENT want=290/8069/0.403480/(a) PER-CELL-SPREAD-NOISE-CONSISTENT match=True
+r114 classify --self-test TOTAL: got=True want=True match=True
+r115 scoped gate run1 == run2: got=True want=True match=True
+r116 scoped gate artifact == s45 artifact: got=True want=True match=True
+r117 scoped gate summary line: got=True want=True match=True
+r118 scoped gate failures line: got=True want=True match=True
+r119 full run-tests RED AT BASE kotoba.form: got=True want=True match=True
+r120 full run-tests artifact == s45 artifact: got=True want=True match=True
+r121 bar --self-test fixture pin: got=True want=True match=True
+r122 bar ledger eval run1 == run2: got=True want=True match=True
+r123 bar verdict: got=VERDICT: PENDING 1/4 want=VERDICT: PENDING 1/4 match=True
+r124 settle-bar-ledger.txt byte-identical to HEAD: got=True want=True match=True
+r125 find docs/evidence/gpu -name '*.sh' -> 0: got= want= match=True
+r126 analysis-s46.py re-run byte-identical: got=True want=True match=True
+
+TOTAL: 126 rows, 0 mismatched

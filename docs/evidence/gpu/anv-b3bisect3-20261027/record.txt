@@ -1,0 +1,190 @@
+JUN-59 -- session 23 record: THE B=3 PER-DISPATCH-WORK THRESHOLD
+BISECT, THIRD CUT (one new grid point between the session-22 bracket
+ends 250,000 and 270,834). INSTRUMENT channel.
+2026-10-27 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis: THE PER-DISPATCH GRID n at
+   FIXED dispatch count B=3 -- session 22's named residual "the flip
+   location inside (250,000, 270,834]" is reachable this tick and is
+   taken; the NDIV=3,5,6,... columns of L10 stay open and are NOT
+   taken; sessions 15-22's named residual "cross-day replication" is
+   NOT reachable this tick -- the UTC day is still 2026-10-27 at tick
+   time, protocol L4 named not hidden):
+
+     AT FIXED DISPATCH COUNT B=3, WHERE IN (250,000, 270,834] DOES
+     THE B=3 CLASS FLIP FROM INTERMEDIATE/MIXED TO CAPTURED? The
+     bisect grid point n = 260,417 = (250,000+270,834)//2 -- the EXACT
+     floor midpoint of the frozen bracket (bracket midpoint 260,417.0,
+     an integer), computed programmatically. NAMED, NOT HIDDEN:
+     unlike session 22's second cut the exact floor midpoint IS
+     reachable at the knob -- an exhaustive search over WORK_MUL
+     1..2,048 x NDIV 1..8,192 finds 81 pairs with (1,000,003*WORK_MUL)
+     //NDIV == 260,417 (derivation-census-s23.txt); the bisect uses
+     the smallest, (25,96), and its same-ratio double (50,192) is the
+     eq3 arm (40 of the 81 pairs have their double within bounds;
+     floor(2x/2) == floor(x)).
+
+   The B=3 class as a function of per-dispatch work was measured at
+   seven grid points before this session; the flip bracket was
+   (250,000, 270,834].
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such).
+   The instrument is session 22's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host).
+   The arms are (BATCH, WORK_MUL, NDIV) triples of the source's
+   existing knobs. NAMED, NOT HIDDEN: (25,96) and (50,192) are NEW
+   (WORK_MUL,NDIV) pairs of the WORK_MUL!=1 + NDIV!=1 combination
+   class (protocol L8); the eq3 arm re-tests that class at the
+   bisect grid with the same-ratio pair (50,192) vs (25,96).
+   Manifest cases-s23-a.txt's 24 cell lines are a BYTE-COPY of
+   session 22's (byte-equal to sessions 9-22's a-set; checked
+   programmatically). expected-corpus.sha256 a byte-copy of session
+   22's.
+
+3. CHAIN OF CUSTODY (host-verify-s23.txt): corpus 16/16 MATCH vs
+   session 2's committed census (host-side sha256sum -c from the
+   workdir root) + instrument + manifest + census expectation
+   local-vs-host MATCH 3/3 -- GO at 2026-10-27T20:09:09Z BEFORE the
+   builds and ALL 21 runs (TIMELINE says so). NAMED, NOT HIDDEN: one
+   pre-GO compile smoke of BOTH NEW knob pairs (throwaway dir
+   ~/anv-b33-smoke, gcc -O2 -DBATCH=3 -DWORK_MUL=25 -DNDIV=96 and
+   -DWORK_MUL=50 -DNDIV=192, rc=0 both, build stderr 0 bytes both,
+   host source digest a5e539f0... MATCH local, zero runs; the smoke
+   prints its own host timestamp 2026-10-27T20:09:09Z). BUILD
+   REPLICATION PIN (declared in the protocol in advance; prior
+   censuses parsed programmatically): c2 and c8 rebuilt binaries
+   BYTE-IDENTICAL to sessions 13-22's same-flag binaries; lo
+   BYTE-IDENTICAL to session 19's anv-n4-z3 (efc6f4ee...); hi
+   BYTE-IDENTICAL to session 22's anv-bb-mid (e0f22e91...) -- 4/4
+   pins BYTE-IDENTICAL; mid/eq3/b2m are NEW knob triples with NO
+   prior binary (named, not hidden).
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T20:09:42Z..20:09:49Z, stderr 0 bytes 21/21, 450
+   SAMPLE + 24 VERIFY lines each; every run's
+   batch=/work_mul=/ndiv=/n= == its arm's (B,WM,NDIV,(1,000,003*WM)
+   //NDIV); forcing reality 378/378; VERIFY mismatch 0 everywhere
+   (per-arm 0x7); S=8 fail-closed 126/126. The session-22 driver's
+   empty-rc-token shell typo ($rcc for ${rc}) is FIXED here: rc=0
+   21/21 printed AND independently established by every log's
+   terminal "# done cells=24" (21/21) -- run-window.txt records both,
+   plus a host-file-mtime cross-check (21/21 consistent). Host:
+   aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns. Session 22
+   ran 19:44:10Z..19:44:17Z -- this session runs ~25 minutes after
+   session 22, ALL on UTC day 2026-10-27.
+
+5. FINDINGS (publication-s23.txt, produced ONLY by analysis-s23.py
+   over the committed run logs, recorded run twice byte-identical --
+   diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (32, band 31..32), c8 32,652 vs committed 32,915 (-0.80%),
+       inside the frozen +/-5%.
+
+   (b) C2 BRACKET ANCHOR REPLICATION fired branch (a) -- BOTH bracket
+       ends replicate IN-SESSION at a byte-identical rebuilt binary
+       each: lo (the committed z3 knob pair) 1,129 vs committed
+       1,140 (-0.96%), class INTERMEDIATE/MIXED as committed; hi
+       (session 22's bisect knob pair (13,48)) 1,229 vs session 22's
+       1,224 (+0.41%), class CAPTURED as measured in session 22 --
+       the FIRST cross-session replication of the (13,48) knob pair
+       (closing session 22's "cross-session stability of mid"
+       residual).
+
+   (c) C3 PAIR-REPRESENTATION CHECK fired branch (a) -- eq3 ((50,192)
+       at the bisect grid, B=3) is class-identical to mid ((25,96)):
+       1,190 vs 1,186 (+0.34%), both CAPTURED (MEASURED at this one
+       grid point and B only).
+
+   (d) W1 THE ROW QUESTION fired branch (a) MID-CAPTURED -- mid (B=3,
+       n=260,417) is CAPTURED (pooled median 1,186 at
+       (sum,128,S=16); 18-cell min 1,026 -- >=1000 at all 18
+       pipeline-ok cells), so THE B=3 CLASS FLIP SITS IN (250,000,
+       260,417] n-units = (0.2499993, 0.2604162] work-units among
+       measured grid points -- the bracket's LOWER half again; the
+       (250,000, 270,834] bracket of session 22 is cut to its lower
+       half. AND b2m (B=2 at the bisect n) is FLOOR (31) -- "B=2
+       never captures" extends to n=260,417 at total work 0.5208324.
+       ONE session; protocol L2 binds (at fixed B=3, n and total work
+       co-vary BY CONSTRUCTION); nothing between grid points is
+       interpolated (L5); NO causal mechanism is claimed or measured.
+
+   (e) W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-
+       DISPATCH-WORK ROW now stands at EIGHT grid points -- 1/8 (599
+       INTERMEDIATE/MIXED), 1/4 (1,140 quote / 1,129 measured
+       INTERMEDIATE/MIXED), 0.2604162 (1,186 CAPTURED -- THIS
+       SESSION), 0.2708332 (1,224 quote / 1,229 measured CAPTURED),
+       0.2916657 (1,330 CAPTURED), 1/3 (1,578 CAPTURED), 1/2 (2,739
+       CAPTURED), 1.0 (5,520 CAPTURED) -- a MONOTONE picture across
+       measured points at class granularity (quote-only for committed
+       points L7; L5 no interpolation).
+
+   (f) W3 (pre-registered, descriptive) THE PAIRED EQUAL-GRID
+       COMPARISONS: (i) mid vs eq3 at identical n and B: 1,186 vs
+       1,190 CAPTURED/CAPTURED; (ii) mid vs b2m at identical n and
+       pair: 1,186 vs 31 CAPTURED/FLOOR; (iii) lo/mid/hi at
+       identical B=3: 1,129/1,186/1,229 rising with n, the class
+       flip between lo and mid.
+
+   (g) X1 (descriptive, host_ns): hi 325,467 = 1.002x session 22's
+       same-knob mid (324,916) -- the (13,48) pair's first
+       cross-session host_ns comparison; lo 305,159 = 1.008x session
+       22's (302,655) and 1.000x session 19's z3 (305,240); c2
+       678,063 = 0.998x session 22's; c8 2,380,546 = 0.995x;
+       mid/eq3/b2m first measured here (314,966 / 315,348 /
+       235,118). host_ns is the HOST-side proxy (L3), not a C
+       criterion.
+
+6. NAMED DEFECTS OF THIS SESSION (named, not hidden): none in the
+   recorded artifacts -- the session-22 $rcc transcript typo is fixed
+   (section 4); the arm table's 7 rows and the 21-run count agree;
+   the analysis ran twice byte-identical. NAMED, NOT HIDDEN: the
+   scoped GPU gate was executed four times this tick (two preliminary
+   terminal-only passes and the two recorded passes in
+   gate-run1.txt/gate-run2.txt -- all four GREEN 123/12162/0/0); the
+   recorded artifacts are the third and fourth executions.
+
+7. THE TICK'S FINDING IN ONE LINE: the B=3 capture-class flip in
+   per-dispatch work sits in (250,000, 260,417] n-units =
+   (0.2499993, 0.2604162] work-units -- the session-22 bracket
+   (250,000, 270,834] is cut to its lower half by the measured exact
+   floor midpoint (mid CAPTURED 1,186 at n=260,417, with both
+   bracket ends replicating in-session: lo 1,129
+   INTERMEDIATE/MIXED, hi 1,229 CAPTURED) -- and "B=2 never
+   captures" extends to n=260,417. WHY is UNMEASURED and NO causal
+   mechanism is claimed.
+
+8. RULE 4 unchanged: NOTHING MOVES -- no workgroup row, no :measured?
+   flag, no selection answer; accelerator-targets defaults remain
+   provisional (:measured? false); NO vendor optimization exists for
+   Intel and none is claimed. UNMEASURED named accordingly (any
+   causal mechanism; the flip location inside (250,000, 260,417] --
+   next bisect points would be n = (250,000+260,417)//2 = 255,208 if
+   reachable at the knob (checked next session), but no boundary
+   between grid points is ever claimed L5; L2 co-variation binds at
+   fixed B=3; cross-UTC-day replication L4; any cross-session
+   stability of mid/eq3/b2m (mid's pair replicated across sessions
+   via hi; eq3/b2m's pairs first measured here); the (50,192)
+   combination's behaviour at any other n/B; the NDIV=3,5,6,...
+   columns of L10; any per-dispatch grid outside {250,000, 260,417,
+   270,834, 291,667, 333,334, 500,001, 1,000,003} this session; the
+   GPU-side cost inside a B<=2 bracket L3; session 2's run-1 dip;
+   d160 spike; y6's host_ns outlier; the d8/x8 host_ns drop; the
+   session-20 B=2-arms host_ns excursion; the cause of session 21's
+   lo host_ns excursion and its reversion in session 22; anything off
+   this host). Gates (real runs this tick):
+   gpu_regime_classify.py --self-test TOTAL 2649/0 (pin); scoped GPU
+   gate GREEN 123 tests / 12162 assertions / 0 failures / 0 errors
+   recorded run 1 AND run 2 (scratch runner gpu_scoped_gate.cljk,
+   never committed); FULL run-tests.cljk RUN LIVE THIS TICK: exit 1,
+   RED AT BASE 'Could not find namespace: kotoba.form' at namespace
+   load (ADR-0362, outside this diff -- this diff touches NO .cljk
+   namespace) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0. CHAIN: this commit lands on the ONE open chain
+   branch bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit +
+   push only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a
+   hermes/ head, re-checked immediately before this push. Evidence:
+   docs/evidence/gpu/anv-b3bisect3-20261027/ + the ADR-0355 dated
+   note. (JUN-55, JUN-59)

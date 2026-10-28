@@ -1,0 +1,117 @@
+JUN-58 / JUN-55: the W = 1024 fast-level ratio at the LAST block is
+MEASURED -- 1.170 at the 40.5k level against 1.185 at the slow level,
+same operator, same block, same session (2026-10-24, chain worktree)
+
+WHAT THIS RECORD IS: the slice record of ONE MEASUREMENT -- the cell
+the previous op-order record's HONEST LEFT named UNMEASURED ("the
+W = 1024 fast-regime ratio at a late block position (UNMEASURED; no
+session schedules a regime)"). The full record is
+docs/evidence/gpu-subgroup-reduce-m1max-oporder-resweep-20261024/
+w1024-sum-last/ ({summary.md, run-log.txt, compile-log.txt, shaders/})
+plus its NOTES.md; this file is the slice's index and scope statement.
+Every number below is from that committed record (real hardware runs,
+2026-10-24 ~18:52 JST, Apple M1 Max, MSL arms, native-Metal channel).
+
+WHAT RAN: the op-order instrument (:sum LAST, dispatch order
+max,min,sum), :baseline vs :subgroup-reduce, W = 1024, n = 1000003,
+ONE named deviation -- 12 fresh processes instead of the cell
+protocol's 6 (the session-design reason is in NOTES.md; the per-run
+protocol and the paired statistic are unchanged). The session RAMPED,
+and the ramp landed :sum's last block at the fastest observed rule-1
+level in runs 8-12.
+
+THE FINDING (level-conditioned per-run paired ratios, ADR-0358's
+statistic):
+- :sum at the LAST block, slow level (128k, runs 1-5): 1.185.
+- :sum at the LAST block, fastest observed level (40,500..40,750,
+  runs 8-12): 1.170 (per-run 1.169..1.171).
+- the 1.170 sits inside the resweep's fast band 1.167-1.175
+  (resweep-20261023/w1024, measured at :max/:min at their later
+  blocks in sum-first sessions).
+So at W = 1024 the paired ratio follows the clock level at the fast
+level too, not the block's position: the same operator at the same
+block measures 1.185 slow and 1.170 fast within one session. The
+previous op-order session's ruling-out of the position confound (slow
+regime only) now has its fast-regime companion.
+
+NEW STRUCTURAL DATA (level structure only; the harness reads no
+clock): the ramp is block-ordered WITHIN a fresh process -- in runs
+8-12 :max's first block stayed slow while :sum's third block was
+already fast in the same process; in runs 8 and 12 :min's second
+block was still slow. Fourth session at this cell shape, third
+distinct regime structure. Cross-operator level identity: REFUTED
+(52/66 run pairs; min and sum refine max, min and sum cross-cut).
+
+NAMING TENSION, named (NOTHING silently upgraded): the claim
+protocol's regime definition (rule 1, GAP-1.15) calls the captured
+level "fastest observed"; the resweep's prose "fast regime" names the
+same level (its fast runs carried per-run medians 40,625). The
+pair-level analyzer's strict bins (fast <= 40k baseline) put ZERO
+pairs in the fast bin here (fastest pair baseline 40,375) as in every
+session at this W -- under that strict reading the <= 40k bin's
+ratio at any block position remains UNMEASURED at this W. Both
+readings are in NOTES.md; the fill claim is scoped to the
+resweep-named regime level.
+
+WHAT MOVED IN CODE (the one code file; gate machinery for this
+record's own arrival): scripts/gpu_regime_classify.py's identity
+corpus pin -- its contract says "A future record entering this set
+fails this pin on purpose: the corpus fact must be re-stated with its
+own story". This record entered the corpus's :sum-refines-:max set,
+the self-test (run as this slice's gate) went RED on the stale
+two-member expectation (AssertionError, exit 1 -- recorded, not
+hidden), and the pin is re-stated as the THREE-member set with this
+record's story (12 runs, :sum LAST refining :max's single level,
+min/sum cross-cut) plus one per-record pin for the record's partition
+facts. After the re-statement: 1954 assertions passed, 0 failed
+(corpus 54 -> 55). No other code, no test namespace.
+
+WHAT THIS SLICE DOES NOT LICENSE:
+- no `:measured?` flag, no `:measured-cell` :shapes, no selection
+  answer, no workgroup row (ADR-0355/0358) moves;
+- the all-12 mixed-regime medians (sum 1.179) are not cell medians
+  and replace nothing; the first-6 subset (sum 1.185, max 1.1845,
+  min 1.1845) reproduces the 6-run cells instead;
+- it fills none of the nine pending `:simdgroup-reduce` cross-day
+  rows (2026-10-25+) and claims nothing about them; this is the
+  op-order record kind, outside the flip contract's rows -- the flip
+  note and its basis evidence lists are untouched (the 2026-10-24
+  same-day re-session naming decision: named in record prose, not in
+  the lists);
+- UNMEASURED unchanged elsewhere: shapes beyond the two contract
+  cells; every Apple device but this M1 Max; the GLSL arm (blocked on
+  the wire-42 route, ADR 0371); the NVIDIA/Intel/ARM/AMD variant rows
+  entirely.
+
+GATE (real runs, this host, route-2 classpath, for THIS record):
+1. gpu_regime_classify.py --self-test -> exit 0, TOTAL: 1954
+   assertions passed, 0 failed (first run at the raw record: RED on
+   the identity pin, exit 1 -- named above).
+2. gpu-subgroup-reduce-metal-measure.py --self-test -> exit 0, 12
+   assertions passed, 0 failed.
+3. Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+   gpu_scoped_gate.cljk): Ran 102 tests containing 9774 assertions.
+   0 failures, 0 errors (no .cljk namespace in this diff).
+4. Full run-tests.cljk: RED AT BASE at `kotoba.form` ("Could not find
+   namespace: kotoba.form", the W3 port path, outside this diff),
+   re-verified live this tick. No green full suite is claimed.
+
+HONESTY STATE: IMPLEMENTED -- the pin re-statement (code + exercised
+by the classifier self-test) and the measurement record (hardware
+runs + analysis). MEASURED -- the level-conditioned ratios named in
+THE FINDING, on this host, this date, this session. UNMEASURED -- the
+analyzer's <= 40k pair-bin ratio at this W at any block position, and
+everything in the NOT LICENSED list. PROPOSED -- nothing new.
+
+HONEST LEFT: the <= 40k pair-bin ratio at this W; the nine
+`:simdgroup-reduce` cross-day rows and the shape-2 W = 512 later-day
+DATA run (2026-10-25+); SOUL.md backlog item 3 (blocked on hardware /
+ADR-0371; `:arm` / `:unknown` rows stay `:measured? false`); the W3
+`string-ascii-lower` residue.
+
+NOT PUSHED: blocker-first rule in force -- kotoba-lang/amu open PR
+#1553 (hermes/jun31-pe-shim-align, head `hermes/...`) verified open
+this tick (gh pr list), so this commit is kept locally on
+bot/amu-gpu-chain and pushes on the first tick after the blocker PR
+clears. Chain PR #1455 (bot/amu-gpu-chain) stays the one open chain
+PR.

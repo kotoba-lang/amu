@@ -1,0 +1,55 @@
+== date -u ==
+2026-10-27T08:23:40Z
+== glslangValidator --version ==
+Glslang Version: 11:15.1.0
+ESSL Version: OpenGL ES GLSL 3.20 glslang Khronos. 15.1.0
+GLSL Version: 4.60 glslang Khronos. 15.1.0
+SPIR-V Version 0x00010600, Revision 1
+GLSL.std.450 Version 100, Revision 1
+Khronos Tool ID 8
+SPIR-V Generator Version 11
+GL_KHR_vulkan_glsl version 100
+ARB_GL_gl_spirv version 100
+== gcc --version ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== shader compiles: glslangValidator -S comp -V --target-env vulkan1.2 <f> -o <f>.spv ==
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/probe-w128.glsl -o probe-w128.spv
+shaders/probe-w128.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/probe-w256.glsl -o probe-w256.spv
+shaders/probe-w256.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w128-max.emitted.glsl -o subgroup-reduce-w128-max.emitted.spv
+shaders/subgroup-reduce-w128-max.emitted.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w128-min.emitted.glsl -o subgroup-reduce-w128-min.emitted.spv
+shaders/subgroup-reduce-w128-min.emitted.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w128-sum.emitted.glsl -o subgroup-reduce-w128-sum.emitted.spv
+shaders/subgroup-reduce-w128-sum.emitted.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w256-max.emitted.glsl -o subgroup-reduce-w256-max.emitted.spv
+shaders/subgroup-reduce-w256-max.emitted.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w256-min.emitted.glsl -o subgroup-reduce-w256-min.emitted.spv
+shaders/subgroup-reduce-w256-min.emitted.glsl
+rc=0
+$ glslangValidator -S comp -V --target-env vulkan1.2 shaders/subgroup-reduce-w256-sum.emitted.glsl -o subgroup-reduce-w256-sum.emitted.spv
+shaders/subgroup-reduce-w256-sum.emitted.glsl
+rc=0
+== instrument compile ==
+$ gcc -O2 -o anv-subgroupsize gpu-subgroup-reduce-anv-subgroupsize.c -lvulkan
+rc=0
+== sha256 of .spv ==
+a1f0dccc4557bc5fb17e8f89170cc53cc9f6db3b42817a4a5de217f0a034ca1a  probe-w128.spv
+1691be2b85c46aa79dc1d86460c84a8992f743ff4be06927c8c850519ddbbd9d  probe-w256.spv
+e3eb4aeba6f4c471f1f11dcc3aba15a522c76cf09e63959f77c6e4ba6c49bebc  subgroup-reduce-w128-max.emitted.spv
+bb1a3755995e88bc70ac2957a86d478561a265ec831a2a7eaef52d9967e7fde2  subgroup-reduce-w128-min.emitted.spv
+30ed70141e1d567b40f62d54c0c38af33ca8dca77d4147d4d5bb50712dc4766f  subgroup-reduce-w128-sum.emitted.spv
+5a9b5fa3ec13f0f93e018310572960f1cfbb9f63890b3aaf8ac3a4f19b694251  subgroup-reduce-w256-max.emitted.spv
+f7755d83d6c44d27a304f301ed2184e01d90d07958ee93dacc42daa7f6433d9b  subgroup-reduce-w256-min.emitted.spv
+0ffc22f8d2449b04951a55bb7b9f8993c40098d3104e9cb9204fa42f09c3b9a8  subgroup-reduce-w256-sum.emitted.spv
+
+== NAMED DEFECTS OF THE FIRST COMPILE ATTEMPT (2026-10-27T08:22Z; corrected above; symptoms verbatim) ==
+1. glslangValidator stage classification: bare *.glsl input with no -S stage answer printed the full Usage text and rc=1 (glslang cannot auto-classify a bare .glsl suffix); fixed by adding -S comp.
+2. instrument compile: gpu-subgroup-reduce-anv-subgroupsize.c:330:36: error: VkPhysicalDeviceLimits has no member named timestampValidPeriod; did you mean timestampPeriod? -- timestampValidPeriod is a VkPhysicalDeviceVulkan12Properties member, not a limits member; fixed by reporting limits.timestampComputeAndGraphics instead.

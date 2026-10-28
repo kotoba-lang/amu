@@ -1,0 +1,192 @@
+{
+  "status": "PASS_DURABLE_SLEEP_RUNTIME",
+  "target": "aarch64-linux",
+  "compiler": {
+    "bytes": 3240448,
+    "sha256": "f782f3f2a8298c39feeedf873896c9858535a8e371786337632cc60f9e971b9f"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "imageSeccomp": "required",
+  "cases": [
+    {
+      "name": "replace-and-refusals",
+      "args": [],
+      "exit": 0,
+      "stdout": "1|1|hello|0|1|new|1|a|1|0|0|0|0|1|{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999967}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "fsync-trailing-bytes",
+      "args": [
+        "/Users/junkawasaki/github/workspaces/codex/native-cdci-qualification-20261023/durable-provider-lockread-arm/scope/finalFSYNC_SEPx"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "sleep",
+      "args": [],
+      "exit": 0,
+      "stdout": "slept|ok|{:status :ok :result 7 :fuel {:initial 100000000 :remaining 99999946}}\n",
+      "stderr": ""
+    },
+    {
+      "name": "sleep-over-60000",
+      "args": [
+        "sleep 60001"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "sleep-not-decimal",
+      "args": [
+        "sleep 1x"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "sleep-no-number",
+      "args": [
+        "sleep "
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "sleep-wire-not-granted",
+      "args": [
+        "sleep 1"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\n"
+    },
+    {
+      "name": "control-no-fsync-rule",
+      "args": [
+        "/Users/junkawasaki/github/workspaces/codex/native-cdci-qualification-20261023/durable-provider-lockread-arm/scope/ctlFSYNC_SEP"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"
+    },
+    {
+      "name": "control-no-sleep-rule",
+      "args": [
+        "sleep 10"
+      ],
+      "exit": 120,
+      "stdout": "{:status :trap :exit 120 :fuel {:initial 100000000 :remaining 99999998}}\n",
+      "stderr": "KEXE_TRAP {:kind :signal :signal :SIGSYS}\n"
+    }
+  ],
+  "controlCompilers": {
+    "no-fsync-rule": {
+      "mutation": "no fsync in the scope's seccomp set, in both runtimes",
+      "pin": {
+        "bytes": 1643008,
+        "sha256": "c76bc80a8ce4c907dccb55e8a33053424c15f6b1e68e6b9976eb1ba05fa6d9a2"
+      }
+    },
+    "no-sleep-rule": {
+      "mutation": "no clock_nanosleep in the seccomp filter, in both runtimes",
+      "pin": {
+        "bytes": 1643008,
+        "sha256": "4c7bf2cc289f19491a3929666e83ba1785f148e3bb94850664b954d4a0be9d29"
+      }
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 541,
+      "sha256": "807282afc305ed284486296b30f115faa031db859d5bdf8a46c70ea154f8bd6a"
+    },
+    "seed/00-ns-static.kotoba": {
+      "bytes": 15174,
+      "sha256": "e4aa5686dbb76ad923c50f0054e42a20deef910b78312c4ff7b54c3fb4ea891b"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 11962,
+      "sha256": "a3c8424e1a4a57de2cf72df5e75f0cb04c3da8547ae22ae5598c271093ca33e8"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 39427,
+      "sha256": "660bac926a904112dad5265e80b26a354632805122d8c46e5aa7860d2859cded"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381742,
+      "sha256": "30f90d5873f3b9ce482a3efbe1a11d014450fb7039265038ad80de8ad593ca23"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 88252,
+      "sha256": "8311440010b5a6ae5ca30127c269714756710b31085cbe669bcf6dcba259f4bf"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19376,
+      "sha256": "063d72ca10fd9214e3efe83fb57a2c8530ade95e1f3afcceea53ebbc5a7f19c0"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5579,
+      "sha256": "8abe266aaeac337810472459f458591228df28081bbcd9a95b8638b75db895d3"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 11557,
+      "sha256": "c2a660cb71dfaa12580ce2926591b54ea9faf19d791810861c414434d7591bea"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 155817,
+      "sha256": "1977a6278608eb10d4f952019c641023802f96ae1351ce69e6cb9770428c6ec7"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 146241,
+      "sha256": "2e92c84bf389a81d76a4930dda076729531cd915141e67b1075b9bc79012f7c4"
+    },
+    "seed/78-x86_64-platform.kotoba": {
+      "bytes": 10690,
+      "sha256": "99e99f629e28862f5c47d1d853afdfb805399dcde7f79717d1eabfe4c0d2f7df"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 17709,
+      "sha256": "9a8b74dc8d42b3cb6475f5368ee2204c3dc4e36ee0815e1511f0c2bcf148a355"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 18296,
+      "sha256": "9d6e833e784995e24e0a7ce8cd5b44ff469d5543f494e32eb5705813c0939a8e"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1502,
+      "sha256": "0fc9b588c8806b4e21341691473e526b8407bc998cf5ea520a4e75e04562f3ff"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "durability across a power cut: fsync returning is what is checked, not the device",
+    "a sleep interrupted by a signal (EINTR resumes it with the remaining time)"
+  ]
+}

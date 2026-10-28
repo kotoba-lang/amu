@@ -1,0 +1,328 @@
+;; Native compiler-side payload-v2 producer. The input is KIR, never a
+;; caller-supplied identity payload or "checked" bit. Entry 06 runs the native
+;; kr/nm/ck pipeline before any CID is produced. The initial pure KIR profile
+;; refuses unsupported effects, schemas and expression heads explicitly.
+;; Canonical encoding remains 04; alpha/SCC rules mirror osaho's authority.
+;; A header: error,counter,scope-size,function-count,current-function,phase,
+;; hash-capacity. Function records contain source map/name, resolved CID slot,
+;; group index+1, dependency bit and shared sparse-graph traversal metadata.
+(def dcp-fwidth 16)
+(defn- dcp-f [A :vector-i64 f :i64 k :i64] :i64
+  (vector-at A (+ 16 (* f dcp-fwidth) k)))
+(defn- dcp-put [A :vector-i64 f :i64 k :i64 v :i64] :vector-i64
+  (vector-assoc! A (+ 16 (* f dcp-fwidth) k) v))
+(defn- dcp-fail [A :vector-i64 code :i64] :string
+  (let [z (vector-assoc! A 0 (if (= (vector-at A 0) 0) code (vector-at A 0)))] ""))
+(defn- dcp-bad [A :vector-i64] :string (dcp-fail A 1))
+(defn- dcp-graph [A :vector-i64] :i64 (+ 16 (* (vector-at A 3) dcp-fwidth)))
+(defn- dcp-hash [A :vector-i64] :i64 (+ (dcp-graph A) (* 3 (vector-at A 11))))
+(defn- dcp-env [A :vector-i64] :i64 (+ (dcp-hash A) (vector-at A 6)))
+(defn- dcp-stack [A :vector-i64] :i64 (vector-at A 12))
+;; Graph node15 belongs to unresolved flags. Effects use a disjoint private
+;; tail after both traversal stacks and the64-word transient CID buffer.
+(defn- dcp-effects-base [A :vector-i64] :i64 (+ (dcp-stack A) (* 2 (vector-at A 3)) 64))
+(defn- dcp-fx [A :vector-i64 f :i64] :i64
+  (vector-at A (+ (dcp-effects-base A) f)))
+(defn- dcp-fx-put [A :vector-i64 f :i64 mask :i64] :vector-i64
+  (vector-assoc! A (+ (dcp-effects-base A) f) mask))
+(defn- dcp-resource [A :vector-i64] :i64
+  (vector-at A (+ (dcp-effects-base A) (vector-at A 3))))
+(defn- dcp-effect-layout? [A :vector-i64] :bool
+  (and (= (vector-at A 14) 1) (= (vector-at A 13) 0) (= (vector-at A 15) 0)
+       (< (+ (dcp-effects-base A) (vector-at A 3)) (vector-count A))
+       (dip-valid? (dcp-resource A))
+       (loop [f 0]
+         (if (= f (vector-at A 3)) true (and (= (dgg-f A f 15) 0) (recur (inc f)))))))
+(defn- dcp-text [M :vector-i64 S :string n :i64] :string
+  (let [t (kr-nf M n NF-TOK)]
+    (string-substring S (kr-tf M t TF-START) (kr-tf M t TF-END))))
+(defn- dcp-child [M :vector-i64 n :i64 i :i64] :i64
+  (loop [p (kr-first M n) left i]
+    (cond (= p 0) 0 (= left 0) p :else (recur (kr-next M p) (dec left)))))
+(defn- dcp-field [M :vector-i64 S :string n :i64 name :string] :i64
+  (if (not= (kr-kind M n) ND-MAP) 0
+    (loop [p (kr-first M n) found 0 count 0]
+      (if (= p 0) (if (= count 1) found 0)
+        (let [v (kr-next M p) hit (= (dcp-text M S p) name)]
+          (if (= v 0) 0
+            (recur (kr-next M v) (if hit v found) (+ count (if hit 1 0)))))))))
+(defn- dcp-string [M :vector-i64 n :i64] :string
+  (let [at (+ MM-LIT-BASE (* (kr-nf M n NF-AUX) MM-LIT-W))
+        begin (vector-at M (+ at LF-B)) count (vector-at M (+ at LF-LEN))
+        bytes (loop [i 0 v (vector-alloc count)]
+                (if (= i count) v
+                  (recur (inc i) (vector-assoc! v i (vector-at M (+ MM-LITB-BASE begin i))))))]
+    (string-from-utf8 (bytes-from-vector-i64 bytes))))
+(defn- dcp-sym [name :string] :string (dc-atom "sym" name))
+(defn- dcp-list [items [:list :string]] :string (dc-collection "list" items false))
+(defn- dcp-vec [items [:list :string]] :string (dc-collection "vec" items false))
+;; These fixed maps are already in decoded-key order; 04 validates their bytes
+;; before hashing. Avoid an 8192-node sorting arena for each tiny fixed map.
+(defn- dcp-map [items [:list :string]] :string (dc-collection "map" items false))
+(defn- dcp-name-hash [M :vector-i64 S :string n :i64] :i64
+  (let [t (kr-nf M n NF-TOK)] (mem-hash-str S (kr-tf M t TF-START) (kr-tf M t TF-END))))
+(defn- dcp-lookup [M :vector-i64 S :string A :vector-i64 n :i64] :i64
+  (let [cap (vector-at A 6) base (dcp-hash A)]
+    (loop [i (bit-and (dcp-name-hash M S n) (dec cap)) left cap]
+      (let [f (vector-at A (+ base i))]
+        (cond (= f 0) -1 (= left 0) -1
+              (= (kr-same M S n (dcp-f A (dec f) 1)) 1) (dec f)
+              :else (recur (bit-and (inc i) (dec cap)) (dec left)))))))
+(defn- dcp-env-find [M :vector-i64 S :string A :vector-i64 n :i64] :i64
+  (loop [i (dec (vector-at A 2))]
+    (if (< i 0) -1
+      (let [at (+ (dcp-env A) (* i 2))]
+        (if (= (kr-same M S n (vector-at A at)) 1) (vector-at A (inc at))
+          (recur (dec i)))))))
+(defn- dcp-bind [M :vector-i64 A :vector-i64 n :i64] :string
+  (let [count (vector-at A 2) index (vector-at A 1)]
+    (if (or (= n 0) (not= (kr-kind M n) ND-SYM) (>= count dc-nodes) (>= index dc-nodes)) (dcp-bad A)
+      (let [at (+ (dcp-env A) (* count 2))
+            a (vector-assoc! A at n) b (vector-assoc! A (inc at) index)
+            c (vector-assoc! A 1 (inc index)) d (vector-assoc! A 2 (inc count))]
+        (dcp-sym (string-concat "k" (mem-u2dec index)))))))
+(defn- dcp-type [M :vector-i64 S :string A :vector-i64 n :i64 depth :i64] :string
+  (cond (> depth 64) (dcp-bad A)
+    (= (kr-kind M n) ND-KW)
+      (let [text (dcp-text M S n)]
+        (if (or (= text ":i64") (= text ":bool") (= text ":string") (= text ":bytes")
+                (= text ":vector-i64") (= text ":keyword") (= text ":list")
+                (= text ":pair") (= text ":option") (= text ":result") (= text ":map") (= text ":set"))
+          (dc-kw (string-substring text 1 (string-length text))) (dcp-bad A)))
+    (= (kr-kind M n) ND-VEC)
+      (if (= (dcp-text M S (kr-first M n)) ":ref") (dcp-fail A 5)
+        (dcp-vec (loop [p (kr-first M n) out (typed-list-new [:list :string])]
+          (if (= p 0) out (recur (kr-next M p)
+            (typed-list-conj [:list :string] out (dcp-type M S A p (inc depth))))))))
+    :else (dcp-bad A)))
+;; The native checker's registered wire vocabulary, named by the pinned
+;; language catalog before it is sealed into payload-v2. No grant is created.
+;; Wire35's byte payload variant has the same primary fs/app-data name.
+(defn- dcp-effect-name [wire :i64] :string
+  (case wire 3 "hash/sha256" 7 "clock/now" 11 "llm/generate"
+    20 "process/spawn" 23 "entropy/draw" 33 "env/read" 34 "fs/browse" 35 "fs/app-data"
+    37 "io/write" 38 "cli/args" 39 "io/write-error" 40 "sys/cwd" 41 "io/read" 42 "gpu/compute"
+    43 "net/listen" 44 "net/accept" 45 "net/dial" 46 "net/read" 47 "net/write" ""))
+(defn- dcp-effect-mask [M :vector-i64 S :string map :i64] :i64
+  (let [row (dcp-field M S map ":effects")]
+    (cond (= row 0) 0 (not= (kr-kind M row) ND-SET) -1
+      :else (loop [p (kr-first M row) mask 0]
+        (if (= p 0) mask
+          (let [tag (kr-first M p) id (kr-next M tag) wire (kr-nf M id NF-AUX)
+                bit (ck-wire-bit wire)]
+            (if (or (not= (kr-kind M p) ND-VEC) (not= (kr-count M p) 2)
+                    (not= (kr-kind M tag) ND-KW) (not= (dcp-text M S tag) ":cap/call")
+                    (not= (kr-kind M id) ND-INT) (= (dcp-effect-name wire) "")
+                    (not= (bit-and mask bit) 0)) -1
+              (recur (kr-next M p) (bit-or mask bit)))))))))
+(defn- dcp-effect-row [mask :i64] :string
+  (if (= mask 0) (dc-collection "set" (typed-list-new [:list :string]) false)
+  (dc-collection "set"
+    (loop [wire 0 out (typed-list-new [:list :string])]
+      (if (= wire 48) out
+        (let [name (dcp-effect-name wire)]
+          (recur (inc wire) (if (and (not= name "") (not= (bit-and mask (ck-wire-bit wire)) 0))
+            (typed-list-conj [:list :string] out (dc-kw name)) out))))) true)))
+;; This walk runs only after the original kr/name/check admission. Direct
+;; capability calls are joined with the already sealed definition graph;
+;; declaration rows must equal this inferred transitive row, not mint it.
+(defn- dcp-direct-effects [M :vector-i64 S :string A :vector-i64 n :i64 depth :i64] :i64
+  (if (or (= n 0) (> depth (dip-expression-depth (dcp-resource A)))) -1
+    (let [kind (kr-kind M n)
+          cap (and (= kind ND-LIST) (= (dcp-text M S (kr-first M n)) "typed-cap-call"))
+          id (dcp-child M n 1) wire (kr-nf M id NF-AUX)
+          own (if cap (if (and (= (kr-kind M id) ND-INT) (not= (dcp-effect-name wire) ""))
+                        (ck-wire-bit wire) -1) 0)]
+      (if (or (< own 0) (not (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET)))) own
+        (loop [p (kr-first M n) mask own]
+          (if (= p 0) mask
+            (let [child (dcp-direct-effects M S A p (inc depth))]
+              (if (< child 0) -1 (recur (kr-next M p) (bit-or mask child))))))))))
+(defn- dcp-effects [M :vector-i64 S :string A :vector-i64 doc :i64] :vector-i64
+  (let [ready (if (dcp-effect-layout? A) A (vector-assoc! A 0 9))
+        direct (loop [f 0]
+        (if (or (= f (vector-at A 3)) (not= (vector-at A 0) 0)) A
+          (let [mask (dcp-direct-effects M S A (dcp-field M S (dcp-f A f 0) ":body") 0)
+                save (if (< mask 0) (vector-assoc! A 0 4) (dcp-fx-put A f mask))]
+            (recur (inc f)))))
+        closed (loop [round 0]
+          (if (not= (vector-at A 0) 0) A
+          (if (> round (vector-at A 3)) (vector-assoc! A 0 4)
+            (let [changes (loop [f 0 count 0]
+              (if (= f (vector-at A 3)) count
+                (let [old (dcp-fx A f)
+                      mask (loop [edge (dgg-f A f 14) acc old]
+                        (if (= edge 0) acc
+                          (recur (dgg-edge A edge 1) (bit-or acc (dcp-fx A (dgg-edge A edge 0))))))
+                      save (dcp-fx-put A f mask)]
+                  (recur (inc f) (+ count (if (= old mask) 0 1))))))]
+              (if (= changes 0) A (recur (inc round)))))))
+        checked (loop [f 0 union 0]
+          (cond (not= (vector-at A 0) 0) A
+            (= f (vector-at A 3))
+              (if (= union (dcp-effect-mask M S doc)) A (vector-assoc! A 0 4))
+            (not= (dcp-fx A f) (dcp-effect-mask M S (dcp-f A f 0))) (vector-assoc! A 0 4)
+            :else (recur (inc f) (bit-or union (dcp-fx A f)))))]
+    (if (dcp-effect-layout? A) A (vector-assoc! A 0 9))))
+(defn- dcp-group-effects [A :vector-i64 C :vector-i64] :i64
+  (loop [i 0 mask 0]
+    (if (= i (vector-count C)) mask (recur (inc i) (bit-or mask (dcp-fx A (vector-at C i)))))))
+;; Reserved native intrinsics are identities, not a claim of purity. In
+;; particular assoc and assoc! must retain distinct aliasing semantics.
+(defn- dcp-primitive-op? [s :string] :bool
+  (or (= s "+") (= s "-") (= s "*") (= s "quot") (= s "rem")
+      (= s "=") (= s "not=") (= s "<") (= s ">") (= s "<=") (= s ">=")
+      (= s "if") (= s "do") (= s "not") (= s "and") (= s "or")
+      (= s "inc") (= s "dec") (= s "bit-and") (= s "bit-or") (= s "bit-xor")
+      (= s "bit-not") (= s "i64-shift-left") (= s "i64-shift-right") (= s "u64-shift-right")
+      (= s "vector-new") (= s "vector-count") (= s "vector-at") (= s "nth")
+      (= s "vector-alloc") (= s "vector-conj") (= s "vector-assoc") (= s "vector-assoc!")
+      (= s "string-length") (= s "string-byte-length") (= s "string=?")
+      (= s "string-concat") (= s "string-substring") (= s "string-code-point-at")
+      (= s "string-compare") (= s "string-index-of") (= s "string-from-utf8")
+      (= s "bytes-from-vector-i64") (= s "vector-i64-from-bytes")
+      (= s "bytes-empty") (= s "bytes-count") (= s "bytes-at")
+      (= s "bytes-concat") (= s "bytes-slice")
+      (= s "typed-list-new") (= s "typed-list-nth") (= s "typed-list-conj")
+      (= s "count") (= s "conj")
+      (= s "pair") (= s "pair-first") (= s "pair-second")
+      (= s "result-ok-of") (= s "result-err-of") (= s "result-ok?-of")
+      (= s "result-value-of") (= s "result-error-of") (= s "option-some-of")
+      (= s "option-none-of") (= s "option-some?-of") (= s "option-value-of")))
+(defn- dcp-symbol [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string]] :string
+  (let [name (dcp-text M S n) local (dcp-env-find M S A n)]
+    (cond (>= local 0) (dcp-sym (string-concat "k" (mem-u2dec local)))
+      (= name "nil") "81636e696c"
+      (= name "true") "8264626f6f6cf5"
+      (= name "false") "8264626f6f6cf4"
+      :else (let [f (dcp-lookup M S A n)]
+        (if (< f 0) (if (or (dcp-primitive-op? name) (= name "typed-cap-call")) (dcp-sym name) (dcp-bad A))
+          (let [edge (if (= (vector-at A 5) 0) (dgg-add A (vector-at A 4) f)
+                       (if (dgg-has? A (vector-at A 4) f) A (dgg-bad A)))]
+            (cond (= (vector-at A 5) 0) (dcp-sym name)
+              (> (dcp-f A f 3) 0)
+                (dcp-vec (typed-list-new [:list :string] (dc-kw "kotoba.definition/group")
+                  (dc-int (mem-u2dec (dec (dcp-f A f 3))))))
+              (= (dcp-f A f 2) 0) (dcp-fail A 3)
+              :else (let [seen (dcp-put A f 4 1)
+                          cid (typed-list-nth [:list :string] R (dec (dcp-f A f 2)))]
+                (dcp-vec (typed-list-new [:list :string] (dc-kw "kotoba.definition/ref") (dc-str cid)))))))))))
+(defn- dcp-sequence [M :vector-i64 S :string A :vector-i64 p :i64 R [:list :string] depth :i64] [:list :string]
+  (loop [node p out (typed-list-new [:list :string])]
+    (if (or (= node 0) (not= (vector-at A 0) 0)) out
+      (recur (kr-next M node) (typed-list-conj [:list :string] out (dcp-form M S A node R depth))))))
+(defn- dcp-let [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
+  (let [bindings (dcp-child M n 1) body (dcp-child M n 2) scope (vector-at A 2)]
+    (if (or (not= (kr-count M n) 3) (not= (kr-kind M bindings) ND-VEC)
+            (not= (rem (kr-count M bindings) 2) 0)) (dcp-bad A)
+      (let [pairs (loop [p (kr-first M bindings) out (typed-list-new [:list :string])]
+                    (if (or (= p 0) (not= (vector-at A 0) 0)) out
+                      (let [v (kr-next M p) value (dcp-form M S A v R depth)
+                            renamed (dcp-bind M A p)]
+                        (recur (kr-next M v) (typed-list-conj [:list :string]
+                          (typed-list-conj [:list :string] out renamed) value)))))
+            value (dcp-form M S A body R depth) restore (vector-assoc! A 2 scope)]
+        (dcp-list (typed-list-new [:list :string] (dcp-sym "let") (dcp-vec pairs) value))))))
+(defn- dcp-branch [M :vector-i64 S :string A :vector-i64 binder :i64 body :i64 R [:list :string] depth :i64] [:list :string]
+  (let [scope (vector-at A 2) name (dcp-bind M A binder)
+        value (dcp-form M S A body R depth) restore (vector-assoc! A 2 scope)]
+    (typed-list-new [:list :string] name value)))
+(defn- dcp-match [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
+  (let [name (dcp-text M S (kr-first M n)) type (dcp-type M S A (dcp-child M n 1) depth)
+        value (dcp-form M S A (dcp-child M n 2) R depth)]
+    (cond (= name "result-match-of")
+      (if (not= (kr-count M n) 7) (dcp-bad A)
+        (let [ok (dcp-branch M S A (dcp-child M n 3) (dcp-child M n 4) R depth)
+              err (dcp-branch M S A (dcp-child M n 5) (dcp-child M n 6) R depth)]
+          (dcp-list (typed-list-new [:list :string] (dcp-sym name) type value
+            (typed-list-nth [:list :string] ok 0) (typed-list-nth [:list :string] ok 1)
+            (typed-list-nth [:list :string] err 0) (typed-list-nth [:list :string] err 1)))))
+      (= name "option-match")
+      (if (not= (kr-count M n) 6) (dcp-bad A)
+        (let [none (dcp-form M S A (dcp-child M n 3) R depth)
+              some (dcp-branch M S A (dcp-child M n 4) (dcp-child M n 5) R depth)]
+          (dcp-list (typed-list-new [:list :string] (dcp-sym name) type value none
+            (typed-list-nth [:list :string] some 0) (typed-list-nth [:list :string] some 1)))))
+      (= name "variant-match")
+      (if (or (not= (kr-count M n) 4) (not= (kr-kind M (dcp-child M n 3)) ND-VEC)) (dcp-bad A)
+        (let [branches (loop [p (kr-first M (dcp-child M n 3)) out (typed-list-new [:list :string])]
+          (if (or (= p 0) (not= (vector-at A 0) 0)) out
+            (if (or (not= (kr-kind M p) ND-VEC) (not= (kr-count M p) 3))
+              (let [bad (dcp-bad A)] out)
+              (let [branch (dcp-branch M S A (dcp-child M p 1) (dcp-child M p 2) R depth)
+                    tag (dcp-type M S A (dcp-child M p 0) depth)]
+                (recur (kr-next M p) (typed-list-conj [:list :string] out
+                  (dcp-vec (typed-list-new [:list :string] tag
+                    (typed-list-nth [:list :string] branch 0) (typed-list-nth [:list :string] branch 1)))))))))]
+          (dcp-list (typed-list-new [:list :string] (dcp-sym name) type value (dcp-vec branches)))))
+      :else (dcp-bad A))))
+(defn- dcp-form [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
+  (cond (or (= n 0) (> depth (dip-expression-depth (dcp-resource A))) (not= (vector-at A 0) 0)) (dcp-bad A)
+    (= (kr-kind M n) ND-INT) (dc-int (mem-u2dec (kr-nf M n NF-AUX)))
+    (= (kr-kind M n) ND-STR) (dc-str (dcp-string M n))
+    (= (kr-kind M n) ND-KW)
+      (let [text (dcp-text M S n)] (dc-kw (string-substring text 1 (string-length text))))
+    (= (kr-kind M n) ND-SYM) (dcp-symbol M S A n R)
+    (= (kr-kind M n) ND-VEC)
+      (if (or (= (dcp-text M S (kr-first M n)) ":ref")
+              (= (dcp-text M S (kr-first M n)) ":kotoba.definition/ref")
+              (= (dcp-text M S (kr-first M n)) ":kotoba.definition/group")) (dcp-bad A)
+        (dcp-vec (dcp-sequence M S A (kr-first M n) R (inc depth))))
+    (= (kr-kind M n) ND-LIST)
+      (let [head (dcp-text M S (kr-first M n))]
+        (cond (= head "let") (dcp-let M S A n R (inc depth))
+              (or (= head "result-match-of") (= head "option-match") (= head "variant-match")) (dcp-match M S A n R (inc depth))
+              :else (dcp-list (dcp-sequence M S A (kr-first M n) R (inc depth)))))
+    :else (dcp-bad A)))
+(defn- dcp-params [M :vector-i64 S :string A :vector-i64 f :i64] :string
+  (let [map (dcp-f A f 0) params (dcp-field M S map ":params")
+        a (vector-assoc! A 1 0) b (vector-assoc! A 2 0) c (vector-assoc! A 4 f)]
+    (if (not= (kr-kind M params) ND-VEC) (dcp-bad A)
+      (dcp-vec (loop [p (kr-first M params) out (typed-list-new [:list :string])]
+        (if (= p 0) out (recur (kr-next M p) (typed-list-conj [:list :string] out (dcp-bind M A p)))))))))
+(defn- dcp-interface [M :vector-i64 S :string A :vector-i64 f :i64] :string
+  (let [map (dcp-f A f 0) ps (dcp-field M S map ":params") pt (dcp-field M S map ":param-types")
+        result (dcp-type M S A (dcp-field M S map ":result") 0)
+        arity (dc-entry "arity" (dc-int (mem-u2dec (kr-count M ps))))]
+    (if (= pt 0) (dcp-map (typed-list-new [:list :string] arity (dc-entry "result" result)))
+      (dcp-map (typed-list-new [:list :string] arity (dc-entry "params" (dcp-type M S A pt 0))
+        (dc-entry "result" result))))))
+(defn- dcp-clear-deps [A :vector-i64] :vector-i64
+  (loop [i 0 state A]
+    (if (= i (vector-at state 3)) state (recur (inc i) (dcp-put state i 4 0)))))
+(defn- dcp-contains [values [:list :string] s :string] :bool
+  (loop [i 0] (if (= i (vector-count values)) false
+    (or (= (typed-list-nth [:list :string] values i) s) (recur (inc i))))))
+(defn- dcp-deps [A :vector-i64 R [:list :string]] :string
+  (let [values (loop [f 0 out (typed-list-new [:list :string])]
+    (if (= f (vector-at A 3)) out
+      (let [slot (dcp-f A f 2) cid (if (> slot 0) (typed-list-nth [:list :string] R (dec slot)) "")]
+        (recur (inc f) (if (and (> (dcp-f A f 4) 0) (not (dcp-contains out (dc-str cid))))
+          (typed-list-conj [:list :string] out (dc-str cid)) out)))))]
+    (dc-collection "vec" values (>= (vector-count values) 2))))
+(defn- dcp-payload-effects [kir :string interface :string deps :string effects :i64] :string
+  (dcp-map (typed-list-new [:list :string]
+    (dc-entry "dependencies" deps) (dc-entry "desugar-contract-version" (dc-int "2"))
+    (dc-entry "effect-row" (dcp-effect-row effects))
+    (dc-entry "interface" interface) (dc-entry "kotoba.definition-identity/version" (dc-int "2"))
+    (dc-entry "profile-version" (dc-int "6")) (dc-entry "typed-kir" kir))))
+(defn- dcp-payload [kir :string interface :string deps :string] :string
+  (dcp-payload-effects kir interface deps 0))
+(defn- dcp-function-payload [M :vector-i64 S :string A :vector-i64 f :i64 R [:list :string]] :string
+  (let [clear (dcp-clear-deps A) params (dcp-params M S A f)
+        body (dcp-form M S A (dcp-field M S (dcp-f A f 0) ":body") R 0)
+        interface (dcp-interface M S A f)]
+    (dcp-payload-effects (dcp-map (typed-list-new [:list :string] (dc-entry "body" body)
+      (dc-entry "op" (dc-kw "kotoba.definition/function")) (dc-entry "params" params))) interface (dcp-deps A R) (dcp-fx A f))))
+(defn- dcp-cid-buffer [A :vector-i64] :i64 (+ (dcp-stack A) (* 2 (vector-at A 3))))
+(defn- dcp-keep-cid [A :vector-i64 hex :string] :bool
+  (let [cid (if (= (vector-at A 0) 0) (dc-definition-cid-resource hex (dcp-resource A)) "")]
+    (if (not= (string-length cid) 59) (let [bad (dcp-fail A 7)] false)
+      (loop [i 0]
+        (if (= i 59) true
+          (let [z (vector-assoc! A (+ (dcp-cid-buffer A) i) (string-code-point-at cid i))]
+            (recur (inc i))))))))
+(defn- dcp-saved-cid [A :vector-i64] :string
+  (let [bytes (loop [i 0 v (vector-alloc 59)]
+    (if (= i 59) v (recur (inc i) (vector-assoc! v i (vector-at A (+ (dcp-cid-buffer A) i))))))]
+    (string-from-utf8 (bytes-from-vector-i64 bytes))))

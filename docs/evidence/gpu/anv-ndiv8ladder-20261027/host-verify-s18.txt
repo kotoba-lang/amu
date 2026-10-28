@@ -1,0 +1,71 @@
+== host-verify (JUN-59 THE NDIV=8 DISPATCH LADDER, session 18) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 17's committed expected-corpus.sha256, itself a ==
+== programmatic regeneration of that census -- byte-copy identity ==
+== recorded in derivation-census-s18.txt). ZERO derivation edits this ==
+== session: the instrument is session 17's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the ladder rungs are new (BATCH,NDIV=8) pairs ==
+== of the source's existing knobs. ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative -- the session-17 driver cwd error is not repeated) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s18-a.txt: local=ca6893efaa7351d10e1cd0f53ad7791a260e2cc072a666668b714ea6fa1cd64e host=ca6893efaa7351d10e1cd0f53ad7791a260e2cc072a666668b714ea6fa1cd64e
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-17 committed file re-sha256 local ==
+== == the uploaded host copy == the session-18 committed copy): ==
+== a5e539f0... MATCH (derivation-census-s18.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-ndiv8ladder-20261027:
+  2026-10-27T17:24:23Z  mkdir + cp -a of session 17's verified corpus
+                        copy (shaders/ -- 100 files: the 16 corpus
+                        files + the same staged set sessions 3-17
+                        used)
+  2026-10-27T17:24:24Z  custody: corpus sha256sum -c from the workdir
+                        root 16/16 OK, local-vs-host 3/3 MATCH
+                        (single attempt -- the session-17 driver cwd
+                        error is not repeated)
+  2026-10-27T17:24:45Z  pre-GO compile smoke (NAMED, NOT HIDDEN):
+                        throwaway dir ~/anv-n8-smoke, gcc -O2
+                        -DBATCH=3 -DNDIV=8 (NEW knob pair -- NDIV=8
+                        has never been compiled at BATCH!=8 in this
+                        series), rc=0, build stderr 0 bytes, host
+                        source digest a5e539f0... MATCH local, ZERO
+                        runs, ZERO timing -- the session-9 D2 lesson
+                        applied by design
+  2026-10-27T17:24:45Z  GO (custody complete) -- BEFORE the builds
+                        (17:25:09Z..17:25:10Z) and ALL 27 runs
+                        (17:25:31Z..17:25:39Z); run-window.txt and
+                        build-census-s18.txt carry those transcripts
+NAMED, NOT HIDDEN (protocol arithmetic slip): protocol.txt section 2's
+opening line says "10 arms, 3 runs each = 30 fresh processes" and
+section 6 says "the 30 committed run logs" -- the arm TABLE in
+section 2 lists 9 rows (c2, y2..y8, c8) and the run is 27 fresh
+processes (9 arms x 3 runs = 27 run logs), matching the table and
+the driver transcript in run-window.txt. The slip is in the frozen
+text (written once, never rewritten -- the session-6/16/17
+precedent: the defect sits in the protocol design at freeze time and
+is named, not erased); the analysis parses the 27 logs of the arm
+table and every count in the publication is computed from them.

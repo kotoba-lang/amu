@@ -1,0 +1,33 @@
+# JUN-59 -- the ANCHOR-CLASS SETTLING BAR ledger (bar frozen in
+# docs/evidence/gpu/anv-b3settlebar-20261027/settle-bar.txt, freeze
+# stamp 2026-10-27T23:40:56Z). APPEND-ONLY: one candidate reading per
+# line, chronological (append) order:
+#   day=<YYYY-MM-DD> session=<tag> class=<CAPTURED|INTERMEDIATE/MIXED|FLOOR>
+#       median=<int> min=<int> flag=<token>
+# flag=none qualifies; any other token is FLAGGED (recorded, no
+# reading, no UTC-day slot consumed). COUNTED = the FIRST qualifying
+# reading of each UTC day in ledger order; later qualifying same-day
+# readings are named descriptive content and do not advance the bar
+# (settle-bar.txt section 2). Verdict = settle-bar-eval.py's output
+# over this file (anv-b3settlebar-20261027/settle-bar-eval.py, frozen;
+# 38-assertion frozen fixture self-test). NEVER hand-write a verdict.
+#
+# LEDGER CONSTRUCTION (frozen in session 31's protocol.txt section 0
+# before the s31 runs): the ledger starts with the first BAR-EXECUTING
+# session (s31, the first tick of the first cross-UTC-day reachable
+# after the freeze). Sessions 26-29's readings predate the bar and
+# were not bar-executing sessions; they are the bar's frozen QUOTE-
+# ONLY reference basis (settle-bar.txt F3/D3 -- D3: "a FUTURE
+# qualifying reading"; the evaluator's frozen fixtures all begin at
+# s31/2026-10-28) and are carried as prior content, NOT backfilled as
+# ledger entries. NAMED, NOT HIDDEN: the alternative construction
+# (backfill s26 as day 2026-10-27's slot) is textually arguable and
+# was REJECTED in the s31 protocol freeze; the bar's COST (at least
+# four qualifying UTC days) is unchanged under either construction.
+day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985 flag=none
+day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982 flag=none
+day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987 flag=none
+day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993 flag=none
+day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991 flag=none
+day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992 flag=none
+day=2026-10-28 session=s39 class=INTERMEDIATE/MIXED median=1146 min=986 flag=none

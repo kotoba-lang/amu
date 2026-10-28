@@ -1,0 +1,251 @@
+JUN-59 -- session 45 record: THE PER-CELL WANDER
+REPARTITION PROBE
+(does ANY ok cell's within-window block-level wander -- the
+range of the cell's own 12 block pooled-median gpu_ticks within
+one window, held cell by cell instead of through the block-min
+tail -- exceed WITHIN-window run-exchangeable sampling noise?).
+ANALYSIS slice -- NO new hardware this tick (every input quantity
+was MEASURED in sessions 36/38/39; this session re-derives
+statistics from their COMMITTED run logs).
+2026-10-28 (UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): SESSION 44'S FIRST-NAMED CANDIDATE ROW
+   "a PER-CELL WANDER probe (the per-cell analog of session 40 --
+   does any cell's within-window block-level wander exceed
+   WITHIN-window run-repartition noise? the s40 probe walked the
+   block-min wander only)" -- taken on ONE observable axis: per
+   (window, arm), does ANY ok cell's within-window block-level
+   wander, W_c = max_b V_{b,c} - min_b V_{b,c} over the 12 blocks
+   (V = the block's per-cell pooled median = the exact 38th order
+   statistic of the block's 75 samples; the s35/s36-frozen block
+   unit UNCHANGED; W_c an exact INTEGER), EXCEED the within-window
+   run-repartition null (the 36 runs of one arm within one window
+   are exchangeable across blocks)? The primary per-probe
+   statistic is the MAX-T, M_obs = max_c W_c, with the max taken
+   INSIDE each resampling trial too (family-wise over the 18
+   cells). Resampling: 20,000 trials per probe,
+   random.Random(20261028) consumed in the frozen probe order s39
+   hi / s39 tw / s36 hi / s36 tw / s38 hi / s38 tw (session 40's
+   order UNCHANGED), per trial one shuffle of list(range(36))
+   split into 12 pseudo-blocks of 3 in draw order, p = (1 +
+   count(M* >= M_obs)) / (1 + 20,000), one-sided; exact INTEGER
+   arithmetic throughout. The T1 letters were pre-registered in
+   protocol.txt sections 0-2 (freeze stamp 2026-10-28T07:15:00Z,
+   BEFORE any statistic of this probe was computed): per probe
+   (a) PER-CELL-NOISE-CONSISTENT / (b) EXCEEDS NULL (named which
+   cell(s)) / (c) NOT EVALUABLE; per-window letter (session 40's
+   rule); T1 = the s39 window letter; s36/s38 carry the same-rule
+   REPLICATION letters; NO cross-window joint letter.
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3percellwander-20261028/ --
+       protocol.txt (frozen before any statistic, freeze stamp
+       2026-10-28T07:15:00Z), analysis-s45.py +
+       publication-s45.txt (run twice, diff exit 0, byte-
+       identical), derivation-census-s45.txt (independent second
+       parser, 87 rows / 0 mismatched, run twice byte-identical),
+       bar-eval-s45.txt, classify-selftest.txt, gate-run1.txt,
+       gate-run2.txt, gate-full-run-tests.txt, this record. NO run
+       logs (no hardware), NO .sh files.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNCHANGED (NO
+       reading -> NO line -> NO day-slot consumption; byte-identical
+       to HEAD, verified in the census row 83).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) DERIVED FROM MEASURED DATA (the 234 committed run logs of
+       the three windows -- 78 each: c2 3 + hi 36 + tw 36 + c8 3;
+       every input quantity was MEASURED on aiueos-6600hs Intel BMG
+       G31 ANV in sessions 36/38/39, run windows
+       2026-10-28T02:40:49Z / 03:39:14Z / 04:09:48Z): integrity
+       re-derived per window (VERIFY mismatch 0, SAMPLE 450 /
+       VERIFY 24 per run, knobs == arm table, S=8 fail-closed, cell
+       map identical -- 3/3 windows clean); C1 at the s39 window
+       (a): c2 FLOOR, c8 pooled median 32,829 vs committed 32,915
+       (0.26%); the six block-min vectors reproduce the
+       published/quote-only vectors of publication-s39.txt section 3
+       EXACTLY (6/6); the anchor reproduction row: hi block A's
+       (sum,128,S=16) pooled median and 18-cell min..max reproduce
+       the quote-only anchor priors EXACTLY at all three windows
+       (s36 1,142 / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 /
+       986..1,432) -- 3/3 EXACT.
+   (b) T1 THE ROW QUESTION (DERIVED): T1 = (a) PER-CELL-NOISE-
+       CONSISTENT at the s39 window -- neither arm's per-cell
+       wander max-T exceeds the within-window run-repartition null
+       there: hi M_obs = 72 ticks (max cells (max,256,S=default)
+       and (min,256,S=32), a tie), count 9,423 / 20,001,
+       p = 0.471176; tw M_obs = 70 (max cell (sum,256,S=32)),
+       count 9,877 / 20,001, p = 0.493875 (both p > 0.05 at the
+       frozen threshold). REPLICATION LETTERS (pre-registered,
+       same rule): s36 = (a) (hi M_obs 84, count 3,095, p
+       0.154792; tw M_obs 68, count 12,890, p 0.644518); s38 =
+       (b) EXCEEDS NULL, NAMED ARM hi -- s38 hi M_obs = 84 (max
+       cell (sum,256,S=32)), count 947 / 20,001, p = 0.047398 <=
+       0.05; its MARGINAL p <= 0.05 cells are (sum,256,S=32) p
+       0.035348 and (min,256,S=default) p 0.042298 (marginals
+       UNCORRECTED, no letter); s38 tw = (a) (M_obs 56, p
+       0.994550). THE FINDING: at the primary window the per-cell
+       within-window block-level wander reads (a) on both arms --
+       session 44's first-named candidate row is closed on its own
+       axis with its own letter -- BUT the pre-registered same-rule
+       replication at the s38 window reads (b) on the hi arm: at
+       that window the (sum,256,S=32) cell's block-level wander
+       exceeds what run-repartition of the same 36 runs produces,
+       family-wise over the 18 cells. NAMED, NOT HIDDEN: the six
+       probe p values and three window letters are UNCORRECTED
+       across probes/windows (the row answer is the s39 letter
+       alone; one (b) among six uncorrected probes at p 0.047398
+       is within what multiple uncorrected tests produce and NO
+       replication of the s38 hi cell exists -- s39 hi's
+       (sum,256,S=32) marginal p is 0.995500 with M_obs elsewhere);
+       the 108 marginal p values are UNCORRECTED (18 cells x 6
+       probes) and carry NO letter; (a) does NOT prove "estimator
+       noise is the mechanism" (a within-window-uniform driver is
+       invisible by construction) and (b) does NOT name a mechanism
+       (thermal/scheduling/memory/driver state all UNMEASURED) nor
+       say physical-vs-estimator; W_c is a tail-to-tail RANGE of 12
+       block pooled medians, NOT a scale estimate (per-cell LEVEL
+       shifts are session 44's probe; other quantiles/scales
+       invisible); max-T at n=12 blocks is LOW POWER; three
+       windows in ONE day on ONE host is LOW POWER; cells span
+       986..1,443 ticks in level and the frozen 1,000-tick class
+       boundary sits INSIDE that range -- threshold-artifact-vs-
+       representation STAYS UNRESOLVED and binds per-cell rows
+       directly; exchangeability of runs is itself an assumption;
+       this letter and sessions 40-44's letters are DIFFERENT
+       statistics over the SAME runs (NOT independent evidence) --
+       descriptive co-location only: session 40's block-min wander
+       at s38 hi was the closest of its six probes to threshold (p
+       0.059247) and this probe's s38 hi reads (b) at p 0.047398;
+       20,000 trials (NOT the s35-frozen 100,000 -- cost, named in
+       the freeze; p resolution 1/20,001 ~= 5e-5); L2 observational
+       ONLY; NO causal mechanism; direction UNMEASURED.
+   (c) B1/B2 THE BAR: NO reading this tick -> NO ledger line, NO
+       day-slot consumption (settle-bar-ledger.txt byte-identical
+       to HEAD, verified in the census); frozen evaluator --self-
+       test 38 fixture checks ok (pin), ledger eval twice
+       byte-identical -> VERDICT UNCHANGED PENDING 1/4 with s31
+       counted; next executable day slot 2026-10-29.
+   (d) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin); scoped GPU gate GREEN 123
+       tests / 12,162 assertions / 0 failures / 0 errors recorded
+       run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk,
+       created, run, deleted -- never committed; gate-run1.txt and
+       gate-run2.txt are byte-identical to session 44's artifact);
+       FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE
+       'Could not find namespace: kotoba.form' at namespace load
+       (ADR-0362, outside this diff -- this diff touches NO .cljk
+       namespace; gate-full-run-tests.txt byte-identical to session
+       44's artifact) -- NO green full suite claimed; find
+       docs/evidence/gpu -name '*.sh' -> 0.
+   (e) derivation-census-s45.txt: an independent second parser
+       (split-based parsing without regex; the observed per-cell
+       pooled median via 3-way merge selection over the sorted
+       per-run 25-lists -- the pooled 75 never sorted as a unit;
+       the per-cell wander via explicit max/min over the 12 block
+       values; the resampling's pooled medians via the np.sort
+       order-statistic path (38th element of the sorted 75), not
+       np.median's, through a triple-cache path structurally
+       different from the analysis's batched recompute; the
+       within-window repartition resampling and RNG call order
+       re-implemented; the observed pooled medians cross-checked
+       between the merge-selection and np.sort paths inside the
+       generator) re-derives every cited number from the 234
+       committed logs and the artifacts -- 87 rows, 0 mismatched
+       -- including the ledger byte-identity, gate pins, bar pins
+       and the section-7/section-4/5 consistency; run twice
+       byte-identical.
+
+4. NAMED, NOT HIDDEN (this tick): (i) NAMED DEFECTS (this tick's
+   scratch census generator's first drafts; none reached a
+   committed value): (d1) the probe-want parser assumed section
+   4's line shape ('M_obs = 72; max cell(s) = ...') and raised
+   ValueError on the section-5 replication lines' inline shape
+   ('M_obs = 84 (max cell(s) ...))') before any row was written;
+   (d2) the integrity-want parser took 5 tokens for a 4-slot
+   format (TypeError before any row was written); (d3) the
+   integrity-want parser indexed the run count (78) as the
+   VERIFY-mismatch count -- caught by its own want row (got=0
+   want=78) BEFORE the census was quoted anywhere; the committed
+   census records the corrected runs only; (ii) the s38 hi (b) is
+   ONE probe among six UNCORRECTED probes (and 3 windows) at p
+   0.047398 -- named, not hidden, no replication, no mechanism;
+   (iii) the (a) letters are LOW-POWER facts (n=12 blocks; three
+   windows, one day, one host) and are NOT evidence of stationarity
+   or of "estimator noise"; (iv) 20,000 trials (not the s35-frozen
+   100,000): cost, named in the freeze; (v) the s34 window is
+   EXCLUDED (hi-only design; the probe needs the same three
+   windows for both arms); (vi) this probe and sessions 40-44's
+   share the same 234 logs and resampling skeleton -- NOT
+   independent evidence.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31), the X1R letter
+   thresholds (s32), the T1 letter thresholds (s33-s36), the joint
+   letter thresholds (s37), the repartition-null letters of
+   sessions 40-44 and the PER-CELL wander max-T letters of THIS
+   session (protocol.txt sections 0-2). Not implemented in the
+   compiler; not themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/
+   evaluator remain evidence-scoped tooling; the ledger is an
+   evidence file; nothing is wired into any namespace.
+   MEASURED (this tick): nothing new -- NO hardware ran; the
+   numbers are DERIVED from the sessions 36/38/39 measured logs.
+   Provisional workgroup defaults in kotoba.compiler.accelerator-
+   targets remain provisional (:measured? false) -- not
+   optimization evidence. RULE 4 unchanged: NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer; NO
+   vendor optimization exists for Intel and none is claimed.
+
+6. UNMEASURED (named): what, if anything, physically moves the
+   wander/level/body/per-cell level/per-cell wander (this probe
+   plus sessions 40-44 show no structure beyond run-exchangeable
+   noise at the block-min wander, window spread, window LEVEL,
+   window BODY-LEVEL and PER-CELL LEVEL scales -- and one (b) at
+   the PER-CELL WANDER scale at s38 hi, mechanism UNMEASURED);
+   whether the s38 hi (sum,256,S=32) per-cell wander excess is
+   physical or estimator structure or a chance finding among six
+   uncorrected probes -- UNMEASURED; any common-mode driver faster
+   than the ~1s block-pair spacing (L14); the s31, s34-window and
+   s36 block-E excursion causes stay UNMEASURED; the threshold-
+   artifact-vs-representation question itself; anything off the
+   ANV host. The bar needs at least THREE more qualifying UTC days
+   (V4 PENDING 1/4); whether FOUR qualifying days is ENOUGH (the
+   bar can return UNSETTLED). NAMED CANDIDATE ROWS for later
+   sessions: a PER-CELL SPREAD probe of the same three windows
+   (this probe tests per-cell RANGE of block medians; per-cell
+   within-run/within-block scale is untested); an s38-window
+   replication of the hi (sum,256,S=32) wander excess at a FUTURE
+   window (the only route from one uncorrected (b) to a letter
+   that survives multiplicity); a fourth-window extension covering
+   the wander, spread, level, body and per-cell probes (three
+   windows are LOW POWER).
+
+7. THE TICK'S FINDING IN ONE LINE: THE PER-CELL WITHIN-WINDOW
+   BLOCK-LEVEL WANDER max-T READS (a) PER-CELL-NOISE-CONSISTENT
+   AT THE PRIMARY s39 WINDOW ON BOTH ARMS (hi M_obs 72, count
+   9,423/20,001, p 0.471176; tw M_obs 70, count 9,877, p
+   0.493875) AND AT THE s36 REPLICATION (hi 84, p 0.154792; tw
+   68, p 0.644518), BUT THE PRE-REGISTERED s38 REPLICATION READS
+   (b) EXCEEDS NULL ON THE HI ARM -- M_obs 84 at cell
+   (sum,256,S=32), count 947/20,001, p 0.047398, its two marginal
+   p <= 0.05 cells named ((sum,256,S=32), (min,256,S=default)),
+   everything else (a) -- so session 44's first-named candidate
+   row is closed at the primary window with its own letter while
+   one uncorrected replication probe reads (b): six probes are
+   UNCORRECTED and NOTHING is claimed beyond the frozen letters;
+   the wander's MECHANISM and threshold-artifact-vs-representation
+   STAY UNRESOLVED, and the bar stays PENDING 1/4 (frozen
+   evaluator, twice byte-identical; no ledger line this tick);
+   nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3percellwander-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged) + the
+   ADR-0355 dated note. (JUN-55, JUN-59)

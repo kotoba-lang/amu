@@ -1,0 +1,93 @@
+mufu-split-identifiability-20261026 -- analysis-output.txt
+verbatim stdout of `python3 analysis.py` (the committed script), run TWICE
+from the Hermes scratch copy on the worktree host (macOS 26.4, python 3.12.8):
+  run1 exit 0  sha256 be3f55acd70417f478e512b120745a838aa877bef6ae06bcedacbbffd8262933
+  run2 exit 0  sha256 be3f55acd70417f478e512b120745a838aa877bef6ae06bcedacbbffd8262933
+  diff run1 run2 -> empty (RUNS-IDENTICAL); both shas above are of the
+  output bytes exactly as reproduced below. The committed analysis.py sha256
+  is 2bb45b9f7ed532e435abff1ddcef20f4645f1b68d0ea1c64a29ed745fb93bcb8
+  (byte-identical to the scratch copy that produced this output).
+NO MEASUREMENT IS IN THIS FILE: it is exact rational linear algebra over the
+edge-additive chain model; every number below is a rank/nullspace coordinate.
+
+=== BEGIN VERBATIM STDOUT (run1; run2 is byte-identical) ===
+mufu-split-identifiability -- exact rank/nullspace analysis of the
+edge-additive chain model; no measurements in this file.
+PRE-REGISTERED PREDICTIONS P1..P4 are in the script header.
+
+=== P1 family A: loop-carried cyclic bodies (as-built instruments)
+alphabet={M,F} form=A max_body_len=6 rows=126 vars=7 rank=3 null_dim=4
+  null: {e_MF:-1, e_FM:1}
+  null: {b_M:1}
+  null: {b_F:1}
+  null: {f:1}
+  e_MF: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_FM:1} (dot=-1)
+  e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_FM:1} (dot=1)
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_FM:1} (dot=-2)
+  e_MM: IDENTIFIABLE
+  e_FF: IDENTIFIABLE
+
+=== P2 family B: open chains, entry edge INSIDE the timed region
+alphabet={M,F} form=B max_body_len=6 rows=126 vars=9 rank=6 null_dim=3
+  null: {e_MF:1, e_FM:-1, a_M:-1, b_M:1}
+  null: {e_MF:-1, e_FM:1, a_F:-1, b_F:1}
+  null: {a_M:-1, a_F:-1, f:1}
+  e_MF: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_FM:-1, a_M:-1, b_M:1} (dot=1)
+  e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_FM:-1, a_M:-1, b_M:1} (dot=-1)
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_FM:-1, a_M:-1, b_M:1} (dot=2)
+  e_MM: IDENTIFIABLE
+  e_FF: IDENTIFIABLE
+
+=== P3 family C: open chains, entry EXCLUDED by timing discipline
+alphabet={M,F} form=C max_body_len=6 rows=126 vars=7 rank=6 null_dim=1
+  null: {b_M:-1, b_F:-1, f:1}
+  e_MF: IDENTIFIABLE
+  e_FM: IDENTIFIABLE
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: IDENTIFIABLE
+  e_MM: IDENTIFIABLE
+  e_FF: IDENTIFIABLE
+  e_MF-e_FM (estimator check): IDENTIFIABLE
+
+=== P4 family A over three node types: cyclic bodies
+alphabet={M,F,U} form=A max_body_len=5 rows=363 vars=13 rank=7 null_dim=6
+  null: {e_MF:-1, e_MU:-1, e_FM:1, e_UM:1}
+  null: {e_MF:1, e_FM:-1, e_FU:-1, e_UF:1}
+  null: {b_M:1}
+  null: {b_F:1}
+  null: {b_U:1}
+  null: {f:1}
+  e_MF: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_MU:-1, e_FM:1, e_UM:1} (dot=-1)
+  e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_MU:-1, e_FM:1, e_UM:1} (dot=1)
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:-1, e_MU:-1, e_FM:1, e_UM:1} (dot=-2)
+
+=== P4b family B over three node types: open chains, entry included
+alphabet={M,F,U} form=B max_body_len=4 rows=120 vars=16 rank=12 null_dim=4
+  null: {e_MF:1, e_MU:1, e_FM:-1, e_UM:-1, a_M:-1, b_M:1}
+  null: {e_MF:-1, e_FM:1, e_FU:1, e_UF:-1, a_F:-1, b_F:1}
+  null: {e_MU:-1, e_FU:-1, e_UM:1, e_UF:1, a_U:-1, b_U:1}
+  null: {a_M:-1, a_F:-1, a_U:-1, f:1}
+  e_MF: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_MU:1, e_FM:-1, e_UM:-1, a_M:-1, b_M:1} (dot=1)
+  e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_MU:1, e_FM:-1, e_UM:-1, a_M:-1, b_M:1} (dot=-1)
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: NOT IDENTIFIABLE -- witness null vector {e_MF:1, e_MU:1, e_FM:-1, e_UM:-1, a_M:-1, b_M:1} (dot=2)
+
+=== P3b family C over three node types: open chains, entry excluded
+alphabet={M,F,U} form=C max_body_len=4 rows=120 vars=13 rank=12 null_dim=1
+  null: {b_M:-1, b_F:-1, b_U:-1, f:1}
+  e_MF: IDENTIFIABLE
+  e_FM: IDENTIFIABLE
+  e_MF+e_FM: IDENTIFIABLE
+  e_MF-e_FM: IDENTIFIABLE
+
+=== estimator identities for the P3 discipline (algebraic, verbatim)
+V(MF) = e_MF + b_F + f ; V(F) = b_F + f  =>  e_MF = V(MF) - V(F)
+V(FM) = e_FM + b_M + f ; V(M) = b_M + f  =>  e_FM = V(FM) - V(M)
+closure (falsifiable prediction for the future instrument):
+  V(MFM) = e_MF + e_FM + b_M + f = V(MF) + V(FM) - V(F)
+  V(FMF) = e_FM + e_MF + b_F + f = V(FM) + V(MF) - V(M)
+=== analysis complete
+=== END VERBATIM STDOUT ===

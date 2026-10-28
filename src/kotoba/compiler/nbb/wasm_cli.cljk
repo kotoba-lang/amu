@@ -18,6 +18,7 @@
             [kotoba.compiler.nbb.io :as io]
             [kotoba.compiler.module-lock :as module-lock]
             [kotoba.compiler.accelerator-pipeline :as accelerator-pipeline]
+            [kotoba.compiler.accelerator-spirv-compile :as spirv-compile]
             [kotoba.compiler.project-files :as project-files]
             [kotoba.compiler.nbb.project-source :as project-source]
             [kotoba.compiler.nbb.output-set :as output-set]
@@ -595,6 +596,36 @@
      :code-sha256 (:code-sha256 artifact)
      :output output}))
 
+(defn- gpu-spirv-compile!
+  "ADR-0359 decision 2's HOST HALF on the bin/amu route: the sealed SPIR-V
+  build step. ARTIFACT.edn is the sealed source artifact `amu gpu-compile`
+  wrote; `--output <file.spv>` is the cache file the wire-42 loader opens.
+  The sealed SPIR-V record (bytes inline, tool identity, provenance) is
+  written beside the cache as `<file.spv>.edn`. Target-independent like
+  gpu-compile: the artifact names its target, not --target."
+  [args]
+  (let [artifact-path (or (second args)
+                          (support/usage-error! "gpu-spirv-compile needs ARTIFACT.edn"))
+        source (support/read-edn-file! artifact-path)
+        output (or (support/option args "--output")
+                   ;; Anchored to the artifact path for the same reason as
+                   ;; gpu-compile's default: the launcher runs with the Amu
+                   ;; checkout as CWD.
+                   (posix-path/join (posix-path/dirname artifact-path) "kernel.spv"))
+        _ (doseq [flag ["--target" "--policy" "--source-path" "--module-lock"
+                        "--blocks" "--device"]]
+            (when (support/option args flag)
+              (support/usage-error!
+                "gpu-spirv-compile takes ARTIFACT.edn --output <FILE.spv>")))
+        {sealed :artifact} (spirv-compile/compile-spirv! source {})
+        record (str output ".edn")]
+    (spirv-compile/write-loader-cache! sealed output)
+    (io/write-text! record (pr-str sealed))
+    {:ok true :target (:target sealed) :variant (:variant sealed)
+     :bindings (:bindings sealed) :spirv-sha256 (:spirv-sha256 sealed)
+     :tool (select-keys (:tool sealed) [:name :version])
+     :artifact record :output output}))
+
 (defn- describe-definition-cids
   "The definition CIDs of one module file, for the lock producer. Reads the
   file alone rather than as part of a project: definition identity is
@@ -625,6 +656,9 @@
     ;; Also target-independent: the device descriptor picks the emission
     ;; target through accelerator-targets, not --target.
     "gpu-compile" (gpu-compile! args)
+    ;; ADR-0359 decision 2's host half: the sealed SPIR-V build step over the
+    ;; artifact gpu-compile wrote.
+    "gpu-spirv-compile" (gpu-spirv-compile! args)
     ;; Authoring, not building. `package-manifest` needs no resolver at all;
     ;; `package-lock` reads each dependency's own signed manifest and asks
     ;; this compiler for the definition CIDs, so the values it writes are

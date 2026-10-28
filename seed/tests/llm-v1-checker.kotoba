@@ -1,0 +1,24 @@
+(ns llm.probe (:export [generate]))
+(defn generate
+  [req [:record :kotoba.llm/generate-request
+        [[:model :keyword] [:system :string] [:prompt :string]
+         [:max-output-tokens :i64] [:temperature-milli :i64]]]]
+  [:variant :kotoba.llm/result
+   [[:ok [:record :kotoba.llm/completion
+           [[:text :string] [:finish-reason :keyword]
+            [:usage [:record :kotoba.llm/usage
+                     [[:input-tokens :i64] [:output-tokens :i64]]]]]]]
+    [:error [:record :kotoba.llm/error
+              [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
+  (typed-cap-call :llm/generate
+    [:record :kotoba.llm/generate-request
+     [[:model :keyword] [:system :string] [:prompt :string]
+      [:max-output-tokens :i64] [:temperature-milli :i64]]]
+    [:variant :kotoba.llm/result
+     [[:ok [:record :kotoba.llm/completion
+             [[:text :string] [:finish-reason :keyword]
+              [:usage [:record :kotoba.llm/usage
+                       [[:input-tokens :i64] [:output-tokens :i64]]]]]]]
+      [:error [:record :kotoba.llm/error
+                [[:code :keyword] [:message :string] [:retryable :bool]]]]]]
+    req))

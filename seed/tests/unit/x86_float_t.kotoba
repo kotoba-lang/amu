@@ -18,29 +18,31 @@
   (loop [sub start current M]
     (if (> sub end) current
       (recur (+ sub 1)
-        (-> current (t-admission 0 operation sub 0) (t-admission 1 operation sub 0)
-                    (t-admission 2 operation sub 7101))))))
+        (-> current (t-admission 3 operation sub 0) (t-admission 0 operation sub 7101)
+                    (t-admission 1 operation sub 7101) (t-admission 2 operation sub 7101))))))
 (defn- t-families [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1) (t-family OP-BIN 16 21) (t-family OP-BIN 24 29)
       (t-family OP-CMP 8 13) (t-family OP-CMP 16 21)
       (t-family OP-UN 16 18) (t-family OP-UN 24 26) (t-family OP-UN 32 37)))
 (defn- t-gaps [M :vector-i64] :vector-i64
   (-> M (mem-set MM-R0 1)
-      (t-admission 0 OP-BIN 15 7101) (t-admission 0 OP-BIN 22 7101) (t-admission 0 OP-BIN 23 7101)
-      (t-admission 1 OP-BIN 30 7101) (t-admission 0 OP-CMP 7 7101) (t-admission 1 OP-CMP 14 7101)
-      (t-admission 1 OP-CMP 15 7101) (t-admission 0 OP-CMP 22 7101)
-      (t-admission 0 OP-UN 19 7101) (t-admission 1 OP-UN 23 7101)
-      (t-admission 0 OP-UN 27 7101) (t-admission 1 OP-UN 31 7101) (t-admission 1 OP-UN 38 7101)))
+      (t-admission 3 OP-BIN 15 7101) (t-admission 3 OP-BIN 22 7101) (t-admission 3 OP-BIN 23 7101)
+      (t-admission 3 OP-BIN 30 7101) (t-admission 3 OP-CMP 7 7101) (t-admission 3 OP-CMP 14 7101)
+      (t-admission 3 OP-CMP 15 7101) (t-admission 3 OP-CMP 22 7101)
+      (t-admission 3 OP-UN 19 7101) (t-admission 3 OP-UN 23 7101)
+      (t-admission 3 OP-UN 27 7101) (t-admission 3 OP-UN 31 7101) (t-admission 3 OP-UN 38 7101)))
 (defn- t-type [M :vector-i64 profile :i64 type :i64 expected :bool] :vector-i64
   (let [m (xg-set M 4 profile)
         ok (and (= (vector-at m MM-R0) 1) (= (xg-type m type) expected))]
     (mem-set m MM-R0 (if ok 1 0))))
 (defn- t-profile-types [M :vector-i64] :vector-i64
-  (-> M (mem-set MM-R0 1) (t-type 0 TY-F64 true) (t-type 1 TY-F32 true)
+  (-> M (mem-set MM-R0 1) (t-type 3 TY-F64 true) (t-type 3 TY-F32 true)
+      (t-type 3 TY-I64 true) (t-type 3 TY-BOOL true)
+      (t-type 0 TY-F64 false) (t-type 0 TY-F32 false) (t-type 1 TY-F64 false) (t-type 1 TY-F32 false)
       (t-type 2 TY-F64 false) (t-type 2 TY-F32 false)
-      (t-type 2 TY-I64 true) (t-type 2 TY-BOOL true) (t-type 3 TY-I64 false)))
+      (t-type 0 TY-I64 true) (t-type 2 TY-I64 true) (t-type 2 TY-BOOL true)))
 (defn- t-frame [M :vector-i64 floating :bool slots :i64 expected :i64] :vector-i64
-  (let [m (-> (t-float-row M 0 OP-BIN (if floating BOP-F64-ADD BOP-ADD))
+  (let [m (-> (t-float-row M 3 OP-BIN (if floating BOP-F64-ADD BOP-ADD))
               (mem-set (+ MM-FN-BASE MM-FN-W FF-SIR) 1)
               (mem-set (+ MM-FN-BASE MM-FN-W FF-NSLOTS) slots)
               (mem-set (+ MM-FN-BASE MM-FN-W FF-DEPTH) 0))

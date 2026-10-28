@@ -1,0 +1,178 @@
+JUN-58 / JUN-55 -- the fold-arms counters CROSS-DAY REPLICATION row,
+DAY 3: the named UNMEASURED item "day 3+ cross-day replications at
+sum,max,min" is MEASURED at day 3 -- the rule-2 sign REPRODUCES on the
+third distinct UTC day (regime-invariant, slower, 18/18) while the
+rule-1 regime structure again does NOT reproduce (a sixth distinct
+level split; no one-level operator a second session running)
+(2026-10-27 UTC, tick slice)
+
+Row taken: the cross-day record's own named UNMEASURED item, verbatim
+-- "day 3+ cross-day replications at sum,max,min" (metal-counter-
+foldarms-crossday-20261026/record.txt and every later row's UNMEASURED
+list). This row is the THIRD day of the anchor cell's cross-day series.
+ONE measurement slice. HARDWARE RAN.
+
+DAY FACTS (tool output, run-window.txt verbatim): the anchor record's
+runs were written 2026-10-25 (evidence dir mtimes 2026-10-25 22:55-23:03
+JST = ~13:55-14:03 UTC; the anchor row predates run-window.txt, named);
+the cross-day day-2 runs executed 2026-10-26T19:23:48Z.. (run-window.txt,
+verbatim); this row's run window is 2026-10-27T00:01:51Z ..
+2026-10-27T00:01:52Z (captured verbatim around the runs). P-day HOLDS:
+all six runs land on 2026-10-27 UTC -- three different UTC days, so the
+replication is CROSS-DAY at day 3 at its letter.
+
+WHAT RAN (the declared protocol, protocol.txt -- written BEFORE the
+first run of this row, predictions P-day, P0..P6 registered there):
+
+  cell: n = 1000003, workgroup = 256 -- the anchor cell exactly
+  (headers verified programmatically in every run log, 6/6 ok:
+  device=Apple M1 Max, channel=counters, sampling_points dispatch=0
+  stage=1 draw=0 tile=0 blit=0, simdgroup_size=32, n=1000003,
+  workgroup=256, pairs=20, warmup=2, op_order=sum,max,min; the header
+  precedes the first sample line in every log).
+  runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+  each (20 interleaved AB/BA pairs per operator per run, 2 warmup
+  submits per arm discarded, verified untimed read-back) -- the anchor
+  row's declared protocol unchanged.
+  instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled
+  fresh (unchanged in the tree since the anchor row; last commit
+  touching it is the harness row b3717baf3, before the anchor
+  cf631722d).
+  arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib
+  at W=256, built THIS row from the COMMITTED emitters via
+  scripts/gpu-subgroup-reduce-metal-measure.cljk --width 256 into a
+  FRESH build dir (no earlier row's build dir reused).
+  op-order: the instrument default sum,max,min, FIXED (the anchor
+  protocol's order -- this row changes no run parameter except the
+  calendar day).
+  analysis: ONLY the committed route -- scripts/gpu_regime_classify.py
+  --counters-log run-1..6.txt -- run twice, the two outputs
+  BYTE-IDENTICAL (diff exit 0); publication saved verbatim as
+  publication.txt (72 lines, sha256 36426238..). NO analysis code
+  written.
+
+REALIZATION CONTROL (P0a HOLD, build-shas.txt): the rebuilt artifacts
+are sha256-IDENTICAL to the anchor row's 2026-10-25 build AND the day-2
+row's 2026-10-26 build (and the oporder and oporder-rep2 rows' W=256
+builds) on all 8 files (6 metallibs + probe.metallib + the counters
+binary itself, 4cb76bdc..): grand total identical=32 differs=0 across
+the compared builds -- the realization is held FIXED across the three
+days, so every behavioral difference below is run/day level, not
+realization level. P0b did not trigger.
+
+VERIFIED (real runs): all 6 processes exit 0, stderr 0 bytes, 120/120
+sample lines resolved each (counter_ns=ERR count 0 across all 720
+samples), 6/6 verify lines ok=1 per run (36 total, 0 ok=0). The
+committed route parses the session with ZERO named exclusions (every
+(run, operator) block usable at its letter). P1 HOLD.
+
+FINDING (the published claim-protocol record -- publication.txt is the
+publication):
+
+  THE NAMED QUESTION, P2a HOLD: THE SIGN REPRODUCES ON DAY 3. Rule 2
+  at its letter over day-3 data: REGIME-INVARIANT, SLOWER at every
+  operator and at the cell -- all 18 per-run paired-median ratios above
+  1.0: max 6/6 1.195..1.219 (1.219, 1.217, 1.217, 1.195, 1.199, 1.204),
+  min 6/6 1.198..1.219 (1.219, 1.217, 1.202, 1.201, 1.198, 1.201),
+  sum 6/6 1.214..1.221 (1.214, 1.220, 1.218, 1.220, 1.217, 1.221),
+  roll-up 18/18 slower -- the anchor cell's rule-2 verdict class
+  reproduces at the third distinct UTC day (day-1 sum-first, day-2
+  sum-first, day-3 sum-first -- this row's run order min,max,sum and
+  max,min,sum never used). P2b did not fire (no opposing sign); P2c
+  did not fire (nothing intermediate). The reopen-trigger class is NOT
+  exercised by this record -- the count STAYS at TWO exercising records
+  (the W=32 sum side-flip at n=1000003 and n=2^20, both unadjudicated);
+  this row registers no reopen claim.
+
+  RULE-1 STRUCTURE, P4: the regime STRUCTURE again does NOT reproduce
+  -- a NEW level split, the session-variability reading CONTINUES
+  (every counted anchor-cell session a different split, now 5/5):
+  max TWO levels (fast 33041.5..33062.5 runs 4-6 / slow
+  103500.0..103771.0 runs 1-3), min THREE (fast 32917.0..33062.5 runs
+  4-6 / mid 54062.5 run 3 / slow 103625.0..103771.0 runs 1-2), sum TWO
+  (fast-state 83437.5 run 1 / slow 103604.0..103792.0 runs 2-6). NO
+  operator is one-level this session -- the SECOND anchor-cell session
+  with no one-level operator (after oporder-rep2), and the first
+  SUM-FIRST session with none (at the anchor and day-2 sessions the
+  first block sum was the one-level operator). Counts move in record
+  state only: "the first block is the one-level block" 3/4 -> 3/5
+  sessions (this session's first block sum is not one-level); "sum is
+  the one-level operator" 2/4 -> 2/5. NAMED, NOT EXPLAINED: the level
+  VALUES stay session-variable (this session's fast states ~33.0k in
+  the reversed-order sessions' class, not the anchor's ~54k, and its
+  sum fast state is a NEW value ~83.4k); a within-row descent appears
+  at max and min (slow runs 1-3 / 1-2, fast runs 4-6, min carrying a
+  mid state at run 3) while sum sits slow runs 2-6 with run 1 at the
+  83.4k state; the state-shift cause/threshold/prevalence stay
+  UNMEASURED. After five counted anchor-cell sessions the regime
+  STRUCTURE is session-variable and both one-level fits are
+  contradicted at least twice -- the observed class, not a mechanism.
+
+  P3 (magnitude, same instrument/channel/cell across days): the pooled
+  18-ratio band 1.195..1.221 overlaps the anchor day-1 band
+  (1.204..1.221) at 1.204..1.221 and the day-2 band (1.197..1.222) at
+  1.197..1.221, with this row's fast edge (1.195) extending 0.002
+  below day-2's and 0.009 below day-1's low edge (same instrument,
+  same cell, raw-band observation only, rule 3 -- no magnitude
+  invariance claimed across days). The anchor's ratio-vs-state pattern
+  (fast-state ratios slightly lower, still slower) reproduces (max
+  fast 1.195..1.204 vs slow 1.217..1.219; min fast 1.198..1.201 vs
+  slow 1.217..1.219; sum's 83.4k-state run 1.214 vs slow-state
+  1.217..1.221). P5 (state shifts): the mid-run descent class appears
+  again and the one-bracket spike class may be present in the mid
+  states -- named, never explained.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no :measured? flag, no :shapes
+value, no selection answer, no workgroup row (this channel can never
+move one), no WGSL cell flip, no MSL command-buffer cell flip, no
+cross-instrument magnitude claim. The sign stays CHANNEL-SCOPED at the
+route's own letter and M1-Max scoped. The named item moves in record
+state only ("day 3+ cross-day replications at sum,max,min" UNMEASURED
+-> "day 3 MEASURED: reproduced" -- the day-3 item is answered at its
+letter; "day 4+" remains as the open continuation).
+
+UNMEASURED named: day 4+ cross-day replications; a third reversed-order
+session (two reversed-order sessions disagree on regime structure);
+op-order dependence at every OTHER cell and at this order on day 3 by
+construction (this row changed no run parameter but the calendar day);
+the state-shift cause/threshold/prevalence; "R at those grids" and the
+residual's internal decomposition and absolute clock domain; the
+W-shape's cause (the W=32 side-flip stays unadjudicated); the partial
+tail's quantitative role; anything off M1 Max; the WGSL route's kernel
+time; every workgroup-row question (:arm/:unknown stay provisional
+:measured? false -- accelerator-targets defaults remain design
+assumptions, not evidence).
+
+CROSS-CHANNEL CONTEXT (rule 3, never merged): the MSL command-buffer
+channel's historical op-order cell/re-session stays its own
+instrument's record; this row adopted none of its magnitudes or
+mechanism.
+
+Gates (real runs): gpu_regime_classify.py --self-test TOTAL 2649
+assertions passed / 0 failed (committed pin 2649/0; no classify code
+touched -- regression pin; log classify-selftest.txt); scoped GPU gate
+(8 GPU-owned namespaces, scratch runner gpu_scoped_gate.cljk, never
+committed) GREEN 123 tests / 12162 assertions / 0 failures / 0 errors
+on run 1 AND run 2 (logs day3-gate-run1.txt, day3-gate-run2.txt); FULL
+run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not find
+namespace: kotoba.form' at namespace load (ADR-0362), outside this
+diff (log full-run-tests.txt) -- NO green full suite claimed; find docs
+-name '*.sh' -> 0 (the no-POSIX-sh evidence rule).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at tick
+start and re-checked before the push (heads: codex/*, claude/*,
+kami-native-*); no chain PR was open at tick start (the previous chain
+PR #1612 merged into main), so this row's push opens the ONE new chain
+PR per the chain-branch rule.
+
+NAMED NOT HIDDEN: the one-second run window (wall time is no metric);
+the protocol's P4 registry pre-named the counts move at "3/3 -> 3/4"
+and "2/3 -> 2/4" for the session before this one -- this row moves
+them to 3/5 and 2/5 at five counted sessions, five counted sessions
+named here in case a later row recounts differently; untracked
+deps.edn (not created by this bot) untouched; kbb '2 dep(s) not
+:local/root' warning (identical everywhere); the build/run/gate
+scripts live in Hermes scratch and are never staged (POSIX .sh ban;
+all logs staged are .txt); the scratch publish reruns (w64/w512-pub)
+that share this scratch dir are another row's business and were not
+touched.

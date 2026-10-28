@@ -1,0 +1,7 @@
+;; A word outside 0..255 is refused before any bytes handle is minted.
+(ns seed.macos-bytes-refusal (:export [main]))
+
+(defn main [] :i64
+  (let [v0 (vector-alloc 1)
+        v1 (vector-assoc! v0 0 256)]
+    (bytes-count (bytes-from-vector-i64 v1))))

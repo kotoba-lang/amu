@@ -1,4 +1,4 @@
-;; x86_64 Linux runtime profile. Context v11, SysV C helper calls.
+;; x86_64 Linux runtime profile. Context v11, SysV native helper calls.
 ;; Guest direct calls reserve r9 for context and put arguments 6..16 on stack.
 (defn- xr-call [M :vector-i64 slot :i64] :vector-i64
   (-> M (xg-bytes 0xf87d8b48 4) (xg-bytes 0x97ff 2) (xg-bytes slot 4) (xg-bytes 0xf84d8b4c 4)))
@@ -50,13 +50,15 @@
 (defn- xr-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) c (xg-si M i IF-C)]
-      (cond (and (= op OP-RT) (or (not (xr-slot a)) (< c 0) (> c 5))) (xg-err M 7101 a)
+      (cond (and (= op OP-RT) (or (not (xr-slot a)) (< c 0) (> c 5)
+                                (and (or (= a 224) (= a 232)) (not= c 0))
+                                (and (= a 80) (not= c 3)) (and (= a 88) (not= c 2)))) (xg-err M 7101 a)
             (and (= op OP-CALLI) (or (< c 0) (> c 5))) (xg-err M 7101 op)
             :else (xr-check M (inc i))))))
 (defn- xr-slot [slot :i64] :bool
-  (case slot 48 true 56 true 64 true 72 true 112 true 120 true 128 true 136 true 144 true
+  (case slot 48 true 56 true 64 true 72 true 80 true 88 true 96 true 104 true 112 true 120 true 128 true 136 true 144 true
     152 true 160 true 168 true 176 true 184 true 192 true 200 true 208 true 216 true
-    240 true 352 true 360 true 368 true 376 true false))
+    224 true 232 true 240 true 352 true 360 true 368 true 376 true false))
 (defn- xr-build [M :vector-i64 S :string] :vector-i64
   (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 4 1) (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))]
     (cond (not= (vector-at a MM-ERR) 0) a

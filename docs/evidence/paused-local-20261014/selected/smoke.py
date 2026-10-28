@@ -1,0 +1,8 @@
+from pathlib import Path
+import os,json,subprocess,hashlib
+W=Path(__file__).parent;A=W/'smoke';E={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};E['SEED_RESOURCE_ROOT']=str(A);calls=[]
+def pin(p):b=p.read_bytes();return dict(path=str(p),bytes=len(b),sha256=hashlib.sha256(b).hexdigest())
+for op,cmd in [('compile',[W/'native-compiler','compile',A/'smoke.kotoba','--target','aarch64-macos','--output',A/'smoke.kseed']),('extract',[W/'native-compiler','extract-native',A/'smoke.kseed','--symbol','answer','--output',A/'smoke.bin'])]:
+ z=subprocess.run(list(map(str,cmd)),cwd=A,env=E,capture_output=True);(A/(op+'.stdout')).write_bytes(z.stdout);(A/(op+'.stderr')).write_bytes(z.stderr);assert z.returncode==0 and not z.stderr,(op,z.returncode,z.stderr);calls.append(dict(operation=op,exit=0))
+head,body=(A/'smoke.kseed').read_bytes().split(b'\n\n',1);assert body==(A/'smoke.bin').read_bytes();ex=[line.split()for line in head.decode().splitlines()[1:]];answer=next(x for x in ex if x[0]=='answer');cmd=[W/'kexe-loader',A/'smoke.bin',answer[1],answer[2],'aarch64','-'];E={k:v for k,v in os.environ.items()if not k.startswith('KEXE_')};z=subprocess.run(list(map(str,cmd)),cwd=A,env=E,capture_output=True);(A/'execute.stdout').write_bytes(z.stdout);(A/'execute.stderr').write_bytes(z.stderr);assert z.returncode==0 and z.stdout.strip()==b'42'and not z.stderr,(z.returncode,z.stdout,z.stderr);calls.append(dict(operation='execute',exit=0,result=42))
+(W/'SMOKE-READBACK.json').write_text(json.dumps(dict(status='PASS_LOCAL_BUNDLE_NATIVE_COMPILE_EXTRACT_EXECUTE42',calls=calls,files=[pin(p)for p in A.iterdir()],compiler=pin(W/'compiler.bin'),source=pin(W/'source-unity.kotoba')),indent=2)+'\n');print('PASS nativebundle compile/extract/execute42',flush=True)

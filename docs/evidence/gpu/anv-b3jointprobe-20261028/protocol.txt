@@ -1,0 +1,174 @@
+JUN-59 -- session 37 protocol: THE SAME-WINDOW JOINT PROBE (at ONE
+window, do the block-unit min statistics couple to the host-side
+proxy within each arm AND across the two arms?). ANALYSIS slice --
+NO new hardware; the inputs are session 36's 78 committed measured
+run logs in ../anv-b3commonmode-20261028/. INSTRUMENT channel.
+Frozen BEFORE the statistic is computed (freeze stamp
+2026-10-28T03:06:03Z, this tick). This file is written once and
+never rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE JOINT COUPLING PATTERN AT
+   ONE WINDOW). Session 36's named-not-hidden residual is the row
+   taken here: "a same-window joint probe of the proxy AND the
+   cross-arm axis (s35 and s36 probed different windows)" -- the
+   s35 letter (min vs host-side proxy) was measured at s34's window
+   and the s36 letter (cross-arm min vs min) at s36's window, so
+   NEITHER window has both axes probed. This session probes BOTH
+   axes at session 36's single window (the same 12 adjacent (hi,tw)
+   block-pairs A..L, byte-identical binaries) and adds the second
+   arm's proxy axis, on THREE frozen sub-statistics, all at the
+   BLOCK unit (n=12), all Spearman rho (tie-corrected average
+   ranks) + permutation p (two-sided, 100,000 trials, frozen seed
+   20261028 -- the s35-frozen algorithm, reused UNCHANGED):
+
+     (A) hi proxy:   rho(hi block-min,  hi block host_ns at (sum,128,S=16))
+     (B) tw proxy:   rho(tw block-min,  tw block host_ns at (sum,128,S=16))
+     (C) cross-arm:  rho(hi block-min,  tw block-min)
+
+   A coupling reads CO-MOVE iff |rho| >= 0.60 AND p <= 0.05 (the
+   s35/s36 letter thresholds, unchanged).
+
+   T1 LETTERS (pre-registered NOW, before the statistic is computed):
+     (a) JOINT NO-COUPLE: NONE of A, B, C reads CO-MOVE -- at ONE
+         common window the wander couples to NEITHER the host-side
+         proxy (in either arm) NOR the other arm: the s35 (b) + s36
+         (b) pattern REPLICATES at a single window. Consistent with
+         per-arm estimator noise or arm-specific effects; excludes
+         only these couplings at this window and this power.
+     (b) ANY COUPLE: at least one of A, B, C reads CO-MOVE -- named
+         which. Consistent with that coupling existing at this
+         window; L2 OBSERVATIONAL ONLY (NO causal mechanism).
+     (c) NAMED, UNRESOLVED / NOT EVALUABLE: on integrity failure or
+         C1 (b) (section 4) -- no letter is evaluable.
+   NAMED, NOT HIDDEN (frozen): NEITHER letter resolves
+   threshold-artifact-vs-representation; n=12 in ONE window is LOW
+   POWER (a null at n=12 is not evidence of independence); the three
+   sub-statistics share the same 12 block-pairs (they are not
+   independent tests); the block-pair adjacency (~1s of host time)
+   is the common-mode resolution (L14 -- faster structure is
+   invisible); (A)/(B) speak to the host-side proxy only (L3), and a
+   driver slower than one block can move both min and host_ns
+   together without either being the other's cause. Either way the
+   threshold-artifact-vs-representation question is NOT resolved by
+   this session and no report may say it is.
+
+   EXPOSURE CAVEAT (frozen, as s35's): the input vectors are
+   PUBLISHED session-36 content (publication-s36.txt section 3 and
+   D3) -- the freeze guards against letter-shopping, not against
+   prior exposure to the inputs. Checked BEFORE the freeze: no
+   committed file computes any min-vs-proxy correlation at the s36
+   window (analysis-s36.py computes only the cross-arm rho and
+   publishes the vectors). (C) is re-derived this session as an
+   INTEGRITY ANCHOR and must reproduce s36's published
+   rho = -0.251762 / p = 0.425076 (count 42,507) EXACTLY, else the
+   route is broken and the letter is (c).
+
+   SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of it
+   is the row question):
+   (D1) the per-run-unit analogs of (A) and (B) (36 points per arm;
+        per-run min vs per-run host_ns at (sum,128,S=16); NAMED
+        DIFFERENT UNIT L10): descriptive only, no letter.
+   (D2) the (B) coupling recomputed leaving out block E (11 blocks)
+        -- tw block E carries the session-36 named host_ns excursion
+        (465,709 vs ~307k..312k, L3, cause UNMEASURED); named in
+        advance so this leave-one-out is not post-hoc; descriptive
+        only, no letter, the T1 letter always uses all 12 blocks.
+   (D3) the bar: NO reading this session (analysis tick, no new
+        hardware) -> NO ledger line, NO day-slot consumption; the
+        frozen evaluator's verdict over the unchanged ledger.
+
+   NAMED, NOT HIDDEN: ZERO derivation edits; ZERO new knob pairs;
+   ZERO fresh processes (the analysis reads only the 78 committed
+   session-36 logs). The instrument, manifest, corpus and build pins
+   are session 36's committed custody chain (cited, not re-measured).
+
+1. INPUT TABLE (the 78 committed logs in
+   ../anv-b3commonmode-20261028/, session 36's arm table):
+     tag  BATCH  WORK_MUL  NDIV   n        runs  role
+     c2   2      1         1      1000003  3     archived control (bracket head)
+     hi   3      1024      4033   253906   36    arm X (12 blocks of 3)
+     tw   3      2048      8066   253906   36    arm Y (12 blocks of 3)
+     c8   8      1         1      1000003  3     archived control (bracket tail)
+   Block k of an arm = runs r(3k-2), r(3k-1), r(3k), k = 1..12.
+
+2. BUILD PIN (cited, not rebuilt): session 36's custody chain -- 4/4
+   pins byte-identical at s36 (c2 e5ed903e / hi a6c31b6c / tw
+   bb901eb5 / c8 480925e5), custody GO 2026-10-28T02:40:47Z before
+   s36's builds and runs (build-census-s36.txt, host-verify-s36.txt,
+   run-window.txt -- quote-only this session).
+
+3. QUOTE-ONLY REFERENCE VALUES (L7; re-checked against s36's
+   committed publication in the analysis and census; never this
+   session's measurements):
+   - s36 hi block-min vector A..L: 991 989 981 998 993 985 984 997
+     994 994 980 982;
+   - s36 tw block-min vector A..L: 988 985 994 993 994 995 992 984
+     987 984 993 981;
+   - s36 hi per-block host_ns A..L: 311901 309627 308465 311051
+     309968 310649 307113 310719 310348 310720 308987 309547;
+   - s36 tw per-block host_ns A..L: 310259 308936 311031 311871
+     465709 307253 310520 310319 309598 309477 307814 311300;
+   - s36 cross-arm letter (C): (b) NO-CO-MOVE, rho -0.251762,
+     p 0.425076 (count 42,507/100,001);
+   - s35 proxy letter at s34's window: (b) NO-CO-MOVE, rho
+     -0.038597, p 0.907841;
+   - committed controls: c2 floor band 31..32 (FLOOR at B=2), c8
+     session-4 pooled median 32,915;
+   - the bar's frozen in-band refs 1,129 / 1,132 / 1,131 and the
+     ledger state (5 reading lines, s31 the only COUNTED, verdict
+     PENDING 1/4, next executable day slot 2026-10-29).
+
+4. THRESHOLDS AND CRITERIA (frozen):
+   - the frozen class threshold (for C1 only): FLOOR <= 100 ticks at
+     all 18 pipeline-ok cells; CAPTURED >= 1000 at all 18; anything
+     else INTERMEDIATE/MIXED (pooled median gpu_ticks over 3 runs x
+     25 rounds per cell);
+   - C1 ARCHIVED CONTROL REPLICATION (frozen, as sessions 13-36):
+     (a) both controls satisfy their criteria (c2 FLOOR; c8 pooled
+     median within +/-5% of 32,915) or (b) discrepancy -> the letter
+     is (c);
+   - INVALIDATION: VERIFY mismatch > 0 in any of the 78 logs, SAMPLE
+     count != 450 in any run, knob-field mismatch, S=8 fail-closed
+     violation, or cell-map mismatch -> integrity failure -> letter
+     (c);
+   - the T1 letters are exactly section 0's.
+
+5. NAMED LIMITATIONS (frozen):
+   (L2) n, B, the host and the instrument are FIXED against every
+        prior reading; the INDEPENDENT VARIABLE this session is
+        BLOCK IDENTITY WITHIN SESSION 36'S WINDOW. The letters are
+        observational discriminators; none is a causal mechanism and
+        none is claimed as one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on
+        this instrument and stays UNMEASURED. (A)/(B) are statements
+        about the proxy, not about GPU-side time.
+   (L4) hi and tw are different dispatch shapes ((WORK_MUL,NDIV)
+        1024/4033 vs 2048/8066); their min statistics are compared
+        in RANKS, never as absolute values.
+   (L5) this session does NOT narrow the flip bracket (252,604,
+        253,906]; nothing between grid points is interpolated.
+   (L7) all cross-session values are QUOTE-ONLY.
+   (L10) per-run statistics are descriptive; the frozen estimator
+        unit is the 3-run block.
+   (L11) the settling bar NEVER judges the (2048,8066) twin; this
+        session produces NO ledger line at all (no new reading).
+   (L12) frozen ledger-construction decision carried UNCHANGED.
+   (L14) the block-pair adjacency is the design's common-mode
+        resolution: structure faster than one block-pair cannot read
+        on any of A, B, C.
+   (L15) NAMED THIS SESSION: (A), (B), (C) share the same 12 blocks
+        and the same host window; they are NOT independent tests and
+        no multiple-comparison claim is made or needed for the joint
+        letter (which is a single pre-registered pattern statement).
+
+6. ANALYSIS ROUTE (frozen): analysis-s37.py parses ONLY the 78
+   committed session-36 run logs (../anv-b3commonmode-20261028/
+   run-<tag>-r<R>.txt) and writes publication-s37.txt in its own
+   directory; deterministic (run twice, diff). An independent
+   scratch generator re-derives every cited number from the same
+   committed logs and the committed custody artifacts ONLY into
+   derivation-census-s37.txt (independent second parser, split-based;
+   the frozen Spearman + permutation algorithm re-implemented there).
+   The bar letter comes ONLY from settle-bar-eval.py over the
+   unchanged ledger (bar-eval-s37.txt).

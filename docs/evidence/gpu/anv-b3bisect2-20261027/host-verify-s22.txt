@@ -1,0 +1,68 @@
+== host-verify (JUN-59 THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, SECOND
+== CUT, session 22) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 21's committed expected-corpus.sha256, itself a ==
+== byte-copy chain back to that census -- byte-copy identity recorded in ==
+== derivation-census-s22.txt). ZERO derivation edits this ==
+== session: the instrument is session 21's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the arms are (BATCH,WORK_MUL,NDIV) triples of ==
+== the source's existing knobs. ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s22-a.txt: local=c710f57c32f683285f55ac5ed6b7cd8555640ed84805353840dc45426f554503 host=c710f57c32f683285f55ac5ed6b7cd8555640ed84805353840dc45426f554503
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-21 committed file re-sha256 local ==
+== == the uploaded host copy == the session-22 committed copy): ==
+== a5e539f0... MATCH (derivation-census-s22.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-b3bisect2-20261027:
+  2026-10-27T19:43:25Z  mkdir + cp -a of session 21's verified corpus
+                        copy (shaders/ -- 142 files: the 16 corpus
+                        files + the staged set the series uses)
+  2026-10-27T19:43:32Z
+                        scp of instrument + manifest +
+                        expected-corpus (digests checked above), then
+                        custody: corpus sha256sum -c from the workdir
+                        root 16/16 OK, local-vs-host 3/3 MATCH
+                        (single attempt)
+  2026-10-27T19:43:50Z  pre-GO compile smoke (NAMED, NOT HIDDEN; the
+                        session-9 D2 lesson applied by design; the
+                        smoke prints its own host timestamp
+                        2026-10-27T19:43:50Z):
+                        throwaway dir ~/anv-b32-smoke, gcc -O2
+                        -DBATCH=3 -DWORK_MUL=13 -DNDIV=48 (NEW knob
+                        pair (13,48)) and gcc -O2 -DBATCH=3
+                        -DWORK_MUL=26 -DNDIV=96 (NEW knob pair
+                        (26,96)) -- both NEW pairs of the
+                        WORK_MUL!=1 + NDIV!=1 combination class --
+                        rc=0 both, build stderr 0 bytes both, host
+                        source digest a5e539f0... MATCH local, ZERO
+                        runs, ZERO timing
+  2026-10-27T19:43:50Z  GO (custody complete) -- BEFORE the builds
+                        (19:43:58Z..19:43:59Z) and ALL 21 runs
+                        (19:44:10Z..19:44:17Z); run-window.txt and
+                        build-census-s22.txt carry those transcripts

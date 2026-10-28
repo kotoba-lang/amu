@@ -1,0 +1,56 @@
+{
+  "schema": "amu.aiueos-guard-negative-control.v1",
+  "observerResult": "refused: no #UD at window guard; observed CLI exit1",
+  "observer": {
+    "bytes": 4062,
+    "sha256": "f2d55dee5830b66de7b8d5ec8a7988e68ff72f7f56997998598f142a66cb4de3"
+  },
+  "expectedTrapAddress": "0x1010ee",
+  "exceptionLog": {
+    "bytes": 228286,
+    "sha256": "6af80fe3fb3c8f5c2eaa9dd2ec59703691252e19e528ce11477157e285eb949b"
+  },
+  "command": [
+    "/opt/homebrew/Cellar/qemu/10.0.3/bin/qemu-system-x86_64",
+    "-machine",
+    "q35,accel=tcg",
+    "-cpu",
+    "max",
+    "-m",
+    "128M",
+    "-smp",
+    "1",
+    "-drive",
+    "if=pflash,format=raw,readonly=on,file=/opt/homebrew/Cellar/qemu/10.0.3/share/qemu/edk2-x86_64-code.fd",
+    "-drive",
+    "file=fat:rw:esp,format=raw",
+    "-boot",
+    "order=c",
+    "-nic",
+    "none",
+    "-display",
+    "none",
+    "-serial",
+    "file:serial.log",
+    "-debugcon",
+    "file:debug.log",
+    "-no-reboot",
+    "-d",
+    "int",
+    "-D",
+    "exceptions.log"
+  ],
+  "normalEntryReceipt": {
+    "bytes": 1082,
+    "sha256": "444fd7250f2add74b1a3707db5b08705546cc08fb336d90ff6795fc236a39274"
+  },
+  "kernel": {
+    "bytes": 110872,
+    "sha256": "962612065d5f86bf46f122c7ef988329e752e6cf66d160a5f98cf8f28765ec37"
+  },
+  "efi": {
+    "bytes": 129024,
+    "sha256": "2df2dd1b02af0a7b025381b7d5a49479daeb288946c1d708efccfae46ff5a088"
+  },
+  "falsePass": false
+}

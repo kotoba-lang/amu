@@ -1,0 +1,44 @@
+[
+  {
+    "name": "access",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 base 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "wrong-identity",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 2 0 base 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "outside-bar",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 (+ base 16777216) 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "oversized",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-pci-mmio 0 1 0 2147483648 65537) 0) 42 0))\n"
+  },
+  {
+    "name": "zero-bytes",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-pci-mmio 0 1 0 2147483648 0) 0) 42 0))\n"
+  },
+  {
+    "name": "ram",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [selected (kernel-out-u32 3320 2147485712)\n       raw (kernel-in-u32 3324)\n       base (bit-and raw 4294967280)\n       mmio (kernel-pci-mmio 0 1 0 1048576 4096)\n       old (kernel-load-u32-4k mmio 4096 0)\n       wrote (kernel-store-u32-4k mmio 4096 0 305419896)\n       actual (kernel-load-u32-4k mmio 4096 0)\n       restored (kernel-store-u32-4k mmio 4096 0 old)\n       again (kernel-load-u32-4k mmio 4096 0)]\n   (if (and (= selected 2147485712) (= wrote 305419896) (= actual 305419896)\n            (= restored old) (= again old)) 42 0)))\n"
+  },
+  {
+    "name": "literal-root",
+    "exit": 1,
+    "stderr": "region instruction 7\n  writer 4\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 7\n    writer 4\n    writer op 3\n    writer operand 2147483648\n  supplied extent source 4294967808\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/pci-private/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 7\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u32 2147483648 512 0))\n"
+  }
+]

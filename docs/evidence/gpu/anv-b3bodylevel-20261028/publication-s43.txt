@@ -1,0 +1,145 @@
+JUN-59 session 43 -- THE CROSS-WINDOW BODY-LEVEL REPARTITION
+PROBE (publication)
+(does the window-to-window variation of the BODY level -- the
+median over the 18 ok cells of the block's per-cell pooled-
+median gpu_ticks -- exceed run-exchangeable sampling noise? ONE
+observable axis: S = max_w L_w - min_w L_w over the three
+probed windows (s36, s38, s39) per arm vs a cross-window
+run-repartition resampling null over the same arms' 108
+committed runs.)
+Produced ONLY by analysis-s43.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window); protocol.txt was
+frozen BEFORE any statistic of this probe was computed (freeze
+stamp 2026-10-28T06:07:08Z). ANALYSIS slice -- NO hardware ran
+this tick; every input quantity was MEASURED on aiueos-6600hs
+Intel BMG G31 ANV in sessions 36/38/39 (run windows
+2026-10-28T02:40:49Z, 03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs;
+   block order A..L; reproduction check vs the published/
+   quote-only vectors of publication-s39.txt section 3 --
+   mismatch => (c)):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+3b. ANCHOR REPRODUCTION ROW (protocol section 3, pre-registered;
+    hi block A's (sum,128,S=16) pooled median and 18-cell
+    min..max vs the quote-only anchor priors of publication-
+    s36/38/39 section D -- mismatch => (c)):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   does the window-to-window spread of the BODY LEVEL (the
+   median over the 18 ok cells of the block's per-cell pooled
+   medians) EXCEED the cross-window run-repartition null?
+   (S = max_w L_w - min_w L_w; 20000
+   trials, seed 20261028, probe order hi then tw; p = (1 +
+   count(S* >= S_obs)) / (1 + 20000), one-sided; L and S
+   in quarter-tick exact arithmetic, printed in ticks):
+   hi: L per window (s36, s38, s39) = 1138.25, 1139.50, 1137.25; S_obs = 2.25; count 13660 / 20001; p = 0.683016; p <= 0.05: False; arm letter (a) BODY-LEVEL-CONSISTENT
+   tw: L per window (s36, s38, s39) = 1138.50, 1137.25, 1136.00; S_obs = 2.50; count 12202 / 20001; p = 0.610119; p <= 0.05: False; arm letter (a) BODY-LEVEL-CONSISTENT
+   T1 = (a) BODY-LEVEL-CONSISTENT
+   NAMED, NOT HIDDEN: (a) does NOT prove 'no physical window-
+   level driver' -- the null is run-exchangeability ACROSS
+   WINDOWS and a driver acting uniformly within AND across
+   windows is invisible by construction; AND the BODY statistic
+   is the MEDIAN OVER 18 HETEROGENEOUS CELLS (different
+   ops/workgroups span 986..1,438 ticks even within one block)
+   -- a window-level shift that moves only SOME cells' levels
+   (per-cell structure) can cancel in the median over cells and
+   is invisible to this construction (named limitation of the
+   row question; a per-cell shift probe is a named candidate
+   row); the body level sits ABOVE the frozen 1,000-tick class
+   boundary while the min-tail sits AT it -- the threshold-
+   artifact-vs-representation ambiguity binds this probe less
+   directly but STAYS UNRESOLVED; (b) would implicate window-
+   timescale structure in the BODY LEVEL but NOT name it
+   (thermal/scheduling/memory/driver state all UNMEASURED);
+   exchangeability across windows is a STRONGER assumption than
+   session 40's within-window exchangeability and is itself an
+   assumption; three windows ~30-60 min apart in ONE day on ONE
+   host is LOW POWER (a null at three windows is not evidence
+   of stationarity); this letter and sessions 40/41/42's
+   letters are DIFFERENT nulls over the SAME runs -- none
+   confirms nor overturns another, and the probes share the
+   same 234 logs and resampling skeleton (NOT independent
+   evidence); L2 observational ONLY; NO causal mechanism;
+   direction UNMEASURED; threshold-artifact-vs-representation
+   STAYS UNRESOLVED under any letter.
+
+5. REPLICATION FRAMING (frozen): hi is the primary arm and tw
+   the same-rule replication at the SAME three windows; the
+   joint T1 above is the row answer; the per-arm letters are
+   listed in section 4.
+
+6. DESCRIPTIVE (not the row question):
+   D1 per-run-unit body analog (36 points per (window, arm);
+      median over 18 per-cell medians of 25 -- NAMED DIFFERENT
+      UNIT L10, no letter): median and range of the 36 per-run
+      body values:
+      s36 hi per-run body median 1141.75 range 1127.0..1169.5
+      s36 tw per-run body median 1140.25 range 1122.5..1158.5
+      s38 hi per-run body median 1143.50 range 1124.5..1161.5
+      s38 tw per-run body median 1142.75 range 1124.0..1164.0
+      s39 hi per-run body median 1143.00 range 1119.5..1170.0
+      s39 tw per-run body median 1140.00 range 1130.0..1171.0
+   D2 the L/S scoreboard (descriptive only -- three windows are
+      not a rate, variance or distribution):
+      hi: L s36 1138.25 / s38 1139.50 / s39 1137.25; S 2.25
+      tw: L s36 1138.50 / s38 1137.25 / s39 1136.00; S 2.50
+   D3 per-window MEAN of the 12 block-bodies per arm (second
+      level summary; descriptive only, no letter):
+      s36 hi block-body mean 1138.62 (range 1131.5..1147.5)
+      s36 tw block-body mean 1139.54 (range 1133.0..1146.0)
+      s38 hi block-body mean 1139.17 (range 1133.0..1144.5)
+      s38 tw block-body mean 1136.17 (range 1128.0..1142.0)
+      s39 hi block-body mean 1136.88 (range 1129.5..1141.5)
+      s39 tw block-body mean 1137.21 (range 1126.5..1147.5)
+   D4 anchor-cell level scoreboard (block A's (sum,128,S=16)
+      pooled median + 18-cell min..max; the hi values are the
+      section 3b reproduction row's -- quote-only priors exist
+      for hi only):
+      s36 hi: median 1142 18-cell 991..1438
+      s36 tw: median 1132 18-cell 988..1448
+      s38 hi: median 1132 18-cell 992..1443
+      s38 tw: median 1137 18-cell 988..1448
+      s39 hi: median 1146 18-cell 986..1432
+      s39 tw: median 1139 18-cell 988..1417
+
+7. VERDICT SUMMARY:
+   T1 = (a) BODY-LEVEL-CONSISTENT
+   hi: L (s36, s38, s39) = (1138.25, 1139.50, 1137.25); S_obs 2.25; count 13660/20001; p 0.683016; letter (a) BODY-LEVEL-CONSISTENT
+   tw: L (s36, s38, s39) = (1138.50, 1137.25, 1136.00); S_obs 2.50; count 12202/20001; p 0.610119; letter (a) BODY-LEVEL-CONSISTENT
+   evaluable inputs: vector reproduction EXACT (True); anchor row EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger
+   line (NO reading -> NO line -> NO day-slot consumption).
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

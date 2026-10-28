@@ -1,0 +1,130 @@
+JUN-59 -- session 10 record: GRID x FATNESS INTERACTION (the JOINT knob
+at B=2), INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (the GRID x FATNESS interaction that sessions 8 and 9
+   both named UNMEASURED, ONE observable axis):
+
+     AT FIXED DISPATCH COUNT B=2, IS THE CAPTURE REACHABLE BY THE
+     JOINT GRID x FATNESS DOSE -- the biggest work dose the two
+     proven knobs (WORK_MUL grid, ITERMUL per-workgroup fatness) can
+     jointly produce inside one 2-dispatch bracket?
+
+   arm gf = (B=2, M=8, I=8): 2 dispatches of an 8-times grid
+   (n = 8,000,024) with 8x-fat workgroups = 128 NOMINAL work units.
+   Nominal is a DEFINITION (B*M*I), not a cost claim (X2 realization
+   below; the frozen protocol named the uncalibrated cost in advance).
+
+2. DERIVATION (chain of custody): NO new derivation this session --
+   every input is a byte-reuse of a committed custody-checked artifact:
+   instrument = the archived session-8 snapshot (digest 5c7cf2d5...,
+   NO C edit; all 3 binaries byte-identical to session 8's same-flag
+   binaries -- build-census-s10.txt); iter8 shader sources = session
+   9's committed derived files (inverse check re-run 6/6 EXACT, base
+   census 6/6 MATCH -- shader-reuse-census.txt); the iter8 spv REBUILT
+   with the corpus toolchain are byte-identical to session 9's built
+   spv (6/6, diff exit 0 -- the reproducibility pin); corpus 16/16
+   MATCH; manifests are cell-line byte-copies (cases-s10-a.txt of
+   cases-s9-a.txt, cases-s10-i8.txt of cases-s9-f8.txt; the
+   a->iter8 relation checked programmatically).
+
+3. CHAIN OF CUSTODY (host-verify-s10.txt): corpus 16/16 digests MATCH
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c); instrument +
+   manifests + 6 iter8 sources local-vs-host MATCH (9/9); inverse
+   check 6/6 -- GO at 2026-10-27T13:24:27Z, BEFORE the builds and ALL
+   runs (TIMELINE in host-verify-s10.txt says so).
+
+4. HARDWARE RAN (MEASURED): 15 fresh processes (5 arms x 3 runs), run
+   window 2026-10-27T13:24:58Z..2026-10-27T13:25:15Z, rc=0 15/15,
+   stderr 0 bytes 15/15 (host-side wc -c total 0), 450 SAMPLE lines
+   each; headers byte-identical across all runs outside the # n= knob
+   line; every run's batch=/work_mul=/n= fields == its arm's (B, M,
+   1,000,003*M), barrier_n=0; every CELL's spv= name carries its
+   arm's shader-set suffix (analysis-s10.py checks all fields);
+   forcing reality 270/270; VERIFY mismatch 0 everywhere (the ITERMUL
+   loop did not change any stored value, at any WORK_MUL); S=8
+   fail-closed 90/90. Host: aiueos-6600hs-1 (BMG G31 / ANV), 1 tick =
+   52.083 ns. Per-run transcript (host date -u, rc) in run-window.txt.
+
+5. FINDINGS (publication-s10.txt, produced ONLY by analysis-s10.py
+   over the committed run logs, the recorded publication run twice
+   byte-identical -- diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (32 ticks, band 31..32), c8 = 32,710 vs committed 32,915
+       (-0.62%), inside the frozen +/-5%.
+   (b) C2 KNOB CONTROL REPLICATION fired branch (a) -- g8 FLOOR (32
+       ticks, session 8's committed b2m8 reading) and f8 FLOOR (31
+       ticks, session 9's committed f8b2 reading): both knobs pinned
+       at their single-knob readings in this session's environment.
+   (c) X1 fired branch (a) AS FROZEN -- gf is FLOOR (32 ticks at all
+       18 cells; pooled median (sum,128,S=16) 32, run-median band
+       31..32) while the c8 control (8 nominal units, 8 dispatches)
+       is CAPTURED (32,710 ticks): THE CAPTURE AT B=2 IS NOT
+       REACHABLE EVEN BY THE JOINT GRID x FATNESS DOSE -- 128 nominal
+       work units (64x the captured control's nominal 8) inside a
+       2-dispatch bracket sit at the same 31..32-tick floor as
+       everything else at B<=2. With session 8 (grid axis alone,
+       cost-realized 4.63x, unreachable) and session 9 (fatness axis
+       alone, nominal, unreachable), the capture is not a total-work
+       threshold on ANY knob combination tested to date; dispatch
+       count stays implicated. Observable only; NO causal mechanism
+       claimed or measured.
+   (d) X2 REALIZATION, NAMED, NOT HIDDEN (computed from the same
+       runs' host_ns, no new measurement): the joint knob's cost
+       realization is MARGINAL OVER THE GRID KNOB ALONE -- gf/c2
+       5.92x host_ns (nominal 64x), g8/c2 5.55x (nominal 8x), f8/c2
+       1.18x (nominal 8x), gf/g8 = 1.07x: the fatness knob adds ~7%
+       realized cost on top of the grid knob (consistent with session
+       9's marginal I realization; the grid knob here realizes 5.55x
+       vs session 8's committed 4.63x, both runs' own numbers as
+       recorded). Therefore branch (c) closes the NOMINAL joint axis
+       only: a genuinely COST-CALIBRATED 8x-heavier-per-workgroup,
+       8x-bigger-grid dose at B=2 stays UNMEASURED (the frozen
+       protocol named the uncalibrated cost in advance).
+   (e) W2-analogue (descriptive): equal nominal work splits by
+       dispatch count again -- 16 nominal units as 2 dispatches (g8)
+       32 ticks FLOOR vs 8 units as 8 dispatches (c8) 32,710 ticks
+       CAPTURED (ratio 0.001).
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism for the undercount, the
+   capture or the onset; WHY capture turns on where it does; the joint
+   knob's cost realization beyond the reported host_ns factors; any
+   genuinely COST-CALIBRATED joint dose at B=2; any codegen difference
+   between iter1/iter8 spv and archived spv beyond the wrapper; any
+   (M,I) outside {(1,1),(8,1),(1,8),(8,8)}; M or I in {2..7,9+}; any
+   B outside {2,8}; B in {4,5,6,7} at any (M,I); any N>0; session 2's
+   run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   isolated single-dispatch timing; non-empty barriers; anything off
+   this host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   gridfat session protocol + analysis-s10.py validated by complete
+   runs; MEASURED only what publication-s10.txt sections 1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-gridfat-20261027/ + the ADR-0355 dated
+note. (JUN-55, JUN-59)

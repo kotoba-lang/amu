@@ -1,0 +1,57 @@
+name: native-checked-definition
+# Independent producer qualification; it does not replace any selfhost gate
+# or admit these prototype modules into the production compiler closure.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "seed/**"
+      - "bin/amu"
+      - "scripts/seed/check-checked-definition-native.py"
+      - ".github/workflows/native-checked-definition.yml"
+  push:
+    branches: [main]
+    paths:
+      - "seed/**"
+      - "bin/amu"
+      - "scripts/seed/check-checked-definition-native.py"
+      - ".github/workflows/native-checked-definition.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-checked-definition-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  producer:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            isa: x86_64
+            compiler: bin/amu
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted source and compiler pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native checking, alpha normalization, SCC oracle and executed mutants
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --slot-dir "$RUNNER_TEMP/native-build-slots" --
+          python3 scripts/seed/check-checked-definition-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/checked-definition"
+          --benchmark-scc
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: checked-definition-${{ matrix.isa }}
+          path: ${{ runner.temp }}/checked-definition
+          if-no-files-found: warn

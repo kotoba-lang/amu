@@ -1,0 +1,63 @@
+== host-verify (JUN-59 WORK-THRESHOLD BISECT at fixed B=8, session 13) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== census (parsed programmatically from that committed file, never ==
+== transcribed; the same 16 lines are checked host-side via ==
+== `sha256sum -c expected-corpus.sha256`). ZERO derivation edits this ==
+== session: the instrument is session 12's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the new bisect arms are new -D NDIV values only. ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s13-a.txt: local=9ceefa897dbc878ea370ef36f9bdbd8e455e13f41fdffd57af289b90a8c6d897 host=9ceefa897dbc878ea370ef36f9bdbd8e455e13f41fdffd57af289b90a8c6d897
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-12 committed file re-sha256 local ==
+== == the uploaded host copy == the session-13 committed copy): ==
+== a5e539f0... MATCH (derivation-census.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== (there is nothing to strip; byte-identity IS the custody). ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-workthresh-20261027:
+  2026-10-27T14:52:01Z  cp -a of session 12's verified corpus copy
+                        (shaders/ -- 100 files: the 16 corpus files +
+                        84 carried-forward extras from the session
+                        chain; extras UNUSED by this session's manifest
+                        -- named, not hidden)
+  2026-10-27T14:52:08Z  upload complete (instrument + manifest +
+                        census expectation); the 3 upload digests
+                        MATCH local
+  2026-10-27T14:52:14Z  PRE-PROTOCOL compile smoke (throwaway dir
+                        ~/anv-wt-smoke, gcc -O2 -DBATCH=8 -DNDIV=32
+                        -- a NEW knob value -- rc=0, host digest
+                        a5e539f0... MATCH local, ZERO runs, ZERO
+                        timing -- the session-9 D2 lesson applied by
+                        design even though the source is byte-identical
+                        to session 12's built-and-run source)
+  2026-10-27T14:53Z     protocol.txt frozen (this file's session)
+  2026-10-27T14:53:09Z  THIS verify: corpus 16/16 + local-vs-host 3/3
+                        -- GO
+  2026-10-27T14:53:20Z..14:53:21Z  builds: 7 gcc binaries (one per
+                        (BATCH, NDIV) arm pair; build-census-s13.txt)
+  2026-10-27T14:53:30Z..14:53:38Z  the 21 runs (strictly after this
+                        verify -- run-window.txt)
+host timestamp at this verify: 2026-10-27T14:53:09Z
+SESSION GO/NO-GO: GO (corpus 16/16 + instrument + manifest + census
+expectation all MATCH local-vs-host; instrument byte-identity to
+session 12's committed derived source MATCH; manifest cell-line
+byte-copy checked -- derivation-census.txt)

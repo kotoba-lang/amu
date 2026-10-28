@@ -1,0 +1,101 @@
+;; Independent native reachability oracle, not another Tarjan implementation.
+;; Exhaust every directed graph through four vertices, including loops and
+;; repeated edges; compare the entire SCC equivalence relation.
+(defn- dgt-check [n :i64 mask :i64] :bool
+  (let [G (dgg-new n (* n n 2)) R (vector-alloc (* n n))
+        edges (loop [i 0 state G]
+                (if (= i (* n n)) state
+                  (let [from (quot i n) to (rem i n)
+                        present (not= (bit-and mask (i64-shift-left 1 i)) 0)
+                        reach (vector-assoc! R i (if (or present (= from to)) 1 0))]
+                    (recur (inc i) (if present (-> state (dgg-add from to) (dgg-add from to)) state)))))
+        closure (loop [k 0]
+                  (if (= k n) 0
+                    (let [rows (loop [i 0]
+                                 (if (= i n) 0
+                                   (let [columns (loop [j 0]
+                                                   (if (= j n) 0
+                                                     (let [link (if (and (> (vector-at R (+ (* i n) k)) 0)
+                                                                                 (> (vector-at R (+ (* k n) j)) 0))
+                                                                  (vector-assoc! R (+ (* i n) j) 1) R)]
+                                                       (recur (inc j)))))]
+                                     (recur (inc i)))))]
+                      (recur (inc k)))))
+        C (dgg-components edges)]
+    (and (= (vector-at C 0) 0) (dgg-members-valid? C) (= (vector-at C 7) n) (= (vector-at C 8) 0)
+      (loop [i 0]
+        (if (= i (* n n)) true
+          (let [a (quot i n) b (rem i n)
+                expected (and (> (vector-at R (+ (* a n) b)) 0) (> (vector-at R (+ (* b n) a)) 0))]
+            (and (> (dgg-f C a 5) 0) (= (dgg-f C a 8) 0)
+                 (= (= (dgg-f C a 5) (dgg-f C b 5)) expected) (recur (inc i)))))))))
+(defn- dgt-grid [] :bool
+  (loop [n 0]
+    (if (= n 5) true
+      (and (loop [mask 0]
+             (if (= mask (i64-shift-left 1 (* n n))) true
+               (and (arena-scope (dgt-check n mask)) (recur (inc mask)))))
+           (recur (inc n))))))
+(defn- dgt-large [cycle :bool] :bool
+  (let [n (dec MM-FN-CAP) G (dgg-new n n)
+        edges (loop [i 0 state G]
+                (if (= i (if cycle n (dec n))) state
+                  (recur (inc i) (dgg-add state i (rem (inc i) n)))))
+        C (dgg-components edges)]
+    (and (= (vector-at C 0) 0) (= (vector-at C 7) n) (= (vector-at C 8) 0)
+         (= (vector-at C 9) (if cycle 1 n))
+         (loop [i 0]
+           (if (= i n) true
+             (and (= (dgg-f C i 8) 0)
+                  (= (dgg-f C i 5) (if cycle 1 (- n i))) (recur (inc i))))))))
+(defn- dgt-refusals [] :bool
+  (and (= (vector-at (dgg-new -1 0) 0) 9)
+       (= (vector-at (dgg-new MM-FN-CAP 0) 0) 9)
+       (= (vector-at (dgg-new 1 -1) 0) 9)
+       (= (vector-at (dgg-new 1 (inc MM-NODE-CAP)) 0) 9)
+       (= (vector-at (dgg-init (vector-alloc 16) 1 0 16) 0) 9)
+       (= (vector-at (dgg-add (dgg-new 2 1) -1 0) 0) 9)
+       (= (vector-at (dgg-add (dgg-new 2 1) 0 2) 0) 9)
+       (= (vector-at (-> (dgg-new 2 1) (dgg-add 0 1) (dgg-add 1 0)) 0) 9)
+       (loop [kind 0]
+         (if (= kind 6) true
+           (and (arena-scope
+                  (let [G (dgg-add (dgg-new 2 1) 0 1) base (dgg-edges G)
+                        broken (case kind
+                                 0 (vector-assoc! G base 2)
+                                 1 (vector-assoc! G (inc base) 1)
+                                 2 (vector-assoc! G (+ base 2) 2)
+                                 3 (dgg-put G 0 14 0)
+                                 4 (dgg-put G 1 6 1)
+                                 5 (dgg-put G 1 14 1) G)
+                        C (dgg-components broken)] (= (vector-at C 0) 9)))
+                (recur (inc kind)))))
+       (let [G (dgg-components (dgg-new 1 1))]
+         (and (dgg-direct-only? G) (= (vector-at (dgg-add G 0 0) 0) 9)))
+       (let [G (dgg-components (dgg-new 1 0))] (= (vector-at (dgg-components G) 0) 9))
+       (let [G (-> (dgg-new 1 0) (vector-assoc! 13 1) (dgg-put 0 15 4)) C (dgg-components G)]
+         (and (= (vector-at C 0) 0) (not (dgg-direct-only? C))))
+       (let [G (dgg-put (dgg-new 1 0) 0 15 4)] (= (vector-at (dgg-components G) 0) 9))
+       (let [G (-> (dgg-new 1 0) (vector-assoc! 15 1) (dgg-put 0 15 1)) C (dgg-components G)]
+         (and (= (vector-at C 0) 0) (not (dgg-direct-only? C))))
+       (let [G (dgg-put (dgg-new 1 0) 0 15 1)] (= (vector-at (dgg-components G) 0) 9))
+       (let [G (-> (dgg-new 1 0) (vector-assoc! 15 1) (dgg-put 0 15 2)) C (dgg-components G)]
+         (and (= (vector-at C 0) 0) (not (dgg-direct-only? C))))
+       (let [G (-> (dgg-new 1 0) (vector-assoc! 15 1) (dgg-put 0 15 3))]
+         (= (vector-at (dgg-components G) 0) 9))
+       (loop [kind 0]
+         (if (= kind 3) true
+           (and (arena-scope
+                  (let [G (dgg-components (dgg-add (dgg-new 2 1) 0 1))
+                        head (+ (vector-at G 12) (vector-at G 3))
+                        broken (case kind 0 (vector-assoc! G head 0)
+                                           1 (vector-assoc! G head 1)
+                                           2 (dgg-put G 1 9 2) G)]
+                    (not (dgg-members-valid? broken))))
+                (recur (inc kind)))))))
+(defn- dgt-run [] :i64
+  (cond (not (dgt-grid)) (let [out (io-err "DGG:REACHABILITY\n")] 1)
+        (not (and (arena-scope (dgt-large false)) (arena-scope (dgt-large true))))
+          (let [out (io-err "DGG:LARGE\n")] 1)
+        (not (dgt-refusals)) (let [out (io-err "DGG:REFUSAL\n")] 1)
+        :else (let [out (io-out "PASS_NATIVE_SPARSE_GRAPH 66067 8191\n")] 0)))

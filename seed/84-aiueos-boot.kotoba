@@ -1,0 +1,295 @@
+;; JUN-31: native PE32+ transition loader packaging. No foreign object/linker.
+;; Transcribes the ordinary two-segment transition in packaging/pe32plus:
+;; firmware GOP metadata, AllocatePages/CopyMem, private scratch/map,
+;; ExitBootServices, then the admitted ELF entry. Resident and K16 tender
+;; modes are unsupported and must refuse, never silently substitute this mode.
+;; This module packages bytes; a boot probe does not qualify the whole OS.
+
+(defn- eb-align [n :i64 a :i64] :i64 (* a (quot (+ n (dec a)) a)))
+(defn- eb-le [V :vector-i64 at :i64 n :i64] :i64
+  (if (or (< at 0) (> at (vector-count V)) (> n (- (vector-count V) at))) -1
+    (loop [i 0 value 0]
+      (if (= i n) value
+        (recur (inc i) (bit-or value (i64-shift-left (vector-at V (+ at i)) (* 8 i))))))))
+(defn- eb-segment? [V :vector-i64 at :i64 flags :i64] :bool
+  (let [off (eb-le V (+ at 8) 8) pa (eb-le V (+ at 24) 8)
+        size (eb-le V (+ at 32) 8)]
+    (and (= (eb-le V at 4) 1) (= (eb-le V (+ at 4) 4) flags)
+         (>= off 0) (> size 0) (<= size 3145728) (= size (eb-le V (+ at 40) 8))
+         (>= pa 1048576) (<= pa (- 1073741824 size)) (= (bit-and pa 4095) 0)
+         (= (eb-le V (+ at 16) 8) pa) (= (eb-le V (+ at 48) 8) 4096)
+         (<= off (vector-count V)) (<= size (- (vector-count V) off)))))
+(defn- eb-admit? [V :vector-i64] :bool
+  (let [n (vector-count V) ph (eb-le V 32 8) entry (eb-le V 24 8)
+        rw (eb-le V (+ ph 80) 8)]
+    (and (>= n 176) (<= n (cond (= rw 0x400000) 7340032
+                                  (= rw 0x300000) 6291456
+                                  :else 4194304))
+         (= (eb-le V 0 8) 0x00010102464c457f)
+         (= (eb-le V 8 8) 0) (= (eb-le V 16 2) 2) (= (eb-le V 18 2) 62)
+         (= (eb-le V 20 4) 1) (= (eb-le V 48 4) 0)
+         (= (eb-le V 52 2) 64) (= (eb-le V 54 2) 56) (= (eb-le V 56 2) 2)
+         (>= ph 64) (<= ph (- n 112)) (= (bit-and ph 7) 0)
+         (eb-segment? V ph 5) (eb-segment? V (+ ph 56) 6)
+         (let [rx (eb-le V (+ ph 24) 8) rxn (eb-le V (+ ph 40) 8)
+               rw (eb-le V (+ ph 80) 8) rwn (eb-le V (+ ph 96) 8)]
+           (and (>= entry rx) (< entry (+ rx rxn))
+                (or (<= (+ rx rxn) rw) (<= (+ rw rwn) rx)))))))
+
+;; Backend state 0..8: entry, RX file/address/size, RW file/address/size,
+;; kernel bytes, payload bytes. 9..14: data RVA/size/file, reloc RVA/file,
+;; embedded kernel offset. CODE is the loader; OUT is the resulting PE.
+(defn- eb-setup [M :vector-i64 K :vector-i64 payload :i64 pci :bool] :vector-i64
+  (let [p (eb-le K 32 8)]
+    (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+        (xg-set 0 (eb-le K 24 8)) (xg-set 1 (eb-le K (+ p 8) 8))
+        (xg-set 2 (eb-le K (+ p 24) 8)) (xg-set 3 (eb-le K (+ p 32) 8))
+        (xg-set 4 (eb-le K (+ p 64) 8)) (xg-set 5 (eb-le K (+ p 80) 8))
+        (xg-set 6 (eb-le K (+ p 88) 8)) (xg-set 7 (vector-count K)) (xg-set 8 payload)
+        (xg-set 15 (if pci 1 0))
+        (xg-set 14 (eb-align (+ 16560 (if pci EP-BYTES 0) payload) 16)))))
+(defn- eb-rip [M :vector-i64 op :i64 n :i64 label :i64] :vector-i64 (xg-rel M op n 2 label))
+(defn- eb-alloc [M :vector-i64 second :bool] :vector-i64
+  (let [size (if second (xg-get M 6) (xg-get M 3)) address (if second 2 1) source (if second 23 22)]
+    (-> M (xg-bytes 0x00000002b9 5) (xg-bytes 0x00000002ba 5)
+        (xg-bytes 0xb841 2) (xg-bytes (quot (+ size 4095) 4096) 4)
+        (eb-rip 0x0d8d4c 3 address) (xg-bytes 0x2856ff41 4)
+        (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26)
+        (eb-rip 0x0d8b48 3 address) (eb-rip 0x158d48 3 source)
+        (xg-bytes 0xb841 2) (xg-bytes size 4) (xg-bytes 0x0000016096ff41 7))))
+(defn- eb-gop [M :vector-i64] :vector-i64
+  (-> M (eb-rip 0x0d8d48 3 19) (xg-bytes 0xd231 2) (eb-rip 0x058d4c 3 20)
+      (xg-bytes 0x0000014096ff41 7) (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 24)
+      (eb-rip 0x058b48 3 20) (xg-bytes 0xc08548 3) (eb-rip 0x840f 2 24)
+      (xg-bytes 0x18508b48 4) (xg-bytes 0xd28548 3) (eb-rip 0x840f 2 24)
+      (xg-bytes 0x18428b48 4) (eb-rip 0x058948 3 13)
+      (xg-bytes 0x20428b48 4) (eb-rip 0x058948 3 14)
+      (xg-bytes 0x08428b48 4) (xg-bytes 0xc08548 3) (eb-rip 0x840f 2 24)
+      (xg-bytes 0x04488b 3) (eb-rip 0x0d89 2 15)
+      (xg-bytes 0x08508b 3) (eb-rip 0x1589 2 16)
+      (xg-bytes 0x0c488b 3) (eb-rip 0x0d89 2 18)
+      (xg-bytes 0x20508b 3) (eb-rip 0x1589 2 17) (xg-label 24)))
+(defn- eb-code [M :vector-i64] :vector-i64
+  (let [start (-> M (xg-bytes 0x5741564155415441 8) (xg-bytes (if (= (xg-get M 15) 1) 0x38ec8348 0x28ec8348) 4)
+                  (xg-bytes 0xd58949cc8949 6) (xg-bytes 0x60728b4c 4)
+                  (eb-gop) (eb-alloc false) (eb-alloc true)
+                  (xg-bytes 0x00000000b9 5) (xg-bytes 0x00000002ba 5) (xg-bytes 0xb841 2) (xg-bytes 15 4)
+                  (eb-rip 0x0d8d4c 3 9) (xg-bytes 0x2856ff41 4)
+                  (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26))
+        payload (if (> (xg-get M 8) 0)
+                  (-> start (eb-rip 0x058d48 3 21) (eb-rip 0x058948 3 11)
+                      (xg-byte 0xb8) (xg-bytes (xg-get M 8) 4) (eb-rip 0x058948 3 12)) start)]
+    (-> (if (= (xg-get M 15) 1) (ep-code payload) payload) (eb-rip 0x058d48 3 10) (eb-rip 0x058948 3 4) (xg-label 25)
+        (xg-bytes 0x00004000b8 5) (eb-rip 0x058948 3 5)
+        (eb-rip 0x0d8d48 3 5) (eb-rip 0x158b48 3 4)
+        (eb-rip 0x058d4c 3 8) (eb-rip 0x0d8d4c 3 6)
+        (eb-rip 0x058d48 3 7) (xg-bytes 0x2024448948 5) (xg-bytes 0x3856ff41 4)
+        (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26)
+        (xg-bytes 0xe1894c 3) (eb-rip 0x158b48 3 8)
+        (xg-bytes 0x000000e896ff41 7) (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 25)
+        (eb-rip 0x3d8d48 3 3) (xg-bytes 0xb848 2) (xg-bytes (xg-get M 0) 8) (xg-bytes 0xd0ff 2)
+        (xg-label 26) (xg-bytes 0xee46b000e9ba66 7)
+        (xg-bytes 0x007fb800f4ba66 7) (xg-bytes 0xef0000 3) (xg-bytes 0xfcebf4fa 4))))
+(defn- eb-external [M :vector-i64 label :i64 off :i64] :vector-i64
+  (mem-set M (+ MM-LABEL-BASE label) (+ 1 (- (xg-get M 9) 4096) off)))
+(defn- eb-labels [M :vector-i64] :vector-i64
+  (let [guid (eb-align (+ (xg-get M 14) (xg-get M 7)) 8)]
+    (-> M (eb-external 1 0) (eb-external 2 8) (eb-external 3 16)
+        (eb-external 4 32) (eb-external 5 40) (eb-external 6 48) (eb-external 7 56)
+        (eb-external 8 64) (eb-external 9 96) (eb-external 10 176)
+        (eb-external 11 112) (eb-external 12 120) (eb-external 13 128)
+        (eb-external 14 136) (eb-external 15 144) (eb-external 16 148)
+        (eb-external 17 152) (eb-external 18 156) (eb-external 19 guid) (eb-external 20 (+ guid 16))
+        (eb-external 21 (+ 16560 (if (= (xg-get M 15) 1) EP-BYTES 0))) (eb-external 22 (+ (xg-get M 14) (xg-get M 1)))
+        (eb-external 23 (+ (xg-get M 14) (xg-get M 4))))))
+
+(defn- eb-section [M :vector-i64 name :i64 size :i64 rva :i64 raw :i64 off :i64 flags :i64] :vector-i64
+  (-> M (xg-out name 8) (xg-out size 4) (xg-out rva 4) (xg-out raw 4) (xg-out off 4)
+      (xg-out 0 8) (xg-out 0 4) (xg-out flags 4)))
+(defn- eb-loader-base? [M :vector-i64 base :i64 size :i64] :bool
+  (and (or (<= (+ base size) (xg-get M 2)) (<= (+ (xg-get M 2) (xg-get M 3)) base))
+       (or (<= (+ base size) (xg-get M 5)) (<= (+ (xg-get M 5) (xg-get M 6)) base))))
+(defn- eb-header [M :vector-i64] :vector-i64
+  (let [text (xg-pos M) text-raw (eb-align text 512) data (xg-get M 10) raw (eb-align data 512)
+        reloc (xg-get M 12) image (eb-align (+ reloc 12) 4096)
+        base (cond (eb-loader-base? M 0x400000 image) 0x400000
+                   (eb-loader-base? M 0x1000000 image) 0x1000000
+                   (eb-loader-base? M 0x2000000 image) 0x2000000 :else 0)
+        admitted (if (or (= base 0) (> image 8388608)) (xg-err M 7104 image) M)]
+    (-> admitted (mem-set MM-OUT-N 1) (xg-out 0x5a4d 2) (xg-pad 60) (xg-out 128 4) (xg-pad 128)
+        (xg-out 0x4550 4) (xg-out 0x8664 2) (xg-out 3 2) (xg-out 0 8) (xg-out 0 4)
+        (xg-out 240 2) (xg-out 0x22 2)
+        (xg-out 0x20b 2) (xg-out 1 1) (xg-out 0 1) (xg-out text-raw 4)
+        (xg-out (+ raw 512) 4) (xg-out 0 4) (xg-out 4096 4) (xg-out 4096 4)
+        (xg-out base 8) (xg-out 4096 4) (xg-out 512 4)
+        (xg-out 2 2) (xg-out 0 2) (xg-out 0 4) (xg-out 2 2) (xg-out 0 2)
+        (xg-out 0 4) (xg-out image 4) (xg-out 512 4) (xg-out 0 4)
+        (xg-out 10 2) (xg-out 0x160 2)
+        (xg-out 1048576 8) (xg-out 4096 8) (xg-out 1048576 8) (xg-out 4096 8)
+        (xg-out 0 4) (xg-out 16 4) (xg-pad (+ 264 40)) (xg-out reloc 4) (xg-out 12 4)
+        (xg-pad 392)
+        (eb-section 0x747865742e text 4096 text-raw 512 0x60000020)
+        (eb-section 0x617461642e data (xg-get M 9) raw (xg-get M 11) 0xc0000040)
+        (eb-section 0x636f6c65722e 12 reloc 512 (xg-get M 13) 0x42000040))))
+(defn- eb-copy [M :vector-i64 V :vector-i64 at :i64 end :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (>= at end)) M
+    (eb-copy (out-put M (vector-at V at)) V (inc at) end)))
+(defn- eb-pci-header [M :vector-i64 file :i64] :vector-i64
+  (if (= (xg-get M 15) 1)
+    (-> M (xg-out EP-MAGIC 8) (xg-out 1 8) (xg-out 0 8) (xg-out 64 8)
+          (xg-pad (+ file EP-CATALOG EP-BYTES))) M))
+(defn- eb-pci-data [M :vector-i64] :vector-i64
+  (if (= (xg-get M 15) 1) (ep-data M) M))
+(defn- eb-image [M :vector-i64 K :vector-i64 P :vector-i64 Q :vector-i64] :vector-i64
+  (let [file (xg-get M 11) kernel (xg-get M 14) guid (eb-align (+ kernel (vector-count K)) 8)]
+    (-> M (eb-header) (xg-out-code 1) (xg-pad file)
+        (xg-out (xg-get M 2) 8) (xg-out (xg-get M 5) 8)
+        (xg-out 0x544f4f4245554941 8) (xg-out (if (= (xg-get M 15) 1) 6 5) 8) (xg-pad (+ file 72))
+        (xg-out (eb-align (+ (xg-get M 2) (xg-get M 3)) 4096) 8)
+        (xg-out (xg-get M 5) 8) (xg-out (+ (xg-get M 5) (xg-get M 6)) 8)
+        (xg-out 0 8) (xg-out 15 8) (xg-pad (+ file 16560))
+        (eb-pci-header file)
+        (eb-copy P 0 (vector-count P)) (eb-copy Q 0 (vector-count Q))
+        (xg-pad (+ file kernel)) (eb-copy K 0 (vector-count K))
+        (xg-pad (+ file guid)) (xg-out 0x4a3823dc9042a9de 8) (xg-out 0x6a5180d0de7afb96 8) (xg-out 0 8)
+        (eb-pci-data)
+        (xg-pad (xg-get M 13)) (xg-out 0 4) (xg-out 12 4) (xg-out 0 4)
+        (xg-pad (+ (xg-get M 13) 512)))))
+(defn- eb-build [K :vector-i64 P :vector-i64 Q :vector-i64 pci :bool] :vector-i64
+  (let [M (eb-code (eb-setup (mem-new) K (+ (vector-count P) (vector-count Q)) pci))
+        data-rva (eb-align (+ 4096 (xg-pos M)) 4096)
+        size (+ (eb-align (+ (xg-get M 14) (vector-count K)) 8) 24 (if pci 120 0))
+        data-off (+ 512 (eb-align (xg-pos M) 512))
+        layout (-> M (xg-set 9 data-rva) (xg-set 10 size) (xg-set 11 data-off)
+                   (xg-set 12 (eb-align (+ data-rva size) 4096))
+                   (xg-set 13 (+ data-off (eb-align size 512))))]
+    (eb-image (xg-fix (if pci (ep-labels (eb-labels layout) (eb-align (+ (xg-get M 14) (vector-count K)) 8)) (eb-labels layout)) 1) K P Q)))
+(defn- eb-pci-required? [K :vector-i64] :bool
+  (let [ph (eb-le K 32 8) rw (eb-le K (+ ph 64) 8)]
+    (= (eb-le K (+ rw 336) 8) 0x31494350)))
+(defn- eb-dual-layout? [K :vector-i64 slot-version :i64] :bool
+  (let [ph (eb-le K 32 8)
+        boundary (case slot-version 4 3145728 3 2097152 1048576)
+        text-cap (if (= slot-version 2) 1048576 2097152)
+        rw-file (eb-le K (+ ph 64) 8)
+        rx-size (eb-le K (+ ph 32) 8)
+        handler (eb-le K (+ rw-file UV-HANDLER) 8)]
+    (and (or (= slot-version 2) (= slot-version 3) (= slot-version 4))
+         (= (eb-le K 24 8) 0x101000)
+         (= (eb-le K (+ ph 8) 8) 4096)
+         (= (eb-le K (+ ph 24) 8) 0x101000)
+         (<= rx-size (- text-cap 4096))
+         (= (eb-le K (+ ph 64) 8) boundary)
+         (= (eb-le K (+ ph 80) 8) (+ 0x100000 boundary))
+         (= (eb-le K (+ ph 96) 8) 2359296)
+         (or (not= slot-version 4)
+             (and (= (eb-le K (+ rw-file 464) 4) UV-V5-MAGIC)
+                  (>= handler 0x101000) (< handler (+ 0x101000 rx-size)))))))
+(defn- eb-package [kernel :string payload :string extra :string out :string pci :bool] :i64
+  (let [K (io-read-bytes kernel)
+        P (if (= (string-length payload) 0) (vector-alloc 0) (io-read-bytes payload))
+        Q (if (= (string-length extra) 0) (vector-alloc 0) (io-read-bytes extra))
+        dual (> (string-length extra) 0)
+        slot-version (eb-le Q 8 8)]
+    (if (or (not (eb-admit? K))
+            (if dual
+              (or (not pci) (not= (vector-count P) 524288) (not= (vector-count Q) 524288)
+                  (not= (eb-le P 0 4) 0x46554941) (not= (eb-le P 4 4) 1)
+                  (not= (eb-le Q 0 8) 0x0031444c50554941)
+                  (not= (eb-le Q 16 8) 8280)
+                  (not (eb-dual-layout? K slot-version)))
+              (> (vector-count P) 524288))
+            (and (eb-pci-required? K) (not pci)))
+      (let [w (io-err "seed-aiueos-boot: E7111 bounded ELF64 kernel/payload admission refused\n")] 1)
+      (let [M (eb-build K P Q pci) e (vector-at M MM-ERR)]
+        (if (not= e 0) (drv-fail M kernel)
+          (let [n (dec (vector-at M MM-OUT-N)) w (out-write-v M out (+ MM-OUT-BASE 1) n)]
+            (if (= (io-exists out) 1)
+              (let [z (io-out (string-concat "{:ok true, :format :pe32+-embedded-kernel, :bytes " (string-concat (mem-u2dec n) "}\n")))] 0)
+              (drv-fail0 E-WRITE))))))))
+(defn- eb-command [] :i64
+  (let [n (io-argc) kernel (io-arg 1) out (io-arg 3)
+        pci (or (and (= n 6) (string=? (io-arg 4) "--pci-resources") (string=? (io-arg 5) "v1"))
+                (and (= n 8) (string=? (io-arg 6) "--pci-resources") (string=? (io-arg 7) "v1"))
+                (and (= n 10) (string=? (io-arg 8) "--pci-resources") (string=? (io-arg 9) "v1")))
+        dual (and (= n 10) (string=? (io-arg 4) "--font") (string=? (io-arg 6) "--user-slot"))
+        payload (if (and (>= n 6) (or (string=? (io-arg 4) "--payload") dual)) (io-arg 5) "")
+        extra (if dual (io-arg 7) "")]
+    (cond (or (not (or (= n 4) (and (= n 6) (or pci (> (string-length payload) 0)))
+                              (and (= n 8) pci (> (string-length payload) 0))
+                              (and dual pci (> (string-length payload) 0) (> (string-length extra) 0))))
+              (not (string=? (io-arg 2) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-boot KERNEL --output NEW_EFI [--payload FILE | --font FILE --user-slot FILE] [--pci-resources v1]; unsupported options refuse\n")] 2)
+          (or (= (io-exists kernel) 0)
+              (and (> (string-length payload) 0) (= (io-exists payload) 0))
+              (and dual (= (io-exists extra) 0))) (drv-fail0 E-READ)
+          :else (eb-package kernel payload extra out pci))))
+
+;; A fixed-size region for the v6 boot-payload capability. The outer slot is
+;; always allocated in full; its 64-byte header gives the bounded inner bytes.
+;; Digest and signature admission remain the guest's responsibility.
+(defn- eu-v2-elf? [P :vector-i64 v3 :bool] :bool
+  (and (= (vector-count P) 8280)
+       (= (eb-le P 0 8) 0x00010102464c457f)
+       (= (eb-le P 16 2) 2) (= (eb-le P 18 2) 62)
+       (= (eb-le P 24 8) (if v3 0x320000 0x220000)) (= (eb-le P 32 8) 64)
+       (= (eb-le P 54 2) 56) (= (eb-le P 56 2) 2)
+       (= (eb-le P 64 4) 1) (= (eb-le P 68 4) 5)
+       (= (eb-le P 72 8) 4096) (= (eb-le P 80 8) (if v3 0x320000 0x220000))
+       (= (eb-le P 88 8) (if v3 0x320000 0x220000))
+       (> (eb-le P 96 8) 80) (<= (eb-le P 96 8) 4096)
+       (= (eb-le P 96 8) (eb-le P 104 8))
+       (= (eb-le P 120 4) 1) (= (eb-le P 124 4) 6)
+       (= (eb-le P 128 8) 8192) (= (eb-le P 136 8) (if v3 0x321000 0x221000))
+       (= (eb-le P 144 8) (if v3 0x321000 0x221000))
+       (= (eb-le P 152 8) 88) (= (eb-le P 160 8) 320)))
+;; Slot v4 is admitted only with a kernel-v3 ELF carrying the v5 user-map
+;; marker and an RX-resident user syscall handler. Guest source must still
+;; verify the pinned complete ELF and its own request policy before execution.
+(defn- eu-v4-elf? [P :vector-i64] :bool
+  (and (= (vector-count P) 8280)
+       (= (eb-le P 0 8) 0x00010102464c457f)
+       (= (eb-le P 16 2) 2) (= (eb-le P 18 2) 62)
+       (= (eb-le P 24 8) 0x420000) (= (eb-le P 32 8) 64)
+       (= (eb-le P 54 2) 56) (= (eb-le P 56 2) 2)
+       (= (eb-le P 64 4) 1) (= (eb-le P 68 4) 5)
+       (= (eb-le P 72 8) 4096) (= (eb-le P 80 8) 0x420000)
+       (= (eb-le P 88 8) 0x420000)
+       (> (eb-le P 96 8) 80) (<= (eb-le P 96 8) 4096)
+       (= (eb-le P 96 8) (eb-le P 104 8))
+       (= (eb-le P 120 4) 1) (= (eb-le P 124 4) 6)
+       (= (eb-le P 128 8) 8192) (= (eb-le P 136 8) 0x421000)
+       (= (eb-le P 144 8) 0x421000)
+       (= (eb-le P 152 8) 88) (= (eb-le P 160 8) 262144)))
+(defn- eu-package [source :string out :string version :i64] :i64
+  (let [P (io-read-bytes source) n (vector-count P)]
+    (if (or (= n 0) (> n 524224))
+      (let [w (io-err "seed-aiueos-boot: E7112 user payload exceeds fixed slot\n")] 1)
+      (if (and (>= version 2)
+               (not (if (= version 4) (eu-v4-elf? P) (eu-v2-elf? P (= version 3)))))
+        (let [w (io-err "seed-aiueos-boot: E7111 versioned user ELF shape refused\n")] 1)
+      (let [M (-> (mem-new) (xg-out 0x0031444c50554941 8) (xg-out version 8)
+                  (xg-out n 8) (xg-pad 64) (eb-copy P 0 n) (xg-pad 524288))
+            size (dec (vector-at M MM-OUT-N))]
+        (if (or (not= (vector-at M MM-ERR) 0) (not= size 524288))
+          (drv-fail M source)
+          (let [written (out-write-v M out (+ MM-OUT-BASE 1) size)]
+            (if (and (= written size) (= (io-exists out) 1))
+              (let [z (io-out (cond (= version 4) "{:ok true, :format :aiueos-user-payload-v4, :bytes 524288}\n"
+                                    (= version 3) "{:ok true, :format :aiueos-user-payload-v3, :bytes 524288}\n"
+                                    (= version 2) "{:ok true, :format :aiueos-user-payload-v2, :bytes 524288}\n"
+                                    :else "{:ok true, :format :aiueos-user-payload-v1, :bytes 524288}\n"))] 0)
+              (drv-fail0 E-WRITE)))))))))
+(defn- eu-command [] :i64
+  (let [n (io-argc) source (io-arg 1) out (io-arg 3)
+        version (if (and (= n 6) (string=? (io-arg 4) "--version"))
+                  (cond (string=? (io-arg 5) "v2") 2
+                        (string=? (io-arg 5) "v3") 3
+                        (string=? (io-arg 5) "v4") 4
+                        :else 0) 1)]
+    (cond (or (not (or (= n 4) (and (= n 6) (> version 1))))
+              (not (string=? (io-arg 2) "--output"))
+              (= (string-length out) 0) (= (io-exists out) 1))
+          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-user-payload SOURCE --output NEW_SLOT [--version v2|v3|v4]\n")] 2)
+          (= (io-exists source) 0) (drv-fail0 E-READ)
+          :else (eu-package source out version))))

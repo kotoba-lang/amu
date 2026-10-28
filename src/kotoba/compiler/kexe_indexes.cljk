@@ -25,9 +25,65 @@
   {:kotoba/export [narrow-artifact narrow-envelope structural-index-keys]}
   (:require [kotoba.compiler.host-integer :as host-integer]))
 
-(def structural-index-keys
-  [:closure-param-indexes :i64-pair-chain-param-indexes])
+;; R6QW3: the Kotoba reading (W3: the scan refused this module E2101 at get-in). The
+;; exported constant is a 0-argument function (the export surface names functions only);
+;; the artifact/envelope are :document maps and the narrowing is a document walk
+;; (the walk contract). host-integer/narrow's result is wrapped as a document.
+#?(:kotoba
+   (defn- dgk [d :document k :keyword] :document
+     (option-value-of [:option :document] (document-get d k) (document-null))))
+#?(:kotoba
+   (defn- map-doc? [d :document] :bool (= (document-kind d) :map)))
+;; the narrow of one index list (the host's (mapv host-integer/narrow %))
+#?(:kotoba
+   (defn- narrow-list [l :document i :i64 n :i64 out :document] :document
+     (if (>= i n)
+       out
+       (narrow-list l (+ i 1) n
+                    (document-vector-conj out (host-narrow (option-value-of [:option :document] (document-list-at l i) (document-null))))))))
+;; the per-function narrowing over the two structural keys (the host's reduce over keys)
+#?(:kotoba
+   (defn- narrow-fn [function :document ki :i64] :document
+     (if (>= ki 2)
+       function
+       (let [k (option-value-of [:option :document] (document-list-at (structural-index-keys) ki) (document-null))
+             v (dgk function (option-value-of [:option :keyword] (document-keyword-value k) :none))]
+         (narrow-fn (if (and (map-doc? function) (seq-doc? v))
+                      (document-assoc function k (narrow-list v 0 (document-count v) (document-vector)))
+                      function)
+                    (+ ki 1))))))
+;; the sequential?/vector? shape checks (the host's get-in [:program :functions])
+#?(:kotoba
+   (defn- seq-doc? [d :document] :bool
+     (or (= (document-kind d) :list) (= (document-kind d) :vector))))
+;; the functions list walk (the host's mapv over functions)
+#?(:kotoba
+   (defn- narrow-functions [fns :document i :i64 n :i64 out :document] :document
+     (if (>= i n)
+       out
+       (narrow-functions fns (+ i 1) n
+                         (document-vector-conj out (narrow-fn (option-value-of [:option :document] (document-list-at fns i) (document-null)) 0))))))
+;; the host-integer narrowing call (kotoba.compiler.host-integer's narrow)
+#?(:kotoba
+   (defn- host-narrow [x :document] :document (document-i64 (host-integer/narrow (option-value-of [:option :i64] (document-i64-value x) 0)))))
 
+#?(:kotoba
+   (defn structural-index-keys [] :document
+     (document-vector (document-keyword :closure-param-indexes)
+                      (document-keyword :i64-pair-chain-param-indexes)))
+   :default
+(def structural-index-keys
+  [:closure-param-indexes :i64-pair-chain-param-indexes]))
+#?(:kotoba
+   (defn narrow-artifact [artifact :document] :document
+     (if (and (map-doc? artifact) (seq-doc? (dgk (dgk artifact :program) :functions)))
+       (document-assoc artifact (document-keyword :program)
+                       (document-assoc (dgk artifact :program) (document-keyword :functions)
+                                       (narrow-functions (dgk (dgk artifact :program) :functions) 0
+                                                         (document-count (dgk (dgk artifact :program) :functions))
+                                                         (document-vector))))
+       artifact))
+   :default
 (defn narrow-artifact
   "ARTIFACT with every function's structural indexes as host numbers; any
   value that is not an artifact-shaped map is returned as is, for the
@@ -39,16 +95,21 @@
                  (mapv (fn [function]
                          (reduce (fn [function key]
                                    (if (and (map? function) (sequential? (get function key)))
-                                     (update function key (fn [x] (mapv host-integer/narrow x)))
+                                     (update function key #(mapv host-integer/narrow %))
                                      function))
                                  function structural-index-keys))
                        functions)))
-    artifact))
-
+    artifact)))
+#?(:kotoba
+   (defn narrow-envelope [envelope :document] :document
+     (if (and (map-doc? envelope) (document-contains envelope (document-keyword :artifact)))
+       (document-assoc envelope (document-keyword :artifact) (narrow-artifact (dgk envelope :artifact)))
+       envelope))
+   :default
 (defn narrow-envelope
   "A signed envelope (`:kotoba.signed-kexe/v1`) with its `:artifact`
   narrowed; the envelope's key set is unchanged."
   [envelope]
   (if (and (map? envelope) (contains? envelope :artifact))
     (update envelope :artifact narrow-artifact)
-    envelope))
+    envelope)))

@@ -1,0 +1,111 @@
+(ns static-launcher (:export [main]))
+
+;; The static launcher's run receipt (ADR 0371 step 4). Build the launcher with
+;; an Amu selfhost compiler:
+;;   compile tools/static_launcher.kotoba --target aarch64-linux|x86_64-linux
+;;           --output NEW --format launcher
+;; Its runtime (the launcher text of seed/76 and seed/77) hashes and seals the
+;; inputs, starts the GPU provider and the guest, relays the guest's stdout,
+;; waits, seals itself, and only then calls main with the run's facts as wire-38
+;; arguments:
+;;    0 WALL                 1 ALLOW               2 elapsed ms
+;;    3 timed out (0/1)      4 relay ok (0/1)      5 launcher sha256
+;;    6 guest sha256         7 guest exit (-1 when a signal ended it)
+;;    8 guest signal         9 guest structured line ("" when none)
+;;   10 guest stdout bytes  11 guest stdout sha256
+;;   12 provider (0/1)      13 provider sha256    14 provider exit
+;;   15 provider signal     16 provider killed (0/1)
+;;   17 provider report state: 0 none, 1 text, 2 not UTF-8 or has NUL, 3 over 64 KiB
+;;   18 provider report     19 grant sha256
+;; Every fact but 18 is ASCII; 18 is UTF-8 when state is 1, else "".
+;;
+;; main writes one EDN line after the relayed stdout and answers the launcher's
+;; exit status. This is not a run receipt of the trust plane: nothing is signed
+;; (JUN-282, M3).
+;;
+;; tools/static_launcher_test.kotoba tests the functions above main: its unit
+;; is its own ns line, this file without its first line and without main (the
+;; last form), then the tests. scripts/seed/check-static-launcher.py builds it.
+
+(defn- hex-digit [d :i64] :string (string-substring "0123456789abcdef" d (inc d)))
+
+;; An EDN string: quotes around s with backslash, quote, newline, return and
+;; tab escaped, other bytes below 32 as \u00XX; the rest of the UTF-8 as is.
+(defn- escape-one [c :i64] :string
+  (cond (= c 34) "\\\"" (= c 92) "\\\\" (= c 10) "\\n" (= c 13) "\\r" (= c 9) "\\t"
+        :else (string-concat "\\u00" (string-concat (hex-digit (quot c 16)) (hex-digit (- c (* 16 (quot c 16))))))))
+(defn- utf8-width [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))
+(defn- quoted [s :string] :string
+  (let [n (string-length s)]
+    (loop [i 0 start 0 acc "\""]
+      (if (>= i n)
+        (string-concat (string-concat acc (string-substring s start n)) "\"")
+        (let [c (string-code-point-at s i)]
+          (if (or (< c 32) (= c 34) (= c 92))
+            (recur (inc i) (inc i) (string-concat (string-concat acc (string-substring s start i)) (escape-one c)))
+            (recur (+ i (utf8-width c)) start acc)))))))
+
+(defn- flag [s :string] :string (if (string=? s "1") "true" "false"))
+
+;; :exit N, or :signal N when the exit fact is -1
+(defn- ended [exit :string sig :string] :string
+  (if (string=? exit "-1") (string-concat ":signal " sig) (string-concat ":exit " exit)))
+
+;; The first failure names the verdict: the relay, wall time, the guest, then
+;; the provider (killed at its deadline counts as failed).
+(defn- verdict [timed-out :string relay :string guest-exit :string provider :string provider-exit :string killed :string] :string
+  (cond (string=? relay "0") ":relay-failed"
+        (string=? timed-out "1") ":timeout"
+        (not (string=? guest-exit "0")) ":guest-failed"
+        (and (string=? provider "1") (or (string=? killed "1") (not (string=? provider-exit "0")))) ":provider-failed"
+        :else ":ok"))
+
+;; the launcher's exit status for a verdict: 0 ok, 122 timeout (the old
+;; supervisor's wall code), 1 otherwise
+(defn- status-of [v :string] :i64 (cond (string=? v ":ok") 0 (string=? v ":timeout") 122 :else 1))
+
+(defn- guest-part [sha :string allow :string exit :string sig :string line :string bytes :string out-sha :string] :string
+  (let [a (string-concat "{:sha256 " (quoted sha))
+        b (string-concat a (string-concat " :allow " (quoted allow)))
+        c (string-concat b (string-concat " " (ended exit sig)))
+        d (string-concat c (string-concat " :report " (if (= (string-length line) 0) "nil" line)))
+        e (string-concat d (string-concat " :stdout {:bytes " bytes))]
+    (string-concat e (string-concat " :sha256 " (string-concat (quoted out-sha) "}}")))))
+
+(defn- report-value [state :string text :string] :string
+  (cond (string=? state "1") (quoted text) (string=? state "2") ":invalid" (string=? state "3") ":overflow" :else "nil"))
+
+(defn- provider-part [given :string sha :string exit :string sig :string killed :string state :string text :string] :string
+  (if (not (string=? given "1")) "nil"
+    (let [a (string-concat "{:sha256 " (quoted sha))
+          b (string-concat a (string-concat " " (ended exit sig)))
+          c (string-concat b (string-concat " :killed " (flag killed)))]
+      (string-concat c (string-concat " :report " (string-concat (report-value state text) "}"))))))
+
+(defn- sha-part [given :string sha :string] :string
+  (if (string=? given "1") (string-concat "{:sha256 " (string-concat (quoted sha) "}")) "nil"))
+
+(defn- run-part [v :string wall :string elapsed :string timed-out :string relay :string] :string
+  (let [a (string-concat "{:receipt :kotoba.static-launcher/v1 :verdict " v)
+        b (string-concat a (string-concat " :wall-seconds " wall))
+        c (string-concat b (string-concat " :elapsed-ms " elapsed))
+        d (string-concat c (string-concat " :timed-out " (flag timed-out)))]
+    (string-concat d (string-concat " :relay " (flag relay)))))
+
+(defn- receipt [run :string launcher :string guest :string provider :string grant :string] :string
+  (let [a (string-concat run (string-concat " :launcher " launcher))
+        b (string-concat a (string-concat " :guest " guest))
+        c (string-concat b (string-concat " :provider " provider))]
+    (string-concat c (string-concat " :grant " (string-concat grant "}\n")))))
+
+(defn- fact [k :i64] :string (typed-cap-call :cli/args :string :string (string-from-i64 k)))
+
+(defn main [] :i64
+  (let [v (verdict (fact 3) (fact 4) (fact 7) (fact 12) (fact 14) (fact 16))
+        line (receipt (run-part v (fact 0) (fact 2) (fact 3) (fact 4))
+                      (sha-part "1" (fact 5))
+                      (guest-part (fact 6) (fact 1) (fact 7) (fact 8) (fact 9) (fact 10) (fact 11))
+                      (provider-part (fact 12) (fact 13) (fact 14) (fact 15) (fact 16) (fact 17) (fact 18))
+                      (sha-part (fact 12) (fact 19)))
+        w (typed-cap-call :io/write :string :string line)]
+    (status-of v)))

@@ -1,0 +1,42 @@
+;; Dispatch for the combined native CLI. A lock-aware checker must never be
+;; mistaken for a lock-aware builder: the current seed builder has no lock
+;; parser. Keep such requests out of seed/main until that implementation lands.
+(ns kotoba.compiler.selfhost-route
+  {:kotoba/export [dispatch]})
+
+(defn- lock-option? [argument :string] :bool
+  (or (string=? argument "--module-lock")
+      (string=? argument "--blocks")
+      (= (string-index-of argument "--module-lock=") 0)
+      (= (string-index-of argument "--blocks=") 0)))
+
+(defn- value-option? [argument :string] :bool
+  (or (string=? argument "--target")
+      (string=? argument "--output")
+      (string=? argument "--symbol")
+      (string=? argument "--source-path")
+      (string=? argument "--policy")
+      (string=? argument "--object-dir")
+      (string=? argument "--ns")))
+
+(defn- locked-options? [arguments [:list :string]] :bool
+  (loop [index 0]
+    (if (>= index (vector-count arguments))
+      false
+      (let [argument (typed-list-nth [:list :string] arguments index)]
+        (cond
+          (lock-option? argument) true
+          (value-option? argument) (recur (+ index 2))
+          :else (recur (+ index 1)))))))
+
+(defn dispatch [command :string arguments [:list :string]] :keyword
+  (let [locked? (locked-options? arguments)]
+    (cond
+      (string=? command "modules")
+      (if locked? :native-project :seed-builder)
+
+      (or (string=? command "compile") (string=? command "compile-kir")
+          (string=? command "link") (string=? command "extract-native"))
+      (if locked? :unsupported-locked-builder :seed-builder)
+
+      :else :native-project)))

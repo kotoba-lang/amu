@@ -1,0 +1,438 @@
+JUN-55/JUN-58 -- WGSL route reduce arms, first TIMING read (wall-clock; GPU-core timestamps attempted and recorded below)
+run_started=2026-10-25T00:17:45.726Z
+host: darwin 25.4.0 arm64
+node: v26.0.0
+subgroup-corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders
+baseline-corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu-baseline-reduce-wgsl-fix-20261025/shaders
+protocol: single=3w+11r batch32=2w+7r per arm per cell; arms paired per round with alternating order
+toolchain: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+adapter-info: {"vendor":"apple","architecture":"metal-3","description":"","device":""}
+adapter-features: bgra8unorm-storage,chromium-experimental-subgroup-matrix,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,shader-f16,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,texture-compression-unaligned,texture-formats-tier1,texture-formats-tier2,timestamp-query
+subgroups-feature: present
+adapter-limits: {"maxComputeWorkgroupSizeX":1024,"maxComputeInvocationsPerWorkgroup":1024,"maxWorkgroupsPerDimension":65535}
+cross-origin-isolated: yes
+perf-now-resolution-ms: 0.004999995231628418
+gpu-timestamp-write: UNAVAILABLE -- writeTimestamp threw: TypeError: Failed to execute 'writeTimestamp' on 'GPUComputePassEncoder': Use of the writeTimestamp() method on compute pass requires the 'chromium-experimental-timestamp-query-inside-passes' feature 
+check n=1000003 w=32 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=32 op=sum arm=subgroup single_ms=0.695,0.535,0.465,0.435,0.450,0.425,0.450,0.535,0.500,0.590,0.500 batch32_ms=0.1417,0.1658,0.1217,0.0914,0.0984,0.0630,0.0623
+time n=1000003 w=32 op=sum arm=subgroup single_median_ms=0.500 single_rounds=11 batch32_median_ms=0.0984 batch32_rounds=7
+check n=1000003 w=32 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=32 op=sum arm=baseline single_ms=0.550,0.615,0.455,0.460,0.425,0.440,0.540,0.655,0.485,0.455,0.490 batch32_ms=0.1375,0.1330,0.0845,0.0872,0.0775,0.0625,0.0617
+time n=1000003 w=32 op=sum arm=baseline single_median_ms=0.485 single_rounds=11 batch32_median_ms=0.0845 batch32_rounds=7
+pair n=1000003 w=32 op=sum single_paired_ratio=1.020 batch32_paired_ratio=1.048 rounds=11/7
+check n=1000003 w=32 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=32 op=max arm=subgroup single_ms=0.640,0.935,0.455,0.430,0.405,0.410,0.425,0.415,0.400,0.440,0.435 batch32_ms=0.1395,0.1133,0.0839,0.0750,0.0702,0.0811,0.0684
+time n=1000003 w=32 op=max arm=subgroup single_median_ms=0.430 single_rounds=11 batch32_median_ms=0.0811 batch32_rounds=7
+check n=1000003 w=32 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=32 op=max arm=baseline single_ms=0.535,0.495,0.520,0.555,0.455,0.445,0.565,0.565,0.495,0.510,0.430 batch32_ms=0.1197,0.1316,0.0786,0.0611,0.0616,0.0630,0.0609
+time n=1000003 w=32 op=max arm=baseline single_median_ms=0.510 single_rounds=11 batch32_median_ms=0.0630 batch32_rounds=7
+pair n=1000003 w=32 op=max single_paired_ratio=0.875 batch32_paired_ratio=1.140 rounds=11/7
+check n=1000003 w=32 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=32 op=min arm=subgroup single_ms=0.675,0.610,0.420,0.580,0.515,0.430,0.455,0.445,0.455,0.750,0.510 batch32_ms=0.0589,0.0631,0.0612,0.0531,0.0580,0.0570,0.0514
+time n=1000003 w=32 op=min arm=subgroup single_median_ms=0.510 single_rounds=11 batch32_median_ms=0.0580 batch32_rounds=7
+check n=1000003 w=32 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=32 op=min arm=baseline single_ms=0.505,0.465,0.605,0.550,0.520,0.490,0.555,0.340,0.485,0.475,0.510 batch32_ms=0.0664,0.0614,0.0631,0.0516,0.0631,0.0613,0.0534
+time n=1000003 w=32 op=min arm=baseline single_median_ms=0.505 single_rounds=11 batch32_median_ms=0.0614 batch32_rounds=7
+pair n=1000003 w=32 op=min single_paired_ratio=1.000 batch32_paired_ratio=0.962 rounds=11/7
+check n=1000003 w=64 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=64 op=sum arm=subgroup single_ms=0.480,0.460,0.485,0.480,0.995,0.385,0.545,0.570,0.920,0.605,0.550 batch32_ms=0.1100,0.1270,0.1041,0.0898,0.0834,0.0800,0.0883
+time n=1000003 w=64 op=sum arm=subgroup single_median_ms=0.545 single_rounds=11 batch32_median_ms=0.0898 batch32_rounds=7
+check n=1000003 w=64 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=64 op=sum arm=baseline single_ms=0.565,0.440,0.455,0.465,0.500,0.470,0.705,0.485,0.490,0.445,0.430 batch32_ms=0.1155,0.0980,0.1427,0.1577,0.0780,0.1066,0.1044
+time n=1000003 w=64 op=sum arm=baseline single_median_ms=0.470 single_rounds=11 batch32_median_ms=0.1066 batch32_rounds=7
+pair n=1000003 w=64 op=sum single_paired_ratio=1.066 batch32_paired_ratio=0.846 rounds=11/7
+check n=1000003 w=64 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=64 op=max arm=subgroup single_ms=0.795,0.455,0.430,0.480,0.410,0.560,0.645,1.415,0.780,0.530,0.980 batch32_ms=0.1173,0.1653,0.1105,0.0859,0.0961,0.0931,0.0745
+time n=1000003 w=64 op=max arm=subgroup single_median_ms=0.560 single_rounds=11 batch32_median_ms=0.0961 batch32_rounds=7
+check n=1000003 w=64 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=64 op=max arm=baseline single_ms=0.570,0.445,0.615,0.455,0.400,0.570,0.585,0.835,0.490,0.520,0.490 batch32_ms=0.1109,0.1172,0.0962,0.0708,0.0767,0.0844,0.0780
+time n=1000003 w=64 op=max arm=baseline single_median_ms=0.520 single_rounds=11 batch32_median_ms=0.0844 batch32_rounds=7
+pair n=1000003 w=64 op=max single_paired_ratio=1.055 batch32_paired_ratio=1.148 rounds=11/7
+check n=1000003 w=64 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=64 op=min arm=subgroup single_ms=0.500,0.505,0.580,0.480,0.460,0.435,0.475,0.520,0.590,0.425,0.405 batch32_ms=0.1208,0.1055,0.1402,0.0881,0.0889,0.0683,0.0709
+time n=1000003 w=64 op=min arm=subgroup single_median_ms=0.480 single_rounds=11 batch32_median_ms=0.0889 batch32_rounds=7
+check n=1000003 w=64 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=64 op=min arm=baseline single_ms=0.420,0.400,0.495,0.645,0.420,0.510,0.385,0.380,0.475,0.805,0.465 batch32_ms=0.1025,0.1312,0.1522,0.1031,0.0739,0.0722,0.0683
+time n=1000003 w=64 op=min arm=baseline single_median_ms=0.465 single_rounds=11 batch32_median_ms=0.1025 batch32_rounds=7
+pair n=1000003 w=64 op=min single_paired_ratio=1.172 batch32_paired_ratio=0.946 rounds=11/7
+check n=1000003 w=128 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=128 op=sum arm=subgroup single_ms=0.600,0.410,0.475,0.820,0.580,0.415,0.425,0.400,0.465,0.450,0.670 batch32_ms=0.1195,0.0928,0.1463,0.1028,0.1030,0.0959,0.0792
+time n=1000003 w=128 op=sum arm=subgroup single_median_ms=0.465 single_rounds=11 batch32_median_ms=0.1028 batch32_rounds=7
+check n=1000003 w=128 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=128 op=sum arm=baseline single_ms=0.490,0.415,0.550,0.535,0.410,0.400,0.400,0.440,0.440,0.445,0.480 batch32_ms=0.1089,0.1072,0.1317,0.1056,0.1039,0.1008,0.0791
+time n=1000003 w=128 op=sum arm=baseline single_median_ms=0.440 single_rounds=11 batch32_median_ms=0.1056 batch32_rounds=7
+pair n=1000003 w=128 op=sum single_paired_ratio=1.057 batch32_paired_ratio=0.991 rounds=11/7
+check n=1000003 w=128 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=128 op=max arm=subgroup single_ms=0.595,0.810,0.575,0.860,0.500,0.415,0.380,0.435,0.425,0.375,0.370 batch32_ms=0.1053,0.1061,0.1306,0.1322,0.1139,0.1025,0.0786
+time n=1000003 w=128 op=max arm=subgroup single_median_ms=0.435 single_rounds=11 batch32_median_ms=0.1061 batch32_rounds=7
+check n=1000003 w=128 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=128 op=max arm=baseline single_ms=0.450,0.395,0.490,0.640,0.490,0.415,0.595,0.550,0.425,0.530,0.375 batch32_ms=0.1023,0.1077,0.1414,0.1494,0.1108,0.0941,0.0883
+time n=1000003 w=128 op=max arm=baseline single_median_ms=0.490 single_rounds=11 batch32_median_ms=0.1077 batch32_rounds=7
+pair n=1000003 w=128 op=max single_paired_ratio=1.000 batch32_paired_ratio=0.985 rounds=11/7
+check n=1000003 w=128 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=128 op=min arm=subgroup single_ms=0.415,0.340,0.300,0.345,0.320,0.330,0.315,0.620,0.380,0.365,0.350 batch32_ms=0.0689,0.0923,0.0631,0.0598,0.0619,0.0647,0.0602
+time n=1000003 w=128 op=min arm=subgroup single_median_ms=0.345 single_rounds=11 batch32_median_ms=0.0631 batch32_rounds=7
+check n=1000003 w=128 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=128 op=min arm=baseline single_ms=0.350,0.305,0.695,0.355,0.290,0.305,0.315,0.380,0.300,0.305,0.345 batch32_ms=0.0666,0.0655,0.0614,0.0591,0.0581,0.0570,0.0622
+time n=1000003 w=128 op=min arm=baseline single_median_ms=0.315 single_rounds=11 batch32_median_ms=0.0614 batch32_rounds=7
+pair n=1000003 w=128 op=min single_paired_ratio=1.103 batch32_paired_ratio=1.035 rounds=11/7
+check n=1000003 w=256 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=256 op=sum arm=subgroup single_ms=0.450,0.395,0.560,0.325,0.365,0.420,0.365,0.330,0.355,0.370,0.355 batch32_ms=0.0617,0.0631,0.0658,0.0664,0.0620,0.0716,0.0656
+time n=1000003 w=256 op=sum arm=subgroup single_median_ms=0.365 single_rounds=11 batch32_median_ms=0.0656 batch32_rounds=7
+check n=1000003 w=256 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=256 op=sum arm=baseline single_ms=0.405,0.350,0.355,0.350,0.350,0.335,0.395,0.375,0.360,0.330,0.610 batch32_ms=0.0627,0.0670,0.0755,0.0634,0.0611,0.0697,0.0652
+time n=1000003 w=256 op=sum arm=baseline single_median_ms=0.355 single_rounds=11 batch32_median_ms=0.0652 batch32_rounds=7
+pair n=1000003 w=256 op=sum single_paired_ratio=1.043 batch32_paired_ratio=1.007 rounds=11/7
+check n=1000003 w=256 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=256 op=max arm=subgroup single_ms=0.550,0.475,0.350,0.360,0.380,0.365,0.455,0.360,0.380,0.350,0.560 batch32_ms=0.0627,0.0664,0.0659,0.0634,0.0728,0.0673,0.0666
+time n=1000003 w=256 op=max arm=subgroup single_median_ms=0.380 single_rounds=11 batch32_median_ms=0.0664 batch32_rounds=7
+check n=1000003 w=256 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=256 op=max arm=baseline single_ms=0.400,0.355,0.365,0.425,0.360,0.355,0.415,0.350,0.340,0.370,0.400 batch32_ms=0.0805,0.0722,0.0736,0.0631,0.0717,0.0661,0.0648
+time n=1000003 w=256 op=max arm=baseline single_median_ms=0.365 single_rounds=11 batch32_median_ms=0.0717 batch32_rounds=7
+pair n=1000003 w=256 op=max single_paired_ratio=1.056 batch32_paired_ratio=1.005 rounds=11/7
+check n=1000003 w=256 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=256 op=min arm=subgroup single_ms=0.325,0.285,0.290,0.330,0.295,0.280,0.420,0.440,0.440,0.315,0.490 batch32_ms=0.0603,0.0633,0.0689,0.0637,0.0620,0.0627,0.0628
+time n=1000003 w=256 op=min arm=subgroup single_median_ms=0.325 single_rounds=11 batch32_median_ms=0.0628 batch32_rounds=7
+check n=1000003 w=256 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=256 op=min arm=baseline single_ms=0.310,0.305,0.290,0.285,0.295,0.285,0.295,0.275,0.375,0.350,0.410 batch32_ms=0.0647,0.0644,0.0648,0.0750,0.0631,0.0669,0.0625
+time n=1000003 w=256 op=min arm=baseline single_median_ms=0.295 single_rounds=11 batch32_median_ms=0.0647 batch32_rounds=7
+pair n=1000003 w=256 op=min single_paired_ratio=1.048 batch32_paired_ratio=0.983 rounds=11/7
+check n=1000003 w=512 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=512 op=sum arm=subgroup single_ms=0.485,0.555,0.410,0.400,0.415,0.335,0.335,0.370,0.375,0.370,0.350 batch32_ms=0.0702,0.0695,0.0806,0.0713,0.0755,0.0762,0.0709
+time n=1000003 w=512 op=sum arm=subgroup single_median_ms=0.375 single_rounds=11 batch32_median_ms=0.0713 batch32_rounds=7
+check n=1000003 w=512 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=512 op=sum arm=baseline single_ms=0.425,0.465,0.395,0.410,0.390,0.370,0.650,0.450,0.395,0.335,0.350 batch32_ms=0.0725,0.0836,0.0727,0.0719,0.0720,0.0712,0.0750
+time n=1000003 w=512 op=sum arm=baseline single_median_ms=0.395 single_rounds=11 batch32_median_ms=0.0725 batch32_rounds=7
+pair n=1000003 w=512 op=sum single_paired_ratio=1.000 batch32_paired_ratio=0.991 rounds=11/7
+check n=1000003 w=512 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=512 op=max arm=subgroup single_ms=0.465,0.520,0.505,0.455,0.560,0.735,0.430,1.040,2.100,0.395,0.315 batch32_ms=0.0722,0.0700,0.0733,0.0761,0.0703,0.0688,0.0681
+time n=1000003 w=512 op=max arm=subgroup single_median_ms=0.505 single_rounds=11 batch32_median_ms=0.0703 batch32_rounds=7
+check n=1000003 w=512 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=512 op=max arm=baseline single_ms=0.580,0.530,1.280,0.685,1.140,1.260,0.510,0.650,0.625,0.475,0.400 batch32_ms=0.0714,0.0728,0.0697,0.0753,0.0683,0.0730,0.0709
+time n=1000003 w=512 op=max arm=baseline single_median_ms=0.625 single_rounds=11 batch32_median_ms=0.0714 batch32_rounds=7
+pair n=1000003 w=512 op=max single_paired_ratio=0.802 batch32_paired_ratio=1.010 rounds=11/7
+check n=1000003 w=512 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=512 op=min arm=subgroup single_ms=0.530,0.490,0.315,0.305,0.305,0.390,0.385,0.455,0.370,0.490,0.540 batch32_ms=0.0686,0.0694,0.0767,0.0891,0.0758,0.1019,0.0691
+time n=1000003 w=512 op=min arm=subgroup single_median_ms=0.390 single_rounds=11 batch32_median_ms=0.0758 batch32_rounds=7
+check n=1000003 w=512 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=512 op=min arm=baseline single_ms=0.980,0.545,0.350,0.305,0.350,0.340,0.390,0.430,0.365,0.335,0.460 batch32_ms=0.0695,0.0706,0.0750,0.0741,0.0759,0.0727,0.0741
+time n=1000003 w=512 op=min arm=baseline single_median_ms=0.365 single_rounds=11 batch32_median_ms=0.0741 batch32_rounds=7
+pair n=1000003 w=512 op=min single_paired_ratio=1.000 batch32_paired_ratio=0.998 rounds=11/7
+check n=1000003 w=1024 op=sum arm=subgroup answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=1024 op=sum arm=subgroup single_ms=0.475,0.450,0.545,0.460,0.375,0.400,0.475,0.425,0.360,0.390,0.290 batch32_ms=0.1000,0.1392,0.1408,0.1147,0.0977,0.0828,0.1067
+time n=1000003 w=1024 op=sum arm=subgroup single_median_ms=0.425 single_rounds=11 batch32_median_ms=0.1067 batch32_rounds=7
+check n=1000003 w=1024 op=sum arm=baseline answer=1500004 ref=1500004 ok=1
+raw n=1000003 w=1024 op=sum arm=baseline single_ms=0.575,0.410,0.890,0.530,0.410,0.395,0.440,0.440,0.365,0.370,0.420 batch32_ms=0.1072,0.1211,0.1202,0.1194,0.1002,0.0973,0.0781
+time n=1000003 w=1024 op=sum arm=baseline single_median_ms=0.420 single_rounds=11 batch32_median_ms=0.1072 batch32_rounds=7
+pair n=1000003 w=1024 op=sum single_paired_ratio=0.966 batch32_paired_ratio=0.975 rounds=11/7
+check n=1000003 w=1024 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1000003 w=1024 op=max arm=subgroup single_ms=0.570,0.480,1.025,0.465,0.535,0.410,0.505,0.580,0.500,0.415,0.475 batch32_ms=0.0872,0.0753,0.0845,0.0839,0.0745,0.0766,0.0813
+time n=1000003 w=1024 op=max arm=subgroup single_median_ms=0.500 single_rounds=11 batch32_median_ms=0.0813 batch32_rounds=7
+check n=1000003 w=1024 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1000003 w=1024 op=max arm=baseline single_ms=0.510,0.725,0.490,0.435,0.555,0.450,0.450,0.520,0.495,0.475,0.390 batch32_ms=0.0864,0.0781,0.0827,0.0895,0.0761,0.0823,0.0784
+time n=1000003 w=1024 op=max arm=baseline single_median_ms=0.490 single_rounds=11 batch32_median_ms=0.0823 batch32_rounds=7
+pair n=1000003 w=1024 op=max single_paired_ratio=1.069 batch32_paired_ratio=0.979 rounds=11/7
+check n=1000003 w=1024 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1000003 w=1024 op=min arm=subgroup single_ms=0.430,0.335,0.355,0.585,0.495,0.380,0.380,0.420,0.640,0.610,0.800 batch32_ms=0.0772,0.0956,0.0880,0.0748,0.0756,0.0772,0.0834
+time n=1000003 w=1024 op=min arm=subgroup single_median_ms=0.430 single_rounds=11 batch32_median_ms=0.0772 batch32_rounds=7
+check n=1000003 w=1024 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1000003 w=1024 op=min arm=baseline single_ms=0.325,0.420,0.365,0.435,0.390,0.390,0.495,0.525,0.670,0.545,0.395 batch32_ms=0.0770,0.0838,0.0825,0.0772,0.0794,0.0903,0.0927
+time n=1000003 w=1024 op=min arm=baseline single_median_ms=0.420 single_rounds=11 batch32_median_ms=0.0825 batch32_rounds=7
+pair n=1000003 w=1024 op=min single_paired_ratio=0.974 batch32_paired_ratio=0.970 rounds=11/7
+check n=1048576 w=32 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=32 op=sum arm=subgroup single_ms=0.810,0.445,0.815,0.515,0.595,0.460,0.395,0.440,2.060,4.935,1.500 batch32_ms=0.0789,0.0822,0.0789,0.0789,0.0683,0.0545,0.0627
+time n=1048576 w=32 op=sum arm=subgroup single_median_ms=0.595 single_rounds=11 batch32_median_ms=0.0789 batch32_rounds=7
+check n=1048576 w=32 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=32 op=sum arm=baseline single_ms=0.415,0.440,0.580,0.570,0.610,0.385,0.340,0.465,0.575,0.840,1.850 batch32_ms=0.0709,0.0722,0.0698,0.0847,0.0667,0.0542,0.0578
+time n=1048576 w=32 op=sum arm=baseline single_median_ms=0.570 single_rounds=11 batch32_median_ms=0.0698 batch32_rounds=7
+pair n=1048576 w=32 op=sum single_paired_ratio=1.162 batch32_paired_ratio=1.084 rounds=11/7
+check n=1048576 w=32 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=32 op=max arm=subgroup single_ms=0.905,0.405,0.445,0.690,0.545,0.395,0.465,0.445,0.425,0.440,0.790 batch32_ms=0.0605,0.0531,0.0517,0.0516,0.0516,0.0556,0.0520
+time n=1048576 w=32 op=max arm=subgroup single_median_ms=0.445 single_rounds=11 batch32_median_ms=0.0520 batch32_rounds=7
+check n=1048576 w=32 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=32 op=max arm=baseline single_ms=0.610,0.795,0.570,0.580,0.605,0.600,0.450,0.440,0.785,0.495,0.910 batch32_ms=0.0687,0.0611,0.0519,0.0534,0.0506,0.0589,0.0547
+time n=1048576 w=32 op=max arm=baseline single_median_ms=0.600 single_rounds=11 batch32_median_ms=0.0547 batch32_rounds=7
+pair n=1048576 w=32 op=max single_paired_ratio=0.889 batch32_paired_ratio=0.951 rounds=11/7
+check n=1048576 w=32 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=32 op=min arm=subgroup single_ms=0.565,0.425,0.330,0.430,0.455,0.385,0.410,0.405,0.415,0.395,0.285 batch32_ms=0.0488,0.0541,0.0580,0.0553,0.0586,0.0519,0.0502
+time n=1048576 w=32 op=min arm=subgroup single_median_ms=0.410 single_rounds=11 batch32_median_ms=0.0541 batch32_rounds=7
+check n=1048576 w=32 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=32 op=min arm=baseline single_ms=0.490,0.500,0.330,0.360,0.775,0.455,0.375,0.370,0.390,1.125,0.265 batch32_ms=0.0578,0.0563,0.0578,0.0575,0.0531,0.0570,0.0505
+time n=1048576 w=32 op=min arm=baseline single_median_ms=0.390 single_rounds=11 batch32_median_ms=0.0570 batch32_rounds=7
+pair n=1048576 w=32 op=min single_paired_ratio=1.064 batch32_paired_ratio=0.962 rounds=11/7
+check n=1048576 w=64 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=64 op=sum arm=subgroup single_ms=0.610,0.650,0.660,0.515,0.445,0.440,0.490,0.355,0.370,0.360,0.365 batch32_ms=0.0570,0.0594,0.0630,0.0622,0.0686,0.0642,0.0611
+time n=1048576 w=64 op=sum arm=subgroup single_median_ms=0.445 single_rounds=11 batch32_median_ms=0.0622 batch32_rounds=7
+check n=1048576 w=64 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=64 op=sum arm=baseline single_ms=0.495,0.615,0.535,0.480,0.465,0.475,0.705,0.420,0.395,0.400,0.360 batch32_ms=0.0550,0.0631,0.0617,0.0603,0.0605,0.0628,0.0552
+time n=1048576 w=64 op=sum arm=baseline single_median_ms=0.475 single_rounds=11 batch32_median_ms=0.0605 batch32_rounds=7
+pair n=1048576 w=64 op=sum single_paired_ratio=0.957 batch32_paired_ratio=1.031 rounds=11/7
+check n=1048576 w=64 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=64 op=max arm=subgroup single_ms=0.490,0.410,0.445,0.965,0.410,0.370,0.355,0.675,0.425,0.770,0.640 batch32_ms=0.0916,0.1919,0.0730,0.0567,0.0655,0.0575,0.0583
+time n=1048576 w=64 op=max arm=subgroup single_median_ms=0.445 single_rounds=11 batch32_median_ms=0.0655 batch32_rounds=7
+check n=1048576 w=64 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=64 op=max arm=baseline single_ms=0.835,0.415,0.425,0.410,0.355,0.435,0.345,0.375,0.380,0.455,0.420 batch32_ms=0.0725,0.0800,0.0622,0.0573,0.0628,0.0562,0.0802
+time n=1048576 w=64 op=max arm=baseline single_median_ms=0.415 single_rounds=11 batch32_median_ms=0.0628 batch32_rounds=7
+pair n=1048576 w=64 op=max single_paired_ratio=1.118 batch32_paired_ratio=1.042 rounds=11/7
+check n=1048576 w=64 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=64 op=min arm=subgroup single_ms=0.830,0.500,0.485,0.445,0.470,0.545,0.565,0.325,0.395,0.335,0.400 batch32_ms=0.1128,0.1108,0.1281,0.0927,0.0916,0.1481,0.2548
+time n=1048576 w=64 op=min arm=subgroup single_median_ms=0.470 single_rounds=11 batch32_median_ms=0.1128 batch32_rounds=7
+check n=1048576 w=64 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=64 op=min arm=baseline single_ms=0.455,0.570,0.530,0.450,0.565,0.555,0.380,0.335,0.425,0.330,0.360 batch32_ms=0.0972,0.1003,0.1025,0.0864,0.0866,0.0947,0.1227
+time n=1048576 w=64 op=min arm=baseline single_median_ms=0.450 single_rounds=11 batch32_median_ms=0.0972 batch32_rounds=7
+pair n=1048576 w=64 op=min single_paired_ratio=0.982 batch32_paired_ratio=1.161 rounds=11/7
+check n=1048576 w=128 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=128 op=sum arm=subgroup single_ms=0.510,0.420,0.405,0.405,0.610,0.415,0.520,0.420,0.395,0.385,0.805 batch32_ms=0.0780,0.0838,0.0847,0.0870,0.0881,0.0848,0.0944
+time n=1048576 w=128 op=sum arm=subgroup single_median_ms=0.420 single_rounds=11 batch32_median_ms=0.0848 batch32_rounds=7
+check n=1048576 w=128 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=128 op=sum arm=baseline single_ms=0.465,0.515,0.390,0.420,0.600,0.440,0.770,0.465,0.480,0.385,0.360 batch32_ms=0.0805,0.1064,0.0911,0.0772,0.0806,0.0859,0.0684
+time n=1048576 w=128 op=sum arm=baseline single_median_ms=0.465 single_rounds=11 batch32_median_ms=0.0806 batch32_rounds=7
+pair n=1048576 w=128 op=sum single_paired_ratio=0.964 batch32_paired_ratio=0.987 rounds=11/7
+check n=1048576 w=128 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=128 op=max arm=subgroup single_ms=0.535,0.370,0.430,0.425,0.385,0.405,0.400,0.530,0.700,0.520,0.585 batch32_ms=0.1055,0.1430,0.1142,0.0975,0.0970,0.0802,0.0892
+time n=1048576 w=128 op=max arm=subgroup single_median_ms=0.430 single_rounds=11 batch32_median_ms=0.0975 batch32_rounds=7
+check n=1048576 w=128 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=128 op=max arm=baseline single_ms=0.450,0.415,0.575,1.255,0.510,0.415,0.410,0.375,0.405,0.400,2.190 batch32_ms=0.0969,0.1047,0.1164,0.0962,0.0948,0.1238,0.1094
+time n=1048576 w=128 op=max arm=baseline single_median_ms=0.415 single_rounds=11 batch32_median_ms=0.1047 batch32_rounds=7
+pair n=1048576 w=128 op=max single_paired_ratio=0.976 batch32_paired_ratio=1.013 rounds=11/7
+check n=1048576 w=128 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=128 op=min arm=subgroup single_ms=0.655,0.490,0.445,0.390,0.610,0.665,0.520,1.800,0.830,0.620,0.665 batch32_ms=0.1331,0.1688,0.1466,0.1320,0.1181,0.0852,0.0691
+time n=1048576 w=128 op=min arm=subgroup single_median_ms=0.620 single_rounds=11 batch32_median_ms=0.1320 batch32_rounds=7
+check n=1048576 w=128 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=128 op=min arm=baseline single_ms=0.710,0.495,0.415,0.365,0.430,0.935,0.750,0.680,0.700,0.880,0.920 batch32_ms=0.1161,0.1781,0.1472,0.1017,0.1563,0.1267,0.0652
+time n=1048576 w=128 op=min arm=baseline single_median_ms=0.700 single_rounds=11 batch32_median_ms=0.1267 batch32_rounds=7
+pair n=1048576 w=128 op=min single_paired_ratio=0.990 batch32_paired_ratio=0.996 rounds=11/7
+check n=1048576 w=256 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=256 op=sum arm=subgroup single_ms=0.565,0.460,0.460,0.615,0.860,0.540,0.495,0.565,0.645,1.225,0.550 batch32_ms=0.1308,0.1381,0.1450,0.1228,0.1205,0.1225,0.1055
+time n=1048576 w=256 op=sum arm=subgroup single_median_ms=0.565 single_rounds=11 batch32_median_ms=0.1228 batch32_rounds=7
+check n=1048576 w=256 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=256 op=sum arm=baseline single_ms=0.705,0.590,0.555,1.015,0.590,0.675,0.510,0.680,0.705,0.570,0.420 batch32_ms=0.1598,0.1586,0.1245,0.1669,0.1086,0.1073,0.1028
+time n=1048576 w=256 op=sum arm=baseline single_median_ms=0.590 single_rounds=11 batch32_median_ms=0.1245 batch32_rounds=7
+pair n=1048576 w=256 op=sum single_paired_ratio=0.831 batch32_paired_ratio=1.026 rounds=11/7
+check n=1048576 w=256 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=256 op=max arm=subgroup single_ms=0.580,0.560,0.500,0.525,0.485,0.490,0.480,0.385,0.415,0.500,0.460 batch32_ms=0.1205,0.1261,0.1211,0.0889,0.0898,0.0942,0.0886
+time n=1048576 w=256 op=max arm=subgroup single_median_ms=0.490 single_rounds=11 batch32_median_ms=0.0942 batch32_rounds=7
+check n=1048576 w=256 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=256 op=max arm=baseline single_ms=0.500,0.635,0.525,0.675,0.605,0.520,0.405,0.430,0.545,0.710,0.490 batch32_ms=0.1259,0.1248,0.1053,0.1189,0.1105,0.0953,0.0858
+time n=1048576 w=256 op=max arm=baseline single_median_ms=0.525 single_rounds=11 batch32_median_ms=0.1105 batch32_rounds=7
+pair n=1048576 w=256 op=max single_paired_ratio=0.895 batch32_paired_ratio=0.989 rounds=11/7
+check n=1048576 w=256 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=256 op=min arm=subgroup single_ms=0.660,0.455,0.545,0.335,0.350,0.995,0.480,1.145,0.590,1.325,0.710 batch32_ms=0.0697,0.0850,0.0736,0.0744,0.0711,0.0872,0.0777
+time n=1048576 w=256 op=min arm=subgroup single_median_ms=0.590 single_rounds=11 batch32_median_ms=0.0744 batch32_rounds=7
+check n=1048576 w=256 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=256 op=min arm=baseline single_ms=0.680,0.445,0.480,0.405,0.410,1.445,0.735,0.685,0.565,0.430,0.535 batch32_ms=0.0722,0.0744,0.0663,0.0712,0.0669,0.1047,0.0956
+time n=1048576 w=256 op=min arm=baseline single_median_ms=0.535 single_rounds=11 batch32_median_ms=0.0722 batch32_rounds=7
+pair n=1048576 w=256 op=min single_paired_ratio=1.022 batch32_paired_ratio=1.044 rounds=11/7
+check n=1048576 w=512 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=512 op=sum arm=subgroup single_ms=0.640,0.380,0.435,0.465,0.500,0.485,0.420,0.360,0.355,0.395,0.420 batch32_ms=0.2152,0.1159,0.1000,0.0939,0.0914,0.0698,0.0708
+time n=1048576 w=512 op=sum arm=subgroup single_median_ms=0.420 single_rounds=11 batch32_median_ms=0.0939 batch32_rounds=7
+check n=1048576 w=512 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=512 op=sum arm=baseline single_ms=0.545,0.410,0.615,0.475,0.545,0.670,0.405,0.375,0.900,0.560,0.895 batch32_ms=0.2347,0.1600,0.1013,0.1119,0.0917,0.0742,0.0730
+time n=1048576 w=512 op=sum arm=baseline single_median_ms=0.545 single_rounds=11 batch32_median_ms=0.1013 batch32_rounds=7
+pair n=1048576 w=512 op=sum single_paired_ratio=0.917 batch32_paired_ratio=0.941 rounds=11/7
+check n=1048576 w=512 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=512 op=max arm=subgroup single_ms=0.505,0.360,0.410,0.275,0.295,0.275,0.290,0.295,0.330,0.425,0.425 batch32_ms=0.0847,0.1003,0.0759,0.0764,0.0866,0.0873,0.0917
+time n=1048576 w=512 op=max arm=subgroup single_median_ms=0.330 single_rounds=11 batch32_median_ms=0.0866 batch32_rounds=7
+check n=1048576 w=512 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=512 op=max arm=baseline single_ms=0.855,0.375,0.340,0.375,0.270,0.270,0.295,0.315,0.345,0.325,0.445 batch32_ms=0.0711,0.0889,0.0877,0.0922,0.0956,0.0752,0.0750
+time n=1048576 w=512 op=max arm=baseline single_median_ms=0.340 single_rounds=11 batch32_median_ms=0.0877 batch32_rounds=7
+pair n=1048576 w=512 op=max single_paired_ratio=0.960 batch32_paired_ratio=1.128 rounds=11/7
+check n=1048576 w=512 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=512 op=min arm=subgroup single_ms=0.570,0.430,0.505,0.420,0.440,0.420,0.475,0.520,0.515,0.460,0.430 batch32_ms=0.0977,0.1888,0.1556,0.1370,0.1634,0.1134,0.1003
+time n=1048576 w=512 op=min arm=subgroup single_median_ms=0.460 single_rounds=11 batch32_median_ms=0.1370 batch32_rounds=7
+check n=1048576 w=512 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=512 op=min arm=baseline single_ms=0.530,0.755,0.435,0.435,0.520,0.510,0.975,0.505,0.620,0.640,0.455 batch32_ms=0.1241,0.1156,0.1369,0.1548,0.1338,0.1369,0.0908
+time n=1048576 w=512 op=min arm=baseline single_median_ms=0.520 single_rounds=11 batch32_median_ms=0.1338 batch32_rounds=7
+pair n=1048576 w=512 op=min single_paired_ratio=0.846 batch32_paired_ratio=1.105 rounds=11/7
+check n=1048576 w=1024 op=sum arm=subgroup answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=1024 op=sum arm=subgroup single_ms=0.450,0.385,0.370,0.450,0.380,0.380,0.505,0.980,1.005,0.580,0.525 batch32_ms=0.1181,0.1330,0.1080,0.1012,0.1011,0.1109,0.1002
+time n=1048576 w=1024 op=sum arm=subgroup single_median_ms=0.450 single_rounds=11 batch32_median_ms=0.1080 batch32_rounds=7
+check n=1048576 w=1024 op=sum arm=baseline answer=1572864 ref=1572864 ok=1
+raw n=1048576 w=1024 op=sum arm=baseline single_ms=0.470,0.420,0.375,0.465,0.420,0.385,0.425,0.505,0.630,0.465,0.550 batch32_ms=0.1370,0.1177,0.1262,0.1323,0.1000,0.1220,0.1038
+time n=1048576 w=1024 op=sum arm=baseline single_median_ms=0.465 single_rounds=11 batch32_median_ms=0.1220 batch32_rounds=7
+pair n=1048576 w=1024 op=sum single_paired_ratio=0.987 batch32_paired_ratio=0.909 rounds=11/7
+check n=1048576 w=1024 op=max arm=subgroup answer=4095 ref=4095 ok=1
+raw n=1048576 w=1024 op=max arm=subgroup single_ms=0.530,0.575,0.390,0.535,0.520,0.470,0.415,0.385,0.360,0.445,0.385 batch32_ms=0.0764,0.0833,0.0848,0.0755,0.0766,0.0759,0.0753
+time n=1048576 w=1024 op=max arm=subgroup single_median_ms=0.445 single_rounds=11 batch32_median_ms=0.0764 batch32_rounds=7
+check n=1048576 w=1024 op=max arm=baseline answer=4095 ref=4095 ok=1
+raw n=1048576 w=1024 op=max arm=baseline single_ms=0.655,0.595,0.375,0.600,0.505,0.875,0.375,0.395,0.375,0.380,0.455 batch32_ms=0.0841,0.0794,0.0870,0.0786,0.0839,0.0819,0.0798
+time n=1048576 w=1024 op=max arm=baseline single_median_ms=0.455 single_rounds=11 batch32_median_ms=0.0819 batch32_rounds=7
+pair n=1048576 w=1024 op=max single_paired_ratio=0.966 batch32_paired_ratio=0.943 rounds=11/7
+check n=1048576 w=1024 op=min arm=subgroup answer=0 ref=0 ok=1
+raw n=1048576 w=1024 op=min arm=subgroup single_ms=0.490,0.465,0.455,0.385,0.675,0.500,0.460,0.400,0.360,0.485,0.520 batch32_ms=0.0767,0.0767,0.0828,0.0798,0.0775,0.0773,0.0752
+time n=1048576 w=1024 op=min arm=subgroup single_median_ms=0.465 single_rounds=11 batch32_median_ms=0.0773 batch32_rounds=7
+check n=1048576 w=1024 op=min arm=baseline answer=0 ref=0 ok=1
+raw n=1048576 w=1024 op=min arm=baseline single_ms=0.410,0.405,0.390,0.405,0.385,0.460,0.725,0.475,0.445,0.560,0.880 batch32_ms=0.0875,0.0809,0.0834,0.0809,0.0800,0.0798,0.0883
+time n=1048576 w=1024 op=min arm=baseline single_median_ms=0.445 single_rounds=11 batch32_median_ms=0.0809 batch32_rounds=7
+pair n=1048576 w=1024 op=min single_paired_ratio=0.951 batch32_paired_ratio=0.969 rounds=11/7
+checks: 72/72 arm answers exact against the CPU reference
+aggregate pairs=36 single_subgroup_faster=19 batch32_subgroup_faster=20 (paired-median ratio < 1)
+
+## Regime classification (claim protocol rule 1, WGSL wall-clock channel)
+
+Published by scripts/gpu_regime_classify.py (GAP-1.15), invoked by the WGSL measurement harness. This channel's baseline metric is NAMED BY THE CHANNEL (the 2026-10-25 claim-protocol WGSL adoption, ADR-0360): host wall-clock submit->completion in milliseconds -- the harness reads no GPU clock. A regime here is a cluster of the observed baseline per-run median levels in that metric, named by its host-ms range, per operator.
+
+Run unit on this channel (the adoption's "per cell-arm run"): one run is one cell-arm sampling block -- (n, W, operator, metric) -- whose per-run median is the block's median over its paired rounds of host submit->completion (the measure-log's own `time` line). The MSL channel's run is a fresh process; this channel's is the paired sampling block. single and batch32 are TWO metrics of the channel (one dispatch per submit vs amortized over 32 dispatches in one command buffer); each clusters only its own runs -- never mixed.
+
+Clustering rule GAP-1.15: per operator, the per-run baseline medians sorted ascending, single-linkage -- the next median joins the current level at <= 1.15x the previous, else it starts a new level. The rule is metric-parametric as written (its 1.15 window derives from the MSL corpus's decided separation and carries unchanged); only the publication names the metric. Rule 2's sign classification is published in its own section beside this one (regime-matched sign per level over this record's `pair` lines) -- this rule-1 section itself renders no sign verdict -- and rule 4 is unchanged: this publication moves no `:measured?` flag and no workgroup row.
+
+### metric: single -- host wall-clock submit->completion, milliseconds (one dispatch per queue submit; the performance.now bracket submit -> onSubmittedWorkDone)
+
+Per-run baseline medians (rule 1's first publication; baseline = the :reduce WGSL arm):
+
+| operator | run (n, W) | baseline per-run median (host ms) |
+|---|---|---|
+| max | n=1000003 W=32 | 0.5100 |
+| max | n=1000003 W=64 | 0.5200 |
+| max | n=1000003 W=128 | 0.4900 |
+| max | n=1000003 W=256 | 0.3650 |
+| max | n=1000003 W=512 | 0.6250 |
+| max | n=1000003 W=1024 | 0.4900 |
+| max | n=1048576 W=32 | 0.6000 |
+| max | n=1048576 W=64 | 0.4150 |
+| max | n=1048576 W=128 | 0.4150 |
+| max | n=1048576 W=256 | 0.5250 |
+| max | n=1048576 W=512 | 0.3400 |
+| max | n=1048576 W=1024 | 0.4550 |
+| min | n=1000003 W=32 | 0.5050 |
+| min | n=1000003 W=64 | 0.4650 |
+| min | n=1000003 W=128 | 0.3150 |
+| min | n=1000003 W=256 | 0.2950 |
+| min | n=1000003 W=512 | 0.3650 |
+| min | n=1000003 W=1024 | 0.4200 |
+| min | n=1048576 W=32 | 0.3900 |
+| min | n=1048576 W=64 | 0.4500 |
+| min | n=1048576 W=128 | 0.7000 |
+| min | n=1048576 W=256 | 0.5350 |
+| min | n=1048576 W=512 | 0.5200 |
+| min | n=1048576 W=1024 | 0.4450 |
+| sum | n=1000003 W=32 | 0.4850 |
+| sum | n=1000003 W=64 | 0.4700 |
+| sum | n=1000003 W=128 | 0.4400 |
+| sum | n=1000003 W=256 | 0.3550 |
+| sum | n=1000003 W=512 | 0.3950 |
+| sum | n=1000003 W=1024 | 0.4200 |
+| sum | n=1048576 W=32 | 0.5700 |
+| sum | n=1048576 W=64 | 0.4750 |
+| sum | n=1048576 W=128 | 0.4650 |
+| sum | n=1048576 W=256 | 0.5900 |
+| sum | n=1048576 W=512 | 0.5450 |
+| sum | n=1048576 W=1024 | 0.4650 |
+
+Regime clusters:
+
+| operator | level | host-ms range | runs (baseline per-run median) |
+|---|---|---|---|
+| max | 1 (the only observed level) | 0.3400..0.6250 | n=1000003 W=32 (0.5100), n=1000003 W=64 (0.5200), n=1000003 W=128 (0.4900), n=1000003 W=256 (0.3650), n=1000003 W=512 (0.6250), n=1000003 W=1024 (0.4900), n=1048576 W=32 (0.6000), n=1048576 W=64 (0.4150), n=1048576 W=128 (0.4150), n=1048576 W=256 (0.5250), n=1048576 W=512 (0.3400), n=1048576 W=1024 (0.4550) |
+| min | 1 (fastest observed) | 0.2950..0.3150 | n=1000003 W=128 (0.3150), n=1000003 W=256 (0.2950) |
+| min | 2 | 0.3650..0.5350 | n=1000003 W=32 (0.5050), n=1000003 W=64 (0.4650), n=1000003 W=512 (0.3650), n=1000003 W=1024 (0.4200), n=1048576 W=32 (0.3900), n=1048576 W=64 (0.4500), n=1048576 W=256 (0.5350), n=1048576 W=512 (0.5200), n=1048576 W=1024 (0.4450) |
+| min | 3 (slowest observed) | 0.7000 | n=1048576 W=128 (0.7000) |
+| sum | 1 (the only observed level) | 0.3550..0.5900 | n=1000003 W=32 (0.4850), n=1000003 W=64 (0.4700), n=1000003 W=128 (0.4400), n=1000003 W=256 (0.3550), n=1000003 W=512 (0.3950), n=1000003 W=1024 (0.4200), n=1048576 W=32 (0.5700), n=1048576 W=64 (0.4750), n=1048576 W=128 (0.4650), n=1048576 W=256 (0.5900), n=1048576 W=512 (0.5450), n=1048576 W=1024 (0.4650) |
+
+### metric: batch32 -- host wall-clock submit->completion per dispatch, milliseconds (32 dispatches of the same kernel in one command buffer; the submit bracket divided by 32)
+
+Per-run baseline medians (rule 1's first publication; baseline = the :reduce WGSL arm):
+
+| operator | run (n, W) | baseline per-run median (host ms) |
+|---|---|---|
+| max | n=1000003 W=32 | 0.0630 |
+| max | n=1000003 W=64 | 0.0844 |
+| max | n=1000003 W=128 | 0.1077 |
+| max | n=1000003 W=256 | 0.0717 |
+| max | n=1000003 W=512 | 0.0714 |
+| max | n=1000003 W=1024 | 0.0823 |
+| max | n=1048576 W=32 | 0.0547 |
+| max | n=1048576 W=64 | 0.0628 |
+| max | n=1048576 W=128 | 0.1047 |
+| max | n=1048576 W=256 | 0.1105 |
+| max | n=1048576 W=512 | 0.0877 |
+| max | n=1048576 W=1024 | 0.0819 |
+| min | n=1000003 W=32 | 0.0614 |
+| min | n=1000003 W=64 | 0.1025 |
+| min | n=1000003 W=128 | 0.0614 |
+| min | n=1000003 W=256 | 0.0647 |
+| min | n=1000003 W=512 | 0.0741 |
+| min | n=1000003 W=1024 | 0.0825 |
+| min | n=1048576 W=32 | 0.0570 |
+| min | n=1048576 W=64 | 0.0972 |
+| min | n=1048576 W=128 | 0.1267 |
+| min | n=1048576 W=256 | 0.0722 |
+| min | n=1048576 W=512 | 0.1338 |
+| min | n=1048576 W=1024 | 0.0809 |
+| sum | n=1000003 W=32 | 0.0845 |
+| sum | n=1000003 W=64 | 0.1066 |
+| sum | n=1000003 W=128 | 0.1056 |
+| sum | n=1000003 W=256 | 0.0652 |
+| sum | n=1000003 W=512 | 0.0725 |
+| sum | n=1000003 W=1024 | 0.1072 |
+| sum | n=1048576 W=32 | 0.0698 |
+| sum | n=1048576 W=64 | 0.0605 |
+| sum | n=1048576 W=128 | 0.0806 |
+| sum | n=1048576 W=256 | 0.1245 |
+| sum | n=1048576 W=512 | 0.1013 |
+| sum | n=1048576 W=1024 | 0.1220 |
+
+Regime clusters:
+
+| operator | level | host-ms range | runs (baseline per-run median) |
+|---|---|---|---|
+| max | 1 (fastest observed) | 0.0547..0.0877 | n=1000003 W=32 (0.0630), n=1000003 W=64 (0.0844), n=1000003 W=256 (0.0717), n=1000003 W=512 (0.0714), n=1000003 W=1024 (0.0823), n=1048576 W=32 (0.0547), n=1048576 W=64 (0.0628), n=1048576 W=512 (0.0877), n=1048576 W=1024 (0.0819) |
+| max | 2 (slowest observed) | 0.1047..0.1105 | n=1000003 W=128 (0.1077), n=1048576 W=128 (0.1047), n=1048576 W=256 (0.1105) |
+| min | 1 (fastest observed) | 0.0570..0.0825 | n=1000003 W=32 (0.0614), n=1000003 W=128 (0.0614), n=1000003 W=256 (0.0647), n=1000003 W=512 (0.0741), n=1000003 W=1024 (0.0825), n=1048576 W=32 (0.0570), n=1048576 W=256 (0.0722), n=1048576 W=1024 (0.0809) |
+| min | 2 | 0.0972..0.1025 | n=1000003 W=64 (0.1025), n=1048576 W=64 (0.0972) |
+| min | 3 (slowest observed) | 0.1267..0.1338 | n=1048576 W=128 (0.1267), n=1048576 W=512 (0.1338) |
+| sum | 1 (fastest observed) | 0.0605..0.0845 | n=1000003 W=32 (0.0845), n=1000003 W=256 (0.0652), n=1000003 W=512 (0.0725), n=1048576 W=32 (0.0698), n=1048576 W=64 (0.0605), n=1048576 W=128 (0.0806) |
+| sum | 2 (slowest observed) | 0.1013..0.1245 | n=1000003 W=64 (0.1066), n=1000003 W=128 (0.1056), n=1000003 W=1024 (0.1072), n=1048576 W=256 (0.1245), n=1048576 W=512 (0.1013), n=1048576 W=1024 (0.1220) |
+
+claim-protocol-rule2: PUBLISHED (regime-matched sign per level below; sign claims channel-scoped -- a WGSL-channel sign never flips an MSL cell and never answers a workgroup row; rule 4 unchanged: no :measured? flag and no workgroup row moves)
+
+## Sign classification (claim protocol rule 2, WGSL wall-clock channel)
+
+Published by scripts/gpu_regime_classify.py from the record's own `pair` lines (rule 2's unit on this channel: the per-run ratio is the block's paired-median ratio, median over the block's rounds of subgroup/baseline) and the rule-1 regime clusters of the same runs' baseline per-run medians (GAP-1.15, host-ms). Rule 2: a sign is regime-invariant when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis; any other sign is regime-scoped and cannot choose a variant. The sign machine is the MSL channel's, unchanged and metric-parametric; single and batch32 are TWO metrics of this channel and classify separately, never mixed.
+
+Sign claims on this channel are CHANNEL-SCOPED (rule 2 carries in full, the 2026-10-25 adoption): a WGSL-channel sign never flips an MSL cell and never answers a workgroup row. Rule 4 is unchanged -- this publication moves no `:measured?` flag and no workgroup row.
+
+### metric: single -- host wall-clock submit->completion, milliseconds (one dispatch per queue submit; the performance.now bracket submit -> onSubmittedWorkDone)
+
+Regime-matched sign per level (rule 1's levels of this metric; the sign of the pair ratios within each level):
+
+| operator | level | runs (paired ratio) | level sign |
+|---|---|---|---|
+| max | 1 (the only observed level) | n=1000003 W=32 (0.875), n=1000003 W=64 (1.055), n=1000003 W=128 (1.000), n=1000003 W=256 (1.056), n=1000003 W=512 (0.802), n=1000003 W=1024 (1.069), n=1048576 W=32 (0.889), n=1048576 W=64 (1.118), n=1048576 W=128 (0.976), n=1048576 W=256 (0.895), n=1048576 W=512 (0.960), n=1048576 W=1024 (0.966) | mixed sides (4 above 1.0, 7 below 1.0, 1 at 1.0) |
+| min | 1 (fastest observed) | n=1000003 W=128 (1.103), n=1000003 W=256 (1.048) | one-sided slower (2/2 above 1.0) |
+| min | 2 | n=1000003 W=32 (1.000), n=1000003 W=64 (1.172), n=1000003 W=512 (1.000), n=1000003 W=1024 (0.974), n=1048576 W=32 (1.064), n=1048576 W=64 (0.982), n=1048576 W=256 (1.022), n=1048576 W=512 (0.846), n=1048576 W=1024 (0.951) | mixed sides (3 above 1.0, 4 below 1.0, 2 at 1.0) |
+| min | 3 (slowest observed) | n=1048576 W=128 (0.990) | one-sided faster (1/1 below 1.0) |
+| sum | 1 (the only observed level) | n=1000003 W=32 (1.020), n=1000003 W=64 (1.066), n=1000003 W=128 (1.057), n=1000003 W=256 (1.043), n=1000003 W=512 (1.000), n=1000003 W=1024 (0.966), n=1048576 W=32 (1.162), n=1048576 W=64 (0.957), n=1048576 W=128 (0.964), n=1048576 W=256 (0.831), n=1048576 W=512 (0.917), n=1048576 W=1024 (0.987) | mixed sides (5 above 1.0, 6 below 1.0, 1 at 1.0) |
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): n=1000003 W=32 0.875 below 1.0, n=1000003 W=64 1.055 above 1.0, n=1000003 W=128 1.000 at 1.0, n=1000003 W=256 1.056 above 1.0, n=1000003 W=512 0.802 below 1.0, n=1000003 W=1024 1.069 above 1.0, n=1048576 W=32 0.889 below 1.0, n=1048576 W=64 1.118 above 1.0, n=1048576 W=128 0.976 below 1.0, n=1048576 W=256 0.895 below 1.0, n=1048576 W=512 0.960 below 1.0, n=1048576 W=1024 0.966 below 1.0 |
+| min | regime-scoped | straddles 1.0 | straddle within regime 2 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=128 1.103 above 1.0, n=1000003 W=256 1.048 above 1.0; level 2 (middle level): n=1000003 W=32 1.000 at 1.0, n=1000003 W=64 1.172 above 1.0, n=1000003 W=512 1.000 at 1.0, n=1000003 W=1024 0.974 below 1.0, n=1048576 W=32 1.064 above 1.0, n=1048576 W=64 0.982 below 1.0, n=1048576 W=256 1.022 above 1.0, n=1048576 W=512 0.846 below 1.0, n=1048576 W=1024 0.951 below 1.0; level 3 (slowest observed): n=1048576 W=128 0.990 below 1.0 |
+| sum | regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): n=1000003 W=32 1.020 above 1.0, n=1000003 W=64 1.066 above 1.0, n=1000003 W=128 1.057 above 1.0, n=1000003 W=256 1.043 above 1.0, n=1000003 W=512 1.000 at 1.0, n=1000003 W=1024 0.966 below 1.0, n=1048576 W=32 1.162 above 1.0, n=1048576 W=64 0.957 below 1.0, n=1048576 W=128 0.964 below 1.0, n=1048576 W=256 0.831 below 1.0, n=1048576 W=512 0.917 below 1.0, n=1048576 W=1024 0.987 below 1.0 |
+
+Cell (metric single, all 36 paired ratios pooled): **regime-scoped** (14 above 1.0, 18 below 1.0, 4 at 1.0) -- not a selection basis; non-invariant operators: max, min, sum.
+
+### metric: batch32 -- host wall-clock submit->completion per dispatch, milliseconds (32 dispatches of the same kernel in one command buffer; the submit bracket divided by 32)
+
+Regime-matched sign per level (rule 1's levels of this metric; the sign of the pair ratios within each level):
+
+| operator | level | runs (paired ratio) | level sign |
+|---|---|---|---|
+| max | 1 (fastest observed) | n=1000003 W=32 (1.140), n=1000003 W=64 (1.148), n=1000003 W=256 (1.005), n=1000003 W=512 (1.010), n=1000003 W=1024 (0.979), n=1048576 W=32 (0.951), n=1048576 W=64 (1.042), n=1048576 W=512 (1.128), n=1048576 W=1024 (0.943) | mixed sides (6 above 1.0, 3 below 1.0) |
+| max | 2 (slowest observed) | n=1000003 W=128 (0.985), n=1048576 W=128 (1.013), n=1048576 W=256 (0.989) | mixed sides (1 above 1.0, 2 below 1.0) |
+| min | 1 (fastest observed) | n=1000003 W=32 (0.962), n=1000003 W=128 (1.035), n=1000003 W=256 (0.983), n=1000003 W=512 (0.998), n=1000003 W=1024 (0.970), n=1048576 W=32 (0.962), n=1048576 W=256 (1.044), n=1048576 W=1024 (0.969) | mixed sides (2 above 1.0, 6 below 1.0) |
+| min | 2 | n=1000003 W=64 (0.946), n=1048576 W=64 (1.161) | mixed sides (1 above 1.0, 1 below 1.0) |
+| min | 3 (slowest observed) | n=1048576 W=128 (0.996), n=1048576 W=512 (1.105) | mixed sides (1 above 1.0, 1 below 1.0) |
+| sum | 1 (fastest observed) | n=1000003 W=32 (1.048), n=1000003 W=256 (1.007), n=1000003 W=512 (0.991), n=1048576 W=32 (1.084), n=1048576 W=64 (1.031), n=1048576 W=128 (0.987) | mixed sides (4 above 1.0, 2 below 1.0) |
+| sum | 2 (slowest observed) | n=1000003 W=64 (0.846), n=1000003 W=128 (0.991), n=1000003 W=1024 (0.975), n=1048576 W=256 (1.026), n=1048576 W=512 (0.941), n=1048576 W=1024 (0.909) | mixed sides (1 above 1.0, 5 below 1.0) |
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-scoped | straddles 1.0 | straddle within regime 1, 2 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=32 1.140 above 1.0, n=1000003 W=64 1.148 above 1.0, n=1000003 W=256 1.005 above 1.0, n=1000003 W=512 1.010 above 1.0, n=1000003 W=1024 0.979 below 1.0, n=1048576 W=32 0.951 below 1.0, n=1048576 W=64 1.042 above 1.0, n=1048576 W=512 1.128 above 1.0, n=1048576 W=1024 0.943 below 1.0; level 2 (slowest observed): n=1000003 W=128 0.985 below 1.0, n=1048576 W=128 1.013 above 1.0, n=1048576 W=256 0.989 below 1.0 |
+| min | regime-scoped | straddles 1.0 | straddle within regime 1, 2, 3 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=32 0.962 below 1.0, n=1000003 W=128 1.035 above 1.0, n=1000003 W=256 0.983 below 1.0, n=1000003 W=512 0.998 below 1.0, n=1000003 W=1024 0.970 below 1.0, n=1048576 W=32 0.962 below 1.0, n=1048576 W=256 1.044 above 1.0, n=1048576 W=1024 0.969 below 1.0; level 2 (middle level): n=1000003 W=64 0.946 below 1.0, n=1048576 W=64 1.161 above 1.0; level 3 (slowest observed): n=1048576 W=128 0.996 below 1.0, n=1048576 W=512 1.105 above 1.0 |
+| sum | regime-scoped | straddles 1.0 | straddle within regime 1, 2 (one regime holds both sides): level 1 (fastest observed): n=1000003 W=32 1.048 above 1.0, n=1000003 W=256 1.007 above 1.0, n=1000003 W=512 0.991 below 1.0, n=1048576 W=32 1.084 above 1.0, n=1048576 W=64 1.031 above 1.0, n=1048576 W=128 0.987 below 1.0; level 2 (slowest observed): n=1000003 W=64 0.846 below 1.0, n=1000003 W=128 0.991 below 1.0, n=1000003 W=1024 0.975 below 1.0, n=1048576 W=256 1.026 above 1.0, n=1048576 W=512 0.941 below 1.0, n=1048576 W=1024 0.909 below 1.0 |
+
+Cell (metric batch32, all 36 paired ratios pooled): **regime-scoped** (16 above 1.0, 20 below 1.0) -- not a selection basis; non-invariant operators: max, min, sum.
+claim-protocol-rule1: PUBLISHED (rule 2 sign classification also published below (regime-matched sign per level; sign claims channel-scoped); no :measured? flag or workgroup row moves)
+run_finished=2026-10-25T00:17:56.414Z
+VERDICT: MEASURED-WALLCLOCK -- timings above are wall-clock submit-to-completion on this host (GPU-core timestamps: see gpu-timestamp-write line). CORRECTNESS ALSO VERIFIED per cell. NO :measured? flag or workgroup row is flipped by this log.

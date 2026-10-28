@@ -1,0 +1,787 @@
+{
+  "status": "PASS_CURRENT_LAYOUT_REPRODUCTION_AND_REFUSALS",
+  "producer": {
+    "bytes": 3350720,
+    "sha256": "0b1640634227d92405ae7784bde504bd42c3e8bbf2320d7e61468e22a72a7483"
+  },
+  "compilerSource": {
+    "bytes": 3486020,
+    "sha256": "0c24d2019b21e4d1135f01592d0b7ba220b6fd026ba35014290b02178a039e18"
+  },
+  "reproductions": [
+    {
+      "case": "old",
+      "sourceReceipt": {
+        "bytes": 17883,
+        "sha256": "53f8a5d0e829682bc268069d624844893bdce14462a9c38e45ad31a7bc0543db"
+      },
+      "kernel": {
+        "bytes": 3408152,
+        "sha256": "93b8f315aa564610d423ded13a136d4ceb3a0222afafe1d5114dbab682b4cd15"
+      },
+      "efi": {
+        "bytes": 4485120,
+        "sha256": "5e0dd35830ac0893b0163a2c36b3ef1be79392acce1b922694bc4d2e5c5111c1"
+      },
+      "calls": [
+        {
+          "name": "compile-boot-user.elf",
+          "argv": [
+            "compile",
+            "boot-user-source.kotoba",
+            "--target",
+            "x86_64-aiueos-user-v3",
+            "--output",
+            "boot-user.elf"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 77,
+            "sha256": "8328472abae44096057875d4b4e102d038253755b550c00d52031aa77c09579f"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-boot-user.reproduced.elf",
+          "argv": [
+            "compile",
+            "boot-user-source.kotoba",
+            "--target",
+            "x86_64-aiueos-user-v3",
+            "--output",
+            "boot-user.reproduced.elf"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 77,
+            "sha256": "8328472abae44096057875d4b4e102d038253755b550c00d52031aa77c09579f"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-boot-user-slot.bin",
+          "argv": [
+            "package-aiueos-user-payload",
+            "boot-user.elf",
+            "--output",
+            "boot-user-slot.bin",
+            "--version",
+            "v2"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "4fe76e11e48447445c55814b231be01faf596d8c69d94a2e67cd64c2c6811699"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-boot-user-slot.reproduced.bin",
+          "argv": [
+            "package-aiueos-user-payload",
+            "boot-user.elf",
+            "--output",
+            "boot-user-slot.reproduced.bin",
+            "--version",
+            "v2"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "4fe76e11e48447445c55814b231be01faf596d8c69d94a2e67cd64c2c6811699"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "discover",
+          "argv": [
+            "modules",
+            "/os/aiueos/native/user-elf-v3-local-model-entry.kotoba",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 2229,
+            "sha256": "e710c9c3c21fb6d8fd8aca61b7d847d4a831151915a847c9cf69093de49aafa1"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-KERNEL.ELF",
+          "argv": [
+            "compile",
+            "/os/aiueos/native/user-elf-v3-local-model-entry.kotoba",
+            "--target",
+            "x86_64-aiueos-kernel-v1",
+            "--artifact",
+            "image",
+            "--output",
+            "KERNEL.ELF",
+            "--fuel",
+            "1073741824",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba",
+            "--source-lock",
+            "kernel.ksl",
+            "--source-lock-sha256",
+            "e8944e9573f31f087a01b6e5afdf4e4357a7e897f003fce0c7cdd10c40b940af"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-KERNEL.reproduced.ELF",
+          "argv": [
+            "compile",
+            "/os/aiueos/native/user-elf-v3-local-model-entry.kotoba",
+            "--target",
+            "x86_64-aiueos-kernel-v1",
+            "--artifact",
+            "image",
+            "--output",
+            "KERNEL.reproduced.ELF",
+            "--fuel",
+            "1073741824",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba",
+            "--source-lock",
+            "kernel.ksl",
+            "--source-lock-sha256",
+            "e8944e9573f31f087a01b6e5afdf4e4357a7e897f003fce0c7cdd10c40b940af"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-BOOTX64.EFI",
+          "argv": [
+            "package-aiueos-boot",
+            "KERNEL.ELF",
+            "--output",
+            "BOOTX64.EFI",
+            "--font",
+            "boot-font.bin",
+            "--user-slot",
+            "boot-user-slot.bin",
+            "--pci-resources",
+            "v1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "8046dcbcbdebca5671285fd920245143de02861deafb12726728cf1fc947bc18"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-BOOTX64.reproduced.EFI",
+          "argv": [
+            "package-aiueos-boot",
+            "KERNEL.ELF",
+            "--output",
+            "BOOTX64.reproduced.EFI",
+            "--font",
+            "boot-font.bin",
+            "--user-slot",
+            "boot-user-slot.bin",
+            "--pci-resources",
+            "v1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "8046dcbcbdebca5671285fd920245143de02861deafb12726728cf1fc947bc18"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    },
+    {
+      "case": "new",
+      "sourceReceipt": {
+        "bytes": 18531,
+        "sha256": "e139798e1db76e4429d31fe4bc2309308ab0c1e83033262903fc00cf1b8309c8"
+      },
+      "kernel": {
+        "bytes": 4456728,
+        "sha256": "12397461b3a6ee6ec998ff9bd9a2dc9a838575db65696f84e015cece4185d0a8"
+      },
+      "efi": {
+        "bytes": 5533696,
+        "sha256": "08d1c651dcd8de336bd2edbe470a83469ba3179813c3d1f7d0c3edc8b16c4065"
+      },
+      "calls": [
+        {
+          "name": "compile-boot-user.elf",
+          "argv": [
+            "compile",
+            "boot-user-source.kotoba",
+            "--target",
+            "x86_64-aiueos-user-v4",
+            "--output",
+            "boot-user.elf"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 77,
+            "sha256": "97a76a089a01e73ae4142490503d5490e9265cd9891c3fc35c113df3a75d95ff"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-boot-user.reproduced.elf",
+          "argv": [
+            "compile",
+            "boot-user-source.kotoba",
+            "--target",
+            "x86_64-aiueos-user-v4",
+            "--output",
+            "boot-user.reproduced.elf"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 77,
+            "sha256": "97a76a089a01e73ae4142490503d5490e9265cd9891c3fc35c113df3a75d95ff"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-boot-user-slot.bin",
+          "argv": [
+            "package-aiueos-user-payload",
+            "boot-user.elf",
+            "--output",
+            "boot-user-slot.bin",
+            "--version",
+            "v3"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "09a9d62a80f3792d2d39ef6d77598ba44f18a0d9e425af9065aaf810a4966a26"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-boot-user-slot.reproduced.bin",
+          "argv": [
+            "package-aiueos-user-payload",
+            "boot-user.elf",
+            "--output",
+            "boot-user-slot.reproduced.bin",
+            "--version",
+            "v3"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "09a9d62a80f3792d2d39ef6d77598ba44f18a0d9e425af9065aaf810a4966a26"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "discover",
+          "argv": [
+            "modules",
+            "/os/aiueos/native/user-elf-v4-local-model-entry.kotoba",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 2521,
+            "sha256": "888aed4613b0ab0d6e64863cb98957c52e874c256398c6a325827901d7d15770"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-KERNEL.ELF",
+          "argv": [
+            "compile",
+            "/os/aiueos/native/user-elf-v4-local-model-entry.kotoba",
+            "--target",
+            "x86_64-aiueos-kernel-v2",
+            "--artifact",
+            "image",
+            "--output",
+            "KERNEL.ELF",
+            "--fuel",
+            "1073741824",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba",
+            "--source-lock",
+            "kernel.ksl",
+            "--source-lock-sha256",
+            "176adee738b282ca09f84da8b5f0199e9074533a1881b950d5aa06cd9ec4ef2d"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "compile-KERNEL.reproduced.ELF",
+          "argv": [
+            "compile",
+            "/os/aiueos/native/user-elf-v4-local-model-entry.kotoba",
+            "--target",
+            "x86_64-aiueos-kernel-v2",
+            "--artifact",
+            "image",
+            "--output",
+            "KERNEL.reproduced.ELF",
+            "--fuel",
+            "1073741824",
+            "--source-path",
+            "/os",
+            "--source-path",
+            "/os/aiueos",
+            "--source-path",
+            "/os/aiueos/kotoba",
+            "--source-path",
+            "/owners/capability-link-frame/kotoba",
+            "--source-path",
+            "/owners/capability-dma-map/kotoba",
+            "--source-path",
+            "/owners/capability-mmio-map/kotoba",
+            "--source-path",
+            "/owners/capability-net-transport/kotoba",
+            "--source-path",
+            "/owners/org-ietf-tcp/kotoba",
+            "--source-lock",
+            "kernel.ksl",
+            "--source-lock-sha256",
+            "176adee738b282ca09f84da8b5f0199e9074533a1881b950d5aa06cd9ec4ef2d"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-BOOTX64.EFI",
+          "argv": [
+            "package-aiueos-boot",
+            "KERNEL.ELF",
+            "--output",
+            "BOOTX64.EFI",
+            "--font",
+            "boot-font.bin",
+            "--user-slot",
+            "boot-user-slot.bin",
+            "--pci-resources",
+            "v1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "986cb4ca2cf92df45c14d4c29f175cf2c3154d7996a2478069a43c9496278adf"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        {
+          "name": "package-BOOTX64.reproduced.EFI",
+          "argv": [
+            "package-aiueos-boot",
+            "KERNEL.ELF",
+            "--output",
+            "BOOTX64.reproduced.EFI",
+            "--font",
+            "boot-font.bin",
+            "--user-slot",
+            "boot-user-slot.bin",
+            "--pci-resources",
+            "v1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "bytes": 59,
+            "sha256": "986cb4ca2cf92df45c14d4c29f175cf2c3154d7996a2478069a43c9496278adf"
+          },
+          "stderr": {
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      ]
+    }
+  ],
+  "pairings": [
+    {
+      "name": "changed-user-entry",
+      "args": [
+        "package-aiueos-user-payload",
+        "changed-entry",
+        "--output",
+        "bad-slot",
+        "--version",
+        "v3"
+      ],
+      "exit": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 57,
+        "sha256": "68729baafc4671a52fc8ebed06717faf320ea0c20d6feb652c1033db2d6835a3"
+      },
+      "artifact": null
+    },
+    {
+      "name": "short-rw-generic",
+      "args": [
+        "package-aiueos-boot",
+        "short-rw",
+        "--output",
+        "short-rw-generic.EFI",
+        "--payload",
+        "font",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 0,
+      "stdout": {
+        "bytes": 59,
+        "sha256": "99eff195fad20bf524e75f7598986f433145323e5b9f77dae5a01f0fb4d441fb"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "artifact": {
+        "bytes": 5009408,
+        "sha256": "13d3da145eff8ae472a183ab5d151e31829b681bbd0c3eaa52a352594bc0a406"
+      }
+    },
+    {
+      "name": "old-kernel-old-slot",
+      "args": [
+        "package-aiueos-boot",
+        "old-kernel",
+        "--output",
+        "old-kernel-old-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "old-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 0,
+      "stdout": {
+        "bytes": 59,
+        "sha256": "8046dcbcbdebca5671285fd920245143de02861deafb12726728cf1fc947bc18"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "artifact": {
+        "bytes": 4485120,
+        "sha256": "5e0dd35830ac0893b0163a2c36b3ef1be79392acce1b922694bc4d2e5c5111c1"
+      }
+    },
+    {
+      "name": "new-kernel-new-slot",
+      "args": [
+        "package-aiueos-boot",
+        "new-kernel",
+        "--output",
+        "new-kernel-new-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "new-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 0,
+      "stdout": {
+        "bytes": 59,
+        "sha256": "986cb4ca2cf92df45c14d4c29f175cf2c3154d7996a2478069a43c9496278adf"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "artifact": {
+        "bytes": 5533696,
+        "sha256": "08d1c651dcd8de336bd2edbe470a83469ba3179813c3d1f7d0c3edc8b16c4065"
+      }
+    },
+    {
+      "name": "old-kernel-new-slot",
+      "args": [
+        "package-aiueos-boot",
+        "old-kernel",
+        "--output",
+        "old-kernel-new-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "new-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 71,
+        "sha256": "dcf0867e0b1724ac118ed949877457453e5b4b85e1b31999e62f5f6a63a15803"
+      },
+      "artifact": null
+    },
+    {
+      "name": "new-kernel-old-slot",
+      "args": [
+        "package-aiueos-boot",
+        "new-kernel",
+        "--output",
+        "new-kernel-old-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "old-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 71,
+        "sha256": "dcf0867e0b1724ac118ed949877457453e5b4b85e1b31999e62f5f6a63a15803"
+      },
+      "artifact": null
+    },
+    {
+      "name": "changed-address-new-slot",
+      "args": [
+        "package-aiueos-boot",
+        "changed-address",
+        "--output",
+        "changed-address-new-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "new-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 71,
+        "sha256": "dcf0867e0b1724ac118ed949877457453e5b4b85e1b31999e62f5f6a63a15803"
+      },
+      "artifact": null
+    },
+    {
+      "name": "short-rw-new-slot",
+      "args": [
+        "package-aiueos-boot",
+        "short-rw",
+        "--output",
+        "short-rw-new-slot.EFI",
+        "--font",
+        "font",
+        "--user-slot",
+        "new-slot",
+        "--pci-resources",
+        "v1"
+      ],
+      "exit": 1,
+      "stdout": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "bytes": 71,
+        "sha256": "dcf0867e0b1724ac118ed949877457453e5b4b85e1b31999e62f5f6a63a15803"
+      },
+      "artifact": null
+    }
+  ],
+  "guestExecutionThisRun": false,
+  "realModelQualified": false,
+  "cumulativeOverflowRefusal": {
+    "args": [
+      "compile",
+      "/os/aiueos/native/user-elf-v4-local-model-entry.kotoba",
+      "--target",
+      "x86_64-aiueos-kernel-v1",
+      "--artifact",
+      "image",
+      "--output",
+      "overflow-v1.elf",
+      "--fuel",
+      "1073741824",
+      "--source-path",
+      "/os",
+      "--source-path",
+      "/os/aiueos",
+      "--source-path",
+      "/os/aiueos/kotoba",
+      "--source-path",
+      "/owners/capability-link-frame/kotoba",
+      "--source-path",
+      "/owners/capability-dma-map/kotoba",
+      "--source-path",
+      "/owners/capability-mmio-map/kotoba",
+      "--source-path",
+      "/owners/capability-net-transport/kotoba",
+      "--source-path",
+      "/owners/org-ietf-tcp/kotoba",
+      "--source-lock",
+      "kernel.ksl",
+      "--source-lock-sha256",
+      "176adee738b282ca09f84da8b5f0199e9074533a1881b950d5aa06cd9ec4ef2d"
+    ],
+    "exit": 1,
+    "stderr": "kernel project in /os/aiueos/native/user-elf-v4-local-model-entry.kotoba:\nseed-x86_64-aiueos-object: E7104 unsupported object profile or code limit; detail 1070137\n",
+    "noArtifact": true
+  }
+}

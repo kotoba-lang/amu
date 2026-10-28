@@ -1,0 +1,96 @@
+JUN-59 session 7 -- B-ONSET LOCALIZATION (BONSET), publication
+Produced ONLY by analysis-s7.py over the 21 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = the BATCH compile-time value alone (BARRIER_N=0
+everywhere; the instrument is the byte-identical session-6 snapshot).
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 21 logs):
+   runs parsed: 21 (7 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch= field == run's B and barrier_n=0 everywhere; every SAMPLE batch= field == run's B: True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 21/21 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 378/378
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 126 cell-runs (6 per run x 21 runs = 126 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   b1n0  1          31           31..31              31..31           355253
+   b2n0  2          31           31..32              31..32           679998
+   b3n0  3        5520         5499..5544          4254..5526         960432
+   b4n0  4       11680        11638..11700         8971..11680       1279136
+   b5n0  5       17386        17367..17419        13242..17386       1582402
+   b6n0  6       22730        22609..22831        17271..22730       1863736
+   b8n0  8       32951        32879..33010        25290..33005       3038388
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class b1n0 (B=1): FLOOR
+   class b2n0 (B=2): FLOOR
+   class b3n0 (B=3): CAPTURED
+   class b4n0 (B=4): CAPTURED
+   class b5n0 (B=5): CAPTURED
+   class b6n0 (B=6): CAPTURED
+   class b8n0 (B=8): CAPTURED
+
+   O3 CONTROL REPLICATION (numeric agreement with the committed value at
+   each control's OWN B -- the named fix for session 6's C1 threshold defect):
+     b1n0 and b2n0 satisfy FLOOR: True
+     b4n0 (sum,128,16) pooled median 11680 within +/-5% of committed 11674 (session 4): True
+     b8n0 (sum,128,16) pooled median 32951 within +/-5% of committed 32915 (session 4): True
+     VERDICT: branch (a) all four controls satisfy their criteria --
+     O1-O2 are evaluated against the row question.
+
+   O1 ONSET LOCALIZATION (the row question): classes above.
+     VERDICT: branch (a) -- b3n0 CAPTURED while b2n0 FLOOR: capture turns
+     on strictly between B=2 and B=3 (the committed 'between 2 and 4' band
+     is narrowed on the low side). Observable only; NO causal mechanism
+     claimed or measured.
+
+   O2 POST-ONSET GROWTH (descriptive; per-dispatch = pooled median bracket / B
+   at (sum,128,16); committed anchors: B=4 2918 ticks/dispatch,
+   flat band 3455.69..4369.81 ticks/dispatch for B>=16 (session 4)):
+     b1n0: bracket 31 ticks -> per-dispatch 31.0 (below the committed flat band)
+     b2n0: bracket 31 ticks -> per-dispatch 15.5 (below the committed flat band)
+     b3n0: bracket 5520 ticks -> per-dispatch 1840.0 (below the committed flat band)
+     b4n0: bracket 11680 ticks -> per-dispatch 2920.0 (below the committed flat band)
+     b5n0: bracket 17386 ticks -> per-dispatch 3477.2 (inside the committed flat band)
+     b6n0: bracket 22730 ticks -> per-dispatch 3788.3 (inside the committed flat band)
+     b8n0: bracket 32951 ticks -> per-dispatch 4118.9 (inside the committed flat band)
+
+   O4 B-DOSE (descriptive only): this session's own B-curve at (sum,128,16)
+     B=1: bracket 31 ticks = 1.61 us; host_ns 355253
+     B=2: bracket 31 ticks = 1.61 us; host_ns 679998
+     B=3: bracket 5520 ticks = 287.50 us; host_ns 960432
+     B=4: bracket 11680 ticks = 608.33 us; host_ns 1279136
+     B=5: bracket 17386 ticks = 905.52 us; host_ns 1582402
+     B=6: bracket 22730 ticks = 1183.85 us; host_ns 1863736
+     B=8: bracket 32951 ticks = 1716.19 us; host_ns 3038388
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   b1n0: bracket 31 ticks = 1.61 us; per-dispatch 31.0 ticks; vs committed floor 31
+   b2n0: bracket 31 ticks = 1.61 us; per-dispatch 15.5 ticks; vs committed floor 31
+   b3n0: bracket 5520 ticks = 287.50 us; per-dispatch 1840.0 ticks; (no committed anchor at this B -- new)
+   b4n0: bracket 11680 ticks = 608.33 us; per-dispatch 2920.0 ticks; vs committed 11674: +0.05%
+   b5n0: bracket 17386 ticks = 905.52 us; per-dispatch 3477.2 ticks; (no committed anchor at this B -- new)
+   b6n0: bracket 22730 ticks = 1183.85 us; per-dispatch 3788.3 ticks; (no committed anchor at this B -- new)
+   b8n0: bracket 32951 ticks = 1716.19 us; per-dispatch 4118.9 ticks; vs committed 32915: +0.11%
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   or the onset location; WHY capture turns on where it does; B=7; any B
+   outside {1,2,3,4,5,6,8}; any N>0 at these B; session 2's run-1 dip cause;
+   cross-day replication; S=8 timing; every W outside {128,256}; shape 2; any
+   baseline-vs-variant sign; BT ordering; isolated single-dispatch timing;
+   anything about non-empty barriers; anything off this host.

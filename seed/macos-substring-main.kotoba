@@ -1,0 +1,19 @@
+;; Exercise literal and pool-backed UTF-8 views, including empty ranges.
+(ns seed.macos-substring-main (:export [main]))
+
+(defn main [] :i64
+  (let [literal "Aé€🙂"
+        pooled (string-concat "A" "é€🙂")
+        a (string-substring literal 1 6)
+        b (string-substring pooled 1 6)
+        empty (string-substring literal 6 6)
+        zero (string-substring "" 0 0)]
+    (if (and (= (string-length a) 5)
+             (= (string-code-point-at a 0) 233)
+             (= (string-code-point-at a 2) 8364)
+             (= (string-length b) 5)
+             (= (string-code-point-at b 0) 233)
+             (= (string-code-point-at b 2) 8364)
+             (= (string-length empty) 0)
+             (= (string-length zero) 0))
+      42 1)))

@@ -1,0 +1,153 @@
+mufu-split-identifiability-20261026 -- record.txt
+JUN-55 / JUN-57. ONE design slice. NO HARDWARE RAN THIS TICK; NOTHING IS
+MEASURED HERE. The tick executes 2026-10-26T15:45Z UTC (2026-10-27 JST) --
+STILL the same UTC day as every earlier probe, so cross-day run 3+ does NOT
+move and this record enters no :evidence and extends no record's claim.
+
+WHAT THIS RESOLVES. The twenty-eighth amendment (evidence
+cuda-mufu-edglat-20261026) ended with: "The cross-edge split is
+UNIDENTIFIABLE in this form (design fact, REASONED by rotation counting) ...
+an open-chain form would be needed (proposed, not implemented)." This tick
+settles the identifiability question the proposed open-chain instrument
+depends on, BEFORE any hardware time is spent on it: can any chain form
+identify the two directed cross-edge prices e_MF and e_FM separately, or
+only their sum?
+
+THE MODEL (the twenty-eighth amendment's own frame, unchanged). A dependent
+chain's cost is a sum of edge prices along the chain path. Variables: e_{i,j}
+= price of the edge from an op of type i to a consumer of type j (self edges
+included; M = MUFU.RSQ-class, F = FADD-class, U = any third same-accumulator
+op), a_i = entry edge (seed producer -> first op) where the timed region
+includes the chain's start, b_i = exit edge (last op -> sink consumer), f =
+floor intercept. Every measurable quantity of every chain form is a PATH SUM
+over these variables. Loop-carried bodies are cyclic path sums (consecutive
+edges plus the loop back edge).
+
+PRE-REGISTERED PREDICTIONS (written in the script header before the first
+run; script sha256 2bb45b9f7ed532e435abff1ddcef20f4645f1b68d0ea1c64a29ed745
+fb93bcb8, committed verbatim as analysis.py):
+  P1 loop-carried cyclic bodies, {M,F}: rank 3 of the 4 edge variables;
+     split NOT identifiable, sum identifiable.
+  P2 open chains with the entry edge INSIDE the timed region: nullspace is a
+     potential gauge (dimension predicted |types| = 2); split NOT
+     identifiable -- the twenty-eighth's "open-chain form" NOT sufficient in
+     this discipline.
+  P3 open chains with the entry edge EXCLUDED by timing discipline (first
+     operand ready before the timing boundary): full rank; split
+     identifiable; estimator e_MF = V(MF) - V(F), e_FM = V(FM) - V(M);
+     falsifiable closure V(MFM) == V(MF) + V(FM) - V(F).
+  P4 cyclic bodies over {M,F,U}: nullspace = 2-dim potential gauge; split
+     NOT identifiable in any cyclic alphabet.
+
+VERIFIED RESULT (exact rational Gauss-Jordan; analysis-output.txt is the
+verbatim stdout, two runs byte-identical, sha256
+be3f55acd70417f478e512b120745a838aa877bef6ae06bcedacbbffd8262933):
+  Family A ({M,F}, 126 cyclic bodies of length 1..6, 7 vars): rank 3,
+  null = {e_MF:-1, e_FM:1} plus the 3 columns cyclic bodies never exercise
+  ({b_M:1},{b_F:1},{f:1}). e_MF+e_FM IDENTIFIABLE; e_MF-e_FM NOT
+  (witness dot = -2). P1 CONFIRMED -- this reproduces the twenty-eighth
+  amendment's rotation-counting result mechanically.
+  Family B ({M,F}, 126 open chains, entry included, 9 vars): rank 6,
+  null = {e_MF:1, e_FM:-1, a_M:-1, b_M:1}, {e_MF:-1, e_FM:1, a_F:-1,
+  b_F:1}, {a_M:-1, a_F:-1, f:1}. e_MF-e_FM NOT IDENTIFIABLE (witness
+  dot = 2). P2 CONFIRMED ON THE VERDICT, DEVIANT ON THE DIMENSION: the
+  nullspace is 3-dimensional, not 2 -- the direction P2 did not count is
+  the floor-vs-entry trade {a_M:-1, a_F:-1, f:1} (the floor intercept and
+  the entry edges are mutually unobservable, which is also why the
+  twenty-eighth amendment's per-form intercept differences stayed
+  unexplained). NAMED, not smoothed over.
+  Family C ({M,F}, 126 open chains, entry EXCLUDED, 7 vars): rank 6, null =
+  the sink-vs-floor trade {b_M:-1, b_F:-1, f:1} ONLY -- which moves no
+  e_{i,j}. e_MF, e_FM, and e_MF-e_FM all IDENTIFIABLE. P3 CONFIRMED ON THE
+  VERDICT (the prediction said "full rank"; the residual sink/floor trade is
+  the same uncounted intercept freedom as in P2 -- NAMED).
+  Family A ({M,F,U}, 363 cyclic bodies, 13 vars): rank 7 of the 9 edge
+  variables, null = 2-dim potential gauge ({e_MF:-1, e_MU:-1, e_FM:1,
+  e_UM:1}, {e_MF:1, e_FM:-1, e_FU:-1, e_UF:1}). Split NOT identifiable in
+  ANY cyclic alphabet. P4 CONFIRMED.
+  Family B ({M,F,U}, 120 open chains, entry included): rank 12, null = 3-dim
+  potential gauge + the floor trade; split NOT identifiable.
+  Family C ({M,F,U}, 120 open chains, entry excluded): rank 12, null = the
+  sink/floor trade only; split IDENTIFIABLE.
+
+THE FINDING (design fact; REASONED and MECHANICALLY VERIFIED; NOT a
+measurement):
+(1) THE SPLIT IS UNIDENTIFIABLE IN EVERY FORM WHERE THE ENTRY EDGE SITS
+    INSIDE THE TIMED REGION -- not just loop-carried bodies. The freedom is
+    a potential gauge: for any per-node-type potential p, shifting e_{i,j}
+    by p(j)-p(i) and the entry/exit edges correspondingly leaves EVERY path
+    sum invariant. Open chains (the twenty-eighth amendment's proposed
+    carrier) do NOT break it: they merely re-seat the freedom onto the
+    entry/exit edges (families B above). Only path sums are observable; the
+    only cross-pipe quantity any of these forms returns is the cycle sum
+    e_MF + e_FM = 21.0000 (the measured pair slope, standing unchanged).
+(2) THE TWENTY-EIGHTH AMENDMENT'S FORWARD PATH IS CORRECTED: an open-chain
+    form is needed AND SUFFICIENT only under the entry-excluding timing
+    discipline -- the first chain operand must be READY BEFORE the timing
+    boundary so the entry edge is outside the measured functional, and the
+    sink consumer must be common to all arms. Under that discipline the
+    gauge collapses to a single sink-vs-floor trade that moves no edge
+    price, and the split becomes identifiable with the estimators
+        e_MF = V(MF) - V(F),   e_FM = V(FM) - V(M),
+    where V(w) is the timed open-chain total of word w.
+(3) FALSIFIABLE CLOSURE for that future instrument (pre-registered now, for
+    whatever tick builds it): V(MFM) == V(MF) + V(FM) - V(F) and
+    V(FMF) == V(FM) + V(MF) - V(M). If the closures fail, the discipline's
+    assumption (entry edge outside the timed region) is wrong and the split
+    stays unmeasured -- it must NOT be reported.
+(4) The gauge also explains a standing loose end: the twenty-eighth
+    amendment's per-form intercept differences (0.5234 / 7.4844 / 5.4805)
+    live exactly in the floor-vs-entry freedom this analysis exhibits
+    (family B's third null direction) and cannot be resolved from any
+    intercept either.
+
+CONSEQUENCE: NOTHING MOVES (rule 4). No record, no :measured? flag, no
+selection answer, no workgroup row. The named item (the e_MF/e_FM split)
+stays UNMEASURED and moves in DESIGN STATE ONLY: "unidentifiable in-form"
+becomes "unidentifiable in every entry-included chain form (gauge, verified)
+and identifiable only under the entry-excluding discipline (spec'd,
+estimators + closures pre-registered, instrument PROPOSED, NOT
+implemented)". The twenty-eighth's "an open-chain form would be needed
+(proposed, not implemented)" is SUPERSEDED by this corrected statement.
+
+STATES. REASONED + MECHANICALLY VERIFIED (not measured): the gauge theorem
+and all rank/nullspace verdicts above (analysis.py + analysis-output.txt).
+MEASURED (standing, unchanged, from earlier ticks): e_MM 14.9966, e_FF
+4.0000, e_MF+e_FM 21.0000, cross surplus +2.0034 -- all still only the
+cycle sums this analysis proves are all that cyclic forms can return.
+PROPOSED (neither implemented nor run): the entry-excluded open-chain
+instrument with the estimators and closures of (2)/(3). RETRACTED/
+SUPERSEDED: nothing beyond the twenty-eighth's forward-path phrasing, which
+is superseded as stated. IMPLEMENTED: nothing in src/ or test/ (this diff is
+docs/evidence + one ADR amendment). DECIDED: nothing new.
+
+UNMEASURED, named (the twenty-eighth's list, carried forward intact): the
+e_MF / e_FM split (now: unidentifiable in entry-included forms; measurable
+only via the PROPOSED entry-excluded instrument), bare MUFU.RCP
+dependent-chain latency (three carrier forms agree with equality, no
+separation), the floor's internal composition (including the per-form
+intercept differences 0.5234 / 7.4844 / 5.4805 -- now placed in the
+floor-vs-entry gauge freedom, still unmeasured), the pure 2-input IADD3 and
+IMAD.IADD separations, the 21 surplus ops' costs, the residual W-shape's
+dynamic carrier, noise exceedance, sum TRUE side W=256, cross-day run 3+
+(still 2026-10-26 UTC -- this tick is same-UTC-day), non-xavier verdicts,
+:sum W=64 elsewhere, live CUDA selection path, workgroup rows (:arm/:unknown
+provisional :measured? false -- the accelerator-targets defaults are design
+assumptions, not evidence, and none of them is touched here).
+
+GATES (honest): scoped GPU gate GREEN on run 1 AND run 2 (123 tests / 12162
+assertions / 0 failures / 0 errors, glslang 16.6.0 real-spawn, regression
+pin -- verbatim logs gate-run1.txt / gate-run2.txt in this dir); `find docs
+-name '*.sh'` -> 0. FULL run-tests.cljk NOT run (this diff touches NO .cljk
+namespace) -- documented RED AT BASE 'Could not find namespace: kotoba.form'
+(ADR-0362), outside this diff -- NO green full suite claimed.
+
+NAMED NOT HIDDEN. P2's and P3's predicted nullspace dimensions were wrong
+(floor-vs-entry and sink-vs-floor trades uncounted); every verdict matched
+-- both deviations are printed above and in the verbatim output. This tick
+ran NO hardware and took NO measurement; nothing in it extends any
+:evidence. Untracked deps.edn (not created by this bot) left untouched. The
+analysis script is committed as analysis.py (docs/evidence carries 115
+tracked .py files, 69 with shebangs -- established precedent; the owner
+rule bans .sh execution files only). Determinism: the analysis was run
+twice; both outputs byte-identical (sha256 in analysis-output.txt).

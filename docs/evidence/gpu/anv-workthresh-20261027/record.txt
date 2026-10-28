@@ -1,0 +1,170 @@
+JUN-59 -- session 13 record: WORK-THRESHOLD BISECT at fixed B=8 (the
+NDIV ladder). INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE observable axis -- session 12's named residual,
+   "the exact per-dispatch work threshold location inside the
+   (3,906..125,000] element band at B=8"):
+
+     AT FIXED DISPATCH COUNT B=8, WHERE INSIDE THE (3,906..125,000]
+     ELEMENT BAND DOES THE CAPTURE DIE -- 8 dispatches of a 1/32-,
+     1/64- or 1/128-times grid (n = 31,250 / 15,625 / 7,812) on the
+     NDIV ladder {8, 32, 64, 128, 256} (n = 125,000 .. 3,906)?
+
+2. DERIVATION (chain of custody): ZERO derivation edits this session
+   (the strongest custody position in the chain -- named as such). The
+   instrument is session 12's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0..., re-verified local-vs-host; the
+   NDIV knob already parameterizes this axis); the new bisect arms are
+   new compile-time -D NDIV values only. The shader corpus is used
+   byte-identical (16-digest corpus; NO shader derivation). Manifest
+   cases-s13-a.txt = the 24 a-set cell lines a BYTE-COPY of session
+   12's cases-s12-a.txt cell lines (checked programmatically); ALL 7
+   arms run this one manifest. expected-corpus.sha256 regenerated
+   programmatically from session 2's committed census (byte-equal to
+   session 12's). Knob arithmetic pin: n = 1,000,003 // NDIV gives the
+   seven protocol-L2 values exactly; workgroup counts ceil(n/W)
+   recorded in derivation-census.txt.
+
+3. CHAIN OF CUSTODY (host-verify-s13.txt): corpus 16/16 digests MATCH
+   session 2's committed census (parsed programmatically, never
+   transcribed; checked host-side via sha256sum -c) + instrument +
+   manifest + census expectation local-vs-host MATCH 3/3 -- GO at
+   2026-10-27T14:53:09Z, BEFORE the builds and ALL runs (TIMELINE in
+   host-verify-s13.txt says so). NAMED, NOT HIDDEN: one pre-freeze
+   compile smoke of a NEW knob value (14:52:14Z, throwaway dir
+   ~/anv-wt-smoke, gcc -O2 -DBATCH=8 -DNDIV=32, rc=0, host digest
+   a5e539f0... MATCH local, zero runs -- the session-9 D2 lesson
+   applied by design even though the source is byte-identical to
+   session 12's built-and-run source).
+
+4. HARDWARE RAN (MEASURED): 21 fresh processes (7 arms x 3 runs), run
+   window 2026-10-27T14:53:30Z..2026-10-27T14:53:38Z, rc=0 21/21,
+   stderr 0 bytes 21/21 (host-side wc -c total 0), 450 SAMPLE lines
+   each; every run's batch=/work_mul=/ndiv=/n= == its arm's (B, 1,
+   NDIV, floor(1,000,003/NDIV)); every CELL's spv= is an archived
+   .emitted.spv (no .iter -- byte-identical corpus); forcing reality
+   378/378; VERIFY mismatch 0 everywhere (per-arm
+   0/0/0/0/0/0/0 -- the NDIV knob arithmetic is right at every rung);
+   S=8 fail-closed 126/126. Host: aiueos-6600hs-1 (BMG G31 / ANV), 1
+   tick = 52.083 ns. Per-run transcript (host date -u, rc) in
+   run-window.txt.
+
+5. FINDINGS (publication-s13.txt, produced ONLY by analysis-s13.py
+   over the committed run logs, the recorded publication run twice
+   byte-identical -- diff exit 0):
+
+   (a) C1 ARCHIVED CONTROL REPLICATION fired branch (a) -- c2 FLOOR
+       (32 ticks, run-median band 31..32), c8 = 32,906 vs committed
+       32,915 (-0.03%), inside the frozen +/-5%.
+
+   (b) C2 WORK-DOWN ANCHOR REPLICATION fired branch (a) -- d8 =
+       5,431 vs session-12 committed 5,465 (-0.62%), class CAPTURED;
+       d256 class FLOOR (34): both ladder ends replicate at session
+       12's OWN settings.
+
+   (c) W1 THE ROW QUESTION fired branch (c) AS FROZEN -- all THREE
+       bisect rungs are INTERMEDIATE/MIXED (branch (a) allowed at
+       most one): d32 = 1,050 ticks (run-median band 974..1,158,
+       min..max over the 18 cells 728..1,161), d64 = 403 (389..411;
+       282..403), d128 = 167 (166..170; 34..167). The ladder
+       (descending n) is d8 CAPTURED, d32/d64/d128 INTERMEDIATE,
+       d256 FLOOR. As frozen, branch (c)'s standing is the
+       cell-quantified content of publication sections 2-3 with
+       mechanism UNMEASURED. DESCRIPTIVE OVER THE FROZEN CLASSES (no
+       new letter, no interpolation): at class granularity the
+       bisect narrows TWO boundaries to ONE named adjacent ladder
+       interval each -- the CAPTURED-class boundary lies inside
+       (31,250..125,000] (between the d32 and d8 rungs) and the
+       FLOOR-class boundary inside (3,906..7,812] (between the d256
+       and d128 rungs); between them the class transition spans the
+       three measured intermediate rungs -- so session 12's "the
+       capture dies between NDIV=8 and NDIV=256" is refined to a
+       MULTI-STEP descent at class granularity, NOT a single-step
+       kill at any tested rung. Observable only; NO causal mechanism
+       claimed or measured.
+
+   (d) W2 (pre-registered, descriptive) THE LADDER DOSE CURVE at B=8
+       descends monotonically with per-dispatch work -- brackets
+       (sum,128,S=16) 32,906 / 5,431 / 1,050 / 403 / 167 / 34 at
+       NDIV 1/8/32/64/128/256 against the linear-work comparison
+       c8/NDIV 32,906 / 4,113 / 1,028 / 514 / 257 / 129: the top
+       three rungs sit within -22%..+32% of that comparison (d32
+       within +2%) and the bottom two fall below it (d128 -35%,
+       d256 -74%) as the bracket approaches the floor. This is a
+       descriptive comparison over 6 grid points ONLY -- NO
+       linearity claim, no interpolation (protocol W2).
+
+   (e) W3 (descriptive) TOTAL-WORK PARITY inverts again at every
+       rung: d32 (0.25 total nominal units, 8 dispatches) 1,050
+       ticks = 32.8x c2's bracket (2.0 units, 2 dispatches, FLOOR
+       32); d64 (0.125 units) 12.6x c2; d128 (0.0625 units -- 1/32
+       of c2's total work) 5.2x c2. Observable split only; NO
+       mechanism claimed.
+
+   (f) X1 (descriptive realization, host_ns): c8 3.615x c2, d8
+       1.455x, d32 0.210x, d64 0.145x, d128 0.119x, d256 0.121x.
+       NAMED, NOT HIDDEN: d8's host_ns here is 987,632 vs session
+       12's 607,422 for the same knob (+62%) while its GPU bracket
+       replicated to -0.62% and c2/c8 host_ns reproduce session
+       12's to within 3% -- host_ns is not a C criterion, no letter
+       depends on it, cause UNMEASURED.
+
+   NAMED, NOT HIDDEN (other): (i) c2's pooled median 32 is +3.23%
+   of the committed 31 while its run-median band 31..32 sits in the
+   committed floor band (the FLOOR class criterion is satisfied);
+   (ii) d128's cell spread includes floor-level cells (min 34) while
+   (sum,128,16) = 167 -- cell dependence at the bottom rung,
+   quantified in publication section 2; (iii) an extra BUILD PIN not
+   pre-registered: the four rebuilt arms that share session 12's
+   (BATCH,NDIV) pairs are byte-identical to session 12's same-flag
+   binaries (build-census-s13.txt).
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists
+   for Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism (for the undercount, the
+   capture, the onset, any work-down transition, or the descent's
+   shape); WHY capture turns on where it does; whether the
+   transition is on n, workgroup count or grid shape (protocol L4 --
+   n and workgroup count co-vary on this instrument); the exact
+   bracket value between any two ladder rungs (L5); the class
+   boundaries' exact locations inside (31,250..125,000] and
+   (3,906..7,812]; WHY d8's host_ns deviates +62% from session 12
+   while its bracket replicates; the GPU-side cost inside a B<=2
+   bracket (L3); any NDIV outside {1,8,32,64,128,256}; any B
+   outside {2,8}; B in {3,4,5,6,7} at any shrunk grid; any WORK_MUL>
+   1 this session; any n outside the seven L2 values; anything
+   between ladder rungs; whether ANY n at B=2 captures (the down
+   side at B=2 is still untested); session 2's run-1 dip cause;
+   cross-day replication; S=8 timing; every W outside {128,256};
+   shape 2; BT ordering; any baseline-vs-variant sign; isolated
+   single-dispatch timing; non-empty barriers; anything off this
+   host.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   byte-identical instrument reuse + analysis-s13.py validated by
+   complete runs; MEASURED only what publication-s13.txt sections
+   1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0.
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push
+   only. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/
+   head at tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-workthresh-20261027/ + the ADR-0355
+dated note. (JUN-55, JUN-59)

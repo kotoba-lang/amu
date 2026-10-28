@@ -1,0 +1,237 @@
+{
+  "status": "PASS_GPU_RUNTIME_TRANSPORT",
+  "target": "x86_64-linux",
+  "compiler": {
+    "bytes": 1294848,
+    "sha256": "f19ab1c48b54e8ae032f26563b99695c38bd10de8ab7305407fc8fd05ace8eba"
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "6.15.10-200.fc42.aarch64"
+  ],
+  "executionNative": false,
+  "imageSeccomp": "if-available",
+  "checkerAdmitsWire42": true,
+  "knob": [
+    {
+      "name": "no-knob",
+      "allow": "37,42",
+      "knob": null,
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "one-fd",
+      "allow": "37,42",
+      "knob": "{req}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "not-a-number",
+      "allow": "37,42",
+      "knob": "{req},x",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "fd-below-3",
+      "allow": "37,42",
+      "knob": "2,{ans}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "fd-above-1023",
+      "allow": "37,42",
+      "knob": "1024,{ans}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "same-fd",
+      "allow": "37,42",
+      "knob": "{req},{req}",
+      "fds": "pipes",
+      "exit": 2
+    },
+    {
+      "name": "closed-fds",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "closed",
+      "exit": 2
+    },
+    {
+      "name": "regular-files",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "files",
+      "exit": 2
+    },
+    {
+      "name": "valid-pipes",
+      "allow": "37,42",
+      "knob": "{req},{ans}",
+      "fds": "pipes",
+      "exit": 0
+    },
+    {
+      "name": "not-granted-ignored",
+      "allow": "37",
+      "knob": "x",
+      "fds": "pipes",
+      "exit": 0
+    }
+  ],
+  "transport": [
+    {
+      "name": "round-trip",
+      "exit": 0,
+      "requests": 4,
+      "image": {
+        "bytes": 160256,
+        "sha256": "9734dc5d267a6a41baa7388783defc7b433f27258a2811bcc47186e77ba87d46"
+      }
+    },
+    {
+      "name": "four-mib-answer",
+      "exit": 0,
+      "requests": 1,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    },
+    {
+      "name": "named-refusal",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    },
+    {
+      "name": "bare-refusal",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    },
+    {
+      "name": "provider-eof",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    },
+    {
+      "name": "request-pipe-closed",
+      "exit": 120,
+      "requests": 0,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    },
+    {
+      "name": "oversize-answer",
+      "exit": 120,
+      "requests": 1,
+      "image": {
+        "bytes": 160256,
+        "sha256": "cc1fdc97e0e2bfac3d1975992957cf7f9d0aa12ec8082d2b5296c7c121032927"
+      }
+    }
+  ],
+  "testOnlyCompilers": {
+    "controlWrongReadFd": {
+      "bytes": 1294848,
+      "sha256": "2282104dc031c293e25f295c37c3c5052cc887e4e9144be2e8211d6ff3d45c85"
+    }
+  },
+  "unity": {
+    "seed/X86_64-LINUX-SELFHOST-MANIFEST": {
+      "bytes": 503,
+      "sha256": "297e4bea88c34ac7cae6f566c736401f8f9e9689a9123fd29323ccd622be48c9"
+    },
+    "seed/00-ns.kotoba": {
+      "bytes": 14584,
+      "sha256": "b97579806d87b772a253d30b0c146cf6b7e88bd4f6f7b353937cb1b23bcade76"
+    },
+    "seed/01-mem.kotoba": {
+      "bytes": 15304,
+      "sha256": "79bb1d1154857efc70bee464161abfce37ec6b90e55af7bbef386ab96ca131c9"
+    },
+    "seed/02-io.kotoba": {
+      "bytes": 10931,
+      "sha256": "268ae7a0d450deb0b7981b85f7e6895b08b4af828f1f57cb96cf2eb29777c4ea"
+    },
+    "seed/10-lex.kotoba": {
+      "bytes": 24829,
+      "sha256": "a8b8128b9e00564f3d86a81b9c69e692efa0114a3cd0083e401cda8577086d6b"
+    },
+    "seed/11-read.kotoba": {
+      "bytes": 9176,
+      "sha256": "89fd65139a4502f96c87807db80d4cbaa15913ea75788eb3b647dcc9556e0392"
+    },
+    "seed/20-names.kotoba": {
+      "bytes": 38998,
+      "sha256": "fe067b8e507d6f7321a36f48a2a3d26a8874089caf00ac4ac5371c0d197ccde8"
+    },
+    "seed/21-check.kotoba": {
+      "bytes": 381021,
+      "sha256": "a42b412a1aed44f9ce24db7a0f7fdec3a242b8b36e3502062bf37fcecfd62081"
+    },
+    "seed/30-lower.kotoba": {
+      "bytes": 87820,
+      "sha256": "42c85dc4c8afa5b82633dd73f61df9bb0f03da6b93c28c7ae2e85008edb980d7"
+    },
+    "seed/50-out.kotoba": {
+      "bytes": 21354,
+      "sha256": "1cf17b348bda09d73d721856705a52db05131b88f80d017e1fe9b9a92c066955"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 19198,
+      "sha256": "82f14d94d4d9b1f8c71a65de463b784b78b34ade93e5bb630148b5bde2dbebe7"
+    },
+    "seed/71-x86_64-runtime.kotoba": {
+      "bytes": 5382,
+      "sha256": "15f2c4f8b8f0a2a46ccd8fbb4c7f621e17a385b680e0d6878d258a9c9e6cc14c"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 8845,
+      "sha256": "e2f260bae95b873fb5b18c4f47324429cff1acf969d4a39ba4386da76fcfe2c9"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 58199,
+      "sha256": "e829fc1be185f6607867299bffada947ad1c69986d5128c3c5a72d306ff9fdc6"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 58315,
+      "sha256": "56ab7d8bc4a0c19b277aac2748713129c482100e3aa7aad61c40c074a90b809e"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 15441,
+      "sha256": "508dd6769a2e8e9fd3c99bd5fe4c15c7a5bfd70a67b4451847f9cee547c58a1a"
+    },
+    "seed/74-x86_64-aiueos-object.kotoba": {
+      "bytes": 8402,
+      "sha256": "9c3b16530f722e9a86249d17be3d5d55e1306be759be76c21df8cfac1d5db4d8"
+    },
+    "seed/73-x86-linux-entry.kotoba": {
+      "bytes": 1175,
+      "sha256": "499022e15adce90748a6a545230e3ca922a6a49cf0f9cd986807a59d93b36b6b"
+    }
+  },
+  "cCompilerOrLoader": false,
+  "notCovered": [
+    "control-wrong-read-fd: this kernel does not enforce seccomp (KEXE_SECCOMP=if-available)"
+  ]
+}

@@ -1,0 +1,156 @@
+JUN-57 -- the entry contract's WIRING row LANDS (ADR-0361's 2026-10-25
+sixth amendment): the CUDA flip/confirm predicate + record data in
+kotoba.compiler.accelerator-variants, pinned by its tests
+
+The row: the entry contract (ADR-0361's fifth amendment,
+docs/evidence/gpu/cuda-cell-selection-surface-20261025.txt) decided
+that a published cell verdict MAY enter select-variant's selection
+surface, and named its wiring -- "a CUDA flip/confirm predicate +
+record data in accelerator-variants pinned by its tests" -- as its own
+later implementation row: "until it lands NO cell verdict is consumed
+and every CUDA-route answer keeps :measured? false". This row lands
+it. NO hardware ran this tick; nothing is re-measured -- every number
+behind the table is a citation of the two committed adopted sessions
+(docs/evidence/gpu/cuda-claimprotocol-run{1,2}-20261025/), consumed
+through the committed cell censuses.
+
+------------------------------------------------------------------
+What landed (IMPLEMENTED, code + tests):
+
+- kotoba.compiler.accelerator-variants/cuda-cell-entries (public
+  data): the entry census as a table -- the five ENTERED widths W =
+  32/128/256/512/1024, each {:winner :warp-shuffle-reduce (the design
+  answer), :shapes [1000003 1048576], :evidence
+  ["docs/evidence/gpu/cuda-claimprotocol-run1-20261025"]}. W = 64 is
+  ABSENT (its groups REFUSED -- the straddle has no winner). The valid
+  rung-1 width band is exactly 32/64/128/256/512/1024 (a positive
+  power of two, the warp floor 32 .. max-workgroup-size 1024 -- pinned
+  from validate!'s own rule), so 64 is the band's only non-entry; the
+  test pins the band and the hole.
+
+- kotoba.compiler.accelerator-variants/cuda-entry-cell (private): the
+  entry contract applied to ONE CUDA-route answer cell. Keys, each
+  fail closed:
+  (a) the tested device class -- the uB5G name fragment "xavier" (any
+      of :device/:name/:vendor, case-insensitive; an unnamed
+      descriptor is not the class) AND a reported compute capability
+      EXACTLY 7.2 (7.0, 7.5, a string, nothing -- not the class);
+  (b) the measured channel's route (:cuda-v1 under either spelling; a
+      CUDA cell never acts on an MSL/WGSL/GLSL cell, contract point
+      5);
+  (c) the reduce shape selected as a whole (one of :sum/:max/:min --
+      per-operator entry stays rejected);
+  (d) a workgroup width whose group ENTERED (W = 64 refused).
+  The design ladder's answer at the cell must be the rung-1
+  :warp-shuffle-reduce -- so a rung-2 answer cell (:subgroup-reduce
+  where the warp gate does not reach, a descriptor reporting NO
+  compute capability) can never attach a record: the tested class
+  reports 7.2 by definition. Outcomes: :confirm (the group's unique
+  winner EQUALS the design answer -- answer text frozen, no note
+  appended to :basis, :measured? true with the record), :flip (a
+  differing winner -- the cell answers the winner with the record and
+  cuda-flip-note), or REFUSE (nil: the design ladder's answer stands,
+  :measured? false, no record).
+
+- The record (contract point 3, shape unchanged):
+  {:device "xavier sm_72" (the tested device class as the contract
+  spells it), :channel :native-cuda, :route :cuda-v1,
+  :workgroup-size W, :operators #{:sum :max :min} whole, :shapes
+  qualifying-only, :evidence the group's own session's runs (run 1)
+  plus sanctioned cross-day replications (NONE EXIST YET -- run 2 is a
+  SAME-DAY second session and is flip-note prose only, ADR-0373's
+  naming rule by citation)}.
+
+- select-variant's consumption: the record feeds the :measured-cell /
+  :measured? surface exactly like the Apple flip records (or-ed with
+  them; the vendors never overlap), and the flip arm re-answers with
+  the winner plus a :basis of the winner's design rationale and
+  cuda-flip-note (prose NO production answer carries today).
+
+NAMED, NOT HIDDEN (record realization): the projection's "10
+confirming :measured-cell records" is 10 (W, shape) GROUP
+confirmations consumed through FIVE per-W records naming both shapes
+each -- the record keys carry no shape axis (device class, channel, W)
+and select-variant's query has none (the KIR's bounds are runtime-u32
+at selection time), so each (W, shape) group's record rides its W with
+the qualifying shapes listed (contract point 3's ":shapes qualifying
+shapes only"). Two groups per record; nothing is claimed beyond the
+listed shapes.
+
+------------------------------------------------------------------
+The projection realized (the selection surface's delta):
+
+- The 10 confirming groups -> :measured? true + the record at W =
+  32/128/256/512/1024 for the tested class (xavier sm_72) on the CUDA
+  route, for every operator :sum/:max/:min. NO answer text change
+  anywhere: the confirm's :basis is byte-for-byte variant-bases'
+  :warp-shuffle-reduce (pinned by the test).
+- W = 64 (both shapes): :measured? stays FALSE and no record (the
+  refusal) -- the honesty lock holds where the measurement refuses to
+  choose.
+- ZERO flips in real data (every entered group's winner equals the
+  design answer). The flip arm is exercised ONLY by a synthetic
+  redefinition in the test (with-redefs of one group's winner to
+  :subgroup-reduce -> the cell answers :subgroup-reduce with the record
+  and "MEASURED FLIP" in :basis). No production answer is flipped by
+  this slice.
+- Nothing moves outside the CUDA route's tested-class cells: no
+  workgroup row (kotoba.compiler.accelerator-targets untouched), no
+  MSL/WGSL/GLSL cell, no rung-2 cell, no non-reduce kernel (all pinned
+  by the test).
+
+------------------------------------------------------------------
+States.
+
+IMPLEMENTED (code + tests): the wiring row in full -- the table, the
+predicate (BOTH arms: confirm and flip), select-variant's consumption
+-- pinned by the-cuda-cell-entry-wiring-confirms-the-design-answer
+(+1 test, +194 assertions over the committed scoped-gate pin).
+
+MEASURED: nothing new. NO hardware ran this tick; no sample exists
+from it. The two adopted sessions' measurements are CONSUMED (their
+committed censuses are the table's ground), not re-measured.
+
+ACCEPTED DESIGN ONLY: the claim-protocol adoption (ADR-0361's first
+2026-10-25 amendment), the cell unit + full-census machinery (the
+third + fourth amendments), the entry contract (the fifth amendment),
+ADR-0358, ADR-0373.
+
+UNMEASURED, named: every workgroup row (kotoba.compiler.
+accelerator-targets untouched; :arm/:unknown stay provisional
+:measured? false); any cell verdict on non-xavier hardware (every
+record DEVICE-SCOPED to xavier sm_72); run 3+ / cross-day replication
+(records name run 1 only, run 2 same-day prose); the :sum ordering at
+W = 64 on any device; operator-aware selection (PROPOSED, its own
+row); the flip arm on real data (ZERO real flips -- its test is
+synthetic); and the name-fragment key's coarseness -- NAMED, NOT
+HIDDEN: a Jetson Xavier NX descriptor (also sm_72) reads as the
+tested class under "xavier" + 7.2, exactly as the workgroup rows' own
+"xavier" key is coarse; a narrower key is its own later row.
+
+------------------------------------------------------------------
+Gates (real runs, this tick):
+
+- scoped GPU gate (8 GPU-owned test namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed): GREEN --
+  107 tests, 11240 assertions, 0 failures, 0 errors (glslang 16.6.0
+  real-spawn). The committed base pin is 106 tests / 11046
+  assertions; the delta (+1 test, +194 assertions) is this slice's
+  test.
+- NAMED, NOT HIDDEN: the gate's FIRST run was RED -- 4 failures, all
+  in the new test's own "refused group" case, which asserted
+  :warp-shuffle-reduce for W = 48 and W = 2048; validate! refuses both
+  (a workgroup must be a positive power of two <= 1024 -> :baseline,
+  fail closed). The test was wrong, not the code; the case now pins
+  W = 64 and the width-band fact. The second run is GREEN as above.
+- FULL run-tests.cljk: RED at base -- 'Could not find namespace:
+  kotoba.form' (ADR-0362) fails the run before any test executes,
+  OUTSIDE this diff (re-verified this tick since the diff touches
+  .cljk namespaces; exit 1). The touched namespace's own tests are the
+  scoped gate above; NO green full suite is claimed.
+- python3 scripts/gpu_regime_classify.py --self-test -> TOTAL: 2536
+  assertions passed, 0 failed (no classify code touched -- regression
+  pin at the committed 2536).
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+Evidence: this record + the ADR-0361 sixth amendment.

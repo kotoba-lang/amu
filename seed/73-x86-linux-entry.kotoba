@@ -10,6 +10,14 @@
     (drv-fail0 (vector-at M MM-ERR))))
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- seed-main [] :i64
-  (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
-           (string=? (io-arg 3) "x86_64-aiueos-kernel-v1"))
-    (xo-command) (xg-main)))
+  (cond (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "x86_64-aiueos-kernel-v1"))
+          (xo-command)
+        (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "aarch64-linux"))
+          (xa-command)
+        ;; The native-only entry refuses the C dynamic-loader/runtime format.
+        (and (= (io-argc) 8) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target")
+             (string=? (io-arg 3) "x86_64-linux") (string=? (io-arg 6) "--format") (string=? (io-arg 7) "platform-linked"))
+          (drv-fail0 E-TARGET)
+        :else (xg-main)))

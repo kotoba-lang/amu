@@ -1,0 +1,196 @@
+JUN-59 -- session 13 protocol: WORK-THRESHOLD BISECT at fixed B=8 (the
+NDIV ladder). INSTRUMENT channel. Frozen BEFORE the first run
+(2026-10-27T14:53Z, this tick). This file is written once and never
+rewritten.
+
+0. ROW QUESTION (ONE observable axis -- session 12's named residual):
+   session 12 localized the capture at B=8 to a per-dispatch work
+   threshold INSIDE the (3,906..125,000] element band (the capture is
+   CAPTURED at n=125,000 and FLOOR at n=3,906; 2 grid points named;
+   "the exact per-dispatch work threshold location inside the
+   (3,906..125,000] element band at B=8" was named UNMEASURED). This
+   session bisects that band on the same axis:
+
+     AT FIXED DISPATCH COUNT B=8, WHERE INSIDE THE (3,906..125,000]
+     ELEMENT BAND DOES THE CAPTURE DIE -- 8 dispatches of a 1/32-,
+     1/64- or 1/128-times grid (n = 31,250 / 15,625 / 7,812) on the
+     NDIV ladder {8, 32, 64, 128, 256} (n = 125,000 .. 3,906)?
+
+   knobs: ZERO derivation edits this session. The instrument is
+   session 12's committed NDIV-derived source used BYTE-IDENTICAL
+   (digest a5e539f0... re-verified local-vs-host; the NDIV knob
+   already parameterizes this axis); the new arms are new compile-time
+   -D NDIV values only. The shaders take n from the N uniform, so the
+   shader corpus is used BYTE-IDENTICAL (16-digest corpus). Every
+   run's header and every SAMPLE line print ndiv= (knob identity).
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim; total nominal work = B * n /
+        1,000,003.
+   (L2) NDIV divides by integer floor: exact n values at WORK_MUL=1
+        are 1,000,003 / 125,000 / 31,250 / 15,625 / 7,812 / 3,906 for
+        NDIV 1/8/32/64/128/256 (1,000,003 is not divisible by any of
+        them); total nominal work is never exactly the decimal value.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on this
+        instrument (the phenomenon under study) and stays UNMEASURED.
+   (L4) THE BISECT NARROWS THE BAND ON THE (n, WORKGROUP COUNT) COUPLE,
+        NOT ON n ALONE: per-dispatch work and workgroup count co-vary
+        (ceil(n/W) workgroups: at W=128 -- 977/245/123/62/31 for
+        NDIV 8/32/64/128/256; at W=256 -- 489/123/62/31/16). Whether
+        the threshold is on n, on workgroup count, or on grid shape
+        cannot be separated on this instrument; named, not hidden
+        (carried forward from session 12's UNMEASURED).
+   (L5) the three bisect points are one geometric ladder; anything
+        between adjacent rungs (and any ladder point outside
+        {8,32,64,128,256}) stays UNMEASURED.
+   (L6) all bisect grids are real grids (not near-empty): the smallest
+        arm d256 is excluded this session; the smallest rung d128
+        dispatches 62 (W=128) / 31 (W=256) workgroups, so session 12's
+        protocol-L4 near-empty-grid ambiguity does NOT apply to any arm
+        measured here -- named, not hidden.
+
+1. DERIVATION (chain of custody): ZERO derivation edits this session
+   (named as such -- the strongest custody position in the chain):
+
+   instrument = session 12's committed NDIV-derived source
+     docs/evidence/gpu/anv-workdown-20261027/gpu-subgroup-reduce-anv-ndiv.c.txt
+     (digest a5e539f0..., re-verified) used BYTE-IDENTICAL -> committed
+     again in this directory under the same name. Byte-copy identity
+     and the session-8 base digest are recorded in
+     derivation-census.txt (produced programmatically this tick).
+   NAMED, NOT HIDDEN: the instrument source is byte-identical to one
+   that session 12 already built 5 binaries from and ran 15 times on
+   this host, so the session-9 D2 failure mode (invalid derived
+   source) is excluded by byte-identity; nevertheless one pre-freeze
+   compile smoke of a NEW knob value was run (2026-10-27T14:52:14Z,
+   throwaway dir ~/anv-wt-smoke, gcc -O2 -DBATCH=8 -DNDIV=32 rc=0,
+   host digest a5e539f0... MATCH local, ZERO runs, ZERO timing) before
+   this freeze.
+   corpus = the 16 measured/probe files, cp -a'd forward along the
+   session chain (cp -a of session 12's verified copy at
+   2026-10-27T14:52:01Z) and re-verified 16/16 against the session-2
+   census BEFORE any run (sha256sum -c expected-corpus.sha256,
+   regenerated programmatically from the committed census, byte-equal
+   to session 12's file).
+   manifests = cases-s13-a.txt, the 24 a-set cell lines a BYTE-COPY
+   of session 12's cases-s12-a.txt cell lines (checked
+   programmatically). ALL 7 arms run this one manifest (the archived
+   measured spv).
+
+2. ARMS (7 arms, 3 runs each = 21 fresh processes). Binary = the
+   compile-time (BATCH, NDIV) pair. The header prints batch=/work_mul=/
+   ndiv=/n= and every SAMPLE prints batch=/work_mul=/ndiv=, so every
+   run log carries its knob identity.
+
+   tag    B  NDIV     n         per-dispatch nominal   total nominal
+   c2     2  1        1,000,003 1.000                  2.000
+   c8     8  1        1,000,003 1.000                  8.000
+   d8     8  8          125,000 0.125                  1.000 (L2 floor)
+   d32    8  32         31,250  0.03125                0.250
+   d64    8  64         15,625  0.015625               0.125
+   d128   8  128         7,812  0.007812               0.0625
+   d256   8  256         3,906  0.003906               0.03125
+
+   c2/c8 are the ARCHIVED CONTROL anchors. d8/d256 are the
+   WORK-DOWN ANCHOR re-runs (session 12's committed readings at the
+   ladder ends that bound the bisect). d32/d64/d128 are the BISECT
+   PROBE arms (the three ladder points session 12 did not test).
+
+3. CLASSIFICATION (frozen thresholds, derived from committed values
+   only): a bracket is FLOOR if the pooled median gpu_ticks over 3 runs
+   x 25 rounds is <= 100 ticks at ALL 18 pipeline-ok cells; CAPTURED if
+   >= 1000 at ALL 18; otherwise INTERMEDIATE/MIXED. (Same thresholds as
+   sessions 7-12; committed floor band 31..34 ticks across sessions,
+   committed captured anchor 32,915 ticks at c8.) 1 tick =
+   timestampPeriod = 52.083 ns on this device.
+
+4. PRE-REGISTERED LETTERS (BOTH/ALL branches of each named in advance):
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement at the control's
+      OWN (B,NDIV); the a-set + the byte-identical instrument pin the
+      environment):
+      branch (a): c2 satisfies FLOOR AND c8 (sum,128,S=16) pooled
+      median within +/-5% of the committed 32,915 (session 4 pooled
+      median) -> C1 passes and W1-W3 are evaluated against the row
+      question. branch (b): either criterion fails -> replication
+      discrepancy (bearing on the environment pin), W1-W3
+      interpretation FLAGGED; cause UNMEASURED.
+
+   C2 WORK-DOWN ANCHOR REPLICATION (the ladder ends that bound the
+      bisect, at session 12's OWN (B,NDIV) settings):
+      branch (a): d8 (sum,128,S=16) pooled median within +/-5% of
+      session 12's committed 5,465 AND d8 satisfies CAPTURED, AND d256
+      satisfies FLOOR (session 12's committed classes) -> the bisect
+      ladder's end classes replicate and W1's interval reading is
+      anchored at both ends. branch (b): any criterion fails ->
+      anchor discrepancy, W1 interpretation FLAGGED; cause UNMEASURED.
+
+   W1 THE ROW QUESTION (the bisect: classes of d32, d64, d128 on the
+      NDIV ladder {8,32,64,128,256} whose end classes d8 CAPTURED and
+      d256 FLOOR are pinned by C2):
+      branch (a) MONOTONE SPLIT: the three bisect classes are monotone
+      in n (all one class, or one transition between adjacent ladder
+      points, with at most one INTERMEDIATE/MIXED rung between the two
+      classes) -> the (3,906..125,000] band NARROWS to ONE named
+      adjacent sub-interval of the ladder (its two bounding rungs and
+      their n values named; no interpolation, no linearity claim).
+      branch (b) NON-MONOTONE: the classes are not monotone in n (e.g.
+      a floor at a larger n but a capture at a smaller n) -> the
+      single-threshold reading is REJECTED at these rungs; a monotone
+      per-dispatch-work threshold does not describe the band at the
+      five tested rungs; mechanism UNMEASURED.
+      branch (c) OTHERWISE (more than one INTERMEDIATE/MIXED rung or
+      any pattern not covered above): cell-quantified in the
+      publication's sections 2-3; mechanism UNMEASURED.
+
+   W2 BISECT LADDER DOSE CURVE (descriptive, at B=8): the classes and
+      bracket/host_ns figures at all six ladder rungs NDIV
+      {1,8,32,64,128,256} against each other; the linear-work
+      expectation (bracket ~ c8/NDIV) is reported ONLY as a
+      descriptive comparison; NO linearity claim, no interpolation.
+
+   W3 TOTAL-WORK PARITY (descriptive): each bisect arm (0.25 / 0.125 /
+      0.0625 total nominal units) against the c2 control (2.0 total
+      units, 2 dispatches, FLOOR): bracket ratios and classes;
+      observable only, NO mechanism claimed.
+
+   X1 REALIZATION (descriptive, from the same runs' host_ns, no new
+      measurement): host_ns factors vs c2 in-session at
+      (sum,128,S=16); per-dispatch host_ns = host_ns/B; no linearity
+      claim; host_ns is the HOST-side proxy (L3).
+
+5. INVALIDATION (frozen): the instrument's VERIFY step re-checks every
+   cell's stored values bit-exact against a CPU reference INSIDE every
+   run (over integer-valued inputs, any n). VERIFY mismatch > 0 in any
+   run -> that run is DEFECTIVE for the affected arm (buffer sizing /
+   PARTS_CAP / reference follow the NDIV knob; a mismatch means the
+   knob arithmetic is wrong at that NDIV), the arm is INVALID, and no
+   letter against it is evaluable. EXPECTED: mismatch 0 everywhere.
+
+6. ANALYSIS ROUTE (frozen): analysis-s13.py parses ONLY the 21
+   committed run logs in this directory (run-<tag>-r<R>.txt) and
+   writes publication-s13.txt; deterministic (running it twice yields
+   byte-identical output -- diff-checked). Integrity gates inside the
+   analysis: header byte-identity across runs outside the # n= knob
+   line; header batch=/work_mul=/ndiv= == the arm's (B,1,NDIV) and
+   n == floor(1,000,003/NDIV); every SAMPLE's batch=/work_mul=/ndiv=
+   fields == the arm; every CELL's spv= name is an archived
+   .emitted.spv (no .iter suffix -- the corpus is byte-identical this
+   session); 450 SAMPLE lines per run (18 ok cells x 25 rounds);
+   forcing reality (probe_size==forced, probe_nsub==wg/forced); S=8
+   fail-closed (pipeline=FAIL, forced=8) counted (6 per run x 21 =
+   126 expected).
+
+7. UNMEASURED named in advance: any causal mechanism (for the
+   undercount, the capture, the onset, any work-down transition, or
+   the threshold's existence as a threshold); WHY capture turns on
+   where it does; whether the threshold is on n, workgroup count or
+   grid shape (L4); the GPU-side cost inside a B<=2 bracket (L3);
+   anything between adjacent ladder rungs (L5); any NDIV outside
+   {1,8,32,64,128,256}; any B outside {2,8}; any WORK_MUL > 1 this
+   session; any n outside the seven L2 values; session 2's run-1 dip
+   cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; BT ordering; any baseline-vs-variant sign;
+   non-empty barriers; anything off this host.

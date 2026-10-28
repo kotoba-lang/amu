@@ -1,0 +1,10 @@
+;; Diagnostic for the Darwin ABI-v11 code-span string equality slot.
+(ns seed.macos-equal-main (:export [main]))
+
+(defn main [] :i64
+  (let [arg (typed-cap-call :cli/args :string :string "0")]
+    (if (and (string=? arg "")
+             (string=? "abc" "abc")
+             (not (string=? "abc" "abd"))
+             (not (string=? "abc" "abcd")))
+      42 43)))

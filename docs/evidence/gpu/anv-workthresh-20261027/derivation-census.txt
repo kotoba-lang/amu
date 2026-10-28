@@ -1,0 +1,29 @@
+== derivation census (JUN-59 WORK-THRESHOLD BISECT, session 13) ==
+== expectation source: session 2's committed compile-toolchain.txt ==
+== sha256 census (parsed programmatically from that committed file, ==
+== never transcribed). ZERO derivation edits this session: the ==
+== instrument is session 12's committed NDIV-derived source used ==
+== BYTE-IDENTICAL (digest re-sha256 below); the new bisect arms are ==
+== new -D NDIV values only. NO shader derivation (the corpus is used ==
+== byte-identical). ==
+session-8 snapshot digest (committed file re-sha256, local): 5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3
+session-12 derived instrument digest (committed file re-sha256, local): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+session-13 instrument (byte-copy) digest (local): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+byte-copy identity session-12 file vs session-13 file: MATCH
+OK   shaders/probe-w128.glsl expected=cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c got=cffc3f4558d830fbcabf5ada4c1f4752ed7a2ec680f652d06628684f9038601c
+OK   shaders/probe-w256.glsl expected=1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352 got=1d1ba71130e7e1b890e560a309d98689e446f208b3fe17424038cdb2377e4352
+OK   shaders/subgroup-reduce-w128-max.emitted.glsl expected=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf got=94420e5b4b1d2ba93ffd1f41851b693de4e6be594c39532d8fb7076e60372bdf
+OK   shaders/subgroup-reduce-w128-min.emitted.glsl expected=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af got=c21e5035078070f12de178314163f7412d944422f8b122c011699fa224eb11af
+OK   shaders/subgroup-reduce-w128-sum.emitted.glsl expected=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564 got=b49362463cd5954ed739237d7d16a3d4e421f32597bc09c3ead78346dab73564
+OK   shaders/subgroup-reduce-w256-max.emitted.glsl expected=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4 got=06a3fd20d8a361a1c39a80cac9ade63490a478cf27baf77a4099e1a1987d5de4
+OK   shaders/subgroup-reduce-w256-min.emitted.glsl expected=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb got=22e838220e8eb34a1172fd74134533e87d3c9f8538dfff55a08326a4a6fb28cb
+OK   shaders/subgroup-reduce-w256-sum.emitted.glsl expected=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c got=fc50a68abcd1b04aaebb88801f6c93a570c01feab3ed3073661f715abca4b20c
+== corpus glsl digest check (local, session-2 dir): 8/8 ==
+NDIV knob arithmetic pin (integer floor n at WORK_MUL=1): {1: 1000003, 8: 125000, 32: 31250, 64: 15625, 128: 7812, 256: 3906}
+workgroups per dispatch (ceil(n/W), W=128/256): {1: {128: 7813, 256: 3907}, 8: {128: 977, 256: 489}, 32: {128: 245, 256: 123}, 64: {128: 123, 256: 62}, 128: {128: 62, 256: 31}, 256: {128: 31, 256: 16}}
+cases-s13-a.txt cell lines byte-copy of cases-s12-a.txt cell lines: YES
+expected-corpus.sha256 regenerated 16/16 from the committed census, byte-equal to session 12's file: YES
+== local digests (compared local-vs-host in host-verify-s13.txt) ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+9ceefa897dbc878ea370ef36f9bdbd8e455e13f41fdffd57af289b90a8c6d897  cases-s13-a.txt
+eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4  expected-corpus.sha256

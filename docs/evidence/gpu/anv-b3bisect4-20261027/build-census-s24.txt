@@ -1,0 +1,47 @@
+== JUN-59 session 24 build census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, FOURTH CUT) ==
+Build window (host timeline): builds ran after the verify GO
+(compile) and before the first run (run-window.txt: 20:41:24Z).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-b3bisect4-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s24-a.txt; binaries
+../anv-bb-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 23's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> [-DWORK_MUL=<M>] -DNDIV=<D> ==
+== -o anv-bb-<tag> gpu-subgroup-reduce-anv-ndiv.c -lvulkan (7 arms, ==
+== one binary each; WORK_MUL passed only for mid/eq3/b2m) ==
+build c2 (-DBATCH=2 -DNDIV=1) rc=0 @2026-10-27T20:40:47Z
+build lo (-DBATCH=3 -DNDIV=4) rc=0 @2026-10-27T20:40:47Z
+build mid (-DBATCH=3 -DWORK_MUL=1213 -DNDIV=4753) rc=0 @2026-10-27T20:40:47Z
+build eq3 (-DBATCH=3 -DWORK_MUL=2426 -DNDIV=9506) rc=0 @2026-10-27T20:40:47Z
+build hi (-DBATCH=3 -DWORK_MUL=25 -DNDIV=96) rc=0 @2026-10-27T20:40:47Z
+build b2m (-DBATCH=2 -DWORK_MUL=1213 -DNDIV=4753) rc=0 @2026-10-27T20:40:48Z
+build c8 (-DBATCH=8 -DNDIV=1) rc=0 @2026-10-27T20:40:48Z
+build stderr byte counts: 0 7/7 (build-<tag>.err, committed)
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+efc6f4ee344737f82dee8e9f759f02f4951c32a0c622946ea92f025eac00989d  anv-bb-lo
+123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec  anv-bb-mid
+122a54ac5dda941917da6679b5988f83a4d00e6910f7bcb77da7167bc22b6f67  anv-bb-eq3
+91ee6f3c1915d03dd5c40c28f20b84a71dbfe532161c74ffe3ac1966bbc39500  anv-bb-hi
+c48a1de1bf9c7cce55ff3b86d9a916c801f6ece39f0e5f67b6a57ce1d9dd60a0  anv-bb-b2m
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+BUILD REPLICATION PIN (declared in protocol.txt section 2 in advance;
+prior censuses parsed programmatically -- derivation-census-s24.txt):
+  BYTE-IDENTICAL: anv-bb-c2 e5ed903e5b9dfd64... == sessions 13-23's c2 (e5ed903e...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-c8 480925e58d28e7d3... == sessions 13-23's c8 (480925e5...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-lo efc6f4ee344737f8... == session 19's anv-n4-z3 (efc6f4ee...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-hi 91ee6f3c1915d03d... == session 23's anv-bb-mid (91ee6f3c...) -- PIN OK
+  4/4 pins BYTE-IDENTICAL.
+  hi IS session 23's mid knob pair (3,25,96) rebuilt byte-identical --
+  this session's hi and the first cross-session replication of that pair.
+  session-19's anv-n4-z3 cross-check: efc6f4ee344737f8...
+  (== s23 lo pin: True).
+  mid/eq3/b2m are NEW knob triples ((3,1213,4753), (3,2426,9506),
+  (2,1213,4753) -- no prior binary exists for them, so no byte-identity
+  pin applies (named, not hidden)).

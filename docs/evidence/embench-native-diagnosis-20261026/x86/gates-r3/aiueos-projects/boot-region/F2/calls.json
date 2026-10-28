@@ -1,0 +1,92 @@
+[
+  {
+    "name": "boot-region",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 150,
+      "sha256": "7d6eeee1c6193e88f54a52fd51cf357180198ec75a80380f8ae50a6494f8eb81"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)] (if (= (kernel-load-u8 h 160 0) 65) 42 0)))\n"
+  },
+  {
+    "name": "widths",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 2153,
+      "sha256": "4193028b354ea0fc7cee92324a401a3b462da6406f6058a843325f18688b3d68"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [r (kernel-subregion (kernel-boot-info) 16544 152 8)\nsaved (kernel-load-u64 r 8 0)\ns0 (kernel-store-u8 r 8 0 81985529216486895)\nv0 (kernel-load-u8 r 8 0)\ns1 (kernel-store-u16 r 8 0 81985529216486895)\nv1 (kernel-load-u16 r 8 0)\ns2 (kernel-store-u32 r 8 0 81985529216486895)\nv2 (kernel-load-u32 r 8 0)\ns3 (kernel-store-u64 r 8 0 81985529216486895)\nv3 (kernel-load-u64 r 8 0)\ns4 (kernel-store-u8-4k r 8 0 81985529216486895)\nv4 (kernel-load-u8-4k r 8 0)\ns5 (kernel-store-u16-4k r 8 0 81985529216486895)\nv5 (kernel-load-u16-4k r 8 0)\ns6 (kernel-store-u32-4k r 8 0 81985529216486895)\nv6 (kernel-load-u32-4k r 8 0)\ns7 (kernel-store-u64-4k r 8 0 81985529216486895)\nv7 (kernel-load-u64-4k r 8 0)\ns8 (kernel-store-u8-16k r 8 0 81985529216486895)\nv8 (kernel-load-u8-16k r 8 0)\ns9 (kernel-store-u16-16k r 8 0 81985529216486895)\nv9 (kernel-load-u16-16k r 8 0)\ns10 (kernel-store-u32-16k r 8 0 81985529216486895)\nv10 (kernel-load-u32-16k r 8 0)\ns11 (kernel-store-u64-16k r 8 0 81985529216486895)\nv11 (kernel-load-u64-16k r 8 0)\ns12 (kernel-store-u8-64k r 8 0 81985529216486895)\nv12 (kernel-load-u8-64k r 8 0)\ns13 (kernel-store-u16-64k r 8 0 81985529216486895)\nv13 (kernel-load-u16-64k r 8 0)\ns14 (kernel-store-u32-64k r 8 0 81985529216486895)\nv14 (kernel-load-u32-64k r 8 0)\ns15 (kernel-store-u64-64k r 8 0 81985529216486895)\nv15 (kernel-load-u64-64k r 8 0)\nrestored (kernel-store-u64 r 8 0 saved)] (if (and (= s0 81985529216486895) (= v0 239) (= s1 81985529216486895) (= v1 52719) (= s2 81985529216486895) (= v2 2309737967) (= s3 81985529216486895) (= v3 81985529216486895) (= s4 81985529216486895) (= v4 239) (= s5 81985529216486895) (= v5 52719) (= s6 81985529216486895) (= v6 2309737967) (= s7 81985529216486895) (= v7 81985529216486895) (= s8 81985529216486895) (= v8 239) (= s9 81985529216486895) (= v9 52719) (= s10 81985529216486895) (= v10 2309737967) (= s11 81985529216486895) (= v11 81985529216486895) (= s12 81985529216486895) (= v12 239) (= s13 81985529216486895) (= v13 52719) (= s14 81985529216486895) (= v14 2309737967) (= s15 81985529216486895) (= v15 81985529216486895) (= restored saved)) 42 0)))\n"
+  },
+  {
+    "name": "oversized-tier",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 92,
+      "sha256": "8513b1f6eb34e5aab66daed0e8ab0692650668e96aeb9abb6ecd1e8602c46e68"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (kernel-boot-info) 16544 0))\n"
+  },
+  {
+    "name": "valid-tier",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 103,
+      "sha256": "244c2540f293d372798ae0bbdd4970fed6e3f05293dc8ba01a9bb416d9d28480"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (- (kernel-load-u8-64k (kernel-boot-info) 16544 0) 23))\n"
+  },
+  {
+    "name": "wrong-boot-length",
+    "exit": 1,
+    "stderr": "region instruction 8\n  writer 4\n  parameter slot 0\n  region extent source 4294983840\n  caller main\n    use 8\n    writer 4\n    writer op 13\n    writer operand 0\n  supplied extent source 4294983776\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/boot-region/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 8\n",
+    "source": {
+      "bytes": 150,
+      "sha256": "0b659fdeff96f0e65c0e128783f17f87e47ae566bcf78a46e0725c1d9e78ccf2"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (kernel-boot-info) 16480 0 160)] (if (= (kernel-load-u8 h 160 0) 65) 42 0)))\n"
+  },
+  {
+    "name": "computed-root",
+    "exit": 1,
+    "stderr": "region instruction 10\n  writer 6\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 10\n    writer 6\n    writer op 6\n    writer operand 0\n  supplied extent source 4294983840\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/boot-region/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 10\n",
+    "source": {
+      "bytes": 156,
+      "sha256": "49c4f1bac967058ed6ff4a02042cf2fe413653a9868a1967da6b28da62986a23"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (+ (kernel-boot-info) 0) 16544 0 160)] (if (= (kernel-load-u8 h 160 0) 65) 42 0)))\n"
+  },
+  {
+    "name": "literal-root",
+    "exit": 1,
+    "stderr": "region instruction 8\n  writer 4\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 8\n    writer 4\n    writer op 3\n    writer operand 1089536\n  supplied extent source 4294983840\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/boot-region/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 8\n",
+    "source": {
+      "bytes": 139,
+      "sha256": "ce020fe2f80442e071ccd5cbed562b1be37a62acac8ac876524245315280db3b"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion 1089536 16544 0 160)] (if (= (kernel-load-u8 h 160 0) 65) 42 0)))\n"
+  },
+  {
+    "name": "wrong-sub-length",
+    "exit": 1,
+    "stderr": "region instruction 13\n  writer 10\n  parameter slot 1\n  region extent source 4294967456\n  caller main\n    use 13\n    writer 10\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller main\n    use 9\n    writer 8\n    writer op 13\n    writer operand 0\n  caller main\n    use 8\n    writer 4\n    writer op 13\n    writer operand 0\n  supplied extent source 4294967360\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/boot-region/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 13\n",
+    "source": {
+      "bytes": 149,
+      "sha256": "7b08ba1d617b0c2197bfecda507c6d084f2e00e17144467a09640f3403475a91"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)] (if (= (kernel-load-u8 h 64 0) 65) 42 0)))\n"
+  },
+  {
+    "name": "loaded-root",
+    "exit": 1,
+    "stderr": "region instruction 16\n  writer 13\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 16\n    writer 13\n    writer op 13\n    writer operand 0\n  supplied extent source 4294967456\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/boot-region/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 16\n",
+    "source": {
+      "bytes": 174,
+      "sha256": "6eb1aaf3f18655611215d3a22da392de41f28fe3e7949e3762d82664bbb2e551"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (let [h (kernel-subregion (kernel-boot-info) 16544 0 160)] (if (= (kernel-load-u8 (kernel-load-u64 h 160 0) 160 0) 65) 42 0)))\n"
+  }
+]

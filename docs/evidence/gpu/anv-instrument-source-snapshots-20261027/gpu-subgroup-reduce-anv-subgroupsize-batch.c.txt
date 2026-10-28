@@ -1,0 +1,642 @@
+/* gpu-subgroup-reduce-anv-subgroupsize-batch.c -- JUN-59 subgroup 16-vs-32
+ * FLOOR-LIFTING rerun instrument (2026-10-27, second measurement slice).
+ *
+ * DERIVED from gpu-subgroup-reduce-anv-subgroupsize.c (the first session's
+ * instrument, kept byte-stable; this file is the batch variant of it). The
+ * first session's gpu_ns medians PINNED AT THE TIMESTAMP FLOOR (31 ticks =
+ * 1614.6 ns at every (op, W, S) cell), so the S=16-vs-32 timing question
+ * stayed UNRESOLVED above the floor. This variant lifts the floor by
+ * bracketing BATCH consecutive dispatches between the two timestamps
+ * instead of one: the bracket is ~BATCH x the single-dispatch cost, while
+ * the timestamp quantum stays 1 tick, so a per-dispatch difference of d
+ * ticks appears as BATCH*d ticks in the bracket and becomes resolvable
+ * (per-dispatch quantum = timestampPeriod / BATCH).
+ *
+ * Metric named: gpu_ns is the BRACKET time (BATCH dispatches); the
+ * per-dispatch figure is gpu_ns / BATCH (printed as per_dispatch_ns).
+ * This is STEADY-STATE BATCHED THROUGHPUT per dispatch (K dispatches in
+ * one command buffer, no barriers between them -- the K writes to parts[]
+ * are idempotent same-value WAW, so the final readback is unaffected),
+ * NOT isolated single-dispatch latency. host_ns brackets the whole submit
+ * and is never mixed with gpu_ns.
+ *
+ * MEASUREMENT INSTRUMENT, NOT PRODUCT CODE, NOT THE WIRE-42 LOADER PATH
+ * (that path's brokers were removed from main; the ADR-0371 provider does
+ * not answer INFO yet). It exists to run the COMMITTED :subgroup-reduce
+ * GLSL arm's emitted bytes (scripts/emit-gpu-subgroup-reduce-glsl.cljk ->
+ * *.emitted.glsl -> glslangValidator SPIR-V) on the fleet's Intel device
+ * under FORCED subgroup sizes 8/16/32 (VK_EXT_subgroup_size_control) plus
+ * the device default, and to time the dispatches on the GPU timeline
+ * (vkCmdWriteTimestamp) with a host monotonic clock alongside. Correctness
+ * is re-verified INSIDE every run (the per-workgroup parts[] read back and
+ * compared bit-exact against a CPU reference over integer-valued inputs).
+ *
+ * Run unit (the protocol the campaign's rows pre-register): one fresh
+ * process per run; each run visits every cell once per round in a seeded
+ * LCG-shuffled interleaved order, WARMUP untimed submits per cell first.
+ *
+ * Output (stdout, line-oriented, parsed verbatim into evidence):
+ *   # key=value            -- identity, device facts, protocol constants
+ *   CELL idx=.. spv=.. op=.. wg=.. forced=.. probe_size=.. probe_nsub=..
+ *        probe_wg=.. pipeline=ok|FAIL void=0|1 void_reason=..
+ *   VERIFY idx=.. checked=.. mismatch=.. ok=0|1
+ *   SAMPLE round=.. idx=.. batch=.. gpu_ticks=.. gpu_ns=.. per_dispatch_ns=.. host_ns=..
+ *
+ * Build (the exact command is in the record):
+ *   gcc -O2 -o anv-subgroupsize-batch gpu-subgroup-reduce-anv-subgroupsize-batch.c -lvulkan
+ *
+ * Usage: ./anv-subgroupsize-batch <manifest.txt>
+ * Manifest line: <measured.spv> <W> <S|default> <op> <probe.spv>
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+#include <vulkan/vulkan.h>
+
+#define MAX_CELLS 64
+#define N_ELEMENTS 1000003u
+#define PARTS_CAP 8192u
+#define WARMUP 3
+#define ROUNDS 25
+#define BATCH 64
+#define SEED 20261027u
+
+typedef struct {
+    char spv[512];
+    char probe_spv[512];
+    char op[16];
+    uint32_t wg;
+    int forced;             /* -1 = default (no forcing) */
+    uint32_t groups;        /* dispatch group count */
+    VkShaderModule module;
+    VkShaderModule probe_module;
+    VkPipeline pipeline;
+    VkPipeline probe_pipeline;
+    int pipeline_ok;
+    int probe_size;
+    int probe_nsub;
+    int probe_wg;
+    int void_cell;
+    char void_reason[128];
+} Cell;
+
+static VkInstance instance;
+static VkPhysicalDevice phys;
+static VkDevice device;
+static VkQueue queue;
+static uint32_t qfamily;
+static VkCommandPool cmdpool;
+static VkQueryPool querypool;
+static VkDescriptorSetLayout dsl;        /* 3 storage buffers */
+static VkDescriptorSetLayout probe_dsl;  /* 1 storage buffer */
+static VkPipelineLayout playout;
+static VkPipelineLayout probe_playout;
+static VkDescriptorPool dpool;
+static VkDescriptorSet dset;
+static VkDescriptorSet probe_dset;
+
+static VkBuffer xbuf, partsbuf, nbuf, obuf;
+static VkDeviceMemory xm, pm, nm, om;
+static float *xhost;
+static float *phost;    /* partsbuf, persistently mapped at startup */
+static uint32_t *ohost; /* obuf, persistently mapped at startup */
+static uint32_t nparts;
+
+static float device_name[128]; /* unused placeholder to keep layout obvious */
+static char devname[256];
+static uint32_t dev_vendor = 0, dev_device = 0, dev_api = 0;
+static float timestamp_period = 0.0f;
+static int timestamp_compute_graphics = 0;
+static uint32_t subgroup_size_reported = 0;
+static uint32_t min_sub = 0, max_sub = 0;
+static int size_control_feature = 0, size_control_full = 0;
+static uint32_t required_stages = 0;
+
+static void die(const char *msg) {
+    fprintf(stderr, "FATAL: %s\n", msg);
+    exit(1);
+}
+
+static void vkchk(VkResult r, const char *what) {
+    if (r != VK_SUCCESS) {
+        fprintf(stderr, "FATAL: %s -> VkResult %d\n", what, (int)r);
+        exit(1);
+    }
+}
+
+static uint64_t now_ns(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static uint32_t lcg_state;
+static uint32_t lcg_next(void) {
+    lcg_state = lcg_state * 1664525u + 1013904223u;
+    return lcg_state;
+}
+
+static uint32_t *read_file(const char *path, size_t *words) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { fprintf(stderr, "FATAL: cannot open %s\n", path); exit(1); }
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz % 4 != 0) die("SPIR-V file size not a multiple of 4");
+    uint32_t *buf = (uint32_t *)malloc((size_t)sz);
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) die("short read");
+    fclose(f);
+    *words = (size_t)sz / 4;
+    return buf;
+}
+
+static VkShaderModule load_module(const char *path) {
+    size_t words;
+    uint32_t *code = read_file(path, &words);
+    VkShaderModuleCreateInfo ci;
+    memset(&ci, 0, sizeof ci);
+    ci.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    ci.codeSize = words * 4;
+    ci.pCode = code;
+    VkShaderModule m;
+    vkchk(vkCreateShaderModule(device, &ci, NULL, &m), "vkCreateShaderModule");
+    free(code);
+    return m;
+}
+
+static uint32_t find_memory(uint32_t bits) {
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(phys, &mp);
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        if ((bits & (1u << i)) &&
+            (mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+            (mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
+            return i;
+    }
+    die("no HOST_VISIBLE|HOST_COHERENT memory type");
+    return 0;
+}
+
+static void make_buffer(VkDeviceSize size, VkBufferUsageFlags usage,
+                        VkBuffer *b, VkDeviceMemory *m, void **mapped) {
+    VkBufferCreateInfo bi;
+    memset(&bi, 0, sizeof bi);
+    bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bi.size = size;
+    bi.usage = usage;
+    bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    vkchk(vkCreateBuffer(device, &bi, NULL, b), "vkCreateBuffer");
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements(device, *b, &req);
+    VkMemoryAllocateInfo ai;
+    memset(&ai, 0, sizeof ai);
+    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ai.allocationSize = req.size;
+    ai.memoryTypeIndex = find_memory(req.memoryTypeBits);
+    vkchk(vkAllocateMemory(device, &ai, NULL, m), "vkAllocateMemory");
+    vkchk(vkBindBufferMemory(device, *b, *m, 0), "vkBindBufferMemory");
+    if (mapped) vkchk(vkMapMemory(device, *m, 0, VK_WHOLE_SIZE, 0, mapped), "vkMapMemory");
+}
+
+static VkPipeline make_pipeline(VkShaderModule mod, uint32_t wg, int forced,
+                                VkPipelineLayout layout) {
+    VkPipelineShaderStageCreateInfo si;
+    memset(&si, 0, sizeof si);
+    si.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    si.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    si.module = mod;
+    si.pName = "main";
+    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo ssi;
+    memset(&ssi, 0, sizeof ssi);
+    ssi.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO;
+    ssi.requiredSubgroupSize = (uint32_t)forced;
+    if (forced > 0) si.pNext = &ssi;
+    VkComputePipelineCreateInfo ci;
+    memset(&ci, 0, sizeof ci);
+    ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.stage = si;
+    ci.layout = layout;
+    VkPipeline p;
+    VkResult r = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &ci, NULL, &p);
+    if (r != VK_SUCCESS) return VK_NULL_HANDLE;
+    return p;
+}
+
+static void submit_one(VkPipeline p, VkPipelineLayout layout, VkDescriptorSet set,
+                       uint32_t groups, VkCommandBuffer *out_cmd) {
+    VkCommandBufferAllocateInfo ai;
+    memset(&ai, 0, sizeof ai);
+    ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    ai.commandPool = cmdpool;
+    ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    ai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    vkchk(vkAllocateCommandBuffers(device, &ai, &cmd), "vkAllocateCommandBuffers");
+    VkCommandBufferBeginInfo bi;
+    memset(&bi, 0, sizeof bi);
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkchk(vkBeginCommandBuffer(cmd, &bi), "vkBeginCommandBuffer");
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+    vkCmdDispatch(cmd, groups, 1, 1);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si;
+    memset(&si, 0, sizeof si);
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    vkchk(vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE), "vkQueueSubmit");
+    vkchk(vkQueueWaitIdle(queue), "vkQueueWaitIdle");
+    if (out_cmd) *out_cmd = cmd; else vkFreeCommandBuffers(device, cmdpool, 1, &cmd);
+}
+
+static void submit_timed(VkPipeline p, VkPipelineLayout layout, VkDescriptorSet set,
+                         uint32_t groups, uint64_t *gpu_ticks, uint64_t *host_ns) {
+    VkCommandBufferAllocateInfo ai;
+    memset(&ai, 0, sizeof ai);
+    ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    ai.commandPool = cmdpool;
+    ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    ai.commandBufferCount = 1;
+    VkCommandBuffer cmd;
+    vkchk(vkAllocateCommandBuffers(device, &ai, &cmd), "vkAllocateCommandBuffers");
+    VkCommandBufferBeginInfo bi;
+    memset(&bi, 0, sizeof bi);
+    bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkchk(vkBeginCommandBuffer(cmd, &bi), "vkBeginCommandBuffer");
+    vkCmdResetQueryPool(cmd, querypool, 0, 2);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, querypool, 0);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, p);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, NULL);
+    /* BATCH consecutive dispatches inside one bracket (floor lifting):
+       identical, idempotent writes to parts[], no barriers between them --
+       the bracket measures steady-state batched throughput for BATCH
+       dispatches; per-dispatch cost = bracket / BATCH. */
+    for (int b = 0; b < BATCH; b++)
+        vkCmdDispatch(cmd, groups, 1, 1);
+    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, querypool, 1);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si;
+    memset(&si, 0, sizeof si);
+    si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    uint64_t t0 = now_ns();
+    vkchk(vkQueueSubmit(queue, 1, &si, VK_NULL_HANDLE), "vkQueueSubmit");
+    vkchk(vkQueueWaitIdle(queue), "vkQueueWaitIdle");
+    *host_ns = now_ns() - t0;
+    uint64_t ts[2] = {0, 0};
+    VkResult r = vkGetQueryPoolResults(device, querypool, 0, 2, sizeof ts, ts,
+                                       sizeof(uint64_t),
+                                       VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    if (r == VK_SUCCESS && ts[1] >= ts[0]) *gpu_ticks = ts[1] - ts[0];
+    else *gpu_ticks = 0;
+    vkFreeCommandBuffers(device, cmdpool, 1, &cmd);
+}
+
+int main(int argc, char **argv) {
+    if (argc != 2) die("usage: anv-subgroupsize-batch <manifest>");
+    FILE *mf = fopen(argv[1], "r");
+    if (!mf) die("cannot open manifest");
+    static Cell cells[MAX_CELLS];
+    int ncells = 0;
+    char line[1200];
+    while (fgets(line, sizeof line, mf)) {
+        if (line[0] == '#' || line[0] == '\n') continue;
+        Cell *c = &cells[ncells];
+        char sbuf[32];
+        if (sscanf(line, "%511s %u %31s %15s %511s", c->spv, &c->wg, sbuf, c->op,
+                   c->probe_spv) != 5)
+            die("bad manifest line");
+        if (strcmp(sbuf, "default") == 0) c->forced = -1;
+        else c->forced = atoi(sbuf);
+        c->groups = (N_ELEMENTS + c->wg - 1) / c->wg;
+        ncells++;
+        if (ncells >= MAX_CELLS) die("too many cells");
+    }
+    fclose(mf);
+
+    /* ---- instance ---- */
+    VkApplicationInfo app;
+    memset(&app, 0, sizeof app);
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName = "anv-subgroupsize";
+    app.apiVersion = VK_API_VERSION_1_2;
+    VkInstanceCreateInfo ici;
+    memset(&ici, 0, sizeof ici);
+    ici.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ici.pApplicationInfo = &app;
+    vkchk(vkCreateInstance(&ici, NULL, &instance), "vkCreateInstance");
+
+    uint32_t ndev = 0;
+    vkEnumeratePhysicalDevices(instance, &ndev, NULL);
+    VkPhysicalDevice *devs = (VkPhysicalDevice *)malloc(ndev * sizeof(VkPhysicalDevice));
+    vkEnumeratePhysicalDevices(instance, &ndev, devs);
+    int picked = -1;
+    for (uint32_t i = 0; i < ndev; i++) {
+        VkPhysicalDeviceProperties p;
+        vkGetPhysicalDeviceProperties(devs[i], &p);
+        if (p.vendorID == 0x8086) { picked = (int)i; break; }
+    }
+    if (picked < 0) die("no Intel (vendorID 0x8086) Vulkan device");
+    phys = devs[picked];
+    free(devs);
+
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(phys, &props);
+    snprintf(devname, sizeof devname, "%s", props.deviceName);
+    dev_vendor = props.vendorID;
+    dev_device = props.deviceID;
+    dev_api = props.apiVersion;
+    timestamp_period = props.limits.timestampPeriod;
+    timestamp_compute_graphics = props.limits.timestampComputeAndGraphics ? 1 : 0;
+
+    /* subgroup + subgroup-size-control facts */
+    VkPhysicalDeviceSubgroupSizeControlProperties sscp;
+    memset(&sscp, 0, sizeof sscp);
+    sscp.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES;
+    VkPhysicalDeviceSubgroupProperties sgp;
+    memset(&sgp, 0, sizeof sgp);
+    sgp.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
+    sgp.pNext = &sscp;
+    VkPhysicalDeviceProperties2 p2;
+    memset(&p2, 0, sizeof p2);
+    p2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    p2.pNext = &sgp;
+    vkGetPhysicalDeviceProperties2(phys, &p2);
+    subgroup_size_reported = sgp.subgroupSize;
+    min_sub = sscp.minSubgroupSize;
+    max_sub = sscp.maxSubgroupSize;
+    required_stages = sscp.requiredSubgroupSizeStages;
+
+    VkPhysicalDeviceSubgroupSizeControlFeatures sscf;
+    memset(&sscf, 0, sizeof sscf);
+    sscf.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES;
+    VkPhysicalDeviceFeatures2 f2;
+    memset(&f2, 0, sizeof f2);
+    f2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    f2.pNext = &sscf;
+    vkGetPhysicalDeviceFeatures2(phys, &f2);
+    size_control_feature = sscf.subgroupSizeControl ? 1 : 0;
+    size_control_full = sscf.computeFullSubgroups ? 1 : 0;
+
+    /* ---- device ---- */
+    float prio = 1.0f;
+    VkDeviceQueueCreateInfo qci;
+    memset(&qci, 0, sizeof qci);
+    qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    qci.queueFamilyIndex = qfamily = 0;
+    qci.queueCount = 1;
+    qci.pQueuePriorities = &prio;
+    VkDeviceCreateInfo dci;
+    memset(&dci, 0, sizeof dci);
+    dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    dci.queueCreateInfoCount = 1;
+    dci.pQueueCreateInfos = &qci;
+    dci.pNext = &sscf;
+    vkchk(vkCreateDevice(phys, &dci, NULL, &device), "vkCreateDevice");
+    vkGetDeviceQueue(device, qfamily, 0, &queue);
+
+    VkCommandPoolCreateInfo cpci;
+    memset(&cpci, 0, sizeof cpci);
+    cpci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cpci.queueFamilyIndex = qfamily;
+    vkchk(vkCreateCommandPool(device, &cpci, NULL, &cmdpool), "vkCreateCommandPool");
+
+    VkQueryPoolCreateInfo qpci;
+    memset(&qpci, 0, sizeof qpci);
+    qpci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    qpci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    qpci.queryCount = 2;
+    vkchk(vkCreateQueryPool(device, &qpci, NULL, &querypool), "vkCreateQueryPool");
+
+    /* ---- buffers ---- */
+    nparts = PARTS_CAP;
+    void *map;
+    make_buffer((VkDeviceSize)N_ELEMENTS * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &xbuf, &xm, &map);
+    xhost = (float *)map;
+    make_buffer((VkDeviceSize)nparts * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &partsbuf, &pm, &map);
+    phost = (float *)map;
+    make_buffer(4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &nbuf, &nm, &map);
+    *(uint32_t *)map = N_ELEMENTS;
+    make_buffer((VkDeviceSize)nparts * 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &obuf, &om, &map);
+    ohost = (uint32_t *)map;
+    memset(map, 0, nparts * 4);
+
+    lcg_state = SEED;
+    for (uint32_t i = 0; i < N_ELEMENTS; i++) xhost[i] = (float)(lcg_next() % 1024u);
+
+    /* ---- descriptors ---- */
+    VkDescriptorSetLayoutBinding b3[3];
+    memset(b3, 0, sizeof b3);
+    for (int i = 0; i < 3; i++) {
+        b3[i].binding = (uint32_t)i;
+        b3[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b3[i].descriptorCount = 1;
+        b3[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo dlci;
+    memset(&dlci, 0, sizeof dlci);
+    dlci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dlci.bindingCount = 3;
+    dlci.pBindings = b3;
+    vkchk(vkCreateDescriptorSetLayout(device, &dlci, NULL, &dsl), "dsl");
+    VkDescriptorSetLayoutBinding b1 = b3[0];
+    dlci.bindingCount = 1;
+    dlci.pBindings = &b1;
+    vkchk(vkCreateDescriptorSetLayout(device, &dlci, NULL, &probe_dsl), "probe dsl");
+
+    VkDescriptorPoolSize ps[1];
+    ps[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    ps[0].descriptorCount = 8;
+    VkDescriptorPoolCreateInfo dpci;
+    memset(&dpci, 0, sizeof dpci);
+    dpci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    dpci.maxSets = 4;
+    dpci.poolSizeCount = 1;
+    dpci.pPoolSizes = ps;
+    vkchk(vkCreateDescriptorPool(device, &dpci, NULL, &dpool), "pool");
+    VkDescriptorSetAllocateInfo dsai;
+    memset(&dsai, 0, sizeof dsai);
+    dsai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    dsai.descriptorPool = dpool;
+    dsai.descriptorSetCount = 1;
+    dsai.pSetLayouts = &dsl;
+    vkchk(vkAllocateDescriptorSets(device, &dsai, &dset), "dset");
+    dsai.pSetLayouts = &probe_dsl;
+    vkchk(vkAllocateDescriptorSets(device, &dsai, &probe_dset), "probe dset");
+
+    VkDescriptorBufferInfo bi0 = {xbuf, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo bi1 = {partsbuf, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo bi2 = {nbuf, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet w3[3];
+    memset(w3, 0, sizeof w3);
+    for (int i = 0; i < 3; i++) {
+        w3[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w3[i].dstSet = dset;
+        w3[i].dstBinding = (uint32_t)i;
+        w3[i].descriptorCount = 1;
+        w3[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    }
+    w3[0].pBufferInfo = &bi0;
+    w3[1].pBufferInfo = &bi1;
+    w3[2].pBufferInfo = &bi2;
+    vkUpdateDescriptorSets(device, 3, w3, 0, NULL);
+    VkDescriptorBufferInfo bo = {obuf, 0, VK_WHOLE_SIZE};
+    VkWriteDescriptorSet w1;
+    memset(&w1, 0, sizeof w1);
+    w1.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w1.dstSet = probe_dset;
+    w1.dstBinding = 0;
+    w1.descriptorCount = 1;
+    w1.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w1.pBufferInfo = &bo;
+    vkUpdateDescriptorSets(device, 1, &w1, 0, NULL);
+
+    VkPushConstantRange pcr; /* none */
+    memset(&pcr, 0, sizeof pcr);
+    VkPipelineLayoutCreateInfo plci;
+    memset(&plci, 0, sizeof plci);
+    plci.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plci.setLayoutCount = 1;
+    plci.pSetLayouts = &dsl;
+    vkchk(vkCreatePipelineLayout(device, &plci, NULL, &playout), "playout");
+    plci.pSetLayouts = &probe_dsl;
+    vkchk(vkCreatePipelineLayout(device, &plci, NULL, &probe_playout), "probe_playout");
+
+    /* ---- header ---- */
+    printf("# instrument=anv-subgroupsize-batch v2-batch64 (JUN-59 subgroup 16-vs-32 floor-lifting rerun, 2026-10-27)\n");
+    printf("# device_name=%s vendor=%04x device=%04x api=%u.%u.%u\n", devname,
+           dev_vendor, dev_device, VK_API_VERSION_MAJOR(dev_api),
+           VK_API_VERSION_MINOR(dev_api), VK_API_VERSION_PATCH(dev_api));
+    printf("# maxComputeWorkGroupSize=%u,%u,%u\n", props.limits.maxComputeWorkGroupSize[0],
+           props.limits.maxComputeWorkGroupSize[1], props.limits.maxComputeWorkGroupSize[2]);
+    printf("# subgroupSize=%u subgroupStages=%08x subgroupOps=%08x\n",
+           sgp.subgroupSize, sgp.supportedStages, sgp.supportedOperations);
+    printf("# subgroupSizeControl: feature=%d computeFullSubgroups=%d min=%u max=%u requiredStages=%08x\n",
+           size_control_feature, size_control_full, min_sub, max_sub, required_stages);
+    printf("# timestampPeriod=%.3f timestampComputeAndGraphics=%d\n", timestamp_period,
+           timestamp_compute_graphics);
+    printf("# n=%u rounds=%d warmup=%d batch=%d seed=%u metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)\n",
+           N_ELEMENTS, ROUNDS, WARMUP, BATCH, SEED);
+
+    /* ---- pipelines + probe verification ---- */
+    for (int i = 0; i < ncells; i++) {
+        Cell *c = &cells[i];
+        c->module = load_module(c->spv);
+        c->probe_module = load_module(c->probe_spv);
+        int forced_ok = (c->forced < 0) || (size_control_feature &&
+                        (required_stages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+                        c->forced >= (int)min_sub && c->forced <= (int)max_sub);
+        c->pipeline = forced_ok ? make_pipeline(c->module, c->wg, c->forced > 0 ? c->forced : 0, playout)
+                                : VK_NULL_HANDLE;
+        c->pipeline_ok = (c->pipeline != VK_NULL_HANDLE);
+        /* probe: one workgroup at this wg width, same forcing */
+        VkPipeline pp = forced_ok ? make_pipeline(c->probe_module, c->wg, c->forced > 0 ? c->forced : 0, probe_playout)
+                                  : VK_NULL_HANDLE;
+        if (pp) {
+            /* defect (c) fix (2026-10-27, second tick): om is ALREADY
+               persistently mapped by make_buffer at startup -- a second
+               vkMapMemory on the same VkDeviceMemory is invalid usage and
+               ANV answers VK_ERROR_MEMORY_MAP_FAILED (-5). Use the startup
+               mapping; host-coherent, so no explicit sync beyond the
+               submit_one queue wait. */
+            ohost[0] = ohost[1] = ohost[2] = 0;
+            submit_one(pp, probe_playout, probe_dset, 1, NULL);
+            c->probe_size = (int)ohost[0];
+            c->probe_nsub = (int)ohost[1];
+            c->probe_wg = (int)ohost[2];
+            vkDestroyPipeline(device, pp, NULL);
+        } else {
+            c->probe_size = c->probe_nsub = c->probe_wg = -1;
+        }
+        c->void_cell = 0;
+        c->void_reason[0] = 0;
+        if (!c->pipeline_ok) {
+            c->void_cell = 1;
+            snprintf(c->void_reason, sizeof c->void_reason, "pipeline-create-failed");
+        } else if (c->forced > 0 && c->probe_size != c->forced) {
+            c->void_cell = 1;
+            snprintf(c->void_reason, sizeof c->void_reason, "probe-size-mismatch");
+        } else if (c->forced < 0 && c->probe_size != (int)subgroup_size_reported) {
+            c->void_cell = 1;
+            snprintf(c->void_reason, sizeof c->void_reason, "default-probe-mismatch");
+        }
+        printf("CELL idx=%d spv=%s op=%s wg=%u forced=%s probe_size=%d probe_nsub=%d probe_wg=%d pipeline=%s void=%d void_reason=%s\n",
+               i, c->spv, c->op, c->wg, c->forced < 0 ? "default" : (c->forced == 8 ? "8" : c->forced == 16 ? "16" : "32"),
+               c->probe_size, c->probe_nsub, c->probe_wg,
+               c->pipeline_ok ? "ok" : "FAIL", c->void_cell, c->void_reason);
+    }
+
+    /* ---- warmup ---- */
+    for (int i = 0; i < ncells; i++) {
+        Cell *c = &cells[i];
+        if (!c->pipeline_ok) continue;
+        for (int w = 0; w < WARMUP; w++)
+            submit_one(c->pipeline, playout, dset, c->groups, NULL);
+    }
+
+    /* ---- interleaved timed rounds ---- */
+    int order[MAX_CELLS];
+    for (int i = 0; i < ncells; i++) order[i] = i;
+    for (int r = 0; r < ROUNDS; r++) {
+        /* seeded Fisher-Yates: identical order in every process (run unit
+           varies only in process state, never in visit order) */
+        lcg_state = SEED + (uint32_t)r;
+        for (int i = ncells - 1; i > 0; i--) {
+            int j = (int)(lcg_next() % (uint32_t)(i + 1));
+            int t = order[i]; order[i] = order[j]; order[j] = t;
+        }
+        for (int k = 0; k < ncells; k++) {
+            Cell *c = &cells[order[k]];
+            if (!c->pipeline_ok) continue;
+            uint64_t ticks = 0, host = 0;
+            submit_timed(c->pipeline, playout, dset, c->groups, &ticks, &host);
+            printf("SAMPLE round=%d idx=%d batch=%d gpu_ticks=%llu gpu_ns=%.1f per_dispatch_ns=%.2f host_ns=%llu\n",
+                   r, order[k], BATCH, (unsigned long long)ticks,
+                   (double)ticks * (double)timestamp_period,
+                   (double)ticks * (double)timestamp_period / (double)BATCH,
+                   (unsigned long long)host);
+        }
+    }
+
+    /* ---- correctness, inside the run ---- */
+    for (int i = 0; i < ncells; i++) {
+        Cell *c = &cells[i];
+        if (!c->pipeline_ok) {
+            printf("VERIFY idx=%d checked=0 mismatch=0 ok=0 note=pipeline-failed\n", i);
+            continue;
+        }
+        submit_one(c->pipeline, playout, dset, c->groups, NULL);
+        /* defect (c) fix, same class as the probe map: pm is persistently
+           mapped at startup (phost); never vkMapMemory it again. */
+        float *parts = phost;
+        int mismatch = 0;
+        for (uint32_t g = 0; g < c->groups; g++) {
+            uint32_t lo = g * c->wg;
+            uint32_t hi = lo + c->wg; if (hi > N_ELEMENTS) hi = N_ELEMENTS;
+            double ref;
+            if (strcmp(c->op, "sum") == 0) {
+                ref = 0.0;
+                for (uint32_t e = lo; e < hi; e++) ref += (double)xhost[e];
+            } else if (strcmp(c->op, "max") == 0) {
+                ref = -1e30;
+                for (uint32_t e = lo; e < hi; e++) if ((double)xhost[e] > ref) ref = (double)xhost[e];
+            } else {
+                ref = 1e30;
+                for (uint32_t e = lo; e < hi; e++) if ((double)xhost[e] < ref) ref = (double)xhost[e];
+            }
+            if ((double)parts[g] != ref) mismatch++;
+        }
+        printf("VERIFY idx=%d checked=%u mismatch=%d ok=%d\n", i, c->groups, mismatch,
+               mismatch == 0 ? 1 : 0);
+    }
+    printf("# done cells=%d\n", ncells);
+    return 0;
+}

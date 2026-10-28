@@ -16,10 +16,19 @@
   VALUE is a string (hashed as UTF-8) or a byte buffer -- the two request
   kinds the compiler has, `:string` and `:bytes`. See
   kotoba.compiler.nbb.host.io."
-  {:kotoba/export []}
-  (:require ["node:crypto" :as crypto]))
+  {:kotoba/export #?(:kotoba [sha256] :default [])}
+  #?(:cljs (:require ["node:crypto" :as crypto])))
 
-(defn sha256
-  "hash/sha256 3."
-  [value]
-  (-> (.createHash crypto "sha256") (.update value) (.digest "hex")))
+;; R6QW3: the Kotoba reading (W3 re-port). A pure-CLJS mechanism handler (the nbb/Node
+;; layer of a host ability). The guest has no such host surface (the kexe capability model),
+;; so every :kotoba arm is the fail-closed refusal -- the kotoba.kir.js-operations pattern.
+;; The host reading is byte-for-byte. :kotoba/export [] (the guest does not consume it).
+#?(:kotoba (defn sha256
+             "hash/sha256 3 (the ability itself; a Kotoba caller hashes a string)."
+             [value :string] :string
+             (hash/sha256 value))
+   :default
+   (defn sha256
+     "hash/sha256 3."
+     [value]
+     (-> (.createHash crypto "sha256") (.update value) (.digest "hex"))))

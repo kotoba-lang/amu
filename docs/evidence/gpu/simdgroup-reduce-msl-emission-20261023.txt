@@ -1,0 +1,105 @@
+JUN-58 / JUN-55 -- :simdgroup-reduce MSL emission + lower admission
+(ADR-0373 rule 3 step 1), 2026-10-23. Chain branch bot/amu-gpu-chain.
+
+WHAT CHANGED (the slice)
+- src/kotoba/compiler/accelerator_simdgroup_reduce.cljk (NEW): the
+  :simdgroup-reduce emission, MSL route only. The intra-SIMD-group stage is
+  ONE Metal reduction intrinsic per operator (simd_sum / simd_max /
+  simd_min); everything above it is the shared :subgroup-reduce fold,
+  byte-identical: partials[W], the one write barrier, the strided
+  cross-SIMD-group tree (P2: partial index = simdgroup_index_in_threadgroup
+  written by the thread_index_in_simdgroup == 0 lane, never lid
+  arithmetic). ABI unchanged (x 0, parts 1, n 2; entry = :kernel/name).
+  P1 binds option (b): simd_sum's association is the vendor's, :sum claims
+  low bits only. applicable? is the shared reduce row (W power of two in
+  [32, 1024]). basis carries :measured? false.
+- src/kotoba/compiler/accelerator.cljk: :simdgroup-reduce joins
+  kernel-variants; `lower` answers the emission for the
+  (:msl-v1, :simdgroup-reduce) pair in BOTH readings and refuses the
+  variant on every other target ("kernel variant not applicable"); the
+  seal/re-lower machinery (compile-kernel / verify-artifact!) admits the
+  variant in both readings.
+- src/kotoba/compiler/accelerator_variants.cljk: honesty mark in the
+  `variants` set docstring ONLY. select-variant answers are byte-identical
+  to before this slice (its cond rows name no :simdgroup-reduce); rule 3
+  step 2 (the selection predicate) is NOT this slice.
+- test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk (NEW): the
+  MSL arm's test style -- operator meaning pins (intrinsic + combine +
+  infinite-neutral identity per operator, no foreign intrinsic), the
+  shuffle-ladder negative pins (no simd_shuffle_down, no fold-width query,
+  no baked width), spec-spelling pins (the four geometry attributes,
+  threadgroup_barrier; no GLSL/WGSL spellings), P2 pins (partials[sg],
+  strided tree, no lid fallback), workgroup-shape pins, fail-closed off-row
+  + determinism, the unmeasured lock, the admission contract (the pair
+  lowers to the namespace's own text; seal + verify-artifact! round-trip;
+  :wgsl-v1/:cuda-v1/:glsl-v1 refuse), the selection-not-landed pin, and
+  the not-a-rewrite-of-:subgroup-reduce pin (shared tree fragments appear
+  byte-identical in both arms).
+- run-tests.cljk: the new test namespace registered.
+
+TOOLCHAIN PROBE (compiler fact, NOT a measurement): the emitters' own
+bytes for W = 128, all three operators, compile to AIR on this host:
+
+    xcrun metal -c simdgroup-sum.metal -o simdgroup-sum.air   -> exit 0
+    xcrun metal -c simdgroup-max.metal -o simdgroup-max.air   -> exit 0
+    xcrun metal -c simdgroup-min.metal -o simdgroup-min.air   -> exit 0
+    Apple metal version 32023.883 (metalfe-32023.883)
+    Target: air64-apple-darwin25.4.0
+
+(the .metal inputs are scratch emissions of
+kotoba.compiler.accelerator-simdgroup-reduce/emit-msl, not in the repo;
+the full emitted :sum text is reproduced below.) This says nothing about
+performance and nothing about any device.
+
+GATE (real run, this host, kbb --backend sci), scoped GPU gate -- the 8
+GPU-owned test namespaces (scratch runner gpu_scoped_gate.cljk, not in the
+repo), from the chain worktree root:
+
+    Ran 98 tests containing 7279 assertions.
+    0 failures, 0 errors.
+
+    scoped: 98 tests, 7279 passed, 0 failed, 0 errors
+
+(pre-slice baseline for the same runner: 88 tests / 7122 assertions, 0
+failures -- the +10 tests / +157 assertions are this slice's new
+namespace; no existing assertion changed meaning.)
+
+Full suite (run-tests.cljk): RED AT BASE at namespace load on kotoba.form
+("Error: Could not find namespace: kotoba.form", exit 1) -- the documented
+W3-port red at base (ADR 0362), OUTSIDE this diff, unchanged by it. No
+green full suite is claimed.
+
+UNMEASURED, named: every performance property of this variant on every
+device. No Metal execution path exists in this repository (the brokers
+died with the C loader; ADR 0371's provider is the replacement track), so
+nothing has executed this variant -- including the M1 Max class where
+:subgroup-reduce's shuffle fold measured SLOWER than :baseline at every
+measured cell (that refutation neither condemns nor blesses this variant).
+:measured? stays false everywhere. simd_sum's association order as a
+spec-text claim (the spec was not re-read).
+
+WHAT DID NOT MOVE: select-variant answers (byte-identical); every
+:measured? flag; the workgroup table (ADR-0355/0358); the M1 Max carve-out;
+ADR-0373's rule-3 step 2 (selection) and step 3 (measurement) -- both
+still open.
+
+--- the emitted :sum kernel (W = 128), the probe's input bytes ---
+#include <metal_stdlib>
+using namespace metal;
+float combine(float a, float b) { return a+b; }
+kernel void reduce_sum(device const float* x [[buffer(0)]], device float* parts [[buffer(1)]], constant uint& n [[buffer(2)]], uint i [[thread_position_in_grid]], uint sgid [[thread_index_in_simdgroup]], uint sg [[simdgroup_index_in_threadgroup]], uint sgsize [[threads_per_simdgroup]], uint nsg [[simdgroups_per_threadgroup]], uint g [[threadgroup_position_in_grid]]) {
+  threadgroup float partials[128];
+  float v = i < n ? x[i] : 0.0f;
+  v = simd_sum(v);
+  if (sgid == 0u) { partials[sg] = v; }
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  for (uint d = nsg / 2u; d > 0u; d >>= 1u) {
+    if (sg == 0u) {
+      for (uint lid = sgid; lid < d; lid += sgsize) {
+        partials[lid] = combine(partials[lid], partials[lid + d]);
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+  }
+  if (sg == 0u && sgid == 0u) { parts[g] = partials[0]; }
+}

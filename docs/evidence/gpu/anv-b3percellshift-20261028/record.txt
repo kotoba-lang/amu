@@ -1,0 +1,258 @@
+JUN-59 -- session 44 record: THE PER-CELL BODY-SHIFT
+REPARTITION PROBE
+(does ANY of the 18 ok cells show a window-to-window shift of its
+per-cell LEVEL -- the cell's own pooled-median gpu_ticks, held
+cell by cell instead of through the median-over-18-cells body --
+that exceeds run-exchangeable sampling noise?).
+ANALYSIS slice -- NO new hardware this tick (every input quantity
+was MEASURED in sessions 36/38/39; this session re-derives
+statistics from their COMMITTED run logs).
+2026-10-28 (UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): SESSION 43'S FIRST-NAMED CANDIDATE ROW
+   "a PER-CELL body-shift probe of the same three windows (per-
+   cell window-level shifts cancel in this probe's median-over-18-
+   cells construction -- its own named-not-hidden)" -- taken on
+   ONE observable axis: per arm, does ANY ok cell's cross-window
+   per-cell LEVEL spread, S_c = max_w L_{w,c} - min_w L_{w,c} over
+   the three probed windows (s36, s38, s39), where L_{w,c} =
+   median of the 12 block per-cell pooled medians of window w,
+   EXCEED the cross-window run-repartition null (the 108 runs of
+   one arm across the three windows are exchangeable; all
+   within-run, fresh-process run-to-run AND window-to-window noise
+   under the null is sampling noise at the fresh-process
+   granularity)? The block construction is the s35/s36-frozen one
+   UNCHANGED (block = 3 consecutive runs of one arm within one
+   window; per-cell pooled median = the block's 75 samples per ok
+   cell, the exact 38th order statistic); the CELL SUMMARY is
+   NONE -- every cell is held SEPARATE (session 43's body was the
+   median over the 18 cells; that construction cancels per-cell
+   shifts; this probe replaces ONLY that one summary statistic).
+   The primary per-arm statistic is the MAX-T, M_obs = max_c 2*S_c
+   (half-tick integers), with the max taken INSIDE each
+   resampling trial too (M* = max_c 2*S*_c) so the reported p is
+   family-wise controlled over the 18 cells. Exactness: every
+   M* >= M_obs and S*_c >= S_obs_c comparison is exact half-tick
+   INTEGER arithmetic. Resampling: 20,000 trials,
+   random.Random(20261028) consumed in the frozen probe order (hi
+   then tw), per trial one shuffle of list(range(108)) split into
+   three pseudo-windows of 36 in draw order and 12 blocks of 3 in
+   draw order, p = (1 + count(M* >= M_obs)) / (1 + 20,000),
+   one-sided. The T1 letters were pre-registered in protocol.txt
+   sections 0-2 (freeze stamp 2026-10-28T06:35:39Z, BEFORE any
+   statistic of this probe was computed): per arm (a)
+   PER-CELL-CONSISTENT / (b) EXCEEDS NULL (named which cell(s)) /
+   (c) NOT EVALUABLE; joint T1 = (a) iff both arms (a).
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3percellshift-20261028/ --
+       protocol.txt (frozen before any statistic, freeze stamp
+       2026-10-28T06:35:39Z), analysis-s44.py +
+       publication-s44.txt (run twice, diff exit 0),
+       derivation-census-s44.txt (independent second parser, 45
+       rows / 0 mismatched, run twice byte-identical),
+       bar-eval-s44.txt, classify-selftest.txt, gate-run1.txt,
+       gate-run2.txt, gate-full-run-tests.txt, this record. NO run
+       logs (no hardware), NO .sh files.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNCHANGED (NO
+       reading -> NO line -> NO day-slot consumption; byte-identical
+       to HEAD, verified in the census row 37).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) DERIVED FROM MEASURED DATA (the 234 committed run logs of
+       the three windows -- 78 each: c2 3 + hi 36 + tw 36 + c8 3;
+       every input quantity was MEASURED on aiueos-6600hs Intel BMG
+       G31 ANV in sessions 36/38/39, run windows
+       2026-10-28T02:40:49Z / 03:39:14Z / 04:09:48Z): integrity
+       re-derived per window (VERIFY mismatch 0, SAMPLE 450 /
+       VERIFY 24 per run, knobs == arm table, S=8 fail-closed, cell
+       map identical -- 3/3 windows clean); C1 at the s39 window
+       (a): c2 FLOOR, c8 pooled median 32,829 vs committed 32,915
+       (0.26%); the six block-min vectors reproduce the
+       published/quote-only vectors of publication-s39.txt section 3
+       EXACTLY (6/6); the anchor reproduction row: hi block A's
+       (sum,128,S=16) pooled median and 18-cell min..max reproduce
+       the quote-only anchor priors EXACTLY at all three windows
+       (s36 1,142 / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 /
+       986..1,432) -- 3/3 EXACT.
+   (b) T1 THE ROW QUESTION (DERIVED): T1 = (a) PER-CELL-
+       CONSISTENT -- no cell's cross-window LEVEL spread exceeds
+       the max-T-corrected cross-window run-repartition null on
+       either arm: hi M_obs = 23.0 ticks (max cell
+       (sum,256,S=32)), count 3,205 / 20,001, p = 0.160292; tw
+       M_obs = 18.5 ticks (same cell (sum,256,S=32)), count
+       10,573 / 20,001, p = 0.528674 (both p > 0.05 at the frozen
+       threshold). THE FINDING: at the three probed windows the
+       PER-CELL level content does not move between windows beyond
+       what run-repartition of the same 108 runs produces -- on
+       this one axis session 43's named gap ("per-cell window-
+       level shifts cancel in the median-over-18-cells
+       construction") is now closed with its own letter: the
+       per-cell LEVEL content of the gpu_ticks distribution (all
+       18 cells, family-wise over cells via the max-T) is
+       consistent with run-exchangeable sampling noise. NAMED, NOT
+       HIDDEN: (a) does NOT prove "no physical per-cell window-
+       level driver" -- the null is run-exchangeability ACROSS
+       WINDOWS and a driver acting uniformly within AND across
+       windows is invisible by construction; AND each per-cell
+       level is itself a median of 12 block values of pooled
+       medians of 75 samples -- shifts of only the per-cell SPREAD
+       (a per-cell SPREAD probe is a named candidate row), only
+       other distribution quantiles, or only scales inside the
+       25-sample/3-run units are invisible to this construction;
+       the max-T at n=12 blocks per window is LOW POWER and three
+       windows in ONE day on ONE host is LOW POWER (a null is not
+       stationarity and not "no per-cell structure"); the 18+18
+       MARGINAL p values are UNCORRECTED (36 marginal tests) and
+       carry NO letter -- two hi cells' marginal p sit below 0.05
+       WITHOUT any letter: (min,256,S=16) S_c 10.5 marginal p
+       0.013949 and (sum,256,S=32) S_c 23.0 marginal p 0.042248
+       (2 of 36 uncorrected marginal tests below 0.05 is within
+       what chance produces; the max-T p for the same cell is
+       0.160292 -- the family-wise row answer is (a) and NOTHING
+       is claimed from the marginal cells); (b) would implicate
+       window-timescale PER-CELL level structure but NOT name it
+       (thermal/scheduling/memory/driver state all UNMEASURED);
+       cells span 986..1,443 ticks in level even within one block
+       -- the frozen 1,000-tick class boundary sits INSIDE the
+       per-cell level range and the threshold-artifact-vs-
+       representation ambiguity binds per-cell rows directly and
+       STAYS UNRESOLVED; exchangeability across windows is a
+       STRONGER assumption and is itself an assumption; this
+       letter and sessions 40/41/42/43's letters are DIFFERENT
+       nulls over the SAME runs -- none confirms nor overturns
+       another, and the probes share the same 234 logs and
+       resampling skeleton (NOT independent evidence); 20,000
+       trials (NOT the s35-frozen 100,000 -- cost, same named
+       deviation as sessions 40/41/42/43; p resolution
+       1/20,001 ~= 5e-5); L2 observational ONLY; NO causal
+       mechanism; direction UNMEASURED.
+   (c) B1/B2 THE BAR: NO reading this tick -> NO ledger line, NO
+       day-slot consumption (settle-bar-ledger.txt byte-identical
+       to HEAD, verified in the census); frozen evaluator --self-
+       test 38 fixture checks ok (pin), ledger eval twice
+       byte-identical -> VERDICT UNCHANGED PENDING 1/4 with s31
+       counted; next executable day slot 2026-10-29.
+   (d) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin); scoped GPU gate GREEN 123
+       tests / 12,162 assertions / 0 failures / 0 errors recorded
+       run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk,
+       created, run, deleted -- never committed; gate-run1.txt is
+       byte-identical to session 43's artifact); FULL run-tests.
+       cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+       find namespace: kotoba.form' at namespace load (ADR-0362,
+       outside this diff -- this diff touches NO .cljk namespace;
+       gate-full-run-tests.txt byte-identical to session 43's
+       artifact) -- NO green full suite claimed; find
+       docs/evidence/gpu -name '*.sh' -> 0.
+   (e) derivation-census-s44.txt: an independent second parser
+       (split-based parsing without regex; the observed per-cell
+       pooled median via 3-way merge selection over the sorted
+       per-run 25-lists -- the pooled 75 never sorted as a unit;
+       the 12-value level medians via sorted() explicit order
+       statistics; the resampling's pooled medians via the np.sort
+       order-statistic path (38th element of the sorted 75), not
+       np.median's; the cross-window repartition resampling and RNG
+       call order re-implemented; the observed per-cell spreads
+       cross-checked between the merge-selection and np.sort paths
+       inside the generator) re-derives every cited number from the
+       234 committed logs -- 45 rows, 0 mismatched -- and verifies
+       the ledger is byte-identical to HEAD, the gate artifacts and
+       the no-.sh policy; run twice byte-identical.
+
+4. NAMED, NOT HIDDEN (this tick): (i) NAMED DEFECTS (this tick's
+   scratch census generator's first drafts; neither reached a
+   quoted value): (d1) the census generator's TOTAL-line parser
+   indexed "TOTAL: 2649 assertions passed, 0 failed" at the wrong
+   token (read 'passed,' as the failure count; ValueError traceback
+   AFTER the resampling completed but BEFORE any row was written);
+   (d2) the gate-pin parser indexed "Ran 123 tests containing
+   12162 assertions." at the wrong token (read 'containing' as the
+   assertion count -- the same token class as session 43's own
+   d2; ValueError traceback BEFORE any row was written); the
+   committed census records the corrected runs only; (ii) the (a)
+   letter is a LOW-POWER fact at THREE windows in ONE day on ONE
+   host and is NOT evidence of window stationarity; (iii) two hi
+   cells' UNCORRECTED marginal p < 0.05 carry no letter (named in
+   section 3b); (iv) 20,000 trials (not the s35-frozen 100,000):
+   cost, named in the freeze; (v) the s34 window is EXCLUDED
+   (hi-only design; the probe needs the same three windows for
+   both arms); (vi) this probe and sessions 40/41/42/43's share
+   the same 234 logs and resampling skeleton -- NOT independent
+   evidence.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31), the X1R letter
+   thresholds (s32), the T1 letter thresholds (s33-s36), the joint
+   letter thresholds (s37), the repartition-null letters of
+   sessions 40-43 and the PER-CELL max-T letters of THIS session
+   (protocol.txt sections 0-2). Not implemented in the compiler;
+   not themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/
+   evaluator remain evidence-scoped tooling; the ledger is an
+   evidence file; nothing is wired into any namespace.
+   MEASURED (this tick): nothing new -- NO hardware ran; the
+   numbers are DERIVED from the sessions 36/38/39 measured logs.
+   Provisional workgroup defaults in kotoba.compiler.accelerator-
+   targets remain provisional (:measured? false) -- not
+   optimization evidence. RULE 4 unchanged: NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer; NO
+   vendor optimization exists for Intel and none is claimed.
+
+6. UNMEASURED (named): what, if anything, physically moves the
+   wander/level/body/per-cell level (this probe plus sessions
+   40-43 show no structure beyond run-exchangeable noise at the
+   block-min wander, window spread, window LEVEL, window BODY-
+   LEVEL and PER-CELL LEVEL scales; estimator noise vs an
+   unmeasured physical variable STAYS UNRESOLVED -- a uniform
+   driver is invisible to all five designs by construction, and
+   PER-CELL SPREAD/quantile shifts are invisible to the per-cell
+   LEVEL construction specifically); the per-cell marginal cells
+   ((min,256,S=16) and (sum,256,S=32) on hi) -- UNCORRECTED, no
+   letter, UNMEASURED whether anything real stands behind them;
+   any common-mode driver faster than the ~1s block-pair spacing
+   (L14); the s31, s34-window and s36 block-E excursion causes
+   stay UNMEASURED; the threshold-artifact-vs-representation
+   question itself; anything off the ANV host. The bar needs at
+   least THREE more qualifying UTC days (V4 PENDING 1/4); whether
+   FOUR qualifying days is ENOUGH (the bar can return UNSETTLED).
+   NAMED CANDIDATE ROWS for later sessions: a PER-CELL WANDER
+   probe (the per-cell analog of session 40 -- does any cell's
+   within-window block-level wander exceed WITHIN-window
+   run-repartition noise? the s40 probe walked the block-min
+   wander only); a PER-CELL SPREAD probe of the same three windows
+   (this probe tests per-cell LEVEL only); a fourth-window
+   extension covering the spread, level, body and per-cell probes
+   (three windows are LOW POWER).
+
+7. THE TICK'S FINDING IN ONE LINE: THE PER-CELL WINDOW-TO-WINDOW
+   LEVEL (each cell's own pooled-median level, max-T over the 18
+   cells) READS (a) PER-CELL-CONSISTENT ON BOTH ARMS -- at the
+   s36/s38/s39 windows M_obs = 23.0 ticks (hi, max cell
+   (sum,256,S=32), count 3,205 / 20,001, p 0.160292) and 18.5
+   ticks (tw, same cell, count 10,573 / 20,001, p 0.528674) do
+   not exceed the max-T-corrected cross-window run-repartition
+   null (both p > 0.05 at the frozen threshold), so session 43's
+   named gap ("per-cell window-level shifts cancel in the
+   median-over-18-cells construction") is closed on this axis:
+   no per-cell LEVEL shift beyond noise is visible at these
+   windows/powers -- but (a) is not proof of noise (a uniform
+   driver is invisible by construction, per-cell spread/quantile
+   shifts are invisible to this LEVEL construction, the max-T at
+   n=12 blocks is LOW POWER), the two hi marginal p < 0.05 cells
+   are uncorrected and letterless, the wander's MECHANISM and
+   threshold-artifact-vs-representation STAY UNRESOLVED, and the
+   bar stays PENDING 1/4 (frozen evaluator, twice byte-identical;
+   no ledger line this tick); nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3percellshift-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged) + the
+   ADR-0355 dated note. (JUN-55, JUN-59)

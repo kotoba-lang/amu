@@ -1,0 +1,118 @@
+PROTOCOL -- JUN-59 subgroup 16-vs-32 sign REPLICATION (batch64 route),
+THIRD session (2026-10-27, same day as session 2). Written BEFORE the
+first run of this session; nothing here is rewritten after the runs. The
+run transcript is run-rep-1.txt .. run-rep-6.txt and the analysis is
+publication-rep.txt, produced only by analysis-rep.py over those logs.
+
+WHAT THIS SESSION IS. Session 2's named residual (record.txt of
+anv-subgroupsize-batch64-20261027, section 4d/6: "RUN-SENSITIVE at
+(sum,128) and (max,128) -- run-1 reverses the sign there ... The pooled
+P1b verdicts at those two cells are therefore RUN-SENSITIVE and are NOT
+reported as stable ... the cause of 4d's run-1 anomaly [is]
+UNMEASURED"). This session is a REPLICATION of the per-run sign question
+at the SAME 24 cells on the SAME host (aiueos-6600hs-1, BMG G31 / ANV)
+with SIX NEW fresh processes of the BYTE-IDENTICAL instrument, same
+INSTRUMENT channel (a standalone instrument on raw ANV -- neither the
+removed wire-42 loader path nor the ADR-0371 provider), same metric
+(batch64 bracket), same n / rounds / seed. NOTHING ELSE CHANGES. The
+host binary and the .spv corpus are RE-VERIFIED by sha256 against
+session 2's committed compile-toolchain.txt census before the first run
+(host-verify.txt); if any digest differs the session STOPS, named.
+
+WHAT RUNS. The same committed manifest cells (cases-rep.txt is a
+byte-copy of the 24 cell lines with a replication header), the same 8
+.spv files on the host (6 measured + 2 probe; sha256 re-verified), the
+same instrument binary anv-subgroupsize-batch (host gcc 13.3.0 -O2
+-lvulkan, sha256 cc7e07b5d76c32104da5b1abe45a1579b6e6a3695356c0b72b44126137766cfd
+= session 2's recorded host binary), the same committed instrument
+source scripts/gpu-subgroup-reduce-anv-subgroupsize-batch.c (sha256
+34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d731182e6efd51e06,
+byte-stable across sessions 2 and 3). n = 1000003, WARMUP = 3, ROUNDS =
+25, SEED = 20261027, BATCH = 64. Invocation per run: a FRESH process,
+cwd = shaders/ (the session-2 pathfail lesson: bare .spv names in the
+manifest resolve against process cwd), manifest ../cases.txt.
+
+METRIC NAMED (unchanged from session 2): gpu_ns = the vkCmdWriteTimestamp
+bracket (TOP_OF_PIPE -> BOTTOM_OF_PIPE, timestampPeriod 52.083 ns/tick)
+around BATCH=64 back-to-back vkCmdDispatch calls in ONE command buffer
+(no barriers; idempotent same-value WAW on parts[]). STEADY-STATE BATCHED
+THROUGHPUT for 64 dispatches; NOT isolated single-dispatch latency.
+per_dispatch_ns = gpu_ns / 64; per-dispatch quantum 52.083/64 = 0.81 ns.
+
+RUN COUNT FIXED HERE: N = 6 fresh processes (run-rep-1..6). The first
+attempt's stub (if any) is preserved byte-for-byte and never counted, as
+in session 2.
+
+PRE-REGISTERED PREDICTIONS (fixed here, before any run):
+
+Arm statistic (named once, used everywhere below): for a run r and an
+(op, W, S) arm, med(r, op, W, S) = the median of that run's per-sample
+per_dispatch_ns values for that arm (25 SAMPLE lines; the S=8 arms have
+no samples and are out of scope, fail-closed as in sessions 1-2).
+Sign at a cell for run r: SIGN(r, op, W) = "32faster" if
+med(r, op, W, 32) < med(r, op, W, 16), else "16faster-or-tie".
+
+P1r (sign recurrence at the two RUN-SENSITIVE cells, the row question):
+at (sum, 128) and (max, 128) -- the two cells session 2 named
+RUN-SENSITIVE -- the six new runs' SIGN values are published per run.
+CONSISTENT at a cell iff all six share one sign; SPLIT at a cell iff the
+six do not. A SPLIT is the pre-registered reproduction of session 2's
+run-sensitivity (its run-1 vs runs 2/3 reversal), with the split counts
+published. A CONSISTENT result means the anomaly did NOT reproduce in
+six same-day fresh processes; it is NOT called absent (one same-day
+batch of six cannot speak to cross-day or to rare recurrence).
+
+P2r (the dip, secondary): per-run med(r, op, 128, 16) gpu_ticks values
+are published for op in {sum, max}. DIP-RUN at (op, 128) is PRE-DEFINED
+as a run whose med gpu_ticks for the (op, 128, 16) arm sits at least
+1,000 ticks BELOW the median of the six runs' medians at that arm (the
+1,000-tick threshold is named here because session 2's observed dip was
+~3-4k ticks, well clear of it). The classification is secondary; the
+per-run values are published either way. The CAUSE of any dip is not
+measured by this protocol and stays UNMEASURED if one appears.
+
+P3r (forcing reality + correctness): probe gl_SubgroupSize equals the
+forced size at every forced cell and 32 at default cells, probe
+gl_NumSubgroups = W / probe_size (any deviation VOIDS that cell's
+timing with the void named, never dropped silently); mismatch = 0 at
+every measured cell of every run (bit-exact CPU integer reference).
+
+P4r (floor still lifted): the pooled median bracket gpu_ticks at every
+measured (op, W, S=16/32/default) cell of the six new runs is >= 248
+ticks (session 2's pre-registered floor-lift condition). A cell below is
+NAMED floor-not-lifted and its S comparison is void with that reason.
+
+INTERPRETATION REGISTERED IN ADVANCE: under rule 4 NO row moves either
+way -- no workgroup row, no :measured? flag, no :size/:shapes, no
+selection answer (the :intel row 128 / :measured? true / key "g31"
+keeps its ADR-0358 provenance; :arm/:unknown stay provisional
+:measured? false), and this session is NOT the basis-replacing
+baseline-vs-variant contract of accelerator-subgroup-reduce.cljk. NO
+vendor optimization exists for Intel and none is claimed. What the
+session can change is the STATUS OF THE SIGN FINDING ONLY: "stable in
+six fresh same-day runs" vs "run-sensitivity reproduced". The pooled
+verdicts at (sum,128)/(max,128) remain NOT stable in either case until
+a named later row says otherwise on its own evidence.
+
+FAIL-CLOSED BRANCHES (named, never silent): pipeline creation with
+requiredSubgroupSize fails -> CELL pipeline=FAIL, no samples (every S=8
+cell, as in sessions 1-2); probe mismatch -> CELL void=1 with
+void_reason; timestamp query failure -> gpu_ticks=0 in that SAMPLE
+(named absent in analysis); instrument exit != 0 -> that run's log is
+preserved byte-for-byte and NOT counted among the six (re-taken at most
+twice, with every failed stub preserved).
+
+CHANNEL NAMED: INSTRUMENT channel (2026-10-25 ADR-0355 channel rule) --
+a standalone measurement instrument on raw ANV; NOT a row channel.
+Same-day proximity to session 2 (~30 minutes earlier, same host state)
+is NAMED as context: this is same-day replication, NOT cross-day.
+
+STATES AT REGISTRATION: emitter arm, dispatch table, device-class,
+selection rows IMPLEMENTED (code + tests, unchanged by this session --
+the diff touches NO .cljk namespace); sessions 1-2's instruments and
+publications byte-stable. MEASURED by this session only what its logs
+say. UNMEASURED named in advance: the cause of any dip (including
+session 2's run-1 dip, which this protocol can only re-observe or not),
+cross-day replication, every W outside {128,256}, shape 2, isolated
+single-dispatch timing above any floor, any baseline-vs-variant sign,
+anything off this host.

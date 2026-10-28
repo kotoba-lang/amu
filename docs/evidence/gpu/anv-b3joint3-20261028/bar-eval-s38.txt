@@ -1,0 +1,28 @@
+== settle-bar frozen evaluator -- session 38 (bar-eval-s38.txt) ==
+== self-test first (fixture pin 38/0), then the ledger eval run twice ==
+== (byte-identical) over docs/evidence/gpu/settle-bar-ledger.txt (the ==
+== s38 candidate line was appended AFTER a scratch-copy test showed ==
+== it classifies DESCRIPTIVE (same-day duplicate) and the verdict ==
+== unchanged; the scratch copy is not evidence). ==
+
+--- settle-bar-eval.py --self-test ---
+  check day-slot-not-consumed: got 's31b' want 's31b' -> ok
+TOTAL: 38 assertions passed, 0 failed
+
+--- ledger eval run 1 ---
+ledger: docs/evidence/gpu/settle-bar-ledger.txt
+counted    day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985
+descriptive day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982
+descriptive day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987
+descriptive day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993
+descriptive day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991
+descriptive day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992
+VERDICT: PENDING 1/4
+
+--- ledger eval run 2 diff vs run 1 (byte-identical expected) ---
+diff exit 0 -- byte-identical
+
+(NAMED: s38 is day 2026-10-28's SIXTH anchor reading and the day's
+slot was consumed by s31 (COUNTED 1/4) -- the s38 line is same-day
+descriptive content under the frozen same-day-duplicate exclusion
+and does not advance the bar. Next executable day slot 2026-10-29.)

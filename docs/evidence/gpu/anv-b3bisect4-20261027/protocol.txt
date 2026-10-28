@@ -1,0 +1,246 @@
+JUN-59 -- session 24 protocol: THE B=3 PER-DISPATCH-WORK THRESHOLD
+BISECT, FOURTH CUT (one new grid point between the session-23 bracket
+ends 250,000 and 260,417). INSTRUMENT channel. Frozen BEFORE the
+first run (freeze stamp 2026-10-27T20:38:54Z, this tick; the stamp is
+printed in record.txt's timeline and in the run window). This file is
+written once and never rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE PER-DISPATCH GRID n at
+   FIXED dispatch count B=3 -- session 23's named residual "the flip
+   location inside (250,000, 260,417]" is reachable this tick and is
+   taken; the NDIV=3,5,6,... columns of L10 and sessions 15-23's
+   "cross-UTC-day replication" residual stay OPEN and are NOT taken --
+   the UTC day is still 2026-10-27 at tick time (L4 below, named,
+   not hidden)). The committed picture after session 23: the B=3
+   class as a function of per-dispatch work is measured at eight grid
+   points -- 1.0 (5,520 CAPTURED, sessions 7/16), 1/2 (2,739
+   CAPTURED, session 20), 1/3 (1,578 CAPTURED, session 17),
+   0.2916657 (1,330 CAPTURED, session 21), 0.2708332 (1,224
+   CAPTURED, session 22), 0.2604162 (1,186 CAPTURED, session 23),
+   1/4 (1,140 INTERMEDIATE/MIXED, session 19), 1/8 (599
+   INTERMEDIATE/MIXED, session 18) -- and the B=3 capture threshold in
+   per-dispatch work sits in (250,000, 260,417] n-units among measured
+   grid points (L5: nothing between them interpolated). With the
+   (WORK_MUL, NDIV) knobs of the byte-identical NDIV-derived source
+   (n = (1,000,003*WORK_MUL)/NDIV, integer floor) the FOURTH CUT of
+   that bracket is reachable with ZERO derivation edits:
+
+     AT FIXED DISPATCH COUNT B=3, WHERE IN (250,000, 260,417] DOES
+     THE B=3 CLASS FLIP FROM INTERMEDIATE/MIXED TO CAPTURED? -- the
+     bisect grid point n = 255,208 = (250,000+260,417)//2 = the EXACT
+     floor midpoint of the frozen bracket (bracket midpoint 255,208.5
+     -- not an integer; the floor midpoint is computed
+     programmatically in derivation-census-s24.txt) is measured here;
+     branch (a) mid CAPTURED narrows the flip to (250,000, 255,208];
+     branch (b) mid INTERMEDIATE/MIXED narrows it to (255,208,
+     260,417]; branch (c) mid FLOOR is named in advance as a
+     CONTRADICTION of the monotone B=3 picture (FLOOR at n between two
+     INTERMEDIATE/CAPTURED points) and is not resolved here.
+
+   NAMED, NOT HIDDEN: the exact floor midpoint IS reachable at the
+   source's knob -- an exhaustive search (WORK_MUL 1..2,048, NDIV
+   1..8,192 -- the same search box as sessions 21-23) finds 18
+   (WORK_MUL,NDIV) pairs with (1,000,003*WORK_MUL)//NDIV == 255,208
+   (recorded in the census); the bisect uses the smallest, (1213,
+   4753). UNLIKE session 23's cut, ZERO of the 18 pairs have their
+   same-ratio double inside that search box -- the eq3 arm uses the
+   double pair (2426, 9506) anyway (it sits inside the wider search
+   box WM<=8,192 x NDIV<=32,768, where 486 pairs map to 255,208 and
+   104 have in-box doubles): the box is a SEARCH convenience, not a
+   source limit (the source takes any ints and N_ELEMENTS is the only
+   knob-derived quantity, L8); floor(2x/2) == floor(x) so the double
+   maps to the same n.
+
+   knobs: ZERO derivation edits this session (the strongest custody
+   position in the chain -- named as such). The instrument is session
+   23's committed NDIV-derived source used BYTE-IDENTICAL (digest
+   a5e539f0... re-verified local-vs-host). The arms are OLD and NEW
+   (BATCH, WORK_MUL, NDIV) triples of the source's existing knobs.
+   NAMED, NOT HIDDEN: (1213,4753) and (2426,9506) are NEW
+   (WORK_MUL,NDIV) pairs with WORK_MUL != 1 and NDIV != 1 (the
+   session-21 L8 combination risk class); C3 below re-tests that class
+   at the bisect grid with the same-ratio pair (2426,9506) against
+   (1213,4753). The arithmetic N_ELEMENTS =
+   (1,000,003*WORK_MUL)/NDIV is the only place either knob enters
+   (instrument source lines 68-79). The shaders take n from the N
+   uniform, so the shader corpus is used BYTE-IDENTICAL (16-digest
+   corpus). Every run's header and every SAMPLE line print batch=,
+   work_mul= and ndiv= (knob identity).
+
+   ARM TABLE (7 rows = 21 fresh processes; this table governs the
+   run count):
+
+     tag  BATCH  WORK_MUL  NDIV   n          role
+     c2   2      1         1      1000003    archived control
+     lo   3      1         4      250000     bracket lower anchor (committed z3 knob pair)
+     mid  3      1213      4753   255208     THE BISECT POINT (NEW pair (1213,4753))
+     eq3  3      2426      9506   255208     pair-representation check at mid's grid (NEW pair (2426,9506))
+     hi   3      25        96     260417     bracket upper anchor (session-23 mid knob pair (25,96))
+     b2m  2      1213      4753   255208     B=2 control at the bisect grid
+     c8   8      1         1      1000003    archived control
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim. Per-dispatch work at the bisect
+        point is 255,208/1,000,003 = 0.2552072 units; the anchors
+        sit at 250,000/1,000,003 = 0.2499993 and 260,417/1,000,003 =
+        0.2604162; total nominal work B*n/1,000,003 is computed
+        programmatically in derivation-census-s24.txt for all 7
+        arms.
+   (L2) AT FIXED B, THE PER-DISPATCH GRID n AND THE TOTAL NOMINAL
+        WORK CO-VARY BY CONSTRUCTION (total = 3*n/1,000,003 at
+        B=3). This design locates the class flip on the n axis and
+        does NOT separate n from total work at B=3. The letters
+        below are observational discriminators among named
+        hypotheses; none is a causal mechanism and none is claimed
+        as one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost
+        (submit+wait); the GPU-side cost inside a B<=2 bracket is
+        unobservable on this instrument (the phenomenon under
+        study) and stays UNMEASURED.
+   (L4) THIS SESSION IS A NEW SESSION (session 24) ON THE SAME UTC
+        DAY 2026-10-27 as sessions 2-23. Cross-UTC-day replication
+        is NOT reachable this tick and stays UNMEASURED (named, not
+        hidden).
+   (L5) the bisect narrows the flip bracket ONCE (one new grid
+        point). After this session the flip is bracketed by at most
+        two adjacent measured points and anything BETWEEN them is
+        again UNMEASURED; no boundary between grid points is ever
+        claimed.
+   (L8) the (WORK_MUL,NDIV) pairs (1213,4753), (2426,9506) are NEW
+        knob pairs with WORK_MUL != 1 and NDIV != 1. The source
+        reading (N_ELEMENTS is the only knob-derived quantity) is the
+        only thing carried from prior sessions' (25,96)/(50,192)/
+        (13,48)/(26,96)/(2,2)/(7,24) measurements; C3 (below) tests
+        the same-ratio representation (2426,9506) vs (1213,4753) at
+        the bisect grid MEASURED HERE, and nothing is assumed beyond
+        that one measurement. NAMED, NOT HIDDEN: the (1213,4753)
+        ratio 1213/4753 is not an exact rational representation of
+        255,208/1,000,003 (gcd(255,208, 1,000,003) = 1, so every
+        in-box pair is a floor approximation); (1213,4753) and
+        (2426,9506) share the SAME ratio to each other, which is what
+        C3 tests.
+
+1. DERIVATION (chain of custody): ZERO derivation edits this
+   session. The instrument is session 23's committed NDIV-derived
+   source used BYTE-IDENTICAL (digest a5e539f0..., re-verified
+   local-vs-host). Manifest cases-s24-a.txt's 24 cell lines are a
+   BYTE-COPY of session 23's cases-s23-a.txt cell lines (byte-equal
+   to sessions 9-23's a-set -- checked programmatically in the
+   derivation census). expected-corpus.sha256 a byte-copy of session
+   23's.
+
+2. BUILD REPLICATION PINS (declared in advance; prior censuses
+   parsed programmatically -- derivation-census-s24.txt):
+
+     anv-bb-c2  == sessions 13-23's c2 binary digest (e5ed903e...)
+     anv-bb-c8  == sessions 13-23's c8 binary digest (480925e5...)
+     anv-bb-lo  == session 19's anv-n4-z3 digest (efc6f4ee...)
+     anv-bb-hi  == session 23's anv-bb-mid digest (91ee6f3c...)
+       -- hi IS session 23's mid knob pair (3,25,96): this session is
+          the FIRST cross-session replication of that knob pair
+          (part of session 23's "cross-session stability of
+          mid/eq3/b2m" residual).
+
+   mid/eq3/b2m ((3,1213,4753), (3,2426,9506), (2,1213,4753)) are NEW
+   knob triples with NO prior binary (named, not hidden).
+
+3. FROZEN CROSS-SESSION REFERENCE VALUES (QUOTE-ONLY, L7; also
+   embedded as named constants in analysis-s24.py -- never this
+   session's measurements):
+
+   committed controls: c2 31 (floor band 31..32), c8 32,915
+     (session 4 pooled median)
+   session-23 same-knob (recomputed from its committed run logs):
+     c2 32, c8 32,652, lo 1,129, mid 1,186, eq3 1,190, hi 1,229,
+     b2m 31
+   lo knob pair (BATCH=3,NDIV=4), committed z3: 1,140 (session 19;
+     class INTERMEDIATE/MIXED; 18-cell range 991..1,414); session-21
+     in-session replication 1,162; session-22 in-session replication
+     1,141; session-23 in-session replication 1,129
+   hi knob pair (BATCH=3,WORK_MUL=25,NDIV=96), session-23 mid:
+     1,186 (class CAPTURED; 18-cell min 1,026) -- first measured
+     session 23
+   b2m-class (B=2 at a small grid): FLOOR (session 23's b2m
+     (2,25,96) 31; session 22's b2m (2,13,48) 32; session 21's b2m
+     (2,7,24) 31)
+   the B=3 class-vs-per-dispatch-work row (quote-only except this
+     session's lo/mid/hi): 125,000 -> 599 INTERMEDIATE/MIXED
+     (session 18); 250,000 -> 1,140 INTERMEDIATE/MIXED (session
+     19); 260,417 -> 1,186 CAPTURED (session 23); 270,834 -> 1,224
+     CAPTURED (session 22); 291,667 -> 1,330 CAPTURED (session 21);
+     333,334 -> 1,578 CAPTURED (session 17); 500,001 -> 2,739
+     CAPTURED (session 20); 1,000,003 -> 5,520 CAPTURED (sessions
+     7/16)
+   session-23 host_ns (quote-only): c2 678,063; c8 2,380,546; lo
+     305,159; mid 314,966; eq3 315,348; hi 325,467; b2m 235,118;
+     session-19 z3 305,240
+
+4. CLASSIFICATION THRESHOLDS (frozen; identical to sessions 2-23):
+   over the 18 pipeline-ok cells, pooled median gpu_ticks over 3
+   runs x 25 rounds per cell: FLOOR = <= 100 ticks at ALL 18 cells;
+   CAPTURED = >= 1000 ticks at ALL 18 cells; anything else
+   INTERMEDIATE/MIXED. INVALIDATION CRITERION (frozen): VERIFY
+   mismatch > 0 in any run makes that run DEFECTIVE and the arm
+   INVALID (no letter is evaluable from that arm).
+
+5. PRE-REGISTERED LETTERS:
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; W letters depend
+      on it): (a) both c2 (FLOOR, committed floor band 31..32) and
+      c8 ((sum,128,S=16) pooled median within +/-5% of committed
+      32,915) satisfy their criteria; (b) otherwise (replication
+      discrepancy, W interpretation FLAGGED).
+
+   C2 BRACKET ANCHOR REPLICATION: (a) both anchors replicate
+      in-session at a byte-identical rebuilt binary each -- lo
+      within +/-5% of committed z3 1,140 AND class
+      INTERMEDIATE/MIXED; hi within +/-5% of session-23's mid 1,186
+      AND class CAPTURED; (b) otherwise (W1's bracket narrowing is
+      FLAGGED; measured classes stand as content).
+
+   C3 PAIR-REPRESENTATION CHECK (eq3 (2426,9506) vs mid (1213,4753)
+      -- identical n = 255,208 and B=3, differing only in the
+      (WORK_MUL,NDIV) representation of the same ratio 1213/4753):
+      (a) class(eq3) == class(mid) AND the medians agree within
+      +/-5%; (b) otherwise (the same-ratio representation matters
+      at this grid; the contradiction stands as measured content and
+      is NOT resolved here; mid/b2m carry the flagged risk).
+
+   W1 THE ROW QUESTION (the bisect reading; C2 governs bracket
+      validity): class(mid) at B=3, n=255,208:
+      (a) CAPTURED -> the B=3 class flip sits in (250,000, 255,208]
+          n-units = (0.2499993, 0.2552072] work-units;
+      (b) INTERMEDIATE/MIXED -> the flip sits in (255,208, 260,417]
+          n-units = (0.2552072, 0.2604162] work-units;
+      (c) FLOOR -> pre-named non-monotone contradiction (named in
+          advance), NOT resolved here;
+      (d) FLAGGED -- C2 fired (b); no bracket narrowing claimed.
+      AND b2m (B=2 control at the bisect grid): class FLOOR extends
+      "B=2 never captures" to n=255,208 at total work 0.5104145;
+      anything else is a pre-named contradiction of "B=2 never
+      captures", not resolved here.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+      WORK ROW: this session's three B=3 points placed on the
+      committed row as NINE grid points (the committed points
+      QUOTE-ONLY L7; NO interpolation (L5); class granularity
+      only).
+
+   W3 (pre-registered, descriptive) THE PAIRED EQUAL-GRID
+      COMPARISONS: (i) mid vs eq3 (identical n=255,208 and B=3;
+      differ only in the (WORK_MUL,NDIV) representation); (ii) mid
+      vs b2m (identical n and pair (1213,4753); differ only in B 3
+      vs 2); (iii) lo vs mid vs hi (identical B=3; differ only in
+      n/pair).
+
+   X1 (descriptive, host_ns): named, not hidden; not a C criterion
+      (L3).
+
+6. ANALYSIS ROUTE (frozen): analysis-s24.py parses ONLY the 21
+   committed run logs in its own directory (run-<tag>-r<R>.txt) and
+   writes publication-s24.txt. No other input. Deterministic: the
+   analysis is run twice and the two publications diffed (exit 0
+   required). The run logs are stdout/stderr of fresh host processes
+   (aiueos-6600hs-1), one per run, invoked as ../anv-bb-<tag> from
+   cwd=shaders/ with manifest ../cases-s24-a.txt.

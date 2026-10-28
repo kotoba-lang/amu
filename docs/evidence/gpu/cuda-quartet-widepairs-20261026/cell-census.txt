@@ -1,0 +1,355 @@
+## Cell census (claim protocol rule 2 at cells, CUDA paired-timing channel)
+
+Published by scripts/gpu_regime_classify.py under the adopted cell unit (ADR-0361's 2026-10-25 cell amendment, the ADR-0373 flip-cell precedent's unit shape adopted by citation): a cell is (metric, W, pair-type, shape) -- the reduce shape selected as a whole, the operator pool :operators #{:sum :max :min} pooled (the ONLY cross-stratum roll-up this channel carries; operators only, no pooling across W, pair-type, metric, shape, device or channel). The cell's own rule-2 verdict is rule 2 at its letter applied to the cell's pooled per-run ratios (each pair block's paired-median ratio in the named metric at that (W, shape, pair-type), one per operator): REGIME-INVARIANT FASTER / SLOWER is the ONLY selection role a cell verdict may play (the MSL channel's flip-cell role -- a per-W measured-cell flip of the kind :measured-cell records key); anything else (any straddle) is regime-scoped and no basis, in either direction. Rule 1 at the cell: the GAP-1.15 clusters of the pooled reference-arm per-run medians (one per operator present) are the cell's observed regimes.
+
+This publication is a FULL CENSUS: every (metric, W, pair-type, shape) cell of the record's scan grid is published, so no cell is cherry-picked out of it. Metrics classify separately and never mix (rule 3 unchanged), and rule 3's publication limit stands -- cross-clock magnitude claims (gpu_ns vs host_ns) are INADMISSIBLE (different spans) -- so every cell row keeps both clocks' raw per-block times beside the named metric's ratio. A cell verdict is published ONLY over the full operator pool (the shape is selected as a whole): a cell missing an operator carries its ratios and names the gap but publishes NO verdict. A cell verdict belongs to the session that measured it and stays CHANNEL-SCOPED and DEVICE-SCOPED (a CUDA-channel sign never flips an MSL/WGSL cell and never answers a workgroup row; ADR-0355's 2026-10-25 channel rule stands); a same-day second session is corroboration and licenses nothing the cell's own session did not (ADR-0373's same-day rule by citation). Rule 4 is unchanged -- this publication moves no :measured? flag and no workgroup row.
+
+Full census: 12 cells published (12 with a rule-2 verdict over the full operator pool, 0 naming an incomplete operator pool).
+
+### metric: gpu_ns -- CUDA-event elapsed around the kernel on the GPU timeline -- the channel's rule-1 baseline metric
+
+#### cell: W=128 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1465 | 133376.0 | 116400.0 | 138438.0 | 121093.0 |
+| op=min | 1.1495 | 133136.0 | 116080.0 | 137990.5 | 120709.5 |
+| op=sum | 0.9649 | 112544.0 | 116544.0 | 117190.0 | 121094.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 116080.0..116544.0 | op=max (116400.0), op=min (116080.0), op=sum (116544.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.146), op=min (1.150), op=sum (0.965) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.146 above 1.0, op=min 1.150 above 1.0, op=sum 0.965 below 1.0 |
+
+#### cell: W=128 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1420 | 139280.0 | 121952.0 | 144087.0 | 126741.5 |
+| op=min | 1.1461 | 138896.0 | 120944.0 | 143543.0 | 125878.0 |
+| op=sum | 0.9662 | 116688.0 | 120864.0 | 121013.0 | 125301.5 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 120864.0..121952.0 | op=max (121952.0), op=min (120944.0), op=sum (120864.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.142), op=min (1.146), op=sum (0.966) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.142 above 1.0, op=min 1.146 above 1.0, op=sum 0.966 below 1.0 |
+
+#### cell: W=256 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1612 | 140736.0 | 121360.0 | 145334.5 | 126086.0 |
+| op=min | 1.1597 | 140544.0 | 121248.0 | 145542.0 | 125621.5 |
+| op=sum | 0.9963 | 120128.0 | 120752.0 | 124966.0 | 125462.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 120752.0..121360.0 | op=max (121360.0), op=min (121248.0), op=sum (120752.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.161), op=min (1.160), op=sum (0.996) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.161 above 1.0, op=min 1.160 above 1.0, op=sum 0.996 below 1.0 |
+
+#### cell: W=256 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1628 | 146672.0 | 126288.0 | 151415.0 | 131014.0 |
+| op=min | 1.1609 | 146848.0 | 126816.0 | 151719.0 | 131606.5 |
+| op=sum | 0.9941 | 125360.0 | 126048.0 | 130086.0 | 130806.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 126048.0..126816.0 | op=max (126288.0), op=min (126816.0), op=sum (126048.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.163), op=min (1.161), op=sum (0.994) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.163 above 1.0, op=min 1.161 above 1.0, op=sum 0.994 below 1.0 |
+
+#### cell: W=512 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.0654 | 148960.0 | 140176.0 | 153607.5 | 145047.0 |
+| op=min | 1.0656 | 149792.0 | 140704.0 | 154919.0 | 145559.0 |
+| op=sum | 0.9294 | 129936.0 | 139712.0 | 134583.0 | 144630.5 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 139712.0..140704.0 | op=max (140176.0), op=min (140704.0), op=sum (139712.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.065), op=min (1.066), op=sum (0.929) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.065 above 1.0, op=min 1.066 above 1.0, op=sum 0.929 below 1.0 |
+
+#### cell: W=512 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in gpu_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (gpu_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.0660 | 155856.0 | 146448.0 | 160455.5 | 151191.0 |
+| op=min | 1.0666 | 155856.0 | 146448.0 | 160775.0 | 151063.0 |
+| op=sum | 0.9297 | 135488.0 | 146128.0 | 140070.5 | 150903.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in gpu_ns):
+
+| level | gpu_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 146128.0..146448.0 | op=max (146448.0), op=min (146448.0), op=sum (146128.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.066), op=min (1.067), op=sum (0.930) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.066 above 1.0, op=min 1.067 above 1.0, op=sum 0.930 below 1.0 |
+
+### metric: host_ns -- CLOCK_MONOTONIC submit->completion, the stop event's host-side record call named as sitting inside the span -- the channel's second metric
+
+#### cell: W=128 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1433 | 133376.0 | 116400.0 | 138438.0 | 121093.0 |
+| op=min | 1.1418 | 133136.0 | 116080.0 | 137990.5 | 120709.5 |
+| op=sum | 0.9677 | 112544.0 | 116544.0 | 117190.0 | 121094.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 120709.5..121094.0 | op=max (121093.0), op=min (120709.5), op=sum (121094.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.143), op=min (1.142), op=sum (0.968) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.143 above 1.0, op=min 1.142 above 1.0, op=sum 0.968 below 1.0 |
+
+#### cell: W=128 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1396 | 139280.0 | 121952.0 | 144087.0 | 126741.5 |
+| op=min | 1.1417 | 138896.0 | 120944.0 | 143543.0 | 125878.0 |
+| op=sum | 0.9692 | 116688.0 | 120864.0 | 121013.0 | 125301.5 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 125301.5..126741.5 | op=max (126741.5), op=min (125878.0), op=sum (125301.5) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.140), op=min (1.142), op=sum (0.969) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.140 above 1.0, op=min 1.142 above 1.0, op=sum 0.969 below 1.0 |
+
+#### cell: W=256 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1551 | 140736.0 | 121360.0 | 145334.5 | 126086.0 |
+| op=min | 1.1587 | 140544.0 | 121248.0 | 145542.0 | 125621.5 |
+| op=sum | 0.9964 | 120128.0 | 120752.0 | 124966.0 | 125462.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 125462.0..126086.0 | op=max (126086.0), op=min (125621.5), op=sum (125462.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.155), op=min (1.159), op=sum (0.996) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.155 above 1.0, op=min 1.159 above 1.0, op=sum 0.996 below 1.0 |
+
+#### cell: W=256 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.1546 | 146672.0 | 126288.0 | 151415.0 | 131014.0 |
+| op=min | 1.1557 | 146848.0 | 126816.0 | 151719.0 | 131606.5 |
+| op=sum | 0.9938 | 125360.0 | 126048.0 | 130086.0 | 130806.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 130806.0..131606.5 | op=max (131014.0), op=min (131606.5), op=sum (130806.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.155), op=min (1.156), op=sum (0.994) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.155 above 1.0, op=min 1.156 above 1.0, op=sum 0.994 below 1.0 |
+
+#### cell: W=512 pair=subgroup/baseline n=1000003
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.0575 | 148960.0 | 140176.0 | 153607.5 | 145047.0 |
+| op=min | 1.0624 | 149792.0 | 140704.0 | 154919.0 | 145559.0 |
+| op=sum | 0.9314 | 129936.0 | 139712.0 | 134583.0 | 144630.5 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 144630.5..145559.0 | op=max (145047.0), op=min (145559.0), op=sum (144630.5) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.058), op=min (1.062), op=sum (0.931) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.058 above 1.0, op=min 1.062 above 1.0, op=sum 0.931 below 1.0 |
+
+#### cell: W=512 pair=subgroup/baseline n=1048576
+
+(reference arm: baseline :baseline; operators present: max min sum of max min sum)
+
+Pooled per-run ratios (rule 2's cell units, the block's paired-median ratio in host_ns) with both clocks' raw per-block times beside them (rule 3):
+
+| operator | paired ratio (host_ns) | subgroup gpu_ns | baseline gpu_ns | subgroup host_ns | baseline host_ns |
+|---|---|---|---|---|---|
+| op=max | 1.0631 | 155856.0 | 146448.0 | 160455.5 | 151191.0 |
+| op=min | 1.0648 | 155856.0 | 146448.0 | 160775.0 | 151063.0 |
+| op=sum | 0.9289 | 135488.0 | 146128.0 | 140070.5 | 150903.0 |
+
+Rule 1 at the cell -- the cell's observed regimes (GAP-1.15 clusters of the pooled reference-arm per-run medians in host_ns):
+
+| level | host_ns range | operators (reference-arm per-run median) |
+|---|---|---|
+| 1 (the only observed level) | 150903.0..151191.0 | op=max (151191.0), op=min (151063.0), op=sum (150903.0) |
+
+Rule 2 at the cell (the pooled per-run ratios of every observed regime):
+
+| level | operators (paired ratio) | level sign |
+|---|---|---|
+| 1 (the only observed level) | op=max (1.063), op=min (1.065), op=sum (0.929) | mixed sides (2 above 1.0, 1 below 1.0) |
+
+| verdict | side | detail |
+|---|---|---|
+| regime-scoped | straddles 1.0 | straddle within regime 1 (one regime holds both sides): level 1 (the only observed level): op=max 1.063 above 1.0, op=min 1.065 above 1.0, op=sum 0.929 below 1.0 |
+
+Named and excluded blocks leave named gaps in this census (an incomplete-pool cell publishes no verdict); the record's own named census:
+
+## Named and excluded (data, never silently dropped)
+
+All 18 pair blocks are complete (their declared pairs, both arms), verified (every verify line ok=1) and rc=0 -- nothing named and excluded.
+
+400 sample lines sit outside any `-- cell` block (the log's smoke block) -- named and excluded.

@@ -1,0 +1,77 @@
+probe log: 18 usable blocks, 0 excluded, 400 orphan sample lines (the smoke block)
+
+== per-block paired-median ratio over all 200 pairs (the probe's wide estimate) ==
+W n metric op median200 side>1.0 below/above/even min p25 p75 max
+128 1000003 gpu_ns sum 0.9649 below 159/41/0 0.7645 0.9458 0.9905 1.5615
+128 1000003 gpu_ns max 1.1465 above 3/197/0 0.9635 1.1247 1.1717 1.3390
+128 1000003 gpu_ns min 1.1495 above 0/200/0 1.0302 1.1276 1.1693 1.5334
+128 1000003 host_ns sum 0.9677 below 156/44/0 0.6178 0.9455 0.9897 1.5562
+128 1000003 host_ns max 1.1433 above 6/194/0 0.9725 1.1162 1.1741 1.5828
+128 1000003 host_ns min 1.1418 above 2/198/0 0.9627 1.1194 1.1638 1.4191
+128 1048576 gpu_ns sum 0.9662 below 166/34/0 0.7869 0.9525 0.9823 1.1219
+128 1048576 gpu_ns max 1.1420 above 3/197/0 0.8874 1.1274 1.1671 1.7747
+128 1048576 gpu_ns min 1.1461 above 5/195/0 0.8506 1.1279 1.1697 1.3049
+128 1048576 host_ns sum 0.9692 below 160/39/1 0.7955 0.9453 0.9856 1.1402
+128 1048576 host_ns max 1.1396 above 3/197/0 0.8921 1.1158 1.1685 1.7560
+128 1048576 host_ns min 1.1417 above 6/194/0 0.8567 1.1202 1.1698 1.4857
+256 1000003 gpu_ns sum 0.9963 below 115/85/0 0.7270 0.9784 1.0172 1.1430
+256 1000003 gpu_ns max 1.1612 above 3/197/0 0.8373 1.1372 1.1853 1.3072
+256 1000003 gpu_ns min 1.1597 above 3/197/0 0.9662 1.1395 1.1907 1.3272
+256 1000003 host_ns sum 0.9964 below 111/88/1 0.3785 0.9734 1.0164 1.3151
+256 1000003 host_ns max 1.1551 above 6/194/0 0.8329 1.1295 1.1842 1.4426
+256 1000003 host_ns min 1.1587 above 3/197/0 0.8193 1.1288 1.1808 1.3272
+256 1048576 gpu_ns sum 0.9941 below 125/73/2 0.6972 0.9760 1.0152 1.2066
+256 1048576 gpu_ns max 1.1628 above 2/197/1 0.9447 1.1431 1.1824 1.6113
+256 1048576 gpu_ns min 1.1609 above 8/192/0 0.9182 1.1453 1.1761 1.4317
+256 1048576 host_ns sum 0.9938 below 121/79/0 0.7524 0.9764 1.0191 3.4813
+256 1048576 host_ns max 1.1546 above 6/194/0 0.9053 1.1346 1.1805 1.6094
+256 1048576 host_ns min 1.1557 above 6/194/0 0.8973 1.1351 1.1765 1.5934
+512 1000003 gpu_ns sum 0.9294 below 184/16/0 0.7709 0.9145 0.9542 1.1637
+512 1000003 gpu_ns max 1.0654 above 27/173/0 0.8567 1.0504 1.0783 1.2642
+512 1000003 gpu_ns min 1.0656 above 20/180/0 0.8676 1.0451 1.0825 1.3351
+512 1000003 host_ns sum 0.9314 below 182/18/0 0.7861 0.9065 0.9574 1.1758
+512 1000003 host_ns max 1.0575 above 27/173/0 0.9227 1.0399 1.0832 1.2564
+512 1000003 host_ns min 1.0624 above 21/179/0 0.8609 1.0399 1.0826 1.3681
+512 1048576 gpu_ns sum 0.9297 below 182/17/1 0.7479 0.9116 0.9475 1.0473
+512 1048576 gpu_ns max 1.0660 above 13/187/0 0.9499 1.0507 1.0777 1.2061
+512 1048576 gpu_ns min 1.0666 above 21/179/0 0.8804 1.0510 1.0867 1.3591
+512 1048576 host_ns sum 0.9289 below 188/12/0 0.7779 0.9033 0.9524 1.0585
+512 1048576 host_ns max 1.0631 above 19/181/0 0.1355 1.0447 1.0868 1.2528
+512 1048576 host_ns min 1.0648 above 21/179/0 0.8750 1.0431 1.0874 1.3656
+
+== bootstrap of the registered PAIRS=20 statistic over the probe's 200-pair blocks (B=10000, seed 20261026) ==
+P(side) = share of resamples whose 20-pair paired-MEDIAN lands that side of 1.0; the cell class at (metric, W=256, shape) is 'slower' iff ALL THREE ops' medians land above 1.0, else 'scoped'.
+
+W=128 n=1000003 gpu_ns: P(sum med>1.0)=0.002 med95=[0.9515,0.9836] P(max med>1.0)=1.000 med95=[1.1314,1.1640] P(min med>1.0)=1.000 med95=[1.1328,1.1651]  -> P(cell class 'slower' at PAIRS=20) = 0.002
+W=128 n=1000003 host_ns: P(sum med>1.0)=0.003 med95=[0.9519,0.9835] P(max med>1.0)=1.000 med95=[1.1263,1.1622] P(min med>1.0)=1.000 med95=[1.1252,1.1580]  -> P(cell class 'slower' at PAIRS=20) = 0.003
+W=128 n=1048576 gpu_ns: P(sum med>1.0)=0.000 med95=[0.9551,0.9770] P(max med>1.0)=1.000 med95=[1.1317,1.1590] P(min med>1.0)=1.000 med95=[1.1331,1.1652]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+W=128 n=1048576 host_ns: P(sum med>1.0)=0.000 med95=[0.9538,0.9791] P(max med>1.0)=1.000 med95=[1.1236,1.1570] P(min med>1.0)=1.000 med95=[1.1250,1.1618]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+W=256 n=1000003 gpu_ns: P(sum med>1.0)=0.259 med95=[0.9833,1.0103] P(max med>1.0)=1.000 med95=[1.1445,1.1779] P(min med>1.0)=1.000 med95=[1.1460,1.1791]  -> P(cell class 'slower' at PAIRS=20) = 0.262
+W=256 n=1000003 host_ns: P(sum med>1.0)=0.286 med95=[0.9809,1.0111] P(max med>1.0)=1.000 med95=[1.1373,1.1774] P(min med>1.0)=1.000 med95=[1.1381,1.1736]  -> P(cell class 'slower' at PAIRS=20) = 0.295
+W=256 n=1048576 gpu_ns: P(sum med>1.0)=0.117 med95=[0.9822,1.0061] P(max med>1.0)=1.000 med95=[1.1501,1.1769] P(min med>1.0)=1.000 med95=[1.1490,1.1718]  -> P(cell class 'slower' at PAIRS=20) = 0.112
+W=256 n=1048576 host_ns: P(sum med>1.0)=0.158 med95=[0.9803,1.0098] P(max med>1.0)=1.000 med95=[1.1408,1.1712] P(min med>1.0)=1.000 med95=[1.1406,1.1712]  -> P(cell class 'slower' at PAIRS=20) = 0.161
+W=512 n=1000003 gpu_ns: P(sum med>1.0)=0.000 med95=[0.9191,0.9438] P(max med>1.0)=1.000 med95=[1.0530,1.0741] P(min med>1.0)=1.000 med95=[1.0495,1.0757]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+W=512 n=1000003 host_ns: P(sum med>1.0)=0.000 med95=[0.9151,0.9484] P(max med>1.0)=1.000 med95=[1.0441,1.0752] P(min med>1.0)=1.000 med95=[1.0475,1.0765]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+W=512 n=1048576 gpu_ns: P(sum med>1.0)=0.000 med95=[0.9158,0.9426] P(max med>1.0)=1.000 med95=[1.0551,1.0743] P(min med>1.0)=1.000 med95=[1.0552,1.0791]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+W=512 n=1048576 host_ns: P(sum med>1.0)=0.000 med95=[0.9138,0.9444] P(max med>1.0)=1.000 med95=[1.0494,1.0785] P(min med>1.0)=1.000 med95=[1.0489,1.0800]  -> P(cell class 'slower' at PAIRS=20) = 0.000
+
+== registered sessions' op=sum paired-median ratios at the quartet's cell unit (subgroup/baseline, W=256) -- extracted verbatim from the committed cells-census.txt of sessions A/B/C ==
+(session A 2026-10-25 UTC; sessions B and C 2026-10-26 UTC; probe 2026-10-26 UTC -- same day as B/C, NOT a cross-day replication)
+session A gpu_ns n=1000003: op=sum ratio=1.0099 (above 1.0) -> cell class slower
+session A gpu_ns n=1048576: op=sum ratio=1.0019 (above 1.0) -> cell class slower
+session A host_ns n=1000003: op=sum ratio=1.0022 (above 1.0) -> cell class slower
+session A host_ns n=1048576: op=sum ratio=0.9990 (below 1.0) -> cell class scoped
+session B gpu_ns n=1000003: op=sum ratio=0.9956 (below 1.0) -> cell class scoped
+session B gpu_ns n=1048576: op=sum ratio=0.9966 (below 1.0) -> cell class scoped
+session B host_ns n=1000003: op=sum ratio=0.9926 (below 1.0) -> cell class scoped
+session B host_ns n=1048576: op=sum ratio=1.0124 (above 1.0) -> cell class slower
+session C gpu_ns n=1000003: op=sum ratio=0.9861 (below 1.0) -> cell class scoped
+session C gpu_ns n=1048576: op=sum ratio=1.0007 (above 1.0) -> cell class slower
+session C host_ns n=1000003: op=sum ratio=0.9962 (below 1.0) -> cell class scoped
+session C host_ns n=1048576: op=sum ratio=0.9898 (below 1.0) -> cell class scoped
+
+probe (PAIRS=200) op=sum at the same cells:
+probe gpu_ns n=1000003: op=sum ratio=0.9963 (below 1.0) -> cell class scoped
+probe host_ns n=1000003: op=sum ratio=0.9964 (below 1.0) -> cell class scoped
+probe gpu_ns n=1048576: op=sum ratio=0.9941 (below 1.0) -> cell class scoped
+probe host_ns n=1048576: op=sum ratio=0.9938 (below 1.0) -> cell class scoped

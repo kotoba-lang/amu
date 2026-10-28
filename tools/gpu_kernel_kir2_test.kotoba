@@ -1,0 +1,361 @@
+(ns gpu-kernel-kir2-test (:export [main]))
+
+;; Tests for tools/gpu_kernel_kir2.kotoba and tools/gpu_kernels_v2.kotoba (ADR
+;; 0372 step 3). No GPU and no C++ tool: scripts/seed/check-gpu-kernel-spirv.py
+;; (suite kir2) builds the unit (this ns line, then spirv_encode, spirv_check,
+;; gpu_kernel_kir2 and gpu_kernels_v2 without their ns lines, then the rest of
+;; this file), compiles it with an Amu-produced static compiler, runs it with a
+;; writable :fs/app-data scope, and afterwards runs spirv-val and spirv-dis on
+;; the written modules as oracles. The numeric gate on a GPU is the same
+;; script's gpu phase, through the ADR 0371 provider.
+;;
+;; main answers the number of failed cases and prints a FAIL line for each.
+;; CASES equals the expect calls below (the script counts them). CONTROL 1
+;; makes exactly one expectation wrong; the script requires one failure then.
+
+(def CASES 147)
+(def CONTROL 0)
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 0))
+
+(defn- fail [what :string got :i64 want :i64] :i64
+  (let [x (say (string-concat "FAIL " (string-concat what (string-concat " => " (string-concat (string-from-i64 got) (string-concat " ; want " (string-from-i64 want)))))))] 1))
+
+(defn- expect [what :string got :i64 want :i64] :i64
+  (if (= got want) 0 (fail what got want)))
+
+;; the number of instructions of the module with opcode op
+(defn- count-op [M :vector-i64 op :i64] :i64
+  (loop [k 5 c 0]
+    (if (>= k (spv-count M)) c
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (if (= wc 0) -1 (recur (+ k wc) (if (= (bit-and w 65535) op) (inc c) c)))))))
+
+;; word j of the first instruction with opcode op, or -1
+(defn- op-word [M :vector-i64 op :i64 j :i64] :i64
+  (loop [k 5]
+    (if (>= k (spv-count M)) -1
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (cond (= wc 0) -1
+              (= (bit-and w 65535) op) (spv-word M (+ k j))
+              :else (recur (+ k wc)))))))
+
+;; the number of words in which A and B differ, or -1 when the counts differ
+(defn- diff-words [A :vector-i64 B :vector-i64] :i64
+  (if (not= (vector-at A 0) (vector-at B 0)) -1
+    (loop [i 1 d 0] (if (> i (vector-at A 0)) d (recur (inc i) (if (= (vector-at A i) (vector-at B i)) d (inc d)))))))
+
+(defn- operator-name [o :i64] :string
+  (cond (= o 1) "add" (= o 2) "sub" (= o 3) "mul" :else "div"))
+
+;; ---------------------------------------------------------------------
+;; KIR v1's elementwise kernel through the v2 builder.
+
+(defn- ewise [] :i64
+  (loop [o 1 bad 0]
+    (if (> o 4) bad
+      (let [a (kir2-ewise o 64) b (kir2-ewise o 256)
+            pa (string-concat "kir2-ewise-" (string-concat (operator-name o) "-wg64.spv"))
+            pb (string-concat "kir2-ewise-" (string-concat (operator-name o) "-wg256.spv"))]
+        (recur (inc o)
+               (+ bad (+ (expect pa (spc-check a) 0) (+ (expect pb (spc-check b) 0)
+                      (+ (expect (string-concat "write " pa) (spv-write a pa) (* 4 (spv-count a)))
+                         (expect (string-concat "write " pb) (spv-write b pb) (* 4 (spv-count b))))))))))))
+
+(defn- ewise-shape [] :i64
+  (let [a (kir2-ewise 1 64) b (kir2-ewise 1 256) m (kir2-ewise 3 256)]
+    (+ (expect "ewise: the workgroup size is one word" (diff-words a b) 1)
+       (expect "ewise: the operator is one word" (diff-words b m) 1)
+       (expect "ewise: LocalSize x" (op-word b 16 3) 256)
+       (expect "ewise: one selection merge" (count-op b 247) 1)
+       (expect "ewise: no loop" (count-op b 246) 0)
+       (expect "ewise: Shader only" (count-op b 17) 1)
+       (expect "ewise: four bindings" (count-op b 59) 5)
+       (expect "ewise: OpFMul" (count-op m 133) 1)
+       (expect "ewise: operator 5 gives an empty module" (spv-count (kir2-ewise 5 256)) 0)
+       (expect "ewise: workgroup 96 gives an empty module" (spv-count (kir2-ewise 1 96)) 0))))
+
+;; ---------------------------------------------------------------------
+;; attn_copy_dense.
+
+(defn- attn [] :i64
+  (let [a (kir2-attn-copy-dense) b (kir2-attn-copy-dense)]
+    (+ (expect "attn-copy-dense" (spc-check a) 0)
+       (expect "attn-copy-dense: the same words twice" (diff-words a b) 0)
+       (expect "write kir2-attn-copy-dense.spv" (spv-write a "kir2-attn-copy-dense.spv") (* 4 (spv-count a)))
+       (expect "attn: LocalSize x" (op-word a 16 3) 256)
+       (expect "attn: Shader only" (count-op a 17) 1)
+       ;; the phase-1 copy, the dot, the max tree, the sum tree, the two
+       ;; output loops
+       (expect "attn: six loops" (count-op a 246) 6)
+       ;; the single writer, t < T, the two (t == pos) arms and the two trees'
+       ;; t < st
+       (expect "attn: six selections" (count-op a 247) 6)
+       ;; after red[t] = sc, the max tree, after m, wg_sum's two and its tree,
+       ;; after red[t] = p; none after phase 1 (nothing in the dispatch reads it)
+       (expect "attn: seven barriers" (count-op a 224) 7)
+       (expect "attn: no memory barrier" (count-op a 225) 0)
+       (expect "attn: OpSelect for T and e" (count-op a 169) 2)
+       (expect "attn: exp and max" (count-op a 12) 2)
+       ;; 8 bindings, the shared array, 2 built-ins (WorkgroupId,
+       ;; LocalInvocationId) and 8 function variables
+       (expect "attn: variables" (count-op a 59) (if (= CONTROL 1) 18 19))
+       (expect "attn: two interface built-ins" (- (u64-shift-right (op-word a 15 0) 16) 5) 2))))
+
+;; glslang's module of the same source (oracle input, written by the refs
+;; phase) passes the Kotoba checker too
+(defn- attn-ref [] :i64
+  (let [g (spv-read "ref-attn-copy-dense.spv")]
+    (+ (expect "glslang attn-copy-dense is read" (if (> (spv-count g) 5) 1 0) 1)
+       (expect "glslang attn-copy-dense passes the checker" (spc-check g) 0))))
+
+;; ---------------------------------------------------------------------
+;; The nex_ops decode set: every op checks and writes, and glslang's module
+;; of the same -DOP passes the Kotoba checker too.
+
+(defn- nex-ops [] :i64
+  (loop [op 1 bad 0]
+    (if (> op NEX-OPS) bad
+      (let [m (kir2-nex-op op) name (kir2-nex-op-name op)
+            path (string-concat "kir2-nex-" (string-concat name ".spv"))
+            g (spv-read (string-concat "ref-nex-ops-" (string-concat name ".spv")))]
+        (recur (inc op)
+               (+ bad (+ (expect path (spc-check m) 0)
+                      (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                         (expect (string-concat "glslang nex-ops " (string-concat name " passes the checker")) (spc-check g) 0)))))))))
+
+(defn- nex-shape [] :i64
+  (let [rms (kir2-nex-op 1) silu (kir2-nex-op 4) gate (kir2-nex-op 6) mv (kir2-nex-op 12) pos (kir2-nex-op 14)]
+    (+ (expect "nex: op 32 gives an empty module" (spv-count (kir2-nex-op 32)) 0)
+       ;; quant_q8's max, abs and round
+       (expect "nex: quant_q8's three GLSL.std.450 calls" (count-op (kir2-nex-op 20) 12) 3)
+       (expect "nex: rmsnorm twice, the same words" (diff-words rms (kir2-nex-op 1)) 0)
+       ;; the strided sum, wg_sum's tree, the strided write
+       (expect "nex: rmsnorm has three loops" (count-op rms 246) 3)
+       (expect "nex: rmsnorm's inversesqrt" (count-op rms 12) 1)
+       ;; if (i >= n) return; and the function's end
+       (expect "nex: silu_mul returns early" (count-op silu 253) 2)
+       ;; the early return and softplus's x > 20
+       (expect "nex: gate_decay has two selections" (count-op gate 247) 2)
+       ;; softplus's exp and log, and sigmoid's exp
+       (expect "nex: gate_decay's three GLSL.std.450 calls" (count-op gate 12) 3)
+       ;; 7 bindings, the shared array, 2 built-ins and 3 Function variables
+       (expect "nex: f32_matvec's variables" (count-op mv 59) 13)
+       (expect "nex: pos_incr has no loop" (count-op pos 246) 0)
+       (expect "nex: rope_neox's pow, cos and sin" (count-op (kir2-nex-op 15) 12) 3)
+       ;; the max tree's FMax, exp, and sigmoid's exp
+       (expect "nex: attn_decode's three GLSL.std.450 calls" (count-op (kir2-nex-op 16) 12) 3)
+       (expect "nex: softmax_topk's memoryBarrierBuffer" (count-op (kir2-nex-op 17) 225) 1)
+       ;; floatBitsToUint(c[0]) and uintBitsToFloat(redi[0])
+       (expect "nex: argmax_final's two bit casts" (count-op (kir2-nex-op 19) 124) 2))))
+
+;; ---------------------------------------------------------------------
+;; dot_rows and kdot_f32_r1 (the dot and kdot fixtures' kernels)
+
+(defn- dots [] :i64
+  (let [d (kir2-dot-rows) k (kir2-kdot-f32-r1)
+        gd (spv-read "ref-dot-rows.spv") gk (spv-read "ref-kdot-f32-r1.spv")]
+    (+ (expect "dot-rows" (spc-check d) 0)
+       (expect "write kir2-dot-rows.spv" (spv-write d "kir2-dot-rows.spv") (* 4 (spv-count d)))
+       (expect "kdot-f32-r1" (spc-check k) 0)
+       (expect "write kir2-kdot-f32-r1.spv" (spv-write k "kir2-kdot-f32-r1.spv") (* 4 (spv-count k)))
+       (expect "glslang dot_rows passes the checker" (spc-check gd) 0)
+       (expect "glslang kdot_f32_r1 passes the checker" (spc-check gk) 0)
+       (expect "dot_rows returns early" (count-op d 253) 2)
+       (expect "kdot: LocalSize 64" (op-word k 16 3) 64)
+       ;; one dot per tensor-type arm, as in glslang's module
+       (expect "kdot: eleven dot products" (count-op k 148) 11)
+       ;; weight_half at each of its 12 uses, and f16_values' two
+       (expect "kdot: fourteen unpackHalf2x16" (count-op k 12) 14)
+       ;; kvalue at its four uses, and q8_0's four
+       (expect "kdot: eight bitfieldExtract" (count-op k 202) 8))))
+
+;; kdot_f32_r8: R rows per workgroup (8, and 4 as glslang's -DROWS=4)
+(defn- dots8 [] :i64
+  (let [k8 (kir2-kdot-f32-r8 8) k4 (kir2-kdot-f32-r8 4)
+        g8 (spv-read "ref-kdot-f32-r8.spv") g4 (spv-read "ref-kdot-f32-r8-rows4.spv")]
+    (+ (expect "kdot-f32-r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-f32-r8.spv" (spv-write k8 "kir2-kdot-f32-r8.spv") (* 4 (spv-count k8)))
+       (expect "kdot-f32-r8 rows 4" (spc-check k4) 0)
+       (expect "write kir2-kdot-f32-r8-rows4.spv" (spv-write k4 "kir2-kdot-f32-r8-rows4.spv") (* 4 (spv-count k4)))
+       (expect "glslang kdot_f32_r8 passes the checker" (spc-check g8) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=4 passes the checker" (spc-check g4) 0)
+       (expect "kdot r8: LocalSize 64" (op-word k8 16 3) 64)
+       ;; r8's nine tensor-type arms
+       (expect "kdot r8: nine dot products" (count-op k8 148) 9)
+       (expect "kdot r8: the same words twice" (diff-words k8 (kir2-kdot-f32-r8 8)) 0)
+       (expect "kdot r8: rows 5 gives an empty module" (spv-count (kir2-kdot-f32-r8 5)) 0)
+       (expect "write kir2-kdot-f32-r8-rows16.spv" (let [m (kir2-kdot-f32-r8 16)] (- (spv-write m "kir2-kdot-f32-r8-rows16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-f32-r8-rows32.spv" (let [m (kir2-kdot-f32-r8 32)] (- (spv-write m "kir2-kdot-f32-r8-rows32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows16.spv")) 0)
+       (expect "glslang kdot_f32_r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-f32-r8-rows32.spv")) 0))))
+
+;; kdot_x8r8 on the x8 mapping (R 8, and 4: kdot_x8r4)
+(defn- dots-x8 [] :i64
+  (let [k8 (kir2-kdot-x8 8) k4 (kir2-kdot-x8 4)
+        g8 (spv-read "ref-kdot-x8r8.spv") g4 (spv-read "ref-kdot-x8r8-rows4.spv")]
+    (+ (expect "kdot-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-x8r8.spv" (spv-write k8 "kir2-kdot-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "kdot-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-x8r4.spv" (spv-write k4 "kir2-kdot-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "glslang kdot_x8r8 passes the checker" (spc-check g8) 0)
+       (expect "glslang kdot_x8r8 -DROWS=4 passes the checker" (spc-check g4) 0)
+       (expect "kdot x8: LocalSize 256" (op-word k8 16 3) 256)
+       ;; two dots in each of the six arms (Q4_K and Q5_K share one), as in
+       ;; glslang's module
+       (expect "kdot x8: twelve dot products" (count-op k8 148) 12)
+       (expect "kdot x8: rows 5 gives an empty module" (spv-count (kir2-kdot-x8 5)) 0)
+       (expect "write kir2-kdot-x8r16.spv" (let [m (kir2-kdot-x8 16)] (- (spv-write m "kir2-kdot-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-x8r32.spv" (let [m (kir2-kdot-x8 32)] (- (spv-write m "kir2-kdot-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_x8r8 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows16.spv")) 0)
+       (expect "glslang kdot_x8r8 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-x8r8-rows32.spv")) 0))))
+
+;; kdot_i8_x8r4: int8 activations and the packed integer dot product (R 4,
+;; and 8 as glslang's -DROWS=8)
+(defn- dots-i8 [] :i64
+  (let [k4 (kir2-kdot-i8-x8 4) k8 (kir2-kdot-i8-x8 8)
+        g4 (spv-read "ref-kdot-i8-x8r4.spv") g8 (spv-read "ref-kdot-i8-x8r4-rows8.spv")]
+    (+ (expect "kdot-i8-x8r4" (spc-check k4) 0)
+       (expect "write kir2-kdot-i8-x8r4.spv" (spv-write k4 "kir2-kdot-i8-x8r4.spv") (* 4 (spv-count k4)))
+       (expect "kdot-i8-x8r8" (spc-check k8) 0)
+       (expect "write kir2-kdot-i8-x8r8.spv" (spv-write k8 "kir2-kdot-i8-x8r8.spv") (* 4 (spv-count k8)))
+       (expect "glslang kdot_i8_x8r4 passes the checker" (spc-check g4) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=8 passes the checker" (spc-check g8) 0)
+       ;; ysum's two, and two in each of the five integer arms (F16 dots floats)
+       (expect "kdot i8: twelve packed int8 dots" (count-op k4 4450) 12)
+       ;; Shader, DotProduct and DotProductInput4x8BitPacked
+       (expect "kdot i8: three capabilities" (count-op k4 17) 3)
+       (expect "kdot i8: the integer dot product extension" (count-op k4 10) 1)
+       (expect "kdot i8: rows 5 gives an empty module" (spv-count (kir2-kdot-i8-x8 5)) 0)
+       (expect "write kir2-kdot-i8-x8r16.spv" (let [m (kir2-kdot-i8-x8 16)] (- (spv-write m "kir2-kdot-i8-x8r16.spv") (* 4 (spv-count m)))) 0)
+       (expect "write kir2-kdot-i8-x8r32.spv" (let [m (kir2-kdot-i8-x8 32)] (- (spv-write m "kir2-kdot-i8-x8r32.spv") (* 4 (spv-count m)))) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=16 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows16.spv")) 0)
+       (expect "glslang kdot_i8_x8r4 -DROWS=32 passes the checker" (spc-check (spv-read "ref-kdot-i8-x8r4-rows32.spv")) 0))))
+;; ---------------------------------------------------------------------
+;; nex_ops' BATCH, BPREFILL and BIAS variants: each checks and writes, and
+;; glslang's module of the same -DOP and defines passes the checker too.
+
+(defn- nex-variant-name [v :i64] :string
+  (case v 1 "batch" 2 "bprefill" 4 "bias" "batch-bias"))
+
+(defn- nex-variants [] :i64
+  (loop [k 0 bad 0]
+    (if (= k 20) bad
+      (let [op (vector-at [8 8 14 15 15 15 16 16 18 19 22 22 23 24 25 27 28 29 30 31] k)
+            v (vector-at [1 2 1 1 4 5 1 2 1 1 1 2 2 2 1 1 1 1 1 1] k)
+            m (kir2-nex-variant op v)
+            name (string-concat (kir2-nex-op-name op) (string-concat "-" (nex-variant-name v)))
+            path (string-concat "kir2-nex-" (string-concat name ".spv"))
+            g (spv-read (string-concat "ref-nex-ops-" (string-concat name ".spv")))]
+        (recur (inc k)
+               (+ bad (+ (expect path (spc-check m) 0)
+                      (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                         (expect (string-concat "glslang nex-ops " (string-concat name " passes the checker")) (spc-check g) 0)))))))))
+
+(defn- nex-variant-shape [] :i64
+  (let [sf (kir2-nex-variant 31 1)]
+    (+ (expect "nex variant: v 0 is the decode op" (diff-words (kir2-nex-variant 15 0) (kir2-nex-op 15)) 0)
+       (expect "nex variant: rmsnorm has no BATCH" (spv-count (kir2-nex-variant 1 1)) 0)
+       (expect "nex variant: sample_topp has no BATCH" (spv-count (kir2-nex-variant 26 1)) 0)
+       (expect "nex variant: pos_seed has no BATCH" (spv-count (kir2-nex-variant 24 1)) 0)
+       (expect "nex variant: rope BATCH and BATCH BIAS differ" (if (= (diff-words (kir2-nex-variant 15 1) (kir2-nex-variant 15 5)) 0) 0 1) 1)
+       ;; S_SKIP and the function's end
+       (expect "nex variant: sample_part BATCH returns early" (count-op (kir2-nex-variant 27 1) 253) 2)
+       ;; the position and the seed; no token-buffer write
+       (expect "nex variant: sample_final BATCH's two bit casts" (count-op sf 124) 2)
+       (expect "nex variant: ctl BATCH has no loop" (count-op (kir2-nex-variant 22 1) 246) 0)
+       (expect "nex variant: ctl BPREFILL has one loop" (count-op (kir2-nex-variant 22 2) 246) 1)
+       (expect "nex variant: pos_incr BATCH has no loop" (count-op (kir2-nex-variant 14 1) 246) 0))))
+
+;; ---------------------------------------------------------------------
+;; deltanet and embed
+(defn- embed-name [k :i64] :string
+  (case k 23 "iq4xs" 8 "q8" 2 "b32-2" 3 "b32-3" 6 "b32-6" 7 "b32-7" "ptq1"))
+(defn- deltanet-embed [] :i64
+  (let [ds (kir2-deltanet-step) df (kir2-deltanet-fused)
+        es (loop [i 0 bad 0]
+             (if (= i 7) bad
+               (let [k (vector-at [23 8 2 3 6 7 143] i) m (kir2-embed k) n (embed-name k)
+                     path (string-concat "kir2-embed-" (string-concat n ".spv"))
+                     ref (if (= k 23) "ref-embed-iq4xs.spv" (string-concat "ref-embed-iq4xs-" (string-concat n ".spv")))]
+                 (recur (inc i) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang " ref) (spc-check (spv-read ref)) 0))))))))]
+    (+ es
+       (+ (expect "deltanet-step" (spc-check ds) 0)
+          (+ (expect "write kir2-deltanet-step.spv" (spv-write ds "kir2-deltanet-step.spv") (* 4 (spv-count ds)))
+             (+ (expect "deltanet-fused" (spc-check df) 0)
+                (+ (expect "write kir2-deltanet-fused.spv" (spv-write df "kir2-deltanet-fused.spv") (* 4 (spv-count df)))
+                   (+ (expect "glslang deltanet_step passes the checker" (spc-check (spv-read "ref-deltanet-step.spv")) 0)
+                      (+ (expect "glslang deltanet_fused passes the checker" (spc-check (spv-read "ref-deltanet-fused.spv")) 0)
+                         (+ (expect "deltanet_step: LocalSize 128" (op-word ds 16 3) 128)
+                            (+ (expect "deltanet_fused: LocalSize 512" (op-word df 16 3) 512)
+                               (expect "embed: kind 9 gives an empty module" (spv-count (kir2-embed 9)) 0))))))))))))
+
+;; deltanet_fused's and embed's BATCH and BPREFILL variants (every embed kind)
+(defn- dn-embed-variants [] :i64
+  (let [ds (loop [v 1 bad 0]
+             (if (> v 2) bad
+               (let [m (kir2-deltanet-fused-variant v)
+                     name (string-concat "deltanet-fused-" (nex-variant-name v))
+                     path (string-concat "kir2-" (string-concat name ".spv"))]
+                 (recur (inc v) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang ref-" name) (spc-check (spv-read (string-concat "ref-" (string-concat name ".spv")))) 0))))))))
+        es (loop [i 0 bad 0]
+             (if (= i 14) bad
+               (let [k (vector-at [23 8 2 3 6 7 143] (quot i 2)) v (inc (rem i 2))
+                     m (kir2-embed-variant k v)
+                     name (string-concat (embed-name k) (string-concat "-" (nex-variant-name v)))
+                     path (string-concat "kir2-embed-" (string-concat name ".spv"))
+                     ref (string-concat "ref-embed-iq4xs-" (string-concat (if (= k 23) (nex-variant-name v) name) ".spv"))]
+                 (recur (inc i) (+ bad (+ (expect path (spc-check m) 0)
+                                       (+ (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+                                          (expect (string-concat "glslang " ref) (spc-check (spv-read ref)) 0))))))))]
+    (+ ds es
+       (expect "deltanet_fused: v 0 is the decode module" (diff-words (kir2-deltanet-fused-variant 0) (kir2-deltanet-fused)) 0)
+       (expect "deltanet_fused: v 3 gives an empty module" (spv-count (kir2-deltanet-fused-variant 3)) 0)
+       (expect "embed: v 0 is the decode module" (diff-words (kir2-embed-variant 8 0) (kir2-embed 8)) 0)
+       (expect "embed: v 3 gives an empty module" (spv-count (kir2-embed-variant 23 3)) 0)
+       (expect "embed: BATCH and BPREFILL differ" (if (= (diff-words (kir2-embed-variant 23 1) (kir2-embed-variant 23 2)) 0) 0 1) 1))))
+
+;; ---------------------------------------------------------------------
+;; The nvgpu-h2 kernels: each checks and writes, and glslang's module passes
+;; the checker too.
+
+;; the number of OpCapability c in the module
+(defn- count-cap [M :vector-i64 c :i64] :i64
+  (loop [k 5 n 0]
+    (if (>= k (spv-count M)) n
+      (let [w (spv-word M k) wc (u64-shift-right w 16)]
+        (if (= wc 0) -1 (recur (+ k wc) (if (and (= (bit-and w 65535) 17) (= (spv-word M (+ k 1)) c)) (inc n) n)))))))
+
+(defn- h2-one [m :vector-i64 name :string] :i64
+  (let [path (string-concat "kir2-" (string-concat name ".spv"))]
+    (+ (expect path (spc-check m) 0)
+       (expect (string-concat "write " path) (spv-write m path) (* 4 (spv-count m)))
+       (expect (string-concat "glslang ref-" name) (spc-check (spv-read (string-concat "ref-" (string-concat name ".spv")))) 0))))
+
+(defn- h2 [] :i64
+  (let [r1 (kir2-kdot-h2-r1 0) q6 (kir2-kdot-h2-r1 1) r4 (kir2-kdot-h2-q8 4) r8 (kir2-kdot-h2-q8 8)
+        qkv (kir2-kdot-h2-qkv) qkvr (kir2-kdot-h2-qkvr)]
+    (+ (h2-one r1 "kdot-h2-r1") (h2-one q6 "kdot-h2-r1-q6half") (h2-one r4 "kdot-h2-r4-q8") (h2-one r8 "kdot-h2-r8-q8")
+       (h2-one qkv "kdot-h2-qkv-q8") (h2-one qkvr "kdot-h2-qkvr-q8")
+       ;; Shader, Float16, GroupNonUniform and GroupNonUniformArithmetic, as glslang's
+       (expect "h2: r1's four capabilities" (count-op r1 17) 4)
+       (expect "h2: r1 declares Float16" (count-cap r1 9) 1)
+       (expect "h2: r1 declares GroupNonUniformArithmetic" (count-cap r1 63) 1)
+       (expect "h2: dot_rows has no Float16" (count-cap (kir2-dot-rows) 9) 0)
+       (expect "h2: r1 has one subgroupAdd" (count-op r1 350) 1)
+       (expect "h2: r1 has one subgroupElect" (count-op r1 333) 1)
+       (expect "h2: r1 -DQ6_HALF differs" (if (= (diff-words r1 q6) 0) 0 1) 1)
+       (expect "h2: qkvr has two subgroupAdds" (count-op qkvr 350) 2)
+       (expect "h2: r1 q6 2 gives an empty module" (spv-count (kir2-kdot-h2-r1 2)) 0)
+       (expect "h2: q8 R 5 gives an empty module" (spv-count (kir2-kdot-h2-q8 5)) 0))))
+
+(defn main [] :i64
+  (let [failed (+ (ewise) (+ (ewise-shape) (+ (attn) (+ (attn-ref) (+ (nex-ops) (+ (nex-shape) (+ (nex-variants) (+ (nex-variant-shape) (+ (dots) (+ (dots8) (+ (dots-x8) (+ (dots-i8) (+ (deltanet-embed) (+ (dn-embed-variants) (h2)))))))))))))))
+        x (say (string-concat "CASES " (string-from-i64 CASES)))
+        y (say (string-concat "FAILED " (string-from-i64 failed)))]
+    failed))

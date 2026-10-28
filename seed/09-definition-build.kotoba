@@ -1,0 +1,174 @@
+;; Native incremental build integration (candidate, outside FULL-MANIFEST).
+;; Only checked/identified units may reach the object store. Frontend, native
+;; target admission, link, context/fuel and output construction always run.
+(defn- dcb-member [A :vector-i64 C :vector-i64 index :i64] :i64
+  (if (= (dcp-f A (vector-at C 0) 12) 0) (vector-at C 0)
+    (loop [i 0]
+      (cond (= i (vector-count C)) -1
+            (= (dcp-f A (vector-at C i) 13) index) (vector-at C i)
+            :else (recur (inc i))))))
+(defn- dcb-backend [M :vector-i64 K :vector-i64 S :string A :vector-i64 f :i64] :i64
+  (let [name (dcp-text K S (dcp-f A f 1))]
+    (loop [i 1]
+      (cond (= i (vector-at M MM-FN-N)) -1
+            (= (dcn-name M S i) name) i
+            :else (recur (inc i))))))
+(defn- dcb-members [A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
+  (loop [i 0 out (typed-list-new [:list :string])]
+    (if (= i (vector-count C)) out
+      (let [f (dcb-member A C i)]
+        (if (< f 0) (typed-list-new [:list :string])
+          (recur (inc i) (typed-list-conj [:list :string] out
+            (typed-list-nth [:list :string] R (dec (dcp-f A f 2))))))))))
+(defn- dcb-definitions [A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
+  (let [clear (loop [f 0 state A]
+                (if (= f (vector-at state 3)) state (recur (inc f) (dcp-put state f 11 0))))
+        marked (loop [i 0 state clear]
+                 (if (= i (vector-count C)) state
+                   (let [member (vector-at C i) own (dcp-put state member 11 1)
+                         dependencies (loop [edge (dgg-f own member 14) out own]
+                                        (if (= edge 0) out
+                                          (recur (dgg-edge out edge 1)
+                                            (dcp-put out (dgg-edge out edge 0) 11 1))))]
+                     (recur (inc i) dependencies))))]
+    (loop [f 0 out (typed-list-new [:list :string])]
+      (if (= f (vector-at marked 3)) out
+        (recur (inc f) (if (> (dcp-f marked f 11) 0)
+                        (typed-list-conj [:list :string] out (dcn-binding marked R f)) out))))))
+(defn- dcb-unit [A :vector-i64 C :vector-i64 R [:list :string]] :string
+  (let [f (vector-at C 0) slot (if (> (dcp-f A f 12) 0) (dcp-f A f 12) (dcp-f A f 2))]
+    (if (<= slot 0) "" (typed-list-nth [:list :string] R (dec slot)))))
+(defn- dcb-local [ids :vector-i64 target :i64] :i64
+  (loop [i 0]
+    (cond (= i (vector-count ids)) -1 (= (vector-at ids i) target) i :else (recur (inc i)))))
+(defn- dcb-sort [values [:list :string]] [:list :string]
+  (loop [i 0 out (typed-list-new [:list :string])]
+    (if (= i (vector-count values)) out
+      (let [value (typed-list-nth [:list :string] values i)
+            next (loop [j 0 inserted false acc (typed-list-new [:list :string])]
+                   (if (= j (vector-count out))
+                     (if inserted acc (typed-list-conj [:list :string] acc value))
+                     (let [previous (typed-list-nth [:list :string] out j)
+                           before (and (not inserted) (< (string-compare value previous) 0))
+                           add (if before (typed-list-conj [:list :string] acc value) acc)]
+                       (recur (inc j) (or inserted before) (typed-list-conj [:list :string] add previous)))))]
+        (recur (inc i) next)))))
+(defn- dcb-sir [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string] f :i64] :string
+  (let [ids (dcn-label-ids M f) first (xg-f M f FF-SIR)
+        end (dcn-end M f FF-SIR (vector-at M MM-SIR-N))
+        instructions (loop [i first out (typed-list-new [:list :string])]
+      (if (= i end) out
+        (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)
+              aa (cond (or (= op OP-FN) (= op OP-END)) (dc-int "0")
+                       (= op OP-CALL) (let [index (dcn-find K S A (dcn-name M S a))]
+                                       (if (< index 0) "" (dc-str (dcn-binding A R index))))
+                       (or (= op OP-LABEL) (= op OP-BR)) (dc-int (mem-u2dec (dcb-local ids a)))
+                       :else (dc-int (mem-u2dec a)))
+              bb (if (or (= op OP-BRZ) (= op OP-BRNZ)) (dc-int (mem-u2dec (dcb-local ids b)))
+                     (dc-int (mem-u2dec b)))]
+          (if (= aa "") (typed-list-new [:list :string])
+            (recur (inc i) (typed-list-conj [:list :string] out
+              (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec op)) aa bb (dc-int (mem-u2dec c))))))))))]
+    (if (or (<= first 0) (<= end first) (not= (vector-count instructions) (- end first))) ""
+      (dcp-vec instructions))))
+(defn- dcb-layout [M :vector-i64 K :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] :string
+  (let [members (loop [i 0 out (typed-list-new [:list :string])]
+    (if (= i (vector-count C)) out
+      (let [f (dcb-backend M K S A (dcb-member A C i))
+            sir (if (> f 0) (dcb-sir M K S A R f) "")]
+        (if (= sir "") (typed-list-new [:list :string])
+          (recur (inc i) (typed-list-conj [:list :string] out
+            (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec (xg-f M f FF-NSLOTS)))
+              (dc-int (mem-u2dec (xg-f M f FF-DEPTH))) (dc-int (mem-u2dec (xg-frame M f))) sir))))))))]
+    (if (not= (vector-count members) (vector-count C)) "" (dcp-vec members))))
+(defn- dcb-context [M :vector-i64 K :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]
+                    compiler :string] [:list :string]
+  (let [layout (dcb-layout M K S A C R)
+        dependencies (dcp-vec (loop [i 0 out (typed-list-new [:list :string])
+                                     defs (dcb-sort (dcb-definitions A C R))]
+                       (if (= i (vector-count defs)) out
+                         (recur (inc i) (typed-list-conj [:list :string] out
+                           (dc-str (typed-list-nth [:list :string] defs i))) defs))))
+        profile (dcp-vec (typed-list-new [:list :string] (dc-int (mem-u2dec MM-CODE-CAP))
+          (dc-int (mem-u2dec MM-FIX-CAP)) (dc-int (mem-u2dec MM-LABEL-CAP))
+          (dc-int (mem-u2dec MM-OUT-CAP)) (dc-int (mem-u2dec dc-limit)) (dc-int (mem-u2dec dc-nodes))
+          (dc-str (dip-context (dcp-resource A)))))
+        resource (dcp-vec (typed-list-new [:list :string] (dc-int "4096") (dc-int "5")
+          (dc-int (mem-u2dec (vector-at M MM-CAPS))) (dc-str layout) (dc-str (dip-context (dcp-resource A)))))]
+    (if (or (= layout "") (not (dco-digest? compiler)) (not (dip-valid? (dcp-resource A)))) (typed-list-new [:list :string])
+      (typed-list-new [:list :string] compiler (sh-text "x86_64-linux-scalar")
+        (sh-text "sysv-r9-context-scalar-v1") (sh-text layout) (sh-text "xg-one-tail64-v1")
+        (sh-text profile) (sh-text dependencies) (sh-text resource) (sh-text "def-cid-occurrence-v1")))))
+;; Cache reads happen only after complete fresh identity/target admission.
+;; Bodies are indexed by SCC; either the whole unit is present or every member
+;; is emitted. An object never supplies the frontend, admission or link verdict.
+(defn- dcb-load [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                 directory :string compiler :string enabled :bool] [:list :string]
+  (loop [component 1 bodies (typed-list-new [:list :string] "")]
+    (if (> component (vector-at A 9)) bodies
+      (let [C (dcs-members K S A component) unit (dcb-unit A C R) members (dcb-members A C R)
+            key (dco-key unit members (dcb-context M K S A C R compiler))
+            body (if (and enabled (not= key ""))
+                   (dco-load directory key unit members (dcb-definitions A C R) (typed-list-new [:list :string])) "")]
+        (recur (inc component) (typed-list-conj [:list :string] bodies body))))))
+(defn- dcb-code [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                 bodies [:list :string]] :vector-i64
+  (loop [i 1 state M]
+    (if (or (= i (vector-at state MM-SIR-N)) (not= (vector-at state MM-ERR) 0)) state
+      (if (not= (xg-si state i IF-OP) OP-FN) (recur (inc i) (xg-one state i))
+        (let [f (xg-si state i IF-A) index (dcn-find K S A (dcn-name state S f))
+              component (if (< index 0) 0 (dcp-f A index 5))
+              body (if (> component 0) (typed-list-nth [:list :string] bodies component) "")]
+          (cond (< index 0) (xg-err state 7103 f)
+            (= body "") (recur (inc i) (xg-one state i))
+            :else
+            (let [V (dc-unhex body)
+                  D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5)))
+                               (vector-assoc! 2 1) (vector-assoc! 3 (vector-count V))) V 0)
+                  member (dcn-member-node D V (dcn-cid state K S A R f))]
+              (if (= member 0) (xg-err state 7103 f)
+                (recur (dcn-end state f FF-SIR (vector-at state MM-SIR-N))
+                  (dcn-install state K S A R D V member f))))))))))
+(defn- dcb-capture [M :vector-i64 K :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] :string
+  (let [objects (loop [i 0 out (typed-list-new [:list :string])]
+                  (if (= i (vector-count C)) (dcp-vec out)
+                    (let [f (dcb-backend M K S A (dcb-member A C i))
+                          object (if (> f 0) (dcn-capture M K S A R f) "")]
+                      (if (= object "") "" (recur (inc i) (typed-list-conj [:list :string] out object))))))]
+    (if (= objects "") ""
+      (dcp-vec (typed-list-new [:list :string] (dc-str (dcb-unit A C R)) objects)))))
+(defn- dcb-store [M :vector-i64 K :vector-i64 S :string A :vector-i64 R [:list :string]
+                  directory :string compiler :string bodies [:list :string]] :bool
+  (loop [component 1]
+    (cond (> component (vector-at A 9)) true
+      (not= (typed-list-nth [:list :string] bodies component) "") (recur (inc component))
+      :else
+      (let [C (dcs-members K S A component) unit (dcb-unit A C R) members (dcb-members A C R)
+            key (dco-key unit members (dcb-context M K S A C R compiler)) body (dcb-capture M K S A C R)]
+        (and (not= key "") (not= body "")
+          (dco-store directory key body unit members (dcb-definitions A C R) (typed-list-new [:list :string]))
+          (recur (inc component)))))))
+(defn- dcb-report [A :vector-i64 bodies [:list :string]] :i64
+  (let [hits (loop [i 1 n 0]
+               (if (> i (vector-at A 9)) n
+                 (recur (inc i) (+ n (if (= (typed-list-nth [:list :string] bodies i) "") 0 1)))))
+        out (io-out (string-concat "DCB1 reused=" (string-concat (mem-u2dec hits)
+          (string-concat " rebuilt=" (string-concat (mem-u2dec (- (vector-at A 9) hits)) "\n")))))] 0))
+(defn- dcb-build [K :vector-i64 S :string A :vector-i64 R [:list :string]
+                  directory :string compiler :string enabled :bool fuel :i64 path :string out :string] :i64
+  (let [front (dcn-front S)
+        admitted (-> front (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 3)
+                    (xg-check-fns S 1) (xg-check-sir 1))]
+    (if (or (not= (vector-at admitted MM-ERR) 0) (= (xg-get admitted 1) 0)
+            (not= (vector-at admitted MM-CAPS) 0)) (xg-report (xg-err admitted 7102 0) path out)
+      (let [indexed (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1))
+            bodies (dcb-load indexed K S A R directory compiler enabled)
+            generated (dcb-code (xg-start indexed) K S A R bodies)
+            data (bit-and (+ 8191 (xg-pos generated)) -4096)]
+        (cond (not= (vector-at generated MM-ERR) 0) (xg-report generated path out)
+          (>= (+ data 17) MM-OUT-CAP) (xg-report (xg-err generated 7104 data) path out)
+          (and enabled (not (dcb-store generated K S A R directory compiler bodies)))
+            (let [error (io-err "DCB:E_STORE\n")] 1)
+          :else (let [linked (xg-elf (xg-fix (xg-set generated 3 data) 1))
+                      result (xg-report linked path out)]
+                  (if (= result 0) (dcb-report A bodies) result)))))))

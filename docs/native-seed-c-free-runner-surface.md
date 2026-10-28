@@ -1,5 +1,11 @@
 # C-free x86-64 seed runner: bounded surface (JUN-29)
 
+> **2026-10-22: the trusted C loader was removed.** Instructions below that build
+> or run it (clang, `kexe-loader`, `scripts/seed/build-*.py`, `check-*.py`) are
+> historical and no longer runnable; see `scripts/seed/RETIRED.md`. The current
+> route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
+
+
 Measured against the pinned bootstrap loader source
 `seed/bootstrap/adopted-loader-20261012.c` (13,055 lines) at worktree HEAD
 `f56efdd7`, 2026-10-19. This document is a measurement record for the

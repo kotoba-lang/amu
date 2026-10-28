@@ -1,0 +1,186 @@
+REVIEW QUALIFICATION (2026-10-26; supersedes the interpretations below).
+The standalone +4 baseline was not realized by the two attempted constructions;
+this is not a proof of general impossibility. T(1), T(4) and T(16) are measured
+whole-loop totals. The attribution of C to overhead alone and of zero overhead
+to n=16 are model-dependent hypotheses, not independently measured costs.
+Reproducing the earlier n=16 total repeats the same overhead and cannot isolate
+it. The three-point saturation fit does not prove that model uniquely. Raw
+run-log.txt and microbench-sass.txt are unchanged. The instrument source is
+hash-attested but not committed; the disassembled cubin and executed binary
+were separate builds. No timing record or selector is promoted. See the revised
+ADR-0361 amendment for the accepted scope. The text below is historical reporting.
+
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, fifth measurement row of
+the day): JUN-57 -- the ADR-0361 twenty-third amendment's named unmeasured
+item "a non-eliminated overhead baseline (every arm's body carries the
+same +4 overhead instructions -- the baseline is a body of those 4 alone,
+not run)" takes its instrument branch and SPLITS: a standalone body of
+the +4 is NOT REALIZABLE through this toolchain (two constructions
+REFUTED at build/SASS level), the additive-intercept pricing the row was
+designed around is REFUTED by the measurement, and the +4 is priced in
+context instead -- the landed loop-close body costs 26.4766 cyc/iter on
+xavier sm_72 with the chain in its shadow (MEASURED), and at n=16 chain
+ops the same +4 body is FULLY HIDDEN in the dependent chain's shadow
+(MEASURED: T(16) = 16 x 4.4656 exactly). ONE measurement slice; HARDWARE
+RAN: the overhead-baseline microbench on xavier sm_72 at
+2026-10-26T13:00:56Z. NAMED NOT HIDDEN: a PROBE, not a registered timing
+session (no paired samples, no AB/BA), inadmissible under the entry
+criterion BY KIND; SAME-UTC-DAY with every earlier probe -- NOT a
+cross-day replication, extends NO record's :evidence and enters nothing;
+it measures LOOP-BODY costs, not kernels.
+
+WHAT RAN. The v5 instrument (3 arms x 3 launches x 128 threads,
+clock64() over the loop only, REPT=256 = the latency row's trip count):
+straight dependent symbolic IMAD chains (mad.lo.u32 x = x*cm + c,
+c=3u, cm=7u from global memory -- unknowable to ptxas) of length n in
+{1, 4, 16} per iteration, inside the landed loop shape; the arms differ
+ONLY in chain length. Remote tree /root/gpu-oh-baseline-20261026-v5
+created fresh, transferred COPYFILE_DISABLE=1 (4 files, 0 AppleDouble
+sidecars; received-file block matched local shas 4/4; local shas:
+instrument .cu a79ad8e952043710.., verifier 4fae36e74e06d225..,
+realizability A e5f3b53ea3561847.., realizability B fad2a09a5d170e44..).
+Two realizability probes ran in the same driver (see below). All
+produced artifacts sha256-attested in run-log.txt (microbench.sass
+2b34319462a9512c.., fetched locally the same tick, committed verbatim as
+microbench-sass.txt).
+
+NAMED FAILED ATTEMPTS (tool output, not hidden; v1-v2 are the
+interrupted earlier tick's attempts, their runlogs live in Hermes
+scratch and are quoted here): v1 (12:29:31Z) empty-asm C loops --
+ptxas deleted every loop (dead pure counter), arms measured 6 cycles =
+the clock-read pair; v2 (12:37:15Z) explicit PTX loop with a nested
+`asm ""` -- ptxas refused to build ('Duplicate definition of label
+lp0', 'Parsing error near ""'), and its runlog's RESULT lines are the
+stale v1 binary. v3's design (explicit PTX spelling of the +4) and v4's
+design (empty-body counter loops with anchored counter) were REFUTED by
+this row's two realizability probes, committed verbatim in run-log.txt
+sections 1-2:
+  probe A (v3): the +4 spelled explicitly in PTX is REFUSED -- 'Unknown
+  symbol PT', 'Unknown symbol RZ' (x4), 'Predicate expression expected',
+  'Arguments mismatch for instruction shfl' (diag-realiz-a.txt 741
+  bytes). PTX has no PT/RZ registers: the landed `@!PT SHFL.IDX PT, RZ,
+  RZ, RZ, RZ` is NOT spellable from PTX source.
+  probe B (v4): constant-trip empty loop CLOSED-FORMED (zero loop
+  instructions; exit counter is a constant `IMAD.MOV.U32 R8, RZ, RZ,
+  0x40`); symbolic-trip empty loop GROUPED (main loop counts by 0x10
+  per branch + by-4/by-1 peels). Neither realizes the landed +4 body.
+  The @!PT SHFL.IDX barrier appears at function entry and at every loop
+  header of both probes, with no PTX source anywhere: ptxas-inserted,
+  confirming that the landed bodies' SHFL is likewise ptxas-inserted.
+
+VERIFIED (real runs): OK-build / OK-cubin / OK-sass 143 lines, all
+diags 0 bytes except probe A's named refusal, driver exit 0, stderr 0
+bytes; SASS verification 3 functions (run-log.txt VERIFY blocks): every
+body VERIFIED from nvdisasm, oh_n1 = {@!PT SHFL.IDX:1, IMAD:1, IADD3:1,
+ISETP.NE.AND:1, BRA:1}, oh_n4 = same with IMAD:4, oh_n16 = same with
+IMAD:16 (5/8/20 static instructions; counter IADD3 vs 0x100 = 256); 9
+RESULT lines (3 arms x 3 launches), ALL THREE LAUNCHES IDENTICAL
+medians (deterministic; named caveat: 128 threads lockstep -- one
+warp-group draw, not 128 independent samples); device name=Xavier
+clockRate_kHz=1377000 multiProcessorCount=8. ANCHOR CHECK (DERIVED
+arithmetic over the printed anchors): each body's chain executed exactly
+chain_n x 256 times -- x = 7x+3 mod 2^32 applied 256/1024/4096 times
+reproduces the printed x_tid0 3/3 (2222224387 / 890359811 / 138887171).
+
+THE FINDING (cyc per iteration = median loop cycles / 256; the whole
+finding is in oh-baseline-table.txt):
+(1) A STANDALONE +4 BODY IS NOT REALIZABLE (REFUTED, both
+    constructions above). The named item's imagined instrument ("a body
+    of those 4 alone") cannot exist through nvcc 11.4 / ptxas on sm_72.
+(2) THE ADDITIVE-INTERCEPT PRICING IS REFUTED BY THE MEASUREMENT:
+    T(1) = T(4) = 26.4766 cyc/iter EXACTLY (identical distributions,
+    all six statistics) where T(n) = n*L + OH demands +3L; fitted over
+    (T1, T16) the additive model predicts T(4) = 35.4711 against
+    26.4766 measured (misfit +8.9945 cyc/iter) and under-prices the
+    chain-op rate (2.9982 vs the latency row's 4.4657). The v5 design's
+    named assumption (additive separability) fails; the third arm is
+    what refutes it -- two arms would have produced a plausible wrong
+    OH.
+(3) A SATURATION READING FITS ALL THREE POINTS EXACTLY (PROPOSED, not
+    measured): T(n) = max(n*L, C) with L = 4.4656, C = 26.4766 --
+    4L = 17.8623 < C < 16L = 71.4492, and every point is exact to the
+    printed precision. Operational answer to the named item: the +4
+    loop-close body costs C = 26.4766 cyc/iter in context (MEASURED at
+    n=1 and n=4, where the chain hides in ITS shadow), and 0 visible
+    cost at n=16 (MEASURED: T(16)/16 = 4.4656 reproduces the latency
+    row's straight-IMAD quote 4.4656 to printed precision, CONSUMED at
+    its commit).
+(4) CONSEQUENCE FOR THE LANDED PER-OP QUOTES: the 16-chain-body quotes
+    (latency row's 4.4656/4.4658, and by construction the thr row's
+    bodies) carried NO visible overhead inflation -- the +4 rides in the
+    chain's shadow at 16 chains. The correction this row was imagined to
+    supply is UNNECESSARY at n=16 and INAPPLICABLE as a constant to any
+    body with fewer chain ops (there the loop-close floor 26.4766
+    dominates). Any future small-body measurement must report against
+    the floor.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag, no
+selection answer, no :shapes value, no workgroup row; the landed entries
+stand byte-for-byte. The named item moves PARTIALLY: the standalone
+baseline is ANSWERED AS UNREALIZABLE (REFUTED, both forms), the +4 is
+priced in context (the loop-close floor C = 26.4766 cyc/iter,
+MEASURED), the additive correction is REFUTED.
+
+STATES: MEASURED (the v5 microbench on xavier -- T(1)/T(4)/T(16), the
+three realized bodies, the anchor executions, probe A's refusal diag,
+probe B's two SASS forms; the only measured thing this row); DERIVED
+(marked: the cyc/iter conversions, the anchor check arithmetic, the
+additive-model fit and its misfit, the max-model pointwise consistency,
+the T(16)/16 cross-check identity); PROPOSED (the saturation reading
+T(n) = max(n*L, C) -- fits, not measured); IMPLEMENTED: nothing
+(evidence + ADR amendment only); DECIDED: nothing new; ACCEPTED DESIGN
+ONLY (unchanged): the operator-aware contract + pre-registration, the
+row (ii) routes, the entry contract + wiring, ADR-0358, ADR-0373;
+UNMEASURED named: the +4 floor's INTERNAL composition (which of SHFL /
+counter IADD3 / ISETP / taken-BRA carries the 26.4766 -- per-phase
+instrumentation, its own row), the pure 2-input IADD3 and pure IMAD.IADD
+issue costs (UNSEPARATED), the pure 2-input IADD3 register-add dependent
+latency (UNSEPARATED), the IMAD.IADD spelling's own latency, the 21
+surplus ops' true per-op costs, raw MUFU.RCP, the residual W-shape's
+dynamic carrier, noise exceedance of the corrected residuals, sum TRUE
+side W=256, cross-day run 3+ (still 2026-10-26 UTC), non-xavier
+verdicts, :sum W=64 elsewhere, live CUDA selection path, workgroup rows
+(:arm/:unknown provisional :measured? false).
+
+GATES (real runs, this worktree): scoped GPU gate (8 GPU-owned
+namespaces, scratch runner gpu_scoped_gate.cljk, never committed) GREEN
+123 tests / 12162 assertions / 0 failures / 0 errors (glslang 16.6.0
+real-spawn) -- the committed pin exactly (this diff touches NO .cljk
+namespace, regression pin); find docs -name '*.sh' -> 0 files (this
+row's evidence is .txt only: record.txt + run-log.txt +
+microbench-sass.txt + oh-baseline-table.txt); gpu_regime_classify.py
+--self-test NOT re-run this slice (no classify code touched -- standing
+pin 2649/0, NOT re-verified here); FULL run-tests.cljk NOT run this
+slice (no .cljk touched) -- documented RED AT BASE 'Could not find
+namespace: kotoba.form' (ADR-0362), outside this diff -- NO green full
+suite claimed.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+at tick start AND re-checked immediately before this push); chain PR
+#1455 was MERGED before this tick (origin/main 62fb8b7f3), so per the
+chain rule this row starts the next chain branch bot/amu-gpu-chain-20261026
+with ONE fresh PR.
+
+NAMED NOT HIDDEN: the NAMED FAILED ATTEMPTS above (v1-v4) -- the row's
+design was wrong twice before the measurement corrected it (additive
+refuted); the interrupted earlier tick left v1-v3 scratch in Hermes
+scratch (runlogs 12:29:31Z/12:37:15Z, pretests 12:49Z/12:52Z) and NO
+commit -- this tick completed the row; kbb's "2 dep(s) are not
+:local/root ..." warning on every run (identical everywhere); the
+untracked deps.edn in this worktree (present at tick start, not created
+or touched by this row, not committed); the tar transfer's "Ignoring
+unknown extended header keyword
+'LIBARCHIVE.xattr.com.apple.provenance'" notices (benign macOS metadata
+-- the tree is measured after extraction: 4 files, 0 AppleDouble
+sidecars, 4/4 sha256 matched); all scratch instruments
+(gpu-oh-baseline-microbench.cu a79ad8e952043710.., oh_baseline_verify.py
+4fae36e74e06d225.., oh_realiz_a.cu e5f3b53ea3561847.., oh_realiz_b.cu
+fad2a09a5d170e44.., run driver 6502dc297c7b97e1..) kept in Hermes
+scratch, never staged; the latency/thr row numbers and the v2 op-cost
+table are CONSUMED at their own commits, not re-measured; the run
+binary's and the verified cubin's builds are separate nvcc invocations
+of the same source (same flags; the verified SASS is the cubin's).
+
+Evidence: docs/evidence/gpu/cuda-oh-baseline-20261026/ (record.txt +
+run-log.txt + microbench-sass.txt + oh-baseline-table.txt) + the
+ADR-0361 twenty-fourth amendment. (JUN-55, JUN-57)

@@ -1,0 +1,170 @@
+JUN-59 -- session 8 protocol: WORK-DOSE DISCRIMINATOR (WORKMUL).
+INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27T12:25Z, this
+tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (from session 7's named residual, narrowed to ONE
+   observable axis): session 7 MEASURED that the batch instrument's GPU
+   bracket (ts1..ts2 around B dispatches) leaves the 31-tick FLOOR
+   strictly between B=2 and B=3. WHY is UNMEASURED. This session does
+   NOT test a causal mechanism. It measures ONE narrower, observable
+   question:
+
+     AT FIXED DISPATCH COUNT B, IS THE CAPTURE DRIVEN BY THE TOTAL
+     DISPATCHED WORK -- or does the capture stay out of reach at B=2
+     no matter how much work one dispatch carries?
+
+   knob: the new compile-time WORK_MUL knob (the instrument's ONLY
+   derivation edit, see instrument-derivation.diff.txt): one unit of
+   work = one dispatch of the archived grid (n = 1,000,003 elements,
+   groups = ceil(n/W)); an arm (B, M) runs B dispatches of an M-times
+   grid inside the bracket = B*M work units total. WORK_MUL=1 is the
+   archived behaviour (control rows pin this). Whatever the answer, no
+   mechanism is claimed.
+
+   NAMED LIMITATION (frozen in advance): WORK_MUL scales grid size and
+   total work together (the shader bytes are untouched, so per-workgroup
+   cost cannot be scaled separately); "more work" vs "bigger grid" is
+   NOT separated here and stays UNMEASURED.
+
+1. INSTRUMENT DERIVATION (chain of custody):
+   base = the archived session-7 snapshot
+     docs/evidence/gpu/anv-bonset-20261027/gpu-subgroup-reduce-anv-bonset.c.txt
+     (digest 9847b0f1fa139d284d909ddc53e8e25af0b750126f31b8bcae2ed12c16326977,
+     itself the byte-identical session-6 snapshot; re-verified in
+     host-verify)
+   derivation = ONE parameterization edit (the WORK_MUL knob) in 4
+   hunks: H1 the knob + N_ELEMENTS scaling (WORK_MUL=1 reproduces the
+   archived N_ELEMENTS 1000003u exactly), H2 PARTS_CAP derived from
+   N_ELEMENTS (one parts[] slot per workgroup at any M; at M=1 the
+   capacity is 7813 = the wg=128 group count, in-bounds as before),
+   H3/H4 knob-identity prints (work_mul= in the header and in every
+   SAMPLE line). Full diff: instrument-derivation.diff.txt.
+   Derived source archived here as
+   gpu-subgroup-reduce-anv-workmul.c.txt (digest 5c7cf2d5...).
+   Sessions 1/2/4/5/6/7 instruments stay byte-stable.
+
+2. ARMS (one binary per arm; tag = b<B>m<M>; BARRIER_N=0 everywhere):
+   b1m1  B=1 M=1   1 work unit   floor control (committed 31 ticks)
+   b2m1  B=2 M=1   2 work units  floor control (committed 31 ticks)
+   b3m1  B=3 M=1   3 work units  capture control (committed 5,520
+                                 ticks, session 7, at (sum,128,S=16))
+   b8m1  B=8 M=1   8 work units  capture control (committed 32,915
+                                 ticks, session 4)
+   b1m3  B=1 M=3   3 work units  PROBE (equal total work to b3m1,
+                                 one dispatch instead of three)
+   b1m8  B=1 M=8   8 work units  PROBE (equal total work to b8m1,
+                                 one dispatch instead of eight)
+   b2m3  B=2 M=3   6 work units  PROBE (B=2, 3x per-dispatch work)
+   b2m8  B=2 M=8  16 work units  PROBE (B=2, 8x per-dispatch work --
+                                 twice the total work of the captured
+                                 b8m1 control)
+   BATCH and WORK_MUL are compile-time; the header prints batch=,
+   barrier_n= and work_mul=, every SAMPLE prints batch= and work_mul=.
+   One binary per arm = 8 binaries,
+   gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DBARRIER_N=0
+       -o anv-wm-<tag> gpu-subgroup-reduce-anv-workmul.c -lvulkan,
+   same host.
+
+3. CELLS / RUN UNIT (unchanged from sessions 1-7):
+   the same 24 cell lines (byte-copy of cases-s7.txt's cell lines,
+   diff exit 0 verified at derivation time): op {sum,max,min}
+   x W {128,256} x forced S {8,16,32,default}; S=8 fails-closed
+   (minSubgroupSize=16), 18 pipeline-ok cells carry timing samples.
+   One fresh process per run; the instrument's internal protocol
+   (WARMUP 3, ROUNDS 25, seeded LCG-shuffled interleave, SEED 20261027)
+   is UNCHANGED. Runs: 3 fresh processes per arm
+   = 8 arms x 3 runs = 24 processes.
+   Metric per sample: gpu_ticks = ts2 - ts1 (1 tick = timestampPeriod
+   = 52.083 ns on this device, from the instrument header), host_ns.
+   Every SAMPLE's batch=/work_mul= fields must equal its run's (B, M)
+   and every run's header barrier_n= must be 0, n= must be 1,000,003*M
+   (checked by analysis-s8.py).
+
+4. CLASSIFICATION THRESHOLDS (unchanged from session 7, frozen there
+   from COMMITTED values only):
+   FLOOR        := pooled median bracket <= 100 ticks at ALL 18 cells
+                   (committed floor band across sessions 1-7: 25..32
+                   ticks; 100 is >3x that ceiling).
+   CAPTURED     := pooled median bracket >= 1000 ticks at ALL 18 cells
+                   (the smallest committed captured value anywhere is
+                   8,968 ticks, so 1000 is <= 1/8 of any captured
+                   value).
+   INTERMEDIATE := anything else (mixed cell classes, or the reference
+                   cell pooled median in (100, 1000)) -- reported
+                   quantified cell-by-cell, never forced into
+                   FLOOR/CAPTURED.
+   Reference cell for headline numbers: idx=1 (op=sum, W=128,
+   forced=16). Pooled median = median over the 25 rounds x 3 runs = 75
+   samples per cell per arm.
+
+5. PRE-REGISTERED LETTERS (both branches named BEFORE the first run;
+   the analysis route is analysis-s8.py over the 24 committed run logs
+   ONLY, run twice byte-identical -- diff exit 0; publication-s8.txt is
+   produced only by that script):
+
+   C1 CONTROL REPLICATION (prerequisite; the acceptance criteria are
+      NUMERIC AGREEMENT WITH THE COMMITTED VALUE AT EACH CONTROL'S OWN
+      (B, M) -- the session-7 fix, kept):
+      b1m1 and b2m1 satisfy FLOOR; b3m1 reference-cell pooled median
+      within +/-5% of 5,520 (session 7 -- at WORK_MUL=1 the derived
+      instrument must reproduce the byte-identical instrument); b8m1
+      within +/-5% of 32,915 (session 4).
+      (a) all four satisfy -> W1-W4 are evaluated against the row.
+      (b) any fails -> named replication discrepancy (which also bears
+          on the derivation edit: WORK_MUL=1 must be behaviourally
+          identical to the base); W1 interpretation flagged per
+          W1(d); cause UNMEASURED.
+
+   W1 WORK-DOSE AT B=2 (the row question): classify b2m3 and b2m8 per
+      the section-4 thresholds.
+      (a) both FLOOR -> capture at B=2 is NOT reachable by up to 8x
+          per-dispatch work (b2m8 carries 16 work units inside the
+          bracket -- twice the captured b8m1's 8 units): the capture
+          is not a total-work threshold on this axis; dispatch count
+          stays implicated. Observable only.
+      (b) b2m3 or b2m8 CAPTURED -> capture CAN be driven by
+          per-dispatch work at fixed B=2; the 2->3 onset step is not
+          purely a dispatch-count step. Observable only.
+      (c) otherwise INTERMEDIATE/MIXED -> reported cell-by-cell.
+      (d) C1 branch (b) fires -> W1's interpretation is flagged; the
+          discrepancy's cause stays UNMEASURED.
+
+   W2 EQUAL-TOTAL-WORK PAIRS (descriptive, no branch): (b1m3 vs b3m1)
+      at 3 work units and (b1m8 vs b8m1) at 8 work units -- pooled
+      median bracket, host_ns and class at the reference cell and the
+      18-cell band. Counts/ratios only.
+
+   W3 SINGLE-DISPATCH WORK-DOSE (descriptive, no branch): b1m1/b1m3/
+      b1m8 pooled medians and host_ns -- is any single-dispatch arm
+      captured? Counts only.
+
+   W4 WORK-DOSE IN HOST TIME (descriptive, no branch): host_ns per
+      work unit (host_ns / (B*M)) at the reference cell for every arm.
+      Counts only.
+
+6. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer. accelerator-targets defaults
+   remain provisional design assumptions (:measured? false). This is
+   NOT the basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+
+7. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   (committed pin 2649 assertions / 0 failures); scoped GPU gate (the
+   8 accelerator test namespaces; scratch runner, never committed;
+   expected pin 123 tests / 12162 assertions); FULL run-tests.cljk run
+   live this tick (the suite's base state is red 'Could not find
+   namespace: kotoba.form' at namespace load, ADR-0362, outside every
+   amu-gpu diff -- recorded live, no green full suite claimed);
+   find this evidence dir -name '*.sh' -> 0.
+
+8. UNMEASURED (named in advance): any causal mechanism for the
+   undercount OR the capture OR the onset location; WHY capture turns
+   on where it does; "more work" vs "bigger grid" (the named
+   limitation above); any M outside {1,3,8}; any B*M pair outside the
+   eight arms; B=7; any N>0 at any (B, M); session 2's run-1 dip
+   cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; any baseline-vs-variant sign; BT ordering;
+   isolated single-dispatch timing (W3 brackets are still batched
+   through the same submit path); non-empty barriers; anything off
+   this host.

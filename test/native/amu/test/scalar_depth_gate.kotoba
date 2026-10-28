@@ -1,0 +1,9 @@
+;; Native scope boundary: no references escape a scalar region.
+(ns amu.test.scalar-depth-gate (:export [main]))
+(defn- nest [depth :i64] :i64
+ (if (= depth 0) 0 (+ 1 (arena-scope (nest (- depth 1))))))
+(defn main [] :i64
+ (let [mode (typed-cap-call :cli/args :string :string "0")]
+  (cond (= mode "overflow") (nest 4097)
+        (= mode "old-boundary") (nest 257)
+        :else (nest 4096))))

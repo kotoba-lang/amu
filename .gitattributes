@@ -1,7 +1,5 @@
 # Runtime source identity is measured byte-for-byte on every supported host.
 # Never allow checkout configuration to rewrite reviewed loader sources.
-tools/kexe_loader.c text eol=lf
-tools/kexe_loader_windows.c text eol=lf
 
 # `deps.edn` is measured byte-for-byte too, and had no such protection.
 # `kotoba.compiler.nbb.classpath/deps-digest` is sha256 over the FILE'S BYTES,
@@ -26,5 +24,17 @@ seed/MANIFEST text eol=lf
 seed/HEADS text eol=lf
 seed/MEMORY-MAP text eol=lf
 seed/SIR text eol=lf
-seed/bootstrap/adopted-loader-20261012.c text eol=lf
+# Closed measurement factory hashes bind these exact LF source bytes,
+# including their admitted final blank line. Preserve that line rather than
+# rewriting the pinned source after its native execution records were taken.
+seed/bench/host-arm.kotoba text eol=lf whitespace=-blank-at-eof
+seed/bench/registry-arm.kotoba text eol=lf whitespace=-blank-at-eof
 seed/bootstrap/adopted-20261012.bin binary
+seed/bootstrap/aarch64-linux-static-root.elf binary
+
+# Diagnostic hashes bind raw native process bytes, including /proc whitespace.
+# Do not normalize these records or "fix" launcher stdout to satisfy a linter.
+docs/evidence/embench-native-diagnosis-20261026/** -text
+docs/evidence/embench-native-diagnosis-20261026/**/*.stdout -whitespace
+docs/evidence/embench-native-diagnosis-20261026/x86/gates-r3/gate-plan-x86/kernel-memory.log -whitespace
+docs/evidence/embench-native-diagnosis-20261026/x86/extras-plan-r5/project.log -whitespace

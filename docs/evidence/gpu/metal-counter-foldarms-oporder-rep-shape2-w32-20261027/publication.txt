@@ -1,0 +1,64 @@
+## Regime classification (claim protocol rule 1, Metal counters channel)
+
+Published by scripts/gpu_regime_classify.py (GAP-1.15). This channel's baseline metric is NAMED BY THE CHANNEL (the 2026-10-25 counter-channel adoption and its harness/calibration rows, ADR-0360): counter_ns -- the GPUTimestamp counter-sample delta bracketing one dispatch ([encoder start, encoder end], GPU ns, the AtStageBoundary pass-attachment bracket; the instrument prints the raw pair beside every delta). The 2026-10-25 calibration row MEASURED that this delta carries an additive encoder-boundary residual on this host (counter_ns = T_dispatch + R(grid shape, state) + epsilon), so a level here is a BRACKET-DELTA level, not a pure kernel time -- the residual is named, never subtracted (no correction is designed).
+
+Run unit on this channel: the MSL channel's, unchanged -- ONE FRESH PROCESS (the ADR-0358 protocol: fresh processes, interleaved AB/BA pairs, WARMUP=2 discarded, verified read-back). One log is one run; the per-run baseline median is the median over that run's resolved baseline-arm counter_ns samples for the operator; rule 2's unit is the run's paired-median ratio (median over the run's pairs of the within-pair ratio variant_ns/baseline_ns, NEVER re-oriented).
+
+Clustering rule GAP-1.15: per operator, the per-run baseline medians sorted ascending, single-linkage -- the next median joins the current level at <= 1.15x the previous, else it starts a new level. The rule is metric-parametric as written (its 1.15 window derives from the MSL corpus's decided separation and carries unchanged); only the publication names the metric. Rule 2's sign classification is published in its own section beside this one -- this rule-1 section itself renders no sign verdict.
+
+Rule 3's boundary stands: counter_ns merges with NEITHER the MSL campaign's command-buffer GPUStartTime->GPUEndTime bracket's gpu-ns NOR any host wall-clock (three instruments that all say "ns", never merged). Rule 4 is unchanged: this publication moves no `:measured?` flag, no selection answer and no workgroup row.
+
+Cell (every run of this session): n=1048576 W=32. Per-run baseline medians (rule 1's first publication; baseline = the threadgroup-memory reduce arm):
+
+| operator | run | baseline per-run median (counter_ns) |
+|---|---|---|
+| max | run 1 (n=1048576 W=32) | 113646.0 |
+| max | run 2 (n=1048576 W=32) | 113896.0 |
+| max | run 3 (n=1048576 W=32) | 113916.5 |
+| max | run 4 (n=1048576 W=32) | 113521.0 |
+| max | run 5 (n=1048576 W=32) | 113812.5 |
+| max | run 6 (n=1048576 W=32) | 113604.5 |
+| min | run 1 (n=1048576 W=32) | 113416.5 |
+| min | run 2 (n=1048576 W=32) | 113750.0 |
+| min | run 3 (n=1048576 W=32) | 113916.5 |
+| min | run 4 (n=1048576 W=32) | 113771.0 |
+| min | run 5 (n=1048576 W=32) | 114125.5 |
+| min | run 6 (n=1048576 W=32) | 113729.0 |
+| sum | run 1 (n=1048576 W=32) | 113500.0 |
+| sum | run 2 (n=1048576 W=32) | 113917.0 |
+| sum | run 3 (n=1048576 W=32) | 113625.0 |
+| sum | run 4 (n=1048576 W=32) | 113896.0 |
+| sum | run 5 (n=1048576 W=32) | 113813.0 |
+| sum | run 6 (n=1048576 W=32) | 114000.0 |
+
+Regime clusters:
+
+| operator | level | counter-ns range | runs (baseline per-run median) |
+|---|---|---|---|
+| max | 1 (the only observed level) | 113521.0..113916.5 | run 1 (n=1048576 W=32) (113646.0), run 2 (n=1048576 W=32) (113896.0), run 3 (n=1048576 W=32) (113916.5), run 4 (n=1048576 W=32) (113521.0), run 5 (n=1048576 W=32) (113812.5), run 6 (n=1048576 W=32) (113604.5) |
+| min | 1 (the only observed level) | 113416.5..114125.5 | run 1 (n=1048576 W=32) (113416.5), run 2 (n=1048576 W=32) (113750.0), run 3 (n=1048576 W=32) (113916.5), run 4 (n=1048576 W=32) (113771.0), run 5 (n=1048576 W=32) (114125.5), run 6 (n=1048576 W=32) (113729.0) |
+| sum | 1 (the only observed level) | 113500.0..114000.0 | run 1 (n=1048576 W=32) (113500.0), run 2 (n=1048576 W=32) (113917.0), run 3 (n=1048576 W=32) (113625.0), run 4 (n=1048576 W=32) (113896.0), run 5 (n=1048576 W=32) (113813.0), run 6 (n=1048576 W=32) (114000.0) |
+
+claim-protocol-rule2: PUBLISHED (regime-matched sign per level below; sign claims channel-scoped -- a counters-channel sign never flips an MSL command-buffer cell, never flips a WGSL cell and never answers a workgroup row; rule 4 unchanged: no :measured? flag, no selection answer and no workgroup row moves)
+
+## Sign classification (claim protocol rule 2, Metal counters channel)
+
+Published by scripts/gpu_regime_classify.py from the run blocks' paired-median ratios (rule 2's unit on this channel: median over the run's pairs of the within-pair ratio variant_ns/baseline_ns -- the ADR-0358 paired-within-run statistic, NEVER re-oriented) and the rule-1 regime clusters of the same runs' baseline per-run medians (GAP-1.15, counter-ns). Rule 2: a sign is regime-invariant when every per-run ratio of every observed regime lies on the same side of 1.0 -- only such a sign may be a selection basis; any other sign is regime-scoped and cannot choose a variant. The sign machine is the MSL channel's, unchanged and metric-parametric.
+
+Sign claims on this channel are CHANNEL-SCOPED (rule 2 carries in full): a counters-channel sign never flips an MSL command-buffer cell, never flips a WGSL cell and never answers a workgroup row -- this channel is neither the wire-42 loader path nor its provider successor (the 2026-10-25 channel-rule amendment), so it can never move an ADR-0355 workgroup row. Rule 4 is unchanged -- this publication moves no `:measured?` flag, no selection answer and no workgroup row.
+
+Regime-matched sign per level (rule 1's levels; the sign of the paired ratios within each level):
+
+| operator | level | runs (paired ratio) | level sign |
+|---|---|---|---|
+| max | 1 (the only observed level) | run 1 (n=1048576 W=32) (0.918), run 2 (n=1048576 W=32) (0.921), run 3 (n=1048576 W=32) (0.915), run 4 (n=1048576 W=32) (0.919), run 5 (n=1048576 W=32) (0.919), run 6 (n=1048576 W=32) (0.918) | one-sided faster (6/6 below 1.0) |
+| min | 1 (the only observed level) | run 1 (n=1048576 W=32) (0.921), run 2 (n=1048576 W=32) (0.920), run 3 (n=1048576 W=32) (0.920), run 4 (n=1048576 W=32) (0.915), run 5 (n=1048576 W=32) (0.916), run 6 (n=1048576 W=32) (0.918) | one-sided faster (6/6 below 1.0) |
+| sum | 1 (the only observed level) | run 1 (n=1048576 W=32) (0.919), run 2 (n=1048576 W=32) (0.920), run 3 (n=1048576 W=32) (0.921), run 4 (n=1048576 W=32) (0.920), run 5 (n=1048576 W=32) (0.920), run 6 (n=1048576 W=32) (0.917) | one-sided faster (6/6 below 1.0) |
+
+| operator | verdict | side | detail |
+|---|---|---|---|
+| max | regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+| min | regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+| sum | regime-invariant | faster | all 6 per-run ratios below 1.0 (6/6 faster); every observed regime one-sided |
+
+Cell (all 18 per-run ratios pooled): **regime-invariant**, faster (18/18 faster).

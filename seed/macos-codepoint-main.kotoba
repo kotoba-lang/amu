@@ -1,0 +1,10 @@
+;; Exercise ASCII and two-, three-, four-byte UTF-8 through ABI slot 144.
+(ns seed.macos-codepoint-main (:export [main]))
+
+(defn main [] :i64
+  (let [s "Aé€🙂"]
+    (if (and (= (string-code-point-at s 0) 65)
+             (= (string-code-point-at s 1) 233)
+             (= (string-code-point-at s 3) 8364)
+             (= (string-code-point-at s 6) 128578))
+      42 1)))

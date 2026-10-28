@@ -1,0 +1,276 @@
+JUN-59 session 45 -- THE PER-CELL WANDER REPARTITION PROBE
+(publication)
+(does ANY ok cell's within-window block-level wander -- the
+range of the cell's own 12 block pooled-median gpu_ticks
+within one window, held cell by cell instead of through the
+block-min tail -- exceed WITHIN-window run-exchangeable
+sampling noise? ONE observable axis per (window, arm): the
+max-T M = max_c W_c over the 18 cells, W_c = max_b V_{b,c} -
+min_b V_{b,c} over the 12 blocks of that (window, arm), vs a
+within-window run-repartition resampling null over the same
+(window, arm)'s 36 committed runs; the max over cells is taken
+INSIDE each resampling trial too (family-wise over the 18
+cells).)
+Produced ONLY by analysis-s45.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window); protocol.txt was
+frozen BEFORE any statistic of this probe was computed (freeze
+stamp 2026-10-28T07:15:00Z). ANALYSIS slice -- NO hardware ran
+this tick; every input quantity was MEASURED on aiueos-6600hs
+Intel BMG G31 ANV in sessions 36/38/39 (run windows
+2026-10-28T02:40:49Z, 03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs; block
+   order A..L; reproduction check vs the published/quote-only
+   vectors of publication-s39.txt section 3 -- mismatch => (c)):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+3b. ANCHOR REPRODUCTION ROW (pre-registered; hi block A's
+    (sum,128,S=16) pooled median and 18-cell min..max vs the
+    quote-only anchor priors of publication-s36/38/39 section
+    D -- mismatch => (c)):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   at the s39 window (the primary window, session 40's framing)
+   does ANY ok cell's within-window block-level wander W_c =
+   max_b V_{b,c} - min_b V_{b,c} (V = the block's per-cell
+   pooled median over its 75 samples) EXCEED the within-window
+   run-repartition null? Primary per-probe statistic: M = max_c
+   W_c (the max-T; the max is taken inside each resampling
+   trial too). 20000 trials per probe, seed 20261028, frozen
+   probe order s39 hi / s39 tw / s36 hi / s36 tw / s38 hi /
+   s38 tw; p = (1 + count(M* >= M_obs)) / (1 + 20000),
+   one-sided; W and M in exact INTEGER ticks; W_c marginal
+   counts/p are descriptive (uncorrected, 108 marginal tests
+   across the six probes) and shown in section 6 D1):
+   s39 hi: M_obs = 72; max cell(s) = (max,256,S=default), (min,256,S=32); count 9423 / 20001; p = 0.471176; p <= 0.05: False; probe letter (a) PER-CELL-NOISE-CONSISTENT
+   s39 tw: M_obs = 70; max cell(s) = (sum,256,S=32); count 9877 / 20001; p = 0.493875; p <= 0.05: False; probe letter (a) PER-CELL-NOISE-CONSISTENT
+   T1 = (a) PER-CELL-NOISE-CONSISTENT
+   NAMED, NOT HIDDEN: (a) does NOT prove 'estimator noise is
+   the mechanism' -- the null is RUN-EXCHANGEABILITY at the
+   fresh-process granularity within one window and a physical
+   driver acting uniformly within the window would also read
+   (a); AND each per-cell wander is a RANGE (max-min) of 12
+   block values of pooled medians of 75 samples -- a tail-to-
+   tail statistic, NOT a scale estimate; wander of only other
+   distribution quantiles, only the per-cell LEVEL (session
+   44's probe), or only scales inside the 25-sample/3-run
+   units is invisible to this construction; the max-T at n=12
+   blocks is LOW POWER and three windows in ONE day on ONE
+   host is LOW POWER (a null is not stationarity, and not
+   'no per-cell structure'); (b) would implicate
+   block-timescale (~3-run / few-second) PER-CELL wander
+   structure but NOT name it (thermal/scheduling/memory/driver
+   state all UNMEASURED); the 18 per-cell MARGINAL p values
+   per probe are UNCORRECTED (108 marginal tests across the
+   six probes) and carry NO letter (the frozen row test is the
+   max-T); the six probe p values / three window letters are
+   UNCORRECTED across probes/windows too (the row answer is
+   the s39 window letter alone); cells span 986..1,443 ticks
+   in level even within one block -- the frozen 1,000-tick
+   class boundary sits INSIDE the per-cell level range, so the
+   threshold-artifact-vs-representation ambiguity binds
+   per-cell rows directly and STAYS UNRESOLVED; exchangeability
+   of runs is itself an assumption; this letter and sessions
+   40/41/42/43/44's letters are DIFFERENT statistics over the
+   SAME runs -- none confirms nor overturns another, and the
+   probes share the same 234 logs and resampling skeleton (NOT
+   independent evidence); 20,000 trials (NOT the s35-frozen
+   100,000 -- cost, same named deviation as sessions 40-44; p
+   resolution 1/20,001 ~= 5e-5); L2 observational ONLY; NO
+   causal mechanism; direction UNMEASURED.
+
+5. REPLICATION LETTERS (pre-registered, same rule per window
+   at the s36 and s38 windows; NO cross-window joint letter):
+   s36 hi: M_obs = 84 (max cell(s) (max,256,S=default)); count 3095 / 20001; p = 0.154792; p <= 0.05: False; probe letter (a) PER-CELL-NOISE-CONSISTENT
+   s36 tw: M_obs = 68 (max cell(s) (max,256,S=default)); count 12890 / 20001; p = 0.644518; p <= 0.05: False; probe letter (a) PER-CELL-NOISE-CONSISTENT
+   s36 letter = (a) PER-CELL-NOISE-CONSISTENT
+   s38 hi: M_obs = 84 (max cell(s) (sum,256,S=32)); count 947 / 20001; p = 0.047398; p <= 0.05: True; probe letter (b) EXCEEDS NULL
+   s38 tw: M_obs = 56 (max cell(s) (sum,128,S=default)); count 19891 / 20001; p = 0.994550; p <= 0.05: False; probe letter (a) PER-CELL-NOISE-CONSISTENT
+   s38 letter = (b) EXCEEDS NULL (named arms: hi)
+   named cells of s38 hi achieving M_obs: (sum,256,S=32); cells with MARGINAL p <= 0.05: (sum,256,S=32), (min,256,S=default)
+
+6. DESCRIPTIVE (not the row question):
+   D1 the per-cell scoreboard (per probe, cells in cell-map
+      order; W_c = max_b V - min_b V over the 12 blocks of the
+      probe's (window, arm); marginal count/p = trials with
+      W*_c >= W_obs_c over the same 20,000 -- UNCORRECTED for
+      multiplicity (108 marginal tests), descriptive only, no
+      letter):
+      s39 hi:
+      s39 hi cell 0 (sum,128,S=16): W 34 (block pooled medians 1120..1154); marginal count 3441 p 0.172091
+      s39 hi cell 1 (sum,128,S=32): W 43 (block pooled medians 1400..1443); marginal count 10226 p 0.511324
+      s39 hi cell 2 (sum,128,S=default): W 45 (block pooled medians 1401..1446); marginal count 12365 p 0.618269
+      s39 hi cell 3 (max,128,S=16): W 25 (block pooled medians 1121..1146); marginal count 13617 p 0.680866
+      s39 hi cell 4 (max,128,S=32): W 40 (block pooled medians 1401..1441); marginal count 7343 p 0.367182
+      s39 hi cell 5 (max,128,S=default): W 38 (block pooled medians 1393..1431); marginal count 14102 p 0.705115
+      s39 hi cell 6 (min,128,S=16): W 18 (block pooled medians 1124..1142); marginal count 8573 p 0.428679
+      s39 hi cell 7 (min,128,S=32): W 58 (block pooled medians 1391..1449); marginal count 1195 p 0.059797
+      s39 hi cell 8 (min,128,S=default): W 52 (block pooled medians 1403..1455); marginal count 1944 p 0.097245
+      s39 hi cell 9 (sum,256,S=16): W 13 (block pooled medians 986..999); marginal count 19899 p 0.994950
+      s39 hi cell 10 (sum,256,S=32): W 38 (block pooled medians 1105..1143); marginal count 19910 p 0.995500
+      s39 hi cell 11 (sum,256,S=default): W 47 (block pooled medians 1109..1156); marginal count 16926 p 0.846308
+      s39 hi cell 12 (max,256,S=16): W 34 (block pooled medians 981..1015); marginal count 8839 p 0.441978
+      s39 hi cell 13 (max,256,S=32): W 57 (block pooled medians 1112..1169); marginal count 8389 p 0.419479
+      s39 hi cell 14 (max,256,S=default): W 72 (block pooled medians 1099..1171); marginal count 3115 p 0.155792
+      s39 hi cell 15 (min,256,S=16): W 18 (block pooled medians 987..1005); marginal count 10247 p 0.512374
+      s39 hi cell 16 (min,256,S=32): W 72 (block pooled medians 1102..1174); marginal count 671 p 0.033598
+      s39 hi cell 17 (min,256,S=default): W 65 (block pooled medians 1109..1174); marginal count 5009 p 0.250487
+      s39 tw:
+      s39 tw cell 0 (sum,128,S=16): W 25 (block pooled medians 1124..1149); marginal count 5950 p 0.297535
+      s39 tw cell 1 (sum,128,S=32): W 47 (block pooled medians 1396..1443); marginal count 14054 p 0.702715
+      s39 tw cell 2 (sum,128,S=default): W 40 (block pooled medians 1400..1440); marginal count 12047 p 0.602370
+      s39 tw cell 3 (max,128,S=16): W 22 (block pooled medians 1129..1151); marginal count 12296 p 0.614819
+      s39 tw cell 4 (max,128,S=32): W 31 (block pooled medians 1404..1435); marginal count 15708 p 0.785411
+      s39 tw cell 5 (max,128,S=default): W 58 (block pooled medians 1394..1452); marginal count 6411 p 0.320584
+      s39 tw cell 6 (min,128,S=16): W 18 (block pooled medians 1123..1141); marginal count 11928 p 0.596420
+      s39 tw cell 7 (min,128,S=32): W 41 (block pooled medians 1389..1430); marginal count 12691 p 0.634568
+      s39 tw cell 8 (min,128,S=default): W 29 (block pooled medians 1407..1436); marginal count 17729 p 0.886456
+      s39 tw cell 9 (sum,256,S=16): W 27 (block pooled medians 983..1010); marginal count 14065 p 0.703265
+      s39 tw cell 10 (sum,256,S=32): W 70 (block pooled medians 1096..1166); marginal count 3139 p 0.156992
+      s39 tw cell 11 (sum,256,S=default): W 61 (block pooled medians 1090..1151); marginal count 4539 p 0.226989
+      s39 tw cell 12 (max,256,S=16): W 29 (block pooled medians 985..1014); marginal count 801 p 0.040098
+      s39 tw cell 13 (max,256,S=32): W 44 (block pooled medians 1107..1151); marginal count 18912 p 0.945603
+      s39 tw cell 14 (max,256,S=default): W 68 (block pooled medians 1101..1169); marginal count 1915 p 0.095795
+      s39 tw cell 15 (min,256,S=16): W 29 (block pooled medians 983..1012); marginal count 4224 p 0.211239
+      s39 tw cell 16 (min,256,S=32): W 61 (block pooled medians 1100..1161); marginal count 7193 p 0.359682
+      s39 tw cell 17 (min,256,S=default): W 51 (block pooled medians 1102..1153); marginal count 10200 p 0.510024
+      s36 hi:
+      s36 hi cell 0 (sum,128,S=16): W 20 (block pooled medians 1128..1148); marginal count 10623 p 0.531173
+      s36 hi cell 1 (sum,128,S=32): W 40 (block pooled medians 1395..1435); marginal count 16673 p 0.833658
+      s36 hi cell 2 (sum,128,S=default): W 36 (block pooled medians 1398..1434); marginal count 18475 p 0.923754
+      s36 hi cell 3 (max,128,S=16): W 18 (block pooled medians 1121..1139); marginal count 15438 p 0.771911
+      s36 hi cell 4 (max,128,S=32): W 61 (block pooled medians 1391..1452); marginal count 816 p 0.040848
+      s36 hi cell 5 (max,128,S=default): W 64 (block pooled medians 1381..1445); marginal count 1654 p 0.082746
+      s36 hi cell 6 (min,128,S=16): W 20 (block pooled medians 1126..1146); marginal count 13645 p 0.682266
+      s36 hi cell 7 (min,128,S=32): W 43 (block pooled medians 1402..1445); marginal count 11225 p 0.561272
+      s36 hi cell 8 (min,128,S=default): W 46 (block pooled medians 1409..1455); marginal count 6439 p 0.321984
+      s36 hi cell 9 (sum,256,S=16): W 30 (block pooled medians 980..1010); marginal count 7580 p 0.379031
+      s36 hi cell 10 (sum,256,S=32): W 43 (block pooled medians 1108..1151); marginal count 15293 p 0.764662
+      s36 hi cell 11 (sum,256,S=default): W 69 (block pooled medians 1089..1158); marginal count 4037 p 0.201890
+      s36 hi cell 12 (max,256,S=16): W 30 (block pooled medians 982..1012); marginal count 9774 p 0.488726
+      s36 hi cell 13 (max,256,S=32): W 54 (block pooled medians 1091..1145); marginal count 8056 p 0.402830
+      s36 hi cell 14 (max,256,S=default): W 84 (block pooled medians 1090..1174); marginal count 421 p 0.021099
+      s36 hi cell 15 (min,256,S=16): W 23 (block pooled medians 991..1014); marginal count 19765 p 0.988251
+      s36 hi cell 16 (min,256,S=32): W 46 (block pooled medians 1112..1158); marginal count 17860 p 0.893005
+      s36 hi cell 17 (min,256,S=default): W 71 (block pooled medians 1099..1170); marginal count 255 p 0.012799
+      s36 tw:
+      s36 tw cell 0 (sum,128,S=16): W 22 (block pooled medians 1126..1148); marginal count 6345 p 0.317284
+      s36 tw cell 1 (sum,128,S=32): W 41 (block pooled medians 1401..1442); marginal count 10850 p 0.542523
+      s36 tw cell 2 (sum,128,S=default): W 63 (block pooled medians 1385..1448); marginal count 1912 p 0.095645
+      s36 tw cell 3 (max,128,S=16): W 41 (block pooled medians 1121..1162); marginal count 3332 p 0.166642
+      s36 tw cell 4 (max,128,S=32): W 48 (block pooled medians 1407..1455); marginal count 5282 p 0.264137
+      s36 tw cell 5 (max,128,S=default): W 51 (block pooled medians 1390..1441); marginal count 6397 p 0.319884
+      s36 tw cell 6 (min,128,S=16): W 31 (block pooled medians 1125..1156); marginal count 3216 p 0.160842
+      s36 tw cell 7 (min,128,S=32): W 37 (block pooled medians 1398..1435); marginal count 10992 p 0.549623
+      s36 tw cell 8 (min,128,S=default): W 41 (block pooled medians 1407..1448); marginal count 10244 p 0.512224
+      s36 tw cell 9 (sum,256,S=16): W 31 (block pooled medians 985..1016); marginal count 2740 p 0.137043
+      s36 tw cell 10 (sum,256,S=32): W 58 (block pooled medians 1097..1155); marginal count 10319 p 0.515974
+      s36 tw cell 11 (sum,256,S=default): W 62 (block pooled medians 1114..1176); marginal count 3680 p 0.184041
+      s36 tw cell 12 (max,256,S=16): W 24 (block pooled medians 984..1008); marginal count 15764 p 0.788211
+      s36 tw cell 13 (max,256,S=32): W 50 (block pooled medians 1099..1149); marginal count 8901 p 0.445078
+      s36 tw cell 14 (max,256,S=default): W 68 (block pooled medians 1098..1166); marginal count 4979 p 0.248988
+      s36 tw cell 15 (min,256,S=16): W 23 (block pooled medians 981..1004); marginal count 11649 p 0.582471
+      s36 tw cell 16 (min,256,S=32): W 48 (block pooled medians 1113..1161); marginal count 13558 p 0.677916
+      s36 tw cell 17 (min,256,S=default): W 58 (block pooled medians 1110..1168); marginal count 12686 p 0.634318
+      s38 hi:
+      s38 hi cell 0 (sum,128,S=16): W 19 (block pooled medians 1125..1144); marginal count 14445 p 0.722264
+      s38 hi cell 1 (sum,128,S=32): W 40 (block pooled medians 1400..1440); marginal count 11722 p 0.586121
+      s38 hi cell 2 (sum,128,S=default): W 39 (block pooled medians 1404..1443); marginal count 12410 p 0.620519
+      s38 hi cell 3 (max,128,S=16): W 14 (block pooled medians 1130..1144); marginal count 18240 p 0.912004
+      s38 hi cell 4 (max,128,S=32): W 55 (block pooled medians 1392..1447); marginal count 2756 p 0.137843
+      s38 hi cell 5 (max,128,S=default): W 35 (block pooled medians 1403..1438); marginal count 13988 p 0.699415
+      s38 hi cell 6 (min,128,S=16): W 20 (block pooled medians 1127..1147); marginal count 16660 p 0.833008
+      s38 hi cell 7 (min,128,S=32): W 25 (block pooled medians 1406..1431); marginal count 19695 p 0.984751
+      s38 hi cell 8 (min,128,S=default): W 43 (block pooled medians 1398..1441); marginal count 10674 p 0.533723
+      s38 hi cell 9 (sum,256,S=16): W 44 (block pooled medians 986..1030); marginal count 2424 p 0.121244
+      s38 hi cell 10 (sum,256,S=32): W 84 (block pooled medians 1082..1166); marginal count 706 p 0.035348
+      s38 hi cell 11 (sum,256,S=default): W 48 (block pooled medians 1109..1157); marginal count 16398 p 0.819909
+      s38 hi cell 12 (max,256,S=16): W 25 (block pooled medians 983..1008); marginal count 12289 p 0.614469
+      s38 hi cell 13 (max,256,S=32): W 57 (block pooled medians 1102..1159); marginal count 6968 p 0.348433
+      s38 hi cell 14 (max,256,S=default): W 59 (block pooled medians 1100..1159); marginal count 10616 p 0.530823
+      s38 hi cell 15 (min,256,S=16): W 26 (block pooled medians 982..1008); marginal count 4975 p 0.248788
+      s38 hi cell 16 (min,256,S=32): W 37 (block pooled medians 1116..1153); marginal count 18915 p 0.945753
+      s38 hi cell 17 (min,256,S=default): W 67 (block pooled medians 1096..1163); marginal count 845 p 0.042298
+      s38 tw:
+      s38 tw cell 0 (sum,128,S=16): W 22 (block pooled medians 1125..1147); marginal count 9091 p 0.454577
+      s38 tw cell 1 (sum,128,S=32): W 36 (block pooled medians 1412..1448); marginal count 13683 p 0.684166
+      s38 tw cell 2 (sum,128,S=default): W 56 (block pooled medians 1392..1448); marginal count 4164 p 0.208240
+      s38 tw cell 3 (max,128,S=16): W 24 (block pooled medians 1128..1152); marginal count 13077 p 0.653867
+      s38 tw cell 4 (max,128,S=32): W 42 (block pooled medians 1396..1438); marginal count 13016 p 0.650817
+      s38 tw cell 5 (max,128,S=default): W 37 (block pooled medians 1398..1435); marginal count 11042 p 0.552122
+      s38 tw cell 6 (min,128,S=16): W 29 (block pooled medians 1122..1151); marginal count 687 p 0.034398
+      s38 tw cell 7 (min,128,S=32): W 37 (block pooled medians 1400..1437); marginal count 8138 p 0.406930
+      s38 tw cell 8 (min,128,S=default): W 44 (block pooled medians 1397..1441); marginal count 4897 p 0.244888
+      s38 tw cell 9 (sum,256,S=16): W 21 (block pooled medians 993..1014); marginal count 18579 p 0.928954
+      s38 tw cell 10 (sum,256,S=32): W 54 (block pooled medians 1108..1162); marginal count 13866 p 0.693315
+      s38 tw cell 11 (sum,256,S=default): W 55 (block pooled medians 1105..1160); marginal count 11754 p 0.587721
+      s38 tw cell 12 (max,256,S=16): W 32 (block pooled medians 980..1012); marginal count 8050 p 0.402530
+      s38 tw cell 13 (max,256,S=32): W 55 (block pooled medians 1104..1159); marginal count 9605 p 0.480276
+      s38 tw cell 14 (max,256,S=default): W 46 (block pooled medians 1116..1162); marginal count 13519 p 0.675966
+      s38 tw cell 15 (min,256,S=16): W 28 (block pooled medians 983..1011); marginal count 16017 p 0.800860
+      s38 tw cell 16 (min,256,S=32): W 51 (block pooled medians 1105..1156); marginal count 16391 p 0.819559
+      s38 tw cell 17 (min,256,S=default): W 45 (block pooled medians 1113..1158); marginal count 18056 p 0.902805
+   D2 the max-T cell identity and top-3 cells by W_c per probe
+      (ties in W_c named; descriptive only):
+      s39 hi: max cell(s) (max,256,S=default), (min,256,S=32) = 72; top3 (max,256,S=default)=72 (min,256,S=32)=72 (min,256,S=default)=65
+      s39 tw: max cell(s) (sum,256,S=32) = 70; top3 (sum,256,S=32)=70 (max,256,S=default)=68 (sum,256,S=default)=61
+      s36 hi: max cell(s) (max,256,S=default) = 84; top3 (max,256,S=default)=84 (min,256,S=default)=71 (sum,256,S=default)=69
+      s36 tw: max cell(s) (max,256,S=default) = 68; top3 (max,256,S=default)=68 (sum,128,S=default)=63 (sum,256,S=default)=62
+      s38 hi: max cell(s) (sum,256,S=32) = 84; top3 (sum,256,S=32)=84 (min,256,S=default)=67 (max,256,S=default)=59
+      s38 tw: max cell(s) (sum,128,S=default) = 56; top3 (sum,128,S=default)=56 (sum,256,S=default)=55 (max,256,S=32)=55
+   D3 the s40 block-min wander T per (window, arm) (quote-only
+      prior from publication-s40.txt sections 4/5 -- the
+      min-over-cells-first construction this probe replaces;
+      quoted for orientation only, NO recomputation):
+      s39 hi: T(s40) = 14 (block-min wander, different statistic)
+      s39 tw: T(s40) = 8 (block-min wander, different statistic)
+      s36 hi: T(s40) = 18 (block-min wander, different statistic)
+      s36 tw: T(s40) = 14 (block-min wander, different statistic)
+      s38 hi: T(s40) = 25 (block-min wander, different statistic)
+      s38 tw: T(s40) = 21 (block-min wander, different statistic)
+
+7. VERDICT SUMMARY:
+   T1 (s39 window) = (a) PER-CELL-NOISE-CONSISTENT
+   s39 hi: M_obs 72 count 9423/20001 p 0.471176 letter (a) PER-CELL-NOISE-CONSISTENT
+   s39 tw: M_obs 70 count 9877/20001 p 0.493875 letter (a) PER-CELL-NOISE-CONSISTENT
+   s36 hi: M_obs 84 count 3095/20001 p 0.154792 letter (a) PER-CELL-NOISE-CONSISTENT
+   s36 tw: M_obs 68 count 12890/20001 p 0.644518 letter (a) PER-CELL-NOISE-CONSISTENT
+   s38 hi: M_obs 84 count 947/20001 p 0.047398 letter (b) EXCEEDS NULL
+   s38 tw: M_obs 56 count 19891/20001 p 0.994550 letter (a) PER-CELL-NOISE-CONSISTENT
+   s36 window letter = (a) PER-CELL-NOISE-CONSISTENT
+   s38 window letter = (b) EXCEEDS NULL
+   evaluable inputs: vector reproduction EXACT (True); anchor row EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger
+   line (NO reading -> NO line -> NO day-slot consumption).
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

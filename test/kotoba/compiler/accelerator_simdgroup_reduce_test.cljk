@@ -1,0 +1,238 @@
+(ns kotoba.compiler.accelerator-simdgroup-reduce-test
+  "Tests for the :simdgroup-reduce MSL emission and its `lower` admission
+  (ADR-0373, rule 3 step 1). The style is the MSL arm's
+  (accelerator-subgroup-reduce-test's msl-* block): operator meaning pins,
+  P1/P2 pins, spec-spelling pins, determinism -- plus the admission
+  contract itself (the (:msl-v1, :simdgroup-reduce) pair, and its refusal
+  on every other route). Nothing here is a measurement: these are text
+  contracts and compile facts only."
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-simdgroup-reduce :as simdgroup]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]
+            [kotoba.compiler.accelerator-variants :as variants]))
+
+(deftest simdgroup-each-operator-carries-its-intrinsic-and-identity
+  ;; Operator meaning pins, ADR-0373: the intra-SIMD-group fold is ONE
+  ;; Metal reduction intrinsic per operator, and the padded lanes fold the
+  ;; same INFINITE neutrals as every other arm (accelerator-test's
+  ;; every-arm-shares-one-operator-meaning): MSL has no infinity literal,
+  ;; as_type of the IEEE-754 bits is exact.
+  (doseq [[operator intrinsic identity-text]
+          [[:sum "simd_sum" "0.0f"]
+           [:max "simd_max" "as_type<float>(0xFF800000u)"]
+           [:min "simd_min" "as_type<float>(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (simdgroup/emit-msl kir)]
+      (is (str/includes? code (str "  v = " intrinsic "(v);\n")))
+      ;; the cross-SIMD-group tree keeps the family's combine, unchanged
+      (is (str/includes? code (str "float combine(float a, float b) { return "
+                                   (get {:sum "a+b" :max "max(a,b)" :min "min(a,b)"}
+                                        operator)
+                                   "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";")))
+      ;; exactly the operator's own intrinsic: no other reduction intrinsic
+      ;; may appear in the operator's fold.
+      (is (= [intrinsic]
+             (distinct (re-seq #"simd_(?:sum|max|min)" code)))
+          (str "a foreign simd reduction intrinsic leaked into the "
+               (name operator) " fold")))))
+
+(deftest simdgroup-intra-stage-is-one-intrinsic-not-the-shuffle-ladder
+  ;; ADR-0373: "the intra-SIMD-group stage changes and only that stage: the
+  ;; simd_shuffle_down ladder is replaced by one SIMD-group reduction
+  ;; intrinsic per operator." The shuffle ladder, its fold-width query and
+  ;; its guard must be GONE -- a simd_shuffle_down rewrite would be
+  ;; :subgroup-reduce, which this variant is not (the negative pins that
+  ;; bind that variant's fold are exactly why this row exists).
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (simdgroup/emit-msl kir)]
+      (is (nil? (re-find #"simd_shuffle_down" code))
+          "the shuffle ladder is back -- this fold is one intrinsic")
+      (is (nil? (re-find #"uint fold = min\(sgsize" code))
+          "the shuffle ladder's fold-width query leaked in")
+      (is (nil? (re-find #"for \(uint d = fold / 2u" code))
+          "the shuffle ladder's fold loop leaked in")
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest simdgroup-cites-the-spec-spellings-only
+  ;; Spec pins (Apple MSL Specification + "Porting your Metal code to Apple
+  ;; silicon", the same documents the MSL arm pins; the simd_* reductions
+  ;; were additionally compiler-verified on this host -- toolchain fact,
+  ;; docs/evidence/gpu/simdgroup-reduce-msl-emission-20261023/): the
+  ;; subgroup geometry is thread_index_in_simdgroup /
+  ;; simdgroup_index_in_threadgroup / threads_per_simdgroup /
+  ;; simdgroups_per_threadgroup; the write barrier is threadgroup_barrier.
+  ;; GLSL/WGSL spellings must not leak in.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (simdgroup/emit-msl kir)]
+    (is (str/includes? code "#include <metal_stdlib>"))
+    (is (str/includes? code "uint sgid [[thread_index_in_simdgroup]]"))
+    (is (str/includes? code "uint sg [[simdgroup_index_in_threadgroup]]"))
+    (is (str/includes? code "uint sgsize [[threads_per_simdgroup]]"))
+    (is (str/includes? code "uint nsg [[simdgroups_per_threadgroup]]"))
+    (is (str/includes? code "threadgroup_barrier(mem_flags::mem_threadgroup);"))
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups|subgroup_size|subgroupShuffleDown|subgroupBarrier|bitcast<" code))
+        "a GLSL or WGSL spelling leaked into MSL output")))
+
+(deftest simdgroup-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0373 P2 (unchanged): the partial index is the SIMD-group index
+  ;; (simdgroup_index_in_threadgroup, written only by the
+  ;; thread_index_in_simdgroup == 0 lane) and the shared cross-SIMD-group
+  ;; tree strides subgroup 0's lanes by threads_per_simdgroup over the
+  ;; dense partial array -- never lid arithmetic.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (simdgroup/emit-msl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                       {:workgroup-size w}))]
+      (is (str/includes? code "if (sgid == 0u) { partials[sg] = v; }"))
+      (is (str/includes? code
+                         "for (uint lid = sgid; lid < d; lid += sgsize)"))
+      (is (nil? (re-find #"uint lid = 0u" code))
+          "the partial index fell back to lid arithmetic")
+      ;; the tree is the shared fold, byte-for-byte :subgroup-reduce MSL
+      ;; arm's stage text (everything above the intra stage is unchanged).
+      (is (str/includes? code
+                         (str "  for (uint d = nsg / 2u; d > 0u; d >>= 1u) {\n"
+                              "    if (sg == 0u) {\n"))))))
+
+(deftest simdgroup-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (simdgroup/emit-msl kir)]
+    (is (str/includes? code "threadgroup float partials[128];"))
+    (is (str/includes? code "uint i [[thread_position_in_grid]]"))
+    (is (str/includes? code "parts[g] = partials[0];"))
+    ;; the ABI is the MSL family's, unchanged: x 0, parts 1, n 2.
+    (is (str/includes? code "device const float* x [[buffer(0)]]"))
+    (is (str/includes? code "constant uint& n [[buffer(2)]]"))
+    ;; the entry point is the kernel's :kernel/name (Metal refuses main).
+    (is (str/includes? code "kernel void reduce_sum("))
+    (is (nil? (re-find #"kernel void main\(" code))
+        "the wire-42 'main' entry convention leaked into MSL output")))
+
+(deftest simdgroup-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (simdgroup/emit-msl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (simdgroup/emit-msl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (simdgroup/emit-msl reduce-sum) (simdgroup/emit-msl reduce-sum)))))
+
+(deftest simdgroup-the-unmeasured-lock-is-on-the-row
+  ;; Honesty rule: nothing measured this variant anywhere. The lock flips
+  ;; only when hardware measurement replaces the basis text.
+  (is (false? (:measured? simdgroup/basis)))
+  (is (str/includes? (:text simdgroup/basis) "UNMEASURED"))
+  (is (str/includes? (:text simdgroup/basis) "No speed claim"))
+  (is (= 32 simdgroup/min-workgroup-size)))
+
+(deftest simdgroup-is-admitted-on-the-msl-route-only
+  ;; ADR-0373 rule 3 step 1's contract: `lower` answers this text for the
+  ;; (:msl-v1, :simdgroup-reduce) pair in both readings (the seal/re-lower
+  ;; machinery -- compile-kernel seals it, verify-artifact! re-lowers it),
+  ;; and refuses the variant on every other route (rule 3: MSL only).
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})]
+    (testing "the pair lowers to this namespace's own text"
+      (is (= (simdgroup/emit-msl kir)
+             (accelerator/lower kir :msl-v1 :simdgroup-reduce))))
+    (testing "the seal/re-lower reading round-trips"
+      (let [compiled (accelerator/compile-kernel kir :msl-v1 :simdgroup-reduce)]
+        (is (= :simdgroup-reduce (:variant compiled)))
+        (is (= (simdgroup/emit-msl kir) (:code compiled)))
+        (is (= compiled (accelerator/verify-artifact! compiled)))
+        (is (= compiled (accelerator/compile-kernel kir :msl-v1 :simdgroup-reduce)))))
+    (testing "every other route refuses the variant, never answers baseline"
+      (doseq [target [:wgsl-v1 :cuda-v1 :glsl-v1]]
+        (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                              (accelerator/lower kir target :simdgroup-reduce)))
+        (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                              (accelerator/compile-kernel kir target :simdgroup-reduce)))))
+    (testing "the variant is admitted, not invented: unknown variants still refuse"
+      (is (thrown-with-msg? Exception #"unsupported kernel variant"
+                            (accelerator/lower kir :msl-v1 :turbo))))))
+
+(deftest simdgroup-selection-has-landed-under-the-msl-ladder
+  ;; ADR-0373 rule 3 step 2 (2026-10-23, JUN-58): the selection predicate
+  ;; has LANDED. This replaces the old "selection has not landed" guard --
+  ;; the guard's spirit survives, scoped where it still binds: the measured
+  ;; class never answers this variant except at its OWN flip cells (W =
+  ;; 32, W = 64, W = 128, W = 256, W = 512 and W = 1024, the flip slices
+  ;; 2026-10-23/24 --
+  ;; those
+  ;; cells measured
+  ;; THIS variant faster than :baseline and answered it there, MEASURED),
+  ;; no other vendor's row carries it, and every answer but those flip
+  ;; cells is unmeasured. The full ladder (rung precedence, fail-closed
+  ;; cells, the carve-out's basis and the flip interaction) is pinned in
+  ;; accelerator-variants-test's
+  ;; the-msl-ladder-selects-simdgroup-reduce-first and
+  ;; the-simdgroup-rows-own-flip-cell-flips-the-honesty-lock.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        native {:subgroup-size 32 :subgroup-ops #{:simd-reduce}}]
+    (testing "the Apple MSL descriptor carrying the fold's fact gets this variant, unmeasured"
+      (let [answer (variants/select-variant :apple kir :msl-v1
+                                            (assoc native :device "Apple M3"))]
+        (is (= :simdgroup-reduce (:variant answer)))
+        (is (false? (:measured? answer)))
+        (is (nil? (:measured-cell answer)))))
+    (testing "the measured class never answers it where the flip's keys do not hold (the carve-out)"
+      ;; after the W = 32 flip every width the row admits is a flip cell
+      ;; at the measured reported width, so the carve-out's live cells are
+      ;; the flip keys' own refusals: a class name whose reported
+      ;; SIMD-group width is not the measured 32.
+      (doseq [wg [32 256]
+              device [(assoc native :device "Apple M1 Max"
+                             :subgroup-size 8)
+                      (assoc native :name "Apple M1 Max"
+                             :subgroup-ops #{:basic :shuffle-relative :simd-reduce}
+                             :subgroup-size 16)]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant
+                             :apple (accelerator/kernel "reduce_sum" :reduce :sum
+                                                       {:workgroup-size wg})
+                             :msl-v1 device)))
+            (str "the carve-out must refuse the row at W=" wg))))
+    (testing "W = 32, W = 64, W = 128, W = 256, W = 512 and W = 1024 are the flip cells: the measured class answers there, MEASURED"
+      (doseq [device [(assoc native :device "Apple M1 Max")
+                      (assoc native :name "Apple M1 Max"
+                             :subgroup-ops #{:basic :shuffle-relative :simd-reduce})]
+              wg [32 64 128 256 512 1024]]
+        (let [answer (variants/select-variant
+                      :apple (accelerator/kernel "reduce_sum" :reduce :sum
+                                                {:workgroup-size wg})
+                      :msl-v1 device)]
+          (is (= :simdgroup-reduce (:variant answer))))
+        (is (true? (:measured? (variants/select-variant
+                                :apple (accelerator/kernel "reduce_sum" :reduce :sum
+                                                          {:workgroup-size wg})
+                                :msl-v1 device))))))
+    (testing "no other vendor's row carries it, on any route"
+      (doseq [vendor [:intel :arm :nvidia :amd]]
+        (is (not= :simdgroup-reduce
+                  (:variant (variants/select-variant vendor kir :msl-v1
+                                                     (assoc native :device "Apple M3")))))))))
+
+(deftest simdgroup-fold-is-not-a-rewrite-of-subgroup-reduce
+  ;; The negative pin family that keeps :subgroup-reduce's fold the shuffle
+  ;; loop binds the OTHER direction too: the two variants are separate
+  ;; texts, and :subgroup-reduce's emission is byte-unchanged by this row.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        shared (sg/emit-msl kir)
+        native (simdgroup/emit-msl kir)]
+    (is (str/includes? shared "simd_shuffle_down"))
+    (is (nil? (re-find #"simd_sum|simd_max|simd_min" shared)))
+    (is (not= shared native))
+    ;; everything above the intra stage is the shared fold, unchanged: the
+    ;; partials array, the write barrier and the tree stage text appear
+    ;; byte-identical in both arms.
+    (doseq [fragment ["threadgroup float partials[128];"
+                      "  if (sgid == 0u) { partials[sg] = v; }"
+                      "  threadgroup_barrier(mem_flags::mem_threadgroup);"
+                      "  if (sg == 0u && sgid == 0u) { parts[g] = partials[0]; }"]]
+      (is (str/includes? shared fragment))
+      (is (str/includes? native fragment)))))

@@ -1,0 +1,56 @@
+(ns gpu-device-fake (:export [main]))
+
+;; The fake device layer of the GPU provider (ADR 0371 step 6). It has the
+;; device layer's functions and no GPU: buffers are host memory, a pipeline is
+;; accepted and kept nowhere, and a dispatch does nothing. It lets the
+;; provider's protocol core, grant table and handle tables run as a libc-only
+;; image (the native x86_64 CI job, or qemu-user); the Vulkan layer replaces
+;; this file on GPU hosts.
+;;
+;; A unit that uses it drops this ns line (tools/gpu_provider.kotoba).
+;;
+;; Faults, for the provider's device refusals: a DISPATCH whose x is
+;; 4294967295 makes the next submit report a lost device, 4294967294 a fence
+;; timeout (both end the session); a DISPATCH whose x is 4294967293 and an
+;; ALLOC of 4294967293 bytes fail as an ordinary device error. A real device
+;; never sees these values from this layer.
+;;
+;; It has one device: index -1 (unset) or 0.
+;;
+;; Device state: 64 bytes at S-DEV; word 0 is the pending fault (0, 33 or 34).
+
+(defn- dev-open [s :i64 index :i64] :i64
+  (let [d (kxrt-p-alloc 4096)]
+    (cond (< d 0) d
+          (> index 0) -19
+          :else (let [z (kxrt-p-store64 d 0) w (kxrt-p-store64 (+ s S-DEV) d)] 0))))
+(defn- dev-close [s :i64] :i64 0)
+(defn- dev-name [s :i64] :string "fake")
+;; the report's facts about the layer
+(defn- dev-facts [s :i64] :string "{:layer :fake}")
+(defn- dev-info [s :i64] :string "Kotoba fake device|fake|65535|1")
+;; DEVCLASS other
+(defn- dev-devclass [s :i64] :i64 5)
+
+;; a buffer is anonymous memory; its id is the address
+(defn- dev-alloc [s :i64 n :i64] :i64 (if (= n 4294967293) -1 (kxrt-p-alloc n)))
+(defn- dev-free [s :i64 id :i64 n :i64] :i64 (kxrt-p-unmap id n))
+(defn- dev-zero [s :i64 id :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ id i) 0)] (recur (inc i))))))
+(defn- dev-write [s :i64 id :i64 off :i64 src :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ id off i) (kxrt-p-load8 (+ src i)))] (recur (inc i))))))
+(defn- dev-read [s :i64 id :i64 off :i64 dst :i64 n :i64] :i64
+  (loop [i 0] (if (>= i n) 0 (let [z (kxrt-p-store8 (+ dst i) (kxrt-p-load8 (+ id off i)))] (recur (inc i))))))
+
+(defn- dev-pipeline [s :i64 code :i64 n :i64 bindings :i64] :i64 1)
+(defn- dev-begin [s :i64 slot :i64] :i64 0)
+(defn- dev-dispatch [s :i64 pipe :i64 x :i64 y :i64 z :i64 ids :i64 nids :i64 barrier :i64] :i64
+  (let [d (kxrt-p-load64 (+ s S-DEV))]
+    (let [f (cond (= x 4294967295) 33 (= x 4294967294) 34 :else 0)
+          w (if (> f 0) (kxrt-p-store64 d f) 0)] (if (= x 4294967293) -1 0))))
+;; nanoseconds, or a session-ending refusal
+(defn- dev-submit [s :i64 slot :i64 timeout :i64] :i64
+  (let [d (kxrt-p-load64 (+ s S-DEV)) f (kxrt-p-load64 d) t0 (kxrt-p-clock-ns)]
+    (if (> f 0) (- 0 f) (- (kxrt-p-clock-ns) t0))))
+(defn- dev-replay [s :i64 slot :i64 timeout :i64] :i64 (dev-submit s slot timeout))
+(defn- dev-drop [s :i64 slot :i64] :i64 0)

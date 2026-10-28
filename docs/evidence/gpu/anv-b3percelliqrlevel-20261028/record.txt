@@ -1,0 +1,184 @@
+JUN-59 -- session 50 record (ONE-TICK LAND): THE PER-CELL
+ROBUST-SCALE (IQR) LEVEL CROSS-WINDOW REPARTITION PROBE.
+ANALYSIS slice -- NO new hardware (inputs are the COMMITTED run
+logs of the session-36/38/39 windows).
+2026-10-28 (UTC). Chain branch bot/amu-gpu-chain-20261028-2
+(chain PR #1641, open).
+
+1. ROW QUESTION (ONE row): session 49's first-named candidate row
+   "an IQR-level cross-window probe (the other robust scale's
+   LEVEL axis)" -- per arm, does ANY ok cell's cross-window
+   robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+   over the three windows (s36, s38, s39), L_{w,c} = median of
+   the 12 block D values of window w (D = x_(57) - x_(19) of the
+   block's 75 samples = the s47-frozen exclusive-hinge IQR, exact
+   INTEGER; the s35/s36-frozen 3-run block unit UNCHANGED; 2*L in
+   half-tick integer units), exceed the cross-window
+   run-repartition null (the 108 runs of one arm across the three
+   windows exchangeable)? Primary per-arm statistic: MAX-T
+   M_obs = max_c 2*S_c (max taken inside each trial too;
+   family-wise over the 18 cells). Pre-registered in protocol.txt
+   (freeze stamp 2026-10-28T11:02:52Z, BEFORE any statistic of
+   this probe was computed; protocol.txt written once, never
+   rewritten).
+
+2. THE FINDING (DERIVED; publication-s50.txt, analysis-s50.py run
+   twice byte-identical): T1 = (a) PER-CELL-IQR-LEVEL-CONSISTENT
+   -- BOTH arms read (a): hi M_obs = 35.5 ticks (max cell
+   (min,256,S=16)), count 1,677 / 20,001, p = 0.083896; tw
+   M_obs = 34.0 ticks (max cell (max,128,S=default)), count
+   12,239 / 20,001, p = 0.611969 (both p > 0.05 at the frozen
+   threshold). Named cells with MARGINAL p <= 0.05 (UNCORRECTED,
+   no letter): tw (max,128,S=default) p 0.000300 (its IQR-level
+   L: 151.5 / 120.5 / 117.5 ticks at s36/s38/s39, spread 34.0);
+   hi (min,256,S=16) p 0.009100 (its L: 159.5 / 124.0 / 143.5,
+   spread 35.5 -- the SAME cell that topped s49's hi MAD-level
+   arm). NAMED, NOT HIDDEN: this (a) does NOT overturn session
+   49's MAD-level (b) -- the two axes are DIFFERENT robust scales
+   with DIFFERENT null geometries over the SAME runs; the observed
+   shifts AGREE in direction (tw (max,128,S=default) drops from
+   s36 to s38/s39 on BOTH scales: IQR 151.5 -> 120.5 -> 117.5,
+   MAD 71.5 -> 55.5 -> 56.5), but the IQR-level max-T null is far
+   wider than the MAD-level one (tw max-T p 0.611969 here vs
+   0.008600 at s49), so the same shift reads (b) on one scale and
+   (a) on the other -- which scale's null is the right noise
+   model STAYS UNMEASURED; hi's arm-level p 0.083896 is the
+   closest any arm has come to the frozen threshold on the level
+   axes (descriptive only, no letter); the two arm probes / their
+   letters are UNCORRECTED across arms (the row answer is the
+   pre-registered joint T1); the 36 MARGINAL p values are
+   UNCORRECTED (2 marginal cells below 0.05 across the two arms,
+   letterless); this letter and sessions 40-49's letters are
+   DIFFERENT nulls over the SAME runs (NOT independent evidence)
+   -- s49's per-cell MAD-level probe read (b) over the same
+   windows and s44-48's within-window probes read (a) at their
+   scales; the cross-window null assumes exchangeability ACROSS
+   WINDOWS, a STRONGER assumption than within-window
+   exchangeability; three windows ~30-60 min apart in ONE day on
+   ONE host is LOW POWER and max-T at n=12 blocks is LOW POWER;
+   20,000 trials (NOT the s35-frozen 100,000 -- cost, same named
+   deviation as sessions 40-49; p resolution 1/20,001 ~= 5e-5);
+   L2 observational ONLY, NO causal mechanism, direction
+   UNMEASURED; threshold-artifact-vs-representation STAYS
+   UNRESOLVED. Integrity (DERIVED): 3/3 windows clean; C1 (a) at
+   the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%); 6/6
+   block-min vectors EXACT; anchor row EXACT at all three windows.
+
+3. VERIFIED BY TOOL OUTPUT (real runs this tick):
+   (a) publication-s50.txt produced by analysis-s50.py over the
+       234 committed run logs, run twice byte-identical (cmp
+       exit 0).
+   (b) Gates (real runs this tick, all fresh from the worktree
+       root): gpu_regime_classify.py --self-test TOTAL 2649/0,
+       capture BYTE-IDENTICAL to the pinned classify-selftest.txt;
+       scoped GPU gate GREEN 123 tests / 12,162 assertions / 0
+       failures / 0 errors run 1 AND run 2 (scratch runner
+       scoped-gpu-gate.cljk created/run under the worktree
+       scratch/ dir, DELETED at landing, never committed), both
+       captures BYTE-IDENTICAL to the pinned gate-run1.txt/
+       gate-run2.txt (and to each other); FULL run-tests.cljk
+       LIVE: exit 1, RED AT BASE 'Could not find namespace:
+       kotoba.form' (ADR-0362, outside this diff -- touches NO
+       .cljk namespace), stderr BYTE-IDENTICAL to the pinned
+       gate-full-run-tests.txt -- NO green full suite claimed
+       (gate-rerun-s50.txt).
+   (c) BAR: NO reading -> NO ledger line, NO day-slot consumption
+       (settle-bar-ledger.txt byte-identical to HEAD); frozen
+       evaluator --self-test 38/0 (pin), ledger eval twice
+       byte-identical -> VERDICT UNCHANGED PENDING 1/4 with s31
+       counted; next executable day slot 2026-10-29
+       (bar-eval-s50.txt).
+   (d) derivation-census-s50.txt: independent second parser
+       (split-based parsing WITHOUT regex -- no `re` import;
+       observed per-cell within-block IQR via pure-Python sorted()
+       order statistics over the explicitly pooled 75 --
+       sorted()[56] - sorted()[18] -- cross-checked in-loop
+       against the np.partition kth=[18,56] path (True over all
+       1296 (block, cell) pairs); the resampling's D via the
+       np.partition kth=[18,56] path, NOT a sort; the 12-value
+       level medians via sorted() explicit order statistics
+       (observed) / np.partition kth=(5,6) (resampling); the
+       cross-window repartition resampling and RNG call order
+       re-implemented; publication sections 1/2/3/3b/4/5/6-D1/
+       6-D2/6-D3/7 content re-derived -- every letter, resample
+       count and p value reproduces EXACTLY; gate pins, bar pins,
+       ledger byte-identity checked), 55 rows / 0 mismatched, run
+       twice byte-identical. NAMED DEFECTS of the scratch census
+       generator (drafts; none reached a committed value): (d1)
+       the first draft's gate-pin row parser split the capture on
+       ", " and landed inside the glslang tool-version string
+       (its own want/got rows read MISMATCH on both gate pins --
+       caught by the census's own output before anything was
+       committed; fixed by parsing the summary lines instead);
+       (d2) the second draft's summary-line filter required
+       endswith("errors") while the line ends "errors."
+       (IndexError before any census row was persisted -- the
+       census file is written only at the end; fixed); the
+       committed census records the corrected runs only.
+
+4. STATES (the three states, exactly): ACCEPTED DESIGN ONLY: the
+   settling bar and its ledger, the letter thresholds of sessions
+   31-49 and the PER-CELL robust-scale (IQR) LEVEL max-T letters
+   of THIS session (protocol.txt sections 0-2). IMPLEMENTED:
+   nothing in the compiler -- the analysis/evaluator remain
+   evidence-scoped tooling. MEASURED (this tick): nothing new --
+   NO hardware ran; numbers are DERIVED from the sessions
+   36/38/39 measured logs. Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4
+   unchanged: NOTHING MOVES; NO vendor optimization exists for
+   Intel.
+
+5. UNMEASURED (named): what moves the per-cell robust-scale level
+   on the tw arm (s49's (b) names no mechanism and this probe's
+   (a) does not name one either); which robust scale's null is
+   the right noise model for the tw (max,128,S=default) level
+   shift (the MAD-level (b) vs IQR-level (a) divergence is a
+   divergence of NULL GEOMETRY, not of observed shift direction);
+   whether the shifts are physical or estimator structure; other
+   quantile pairs / deviation centers LEVEL analogs (named
+   candidate rows); the s38 hi (sum,256,S=32) wander replication
+   at a future window (needs NEW hardware); a fourth-window
+   extension (three windows are LOW POWER -- the tw-arm
+   robust-scale level question now has BOTH a (b) (MAD) and an
+   (a) (IQR) to replicate or refute at once); the
+   s31/s34/s36 excursion causes; threshold-artifact-vs-
+   representation; anything off the ANV host. NAMED CANDIDATE
+   ROWS for later sessions: (first) a FOURTH-window replication
+   of the tw (max,128,S=default) robust-scale level shift (needs
+   NEW hardware -- the only route from one uncorrected-family (b)
+   to a letter that survives multiplicity, and now it tests both
+   level axes at once); then a deviation-center or other-quantile
+   -pair LEVEL probe over the same three windows (analysis; no
+   hardware); the s38 hi (sum,256,S=32) wander replication.
+
+6. THE TICK'S FINDING IN ONE LINE: THE PER-CELL ROBUST-SCALE
+   (IQR) LEVEL CROSS-WINDOW max-T READS T1 = (a) PER-CELL-IQR-
+   LEVEL-CONSISTENT on BOTH arms (hi M_obs 35.5 at
+   (min,256,S=16), count 1,677/20,001, p 0.083896; tw M_obs 34.0
+   at (max,128,S=default), count 12,239/20,001, p 0.611969; two
+   marginal cells below 0.05 letterless -- tw (max,128,S=default)
+   p 0.000300, hi (min,256,S=16) p 0.009100): at these
+   windows/powers no ok cell's cross-window IQR-level spread
+   exceeds run-exchangeable sampling noise family-wise over the
+   18 cells -- and this (a) does NOT overturn s49's MAD-level (b):
+   the same tw cell shifts in the same direction on both scales
+   but the IQR-level null is far wider, so the two axes disagree
+   in LETTER while agreeing in DIRECTION (which null is right
+   STAYS UNMEASURED); uncorrected across two arms, cross-window
+   exchangeability itself an assumption, threshold-artifact-vs-
+   representation STAYS UNRESOLVED; the bar stays PENDING 1/4
+   (frozen evaluator, twice byte-identical; no ledger line this
+   tick); nothing in Rule 4 moves.
+
+7. CHAIN: this commit lands ON TOP of the ONE open chain branch
+   bot/amu-gpu-chain-20261028-2 (chain PR #1641, open; its first
+   commit is session 48's c1ef728c0) -- no new branch, no new PR
+   (a second chain PR while one is open is a defect), no rebase,
+   no force-push. BLOCKER-FIRST: the open kotoba-lang/amu PRs
+   with a hermes/ head were checked immediately before this push
+   (the count is recorded in the commit message); while any such
+   blocker PR is open the push is skipped by rule. Evidence:
+   docs/evidence/gpu/anv-b3percelliqrlevel-20261028/ +
+   settle-bar-ledger.txt (unchanged) + the ADR-0355 dated note.
+   (JUN-55, JUN-59)

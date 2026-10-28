@@ -1,0 +1,6 @@
+;; Diagnostic stderr operation with a pool-backed decimal byte count result.
+(ns seed.macos-stderr-main (:export [main]))
+
+(defn main [] :i64
+  (let [count (typed-cap-call :io/write-error :string :string "diagnostic\n")]
+    (if (string=? count "11") 42 43)))

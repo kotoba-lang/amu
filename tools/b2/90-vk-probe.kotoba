@@ -1,0 +1,49 @@
+;; tools/b2/90-vk-probe.kotoba -- route B2, slice 1 (ADR 0375, JUN-377): load the system libvulkan.so.1 with the
+;; Kotoba loader, run its initializers, and call vkEnumerateInstanceVersion and
+;; vkEnumerateInstanceExtensionProperties. No ICD is loaded: dlopen refuses everything but the loaded
+;; objects. Usage: image [PATH-OF-libvulkan.so.1]  (default: the first of the system paths that exists).
+
+(defn- vk-path-1 [] :string "/usr/lib/x86_64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-2 [] :string "/lib/x86_64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-3 [] :string "/usr/lib64/libvulkan.so.1")
+(defn- exists? [p :i64] :bool (= (sys2 SYS-ACCESS p 4) 0))
+(defn- vk-find [] :i64
+  (let [m (malloc-alloc 256)]
+    (cond (let [z (put-str m (vk-path-1))] (exists? m)) m
+          (let [z (put-str m (vk-path-2))] (exists? m)) m
+          (let [z (put-str m (vk-path-3))] (exists? m)) m
+          :else (refuse "libvulkan" "libvulkan.so.1 was not found in the system library paths; pass its path"))))
+
+(defn- version-text [v :i64] :string
+  (string-concat (dec-str (bit-and (u64-shift-right v 22) 127)) (string-concat "."
+    (string-concat (dec-str (bit-and (u64-shift-right v 12) 1023)) (string-concat "." (dec-str (bit-and v 4095)))))))
+
+(defn main [] :i64
+  (let [i (b2-init)
+        path (if (> (kxrt-b-argc) 0) (l64 (kxrt-b-argv)) (vk-find))
+        w0 (say (string-concat "b2 slice 1: loading " (c-str path)))
+        lib (elf-open "libvulkan" path)
+        w1 (say (string-concat "loaded: base 0x" (string-concat (hex-str (l64 (+ lib ELF-BASE))) (string-concat " span " (dec-str (l64 (+ lib ELF-SPAN)))))))
+        w2 (say (string-concat "stubs for unresolved imports: " (dec-str (st ST-NSTUBS))))
+        shown (show-maps "libvulkan")
+        w3 (say (string-concat "maps lines naming libvulkan: " (dec-str shown)))
+        it (elf-init lib)
+        w4 (say "initializers done")
+        fv (elf-sym lib (st-str "vkEnumerateInstanceVersion"))
+        verp (malloc-alloc 16)
+        rv (if (= fv 0) (refuse "libvulkan" "no vkEnumerateInstanceVersion") (i32 (call-c fv verp 0 0 0 0 0)))
+        w5 (say (string-concat "vkEnumerateInstanceVersion result=" (string-concat (dec-str rv) (string-concat " version=" (version-text (l32 verp))))))
+        fe (elf-sym lib (st-str "vkEnumerateInstanceExtensionProperties"))
+        cntp (malloc-alloc 16)
+        r1 (if (= fe 0) (refuse "libvulkan" "no vkEnumerateInstanceExtensionProperties") (i32 (call-c fe 0 cntp 0 0 0 0)))
+        n (l32 cntp)
+        w6 (say (string-concat "vkEnumerateInstanceExtensionProperties(count) result=" (string-concat (dec-str r1) (string-concat " count=" (dec-str n)))))
+        props (malloc-alloc (+ 16 (* 260 n)))
+        r2 (if (> n 0) (i32 (call-c fe 0 cntp props 0 0 0)) 0)
+        w7 (say (string-concat "vkEnumerateInstanceExtensionProperties(list) result=" (string-concat (dec-str r2) (string-concat " count=" (dec-str (l32 cntp))))))
+        w8 (loop [k 0]
+             (if (>= k (l32 cntp)) 0
+               (let [e (+ props (* 260 k))
+                     z (say (string-concat "extension " (string-concat (c-str e) (string-concat " " (dec-str (l32 (+ e 256)))))))]
+                 (recur (inc k)))))]
+    (if (and (= rv 0) (= r1 0) (= r2 0)) 0 1)))

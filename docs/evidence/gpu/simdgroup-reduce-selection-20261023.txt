@@ -1,0 +1,102 @@
+JUN-58 / JUN-55 -- rule 3 step 2: the :simdgroup-reduce SELECTION
+predicate lands (the MSL ladder, the measured-cell carve-out, the
+:simd-reduce gate fact). Slice record, 2026-10-23, chain worktree
+/Users/junkawasaki/github/wt/amu-gpu/chain (branch bot/amu-gpu-chain).
+
+WHAT CHANGED (one row: ADR-0373's rule-3 step 2, its own implementation
+slice -- the step-1 emission slice landed earlier the same day):
+
+- src/kotoba/compiler/accelerator_variants.cljk
+  - the rule-6 gate for the fold's own fact: :simd-reduce in
+    :subgroup-ops + a reported :subgroup-size (= SIMD-group width)
+    dividing W (:basic/:shuffle-relative NOT required -- those are the
+    shuffle fold's facts; the cross-SIMD-group tree uses threadgroup
+    barriers).
+  - the MSL ladder's first cond row: vendor :apple + MSL route
+    (:metal/:msl-v1) + valid KIR + the gate + simdgroup/applicable?
+    -> :simdgroup-reduce, checked BEFORE the :subgroup-reduce row (the
+    vendor-native first rung); rung 2 and :else :baseline are
+    byte-for-byte the pre-step-2 answers.
+  - the measured-cell carve-out outranks rung 1: a descriptor whose name
+    parts carry "m1 max" (uB5G idiom) never answers :simdgroup-reduce.
+  - apple-simdgroup-carveout-note: attaches only where rung 1's gate
+    held and the carve-out refused the row (the row's own demotion). It
+    names the flag scope: a :measured? true flag on any cell it carries
+    marks the :subgroup-reduce refutation ONLY (the :measured-cell
+    record's :evidence names those runs); where the flip's keys do not
+    hold the answer is the carve-out's (:measured? false).
+  - variant-bases grows the :simdgroup-reduce design rationale (no speed
+    claim; UNMEASURED).
+- src/kotoba/compiler/accelerator.cljk,
+  src/kotoba/compiler/accelerator_simdgroup_reduce.cljk: state marks
+  updated (step 2 landed; step 3 measurement OPEN). Docstrings only.
+- test/kotoba/compiler/accelerator_variants_test.cljk:
+  the-msl-ladder-selects-simdgroup-reduce-first -- rung precedence (both
+  fact sets and :simd-reduce-only answer :simdgroup-reduce; a fact set
+  larger than the fold's needs still selects), the whole reduce row
+  (W = 32..1024 x :sum/:max/:min), rung 2 byte-for-byte (shuffle facts
+  without :simd-reduce -> :subgroup-reduce), route/vendor scope (no rung
+  on Vulkan; non-Apple vendors byte-for-byte :baseline on MSL), fail
+  closed (bad sizes 24/512/32.5/0, no ops, :all ops, ewise, W = 16,
+  malformed KIR, {} , nil), the carve-out (m1 max never answers the row
+  at any W; the note's presence/absence and the flag scope), rule 3 end
+  to end (select -> compile-kernel -> verify-artifact! on :msl-v1),
+  determinism. Plus the wire-vocabulary negative pin in
+  rule-6-reads-the-facts-the-subgroup-answer-parses:
+  device-from-subgroup keeps ADR-0362's eight VkSubgroupFeatureFlagBits
+  tokens and does NOT carry :simd-reduce (the producer gap is NAMED, not
+  filled).
+- test/kotoba/compiler/accelerator_simdgroup_reduce_test.cljk:
+  simdgroup-selection-has-not-landed replaced by
+  simdgroup-selection-has-landed-under-the-msl-ladder (the guard's
+  spirit survives where it binds: the carved-out class, other vendors).
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: status/State/
+  What moved/What did NOT move/LEFT updated (steps 1-2 DONE, step 3
+  OPEN).
+- docs/adr/0356-gpu-kernel-variant-selection.md: the rows table's
+  :simdgroup-reduce row gains the step-2 mark.
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: the supersession clause
+  marked TAKEN EFFECT as to non-m1-max Apple MSL descriptors carrying
+  :simd-reduce; the m1-max class's narrowed answers unchanged.
+
+WHAT DID NOT MOVE: every :simdgroup-reduce answer is :measured? false
+(nothing has executed this variant anywhere -- UNMEASURED, no speed
+claim); no :measured-cell record for this variant; rung 2's answers, the
+flip's records and every non-Apple/MSL cell are byte-for-byte unchanged
+(the scoped suite pins it); the wire vocabulary is unchanged (ADR-0362's
+table is the whole vocabulary); the workgroup table (ADR-0355/0358) is
+untouched.
+
+STATE (the three states): IMPLEMENTED -- the emission (step 1), the
+selection predicate (step 2), both with tests. ACCEPTED DESIGN ONLY --
+the flip-contract wording as it governs this variant's own future
+measurement cells (no such cell exists). PROPOSED -- every performance
+question about this variant.
+
+UNMEASURED, named: this variant's performance on every device; the M1
+Max cells of this variant (nothing has run it); every Apple device but
+this host's for anything.
+
+GATE (real runs, this host, kbb --backend sci; from the chain worktree
+root):
+
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+    /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+  -> "Ran 99 tests containing 7471 assertions.
+     0 failures, 0 errors.
+     scoped: 99 tests, 7471 passed, 0 failed, 0 errors"
+     (baseline at the step-1 slice: 98 tests / 7279 assertions, 0
+     failures -- the +1 test / +192 assertions are this slice's
+     ladder test and pins; the replaced guard test is 1:1.)
+
+  kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+    run-tests.cljk
+
+  -> RED AT BASE at namespace load on kotoba.form
+     ("Error: Could not find namespace: kotoba.form", the W3 port path,
+     outside this diff) -- re-run and re-captured this tick. No green
+     full suite is claimed.
+
+No POSIX .sh files exist anywhere under docs/evidence/ (the
+check-workflows.cljk structural rule).

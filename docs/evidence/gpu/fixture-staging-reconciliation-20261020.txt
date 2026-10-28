@@ -1,0 +1,89 @@
+fixture-staging-reconciliation-20261020 -- chain-worktree hygiene slice (JUN-58)
+
+WHAT WAS FOUND (verified tool output, 2026-10-20 17:33 JST):
+The long-lived chain worktree tick-20261020-1403 (branch bot/amu-gpu-chain)
+carried UNCOMMITTED modifications in the 4 generated fixtures
+test/fixtures/gpu/subgroup-reduce-w{32,64,128,256}-sum.emitted.glsl
+(mtime 17:06:58, i.e. staged during the load-manip round-2 reg-2 chain run
+whose dispatch was verified complete in commit 462f61df at 17:25).
+
+Byte-identity check BEFORE restoration (shasum):
+  W=32   working tree bd40118a... == docs/evidence/gpu/sign-chain-pinned-fixtures-pre-fix/ bd40118a...  != HEAD e668786f...
+  W=64   working tree a6ae8e5f... == pre-fix archive a6ae8e5f...  != HEAD 214f4f61...
+  W=128  working tree b8283f2b... == pre-fix archive b8283f2b...  != HEAD fb2cbf5d...
+  W=256  working tree 6b3b2ee7... == pre-fix archive 6b3b2ee7...  != HEAD db37461b...
+=> the residue is exactly the sign chain's pinned PRE-FIX bytes staged by
+scripts/gpu-sign-chain-stage-fixtures.sh.txt before the chain run and never
+restored. No foreign edits: all 4 files match the archive byte-for-byte.
+
+WHY THIS MATTERS: while staged, the generated fixtures do not match the
+current emitter, so the `fixtures-match-the-emitter` assertion in
+kotoba.compiler.accelerator-subgroup-reduce-test is red by construction in
+this worktree -- a stale-fixture state of exactly the kind that test was
+written to prevent (see the regen script header: the files "went stale once
+already").
+
+REMEDY APPLIED (documented in the staging script's own header:
+"Chain worktrees are per-tick and disposable; `git checkout -- test/fixtures/gpu/`
+restores the committed (regenerated) bytes when a worktree serves double
+duty." -- this worktree is the long-lived chain worktree and serves double
+duty):
+  1. git checkout -- test/fixtures/gpu/          -> tree clean
+  2. kbb ... scripts/regen-gpu-subgroup-reduce-fixtures.cljk
+     WROTE w32 1204 bytes / w64 1204 / w128 1206 / w256 1206
+     git status --porcelain afterwards: EMPTY
+     => the current emitter reproduces the committed bytes exactly
+        (deterministic fixed point; committed fixtures are honest).
+
+GATE (kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk,
+run from the worktree root after restoration):
+  Run A (17:35): 374 tests, 5786 assertions; 16 failures, 15 errors
+                 (nbb: 5755 passed, 16 failed, 15 errors)
+  Run B (17:40): 374 tests; 16 failures, 14 errors
+                 (nbb: 5756 passed, 16 failed, 14 errors)
+  The count is NOT deterministic across runs (31 vs 30 problem lines); the
+  varying line is kotoba.compiler.row-tuple-element-argument-test
+  (host/stack-exhausted, fuel 512 :verify) which errored on 3 and 2
+  target-oracle rows respectively. Reported as observed; not explained.
+
+RED AT BASE (tree is byte-identical to HEAD 462f61df, so these are base red,
+NOT caused by this slice -- named per the honesty rule):
+  kotoba.compiler.ios-aot-test                    (2 ERROR, 1 FAIL)
+  kotoba.compiler.namespace-reachability-test     (1 FAIL)
+  kotoba.compiler.native-allocation-budget-test   (1 FAIL)
+  kotoba.compiler.policy-grant-count-test         (2 ERROR, 3 FAIL)
+  kotoba.compiler.rebound-row-argument-test       (1 ERROR)
+  kotoba.compiler.row-tuple-element-argument-test (1 ERROR, flaky count)
+GREEN, and the namespace this slice touches:
+  kotoba.compiler.accelerator-subgroup-reduce-test -- ran twice in the gate
+  (log lines 2 and 10), zero FAIL/ERROR attributed, including
+  `fixtures-match-the-emitter` and `the-unmeasured-lock-is-on-the-row`
+  (the :measured? false lock on the provisional workgroup row is asserted
+  false -- nothing here measures anything).
+
+STATES (nothing upgraded):
+  - fixture regen script + fixtures-match-the-emitter test: IMPLEMENTED
+    (committed earlier, verified green here).
+  - sign-chain pre-fix pinning/staging: IMPLEMENTED (archive + .sh.txt + probe
+    sha pin; only its post-run hygiene was missing and is now applied).
+  - All workgroup-default VALUES remain PROVISIONAL :measured? false. This
+    slice contains NO measurement.
+
+PUSH STATE: BLOCKED by the blocker-first rule -- open kotoba-lang/amu PR
+#1397 (head hermes/jun30-land-20261020, MERGEABLE) is a hermes/ blocker.
+This commit is kept local on bot/amu-gpu-chain; push happens on the first
+tick after #1397 clears. No chain PR is open yet (bot/amu-gpu-chain has never
+been pushed; 6+ commits local).
+
+CORRECTION (2026-10-24, later tick): the blanket workgroup-row claim in
+this record -- every/any row of kotoba.compiler.accelerator-targets
+:measured? false / provisional -- is FALSE as written. ADR-0358
+(2026-10-19, uB5G scoping amendment 2026-10-22) measured four of the six
+rows (:nvidia, :apple, :intel, :amd, each scoped to its one
+:measured-device name fragment); only :arm and :unknown remain
+:measured? false. The claim's oldest standing source was the
+accelerator-targets ns docstring, corrected 2026-10-24. Runtime state
+and the full census of this claim's surface:
+docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt. Everything
+else in this record -- its numbers, its "no row moved" claims -- stands
+unchanged.

@@ -144,9 +144,10 @@
     "float-to-i64": "truncating saturating conversion, NaN->0, positive overflow->MAX, negative overflow->MIN"
   },
   "ABI-boundaries": {
-    "profile0": "scalar ELF; public boundary unchanged main()->i64; internal i64/bool/f64/f32 only",
-    "profile1": "existing context bit-carrier runtime; six through sixteen stack arguments preserved",
-    "profile2": "integer-only kernel object signatures and operations; all 36 floating SIR tags refused",
+    "profile0": "integer scalar ELF and kernel object (ADR 0373 windows); no floating types or SIR tags",
+    "profile1": "existing context bit-carrier runtime; six through sixteen stack arguments preserved; no floating types or SIR tags",
+    "profile2": "closed aiueos project; no floating types or SIR tags",
+    "profile3": "scalar ELF; public boundary unchanged main()->i64; internal i64/bool/f64/f32 only; no project frame, five-argument bound",
     "frame": "16 extra bytes only in a function with floating SIR; included in existing 4096-byte bound",
     "integer-only-frames": "unchanged",
     "historical-context-C-loader": "not current acceptance or an authorized fallback"

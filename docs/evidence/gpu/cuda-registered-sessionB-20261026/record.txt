@@ -1,0 +1,139 @@
+JUN-55/JUN-57 -- row (iii) SECOND HALF: FRESH SESSION B under the
+ADR-0361 seventh-amendment pre-registration -- the second admissible
+(hypothesis-testing) paired-timing session of the cross-day
+replication pair, run on a DIFFERENT UTC day from session A (A =
+2026-10-25, B = 2026-10-26). -- HARDWARE RAN THIS SLICE.
+
+record_written=2026-10-26 (JST); session run 2026-10-26T05:09:51Z ->
+05:10:57Z (the log's own DATE-UTC; session B's UTC day = 2026-10-26)
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72),
+nvcc Cuda compilation tools release 11.4 V11.4.315 (log verbatim)
+
+THE ROW (the seventh amendment's "(iii) the measurement rows (fresh
+session A, then cross-day session B on a different UTC day)" -- the
+second half; session A landed at the ninth amendment, 2026-10-25):
+
+WHAT RAN (one measurement slice; no code, no test, no selection
+surface moves):
+  - the paired-timing run driver (scratch/
+    gpu-cuda-timing-run-regb-20261026.sh, Hermes scratch only --
+    never staged, no POSIX .sh anywhere in docs/), byte-identical to
+    session A's driver (scratch/gpu-cuda-timing-run-rega-
+    20261025.sh) EXCEPT the comment's session letter and the working
+    directory (diff run this tick: exactly those two lines); the
+    protocol is the pre-registered one at its letter, identical to
+    session A's;
+  - remote tree /root/gpu-cuda-timing-regb-20261026 created fresh
+    (rm -rf first) and transferred from the local stage (55 files:
+    the three arms' committed corpora, 54 emitted .cu, plus
+    scripts/gpu-cuda-reduce-timing.cu) with COPYFILE_DISABLE=1;
+    measured tree 55 files, 0 AppleDouble sidecars; the log's own
+    received-file sha256 block re-derived this tick by basename
+    against the committed corpora + committed instrument: 55/55
+    matched, 0 mismatched, 0 missing (the local stage re-derived
+    55/55 the same way BEFORE the transfer);
+  - instrument compiled OK-instrument (nvcc -arch=sm_72 -O2 -lcuda);
+    corpus 54/54 OK-cubin; all 55 nvcc diagnostics 0 bytes;
+  - smoke block (n=1000003 W=256 op=sum subgroup/baseline) rc=0,
+    excluded as a duplicate of a grid block;
+  - the full pre-registered grid: 2 shapes (n=1000003/1048576) x 6
+    widths (W 32..1024) x 3 operators x 3 pair types = 108 pair
+    blocks, ONE FRESH PROCESS EACH, PAIRS=20 interleaved, WARMUP=2
+    per arm, AB/BA alternating, LCG seed 20261023 reset per process,
+    gpu_ns CUDA-event + host_ns CLOCK_MONOTONIC, untimed verified
+    read-back, correctness re-verified inside the measurement;
+  - the log analyzed ONLY by the committed routes:
+      python3 scripts/gpu_regime_classify.py --cuda-log   -> publication.txt
+      python3 scripts/gpu_regime_classify.py --cuda-cells -> cells-census.txt
+      python3 scripts/gpu_regime_classify.py --cuda-op-census -> op-census.txt
+    all three exit 0, stderr 0 bytes (916 / 2075 / 367 lines).
+
+VERIFIED (tool output):
+
+1. Run completeness: "=== cells run: 108  failed cells: 0", driver
+   exit 0, driver stderr 0 bytes. 4360 sample lines (4320 grid =
+   108 blocks x 20 pairs x 2 arms, + 40 smoke orphans -- the op
+   census names and excludes them). Correctness re-verified INSIDE
+   the measurement: 218/218 verify lines ok=1 (0 lines ok=0).
+2. Corpus integrity: 55/55 sha256 matched against the committed
+   corpora + committed instrument, by basename, at both ends (local
+   stage before transfer; the log's received-file block after).
+   0 sidecars in the measured tree.
+3. THE FINDING (session B's READING-ARM VERDICTS -- this is the
+   SECOND of the two required fresh sessions; the cross-day
+   agreement adjudication is its own next row and NOTHING is
+   adjudicated or entered by this record): the per-op census
+   publishes 36 (op, W, shape) groups (36 folded to a winner in
+   every session-B reading, 0 refused), fold census warp-shuffle 34
+   / subgroup 2 -- EXACTLY session A's split (and the exploratory
+   census's), the two subgroup folds being (op :sum, W = 64) at
+   both shapes. Session B's readings at the registered contrast
+   group:
+     (op :sum, W=64, n=1000003): gpu_ns warp/subgroup 1.0705
+       (17/20 one-sided), warp/baseline 0.9320 (17/20),
+       subgroup/baseline 0.8937 (19/20); host_ns 1.0727 (17/20),
+       0.9481 (16/20), 0.8962 (19/20) -> unique winner subgroup in
+       both clocks;
+     (op :sum, W=64, n=1048576): gpu_ns 1.0612 (17/20), 0.9612
+       (14/20), 0.8993 (18/20); host_ns 1.0586 (17/20), 0.9746
+       (13/20), 0.8865 (18/20) -> unique winner subgroup in both
+       clocks.
+   At (:max/:min, W = 64) -- H2's projected CONFIRM cells -- all
+   four groups fold warp-shuffle in every session-B reading
+   (max W=64: warp/subgroup 0.8986..0.9050, warp/baseline
+   0.9230..0.9347, subgroup/baseline 1.0332..1.0422; min W=64:
+   warp/subgroup 0.9159..0.9272, warp/baseline 0.9317..0.9410,
+   subgroup/baseline 1.0332..1.0350).
+   Pooled cell census (the pooled unit is corroboration context at
+   this row; the registered entry unit is the (op, W) reading):
+   72 cells, 72/72 with a rule-2 verdict -- session B 48
+   regime-invariant faster / 1 slower / 23 regime-scoped vs session
+   A's 48/3/21. NAMED, NOT HIDDEN: the pooled split is NOT
+   identical across the pair (two cells sit slower in A and
+   regime-scoped in B); the registered criterion reads the per-op
+   reading unit and never the pooled split, and no pooled number
+   here is a cross-session claim.
+
+H1/H2 STATUS: NOT ADJUDICATED BY THIS RECORD -- the replication
+pair now EXISTS (both sessions fresh under the registration, on
+different UTC days, protocol at its letter) but the entry criterion
+("agreeing in every reading of both") is DECIDED in the evaluation
+row, not here; this record carries session B's readings and enters
+nothing (rule 4).
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured?
+flag, no selection answer, no :shapes value, no workgroup row; the
+ladder :warp-shuffle-reduce -> :subgroup-reduce -> :baseline stays
+byte-for-byte and at (op :sum, W=64) the design-ordered answer
+stands UNCLAIMED.
+
+STATES: MEASURED (session B -- one fresh pre-registered paired-
+timing session on xavier sm_72, 2026-10-26 UTC, analyzed by the
+committed routes; the only measured thing this tick); IMPLEMENTED:
+nothing new (evidence + ADR amendment only); DECIDED: nothing new;
+ACCEPTED DESIGN ONLY (unchanged): the operator-aware contract +
+pre-registration (seventh amendment), the row (ii) route set, the
+entry contract + wiring, ADR-0358, ADR-0373; UNMEASURED, named:
+the cross-day agreement adjudication and therefore H1/H2 and every
+per-op entry/flip/confirm verdict, run 3+, every per-op verdict on
+non-xavier hardware, the :sum ordering at W=64 on any other device,
+the flip arm on real data (ZERO real flips), the pooled cell-split
+difference's cause, every workgroup row (:arm/:unknown stay
+provisional :measured? false -- no :measured? flag moves this tick).
+
+Gates (real runs): scoped GPU gate (8 GPU-owned namespaces, scratch
+runner gpu_scoped_gate.cljk, never committed) -- the diff touches
+NO .cljk namespace (regression pin at the committed count; see the
+commit message for the run's own numbers); gpu_regime_classify.py
+--self-test (no classify code touched -- regression pin at the
+committed 2649/0); FULL run-tests.cljk NOT RUN this slice (no .cljk
+touched) -- documented red at base 'Could not find namespace:
+kotoba.form' (ADR-0362), outside this diff, NO green suite
+claimed; find docs -name '*.sh' -> 0 files (the no-POSIX-sh
+evidence rule).
+BLOCKER-FIRST: zero open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and re-checked before the push).
+Evidence: this directory (measure-log.txt + the three committed-
+route publications + this record) + the ADR-0361 twelfth amendment
+(the run driver and the local stage lived in Hermes scratch and
+were never staged).

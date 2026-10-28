@@ -1,0 +1,44 @@
+#!/usr/bin/env kbb
+;; EMIT the :subgroup-reduce GLSL arm's source for the JUN-59 subgroup
+;; 8/16/32 measurement evidence (2026-10-27), straight from the emitter
+;; (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+;;     scripts/emit-gpu-subgroup-reduce-glsl.cljk
+;;
+;; Writes docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/
+;; subgroup-reduce-w<W>-<operator>.emitted.glsl for W in {128, 256} and
+;; operator in {sum, max, min} -- the cells the session runs (the :intel
+;; workgroup row is 128; 256 is the flat-band top of the 2026-10-19
+;; measurement; every other W stays UNMEASURED on this channel). Each
+;; file is compiled to SPIR-V by the instrument host's own
+;; glslangValidator (tool identity verbatim in the compile log), loaded
+;; by scripts/gpu-subgroup-reduce-anv-subgroupsize.c and dispatched on
+;; the ANV device under forced subgroup sizes 8/16/32 plus the device
+;; default. That is a measurement instrument run, NOT product code and
+;; NOT the wire-42 loader path (removed; the ADR-0371 provider does not
+;; answer INFO yet) -- see the session's record.txt for the channel
+;; naming and the rule-4 consequence.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+
+(ns emit-gpu-subgroup-reduce-glsl
+  (:require [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-subgroup-reduce :as sg]))
+
+(def widths [128 256])
+(def operators [:sum :max :min])
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-glsl kir)
+          path (str "docs/evidence/gpu/anv-subgroupsize-81632-20261027/shaders/"
+                    "subgroup-reduce-w" w "-" (name operator) ".emitted.glsl")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

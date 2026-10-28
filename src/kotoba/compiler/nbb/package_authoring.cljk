@@ -1,13 +1,18 @@
 (ns kotoba.compiler.nbb.package-authoring
-  "Produce what `kotoba.compiler.nbb.package-lock` consumes: a signed package
+  "Historical hosted package authoring, retained as migration input rather
+  than Q9 acceptance. Whole-component native authoring is JUN-202/JUN-236;
+  the following authoring/build split does not authorize a legacy host.
+
+  Produce what `kotoba.compiler.nbb.package-lock` consumes: a signed package
   manifest, and a `kotoba.lock.edn` resolved from a dependency declaration.
 
   WHERE tools.deps FITS, AND WHY IT IS ONLY HERE. Choosing between conflicting
   transitive git pins is a solved problem with an implementation
   (`tools.deps`), and a second resolver written in nbb would be free to
   disagree with the first. So this reuses it -- and confines it to authoring
-  time, exactly as `scripts/lock-classpath.cljk` confines it for Amu's own
-  classpath. The split is the whole point:
+  time in this historical route. Amu's former classpath lock generator is
+  retired; native lock authoring remains a separate implementation requirement.
+  The historical split was:
 
     authoring   `amu package-lock`  resolves a closure, may use a JDK,
                                     writes CID pins into kotoba.lock.edn

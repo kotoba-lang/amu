@@ -1,0 +1,46 @@
+#!/usr/bin/env kbb
+;; EMIT the :warp-shuffle-reduce CUDA arm's source for the JUN-57 evidence,
+;; straight from the emitter (never hand-written):
+;;
+;;   kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" scripts/emit-gpu-warp-shuffle-reduce-cuda.cljk
+;;
+;; Writes docs/evidence/gpu-warp-shuffle-reduce-cuda-20261024/shaders/
+;; warp-shuffle-reduce-w<W>-<operator>.emitted.cu for W in
+;; {32, 64, 128, 256, 512, 1024} and operator in {sum, max, min} -- the
+;; whole admitted row (W >= 32, the only shape the arm is admitted for).
+;; The arm's emission is WORKGROUP-SIZE-PARAMETRIC: W enters only as the
+;; admission precondition (W >= 32) and never as a baked constant, so the
+;; six width files of one operator are byte-identical by construction --
+;; a property the corpus records (sha256 per file) rather than assumes.
+;;
+;; UNCOMPILED on this host: no nvcc exists here. [COMPILED 2026-10-24 on
+;; the fleet's CUDA host xavier: these exact bytes (sha256-identical)
+;; compile clean with the real nvcc 11.4 (V11.4.315), -arch=sm_72,
+;; docs/evidence/gpu/warp-shuffle-cuda-compile-xavier-20261024/.] They
+;; are the emitter's bytes recorded as text contracts and one
+;; real-toolchain compile; no timing, speedup, execution result or
+;; correctness verdict is claimed or implied: the CUDA emitter has no
+;; execution path in this repository (wire 42 runs Vulkan only) and
+;; nothing has executed this arm on any GPU.
+;;
+;; Deterministic: same emitter, same bytes. If a run of this script
+;; changes a file, the emitter changed.
+
+(ns emit-gpu-warp-shuffle-reduce-cuda
+  (:require [kotoba.compiler.accelerator :as accelerator]))
+
+(def widths [32 64 128 256 512 1024])
+(def operators [:sum :max :min])
+
+(defn -main [& _]
+  (doseq [w widths
+          operator operators]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (accelerator/lower kir :cuda-v1 :warp-shuffle-reduce)
+          path (str "docs/evidence/gpu-warp-shuffle-reduce-cuda-20261024/shaders/"
+                    "warp-shuffle-reduce-w" w "-" (name operator) ".emitted.cu")]
+      (spit path code)
+      (println "WROTE" path (count code) "bytes"))))
+
+(-main)

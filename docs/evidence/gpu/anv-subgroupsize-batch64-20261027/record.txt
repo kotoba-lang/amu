@@ -1,0 +1,161 @@
+JUN-59 subgroup 16-vs-32 FLOOR-LIFTING rerun (batch64) -- SECOND
+measurement session, INSTRUMENT channel, COMPLETE (2026-10-27). One
+tick, one measurement slice. All numbers below are real tool output;
+nothing unmeasured is reported as measured.
+
+THE ROW: the FIRST session's named residual (record.txt of
+anv-subgroupsize-81632-20261027: "the row question S=16-vs-32 ABOVE the
+floor stays UNRESOLVED (a floor-lifting rerun -- larger n and/or several
+dispatches per timestamp bracket -- is PROPOSED, its own future row)").
+This session IS that proposed row, run at its named option "several
+dispatches per timestamp bracket": BATCH=64 consecutive dispatches per
+vkCmdWriteTimestamp bracket. Protocol (protocol.txt) registered BEFORE
+the first run and never rewritten; the analysis route is analysis.py
+over run-1/2/3.txt only; the channel is the INSTRUMENT channel (a
+standalone instrument on raw ANV -- neither the removed wire-42 loader
+path nor the ADR-0371 provider). Rule 4 binds in full.
+
+1. WHAT CHANGED IN THE TREE (the diff):
+   - scripts/gpu-subgroup-reduce-anv-subgroupsize-batch.c (NEW): the
+     batch instrument, DERIVED from the first session's instrument --
+     that file is kept BYTE-STABLE (sha256 re-derived this tick:
+     b409f753a958c3e6a9dcee662b620ad11593ab6bd6cda213fafa93df4579d987,
+     identical to its own record). Delta over the parent instrument:
+     BATCH=64 dispatches inside one timestamp bracket (was 1), header
+     and SAMPLE lines carry batch= and per_dispatch_ns=; everything
+     else (cells, manifest, warmup/rounds/seed, probe verification,
+     bit-exact verify) is unchanged so the two sessions are
+     cell-comparable. Batch source sha256
+     34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d731182e6efd51e06
+     (host copy byte-identical to the committed local file), host binary
+     (gcc 13.3.0 -O2 -lvulkan) sha256
+     cc7e07b5d76c32104da5b1abe45a1579b6e6a3695356c0b72b44126137766cfd.
+   - docs/evidence/gpu/anv-subgroupsize-batch64-20261027/ (this dir) and
+     the ADR-0355 dated note. NO .cljk namespace is touched.
+
+2. CORPUS (chain of custody, emission-census.txt): the committed emitter
+   scripts/emit-gpu-subgroup-reduce-glsl.cljk re-emitted the 6 shader
+   files TWICE this session, `git diff --stat | wc -l` = 0 after both
+   runs (byte-identical to the committed corpus); this session's
+   shaders/ copies pair 8/8 (sha256) with the emitter corpus; the
+   instrument host's glslangValidator 11:15.1.0 compiled 8/8 rc=0 and
+   its .spv census matches the FIRST session's compile-toolchain.txt
+   census 8/8 (same toolchain, same bytes).
+
+3. THE RUNS (HARDWARE RAN -- MEASURED): THREE fresh processes
+   (run-1/2/3.txt), run window 2026-10-27T09:13:41Z..09:14:00Z (the
+   window is named for identity, wall time is no metric). INSTRUMENT-
+   EXIT=0 3/3, stderr 0 bytes 3/3. Each log 507 lines = 8 header + 24
+   CELL + 450 SAMPLE (18 pipeline-ok cells x 25 rounds; the 6 named
+   S=8 FAIL cells carry none) + 24 VERIFY + done + exit line. Headers
+   byte-identical across runs (verified programmatically in
+   publication.txt section 1), including batch=64 and timestampPeriod=
+   52.083.
+
+4. THE FINDING (publication.txt is the publication; produced ONLY by
+   analysis.py over run-1/2/3.txt, run TWICE byte-identical -- diff
+   exit 0; analysis.py sha256
+   ef42220ba2db1e0deaca7ebf7f09d17148853f408f6f5f01b8f6a99b6fcab4d1,
+   publication.txt sha256
+   b2d6634f5074666e119137bf92590dcf75ccd17e52cd16b02282207be3769508):
+   a. FLOOR LIFTED at every measured cell (the pre-registered enabling
+      condition): pooled median bracket gpu_ticks 229,257..277,286
+      (= 11.9..14.4 ms per 64-dispatch bracket) at every (op, W, S)
+      cell -- >= 8x session 1's 31-tick single-dispatch floor at every
+      cell (in fact ~7,400-9,000x). Per-dispatch steady-state figure
+      186,569..225,654 ns/dispatch (pooled medians); per-dispatch
+      quantum = 52.083/64 = 0.81 ns.
+   b. P2b (forcing reality) HOLDS 54/54 (probe gl_SubgroupSize exactly
+      the forced 16/32 at forced cells, exactly 32 at default cells,
+      gl_NumSubgroups = W/S everywhere). P3b (correctness) HOLDS:
+      mismatch=0 at every measured cell of every run (316,440
+      workgroup results verified in total across runs, bit-exact).
+   c. P1b (S=32 strictly faster than S=16, the barrier-count design
+      reasoning) at its narrowed letter: HOLDS at 5 of 6 (op, W) cells
+      by pooled median (S=32 faster by 397..1,139 ns/dispatch =
+      0.2..0.6% of per-dispatch cost); REFUTED at (sum, W=128)
+      (REVERSED: pooled median has S=16 faster by 575 ns/dispatch).
+      S=8 half NOT EVALUABLE (fail-closed, minSubgroupSize=16).
+   d. PER-RUN SIGNS (section 6b, derived from the same logs): the
+      S=32 advantage is CONSISTENT across all three runs at 4 of 6
+      cells ((sum,256),(max,256),(min,128),(min,256)); RUN-SENSITIVE
+      at (sum,128) and (max,128) -- run-1 reverses the sign there (its
+      W=128 S=16 medians sit ~3-4k ticks below runs 2/3's, OBSERVED
+      ONLY, cause UNMEASURED). The pooled P1b verdicts at those two
+      cells are therefore RUN-SENSITIVE and are NOT reported as stable.
+   e. P4b (cross-run order of medians by S at fixed (op, W)) DIFFERS
+      at 6 of 6 cells (tie-degenerate floor-less order churn among
+      near-equal arms, including the default-vs-32 pair which differ
+      only in pipeline forcing) -- recorded as channel
+      session-variability at its letter, NOT hidden. It does NOT
+      overturn 4c's per-run signs, which are sign-stable at 4 cells.
+   f. CROSS-SESSION (derived arithmetic over the two sessions' committed
+      logs): the batched per-dispatch steady-state figure (186.6..225.7
+      us) is ~116-140x session 1's single-dispatch bracket median
+      (1,614.6 ns). Session 1's single-dispatch bracket therefore did
+      NOT capture dispatch work -- what it did capture is UNMEASURED
+      (the discrepancy's mechanism is named UNMEASURED; both sessions'
+      logs stand as taken and session 1's record is not rewritten).
+      Every S=16-vs-32 comparison in this session is internal to its
+      one bracket route and is unaffected by the discrepancy.
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer (the :intel row 128 /
+   :measured? true / key "g31" keeps its ADR-0358 provenance; :arm/
+   :unknown stay provisional :measured? false -- accelerator-targets
+   defaults remain design assumptions, not evidence). This is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed. The row question's STATUS changes only in
+   words: S=16-vs-32 at batched steady state is now MEASURED (small
+   S=32 advantage at W=256, consistent in all runs; run-sensitive at
+   W=128), where before it was UNRESOLVED above a degenerate bracket.
+
+6. STATES: IMPLEMENTED (code + tests, unchanged by this diff): the
+   emitter arm, dispatch table, device-class, subgroup-answer, variant
+   selection. VALIDATED by complete runs this session: the batch
+   instrument + emit script + analysis.py. MEASURED (this session's
+   logs only): what section 4 says. UNMEASURED named: isolated
+   single-dispatch timing above any floor (this session measures
+   batched throughput only), S=8 timing (not realizable on this
+   device), every W outside {128,256}, shape 2, any baseline-vs-variant
+   sign, cross-day replication, anything off this host, the mechanism
+   of 4f's discrepancy, the cause of 4d's run-1 anomaly.
+
+7. NAMED, NOT HIDDEN:
+   - The first three run attempts of THIS session died before any
+     measurement ("FATAL: cannot open subgroup-reduce-w128-sum.emitted
+     .spv"): the manifest's bare .spv filenames resolve against the
+     process cwd and the workdir root has no .spv (they live in
+     shaders/). The three failed stubs are preserved byte-for-byte as
+     run-pathfail-1/2/3.txt (sha256 d98e7970... / 1d4d9747... /
+     ba5b3a93...) with run-pathfail-N.stderr.txt (sha256 d50fa5d2...,
+     one line: the verbatim FATAL message); the runs were re-taken with
+     cwd=shaders/ and the committed run-1/2/3.txt are those. ZERO
+     timing samples exist in the failed stubs.
+   - analysis.py's first draft of the cross-session paragraph carried
+     a Python indentation/format defect (SyntaxError at the print) --
+     caught by the syntax check and FIXED BEFORE the recorded
+     publication; the recorded publication is the post-fix script's
+     output, run twice byte-identical. A hardcoded bracket range in the
+     same paragraph was replaced by values DERIVED from the logs
+     before the recorded publication.
+   - The clang LSP's "too many errors" noise on the .c file (no Vulkan
+     headers on the macOS editor side) is NOT a compile verdict; the
+     authoritative compile is the host gcc rc=0 in
+     compile-toolchain.txt.
+
+8. GATES (real runs this tick):
+   - gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed
+     / 0 failed (committed pin 2649/0; no classify code touched).
+   - scoped GPU gate (8 GPU-owned namespaces, scratch runner
+     gpu_scoped_gate.cljk, never committed): GREEN 123 tests / 12162
+     assertions / 0 failures / 0 errors on run 1 AND run 2 (the diff
+     touches NO .cljk namespace -- the committed 123/12162 pin holds;
+     logs gate-run1/2.txt).
+   - FULL run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE
+     'Could not find namespace: kotoba.form' at namespace load
+     (ADR-0362, outside this diff) -- NO green full suite claimed
+     (log full-run-tests.txt).
+   - find docs -name '*.sh' -> 0 (the no-POSIX-sh evidence rule; this
+     dir holds .txt/.py only).

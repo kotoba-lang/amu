@@ -1,0 +1,126 @@
+# JUN-58 / JUN-55 -- the counters channel's CLASSIFIER ROUTE lands (rules
+# 1+2 publication machinery), BEFORE any fold-arms measurement runs
+# (2026-10-25, tick slice)
+
+Row taken: the harness row's "What the measurement row inherits" list --
+"the rules-1+2 publication over this channel's own metric (the
+classifier's counters route does not exist yet)". ONE implementation
+slice. NO hardware ran this tick, nothing is timed, and no counters
+instrument log is read by this route yet -- the fold-arms measurement has
+not run (its own later row). Every fixture number below is SYNTHETIC
+(self-test input), not a measurement.
+
+WHY THIS ROW BEFORE THE MEASUREMENT: the CUDA track's registration order
+(its rows (ii) before (iii), cited): a session analyzed by code written
+after the fact is not a pre-registered analysis. The counters route
+commits the analysis BEFORE the fold-arms data exists.
+
+## WHAT LANDED (code + tests): scripts/gpu_regime_classify.py
+
+(1) parse_counters_run -- one fresh-process counters log (one ADR-0358
+run) -> per-(run, operator) blocks: the baseline per-run median (median
+over the run's resolved baseline-arm counter_ns samples) and rule 2's
+unit, the run's PAIRED-MEDIAN RATIO (median over the run's pairs of the
+within-pair ratio variant_ns/baseline_ns -- the ADR-0358 paired-within-
+run statistic, NEVER re-oriented). (2) parse_counters_sessions -- N logs
+= N runs of ONE cell (every log's (n, workgroup) header must agree or
+the session refuses; run indices positional, 1-based, the MSL channel's
+unit). (3) render_counters_rule1_section -- the metric-named rule-1
+publication (counter_ns named BY THE CHANNEL with the calibration row's
+MEASURED residual named in the metric text and never subtracted; GAP-1.15
+clusters of the per-run baseline medians per operator; rule 3's boundary
+named -- counter_ns merges with NEITHER the command-buffer gpu-ns NOR
+any host wall-clock). (4) render_counters_sign_section -- rule 2 at its
+letter (regime-invariant iff every per-run ratio of every observed
+regime lies on one side of 1.0), the regime-matched sign per level, the
+straddle shapes (by-regime / within-regime / no-side), and the cell
+roll-up; sign claims CHANNEL-SCOPED (never flips an MSL command-buffer
+cell, never flips a WGSL cell, never answers a workgroup row -- this
+channel is neither the wire-42 loader path nor its provider successor).
+(5) render_counters_claim_protocol + the CLI
+(--counters-log <log> [<log> ...], one log per fresh process) with the
+rule-2 status token (PUBLISHED / a named NOT PUBLISHED absence).
+
+FAIL-CLOSED READINGS DECIDED where the channel left gaps (named so no
+later reading silently upgrades; the CUDA block model, unchanged):
+(a) a (run, operator) block is usable only when complete (both arms of
+exactly its declared pairs), correctness-verified (both arms' verify
+lines ok=1), every bracket resolved (no counter_ns=ERR) and positive,
+and no sample re-reads an earlier bracket's raw pair -- the calibration
+row's MEASURED staleness signature (byte-identical (ts0, ts1) re-read;
+the first occurrence is the fresh one, every repeat is stale;
+unresolved brackets carry error-sentinel timestamps and never enter the
+staleness test); (b) anything else is NAMED and excluded with its
+reason, never silently dropped, and an all-excluded record still
+publishes its named exclusions plus rule 2's own absence; (c) duplicated
+samples, malformed sample/verify lines, an unknown operator or arm, a
+missing n=/workgroup= or pairs= header, and a mixed-cell session all
+raise ValueError -- measurement errors, never merged, never skipped.
+
+One deliberate renderer improvement over the WGSL cell roll-up, tested:
+when every operator is regime-invariant but on DISAGREEING sides, the
+cell line names them ("every operator regime-invariant but on disagreeing
+sides: max (slower), sum (faster)") instead of an empty non-invariant
+list.
+
+## TESTS (real run, this tick)
+
+python3 scripts/gpu_regime_classify.py --self-test -> exit 0,
+"TOTAL: 2617 assertions passed, 0 failed" (committed pin 2572/0; delta
++45 = this slice's _self_test_counters_unit). Run 1 of the new fixtures
+was RED at ONE assertion (my test matched a table row as a whole line
+where the row carries a detail column -- the machine's output was right,
+the test matcher was wrong; fixed to a substring match, run 2 GREEN).
+The fixtures pin: the two per-run statistics (exact medians and
+paired-median ratios, incl. the orientation pin -- a slower variant
+prices above 1.0); GAP-1.15 clustering (merge at 1.02, split at 1.275;
+the one-run degenerate level); every rule-2 shape (invariant faster /
+invariant slower / by-regime / within-regime / no-side) and the cell
+roll-up's three namings; every fail-closed reading (a)-(c) with its
+reason string; the claim-protocol tokens and the channel-scope text.
+NO CORPUS SELF-TEST yet: no committed counters instrument log exists
+(the harness smoke and the calibration probes were scratch-only); the
+corpus self-test joins with the first claim-protocol counters log (the
+measurement row's own slice).
+
+## GATES (honest ledger, this tick)
+
+- gpu_regime_classify.py --self-test: GREEN 2617 / 0 (above, real run).
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner): NOT RUN --
+  session run-time budget exhausted before it. The diff touches NO .cljk
+  namespace (scripts/gpu_regime_classify.py + docs only), so no touched
+  namespace is unverified, but the regression pin at the committed 110
+  tests / 11445 assertions is UNRE-VERIFIED this tick, named NOT green.
+- FULL run-tests.cljk: NOT RUN this tick (budget; and documented red at
+  base 'Could not find namespace: kotoba.form', ADR-0362, outside this
+  diff). NO green suite claimed.
+- find docs -name '*.sh' -> 0 files rule: the evidence is .txt (this
+  file), no POSIX shell execution file is added.
+- BLOCKER-FIRST: zero open kotoba-lang/amu PRs with a hermes/ head
+  (checked at tick start, before the commit).
+
+## STATE (the three states, named)
+
+- IMPLEMENTED (code + tests): the counters route (parser + rules 1+2
+  publication + CLI + 45 self-test assertions). Nothing else.
+- DECIDED (this row): the fail-closed readings (a)-(c) above; the run
+  unit (one fresh process per log, one cell per session); rule 2's unit
+  on this channel (the run's paired-median ratio, never re-oriented).
+- MEASURED: NOTHING (no hardware ran; every number in the fixtures is
+  synthetic).
+- ACCEPTED DESIGN ONLY (unchanged): the claim protocol and its units;
+  the narrowing and reopen condition; the second-leg letter; ADR-0355's
+  channel rule; the calibration row's residual (measured there, cited
+  here as the metric's named component).
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named: every counters-channel per-dispatch GPU time (the
+  fold-arms measurement -- the measurement row -- has not run); the sign
+  of any counters-channel arm pair; the rules-1+2 publication ON REAL
+  DATA (this route is the machinery, not a record); whether the second
+  leg fires; anything off M1 Max; the WGSL route's kernel time; every
+  workgroup-row question (:arm/:unknown stay provisional :measured?
+  false -- no :measured? flag, :shapes value, selection answer or
+  workgroup row moves this tick; this channel can never move one).
+
+Rule 4 unchanged. A future counters-channel record is analyzed ONLY
+through this committed route -- that is what this row buys.

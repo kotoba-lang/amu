@@ -1,0 +1,117 @@
+JUN-58 / JUN-55: the identity corpus pin re-states its fact -- the
+shape-2 W = 1024 record made the one-record claim false (2026-10-24,
+chain worktree) -- 2026-10-24
+
+WHAT THIS RECORD IS: a defect-fix slice (one implementation row). NOT a
+measurement: no hardware ran in this slice and no value is measured
+here. Every number below is parsed from committed summary.md text by
+the machinery's own self-tests.
+
+THE DEFECT (found by running the classifier self-test this tick):
+scripts/gpu_regime_classify.py's identity corpus self-test pinned a
+corpus-wide fact -- "the op-order cell is the corpus's only record
+where :sum refines :max" (the expectation over the strict (:sum,:max)
+refinement edge set). The shape-2 W = 1024 measurement record
+(docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024,
+committed earlier the same day in chain commit ddd2ddad) added a SECOND
+such record and made the claim false. The self-test was RED from that
+commit until this slice:
+
+  AssertionError: the op-order cell is the corpus's only record where
+  :sum refines :max (['gpu-simdgroup-reduce-m1max-shape2-20261024/
+  w1024', 'gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last'])
+  (exit 1)
+
+Why it went unnoticed -- a gate-convention gap, named: the introducing
+slice's gate line was "This slice touches no code namespaces, so no
+suite run gates it", and the measurement/flip slices gate on the driver
+self-test + the scoped GPU gate. But docs/evidence additions ARE read
+by the python harness self-tests (the corpus pins parse every committed
+summary.md under docs/evidence). Evidence-only slices can break them.
+Going forward: any slice adding a docs/evidence record must run
+`python3 scripts/gpu_regime_classify.py --self-test` (and the driver's)
+before push.
+
+MACHINE FACTS (parsed from committed summaries, no re-measurement):
+- shape-2 W = 1024 (the second record): identity-refuted, 5 divergent
+  pairs; levels :max 1 [[1..6]], :min 1 [[1..6]], :sum 2 [[2],
+  [1, 3, 4, 5, 6]]; refinements (max,min) (min,max) (sum,max)
+  (sum,min). :sum ran FIRST in the record's op order (sum,max,min).
+- the op-order cell: identity-refuted, 12 divergent pairs; levels
+  :max 1 [[1..6]], :min 2 [[6],[1..5]], :sum 4 [[6],[5],[4],
+  [1, 2, 3]]; refinements (min,max) (sum,max) (sum,min). :sum ran
+  LAST there.
+- corpus tally now: 37 multi-operator records -- 11 identity-holds
+  (3 multi-level), 26 identity-refuted (26 with refinement structure).
+
+THE RE-STATED FACT (the pin's new expectation, the two-record set):
+the corpus's :sum-refines-:max records are
+  1. gpu-simdgroup-reduce-m1max-shape2-20261024/w1024 -- :sum FIRST,
+     the refinement is a single-run clock-level split (run 2's :sum
+     baseline at the fast level while :max/:min pool all six);
+  2. gpu-subgroup-reduce-m1max-oporder-20261023/w32-sum-last -- :sum
+     LAST, the dispatch-position ramping story.
+So "refinement tracks the last-dispatched operator" is NOT a corpus
+law; the op-order cell keeps its own reading only. The 2026-10-23
+uniqueness claim is SUPERSEDED, not silently dropped.
+
+WHAT MOVED (the slice's whole scope):
+- scripts/gpu_regime_classify.py: the corpus pin's expectation (one
+  record -> the named two-record set), its message, and the two
+  comments that carried the superseded uniqueness reading (the
+  op-order named-record pin's comment and the corpus pin's comment).
+  Assertion COUNT is unchanged; no machinery, parser, classifier or
+  rendering changed.
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: finding 3 gains the
+  SUPERSEDED update mark (the ADR's update-mark idiom).
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+- No committed record is rewritten. docs/evidence/gpu/
+  cross-operator-level-identity-20261023.txt's "the corpus's only such
+  record" phrase is a 2026-10-23 corpus fact -- true when that self-
+  test ran; superseded 2026-10-24 by the shape-2 W = 1024 record. It
+  is named here, not edited (a run record records its run).
+- No :measured? flag, no :measured-cell record, no selection answer,
+  no flip gate and no workgroup row (ADR-0355/0358) moved. The
+  workgroup defaults in kotoba.compiler.accelerator-targets are
+  untouched and keep their existing :measured? states. Nothing in this
+  slice measures anything.
+- The shape-2 W = 1024 record, its flip, and every earlier record
+  stand unchanged.
+
+RESIDUAL BRITTLENESS, named not hidden: the shape-2 series' remaining
+cells (W = 32/64/128) and any future record whose :sum refines :max
+enter this set and fail the pin ON PURPOSE -- the pin's comment says
+so; the corpus fact must then be re-stated with its own story. That is
+the pin's job (no silent drift).
+
+GATE (real runs, this host, from the chain worktree root, 2026-10-24,
+run for THIS record):
+
+1. python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1376 assertions passed, 0 failed (exit 0).
+      (before the fix, same tick: the AssertionError above, exit 1 --
+      the red is recorded, not hidden.)
+
+2. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> 7 assertions passed, 0 failed.
+
+3. Scoped GPU gate (the GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 9090 assertions.
+      0 failures, 0 errors. (no .cljk in this diff; run anyway.)
+
+4. Full suite (run-tests.cljk): RED AT BASE, outside this diff, at
+   namespace load on `kotoba.form` ("Could not find namespace:
+   kotoba.form"; the documented W3 port red, ADR 0362), re-verified
+   live this tick. No green full suite is claimed.
+
+HONESTY STATE: this slice measured nothing. The classifier self-test's
+numbers are corpus tallies parsed from committed records. Every
+:simdgroup-reduce / :subgroup-reduce answer in the dispatch keeps its
+existing :measured? state; the provisional workgroup defaults stay
+:measured? false. Left: the shape-2 series' remaining measurement
+cells (W = 32/64/128, each its own slice), cross-day replication,
+JUN-57/59/60 hardware-free slices.
