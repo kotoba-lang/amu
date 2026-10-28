@@ -22,6 +22,28 @@ concurrency:
   group: native-definition-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  # Branch-only diagnostic for KOTOBA-161. It is not an admission gate and
+  # must not be promoted to the main workflow with this branch condition.
+  candidate-x86-float:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/kotoba161-f64-stage-20261029'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Observe candidate scalar float on x86_64 Linux
+        run: >-
+          python3 scripts/seed/check-x86-float-scalar-candidate.py
+          --compiler "$PWD/bin/amu"
+          --compiler-sha256 c98d95cac28ae31cd9ba3ceb6c9fb71ad1e796e94369ab5243f93bf35d3243b4
+          --output "$RUNNER_TEMP/x86-float-candidate"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: x86-float-candidate
+          path: ${{ runner.temp }}/x86-float-candidate/
+          if-no-files-found: warn
   objects:
     strategy:
       fail-fast: false
