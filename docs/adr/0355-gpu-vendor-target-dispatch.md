@@ -1363,3 +1363,52 @@ is the frozen pre-registration incl. the T1 letters and L12;
 publication-s34.txt is the measurement; bar-eval-s34.txt is the
 frozen evaluator's verdict; record.txt is the finding) and
 `docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 35 (JUN-59): the wander co-variation read (analysis; no new hardware)
+
+Session 34's named residual ("WHY the block-min statistic wanders
+(estimator noise vs physical drift vs both)" is UNMEASURED) is taken
+on ONE observable axis, from session 34's COMMITTED measured run logs
+only (84 logs; NO new hardware this session -- named): within s34's
+single window (12 blocks A..L of the (1024,4033) anchor at n=253,906,
+B=3, byte-identical binary), do the 12 block-unit min statistics
+co-vary with the 12 block-unit host-side proxy values (host_ns at
+(sum,128,S=16))? ONE analysis slice, pre-registered before the
+statistic was computed (protocol freeze stamp 2026-10-28T02:10:34Z;
+frozen Spearman + permutation letters (a) CO-MOVE |rho| >= 0.60 and
+p <= 0.05 / (b) NO-CO-MOVE otherwise; the input vectors are published
+s34 content and the freeze guards against letter-shopping, not prior
+exposure -- named). DERIVED FROM MEASURED DATA: T1 = (b) NO-CO-MOVE
+-- rho = -0.038597, permutation p = 0.907841 (100,000 trials, frozen
+seed 20261028); the vectors reproduce publication-s34.txt's published
+values exactly (X A 993..L 985; Y A 505,202..L 503,138), C1 (a),
+VERIFY 0 over the 84 logs. THE FINDING: the within-window min-
+statistic wander does NOT co-vary with the host-side proxy -- the
+wander is not explained by host-side variation at this window.
+NAMED, NOT HIDDEN: this excludes ONLY this proxy (estimator noise vs
+an unmeasured physical variable STAYS UNRESOLVED; L2 observational,
+no causal mechanism; n=12 in one window is LOW POWER) and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive:
+per-run unit (36 points, NAMED DIFFERENT UNIT) also reads no
+co-movement (rho -0.098788, p 0.566724); run-order trend rho
+-0.473687, p 0.122189 (not significant, no trend claim). NO reading,
+NO ledger line, NO day-slot consumption -- the bar stays PENDING 1/4
+with s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0); next executable day slot 2026-10-29. NAMED DEFECT (session
+34's commit): build-census-s34.txt was cited as evidence but omitted
+from the tree; recovered this tick as the session-35 artifact
+build-census-s34-recovered-s35.txt from the host workdir's unchanged
+artifacts (mtimes at the s34 build stamps) -- 3/3 digests match the
+protocol-declared pins byte-identically, substantiating the s34
+"3/3 pins BYTE-IDENTICAL" claim retroactively while the omission
+stays named. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and no
+vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3wandercov-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters; publication-
+s35.txt is the derived read; bar-eval-s35.txt is the frozen
+evaluator's verdict; build-census-s34-recovered-s35.txt is the named
+recovery; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger,
+untouched this tick).

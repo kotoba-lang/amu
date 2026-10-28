@@ -1,0 +1,36 @@
+JUN-59 session 35 derivation census (scratch generator; second
+parser; deterministic -- run twice byte-identical). Re-derives
+every cited number of publication-s35.txt from the 84 committed
+session-34 run logs with an independent parsing/implementation
+path (split-based parser, bucket-rank Spearman, the frozen
+permutation algorithm), verifies the build-census recovery
+file's internal consistency, the untouched settling-bar ledger
+and the no-.sh policy. Every 'got' is computed here; 'want' is
+the published/committed value being checked.
+
+row: X vector == publication-s34 quote-only refs: got=[993, 1003, 982, 1000, 991, 988, 991, 986, 992, 989, 989, 985] want=[993, 1003, 982, 1000, 991, 988, 991, 986, 992, 989, 989, 985] match=True
+row: Y vector == publication-s34 quote-only refs: got=[505202, 618664, 606762, 496666, 489032, 488151, 501315, 501726, 497428, 507036, 503279, 503138] want=[505202, 618664, 606762, 496666, 489032, 488151, 501315, 501726, 497428, 507036, 503279, 503138] match=True
+row: Spearman rho(X,Y) == publication-s35: got=-0.038597 want=-0.038597 match=True
+row: permutation p(X,Y) == publication-s35: got=0.907841 want=0.907841 match=True
+row: permutation count(X,Y) == publication-s35: got=90784 want=90784 match=True
+row: T1 letter == publication-s35: got=(b) NO-CO-MOVE want=(b) NO-CO-MOVE match=True
+row: D1 per-run rho == publication-s35: got=-0.098788 want=-0.098788 match=True
+row: D1 per-run p == publication-s35: got=0.566724 want=0.566724 match=True
+row: D1 per-run count == publication-s35: got=56672 want=56672 match=True
+row: D1 per-run min range == publication-s35: got=972..1006 want=972..1006 match=True
+row: D1 per-run host_ns range == publication-s35: got=408552..872497 want=408552..872497 match=True
+row: D2 trend rho == publication-s35: got=-0.473687 want=-0.473687 match=True
+row: D2 trend p == publication-s35: got=0.122189 want=0.122189 match=True
+row: C1 c2 class: got=FLOOR want=FLOOR match=True
+row: C1 c8 (sum,128,S=16) pooled median == publication-s35: got=33027 want=33027 match=True
+row: C1 c8 within +/-5% of committed 32915: got=True want=True match=True
+row: VERIFY mismatch total over 84 logs == publication-s35: got=0 want=0 match=True
+row: recovery file carries host digest == declared pin anv-bb-c2: got=True want=True match=True
+row: recovery file carries host digest == declared pin anv-bb-hi: got=True want=True match=True
+row: recovery file carries host digest == declared pin anv-bb-c8: got=True want=True match=True
+row: recovery file records 3/3 MATCH: got=True want=True match=True
+row: settle-bar-ledger.txt byte-identical to HEAD (no append this tick): got=True want=True match=True
+row: ledger data lines: got=4 want=4 match=True
+row: POSIX .sh files under docs/evidence/gpu: got=0 want=0 match=True
+
+TOTAL: 24 rows, 0 mismatched

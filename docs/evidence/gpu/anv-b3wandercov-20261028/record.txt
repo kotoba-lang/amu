@@ -1,0 +1,188 @@
+JUN-59 -- session 35 record: THE WANDER CO-VARIATION READ (does
+session 34's within-window min-statistic wander co-vary with the
+host-side proxy?). ANALYSIS slice over session 34's COMMITTED measured
+run logs -- NO new hardware ran this session (named; UTC DAY
+2026-10-28, the settling bar's day slot is session 31's). 2026-10-28
+(UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): WITHIN SESSION 34'S SINGLE WINDOW, DO THE
+   12 BLOCK-UNIT MIN STATISTICS CO-VARY WITH THE 12 BLOCK-UNIT
+   HOST-SIDE PROXY VALUES (host_ns at (sum,128,S=16))? Session 34's
+   named-not-hidden residual ("WHY the block-min statistic wanders
+   (estimator noise vs physical drift vs both)" is UNMEASURED) is the
+   row taken here. The T1 letters were pre-registered in protocol.txt
+   section 0 (freeze stamp 2026-10-28T02:10:34Z, BEFORE the
+   correlation statistic was computed): (a) CO-MOVE (Spearman
+   |rho| >= 0.60 AND permutation p <= 0.05), (b) NO-CO-MOVE
+   otherwise, (c) NAMED UNRESOLVED / NOT EVALUABLE on integrity
+   failure or C1 (b). NAMED, NOT HIDDEN in the freeze: NEITHER letter
+   resolves threshold-artifact-vs-representation; (a) would be
+   consistent with a shared physical/host-state driver but is L2
+   observational only, (b) excludes only THIS proxy. The input vectors
+   are PUBLISHED s34 content (publication-s34.txt) -- the freeze
+   guards against letter-shopping, not against prior exposure to the
+   inputs (checked before the freeze: no committed file computes any
+   correlation of these vectors).
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3wandercov-20261028/ -- protocol.txt
+       (frozen before the statistic was computed, freeze stamp
+       2026-10-28T02:10:34Z), analysis-s35.py + publication-s35.txt
+       (run twice, diff exit 0), derivation-census-s35.txt (independent
+       second parser, 24 rows / 0 mismatched, run twice byte-
+       identical), build-census-s34-recovered-s35.txt (the session-35
+       recovery artifact, section 4), classify-selftest.txt,
+       bar-eval-s35.txt, gate-run1/2.txt, gate-full-run-tests.txt,
+       this record.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNTOUCHED (no
+       reading this session; verified byte-identical to HEAD in the
+       census).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) NO HARDWARE RAN (named): the inputs are the 84 committed
+       session-34 run logs (c2 r1-3 + hi r1-36 + c8 r1-3); every
+       input quantity was measured in session 34. The re-derived
+       vectors reproduce publication-s34.txt's published values
+       EXACTLY (cross-check True/True): X = block-unit min statistics
+       A 993 / B 1,003 / C 982 / D 1,000 / E 991 / F 988 / G 991 /
+       H 986 / I 992 / J 989 / K 989 / L 985; Y = per-block host_ns
+       A 505,202 / B 618,664 / C 606,762 / D 496,666 / E 489,032 /
+       F 488,151 / G 501,315 / H 501,726 / I 497,428 / J 507,036 /
+       K 503,279 / L 503,138. Integrity re-derived: VERIFY mismatch 0
+       over all 84 logs; SAMPLE counts 450 per run 84/84; C1 (a):
+       c2 FLOOR 31, c8 (sum,128,S=16) 33,027 vs committed 32,915
+       (+0.34%).
+   (b) T1 THE ROW QUESTION (DERIVED HERE from s34's measured logs):
+       T1 = (b) NO-CO-MOVE -- Spearman rho(X, Y) = -0.038597,
+       permutation p = 0.907841 (two-sided, 100,000 trials, frozen
+       seed 20261028; count 90,784/100,001); |rho| >= 0.60 False,
+       p <= 0.05 False. THE FINDING: within session 34's window the
+       block-min wander does NOT co-vary with the host-side proxy --
+       the wander is not explained by host-side (submit-to-completion)
+       variation at this window. NAMED, NOT HIDDEN: this excludes
+       ONLY the host-side proxy as the within-window driver -- the
+       estimator-noise-vs-physical-drift question STAYS UNRESOLVED
+       (estimator noise OR an unmeasured physical variable -- thermal,
+       scheduling, memory state -- both remain), L2 observational
+       only, NO causal mechanism claimed, n=12 in ONE window is LOW
+       POWER (a null at n=12 is not evidence of independence), and
+       threshold-artifact-vs-representation STAYS UNRESOLVED.
+   (c) DESCRIPTIVE CONTENT (DERIVED HERE): (D1) the per-run unit (36
+       points; 25 rounds/cell, NAMED DIFFERENT UNIT L10) also reads
+       NO co-movement: rho = -0.098788, p = 0.566724 (per-run minima
+       972..1,006, per-run host_ns 408,552..872,497); (D2) the
+       run-order trend rho(X, block index 1..12) = -0.473687,
+       p = 0.122189 -- descriptively larger in magnitude than the
+       proxy's rho but NOT significant at the frozen letters and NOT
+       the row question (a time trend would co-vary with TIME, not
+       necessarily with the proxy; no trend claim is made).
+   (d) B1/B2 THE BAR (the frozen evaluator, never hand-written): NO
+       reading this session -> NO ledger line, NO day-slot
+       consumption; settle-bar-eval.py --self-test 38/0 (pin); the
+       ledger eval run twice byte-identical (diff exit 0) -> "VERDICT:
+       PENDING 1/4" (s31 counted; s32/s33/s34 descriptive). Next
+       executable day slot 2026-10-29.
+   (e) Gates (real runs this tick): gpu_regime_classify.py --self-test
+       TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12,162
+       assertions / 0 failures / 0 errors recorded run 1 AND run 2
+       (scratch runner scoped-gpu-gate.cljk, copied in, run, deleted
+       -- never committed); FULL run-tests.cljk RUN LIVE THIS TICK:
+       exit 1, RED AT BASE 'Could not find namespace: kotoba.form' at
+       namespace load (ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace) -- NO green full suite claimed;
+       find docs/evidence/gpu -name '*.sh' -> 0.
+   (f) derivation-census-s35.txt: an independent second parser
+       (split-based parsing, bucket-rank Spearman, the frozen
+       permutation algorithm re-implemented) re-derives every cited
+       number from the 84 committed logs -- 24 rows, 0 mismatched --
+       and verifies the recovery file's internal consistency, the
+       ledger's byte-identity to HEAD and the no-.sh policy.
+
+4. NAMED, NOT HIDDEN (this tick): (i) NAMED DEFECT IN SESSION 34'S
+   COMMIT: build-census-s34.txt is cited as committed evidence by
+   s34's record.txt, run-window.txt and commit message but is ABSENT
+   from the committed tree (every peer session dir carries its
+   build-census-sN.txt); s34's census rows 222-227 only show the pin
+   VALUES present in s28/s33's censuses, which is NOT evidence that
+   s34's fresh compiles reproduced them. REMEDIATION THIS TICK
+   (session-35 artifact, never presented as the s34 file):
+   build-census-s34-recovered-s35.txt reads the host workdir
+   ~/anv-b3minwander-20261028 artifacts once over ssh -- the three
+   binaries carry mtimes 2026-10-28T01:42:57Z (the s34 build stamps,
+   before all s34 runs, unchanged in the 31 minutes to this read) --
+   and their sha256 digests MATCH the s34 protocol-declared pins
+   BYTE-IDENTICALLY 3/3 (c2 e5ed903e... / hi a6c31b6c... /
+   c8 480925e5...), with build stderr 0 bytes 3/3 and the input
+   digests matching host-verify-s34.txt. The s34 claim "3/3 build
+   pins BYTE-IDENTICAL" is therefore SUBSTANTIATED RETROACTIVELY;
+   the omission itself stays named as a session-34 defect and this
+   recovery cannot restore what a contemporaneous s34 file would
+   have carried; (ii) NAMED DEFECT in this tick's scratch census
+   generator's FIRST DRAFT: the split-based CELL parser mis-indexed
+   the pipeline column (read the void field; the run crashed with
+   IndexError before any value was quoted) -- corrected before any
+   value was quoted; the committed census records the corrected run
+   only; (iii) this session adds NO bar progress and NO new
+   measured values of GPU behavior -- every number here is derived
+   from session 34's committed logs or host artifact digests.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31 protocol section 0),
+   the X1R letter thresholds (s32), the T1 letter thresholds (s33/
+   s34) and this session's T1 letter thresholds + the frozen
+   permutation algorithm (s35 protocol section 0). Not implemented in
+   the compiler; not themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/evaluator
+   remain evidence-scoped tooling; the ledger is an evidence file;
+   nothing is wired into any namespace.
+   DERIVEable from MEASURED data (this tick): the co-variation
+   statistics (rho, p, letter (b)) over session 34's measured
+   samples; the recovery digests (host artifact digests, not GPU
+   measurements). Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4 unchanged:
+   NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; NO vendor optimization exists for Intel and none
+   is claimed.
+
+6. UNMEASURED (named): WHY the block-min statistic wanders (the
+   host-side proxy is now excluded as the within-window driver at
+   this window; estimator noise vs an unmeasured physical variable
+   STAYS UNRESOLVED); a cross-window repetition of this correlation
+   (needs a second window with within-window host variation -- this
+   window's letter bounds nothing beyond it); a common-mode probe
+   across two interleaved arms in one window (physical drift would
+   move both arms' minima together, estimator noise would not -- NEW
+   HARDWARE, a named candidate row for a later session); the
+   threshold-artifact-vs-representation question itself; the s31 and
+   s34-window host-side excursions' causes; the flip location inside
+   (252,604, 253,906]; any causal mechanism; anything off the ANV
+   host. The bar needs at least THREE more qualifying UTC days (V4
+   PENDING 1/4); whether FOUR qualifying days is ENOUGH (the bar can
+   return UNSETTLED).
+
+7. THE TICK'S FINDING IN ONE LINE: THE WANDER DOES NOT CO-MOVE WITH
+   THE HOST-SIDE PROXY -- T1 = (b) NO-CO-MOVE, Spearman rho =
+   -0.038597, permutation p = 0.907841 over the 12 (block-unit min,
+   block-unit host_ns) pairs of session 34's window (vectors
+   reproduce publication-s34's published values exactly; C1 (a),
+   VERIFY 0; derived from s34's committed logs, NO new hardware);
+   the letter excludes only the host-side proxy as the within-window
+   driver -- estimator noise vs physical drift STAYS UNRESOLVED (L2,
+   low power n=12, no causal mechanism) and
+   threshold-artifact-vs-representation stays UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical), the
+   s34-omitted build census is recovered as a named session-35
+   artifact (3/3 pins match), and nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3wandercov-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt + the ADR-0355 dated
+   note. (JUN-55, JUN-59)
