@@ -59,6 +59,7 @@ def main():
         raise SystemExit('runner compile failed')
     runner.chmod(0o700)
     examples = [('full-float', ROOT / 'test/fixtures/selfhost/x86-float/native/x86_float_test.kotoba', 511),
+                ('float-original-stack', ROOT / 'test/fixtures/selfhost/x86-float/native/x86_float_stack_test.kotoba', 3),
                 ('document-f64', ROOT / 'diagnostics/kotoba161-runtime-float/doc-f64.kotoba', 42),
                 ('float-stack', ROOT / 'diagnostics/kotoba161-runtime-float/float-stack.kotoba', 42)]
     cases = []
