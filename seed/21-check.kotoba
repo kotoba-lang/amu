@@ -6045,7 +6045,7 @@
 (def ck-r6f-g-f32 32768)
 (defn- ck-r6f-t-f32 [] :string
   (string-concat "(defn- f32-to-bits [x :f32] :i64 (__r6-as :i64 x))\n"
-  "(defn- f32-from-bits [b :i64] :f32 (if (or (< b -2147483648) (> b 2147483647)) (__r6-as :f32 (vector-at [0] 1)) (__r6-as :f32 b)))\n"))
+  "(defn- f32-from-bits [b :i64] :f32 (do (assert (and (>= b -2147483648) (<= b 2147483647))) (__r6-as :f32 b)))\n"))
 ;; R6F: reference string-kit heads (lang/guest-grammar.edn, context ABI v7/v8/v10) and `mod` as library defn-s, one group
 ;; bit per function (a module that defines a function of the same name keeps its own: ck-r6b-scan's defd rule). Byte
 ;; offsets throughout (the seed's strings are UTF-8, string-code-point-at reads at a byte offset).

@@ -72,6 +72,24 @@ def main():
         elif result.returncode != 0 or result.stderr or result.stdout != (42).to_bytes(8, "little", signed=True):
             raise SystemExit(name + ": positive result mismatch")
 
+    for name, value, should_trap in (("f32-min", -2147483648, False),
+                                     ("f32-max", 2147483647, False),
+                                     ("f32-below-min", -2147483649, True),
+                                     ("f32-above-max", 2147483648, True)):
+        src, image = output / (name + ".kotoba"), output / (name + ".elf")
+        src.write_text("(ns native.f32-boundary (:export [main]))\n"
+                       "(defn main [] :i64 (f32-to-bits (f32-from-bits " + str(value) + ")))\n")
+        built = run(name + "-compile", [compiler, "compile", src, "--target", "x86_64-linux", "--output", image])
+        if built.returncode != 0 or not image.is_file():
+            raise SystemExit(name + ": compile failed")
+        image.chmod(0o700)
+        result = run(name + "-run", [image], guest=True)
+        if should_trap:
+            if result.returncode != -signal.SIGILL or result.stdout:
+                raise SystemExit(name + ": expected SIGILL trap missing")
+        elif result.returncode != 0 or result.stderr or result.stdout != value.to_bytes(8, "little", signed=True):
+            raise SystemExit(name + ": boundary result mismatch")
+
     cases = json.loads((ROOT / "seed/float-cases.json").read_text())["cases"]
     examples = [(row["name"], row["source"], row["result"]) for row in cases]
     examples.append(("full-x86-float", (FIXTURES / "native/x86_float_test.kotoba").read_text(), 511))
