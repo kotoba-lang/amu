@@ -1,0 +1,92 @@
+# Selfhost co-scientist — tournament state
+
+The research goal is the owner's sentence: *an amu binary built by amu itself runs
+`check`, `compile` and `refactor` on its own sources with zero node, JVM and nbb
+processes, and Embench is measured on that compiler* (docs/selfhost-priority.md
+rules 8-11). Stubs, refusal twins and bootstrap-only readings do not count.
+
+This file follows the loop of `docs/codegen-coscientist.md`. One iteration = one
+hypothesis taken to a measured verdict. The fitness function is deterministic, never
+judgment.
+
+## Fitness (the only things that decide a verdict)
+
+| gate | command | meaning |
+|---|---|---|
+| F1 rung gates | `scripts/seed/gates.sh --rung rN` | G1 19 Embench ports return 1, G2 corpus equals stage-0, G3 refusal texts, G4 fixed point (seed-N+1 == seed-N+2 bytes), G5 no host processes |
+| F2 ledger | `scripts/selfhost-wall/ledger.sh` | definitions with a real Kotoba body that agrees with the host (REAL), not files OK |
+| F3 differential | `ds-diff.sh`, `vx-diff.sh`, `tm-diff.sh`, `abort-diff.sh`, `kir-gate.sh` | the Kotoba route agrees with the host case by case |
+| F4 boundary | `scripts/selfhost-wall/bootstrap-boundary.sh` | product-path dependencies on nbb/node/JVM (must reach 0) |
+| F5 Embench | `bench/embench/run_native_qualification.py` with the packaged seed | correctness 19/19; compile ms, code bytes, execute medians on a recorded host |
+
+"Files OK on the native checker" (scripts/selfhost-wall/check-native.sh) is a
+bootstrap feedback signal, not a verdict.
+
+## The loop
+
+| stage | what it means here |
+|---|---|
+| **Generate** | hypotheses come from measured artifacts: refusal histograms (`wall-scan-*.tsv`), the ledger, memory high-water marks (`KEXE_ARENA_USE=1`), gate failures, git throughput. Not from intuition alone |
+| **Reflect** | falsify cheaply first: a one-day spike, a hand-built fixture, a 1-file probe, a count over real data. A hypothesis that does not survive its spike gets no wave |
+| **Rank** | expected progress on F1/F2/F5 × probability, grounded in the spike number; a blocker that gates other hypotheses outranks any single win |
+| **Evolve** | a confirmed-direction hypothesis that is not yet sufficient is combined with the next mechanism, not discarded |
+| **Meta-review** | after each wave: rerun the fitness gates on immutable snapshots, update this table, record the verdict ("not separated" is the absence of a result), and retire or promote hypotheses |
+
+Terminal states: **reached** (F1-F5 all green on the rung that replaces the compiler),
+or a **proven ceiling** written down with evidence (for example a memory bound no
+representation reaches).
+
+## Hypothesis population
+
+| id | hypothesis | status | evidence |
+|---|---|---|---|
+| H-S1 | A small seed compiler compiled from itself reaches a real selfhost fixed point and an Embench measurement far sooner than porting the 136k-line host compiler | **confirmed — seed R0** | fixed point `fe2c20ae…`, 19/19 ports, compile 376 ms vs 4423 ms same-host stage-0 (docs/selfhost-seed-r0-report-20261002.md) |
+| H-S2 | A rung ladder (R1 sugar+records, R2 perf, R3 values, R4 functions, R5 modules/effects, R6 Forms) keeps every step self-proving with a fixed point | **R1-R4 confirmed**, R5 designed (docs/selfhost-seed-r5-design-20261002.md) | tags seed-r1..r4; fixed points c0526b73, e1b2ecd5, cbae36dc, e9598b28 (382,968 B); R2: Embench run time geomean 0.96x of same-host stage-0, code 96,969 B vs 152,476 B; R4: xgboost 2,425 -> 27.5 ms per call after the UTF-8-literal rule |
+| H-M1 | The seed backend can consume the big frontend's KIR text (`compile-kir`), bypassing the memory-hungry `machine_ir`/`mir` Form route | **leaf layer GO; the replacement test F1-F5 now PASSES (2026-10-03 SEEDFIX, be8898af), opt-in `--backend seed`; the earlier NO-GO text below is history** (docs/selfhost-seed-merge-20261003.md) | 299/315 programs compile via compile-kir (277/295 runnable equal to stage-0); 4 big-compiler pieces (posix-path, kstring+decimal, string.case, sha2) give identical output at scale 1/8/20, run time 0.93-1.43x, peak memory <= stage-0; but only 1,069/3,399 (31.4%) per-function slices of 10 big-compiler guests compile. Missing: `:document` 170 fns, records by ref 100, `:bytes` params 60, string-from-utf8 33, [:list [:ref R]] 29, cap calls 17. Verdict flips at >= 95% of functions compiling with EQUAL results on form_count, validate-expr, desugar |
+| H-M2 | Loader-level hash-consing cuts the Form route's heap enough for per-pass processes | **confirmed; hardened (2026-10-03)** | desugar 616 -> 148 B/source byte, byte-identical output on 720 cases; collision-safe by exact compare; default now a 4-way 2^16-entry table: +32% CPU instead of +75%, +4% pairs (docs/selfhost-pass-driver-20261003.md) |
+| H-M3 | Process-per-pass keeps each pass under the loader's pair limit | **confirmed for desugar-class passes and infer (with H-M2); analyze: ~217 KB of real source per process after ADR 0364 (was ~5 KB)** | `scripts/selfhost-wall/pass-driver.sh`; 32x the real corpus (4.6 MB): per pass <= 0.48 GB heap, 14.6 M pairs (22% of 64 Mi), 3.4 M vectors (82% of 4 Mi) (docs/selfhost-pass-driver-20261003.md). FRONT 2026-10-03 (native via seed compile-kir, docs/selfhost-front-native-20261003.md): infer, all 3,468 host cases in ONE process with hash-consing = 3.37 M vectors (80%), 10.3 M pairs, 248 MB; without it the vector table traps. analyze (whole linked frontend, one program per process): up to 1.84 M vectors (44%) for a 1,307 B source; 865 vectors and 49 KB heap per source byte, vectors ~ 487*bytes^1.04, so 4 Mi vectors = ~5 KB of source; a 100 KB module ~7e7 vectors, ~2.4 GB (E). Process-per-pass cannot split below a module: needs freeing inside the pass (arena scopes per definition) or H-M4. MEM2 2026-10-03 (docs/selfhost-analyze-memory-20261003.md, ADR 0364): vector table 4 Mi -> 64 Mi; with hash-consing **analyze fits ~217 KB of real source per process (measured, seed prefix 00-ns..20-names: 156 handles / 211 pairs / ~7.0 KB heap per source byte)**; next wall the 64 Mi pair arena (< 291 KB). Census: 62% of handles and 79% of pairs are frontend constant tables rebuilt per call (filed to kotoba-sema) |
+| H-M4 | Flat Forms (struct of arrays) are needed | **refuted as the next step (MEM2 2026-10-03)** | KEXE_ARENA_CENSUS on native analyze (39.6 KB of seed source): the program's Forms/env/lists are 2.7% of vector handles and 21% of pairs; 62%/79% are constant tables re-materialised per call, 35% of handles empty kids lists (hash-consing shares them). Remove the recomputation first (E 3-5x); 170 B/node vs 40 B flat stays an estimate |
+| H-F1 | The big frontend's remaining Form ports (`infer`, `desugar`, `record_projection`, `analyze`) are on the critical path for R6 | **confirmed: they compile natively and agree with the host (via seed compile-kir); analyze needs a larger seed M** | ledger: REAL 3,209 of 10,219 defs (31.4%). FRONT 2026-10-03: KIR from the pre-ADR-0363 JVM classes (the stable stage-0 refuses the frontend at expand.cljk:149 since ADR 0363 and the guests at its aarch64 admission) -> `seed compile-kir` (R6A 36433468): infer guest (718 fns) 3,468/3,468 host cases agree (3,409 OK + 59 same refusal), state_ability/row/record_projection 2,307/2,307 OK, desugar EQUAL (KIR5); whole `an/analyze` (3,600 fns, 435k KIR tokens) only with a private 16 Mi-word M + the 30-lower loop-node fix (CONTRACT-REQUESTS): 233/263 programs = host, 13 DIFF (byte-identical to the JVM interpreter's answers) + 17 SIGILL (16 slice-carrier programs), known guest gaps. Speed vs the JVM KIR interpreter: ~10^4 x on infer cases, ~5x10^3 x per analyze program (both loaded) |
+| H-F2 | Mechanical rewrites via `amu refactor` are cheaper than hand ports | **confirmed for destructuring/reject!** | rules a-f, 1,000+ sites, outcomes identical |
+| H-V1 | Distributed or remote CPU is worth its coordination cost | **refuted for now (owner decision)** | single-Mac loop; native checker 48 s -> 1 s removed the need |
+| H-X1 | Compiled differential tests (native guests) replace interpreter-on-nbb runs | partly confirmed | `kotoba.string.case` 1.1M cases at 52,710/s; Form guests blocked by aggregate lists in the native backend (docs/selfhost-native-gaps-20261002.md) |
+| H-N1 | nbb, node and JVM can leave the product path once the seed lineage reaches R5 | open (seed lineage is at R6D; the product path has not moved: 58 files, was 56) | bootstrap-boundary report: 58 product-path files on 2026-10-04; S6 plan |
+
+## Iteration log
+
+- **0-15 (historical):** frontend ports, limits (ADR 0358-0360), tooling (wall harness, refactor, native checker); state lived in wave scripts and `docs/selfhost-core-rewrite-plan-20260930.md`.
+- **16 — H-S1 (2026-10-02):** spike T1/T2/T3, then modules, then integration. Verdict: confirmed (seed R0, F1 G1-G5 green, F5 19/19).
+- **17 — H-S2/H-M1 (2026-10-02):** R1 and `compile-kir` built; gates green. Verdict: R1 confirmed, H-M1 confirmed on the 19 ports.
+- **18 — H-M2 (2026-10-03):** hash-consing spike in the loader. Verdict: confirmed.
+- **19 — H-S2 (2026-10-02/03):** R2, R3 built and gated; KIR coverage 241 -> 299/315. Verdict: R2, R3 confirmed.
+- **21 — H-S2/H-M1 (2026-10-03):** R4 functions (fixed point e9598b28), R5 design + oracle (77 cases), KIR merge test. Verdicts: R4 confirmed; H-M1 NO-GO for replacing machine_ir now, GO for the leaf layer.
+- **20 — H-M3 (2026-10-03):** falsified at 8x and 32x on a real corpus, built `pass-driver.sh`, hardened the loader's hash-consing. Verdict: confirmed for desugar-class passes (with H-M2); next wall is `KEXE_VECTOR_MAX`, then the unmeasured `infer`/`analyze`.
+- **22 — gates/lineage (2026-10-03, HOUSE3):** `gates.sh --rung r5a` and `--rung r4b` READY on head seed 4502396d (503,103 B, load 67-80, 14 and 13 gates; r5a runs GR r1 r3 r4 r4b plus R5 part A 39/39 and the XTRA rung proof SPLIT/SEP; UNIT 12/12, KIR 19/19, LEXREAD 78 dumps, LW 65/66, A64GEN 756/756); `bootstrap.sh` replays r0..r4, r5a, r4b with every recorded hash (seed1, seed2, size, bridge) and the head A=B=C fixed point 4502396d. Embench (embench-rungs.sh, runner unchanged): LOADED (load 90-100 at the run, polled 13:46-13:58 at 73-95, HOUSE2 polled 3 h earlier without a quiet minute; correctness and code size only, timings not a measurement): 19/19 workloads correct for stage-0, r4b, r5a and head 4502396d; compile ms sums 351/347/348 vs stage-0 4,306 (loaded). Raw: docs/selfhost-seed-embench-loaded-20261003.md.
+- **23 — H-F1/H-M3 (2026-10-03, FRONT):** the frontend passes as native closed guests through `seed compile-kir` (docs/selfhost-front-native-20261003.md). Verdicts: H-F1 confirmed (analyze conditional on a larger seed M); H-M3 confirmed for infer, ceiling for analyze (~5 KB source per process on the 4 Mi vector table). Found: a latent 30-lower miscompile for loop nodes >= 131,072 (filed), and kotoba-sema's host analyze broken since fd6ad70 (fixed, bd40e37).
+
+- **24 — H-M3/H-M4 (2026-10-03, MEM2):** census of the native analyze guest by guest call site (loader KEXE_ARENA_CENSUS), ADR 0364 (vector table 64 Mi), compiler-size ladder (`analyze-memory.sh`). Verdicts: H-M3 ceiling moved from ~5 KB to ~217 KB per process (pairs next); H-M4 refuted as next step -- the volume is recomputed constant tables in the frontend, not Form layout.
+## Fitness readings (2026-10-04, HOUSE5; page: docs/selfhost-status-20261004.md)
+
+| gate | reading |
+|---|---|
+| F1 | clean worktree `47221cd4d`, `gates.sh --rung r6c --with-unit --with-aux`: 14/14 PASS (fixed point e3654a64, 698,960 B); `bootstrap.sh` r0..r6d + head A=B=C in 22.7 s, no stage-0 |
+| F2 | ledger over 126 modules: REAL 3,209 of 10,163 definitions (31.6%); REAL host lines 21,185 of 136,207 (15.6%); no differential table supplied, so coverage is not read |
+| F3 | r6-diff 984/984 cases agree (R6D record); kir-backend-diff F1-F5 pass (be8898af); amu-front 382/391 same verdict as stage-0 `check` |
+| F4 | bootstrap-boundary: PRODUCT union 58 (snapshot 56): nbb entries 15 -> 17 (check_cli, aarch64_packaged_cli), 4 launchers, 48 nil/no-:kotoba modules, 13 files with unguarded host tokens. Rule 10 growth of 2: needs a decision |
+| F5 | LOADED only (3 h poll, minimum load 9.68): 19/19 correct for stage-0, r2, r4, r6c, r6c-kir, r6d; compile ms sum 371-393 vs stage-0 4,302-4,321; code bytes 97.8 KB vs 152.5 KB (r6d). No QUIET number yet |
+
+H-M1 update: the replacement test (F1-F5 of kir-backend-diff.sh) now passes for seed be8898af and the opt-in `--backend seed` exists
+(INT2); the default stays `machine_ir` until the seed is linked in-process.
+
+## Next iterations (ranked, 2026-10-03)
+
+1. **H-M1 flip conditions**: seed lowering for records by reference, `:bytes` params/results, [:list [:ref R]], `string-from-utf8`, capability calls, >5 parameters, then `:document` (these are R5/R6 features; each is measured by the per-function slice scan `seed/tests/kir/slice.py`).
+2. **R5 implementation** (modules/linking + effects) per the design; gate = 20 conformance programs with oracle values.
+3. **H-F1**: `infer`/`analyze` natively (next measured wall of H-M3 is KEXE_VECTOR_MAX).
+
+## Superseded list (2026-10-03 morning)
+
+1. **H-M3 + H-M2 on by default**: process-per-pass driver for the big frontend (falsify first: run `desugar` guest with hash-consing at 8x and read the arena marks).
+2. **H-M1 coverage**: the share of the repo's programs that `compile-kir` handles; the number decides whether the seed backend replaces `machine_ir`.
+3. **H-F1**: finish `infer` natively (the unknown flagged by the memory study) before more Form ports.
+4. **H-N1**: native launcher for `amu` as soon as R5 gates are green.
