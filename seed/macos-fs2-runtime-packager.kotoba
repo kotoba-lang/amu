@@ -7,6 +7,9 @@
 (def RAW-START 8192)
 (def RUNTIME-START 2048)
 (def SLICE-SETUP-START 1264)
+(def REFUSE-START 1304)
+(def REFUSE-MSG-START 1352)
+(def REFUSE-MSG "seed: arena-scope unsupported (Mac runtime, JUN-546)\n")
 (def POOL-SETUP-START 2048)
 (def CONCAT-START 2184)
 (def POOL-EQUAL-START 2556)
@@ -28,8 +31,8 @@
 (def FS2-KIND9-BYTES 256)
 (def FS2-LOCK-BYTES 792)
 (def FS2-EF-BYTES 1172)
-(def MAC-PACKAGER-RAW-BYTES 47201)
-(def MAC-PACKAGER-ENTRY-OFFSET 42996)
+(def MAC-PACKAGER-RAW-BYTES 49680)
+(def MAC-PACKAGER-ENTRY-OFFSET 44880)
 
 ;; The general build mode accepts an explicit extracted main offset. It is
 ;; bounded by the image size and the scoped FS2 output limit; admission and
@@ -152,11 +155,31 @@
 
 ;; The wrapper's setup stub preserves LR, runs the existing pure helper
 ;; installer, then installs the bytes-slice callback in runtime slot 368.
+;; JUN-546: the generated code calls context ABI slots 224 and 232, the scalar
+;; arena-scope enter and leave routines, which this diagnostic runtime does not
+;; implement. Left at zero they were a call to address 0 (SIGSEGV, exit 139);
+;; both now point at a refusal that writes REFUSE-MSG to stderr and exits 70,
+;; the status the Linux runtimes use for a scope failure.
 (defn- slice-setup-words [] :vector-i64
   [0xa9bf7bfd
    (bl-direct (+ SLICE-SETUP-START 4) PURE-RUNTIME-START)
    (adr8 (+ SLICE-SETUP-START 8) BYTES-SLICE-START)
-   0xf900ba68 0xa8c17bfd 0xd65f03c0])
+   0xf900ba68
+   (adr8 (+ SLICE-SETUP-START 16) REFUSE-START)
+   0xf9007268 0xf9007668
+   0xa8c17bfd 0xd65f03c0])
+
+;; write(2, REFUSE-MSG, length) then exit(70); the words were derived once with
+;; the system assembler and checked against it, and no assembler is in the build.
+(defn- refuse-words [] :vector-i64
+  [0xd2800040
+   (adr8 (+ REFUSE-START 4) REFUSE-MSG-START)
+   0xaa0803e1
+   (bit-or 0xd2800002 (i64-shift-left (string-length REFUSE-MSG) 5))
+   0xd2800090 0xf2a40010 0xd4001001
+   0xd28008c0
+   0xd2800030 0xf2a40010 0xd4001001
+   0xd4200000])
 
 ;; pair_new(ctx, offset, byte_length): 1-based handle. The context contains
 ;; a count pointer at +288, mmap pair base at +296, and mark base at +304.
@@ -754,6 +777,8 @@
       (words-at (+ at 1024) (wrapper-prefix text-bytes))
       (words-at (+ at 1152) (wrapper-suffix raw-bytes mode entry-offset general))
       (words-at (+ at SLICE-SETUP-START) (slice-setup-words))
+      (words-at (+ at REFUSE-START) (refuse-words))
+      (text-at (+ at REFUSE-MSG-START) REFUSE-MSG)
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
       (words-at (+ at STDERR-TYPED-START) (stderr-helper-words))
