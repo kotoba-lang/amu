@@ -10,7 +10,9 @@ import json
 from pathlib import Path
 import platform
 import re
+import resource
 import shutil
+import signal
 import struct
 import subprocess
 
@@ -32,6 +34,7 @@ def main():
     a = p.parse_args()
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise SystemExit("reported native Linux x86_64 host required")
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     compiler = a.compiler.resolve(strict=True)
     if not compiler.is_file() or digest(compiler)["sha256"] != a.compiler_sha256:
         raise SystemExit("compiler pin mismatch")
@@ -51,6 +54,23 @@ def main():
                      "stdout": digest(output / (name + ".stdout")),
                      "stderr": digest(output / (name + ".stderr"))})
         return result
+
+    for name, value, should_trap in (("assert-valid", 1065353216, False),
+                                     ("assert-out-of-range", 2147483648, True)):
+        src, image = output / (name + ".kotoba"), output / (name + ".elf")
+        src.write_text("(ns native.assert-test (:export [main]))\n"
+                       "(defn main [] :i64 (do (assert (and (>= " + str(value) +
+                       " -2147483648) (<= " + str(value) + " 2147483647))) 42))\n")
+        built = run(name + "-compile", [compiler, "compile", src, "--target", "x86_64-linux", "--output", image])
+        if built.returncode != 0 or not image.is_file():
+            raise SystemExit(name + ": compile failed")
+        image.chmod(0o700)
+        result = run(name + "-run", [image], guest=True)
+        if should_trap:
+            if result.returncode != -signal.SIGILL or result.stdout:
+                raise SystemExit(name + ": expected SIGILL trap missing")
+        elif result.returncode != 0 or result.stderr or result.stdout != (42).to_bytes(8, "little", signed=True):
+            raise SystemExit(name + ": positive result mismatch")
 
     cases = json.loads((ROOT / "seed/float-cases.json").read_text())["cases"]
     examples = [(row["name"], row["source"], row["result"]) for row in cases]
