@@ -1231,3 +1231,44 @@ the frozen pre-registration incl. the ledger-construction decision;
 publication-s31.txt is the measurement; bar-eval-s31.txt is the
 frozen evaluator's verdict; record.txt is the finding) and
 `docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 32 (JUN-59): the within-day recurrence read
+of the session-31 hi host_ns excursion
+
+The bar's UTC-day 2026-10-28 slot is consumed by session 31 (COUNTED
+1/4; next executable day slot 2026-10-29), so this tick takes one of
+s31's named residuals instead of bar content: the X1 host-side
+excursion (hi host_ns 875,403 = ~2.83x every same-knob prior, cause
+UNMEASURED). ONE measurement slice, pre-registered before the runs
+(protocol freeze stamp 2026-10-28T00:39:07Z): a second same-UTC-day
+3-run block of the (1024,4033) anchor (B=3, n=253,906) at a
+byte-identical rebuilt binary (a6c31b6c... -- the pair's fifth
+cross-session rebuild; 3/3 pins byte-identical), controls c2/c8
+bracketing, custody GO 00:40:34Z before builds and all runs. MEASURED:
+the excursion DID NOT RECUR -- hi pooled host_ns 304,999 = frozen X1R
+letter (a) REVERTED (0.984x-0.990x every same-knob prior
+309,848/310,008/309,647/308,129; 0.348x session-31's 875,403; per-run
+304,729..305,961), with C1 (a), VERIFY 0 everywhere (9 fresh
+processes, rc=0 9/9, forcing 162/162, host-mtime cross-check 9/9).
+Descriptive same-day content: the second 2026-10-28 anchor reading
+classifies INTERMEDIATE/MIXED at 1,128 (18-cell 982..1,421), in-band
+vs the frozen refs 1,129/1,132/1,131; the F2 min-statistic wander
+carries (block min 982, per-run minima 986/972/989 inside 971..1,001).
+Under settle-bar.txt section 2 the block is NAMED DESCRIPTIVE CONTENT:
+its ledger line (appended after a scratch-copy evaluator test) is
+classified descriptive by the frozen evaluator (same-day-duplicate
+exclusion) and the verdict is UNCHANGED -- PENDING 1/4 with s31
+counted (settle-bar-eval.py run twice byte-identical; fixture pin
+38/0). Named, not hidden: one non-recurrence observation bounds
+nothing about cause -- the excursion's cause remains UNMEASURED and no
+causal mechanism is claimed (two observations of the same knob in one
+day: one excursion, one non-recurrence). Rule 4 binds: the bar moves
+nothing; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization exists
+for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3x1rec-20261028/` (protocol.txt is
+the frozen pre-registration incl. the X1R letters; publication-s32.txt
+is the measurement; bar-eval-s32.txt is the frozen evaluator's
+verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
