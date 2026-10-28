@@ -1412,3 +1412,71 @@ evaluator's verdict; build-census-s34-recovered-s35.txt is the named
 recovery; record.txt is the finding) and
 `docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger,
 untouched this tick).
+
+## 2026-10-28 -- session 36 (JUN-59): the common-mode probe (two interleaved arms, one window)
+
+Session 35's named candidate row ("a common-mode probe across two
+interleaved arms in one window (physical drift would move both arms'
+minima together, estimator noise would not -- NEW HARDWARE, a named
+candidate row for a later session)") is taken on ONE observable
+axis: in ONE session window on the ANV host, do the block-unit min
+statistics of TWO interleaved arms -- the (1024,4033) pair arm (hi)
+and the (2048,8066) twin arm (tw), 12 ADJACENT block-pairs (hi
+block k immediately followed by tw block k) at byte-identical
+rebuilt binaries -- CO-MOVE across the 12 pairs (Spearman rho
+between the hi and tw block-min vectors)? ONE measurement slice,
+pre-registered before the runs (protocol freeze stamp
+2026-10-28T02:36:45Z; frozen letters (a) CO-MOVE |rho| >= 0.60 and
+p <= 0.05 / (b) NO-CO-MOVE otherwise / (c) NOT EVALUABLE; the
+s35-frozen Spearman + permutation algorithm reused UNCHANGED).
+HARDWARE RAN (MEASURED, aiueos-6600hs Intel BMG G31 ANV): 78 fresh
+processes (c2 3 + hi 36 + tw 36 + c8 3) in the frozen interleaved
+order, run window 2026-10-28T02:40:49Z..02:41:27Z, rc=0 78/78 +
+'# done cells=24' 78/78, stderr 0 bytes 78/78, 450 SAMPLE + 24
+VERIFY each, knob fields == arms, forcing 1,404/1,404, S=8
+fail-closed 468/468, VERIFY mismatch 0 everywhere, host-mtime
+cross-check 78/78 (worst 1s), custody GO 2026-10-28T02:40:47Z
+before builds and ALL runs (corpus 16/16 + 3/3 local-vs-host
+MATCH); 4/4 build pins BYTE-IDENTICAL (hi a6c31b6c = the pair's
+EIGHTH cross-session rebuild / 9th measurement; tw bb901eb5 = the
+twin's THIRD cross-session rebuild / 4th measurement; c2/c8 the
+sessions 13-35 pins). THE FINDING (MEASURED): T1 = (b) NO-CO-MOVE
+-- Spearman rho = -0.251762, permutation p = 0.425076 (100,000
+trials, frozen seed 20261028; count 42,507/100,001); hi block-min
+A..L 991/989/981/998/993/985/984/997/994/994/980/982 (980..998) vs
+tw 988/985/994/993/994/995/992/984/987/984/993/981 (981..995), C1
+(a) (c2 FLOOR; c8 32,911 = 0.01% of 32,915). The two arms' block-min
+wander does NOT co-move in this window; with session 35's (b) (no
+co-move vs the host-side proxy at s34's window) the wander is not
+explained by EITHER the host-side proxy OR a common-mode driver at
+the probed windows/powers -- consistent with per-arm estimator noise
+or arm-specific effects. NAMED, NOT HIDDEN: L2 observational only,
+NO causal mechanism; n=12 pairs in ONE window is LOW POWER (a null
+is not evidence of independence); only common-mode structure slower
+than the ~1s block-pair spacing was probed (L14); the s35 and s36
+letters come from DIFFERENT windows (named); estimator noise vs an
+unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(MEASURED here): (D1) per-run minima hi 966..1,023 EXTEND the
+quote-only band 971..1,006 on both sides (new extremes; per-run
+unit L10), tw 971..1,001 in band; (D2) hi block A is day
+2026-10-28's FIFTH anchor reading (INTERMEDIATE/MIXED, median 1,142,
+min 991, 18-cell 991..1,438), in-band vs the frozen refs
+1,129/1,132/1,131; its ledger line appended as DESCRIPTIVE by the
+frozen evaluator (same-day-duplicate exclusion; scratch-copy tested
+first) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted
+(settle-bar-eval.py twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29); (D3) tw block E host_ns 465,709 =
+1.50x its non-excursion blocks -- an L3 proxy excursion, cause
+UNMEASURED (X1 content). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3commonmode-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters; publication-
+s36.txt is the measured read; run-window.txt / build-census-s36.txt
+/ host-verify-s36.txt are the custody chain; bar-eval-s36.txt is the
+frozen evaluator's verdict; derivation-census-s36.txt is the
+independent second parser (53 rows / 0 mismatched); record.txt is
+the finding) and `docs/evidence/gpu/settle-bar-ledger.txt` (the
+append-only ledger, one line appended -- hi block A, descriptive).
