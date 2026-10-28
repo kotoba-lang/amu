@@ -1,0 +1,201 @@
+JUN-59 session 34 -- THE WITHIN-WINDOW MIN-STATISTIC WANDER PROBE
+(THE THRESHOLD-ARTIFACT SIDE OF threshold-artifact-vs-representation:
+TWELVE independent 3-run blocks A..L of the (1024,4033) anchor at
+n=253,906 = (1,000,003*1024)//4033, B=3, in ONE session window at a
+byte-identical rebuilt binary, ON UTC DAY 2026-10-28 -- the settling
+bar's day slot is session 31's (COUNTED 1/4) and block A is the only
+bar-candidate block (protocol L12) -- plus the archived controls
+c2/c8 bracketing the whole hi window), publication
+Produced ONLY by analysis-s34.py over the 42 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run (freeze stamp 2026-10-28T01:39:28Z). Arms = binary
+compile-time (BATCH, WORK_MUL, NDIV); n = (1,000,003*WORK_MUL)/NDIV
+(integer floor). EACH BLOCK = 3 fresh processes x 25 rounds per cell
+(the frozen estimator unit). The row question (protocol section 0):
+DO THE 12 IN-WINDOW BLOCK-UNIT MIN STATISTICS (min over the 18
+pipeline-ok cells of the pooled median gpu_ticks -- the quantity that
+decides CAPTURED-vs-not at the frozen 1,000-tick threshold) STRADDLE
+1,000 (T1)? ZERO derivation this session: the instrument is session
+28's committed NDIV-derived source byte-identical (digest
+a5e539f0... -- derivation-census-s34.txt); the a-set manifest runs the
+ARCHIVED measured spv (16-digest corpus).
+1 tick = timestampPeriod = 52.083 ns.
+
+1. INTEGRITY (computed over the 42 logs):
+   runs parsed: 42 (c2 3 + hi 36 + c8 3); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,WM,NDIV) and n == (1,000,003*WM)//NDIV; every SAMPLE batch=/work_mul=/ndiv= == (B,WM,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 42/42 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, hi=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 4): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 756/756
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 252 cell-runs (6 per run x 42 runs = 252 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks; each BLOCK =
+   3 fresh processes x 25 rounds per cell -- the frozen estimator
+   unit): each row: (sum,128,S=16) exact value, then min..max over
+   the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   unit      B  WM   NDIV    n        total-nominal  (sum,128,16)  min..max over 18 cells   host_ns
+   hi blk A  3  1024 4033   253906      0.750000        1145       993..1423         505202
+   hi blk B  3  1024 4033   253906      0.750000        1151      1003..1436         618664
+   hi blk C  3  1024 4033   253906      0.750000        1139       982..1420         606762
+   hi blk D  3  1024 4033   253906      0.750000        1140      1000..1428         496666
+   hi blk E  3  1024 4033   253906      0.750000        1140       991..1421         489032
+   hi blk F  3  1024 4033   253906      0.750000        1138       988..1422         488151
+   hi blk G  3  1024 4033   253906      0.750000        1153       991..1413         501315
+   hi blk H  3  1024 4033   253906      0.750000        1134       986..1422         501726
+   hi blk I  3  1024 4033   253906      0.750000        1143       992..1456         497428
+   hi blk J  3  1024 4033   253906      0.750000        1134       989..1436         507036
+   hi blk K  3  1024 4033   253906      0.750000        1140       989..1427         503279
+   hi blk L  3  1024 4033   253906      0.750000        1135       985..1412         503138
+   c2        2  1     1       1000003      2.000000          31        31..32           864642
+   c8        8  1     1       1000003      8.000000       33027     25273..33073       2940214
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED; each BLOCK = 3 fresh processes):
+
+   block-unit min statistics (THE STATISTIC, in run order A..L): A 993 B 1003 C 982 D 1000 E 991 F 988 G 991 H 986 I 992 J 989 K 989 L 985
+   block classes (in run order A..L): A INTERMEDIATE/MIXED B CAPTURED C INTERMEDIATE/MIXED D CAPTURED E INTERMEDIATE/MIXED F INTERMEDIATE/MIXED G INTERMEDIATE/MIXED H INTERMEDIATE/MIXED I INTERMEDIATE/MIXED J INTERMEDIATE/MIXED K INTERMEDIATE/MIXED L INTERMEDIATE/MIXED
+   class block A (hi r1-r3, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1145  18-cell 993..1423
+   class block B (hi r4-r6, B=3, WM=1024, NDIV=4033, n=253906): CAPTURED  (sum,128,16) 1151  18-cell 1003..1436
+   class block C (hi r7-r9, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1139  18-cell 982..1420
+   class block D (hi r10-r12, B=3, WM=1024, NDIV=4033, n=253906): CAPTURED  (sum,128,16) 1140  18-cell 1000..1428
+   class block E (hi r13-r15, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1140  18-cell 991..1421
+   class block F (hi r16-r18, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1138  18-cell 988..1422
+   class block G (hi r19-r21, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1153  18-cell 991..1413
+   class block H (hi r22-r24, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1134  18-cell 986..1422
+   class block I (hi r25-r27, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1143  18-cell 992..1456
+   class block J (hi r28-r30, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1134  18-cell 989..1436
+   class block K (hi r31-r33, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1140  18-cell 989..1427
+   class block L (hi r34-r36, B=3, WM=1024, NDIV=4033, n=253906): INTERMEDIATE/MIXED  (sum,128,16) 1135  18-cell 985..1412
+   class c2 (B=2, WM=1, NDIV=1, n=1000003, 2.000000 nominal units): FLOOR
+   class c8 (B=8, WM=1, NDIV=1, n=1000003, 8.000000 nominal units): CAPTURED
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,WORK_MUL,NDIV) -- the a-set runs the
+   ARCHIVED spv bytes through the byte-identical session-34 instrument,
+   so this pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 33027 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the environment pin holds and the T1 letter is evaluable.
+
+   T1 THE ROW QUESTION (frozen letters, protocol section 0): DO THE 12
+   IN-WINDOW BLOCK-UNIT MIN STATISTICS STRADDLE THE FROZEN 1,000-TICK
+   CLASS BOUNDARY AT THE BYTE-IDENTICAL ANCHOR BINARY?
+     in-window block-min range: 982..1003 (12 blocks)
+     blocks with min >= 1,000: 2 (B D); blocks with min < 1,000: 10 (A C E F G H I J K L)
+     T1 LETTER: (a) STRADDLE -- the frozen class boundary is crossed by
+     WITHIN-WINDOW variation alone at byte-identical binaries:
+     blocks B D >= 1,000 and blocks A C E F G H I J K L < 1,000 in ONE window.
+     The cross-session class flip (s26 1,129 CAPTURED min 1,001 ->
+     s27 1,132 MIXED min 976) needs no session-level effect to occur.
+     NAMED, NOT HIDDEN: this does NOT prove threshold artifact -- the
+     wander may itself be driven by an uncontrolled physical variable
+     (thermal, scheduling, memory state); L2 observational only, NO
+     causal mechanism claimed, and threshold-artifact-vs-
+     representation is NOT resolved.
+
+   D1 (pre-registered, descriptive) THE IN-WINDOW BLOCK-MIN SEQUENCE
+   vs THE QUOTE-ONLY CROSS-SESSION BANDS (L7 -- no variance, rate or
+   distribution claim is made or measurable from K=12 in one window):
+     this window's 12 block mins (run order): 993 1003 982 1000 991 988 991 986 992 989 989 985
+     this window's range 982..1003 vs the pair's ten prior block-unit
+     minima 976..1001 (the 1,000 class boundary sits inside BOTH)
+     this window's per-run minima (36 values, DESCRIPTIVE per-run unit -- L10): 980 978 996 981 994 992 978 982 987 996 1000 986 978 996 994 991 977 983 975 988 992 992 981 985 997 986 985 991 983 985 987 1006 972 985 987 982
+     per-run minima range 972..1006 vs the quote-only per-run band 971..1001
+     NAMED, NOT HIDDEN: 12 blocks in ONE window at ONE binary do NOT
+     estimate a per-block noise distribution (L13: the blocks share
+     host state) and no independence assumption is made.
+
+   B1 THE LEDGER STATUS (settle-bar.txt section 2 + this session's
+   frozen L12): the UTC-day 2026-10-28 slot is CONSUMED by session 31
+   (COUNTED 1/4). Block A (the run-order-first hi block) is the
+   session's ONLY bar candidate: a LATER same-UTC-day anchor reading,
+   NAMED DESCRIPTIVE CONTENT; it can NOT advance the bar. Blocks B..L
+   produce NO ledger line (L12, frozen before the runs).
+     The block A reading QUALIFIES on the run-log criteria (C1 (a),
+     VERIFY mismatch 0) and, with the custody facts (build pins, GO
+     before builds/runs), is appended to the ledger with flag=none as
+     descriptive content; the frozen evaluator excludes it from
+     COUNTED (same-day-duplicate fixture).
+     The expected evaluator verdict after the append is UNCHANGED:
+     PENDING 1/4 with session 31 counted. The frozen evaluator
+     settle-bar-eval.py over the ledger (bar-eval-s34.txt) is the ONLY
+     verdict writer -- never hand-written here.
+
+   D2 (pre-registered, descriptive) BLOCK A (THE BAR CANDIDATE) AGAINST
+   THE FLIP PICTURE (quote-only L7 priors; NO bracket narrowing -- L5):
+     BLOCK A (UTC day 2026-10-28, FOURTH same-day, MEASURED HERE): 1145 INTERMEDIATE/MIXED (18-cell min 993, max 1423)
+     in-band vs the bar's frozen refs 1129 / 1132 / 1131 (within +/-5% of EACH): True
+     the pair's ten prior block readings: 1129 CAPTURED (min 1001, session 26 mid) / 1132 INTERMEDIATE/MIXED (min 976, session 27 hi) / 1131 INTERMEDIATE/MIXED (min 991, session 28 hi) / 1130 INTERMEDIATE/MIXED (min 993, session 29 blk-A) / 1144 INTERMEDIATE/MIXED (min 979, session 29 blk-B) / 1143 INTERMEDIATE/MIXED (min 985, session 29 blk-C) / 1151 INTERMEDIATE/MIXED (min 993, session 29 blk-D) / 1142 INTERMEDIATE/MIXED (min 985, session 31 (day 28, COUNTED)) / 1128 INTERMEDIATE/MIXED (min 982, session 32 (day 28, descriptive)) / 1124 INTERMEDIATE/MIXED (min 987, session 33 (day 28, descriptive))
+     Same-day multiplicity does not advance the bar (V4 PENDING 1/4);
+     no causal mechanism is claimed or measured.
+
+   D3 (pre-registered, descriptive) THE PER-RUN VIEW (DESCRIPTIVE --
+   the per-run unit is 25 rounds per cell, NOT the frozen 3-run unit --
+   L10):
+          unit  run  (sum,128,16)  18-cell min   host_ns
+          hi-A  r1         1141         980      612953
+          hi-A  r2         1153         978      872497
+          hi-A  r3         1138         996      467242
+          hi-B  r4         1154         981      865975
+          hi-B  r5         1141         994      602724
+          hi-B  r6         1152         992      500964
+          hi-C  r7         1141         978      497308
+          hi-C  r8         1133         982      531682
+          hi-C  r9         1139         987      869582
+          hi-D  r10        1160         996      533685
+          hi-D  r11        1126        1000      501907
+          hi-D  r12        1139         986      408552
+          hi-E  r13        1160         978      500785
+          hi-E  r14        1163         996      473633
+          hi-E  r15        1120         994      468474
+          hi-F  r16        1139         991      476108
+          hi-F  r17        1137         977      501706
+          hi-F  r18        1135         983      464777
+          hi-G  r19        1142         975      496536
+          hi-G  r20        1129         988      664489
+          hi-G  r21        1162         992      495144
+          hi-H  r22        1134         992      497738
+          hi-H  r23        1130         981      501726
+          hi-H  r24        1142         985      536611
+          hi-I  r25        1138         997      638531
+          hi-I  r26        1154         986      461801
+          hi-I  r27        1147         985      504321
+          hi-J  r28        1148         991      499792
+          hi-J  r29        1129         983      671112
+          hi-J  r30        1134         985      501025
+          hi-K  r31        1134         987      505804
+          hi-K  r32        1148        1006      501415
+          hi-K  r33        1142         972      499812
+          hi-L  r34        1150         985      504641
+          hi-L  r35        1131         987      639573
+          hi-L  r36        1141         982      483041
+          c2    r1           31          31     1004514
+          c2    r2           31          31      829837
+          c2    r3           31          31      863030
+          c8    r1        32900       25243     2869281
+          c8    r2        33085       25249     2992512
+          c8    r3        32888       25228     2780286
+
+   X1 (descriptive, host_ns at (sum,128,S=16)):
+     per-block hi host_ns (run order A..L): A 505202 B 618664 C 606762 D 496666 E 489032 F 488151 G 501315 H 501726 I 497428 J 507036 K 503279 L 503138
+     c2 864642 = 1.271x s26's (680,499); 1.285x s27's (672,684); 1.274x s28's (678,546); 1.284x s29's (673,456); 1.272x s31's (679,908); 1.286x s32's (672,374); 1.274x s33's (678,726) -- sessions 26/27/28/29/31/32/33 same-knob
+     c8 2940214 = 1.235x s26's (2,380,500); 1.226x s27's (2,397,482); 0.963x s28's (3,053,605); 1.226x s29's (2,397,240); 1.235x s31's (2,381,642); 1.225x s32's (2,400,076); 1.228x s33's (2,394,025) -- sessions 26/27/28/29/31/32/33 same-knob
+     hi block range 488151..618664 = 0.558x..0.707x s31's excursion (875,403); 1.575x..1.997x s26's (309,848); 1.575x..1.996x s27's (310,008); 1.576x..1.998x s28's (309,647); 1.584x..2.008x s29's (308,129); 1.601x..2.028x s32's (304,999); 1.580x..2.002x s33's (308,946)
+     host_ns is the HOST-side proxy (L3), not a C criterion; any
+     excursion is NAMED, NOT HIDDEN and its cause is UNMEASURED.
+
+4. VERDICT SUMMARY: C1 (a)=True; T1 LETTER (a) STRADDLE
+   In-window block-min range 982..1003 over 12 blocks of the anchor at
+   n=253,906, B=3 on UTC day 2026-10-28 at a byte-identical binary (3/3
+   pins); blocks >= 1,000: 2 (B D), blocks < 1,000: 10 (A C E F G H I J K L).
+   Block A is the FOURTH same-day anchor reading (the bar stays PENDING
+   1/4 with session 31 counted -- the frozen evaluator's verdict in
+   bar-eval-s34.txt). WHY any class flips across sessions/days is
+   UNMEASURED and NO causal mechanism is claimed; the
+   threshold-artifact-vs-representation question is NOT resolved by
+   this session.

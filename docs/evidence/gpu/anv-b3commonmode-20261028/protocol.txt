@@ -1,0 +1,220 @@
+JUN-59 -- session 36 protocol: THE COMMON-MODE PROBE (does the
+block-unit min-statistic wander CO-MOVE ACROSS TWO ARMS in one
+window?). MEASUREMENT slice -- NEW HARDWARE (the ANV host runs this
+session). INSTRUMENT channel. Frozen BEFORE the first run (freeze
+stamp 2026-10-28T02:36:45Z, this tick; before any build or run).
+This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE observable axis: CROSS-ARM COMMON-MODE
+   CO-MOVEMENT OF THE BLOCK-UNIT MIN STATISTIC INSIDE ONE WINDOW).
+   Session 35's named-not-hidden residual is the row taken here:
+   "estimator noise vs an unmeasured physical variable (thermal,
+   scheduling, memory state) STAYS UNRESOLVED" -- with the named
+   candidate probe "a common-mode probe across two interleaved arms
+   in one window (physical drift would move both arms' minima
+   together, estimator noise would not -- NEW HARDWARE, a named
+   candidate row for a later session)".
+
+   THE DESIGN (frozen): TWO arms -- the (1024,4033) pair arm (tag
+   "hi", n=253,906, B=3) and the (2048,8066) twin arm (tag "tw",
+   the same ratio 1024/4033 by construction, identical N_ELEMENTS
+   253,906, differing ONLY in the (WORK_MUL,NDIV) representation) --
+   run as TWELVE ADJACENT INTERLEAVED BLOCK-PAIRS in ONE session
+   window at BYTE-IDENTICAL rebuilt binaries (every arm carries a
+   prior binary pin; section 2). Block-pair k = hi block k (3 fresh
+   processes) immediately followed by tw block k (3 fresh
+   processes), k = 1..12. The BLOCK-UNIT MIN STATISTIC is exactly
+   sessions 34-35's frozen quantity: min over the 18 pipeline-ok
+   cells of the pooled median gpu_ticks (3 runs x 25 rounds = 75
+   samples per cell). X_k = hi block k's min statistic; Y_k = tw
+   block k's min statistic.
+
+   DO THE TWO ARMS' BLOCK-UNIT MIN STATISTICS CO-MOVE ACROSS THE 12
+   BLOCK-PAIRS (Spearman rho(X, Y), tie-corrected average ranks)?
+
+   T1 LETTERS (pre-registered NOW, before the runs):
+     (a) CO-MOVE: |rho| >= 0.60 AND permutation p <= 0.05
+         (two-sided, 100,000 trials, frozen seed 20261028 -- the
+         s35-frozen algorithm, reused UNCHANGED) -- the wander
+         co-moves across arms in this window: CONSISTENT WITH A
+         SHARED (COMMON-MODE) DRIVER of the wander -- physical
+         (thermal/scheduling/memory state) OR instrument-wide. L2
+         OBSERVATIONAL ONLY; NO causal mechanism is claimed and
+         estimator noise is NOT excluded (it may co-exist).
+     (b) NO-CO-MOVE otherwise -- the wander does NOT co-move across
+         arms in this window: CONSISTENT WITH PER-ARM ESTIMATOR
+         NOISE or arm-specific effects; excludes ONLY a common-mode
+         driver at this window and this power.
+     (c) NAMED, UNRESOLVED / NOT EVALUABLE: on integrity failure or
+         C1 (b) (section 4) -- no letter is evaluable.
+   NAMED, NOT HIDDEN (frozen): NEITHER letter resolves
+   threshold-artifact-vs-representation; n=12 PAIRS in ONE window is
+   LOW POWER (a null at n=12 is not evidence of independence); the
+   pairing is ADJACENT (hi block k runs immediately before tw block
+   k), so a shared driver SLOWER than the block-pair spacing (~1s of
+   host time) is what this design can see -- faster common-mode
+   structure is invisible to it; the two arms are DIFFERENT
+   instruments (different (WORK_MUL,NDIV) dispatch shapes), so (a)
+   is a statement about shared wander of their min statistics, not
+   about equal absolute values. Either way the
+   threshold-artifact-vs-representation question is NOT resolved by
+   this session and no report may say it is.
+
+   SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of it
+   is the row question):
+   (D1) THE TWO BLOCK-MIN SEQUENCES (12 hi + 12 tw values, in run
+        order) and the per-run minima (72 values; per-run unit = 25
+        rounds per cell, NOT the frozen 3-run unit -- L10) against
+        the quote-only cross-session bands (hi block-unit minima
+        976..1,003 over the 14 known pair blocks; tw block-unit
+        minima 983..994 over the 3 known twin blocks; per-run minima
+        971..1,006): descriptive only -- no variance, rate, or
+        distribution claim.
+   (D2) the bar-candidate block (hi block A, the run-order-first hi
+        block -- frozen L12 decision, unchanged) as the FIFTH
+        same-UTC-day anchor reading of day 2026-10-28 (descriptive;
+        ledger candidate line, same-day duplicate; the bar's day slot
+        is session 31's, COUNTED 1/4) vs the bar's frozen refs
+        1,129/1,132/1,131 and the same-day readings s31 1,142
+        (min 985) / s32 1,128 (min 982) / s33 1,124 (min 987) /
+        s34 1,145 (min 993) (quote-only);
+   (D3) per-block host_ns at (sum,128,S=16) for BOTH arms and the
+        controls' host_ns vs their same-knob priors (X1's asymmetry
+        content -- the s31 and s34-window host-side excursions'
+        causes stay UNMEASURED).
+
+   NAMED, NOT HIDDEN: ZERO derivation edits; ZERO NEW knob pairs
+   (the arms are old (BATCH,WORK_MUL,NDIV) triples -- the session-9
+   D2 pre-GO compile smoke does NOT apply). The instrument is
+   session 28's committed NDIV-derived source used BYTE-IDENTICAL
+   (digest a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35
+   ed2c3520556 -- byte-copy checked this tick); the a-set manifest
+   (cases-s36-a.txt) carries a fresh session-36 header whose 24 cell
+   lines are a BYTE-COPY of sessions 9-35's a-set (cells digest
+   873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200);
+   the expected-corpus census is a byte-copy (eefba52e7be052d6...) and
+   the manifest runs the ARCHIVED measured spv (16-digest corpus).
+
+1. ARM TABLE (4 rows = 78 fresh processes; this table governs the run
+   count). RUN ORDER (frozen): c2 r1-3 first, then for k = 1..12 the
+   block-pair (hi r(3k-2), hi r(3k-1), hi r(3k), tw r(3k-2),
+   tw r(3k-1), tw r(3k)) -- hi block k immediately followed by tw
+   block k -- then c8 r1-3 last; the archived controls bracket the
+   whole hi+tw window exactly as in sessions 26-35:
+
+     tag  BATCH  WORK_MUL  NDIV   n        runs  role
+     c2   2      1         1      1000003  3     archived control (bracket head)
+     hi   3      1024      4033   253906   36    THE COMMON-MODE PROBE, arm X (the (1024,4033) pair's 9th measurement session)
+     tw   3      2048      8066   253906   36    THE COMMON-MODE PROBE, arm Y (the (2048,8066) twin's 4th measurement session)
+     c8   8      1         1      1000003  3     archived control (bracket tail)
+
+   Block A of hi (hi r1-3) is the ONLY bar-candidate block (frozen
+   L12); every other block -- including ALL tw blocks (L11: the bar
+   never judges the twin) -- produces NO ledger line.
+
+2. BUILD PIN (declared in advance): the four compiles must reproduce
+   the archived digests BYTE-IDENTICALLY:
+     anv-bb-c2 e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+     anv-bb-hi a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c
+     anv-bb-tw bb901eb5b1e98940c53b3ecaeccad2b8d410967952659f9902668de32c4524b0
+     anv-bb-c8 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+   (gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> -o anv-bb-<tag>
+   gpu-subgroup-reduce-anv-ndiv.c -lvulkan). Every arm carries a
+   prior binary pin (the strongest pin position, as in session 28):
+   hi would be the (1024,4033) pair's EIGHTH cross-session rebuild
+   of session 26's anv-bb-mid bytes (9th measurement session
+   overall); tw would be the (2048,8066) pair's THIRD cross-session
+   rebuild of session 26's anv-bb-eq3 bytes (4th measurement
+   session); c2/c8 are the sessions 13-35 pins.
+
+3. QUOTE-ONLY REFERENCE VALUES (L7: recomputed/checked against prior
+   sessions' committed publications in the derivation census; never
+   this session's measurements):
+   - committed controls: c2 floor band 31..32 (FLOOR at B=2), c8
+     session-4 pooled median 32,915;
+   - hi block-unit min band (the (1024,4033) pair's 14 known blocks):
+     976..1,003 (s26 1,001 / s27 976 / s28 991 / s29 993,979,985,993
+     / s31 985 / s32 982 / s33 987 / s34 993,1,003,982,1,000,991,
+     988,991,986,992,989,989,985);
+   - tw block-unit min band (the (2048,8066) twin's 3 known blocks):
+     983..994 (s26 985 / s28 983 / s33 994);
+   - per-run minima band (quote-only): 971..1,006;
+   - the C3 scoreboard (quote-only): s24 (b) SPLIT / s25 (a) AGREE /
+     s26 (b) SPLIT / s27 (a) AGREE / s28 (a) AGREE / s33 (a) AGREE;
+   - s35's T1 letter (quote-only): (b) NO-CO-MOVE vs the host-side
+     proxy within s34's window (rho -0.038597, p 0.907841);
+   - prior host_ns at (sum,128,S=16) (quote-only): c2
+     680,499/672,684/678,546/673,456/679,908/672,374/678,726/864,642
+     (s26/27/28/29/31/32/33/34-blockA... s34's c2 window value);
+     hi 309,848/310,008/309,647/308,129/875,403/304,999/308,946
+     (s26 mid/27/28/29 pooled/31/32/33) and s34's per-block
+     488,151..618,664; tw 309,578 (s33; s26/s28 twin priors in
+     s33's census); c8 2,380,500/2,397,482/3,053,605/2,397,240/
+     2,381,642/2,400,076/2,394,025 (s26/27/28/29/31/32/33);
+   - the bar's frozen in-band refs 1,129 / 1,132 / 1,131.
+
+4. THRESHOLDS AND CRITERIA (frozen):
+   - the frozen section-4 class threshold: FLOOR <= 100 ticks at all
+     18 pipeline-ok cells; CAPTURED >= 1000 at all 18; anything else
+     INTERMEDIATE/MIXED (pooled median gpu_ticks over 3 runs x 25
+     rounds per cell);
+   - C1 ARCHIVED CONTROL REPLICATION (frozen, as sessions 13-35):
+     (a) both controls satisfy their criteria (c2 FLOOR; c8 pooled
+     median within +/-5% of 32,915) or (b) discrepancy -> FLAGGED;
+   - INVALIDATION: VERIFY mismatch > 0 in any run makes that run
+     DEFECTIVE and the arm INVALID -> FLAGGED (no letter evaluable);
+   - custody: the corpus verify (sha256sum -c, 16 files) and the
+     local-vs-host byte-copy check (instrument source, manifest,
+     expected-corpus census) must pass and the GO stamp must precede
+     the builds and ALL runs, else FLAGGED;
+   - the T1 letters are exactly section 0's.
+
+5. NAMED LIMITATIONS (frozen):
+   (L2) n, B, the host and the instrument are FIXED against every
+        prior reading; the INDEPENDENT VARIABLE this session is
+        BLOCK-PAIR IDENTITY WITHIN ONE WINDOW (12 adjacent
+        hi/tw block-pairs at byte-identical binaries). The letters
+        are observational discriminators; none is a causal mechanism
+        and none is claimed as one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on
+        this instrument and stays UNMEASURED. No B<=2 arm runs this
+        session.
+   (L4) NAMED DESIGN ASYMMETRY: hi and tw are different dispatch
+        shapes ((WORK_MUL,NDIV) 1024/4033 vs 2048/8066); their min
+        statistics are compared in RANKS (Spearman), never as
+        absolute values; a shared driver need not move them by equal
+        tick counts to read (a).
+   (L5) this session does NOT narrow the flip bracket (252,604,
+        253,906]; nothing between grid points is interpolated.
+   (L7) all cross-session values are QUOTE-ONLY.
+   (L9) no other measurement session runs concurrently on the host
+        (named assumption; not independently verified).
+   (L10) per-run statistics are descriptive; the frozen estimator
+        unit is the 3-run block.
+   (L11) the settling bar NEVER judges the (2048,8066) twin; the tw
+        blocks produce NO ledger line.
+   (L12) FROZEN LEDGER-CONSTRUCTION DECISION (s34's, carried
+        UNCHANGED): the bar judges exactly ONE candidate reading per
+        session -- the run-order-first hi block (hi block A) -- and
+        all other blocks produce NO ledger line. The bar's day slot
+        for 2026-10-28 is already consumed by s31 (COUNTED), so the
+        candidate line is same-day descriptive content (the frozen
+        evaluator's same-day-duplicate fixture classifies it).
+   (L13) the 24 blocks run back-to-back in ONE window (~a minute of
+        host time); they share host state (thermal, scheduling). The
+        probe measures common-mode wander AS IT MANIFESTS in that
+        shared state; no independence assumption is made or needed
+        for the T1 letters.
+   (L14) the block-pair adjacency is the design's common-mode
+        resolution: structure slower than ~1 block-pair can read
+        (a); structure faster than it cannot (named in section 0).
+
+6. ANALYSIS ROUTE (frozen): analysis-s36.py parses ONLY the 78
+   committed run logs in this directory (run-<tag>-r<R>.txt) and
+   writes publication-s36.txt; deterministic (run twice, diff). An
+   independent scratch generator re-derives every cited number from
+   the committed logs into derivation-census-s36.txt (independent
+   second parser, split-based; the frozen Spearman + permutation
+   algorithm re-implemented there). The bar letter comes ONLY from
+   settle-bar-eval.py over the ledger (bar-eval-s36.txt).

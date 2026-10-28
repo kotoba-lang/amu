@@ -1,0 +1,136 @@
+JUN-59 session 31 -- THE FIRST BAR-EXECUTING SESSION: THE FIRST
+CROSS-UTC-DAY READING OF THE (1024,4033) ANCHOR (one 3-run block of
+the (1024,4033) knob pair at n=253,906 = (1,000,003*1024)//4033,
+B=3, ON UTC DAY 2026-10-28 -- the settling bar's L4 axis, never
+spanned before -- plus the archived controls c2/c8 bracketing the hi
+window), publication
+Produced ONLY by analysis-s31.py over the 9 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run (freeze stamp 2026-10-28T00:04:50Z). Arms = binary
+compile-time (BATCH, WORK_MUL, NDIV); n = (1,000,003*WORK_MUL)/NDIV
+(integer floor). THE READING is one 3-run block (hi r1-3) pooled over
+25 rounds per cell -- the frozen estimator unit of the settling bar
+(settle-bar.txt section 2). The (1024,4033) pair's prior readings are
+session 26's mid (1,129 CAPTURED, 18-cell min 1,001), session 27's hi
+(1,132 INTERMEDIATE/MIXED, min 976), session 28's hi (1,131
+INTERMEDIATE/MIXED, min 991) and session 29's four within-session
+blocks (1,130/1,144/1,143/1,151, minima 993/979/985/993) -- all on
+UTC day 2026-10-27, all quote-only. The row question (protocol
+section 0): DOES A QUALIFYING READING EXIST FOR UTC DAY 2026-10-28 AT
+THE (1024,4033) ANCHOR, AND WHAT CLASS DOES IT READ AT THE FROZEN
+SECTION-4 THRESHOLD? ZERO derivation this session: the instrument is
+session 28's committed NDIV-derived source byte-identical (digest
+a5e539f0... -- derivation-census-s31.txt); the a-set manifest runs the
+ARCHIVED measured spv (16-digest corpus). 1 tick = timestampPeriod =
+52.083 ns.
+
+1. INTEGRITY (computed over the 9 logs):
+   runs parsed: 9 (c2 3 + hi 3 + c8 3); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,WM,NDIV) and n == (1,000,003*WM)//NDIV; every SAMPLE batch=/work_mul=/ndiv= == (B,WM,NDIV): True
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 9/9 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, hi=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol section 4): >0 in any run makes that run DEFECTIVE and the arm INVALID
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 162/162
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 54 cell-runs (6 per run x 9 runs = 54 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks; THE READING = hi
+   r1-3 = one 3-run block x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, then min..max over the 18
+   pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   unit      B  WM   NDIV    n        total-nominal  (sum,128,16)  min..max over 18 cells   host_ns
+   c2        2  1     1       1000003      2.000000          31        31..32           679908
+   hi        3  1024  4033     253906      0.761716        1142       985..1436         875403
+   c8        8  1     1       1000003      8.000000       32688     25162..32732       2381642
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED; THE READING = 3 fresh processes):
+
+   class c2 (B=2, WM=1, NDIV=1, n=1000003, 2.000000 nominal units): FLOOR
+   class THE READING (runs [1, 2, 3], B=3, WM=1024, NDIV=4033, n=253906, UTC day 2026-10-28): INTERMEDIATE/MIXED  (sum,128,16) 1142  18-cell 985..1436
+   class c8 (B=8, WM=1, NDIV=1, n=1000003, 8.000000 nominal units): CAPTURED
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN (B,WORK_MUL,NDIV) -- the a-set runs the
+   ARCHIVED spv bytes through the byte-identical session-31 instrument,
+   so this pins the environment as well):
+     c2 satisfies FLOOR (committed floor band 31..32 at B=2): True
+     c8 (sum,128,16) pooled median 32688 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     the bar qualification (B1) is evaluated against the row question.
+
+   B1 THE BAR QUALIFICATION (the row question; settle-bar.txt section 2
+   READING criteria: C1 (a), VERIFY mismatch 0 everywhere, byte-identical
+   build pins, custody GO before builds and runs):
+     C1 (a): True; VERIFY mismatch 0 everywhere: True
+     build pins byte-identical and custody GO before builds/runs: see
+     build-census-s31.txt / host-verify-s31.txt (custody facts, outside
+     the run logs this route parses).
+     (run-log parts of the criterion hold; combined with the custody
+     facts the record fixes B1:) branch (a) QUALIFYING -- the reading
+     is COUNTED 1/4 (the FIRST qualifying reading of UTC day
+     2026-10-28), enters the settle-bar ledger with flag=none, and
+     the frozen evaluator's verdict is the bar letter (B2).
+
+   B2 THE BAR LETTER: the frozen evaluator settle-bar-eval.py run over
+   the ledger after this session's append (bar-eval-s31.txt); the
+   verdict string there is the letter -- never hand-written here.
+
+   W1 (pre-registered, descriptive) THE CROSS-UTC-DAY READING AGAINST
+   THE FLIP PICTURE (quote-only L7 priors; NO bracket narrowing -- L5):
+     prior readings (all UTC day 2026-10-27): 1129 CAPTURED (min 1001, session 26 mid) / 1132 INTERMEDIATE/MIXED (min 976, session 27 hi) / 1131 INTERMEDIATE/MIXED (min 991, session 28 hi) / 1130 INTERMEDIATE/MIXED (min 993, session 29 blk-A) / 1144 INTERMEDIATE/MIXED (min 979, session 29 blk-B) / 1143 INTERMEDIATE/MIXED (min 985, session 29 blk-C) / 1151 INTERMEDIATE/MIXED (min 993, session 29 blk-D)
+     THIS READING (UTC day 2026-10-28, MEASURED HERE): 1142 INTERMEDIATE/MIXED (18-cell min 985, max 1436)
+     in-band vs the bar's frozen refs 1129 / 1132 / 1131 (within +/-5% of EACH): True
+     ONE cross-UTC-day reading does not settle the bar (V4 PENDING);
+     no causal mechanism is claimed or measured.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+   WORK ROW: this session adds NO new grid point -- it re-reads
+   253,906 with ONE cross-UTC-day reading placed at that grid (committed
+   points QUOTE-ONLY L7; NO interpolation (L5); class granularity only;
+   * = the session-26 reading carries its C3 (b) caveat):
+
+     n          work-unit     ticks  class                source
+     125000     1/8             599  INTERMEDIATE/MIXED   session 18 (quote-only)
+     250000     1/4            1140  INTERMEDIATE/MIXED   session 19 (quote-only)
+     252604     0.2526032      1153  INTERMEDIATE/MIXED   session 25 (quote-only)
+     253255     0.2532542      1136  INTERMEDIATE/MIXED   session 27 (quote-only)
+     253906     0.2539052      1129  CAPTURED*            session 26 (quote-only)
+     253906     0.2539052      1132  INTERMEDIATE/MIXED   session 27 (quote-only)
+     253906     0.2539052      1131  INTERMEDIATE/MIXED   session 28 (quote-only)
+     253906     0.2539052      1130  INTERMEDIATE/MIXED   session 29 blk-A (quote-only)
+     253906     0.2539052      1144  INTERMEDIATE/MIXED   session 29 blk-B (quote-only)
+     253906     0.2539052      1143  INTERMEDIATE/MIXED   session 29 blk-C (quote-only)
+     253906     0.2539052      1151  INTERMEDIATE/MIXED   session 29 blk-D (quote-only)
+     253906     0.2539052      1142  INTERMEDIATE/MIXED   THIS SESSION (day 2026-10-28)
+     255208     0.2552072      1166  CAPTURED             session 24 (quote-only)
+     260417     0.2604162      1186  CAPTURED             session 23 (quote-only)
+     270834     0.2708332      1224  CAPTURED             session 22 (quote-only)
+     291667     0.2916657      1330  CAPTURED             session 21 (quote-only)
+     333334     1/3            1578  CAPTURED             session 17 (quote-only)
+     500001     1/2            2739  CAPTURED             session 20 (quote-only)
+     1000003    1.0            5520  CAPTURED             sessions 7/16 (quote-only)
+
+   W3 (pre-registered, descriptive) THE PER-RUN VIEW (DESCRIPTIVE --
+   the per-run unit is 25 rounds per cell, NOT the frozen 3-run unit --
+   L10):
+          run  (sum,128,16)  18-cell min
+          r1         1148         980
+          r2         1145         977
+          r3         1128         981
+
+   X1 (descriptive, host_ns at (sum,128,S=16)):
+     c2 679908, hi 875403, c8 2381642
+     c2 679908 = 0.999x session-26's (680,499); 1.011x session-27's (672,684); 1.002x session-28's (678,546) -- session-26 / session-27 / session-28 same-knob
+     hi 875403 = 2.825x session-26's (309,848); 2.824x session-27's (310,008); 2.827x session-28's (309,647) -- session-26 mid / session-27 hi / session-28 hi same-knob
+     c8 2381642 = 1.000x session-26's (2,380,500); 0.993x session-27's (2,397,482); 0.780x session-28's (3,053,605) -- session-26 / session-27 / session-28 same-knob
+     host_ns is the HOST-side proxy (L3), not a C criterion; any
+     excursion is NAMED, NOT HIDDEN and its cause is UNMEASURED.
+
+4. VERDICT SUMMARY: C1 (a)=True; THE READING INTERMEDIATE/MIXED (sum,128,16) 1142
+   (18-cell min 985) on UTC day 2026-10-28; B1 (run-log parts) (a) qualifying;
+   the bar letter is settle-bar-eval.py's verdict over the ledger
+   (bar-eval-s31.txt). WHY any class flips across sessions/days is
+   UNMEASURED and NO causal mechanism is claimed.

@@ -1,0 +1,160 @@
+JUN-59 -- session 31 record: THE FIRST BAR-EXECUTING SESSION -- THE
+FIRST CROSS-UTC-DAY READING OF THE (1024,4033) ANCHOR (ONE measurement
+slice: one 3-run block of (3,1024,4033) at n=253,906, B=3 ON UTC DAY
+2026-10-28, plus the archived controls c2/c8).
+2026-10-28 (UTC; the tick runs 2026-10-28 JST). Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE row): DOES A QUALIFYING READING (C1 (a), VERIFY
+   0, custody GO, BYTE-IDENTICAL BUILD PIN) EXIST FOR UTC DAY
+   2026-10-28 AT THE (1024,4033) ANCHOR, AND WHAT CLASS DOES IT READ
+   AT THE FROZEN SECTION-4 THRESHOLD? This is the settling bar's own
+   first executable step: session 30 froze the bar at
+   2026-10-27T23:40:56Z "BEFORE ANY CROSS-UTC-DAY READING EXISTS" and
+   named the first post-roll tick (2026-10-28T00:00Z on this profile's
+   cron cadence) as when the L4 axis (the UTC day) first becomes
+   spannable. Sessions 2-29 all ran on UTC day 2026-10-27; this tick
+   (protocol freeze stamp 00:04:50Z, run window 00:06:33Z..00:06:39Z)
+   runs natively on UTC day 2026-10-28 and reads the anchor ONCE (the
+   bar's frozen READING unit: one 3-run block). The bisect cut, the
+   (2048,8066) twin, the NDIV=3,5,6,... columns stay OPEN and are NOT
+   taken.
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3xday-20261028/ -- protocol.txt (frozen
+       before the first run, freeze stamp 2026-10-28T00:04:50Z;
+       includes the frozen LEDGER CONSTRUCTION decision -- the ledger
+       starts with the first bar-executing session; the alternative
+       backfill construction is named there and rejected), the a-set
+       manifest cases-s31-a.txt (24 cell lines BYTE-COPY of sessions
+       9-29's a-set) + expected-corpus.sha256 + the instrument source
+       copy (all byte-copies, checked in the derivation census),
+       host-verify-s31.txt (corpus 16/16, local-vs-host 3/3 MATCH, GO
+       stamp 2026-10-28T00:06:23Z before builds and ALL runs),
+       build-census-s31.txt (3 compiles, 3/3 pins BYTE-IDENTICAL),
+       run-window.txt (9 fresh processes + host-mtime cross-check),
+       the 9 committed run logs (stdout+stderr), analysis-s31.py +
+       publication-s31.txt (run twice, diff exit 0),
+       derivation-census-s31.txt (every cited number re-derived from
+       committed run logs by a scratch generator -- match True on every
+       row), bar-eval-s31.txt (the frozen evaluator's output over the
+       ledger), classify-selftest.txt, gate-run1/2.txt,
+       gate-full-run-tests.txt, this record.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- the settling bar's
+       append-only ledger, CREATED this tick with this session's
+       candidate reading appended (day=2026-10-28 session=s31
+       class=INTERMEDIATE/MIXED median=1142 min=985 flag=none); the
+       construction note is frozen in the s31 protocol section 0.
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) HARDWARE RAN (MEASURED): 9 fresh processes (c2 3 + hi 3 + c8 3),
+       run window 2026-10-28T00:06:33Z..00:06:39Z on aiueos-6600hs,
+       rc=0 9/9 printed + 9/9 '# done cells=24', stderr 0 bytes 9/9,
+       450 SAMPLE + 24 VERIFY each; knob fields == arms 9/9; forcing
+       162/162; VERIFY mismatch 0 everywhere; S=8 fail-closed 54/54;
+       host-mtime cross-check 9/9 consistent (worst 1s).
+   (b) THE READING (MEASURED HERE, UTC day 2026-10-28): the (1024,4033)
+       pair at n=253,906, B=3, byte-identical rebuilt binary
+       a6c31b6c5c566308... (the pair's FOURTH cross-session rebuild):
+       INTERMEDIATE/MIXED, (sum,128,S=16) pooled median 1,142 over 3
+       runs x 25 rounds per cell, 18-cell range 985..1,436 (min 985).
+       IN-BAND vs the bar's frozen refs 1,129 / 1,132 / 1,131 (within
+       +/-5% of EACH: True). C1 (a): c2 FLOOR 31 (band 31..32); c8
+       32,688 vs committed 32,915 (-0.69%).
+   (c) B1 (a) QUALIFYING (C1 (a) + VERIFY 0 everywhere + 3/3 byte-
+       identical build pins + custody GO before builds and runs): the
+       reading is COUNTED 1/4 -- the FIRST qualifying reading of UTC
+       day 2026-10-28 -- appended to the ledger with flag=none.
+   (d) B2 THE BAR LETTER (the frozen evaluator, never hand-written):
+       settle-bar-eval.py over settle-bar-ledger.txt -> "VERDICT:
+       PENDING 1/4" (counted: s31 alone), run twice byte-identical
+       (diff exit 0); the evaluator's frozen self-test pin 38
+       assertions / 0 failed. V4 PENDING: the bar settles NOTHING at
+       one reading.
+   (e) Gates (real runs this tick): gpu_regime_classify.py --self-test
+       TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12,162
+       assertions / 0 failures / 0 errors recorded run 1 AND run 2
+       (scratch runner scoped-gpu-gate.cljk, created, run, deleted
+       this tick -- never committed); FULL run-tests.cljk RUN LIVE THIS
+       TICK: exit 1, RED AT BASE 'Could not find namespace: kotoba.form'
+       at namespace load (ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace) -- NO green full suite claimed; find
+       docs/evidence/gpu -name '*.sh' -> 0.
+   (f) derivation-census-s31.txt: the reading re-derived by an
+       independent parser matches the ledger line on all three fields
+       (match True/True/True); sessions 26-29's quote-only integers
+       re-derived from their committed run logs match every published
+       value (7/7 rows); instrument byte-copy chain s28 == s29 == s31
+       (a5e539f0...); manifest cell lines byte-copy; all three build
+       digests present in s29's committed census (pins); n =
+       (1,000,003*1024)//4033 = 253,906, gcd(253,906,1,000,003) = 1.
+
+4. NAMED, NOT HIDDEN (this tick): (i) X1 host_ns excursion -- hi
+   host_ns 875,403 = 2.825x session-26's same-knob mid (309,848) /
+   2.824x session-27's (310,008) / 2.827x session-28's (309,647)
+   while c2 (679,908 =
+   0.999x..1.011x priors) and c8 (2,381,642 = 0.780x..1.000x priors)
+   replicate in band and every GPU-side bracket replicates in band
+   (reading 1,142 in band; controls C1 (a)); host_ns is the HOST-side
+   proxy L3, its cause is UNMEASURED and it is not a C criterion;
+   (ii) the GO stamp (00:06:23Z) and the c2 build stamp (00:06:23Z)
+   share a seconds-granular stamp -- program order governs (named in
+   build-census-s31.txt, sessions 26/27 prior art); (iii) the ledger
+   construction decision (section 2(b) / protocol section 0) is a
+   DESIGN choice made before the runs -- the alternative backfill
+   reading of the bar text is arguable and named, not hidden. No other
+   defects this tick: the driver's inline counters printed correctly
+   and were independently re-derived from the committed logs.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session 30)
+   and its ledger-construction decision (s31 protocol section 0). Not
+   implemented in the compiler; not itself a measurement.
+   IMPLEMENTED: nothing in the compiler. The evaluator remains
+   evidence-scoped tooling (settle-bar-eval.py, frozen fixtures); the
+   ledger is an evidence file; nothing is wired into any namespace.
+   MEASURED (this tick): the cross-UTC-day reading itself -- class
+   INTERMEDIATE/MIXED, median 1,142, 18-cell min 985 on UTC day
+   2026-10-28 at the byte-identical anchor binary, with C1 (a), VERIFY
+   0, custody GO and 3/3 build pins -- and the bar progress COUNTED
+   1/4 (VERDICT PENDING 1/4 from the frozen evaluator). Provisional
+   workgroup defaults in kotoba.compiler.accelerator-targets remain
+   provisional (:measured? false) -- not optimization evidence. RULE 4
+   unchanged: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; NO vendor optimization exists for Intel and none
+   is claimed.
+
+6. UNMEASURED (named): the bar needs at least THREE more qualifying
+   UTC days (V4 PENDING 1/4; FLAGGED days do not shorten the count and
+   later same-day readings do not advance the bar); whether FOUR
+   qualifying days is ENOUGH (the bar can return UNSETTLED; V2 exists
+   for that and the representation-side probe -- the (2048,8066) twin,
+   the open half of the sessions 24/26 C3 (b) splits -- is the named
+   priority in that case); whether the day-28 reading's
+   INTERMEDIATE/MIXED class (same class as s27/28/29, opposite s26's
+   CAPTURED at a 1.1% median difference) is day structure or the same
+   min-statistic wander (F2: this reading's min 985 sits with s29
+   blk-C's 985 inside the 971..1,001 wander band); the
+   threshold-artifact-vs-representation question itself; why the class
+   flips across sessions at byte-identical binaries; the flip location
+   inside (252,604, 253,906]; the hi host_ns excursion's cause; any
+   causal mechanism; anything off the ANV host.
+
+7. THE TICK'S FINDING IN ONE LINE: THE FIRST CROSS-UTC-DAY READING OF
+   THE (1024,4033) ANCHOR EXISTS AND QUALIFIES -- on UTC day 2026-10-28
+   the anchor reads INTERMEDIATE/MIXED at pooled median 1,142 (18-cell
+   min 985) at a byte-identical rebuild (a6c31b6c, the pair's 4th
+   cross-session rebuild) with C1 (a), VERIFY 0 and custody GO -- and
+   the frozen settling bar counts it 1/4 and reports PENDING 1/4
+   (nothing settles at one day); nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   re-checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59 (the
+   com-junkawasaki issue reused for this track), tick comment recorded
+   there. Evidence: docs/evidence/gpu/anv-b3xday-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt + the ADR-0355 dated note.
+   (JUN-55, JUN-59)

@@ -1,0 +1,111 @@
+JUN-59 session 41 -- THE CROSS-WINDOW T-SPREAD REPARTITION
+PROBE (publication)
+(does the window-to-window variation of the block-min spread T
+ITSELF exceed run-exchangeable sampling noise? ONE observable
+axis: R = max_w T_w - min_w T_w over the three probed windows
+(s36, s38, s39) per arm vs a cross-window run-repartition
+resampling null over the same arms' 108 committed runs.)
+Produced ONLY by analysis-s41.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window); protocol.txt was
+frozen BEFORE any statistic of this probe was computed (freeze
+stamp 2026-10-28T05:05:50Z). ANALYSIS slice -- NO hardware ran
+this tick; every input quantity was MEASURED on aiueos-6600hs
+Intel BMG G31 ANV in sessions 36/38/39 (run windows
+2026-10-28T02:40:49Z, 03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs;
+   block order A..L; reproduction check vs the published/
+   quote-only vectors of publication-s39.txt section 3 --
+   mismatch => (c)):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   does the window-to-window spread of T EXCEED the cross-window
+   run-repartition null? (R = max_w T_w - min_w T_w; 20000
+   trials, seed 20261028, probe order hi then tw; p = (1 +
+   count(R* >= R_obs)) / (1 + 20000), one-sided):
+   hi: T per window (s36, s38, s39) = 18, 25, 14; R_obs = 11; count 5510 / 20001; p = 0.275536; p <= 0.05: False; arm letter (a) WINDOW-CONSISTENT
+   tw: T per window (s36, s38, s39) = 14, 21, 8; R_obs = 13; count 1587 / 20001; p = 0.079396; p <= 0.05: False; arm letter (a) WINDOW-CONSISTENT
+   T1 = (a) WINDOW-CONSISTENT
+   NAMED, NOT HIDDEN: (a) does NOT prove 'no physical window-
+   level driver' -- the null is run-exchangeability ACROSS
+   WINDOWS and a driver acting uniformly within AND across
+   windows is invisible by construction; R tests the window-to-
+   window variation of the SPREAD of the 12 block-mins ONLY --
+   window-level shifts in LEVEL do not enter R (named
+   limitation of the row question); (b) would implicate
+   window-timescale structure in the spread but NOT name it
+   (thermal/scheduling/memory/driver state all UNMEASURED);
+   exchangeability across windows is a STRONGER assumption than
+   session 40's within-window exchangeability and is itself an
+   assumption; three windows ~30-60 min apart in ONE day on ONE
+   host is LOW POWER (a null at three windows is not evidence
+   of stationarity); session 40's per-window (a) letters and
+   this letter are DIFFERENT nulls -- neither confirms nor
+   overturns the other; L2 observational ONLY; NO causal
+   mechanism; direction UNMEASURED; threshold-artifact-vs-
+   representation STAYS UNRESOLVED under any letter.
+
+5. REPLICATION FRAMING (frozen): hi is the primary arm and tw
+   the same-rule replication at the SAME three windows; the
+   joint T1 above is the row answer; the per-arm letters are
+   listed in section 4.
+
+6. DESCRIPTIVE (not the row question):
+   D1 per-run-unit min ranges (36 points per (window, arm); min
+      over 18 per-cell medians of 25 -- NAMED DIFFERENT UNIT
+      L10, no letter):
+      s36 hi per-run minima 966..1023
+      s36 tw per-run minima 971..1001
+      s38 hi per-run minima 967..1010
+      s38 tw per-run minima 969..1001
+      s39 hi per-run minima 967..995
+      s39 tw per-run minima 969..1002
+   D2 the T/R scoreboard (descriptive only -- three windows are
+      not a rate, variance or distribution):
+      hi: T s36 18 / s38 25 / s39 14; R 11
+      tw: T s36 14 / s38 21 / s39 8; R 13
+   D3 per-window median of the 12 block-mins per arm (LEVEL
+      content -- R does not test level; descriptive only):
+      s36 hi block-min median 990.0 (range 980..998)
+      s36 tw block-min median 990.0 (range 981..995)
+      s38 hi block-min median 987.0 (range 982..1007)
+      s38 tw block-min median 991.0 (range 980..1001)
+      s39 hi block-min median 986.5 (range 981..995)
+      s39 tw block-min median 988.0 (range 983..991)
+
+7. VERDICT SUMMARY:
+   T1 = (a) WINDOW-CONSISTENT
+   hi: T (s36, s38, s39) = (18, 25, 14); R_obs 11; count 5510/20001; p 0.275536; letter (a) WINDOW-CONSISTENT
+   tw: T (s36, s38, s39) = (14, 21, 8); R_obs 13; count 1587/20001; p 0.079396; letter (a) WINDOW-CONSISTENT
+   evaluable inputs: vector reproduction EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger
+   line (NO reading -> NO line -> NO day-slot consumption).
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

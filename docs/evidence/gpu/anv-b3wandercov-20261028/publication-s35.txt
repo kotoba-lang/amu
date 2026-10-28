@@ -1,0 +1,60 @@
+JUN-59 session 35 -- THE WANDER CO-VARIATION READ (publication)
+(does session 34's within-window min-statistic wander co-vary with
+the host-side proxy? ONE observable axis: Spearman rho between the
+12 block-unit min statistics and the 12 block-unit host_ns values
+of session 34's single window.)
+Produced ONLY by analysis-s35.py over the 84 committed session-34
+run logs in ../anv-b3minwander-20261028/ (run-<tag>-r<R>.txt);
+protocol.txt was frozen before this script ran (freeze stamp
+2026-10-28T02:10:34Z). NO new hardware this session; every input
+quantity was measured in session 34.
+
+1. INTEGRITY (computed over the 84 logs):
+   runs parsed: 84 (c2 3 + hi 36 + c8 3); SAMPLE lines 450 per run: True
+   VERIFY mismatch total over all 84 runs: 0 -- frozen
+   INVALIDATION criterion (protocol section 4): > 0 => letter (c)
+
+2. C1 RE-DERIVATION (environment pin):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 33027 vs committed 32915 (0.34% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE TWO VECTORS (re-derived from the 84 logs; block order A..L):
+   X = block-unit min statistic: A 993 B 1003 C 982 D 1000 E 991 F 988 G 991 H 986 I 992 J 989 K 989 L 985
+   Y = block-unit host_ns at (sum,128,S=16): A 505202 B 618664 C 606762 D 496666 E 489032 F 488151 G 501315 H 501726 I 497428 J 507036 K 503279 L 503138
+   cross-check X vs publication-s34.txt published minima (quote-only refs): True
+   cross-check Y vs publication-s34.txt published host_ns (quote-only refs): True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol section 0): does the
+   within-window block-min wander CO-VARY with the host-side proxy?
+   Spearman rho(X, Y) = -0.038597
+   permutation p (two-sided, 100,000 trials, seed 20261028) = 0.907841 (count 90784 / 100,001)
+   |rho| >= 0.60: False; p <= 0.05: False
+   T1 = (b) NO-CO-MOVE
+   NAMED, NOT HIDDEN: NEITHER letter resolves
+   threshold-artifact-vs-representation. (a) would be consistent
+   with a shared physical/host-state driver (L2 observational, NO
+   causal mechanism; the proxy is L3, its cause UNMEASURED) and
+   does not exclude estimator noise; (b) excludes only THIS proxy
+   as the within-window driver (estimator noise OR an unmeasured
+   physical variable both remain). ONE window, ONE day, 12 blocks:
+   LOW POWER; no rate/variance/distribution claim.
+
+5. DESCRIPTIVE (not the row question):
+   D1 per-run unit (36 points; 25 rounds/cell -- NAMED DIFFERENT UNIT,
+      L10): rho = -0.098788, p = 0.566724 (count 56672)
+      per-run min range 972..1006; per-run host_ns range 408552..872497
+   D2 run-order trend: rho(X, block index 1..12) = -0.473687, p = 0.122189 (count 12218)
+   D3 the omitted s34 build census: see build-census-s34-recovered-
+      s35.txt (session-35 recovery artifact; the omission is a NAMED
+      session-34 defect -- protocol section 7).
+
+6. VERDICT SUMMARY:
+   T1 = (b) NO-CO-MOVE; rho = -0.038597; p = 0.907841
+   evaluable inputs: VERIFY mismatch 0 (0), samples ok (True), vectors xchk (True) ychk (True), C1 (True)
+   NO new hardware ran this session (analysis of session 34's
+   committed measured logs only). The settling bar is untouched:
+   no reading, no ledger line, verdict PENDING 1/4 with s31 counted
+   (frozen evaluator over the unchanged ledger). Rule 4 binds:
+   nothing moves; accelerator-targets defaults remain provisional
+   (:measured? false); NO vendor optimization exists for Intel.

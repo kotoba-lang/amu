@@ -1,0 +1,76 @@
+== JUN-59 session 35 -- RECOVERY of session 34's OMITTED build census ==
+== (build-census-s34-recovered-s35.txt -- a SESSION-35 artifact; it is ==
+== NOT the s34 file and never pretends to be. The omission of         ==
+== build-census-s34.txt from the s34 commit is a NAMED session-34     ==
+== defect: s34's record.txt, run-window.txt and commit message cite   ==
+== it as committed evidence but git ls-files has no such file, while  ==
+== every peer session dir carries its build-census-sN.txt.)           ==
+Produced 2026-10-28T02:13:47Z (this tick), AFTER session 34's runs
+(2026-10-28T01:43:30Z..01:43:46Z) and AFTER the s34 build stamps
+(01:42:57Z). Route: read the HOST workdir ~/anv-b3minwander-20261028
+artifacts ONCE via ssh (murakumo-ci@aiueos-6600hs); every artifact's
+host mtime is printed below and must sit at the s34 build stamps (the
+binaries are unchanged since the s34 builds -- mtime 01:42:57Z, i.e.
+before every s34 run and unchanged in the 31 minutes to this read).
+No artifact was written or touched on the host.
+
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale), user murakumo-ci
+(groups include render). Workdir ~/anv-b3minwander-20261028.
+
+== toolchain (this read) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== session 2's committed compile-toolchain.txt records the same host ==
+== toolchain; the digest match below is the operative pin. ==
+
+== binary compiles (s34's protocol section 2 command line) ==
+== gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> -o anv-bb-<tag> ==
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan (3 arms, one binary each) ==
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) mtime=2026-10-28T01:42:57.503206387Z size=32296
+build hi (-DBATCH=3 -DWORK_MUL=1024 -DNDIV=4033) mtime=2026-10-28T01:42:57.672041527Z size=32296
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) mtime=2026-10-28T01:42:57.840255355Z size=32296
+build stderr byte counts (host build-<tag>.err, mtime at the same stamps):
+0 build-c2.err (mtime 2026-10-28T01:42:57.335207310Z)
+0 build-hi.err (mtime 2026-10-28T01:42:57.505206375Z)
+0 build-c8.err (mtime 2026-10-28T01:42:57.672205458Z)
+0 total
+
+== host sha256 of the built binaries (this read; the bytes are the s34 ==
+== build outputs -- mtimes above) vs s34's protocol section 2 ==
+== DECLARED pins (the s34 pre-registration; the s34 record's claim ==
+== '3/3 pins BYTE-IDENTICAL' rides on these) ==
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+  declared: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+  MATCH: True (== sessions 13-33's c2 pin, s28/s33 committed censuses)
+a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c  anv-bb-hi
+  declared: a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c
+  MATCH: True (== the (1024,4033) pair's archived anv-bb-mid bytes,
+  the pair's seventh cross-session rebuild at s34)
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+  declared: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+  MATCH: True (== sessions 13-33's c8 pin)
+3/3 build pins MATCH the s34 protocol-declared pins BYTE-IDENTICALLY.
+
+== local-vs-host input digests (this read) vs s34's committed ==
+== host-verify-s34.txt recorded values ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+  == host-verify-s34.txt: MATCH True
+4fcf5cb9ee220db5bcea431ffa5302bc424e7e82e7e9840fea5f5e6780587d09  cases-s34-a.txt
+  == host-verify-s34.txt: MATCH True
+eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4  expected-corpus.sha256
+  == host-verify-s34.txt: MATCH True
+
+== STATUS (honest) ==
+The s34 claim "3/3 build pins BYTE-IDENTICAL (hi a6c31b6c ...)" is
+SUBSTANTIATED RETROACTIVELY by this session-35 read of the unchanged
+host artifacts (mtimes at the s34 build stamps, digests == the
+pre-registered pins). The DEFECT stands as named: the primary artifact
+was omitted from the s34 commit and the s34 tree carried only the
+weaker "build pin present in s28/s33 committed census" rows in
+derivation-census-s34.txt (rows 222-227) -- presence of a pin VALUE in
+a prior census is not evidence that s34's fresh compiles reproduced
+it. This recovery file closes the gap for the digests; it cannot
+restore what a contemporaneous s34 file would have carried (e.g. the
+s34 driver's own build transcript order beyond the mtimes printed
+here). No number here is a new measurement of GPU behavior; these are
+host-side artifact digests and stamps only.

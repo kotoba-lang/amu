@@ -1,0 +1,43 @@
+JUN-59 session 31 derivation census -- every measured number the
+session cites, re-derived from COMMITTED RUN LOGS by a scratch
+generator (never committed). QUOTE-ONLY rows re-derive PRIOR
+sessions' published integers from their committed run logs; the
+THIS-SESSION row re-derives the reading independently of
+analysis-s31.py (separate parser). match True on every published
+integer is required before any value is quoted in record.txt.
+
+1. BYTE-COPY CHAINS (sha256):
+   instrument s31 copy a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+   instrument s29 copy a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  match s31==s29: True
+   instrument s28 copy a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  match s29==s28: True
+   instrument digest == a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556: True
+   expected-corpus.sha256 s31==s29 byte-copy: True (eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4)
+   manifest cell lines s31==s29 byte-copy: True (24 cells)
+   manifest cell lines s29==s28 byte-copy: True
+
+2. BUILD REPLICATION PINS (s31 host digests vs s29's committed census, parsed here):
+   anv-bb-c2 e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  present in build-census-s29.txt: True
+   anv-bb-hi a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c  present in build-census-s29.txt: True
+   anv-bb-c8 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  present in build-census-s29.txt: True
+   (all three s31 builds are byte-identical rebuilds -- hi is the
+   (1024,4033) pair's FOURTH cross-session rebuild)
+
+3. THIS SESSION (re-derived from the 9 committed run logs by this
+   generator's own parser -- independent of analysis-s31.py):
+   THE READING (hi r1-3, UTC day 2026-10-28): (sum,128,S=16) 1142, 18-cell 985..1436, class INTERMEDIATE/MIXED
+   ledger line: day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985 flag=none
+   match median: True  match min: True  match class: True
+   in-band vs frozen bar refs 1129/1132/1131 (+/-5% of EACH): True
+
+4. QUOTE-ONLY PRIORS (re-derived from prior sessions' committed run logs):
+   session 26 mid: 1129 (min 1001) CAPTURED  published 1129 (min 1001) CAPTURED  match True
+   session 27 hi: 1132 (min 976) INTERMEDIATE/MIXED  published 1132 (min 976) INTERMEDIATE/MIXED  match True
+   session 28 hi: 1131 (min 991) INTERMEDIATE/MIXED  published 1131 (min 991) INTERMEDIATE/MIXED  match True
+   session 29 blk-A: 1130 (min 993) INTERMEDIATE/MIXED  published 1130 (min 993) INTERMEDIATE/MIXED  match True
+   session 29 blk-B: 1144 (min 979) INTERMEDIATE/MIXED  published 1144 (min 979) INTERMEDIATE/MIXED  match True
+   session 29 blk-C: 1143 (min 985) INTERMEDIATE/MIXED  published 1143 (min 985) INTERMEDIATE/MIXED  match True
+   session 29 blk-D: 1151 (min 993) INTERMEDIATE/MIXED  published 1151 (min 993) INTERMEDIATE/MIXED  match True
+
+5. ARITHMETIC (computed):
+   n = (1,000,003*1024)//4033 = 253906; gcd(253,906, 1,000,003) = 1
+   per-dispatch work 253906/1000003 = 0.2539052; total B*n/1,000,003 = 0.7617157
