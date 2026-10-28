@@ -4,11 +4,14 @@ Read Kotoba, check and compile it with Amu, change the result, and inspect
 two concrete execution boundaries. No Awai membership, account, model,
 payment, network call or Itonami application is required.
 
-**Engineering preview, not a qualified public release.** The compiler pinned
-in `candidate.json` currently records an empty native-generation receipt and
-false public check/compile, controller and current-compiler qualification
-flags. Successful examples do not repair those qualification gates. External
-trial start, independent reproduction and user adoption remain open.
+**Starter engineering preview, not a public trial release.** The compiler
+descriptor still records empty native generations and false qualification
+flags. Separately, main CI run `40613036690` contains successful native
+F1=F2=F3 and public-product receipts with exactly the same compiler bytes and
+source-unity digest. `candidate.json` pins those evidence identities. This
+descriptor/evidence mismatch needs upstream reconciliation; it must not be
+silently relabelled. This new starter still needs its own native smoke,
+second host profile, release review and external-user evidence.
 
 Public compiler host: **native Linux x86_64**. macOS, Windows, Linux ARM64,
 WSL, containers and emulation are not qualified by this starter. Do not run
