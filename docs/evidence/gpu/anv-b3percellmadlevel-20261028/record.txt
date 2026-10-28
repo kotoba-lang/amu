@@ -1,0 +1,226 @@
+JUN-59 -- session 49 record (PARTIAL TICK -- STARTED, NOT
+FINISHED): THE PER-CELL ROBUST-SCALE (MAD) LEVEL CROSS-WINDOW
+REPARTITION PROBE. ANALYSIS slice -- NO new hardware (inputs are
+the COMMITTED run logs of the session-36/38/39 windows).
+2026-10-28 (UTC). Chain branch bot/amu-gpu-chain-20261028-2
+(chain PR #1641, open).
+
+1. ROW QUESTION (ONE row): session 48's first-named candidate row
+   "a per-cell robust-scale LEVEL probe (uniform-across-blocks
+   shifts cancel in W_c; D levels descriptive only in D1, no
+   letter)" -- per arm, does ANY ok cell's cross-window
+   robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+   over the three windows (s36, s38, s39), L_{w,c} = median of
+   the 12 block D values of window w (D = e_(38) about m = x_(38)
+   of the block's 75 samples = the s48-frozen exact-median MAD,
+   exact INTEGER; the s35/s36-frozen 3-run block unit UNCHANGED;
+   2*L in half-tick integer units), exceed the cross-window
+   run-repartition null (the 108 runs of one arm across the three
+   windows exchangeable)? Primary per-arm statistic: MAX-T
+   M_obs = max_c 2*S_c (max taken inside each trial too;
+   family-wise over the 18 cells). Pre-registered in protocol.txt
+   (freeze stamp 2026-10-28T10:09:54Z, BEFORE any statistic of
+   this probe was computed; protocol.txt written once, never
+   rewritten).
+
+2. THE FINDING (DERIVED; publication-s49.txt, analysis-s49.py run
+   twice byte-identical): T1 = (b) EXCEEDS NULL -- the tw arm's
+   max-T exceeds the cross-window repartition null: tw M_obs =
+   16.0 ticks (max cell (max,128,S=default)), count 171 /
+   20,001, p = 0.008600 (<= 0.05 at the frozen threshold); the
+   hi arm reads (a) PER-CELL-MAD-LEVEL-CONSISTENT (hi M_obs 10.0
+   (max cell (min,256,S=16)), count 9,468 / 20,001, p 0.473426).
+   Named cells with MARGINAL p <= 0.05 on tw (UNCORRECTED, no
+   letter): (max,128,S=default) p 0.000200 (its L: 71.5 / 55.5 /
+   56.5 ticks at s36/s38/s39), (sum,128,S=default) p 0.020049.
+   THIS IS THE FIRST T1 = (b) OF THE s40-49 CAMPAIGN (all nine
+   prior row letters read (a); s45's (b) was a replication-window
+   letter, not T1). NAMED, NOT HIDDEN: (b) implicates
+   window-timescale PER-CELL ROBUST-SCALE LEVEL structure on the
+   tw arm but names NO mechanism (thermal/scheduling/memory/driver
+   state all UNMEASURED) and NOT whether the shift is physical or
+   estimator structure; the two arm probes / their letters are
+   UNCORRECTED across arms (two uncorrected probes; the row
+   answer is the pre-registered joint T1); the 36 MARGINAL p
+   values are UNCORRECTED (3 marginal cells below 0.05 across the
+   two arms, letterless); this letter and sessions 40-48's letters
+   are DIFFERENT nulls over the SAME runs (NOT independent
+   evidence) -- in particular s44's per-cell LOCATION level probe
+   read (a) over the same windows and s45-48's within-window
+   wander/spread/IQR/MAD probes read (a) at their scales; the
+   cross-window null assumes exchangeability ACROSS WINDOWS, a
+   STRONGER assumption than within-window exchangeability, and a
+   (b) can also reflect violation of that assumption rather than a
+   per-cell scale mechanism; three windows ~30-60 min apart in ONE
+   day on ONE host is LOW POWER; 20,000 trials (NOT the s35-frozen
+   100,000 -- cost, same named deviation as sessions 40-48; p
+   resolution 1/20,001 ~= 5e-5); L2 observational ONLY, NO causal
+   mechanism, direction UNMEASURED; threshold-artifact-vs-
+   representation STAYS UNRESOLVED. Integrity (DERIVED): 3/3
+   windows clean; C1 (a) at the s39 window (c2 FLOOR; c8 32,829
+   vs 32,915, 0.26%); 6/6 block-min vectors EXACT; anchor row
+   EXACT at all three windows.
+
+3. VERIFIED BY TOOL OUTPUT (real runs this tick):
+   (a) publication-s49.txt produced by analysis-s49.py over the
+       234 committed run logs, run twice byte-identical (cmp
+       exit 0).
+   (b) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0, capture BYTE-IDENTICAL to
+       session 48's pinned classify-selftest.txt; scoped GPU gate
+       GREEN 123 tests / 12,162 assertions / 0 failures / 0
+       errors run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk
+       created/run under the worktree scratch/ dir, to be DELETED
+       at landing, never committed), both captures BYTE-IDENTICAL
+       to session 48's pinned gate-run1.txt/gate-run2.txt; FULL
+       run-tests.cljk LIVE: exit 1, RED AT BASE 'Could not find
+       namespace: kotoba.form' (ADR-0362, outside this diff --
+       touches NO .cljk namespace), stderr BYTE-IDENTICAL to the
+       pinned gate-full-run-tests.txt -- NO green full suite
+       claimed.
+   (c) BAR: NO reading -> NO ledger line, NO day-slot consumption
+       (settle-bar-ledger.txt byte-identical to HEAD); frozen
+       evaluator --self-test 38/0 (pin), ledger eval twice
+       byte-identical -> VERDICT UNCHANGED PENDING 1/4 with s31
+       counted; next executable day slot 2026-10-29
+       (bar-eval-s49.txt).
+
+4. STARTED, NOT FINISHED (moves to the next tick, the session-48
+   two-tick pattern): the derivation census --
+   derivation-census-s49.txt was NOT produced this tick. Its
+   scratch generator (independent second parser; split-based log
+   parsing without regex, observed within-block MAD via
+   pure-Python sorted() order statistics cross-checked against
+   the np.partition kth=[37] path, the resampling's D via
+   np.partition kth=[37] NOT a sort, the cross-window repartition
+   and RNG call order re-implemented) is WRITTEN and its parser
+   bugs FIXED (pre-run review catches, none reached a census row:
+   (d1) the section-4 line parser collided with section 7's
+   same-prefix line (fixed to filter on the section-4-only
+   "; p <= 0.05:" marker); (d2) the D1 L-vector want indexed the
+   publication's line offset instead of slicing per window across
+   the 18 cell lines (fixed); (d3) a leftover dead conditional in
+   the bar fixture row (removed)) but the session's run-time
+   budget ended before the run. Consequently this tick does NOT
+   land: no commit, no push to the chain PR, no ADR-0355 dated
+   note, no Linear comment. The evidence directory
+   docs/evidence/gpu/anv-b3percellmadlevel-20261028/ currently
+   holds protocol.txt (frozen pre-registration), analysis-s49.py,
+   publication-s49.txt (verified), bar-eval-s49.txt and this
+   record; the pinned gate artifacts (classify-selftest.txt,
+   gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt) are to
+   be copied in at landing.
+
+5. STATES (the three states, exactly): ACCEPTED DESIGN ONLY: the
+   settling bar and its ledger, the letter thresholds of sessions
+   31-48 and the PER-CELL robust-scale (MAD) LEVEL max-T letters
+   of THIS session (protocol.txt sections 0-2). IMPLEMENTED:
+   nothing in the compiler -- the analysis/evaluator remain
+   evidence-scoped tooling. MEASURED (this tick): nothing new --
+   NO hardware ran; numbers are DERIVED from the sessions
+   36/38/39 measured logs. Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4
+   unchanged: NOTHING MOVES; NO vendor optimization exists for
+   Intel.
+
+6. UNMEASURED (named): what moves the per-cell robust-scale level
+   on the tw arm (this probe's (b) names no mechanism); whether
+   the (b) is a per-cell scale mechanism or a violation of
+   cross-window run-exchangeability; other robust scales /
+   deviation centers LEVEL analogs (the IQR-level probe is a
+   named candidate row); within-window level of D (unobservable
+   under any repartition null by construction); the s38 hi
+   (sum,256,S=32) wander replication at a future window (needs
+   NEW hardware); a fourth-window extension (three windows are
+   LOW POWER -- and now the tw-arm (b) makes a fourth window the
+   only route to replication of THIS letter); the s31/s34/s36
+   excursion causes; threshold-artifact-vs-representation;
+   anything off the ANV host. NAMED CANDIDATE ROWS for later
+   sessions: (first) FINISH this slice's census + land (the
+   landing tick); then an IQR-level cross-window probe (the
+   other robust scale's LEVEL axis); a fourth-window replication
+   of the tw (max,128,S=default) robust-scale level shift (needs
+   NEW hardware -- the only route from one uncorrected-family (b)
+   to a letter that survives multiplicity).
+
+7. THE TICK'S FINDING IN ONE LINE: THE PER-CELL ROBUST-SCALE
+   (MAD) LEVEL CROSS-WINDOW max-T READS T1 = (b) EXCEEDS NULL --
+   the FIRST (b) row letter of the campaign -- driven by the tw
+   arm (M_obs 16.0 ticks at (max,128,S=default), count 171
+   /20,001, p 0.008600; its L 71.5/55.5/56.5 across s36/s38/s39;
+   marginal (sum,128,S=default) p 0.020049 letterless) while hi
+   reads (a) (M_obs 10.0, p 0.473426): at these windows/powers
+   one cell's cross-window robust-scale level spread exceeds
+   run-exchangeable sampling noise on the tw arm, family-wise
+   over the 18 cells -- mechanism UNMEASURED, uncorrected across
+   two arms, cross-window exchangeability itself an assumption,
+   threshold-artifact-vs-representation STAYS UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical; no
+   ledger line this tick); nothing in Rule 4 moves.
+
+8. CHAIN: NOT LANDED this tick (see section 4 -- census
+   unfinished; per the one-tick rule this slice moves to the next
+   tick: run the census twice byte-identical, copy the pinned
+   gate artifacts, delete the scratch runner, append the ADR-0355
+   dated note, then commit + push to the ONE open chain branch
+   bot/amu-gpu-chain-20261028-2 (chain PR #1641); blocker check
+   (open kotoba-lang/amu PRs with a hermes/ head) was 0 at the
+   tick start and must be re-checked immediately before that
+   push). Linear: 未記録 this tick (to be recorded on JUN-59 when
+   the slice lands). Evidence:
+   docs/evidence/gpu/anv-b3percellmadlevel-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged). (JUN-55,
+   JUN-59)
+
+9. ADDENDUM -- TICK 2 (the landing tick, same day): the section-4
+   unfinished slice is FINISHED and this tick does land. (a) The
+   derivation census ran: derivation-census-s49.txt, 59 rows / 0
+   mismatched, run twice byte-identical (independent second
+   parser per the census header; observed per-cell within-block
+   MAD via pure-Python sorted() order statistics over the
+   explicitly pooled 75, cross-checked in-loop against the
+   np.partition kth=[37] path -- the cross-check row True over all
+   1296 blocks x cells; the resampling's D via np.partition
+   kth=[37], NOT a sort; the 12-value level medians via sorted()
+   explicit order statistics (observed) / np.partition kth=(5,6)
+   (resampling); the cross-window repartition and RNG call order
+   re-implemented; publication sections 1/2/3/3b/4/5/6-D1/6-D2/
+   6-D3/7 content re-derived -- every T1/arm letter, resample
+   count and p value reproduces the publication EXACTLY; gate
+   pins, bar pins, ledger byte-identity checked). NAMED DEFECT of
+   tick 2 (d4) (the census generator's first landing-tick run
+   crashed BEFORE any census row was persisted -- the census file
+   is written only at the end): the joint-T1 row's
+   pub_line("   T1 = ") matched BOTH the publication's section-4
+   per-arm row "   T1 = (b) EXCEEDS NULL (named arms: tw)" and
+   section 7's joint verdict row "   T1 = (b) EXCEEDS NULL"
+   (AssertionError in the unique-line helper; fixed by
+   disambiguating to the section-7 line (no "(named arms"
+   suffix); the committed census records the corrected runs
+   only). (b) GATES: the pinned gate artifacts (classify-selftest
+   .txt, gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt)
+   were copied into this evidence directory at landing (all four
+   verified with cmp byte-identical to session 48's pinned
+   artifacts AND to this slice's tick-1 captures), and the three
+   gate families were RE-RUN FRESH at the landing tick with every
+   capture byte-identical to its pinned artifact
+   (gate-rerun-s49b.txt): gpu_regime_classify.py --self-test
+   2649/0; scoped GPU gate GREEN 123/12162/0/0;
+   run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+   outside this diff) -- still NO green full suite claimed. The
+   scratch runner and all scratch captures were DELETED at
+   landing, never committed. (c) BAR unchanged (no reading -> no
+   ledger line, byte-identical to HEAD; VERDICT UNCHANGED PENDING
+   1/4 with s31 counted; next executable day slot 2026-10-29).
+   (d) LANDING: this commit goes ON TOP of the ONE open chain
+   branch bot/amu-gpu-chain-20261028-2 (chain PR #1641, open --
+   its first commit is session 48's c1ef728c0); no new branch, no
+   new PR, no rebase, no force-push. The blocker-first check
+   (open kotoba-lang/amu PRs with a hermes/ head) was run
+   immediately before the push: 0. Linear comment recorded on
+   JUN-59 at landing. Everything in sections 1-8 above stands
+   unchanged; states and Rule 4 unchanged: nothing in the
+   compiler moves; accelerator-targets defaults remain
+   provisional (:measured? false); NO vendor optimization exists
+   for Intel.

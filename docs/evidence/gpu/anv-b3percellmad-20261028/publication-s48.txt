@@ -1,0 +1,285 @@
+JUN-59 session 48 -- THE PER-CELL WITHIN-BLOCK ROBUST-SCALE
+(MAD) REPARTITION PROBE
+(publication)
+(does ANY ok cell's within-block robust sample scale -- the
+MAD of the cell's own 75 gpu_ticks samples inside one 3-run
+block -- wander across the 12 blocks of one (window, arm)
+beyond WITHIN-window run-exchangeable sampling noise? ONE
+observable axis per (window, arm): the max-T M = max_c W_c
+over the 18 cells, W_c = max_b D_{b,c} - min_b D_{b,c} over
+the 12 blocks of that (window, arm), D_{b,c} = e_(38) about
+m = x_(38) of the block's 75 samples for cell c (the frozen
+exact-median MAD), vs a within-window run-repartition
+resampling null over the same (window, arm)'s 36 committed
+runs; the max over cells is taken INSIDE each resampling trial
+too (family-wise over the 18 cells).)
+Produced ONLY by analysis-s48.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window); protocol.txt was
+frozen BEFORE any statistic of this probe was computed (freeze
+stamp 2026-10-28T09:04:56Z). ANALYSIS slice -- NO hardware ran
+this tick; every input quantity was MEASURED on aiueos-6600hs
+Intel BMG G31 ANV in sessions 36/38/39 (run windows
+2026-10-28T02:40:49Z, 03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs; block
+   order A..L; reproduction check vs the published/quote-only
+   vectors of publication-s39.txt section 3 -- mismatch => (c)):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+3b. ANCHOR REPRODUCTION ROW (pre-registered; hi block A's
+    (sum,128,S=16) pooled median and 18-cell min..max vs the
+    quote-only anchor priors of publication-s36/38/39 section
+    D -- mismatch => (c)):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   at the s39 window (the primary window, session 40's framing)
+   does ANY ok cell's within-block robust-scale wander W_c =
+   max_b D_{b,c} - min_b D_{b,c} (D = e_(38) about m = x_(38)
+   of the block's 75 samples for that cell -- the frozen
+   exact-median MAD) EXCEED the within-window run-repartition
+   null? Primary per-probe statistic: M = max_c W_c (the max-T;
+   the max is taken inside each resampling trial too). 20000 trials per probe, seed 20261028, frozen
+   probe order s39 hi / s39 tw / s36 hi / s36 tw / s38 hi /
+   s38 tw; p = (1 + count(M* >= M_obs)) / (1 + 20000),
+   one-sided; D, W and M in exact INTEGER ticks; W_c marginal
+   counts/p are descriptive (uncorrected, 108 marginal tests
+   across the six probes) and shown in section 6 D1):
+   s39 hi: M_obs = 46; max cell(s) = (sum,128,S=32); count 4374 / 20001; p = 0.218739; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s39 tw: M_obs = 39; max cell(s) = (sum,128,S=32), (max,128,S=32); count 12056 / 20001; p = 0.602820; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   T1 = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   NAMED, NOT HIDDEN: (a) does NOT prove 'estimator noise is
+   the mechanism' -- the null is RUN-EXCHANGEABILITY at the
+   fresh-process granularity within one window and a physical
+   driver acting uniformly within the window would also read
+   (a); AND each per-cell within-block robust spread D is ONE
+   robust scale -- the MAD about the median -- and other
+   quantile pairs, other deviation centers, and any spread or
+   tail-weight change that keeps e_(38) about x_(38) fixed are
+   invisible (the session-47 IQR and session-46 RANGE see
+   DIFFERENT things than this one -- none of the three
+   dominates; other robust scales stay named candidate rows);
+   this probe tests the WANDER of D across blocks only -- a
+   per-cell robust-scale LEVEL shift uniform across all 12
+   blocks cancels in W_c and is invisible (the D level is
+   descriptive only, section 6 D1, no letter); the max-T at
+   n=12 blocks is LOW POWER and three windows in ONE day on
+   ONE host is LOW POWER (a null is not stationarity, and not
+   'no per-cell robust-scale structure'); (b) would implicate
+   block-timescale (~3-run / few-second) PER-CELL ROBUST-SCALE
+   structure but NOT name it (thermal/scheduling/memory/driver
+   state all UNMEASURED); the 18 per-cell MARGINAL p values
+   per probe are UNCORRECTED (108 marginal tests across the
+   six probes) and carry NO letter (the frozen row test is the
+   max-T); the six probe p values / three window letters are
+   UNCORRECTED across probes/windows too (the row answer is
+   the s39 window letter alone); the frozen 1,000-tick class
+   boundary sits INSIDE the per-cell level range (986..1,443
+   ticks) and threshold-artifact-vs-representation STAYS
+   UNRESOLVED (it binds this level-free probe less directly but
+   nothing here resolves it); exchangeability of runs is
+   itself an assumption; this letter and sessions
+   40/41/42/43/44/45/46/47's letters are DIFFERENT statistics over
+   the SAME runs -- none confirms nor overturns another, and
+   the probes share the same 234 logs and resampling skeleton
+   (NOT independent evidence); 20,000 trials (NOT the s35-frozen
+   100,000 -- cost, same named deviation as sessions 40-47; p
+   resolution 1/20,001 ~= 5e-5); L2 observational ONLY; NO
+   causal mechanism; direction UNMEASURED.
+
+5. REPLICATION LETTERS (pre-registered, same rule per window
+   at the s36 and s38 windows; NO cross-window joint letter):
+   s36 hi: M_obs = 41 (max cell(s) (min,256,S=default)); count 15142 / 20001; p = 0.757112; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s36 tw: M_obs = 39 (max cell(s) (max,128,S=default)); count 14413 / 20001; p = 0.720664; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s36 letter = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 hi: M_obs = 45 (max cell(s) (sum,256,S=16)); count 6567 / 20001; p = 0.328384; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 tw: M_obs = 33 (max cell(s) (min,128,S=default), (min,256,S=16)); count 19816 / 20001; p = 0.990800; p <= 0.05: False; probe letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 letter = (a) PER-CELL-MAD-NOISE-CONSISTENT
+
+6. DESCRIPTIVE (not the row question):
+   D1 the per-cell scoreboard (per probe, cells in cell-map
+      order; W_c = max_b D - min_b D over the 12 blocks of the
+      probe's (window, arm); D min..max = the cell's 12 block
+      within-block MADs' range; D median = the per-cell
+      robust-scale LEVEL (descriptive only, no letter);
+      marginal count/p = trials with W*_c >= W_obs_c over the
+      same 20,000 -- UNCORRECTED for multiplicity (108 marginal
+      tests), descriptive only, no letter):
+      s39 hi:
+      s39 hi cell 0 (sum,128,S=16): W 14 (block D 23..37, D median 32.0); marginal count 17091 p 0.854557
+      s39 hi cell 1 (sum,128,S=32): W 46 (block D 43..89, D median 60.0); marginal count 703 p 0.035198
+      s39 hi cell 2 (sum,128,S=default): W 24 (block D 50..74, D median 57.0); marginal count 14995 p 0.749763
+      s39 hi cell 3 (max,128,S=16): W 14 (block D 25..39, D median 30.5); marginal count 17580 p 0.879006
+      s39 hi cell 4 (max,128,S=32): W 31 (block D 42..73, D median 58.5); marginal count 9229 p 0.461477
+      s39 hi cell 5 (max,128,S=default): W 20 (block D 50..70, D median 61.5); marginal count 17310 p 0.865507
+      s39 hi cell 6 (min,128,S=16): W 18 (block D 18..36, D median 29.0); marginal count 4382 p 0.219139
+      s39 hi cell 7 (min,128,S=32): W 32 (block D 40..72, D median 58.5); marginal count 4347 p 0.217389
+      s39 hi cell 8 (min,128,S=default): W 28 (block D 44..72, D median 56.0); marginal count 8781 p 0.439078
+      s39 hi cell 9 (sum,256,S=16): W 19 (block D 25..44, D median 34.0); marginal count 17401 p 0.870056
+      s39 hi cell 10 (sum,256,S=32): W 25 (block D 51..76, D median 68.0); marginal count 9021 p 0.451077
+      s39 hi cell 11 (sum,256,S=default): W 25 (block D 56..81, D median 66.0); marginal count 9164 p 0.458227
+      s39 hi cell 12 (max,256,S=16): W 26 (block D 27..53, D median 37.5); marginal count 18292 p 0.914604
+      s39 hi cell 13 (max,256,S=32): W 22 (block D 59..81, D median 68.0); marginal count 16587 p 0.829359
+      s39 hi cell 14 (max,256,S=default): W 24 (block D 52..76, D median 64.5); marginal count 15652 p 0.782611
+      s39 hi cell 15 (min,256,S=16): W 24 (block D 28..52, D median 34.0); marginal count 8602 p 0.430128
+      s39 hi cell 16 (min,256,S=32): W 25 (block D 55..80, D median 64.0); marginal count 8604 p 0.430228
+      s39 hi cell 17 (min,256,S=default): W 21 (block D 53..74, D median 66.0); marginal count 16983 p 0.849158
+      s39 tw:
+      s39 tw cell 0 (sum,128,S=16): W 20 (block D 22..42, D median 29.0); marginal count 5782 p 0.289136
+      s39 tw cell 1 (sum,128,S=32): W 39 (block D 46..85, D median 59.5); marginal count 4082 p 0.204140
+      s39 tw cell 2 (sum,128,S=default): W 31 (block D 50..81, D median 61.5); marginal count 11081 p 0.554072
+      s39 tw cell 3 (max,128,S=16): W 19 (block D 23..42, D median 31.5); marginal count 14781 p 0.739063
+      s39 tw cell 4 (max,128,S=32): W 39 (block D 41..80, D median 63.5); marginal count 1104 p 0.055247
+      s39 tw cell 5 (max,128,S=default): W 19 (block D 50..69, D median 56.5); marginal count 14157 p 0.707865
+      s39 tw cell 6 (min,128,S=16): W 19 (block D 24..43, D median 29.5); marginal count 11373 p 0.568672
+      s39 tw cell 7 (min,128,S=32): W 26 (block D 47..73, D median 63.0); marginal count 13976 p 0.698815
+      s39 tw cell 8 (min,128,S=default): W 18 (block D 50..68, D median 58.0); marginal count 17369 p 0.868457
+      s39 tw cell 9 (sum,256,S=16): W 30 (block D 24..54, D median 35.5); marginal count 15927 p 0.796360
+      s39 tw cell 10 (sum,256,S=32): W 20 (block D 52..72, D median 65.0); marginal count 12240 p 0.612019
+      s39 tw cell 11 (sum,256,S=default): W 26 (block D 53..79, D median 67.0); marginal count 6815 p 0.340783
+      s39 tw cell 12 (max,256,S=16): W 27 (block D 27..54, D median 33.0); marginal count 5662 p 0.283136
+      s39 tw cell 13 (max,256,S=32): W 30 (block D 59..89, D median 70.5); marginal count 4500 p 0.225039
+      s39 tw cell 14 (max,256,S=default): W 12 (block D 59..71, D median 66.0); marginal count 19860 p 0.993000
+      s39 tw cell 15 (min,256,S=16): W 24 (block D 28..52, D median 34.5); marginal count 11822 p 0.591120
+      s39 tw cell 16 (min,256,S=32): W 10 (block D 62..72, D median 66.5); marginal count 19984 p 0.999200
+      s39 tw cell 17 (min,256,S=default): W 30 (block D 52..82, D median 67.5); marginal count 988 p 0.049448
+      s36 hi:
+      s36 hi cell 0 (sum,128,S=16): W 20 (block D 20..40, D median 31.0); marginal count 5143 p 0.257187
+      s36 hi cell 1 (sum,128,S=32): W 26 (block D 51..77, D median 62.0); marginal count 13395 p 0.669767
+      s36 hi cell 2 (sum,128,S=default): W 27 (block D 43..70, D median 57.0); marginal count 11462 p 0.573121
+      s36 hi cell 3 (max,128,S=16): W 14 (block D 20..34, D median 25.5); marginal count 19457 p 0.972851
+      s36 hi cell 4 (max,128,S=32): W 36 (block D 48..84, D median 62.5); marginal count 553 p 0.027699
+      s36 hi cell 5 (max,128,S=default): W 29 (block D 49..78, D median 62.5); marginal count 7536 p 0.376831
+      s36 hi cell 6 (min,128,S=16): W 11 (block D 24..35, D median 28.5); marginal count 19430 p 0.971501
+      s36 hi cell 7 (min,128,S=32): W 18 (block D 54..72, D median 62.0); marginal count 18390 p 0.919504
+      s36 hi cell 8 (min,128,S=default): W 30 (block D 44..74, D median 55.5); marginal count 7699 p 0.384981
+      s36 hi cell 9 (sum,256,S=16): W 32 (block D 23..55, D median 33.0); marginal count 6025 p 0.301285
+      s36 hi cell 10 (sum,256,S=32): W 37 (block D 47..84, D median 63.0); marginal count 1820 p 0.091045
+      s36 hi cell 11 (sum,256,S=default): W 35 (block D 55..90, D median 69.5); marginal count 1531 p 0.076596
+      s36 hi cell 12 (max,256,S=16): W 30 (block D 25..55, D median 38.0); marginal count 7832 p 0.391630
+      s36 hi cell 13 (max,256,S=32): W 20 (block D 58..78, D median 66.5); marginal count 11869 p 0.593470
+      s36 hi cell 14 (max,256,S=default): W 26 (block D 54..80, D median 71.5); marginal count 13483 p 0.674166
+      s36 hi cell 15 (min,256,S=16): W 31 (block D 29..60, D median 44.0); marginal count 18581 p 0.929054
+      s36 hi cell 16 (min,256,S=32): W 35 (block D 45..80, D median 69.5); marginal count 2110 p 0.105545
+      s36 hi cell 17 (min,256,S=default): W 41 (block D 52..93, D median 64.5); marginal count 1867 p 0.093395
+      s36 tw:
+      s36 tw cell 0 (sum,128,S=16): W 18 (block D 23..41, D median 29.5); marginal count 10294 p 0.514724
+      s36 tw cell 1 (sum,128,S=32): W 28 (block D 42..70, D median 60.5); marginal count 8248 p 0.412429
+      s36 tw cell 2 (sum,128,S=default): W 33 (block D 49..82, D median 56.5); marginal count 7661 p 0.383081
+      s36 tw cell 3 (max,128,S=16): W 25 (block D 22..47, D median 27.5); marginal count 8061 p 0.403080
+      s36 tw cell 4 (max,128,S=32): W 29 (block D 40..69, D median 55.0); marginal count 5227 p 0.261387
+      s36 tw cell 5 (max,128,S=default): W 39 (block D 46..85, D median 71.5); marginal count 2435 p 0.121794
+      s36 tw cell 6 (min,128,S=16): W 20 (block D 23..43, D median 30.0); marginal count 9028 p 0.451427
+      s36 tw cell 7 (min,128,S=32): W 34 (block D 44..78, D median 62.0); marginal count 10108 p 0.505425
+      s36 tw cell 8 (min,128,S=default): W 37 (block D 44..81, D median 56.5); marginal count 5106 p 0.255337
+      s36 tw cell 9 (sum,256,S=16): W 33 (block D 28..61, D median 37.0); marginal count 3969 p 0.198490
+      s36 tw cell 10 (sum,256,S=32): W 21 (block D 53..74, D median 67.5); marginal count 16737 p 0.836858
+      s36 tw cell 11 (sum,256,S=default): W 28 (block D 50..78, D median 62.0); marginal count 1596 p 0.079846
+      s36 tw cell 12 (max,256,S=16): W 29 (block D 24..53, D median 35.0); marginal count 9676 p 0.483826
+      s36 tw cell 13 (max,256,S=32): W 18 (block D 58..76, D median 65.0); marginal count 16341 p 0.817059
+      s36 tw cell 14 (max,256,S=default): W 26 (block D 49..75, D median 60.5); marginal count 13177 p 0.658867
+      s36 tw cell 15 (min,256,S=16): W 26 (block D 23..49, D median 36.5); marginal count 11770 p 0.588521
+      s36 tw cell 16 (min,256,S=32): W 24 (block D 51..75, D median 66.5); marginal count 15707 p 0.785361
+      s36 tw cell 17 (min,256,S=default): W 20 (block D 58..78, D median 70.0); marginal count 16793 p 0.839658
+      s38 hi:
+      s38 hi cell 0 (sum,128,S=16): W 24 (block D 19..43, D median 28.5); marginal count 3056 p 0.152842
+      s38 hi cell 1 (sum,128,S=32): W 17 (block D 54..71, D median 60.0); marginal count 19744 p 0.987201
+      s38 hi cell 2 (sum,128,S=default): W 44 (block D 40..84, D median 57.5); marginal count 1389 p 0.069497
+      s38 hi cell 3 (max,128,S=16): W 17 (block D 21..38, D median 30.0); marginal count 8869 p 0.443478
+      s38 hi cell 4 (max,128,S=32): W 13 (block D 54..67, D median 61.5); marginal count 19738 p 0.986901
+      s38 hi cell 5 (max,128,S=default): W 27 (block D 43..70, D median 64.5); marginal count 14325 p 0.716264
+      s38 hi cell 6 (min,128,S=16): W 17 (block D 22..39, D median 27.0); marginal count 13741 p 0.687066
+      s38 hi cell 7 (min,128,S=32): W 28 (block D 43..71, D median 55.0); marginal count 10859 p 0.542973
+      s38 hi cell 8 (min,128,S=default): W 37 (block D 45..82, D median 60.0); marginal count 6518 p 0.325934
+      s38 hi cell 9 (sum,256,S=16): W 45 (block D 30..75, D median 36.5); marginal count 3770 p 0.188541
+      s38 hi cell 10 (sum,256,S=32): W 32 (block D 52..84, D median 64.5); marginal count 3417 p 0.170891
+      s38 hi cell 11 (sum,256,S=default): W 22 (block D 59..81, D median 71.5); marginal count 14299 p 0.714964
+      s38 hi cell 12 (max,256,S=16): W 27 (block D 32..59, D median 38.0); marginal count 11193 p 0.559672
+      s38 hi cell 13 (max,256,S=32): W 24 (block D 54..78, D median 65.5); marginal count 14753 p 0.737663
+      s38 hi cell 14 (max,256,S=default): W 26 (block D 57..83, D median 63.0); marginal count 10049 p 0.502475
+      s38 hi cell 15 (min,256,S=16): W 30 (block D 24..54, D median 35.5); marginal count 5344 p 0.267237
+      s38 hi cell 16 (min,256,S=32): W 22 (block D 54..76, D median 62.0); marginal count 15460 p 0.773011
+      s38 hi cell 17 (min,256,S=default): W 25 (block D 50..75, D median 64.0); marginal count 7820 p 0.391030
+      s38 tw:
+      s38 tw cell 0 (sum,128,S=16): W 13 (block D 23..36, D median 28.5); marginal count 18347 p 0.917354
+      s38 tw cell 1 (sum,128,S=32): W 23 (block D 46..69, D median 55.5); marginal count 14635 p 0.731763
+      s38 tw cell 2 (sum,128,S=default): W 27 (block D 43..70, D median 49.0); marginal count 13858 p 0.692915
+      s38 tw cell 3 (max,128,S=16): W 15 (block D 26..41, D median 32.5); marginal count 14766 p 0.738313
+      s38 tw cell 4 (max,128,S=32): W 28 (block D 47..75, D median 58.0); marginal count 6309 p 0.315484
+      s38 tw cell 5 (max,128,S=default): W 27 (block D 44..71, D median 55.5); marginal count 9536 p 0.476826
+      s38 tw cell 6 (min,128,S=16): W 19 (block D 17..36, D median 25.0); marginal count 4252 p 0.212639
+      s38 tw cell 7 (min,128,S=32): W 25 (block D 48..73, D median 59.0); marginal count 13400 p 0.670016
+      s38 tw cell 8 (min,128,S=default): W 33 (block D 45..78, D median 60.5); marginal count 7378 p 0.368932
+      s38 tw cell 9 (sum,256,S=16): W 32 (block D 30..62, D median 42.5); marginal count 14690 p 0.734513
+      s38 tw cell 10 (sum,256,S=32): W 17 (block D 56..73, D median 67.0); marginal count 15536 p 0.776811
+      s38 tw cell 11 (sum,256,S=default): W 24 (block D 56..80, D median 68.5); marginal count 15866 p 0.793310
+      s38 tw cell 12 (max,256,S=16): W 26 (block D 25..51, D median 34.5); marginal count 14882 p 0.744113
+      s38 tw cell 13 (max,256,S=32): W 22 (block D 58..80, D median 69.5); marginal count 15604 p 0.780211
+      s38 tw cell 14 (max,256,S=default): W 22 (block D 56..78, D median 65.5); marginal count 11919 p 0.595970
+      s38 tw cell 15 (min,256,S=16): W 33 (block D 27..60, D median 39.5); marginal count 11233 p 0.561672
+      s38 tw cell 16 (min,256,S=32): W 30 (block D 54..84, D median 67.0); marginal count 5384 p 0.269237
+      s38 tw cell 17 (min,256,S=default): W 22 (block D 55..77, D median 66.0); marginal count 13550 p 0.677516
+   D2 the max-T cell identity and top-3 cells by W_c per probe
+      (ties in W_c named; descriptive only):
+      s39 hi: max cell(s) (sum,128,S=32) = 46; top3 (sum,128,S=32)=46 (min,128,S=32)=32 (max,128,S=32)=31
+      s39 tw: max cell(s) (sum,128,S=32), (max,128,S=32) = 39; top3 (sum,128,S=32)=39 (max,128,S=32)=39 (sum,128,S=default)=31
+      s36 hi: max cell(s) (min,256,S=default) = 41; top3 (min,256,S=default)=41 (sum,256,S=32)=37 (max,128,S=32)=36
+      s36 tw: max cell(s) (max,128,S=default) = 39; top3 (max,128,S=default)=39 (min,128,S=default)=37 (min,128,S=32)=34
+      s38 hi: max cell(s) (sum,256,S=16) = 45; top3 (sum,256,S=16)=45 (sum,128,S=default)=44 (min,128,S=default)=37
+      s38 tw: max cell(s) (min,128,S=default), (min,256,S=16) = 33; top3 (min,128,S=default)=33 (min,256,S=16)=33 (sum,256,S=16)=32
+   D3 the session-47 per-cell within-block IQR wander max-T M
+      and p per (window, arm) (quote-only prior from
+      publication-s47.txt sections 4/5 -- the Tukey-hinge
+      robust scale this probe's MAD complements; quoted for
+      orientation only, NO recomputation):
+      s39 hi: M(s47) = 197, p(s47) = 0.789211 (within-block IQR wander, different statistic)
+      s39 tw: M(s47) = 190, p(s47) = 0.987701 (within-block IQR wander, different statistic)
+      s36 hi: M(s47) = 213, p(s47) = 0.657217 (within-block IQR wander, different statistic)
+      s36 tw: M(s47) = 231, p(s47) = 0.573471 (within-block IQR wander, different statistic)
+      s38 hi: M(s47) = 219, p(s47) = 0.191390 (within-block IQR wander, different statistic)
+      s38 tw: M(s47) = 210, p(s47) = 0.783511 (within-block IQR wander, different statistic)
+
+7. VERDICT SUMMARY:
+   T1 (s39 window) = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s39 hi: M_obs 46 count 4374/20001 p 0.218739 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s39 tw: M_obs 39 count 12056/20001 p 0.602820 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s36 hi: M_obs 41 count 15142/20001 p 0.757112 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s36 tw: M_obs 39 count 14413/20001 p 0.720664 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 hi: M_obs 45 count 6567/20001 p 0.328384 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 tw: M_obs 33 count 19816/20001 p 0.990800 letter (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s36 window letter = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   s38 window letter = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   evaluable inputs: vector reproduction EXACT (True); anchor row EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger
+   line (NO reading -> NO line -> NO day-slot consumption).
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.
