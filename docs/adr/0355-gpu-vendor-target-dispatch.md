@@ -1531,3 +1531,68 @@ s37.txt is the derived read over s36's logs; bar-eval-s37.txt is the
 frozen evaluator's verdict; derivation-census-s37.txt is the
 independent second parser (51 rows / 0 mismatched); record.txt is
 the finding).
+
+## 2026-10-28 -- session 38 (JUN-59): the third-window joint probe (measurement; the coupling flips arms)
+
+Session 37's named-not-hidden residual ("a THIRD window probing
+both axes (2 windows do not make a pattern)") is taken on ONE
+observable axis: at a THIRD session window, repeat the session-36
+interleaved design exactly (12 adjacent (hi,tw) block-pairs,
+byte-identical rebuilt binaries) and apply the s37-frozen joint
+probe statistics there -- (A) hi min-vs-host_ns, (B) tw
+min-vs-host_ns, (C) hi-vs-tw min (block unit n=12, Spearman +
+two-sided permutation p, 100,000 trials, frozen seed 20261028 --
+the s35-frozen algorithm UNCHANGED). MEASUREMENT slice -- NEW
+HARDWARE; pre-registered before the runs (protocol freeze stamp
+2026-10-28T03:36:21Z; joint letters (a) JOINT NO-COUPLE / (b) ANY
+COUPLE / (c) NOT EVALUABLE; CO-MOVE iff |rho| >= 0.60 AND p <=
+0.05). HARDWARE RAN (MEASURED, aiueos-6600hs Intel BMG G31 ANV):
+78 fresh processes (c2 3 + hi 36 + tw 36 + c8 3), run window
+2026-10-28T03:39:14Z..03:39:31Z, rc=0 78/78 + '# done cells=24'
+78/78, stderr 0 bytes 78/78, VERIFY mismatch 0 everywhere, forcing
+1,404/1,404, S=8 fail-closed 468/468, custody GO
+2026-10-28T03:38:24Z before builds and ALL runs (corpus 16/16 +
+3/3 local-vs-host MATCH), 4/4 build pins BYTE-IDENTICAL (hi
+a6c31b6c = the (1024,4033) pair's NINTH cross-session rebuild /
+10th measurement; tw bb901eb5 = the (2048,8066) twin's FOURTH
+rebuild / 5th measurement). THE FINDING (MEASURED): T1 = (b) ANY
+COUPLE WITH A FLIPPED ARM -- (B) THE TW ARM'S PROXY AXIS IS THE
+ONE COUPLING (rho 0.748269 / p 0.007040 / count 703 of 100,001);
+(A) the hi proxy axis reads NO-CO-MOVE (rho -0.056141 / p
+0.864691) -- session 37's (A) coupling DOES NOT REPLICATE at this
+window; (C) cross-arm rho -0.536433 / p 0.074439 NO-CO-MOVE.
+Across the three probed windows the proxy-vs-wander coupling is
+NOT window-stable and NOT arm-stable in both directions (s34
+window neither arm / s36 window hi arm / s38 window tw arm), so
+no replicable coupling exists on either arm and no
+window-general exclusion or attribution of the wander is
+available. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction UNMEASURED); this window's (B) coupling
+reads over the tw arm's 1.3%-spread host_ns band (306,491..-
+310,599) -- the s37 near-flat-band caveat binds here too (rank
+coupling on a near-flat proxy series; physical meaning
+UNRESOLVED); (C)'s rho -0.536433 is nearer the 0.60 threshold
+than prior windows but reads NO-CO-MOVE at the frozen letters and
+no strength trend is claimed; n=12 LOW POWER; L14 ~1s resolution;
+estimator noise vs an unmeasured arm-specific physical variable
+STAYS UNRESOLVED and threshold-artifact-vs-representation STAYS
+UNRESOLVED. Descriptive (MEASURED here): (D1) per-run analogs
+(A1 rho -0.211887 / p 0.213358; B1 rho 0.477382 / p 0.003360 --
+below the letter bar; L10 different unit; per-run minima hi
+967..1,010, tw 969..1,001); (D3) hi block A is day 2026-10-28's
+SIXTH anchor reading (INTERMEDIATE/MIXED, median 1,132, min 992,
+in-band vs the frozen refs 1,129/1,132/1,131), its ledger line
+appended as DESCRIPTIVE by the frozen evaluator (same-day
+duplicate) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted
+(frozen evaluator twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29); (D4) all host_ns in band this
+window (no excursion). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3joint3-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s38.txt is the derived
+third-window read over the 78 committed run logs; bar-eval-s38.txt
+is the frozen evaluator's verdict; derivation-census-s38.txt is the
+independent second parser (51 rows / 0 mismatched); record.txt is
+the finding).
