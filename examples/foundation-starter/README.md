@@ -194,7 +194,7 @@ receives no capabilities.
    一致しても host の公開資格を証明したことにはなりません。
 2. 「Obtain and verify the candidate」で、レビューした PR の40文字 commit を指定して
    取得し、compiler とサンプルの hash を照合します。不一致の場合は止めてください。
-3. 「Run the native observation packet」で新しい出力ディレクトリを指定して17ケースを
+3. 「Run the native observation packet」で新しい出力ディレクトリを指定して20操作を
    実行します。host profile は英小文字・数字・ハイフンのみの1〜64文字で、先頭は英小文字か
    数字です。例えば `ubuntu-24.04` ではなく `linux-x86-64-ubuntu-24-04` とします。
    成功表示は機能確認であり、公開資格や第三者試用の完了ではありません。

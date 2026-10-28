@@ -141,10 +141,14 @@ def main(output, profile, experimental_arm64=False):
     _, _, changed = compile_source("hello-changed", hello.replace("(+ 40 2)", "(+ 40 3)"))
     require(pin(image) != pin(changed), "editing source did not change emitted bytes")
     run_guest("hello-changed-run", changed, 43)
-    _, _, summed = compile_source("sum", (FIXTURES / "sum.kotoba").read_text())
+    sum_source = (FIXTURES / "sum.kotoba").read_text()
+    _, _, summed = compile_source("sum", sum_source)
     run_guest("sum-run", summed, 55)
     run_guest("sum-low-fuel", summed, fuel=1, exit_code=120,
               errors=(b":budget/fuel",))
+    require(sum_source.count("(> i 10)") == 1, "sum edit anchor changed")
+    _, _, custom_sum = compile_source("sum-custom", sum_source.replace("(> i 10)", "(> i 20)"))
+    run_guest("sum-custom-run", custom_sum, 210)
     _, _, hashed = compile_source("hash", (FIXTURES / "hash.kotoba").read_text())
     run_guest("hash-denied", hashed, exit_code=120,
               errors=(b"KEXE_CAP {:wire 3 :refused :not-granted}",))
