@@ -1188,3 +1188,46 @@ Evidence: `docs/evidence/gpu/anv-b3settlebar-20261027/` (settle-bar.txt
 is the frozen pre-registration; record.txt is the finding;
 derivation-census-s30.txt re-derives every cited measured number from
 sessions 26-29's committed run logs).
+
+## 2026-10-28 -- session 31 (JUN-59): the first bar-executing session
+-- the first cross-UTC-day anchor reading
+
+The bar's L4 axis is spanned for the first time. This tick runs
+natively on UTC day 2026-10-28 (protocol freeze stamp 00:04:50Z, run
+window 00:06:33Z..00:06:39Z) -- sessions 2-29 all ran on 2026-10-27 --
+and takes ONE reading in the bar's frozen unit: one 3-run block of the
+(1024,4033) anchor (BATCH=3, WORK_MUL=1024, NDIV=4033, n=253,906,
+B=3) at a byte-identical rebuilt binary (a6c31b6c... -- the pair's
+fourth cross-session rebuild), with the archived controls c2/c8
+bracketing the window. MEASURED: the reading classifies
+INTERMEDIATE/MIXED at (sum,128,S=16) pooled median 1,142 (18-cell
+985..1,436) over 3 runs x 25 rounds per cell, IN-BAND vs the frozen
+references 1,129 / 1,132 / 1,131; C1 (a) (c2 FLOOR 31; c8 32,688 vs
+committed 32,915, -0.69%); VERIFY mismatch 0 everywhere (9 fresh
+processes, rc=0 9/9, forcing 162/162, S=8 fail-closed 54/54,
+host-mtime cross-check 9/9). QUALIFYING under the bar (B1 (a)): the
+reading is COUNTED 1/4 -- the first qualifying reading of its UTC day
+-- and the frozen evaluator `settle-bar-eval.py` over the append-only
+ledger (created this tick, `docs/evidence/gpu/settle-bar-ledger.txt`)
+returns VERDICT: PENDING 1/4 (run twice byte-identical; fixture
+self-test pin 38/0). Nothing settles at one day: at least three more
+qualifying UTC days are needed and FLAGGED days do not shorten the
+count. Named, not hidden: the ledger-construction decision (the ledger
+starts with the first bar-executing session; sessions 26-29's readings
+are the bar's quote-only reference basis, not backfilled entries --
+the alternative reading is arguable and was frozen out before the runs
+in protocol section 0) and an X1 host-side excursion (hi host_ns
+875,403 = ~2.83x every same-knob prior while both controls and every
+GPU-side bracket replicate in band -- host_ns is the L3 proxy, cause
+UNMEASURED). The reading's min 985 sits inside the measured
+min-statistic wander (971..1,001) -- whether day 28's class is day
+structure or that wander is UNMEASURED. Rule 4 binds: the bar moves
+nothing; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization exists
+for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3xday-20261028/` (protocol.txt is
+the frozen pre-registration incl. the ledger-construction decision;
+publication-s31.txt is the measurement; bar-eval-s31.txt is the
+frozen evaluator's verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
