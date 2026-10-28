@@ -59,11 +59,17 @@ Code and receipts supersede the sentence above on two points. Read against
   not executed on Linux in that gate (`MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED`).
 
 Still open, and not claimed here: the Mac runtime is a diagnostic profile, not
-a qualified one (`arena-scope` segfaults under `fs2-cli-stdio-general`, exit
-139: the generated code loads context ABI slots 224 and 232, the scope enter
-and leave routines of `docs/native-source-lock-and-scalar-scopes.md`, and calls
-them; the Mac wrapper installs neither, so the call lands on address 0, as the
-crash report shows. JUN-546); the Mac root's status is `diagnostic-candidate`, and updating the pinned
-descriptors still needs a hand-run staged bootstrap (JUN-545); the AIUEOS
-release bundle's own build is tracked separately; physical hardware and release
-qualification are separate gates.
+a qualified one. `arena-scope` is **refused, not implemented**: the generated
+code loads context ABI slots 224 and 232, the scope enter and leave routines of
+`docs/native-source-lock-and-scalar-scopes.md`, and calls them. Before JUN-546
+the Mac wrapper installed neither, so the call landed on address 0 (SIGSEGV,
+exit 139, as the crash report shows). Both slots now point at a routine that
+writes `seed: arena-scope unsupported (Mac runtime, JUN-546)` to stderr and
+exits 70, the status the Linux runtimes use for a scope failure;
+`scripts/seed/check-macos-arena-scope-refusal.py` holds it in the Mac CI job.
+A real implementation would save and restore this runtime's own allocator
+counters in a bounded LIFO and is still open. The Mac root's status stays
+`diagnostic-candidate`; updating the pinned descriptors is now a two-phase,
+receipt-driven step (`scripts/seed/write-bootstrap-descriptors.py`, JUN-545 and
+JUN-547); the AIUEOS release bundle's own build is tracked separately (JUN-548);
+physical hardware and release qualification are separate gates.
