@@ -1,0 +1,126 @@
+JUN-59 session 53 derivation census -- independent second
+parser for publication-s53.txt (split-based parsing, no
+re module, no numpy; pure-Python sorted() order statistics;
+independent pure-Python shuffle loop re-implementing the
+frozen RNG contract random.Random(2026102803) consumed in
+the frozen probe order (s36,s38), (s36,s39), (s36,s51).
+
+sec1 s36 VERIFY mismatch total: published 0 | recomputed 0 | match True
+sec1 s36 four integrity flags: published True True True True | recomputed True True True True | match True
+sec1 s38 VERIFY mismatch total: published 0 | recomputed 0 | match True
+sec1 s38 four integrity flags: published True True True True | recomputed True True True True | match True
+sec1 s39 VERIFY mismatch total: published 0 | recomputed 0 | match True
+sec1 s39 four integrity flags: published True True True True | recomputed True True True True | match True
+sec1 s51 VERIFY mismatch total: published 0 | recomputed 0 | match True
+sec1 s51 four integrity flags: published True True True True | recomputed True True True True | match True
+sec2 s36 c2 class: published FLOOR | recomputed FLOOR | match True
+sec2 s36 c8 median: published 32911 | recomputed 32911 | match True
+sec2 s36 c8 delta pct: published 0.01 | recomputed 0.01 | match True
+sec2 s38 c2 class: published FLOOR | recomputed FLOOR | match True
+sec2 s38 c8 median: published 32739 | recomputed 32739 | match True
+sec2 s38 c8 delta pct: published 0.53 | recomputed 0.53 | match True
+sec2 s39 c2 class: published FLOOR | recomputed FLOOR | match True
+sec2 s39 c8 median: published 32829 | recomputed 32829 | match True
+sec2 s39 c8 delta pct: published 0.26 | recomputed 0.26 | match True
+sec2 s51 c2 class: published FLOOR | recomputed FLOOR | match True
+sec2 s51 c8 median: published 32890 | recomputed 32890 | match True
+sec2 s51 c8 delta pct: published 0.08 | recomputed 0.08 | match True
+sec3 s36 X vector: published 991 989 981 998 993 985 984 997 994 994 980 982 | recomputed 991 989 981 998 993 985 984 997 994 994 980 982 | match True
+sec3 s36 Y vector: published 988 985 994 993 994 995 992 984 987 984 993 981 | recomputed 988 985 994 993 994 995 992 984 987 984 993 981 | match True
+sec3 s36 reproduction flag: published True | recomputed True | match True
+sec3b s36 anchor median: published 1142 | recomputed 1142 | match True
+sec3b s36 anchor min..max: published 991..1438 | recomputed 991..1438 | match True
+sec3b s36 reproduction flag: published True | recomputed True | match True
+sec3 s38 X vector: published 992 988 984 1007 985 984 986 983 992 991 982 997 | recomputed 992 988 984 1007 985 984 986 983 992 991 982 997 | match True
+sec3 s38 Y vector: published 988 987 980 980 991 994 991 994 988 991 1001 992 | recomputed 988 987 980 980 991 994 991 994 988 991 1001 992 | match True
+sec3 s38 reproduction flag: published True | recomputed True | match True
+sec3b s38 anchor median: published 1132 | recomputed 1132 | match True
+sec3b s38 anchor min..max: published 992..1443 | recomputed 992..1443 | match True
+sec3b s38 reproduction flag: published True | recomputed True | match True
+sec3 s39 X vector: published 986 991 984 985 989 989 986 990 995 986 987 981 | recomputed 986 991 984 985 989 989 986 990 995 986 987 981 | match True
+sec3 s39 Y vector: published 988 989 987 990 990 988 991 983 985 988 983 986 | recomputed 988 989 987 990 990 988 991 983 985 988 983 986 | match True
+sec3 s39 reproduction flag: published True | recomputed True | match True
+sec3b s39 anchor median: published 1146 | recomputed 1146 | match True
+sec3b s39 anchor min..max: published 986..1432 | recomputed 986..1432 | match True
+sec3b s39 reproduction flag: published True | recomputed True | match True
+sec3 s51 X vector: published 988 986 1000 986 989 983 995 983 994 991 984 985 | recomputed 988 986 1000 986 989 983 995 983 994 991 984 985 | match True
+sec3 s51 Y vector: published 980 975 991 979 986 986 992 991 988 993 995 996 | recomputed 980 975 991 979 986 986 992 991 988 993 995 996 | match True
+sec3 s51 reproduction flag: published True | recomputed True | match True
+sec3b s51 anchor median: published 1137 | recomputed 1137 | match True
+sec3b s51 anchor min..max: published 988..1430 | recomputed 988..1430 | match True
+sec3b s51 reproduction flag: published True | recomputed True | match True
+sec4 s36-vs-s38 2*L_s36: published 118 | recomputed 118 | match True
+sec4 s36-vs-s38 2*L_s38: published 102 | recomputed 102 | match True
+sec4 s36-vs-s38 C_obs: published 8.0 | recomputed 8.0 | match True
+sec4 s36-vs-s38 count: published 1942 | recomputed 1942 | match True
+sec4 s36-vs-s38 p: published 0.097145 | recomputed 0.097145 | match True
+sec4 s36-vs-s38 letter: published (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] | recomputed (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] | match True
+sec4 s36-vs-s39 2*L_s36: published 118 | recomputed 118 | match True
+sec4 s36-vs-s39 2*L_s39: published 128 | recomputed 128 | match True
+sec4 s36-vs-s39 C_obs: published -5.0 | recomputed -5.0 | match True
+sec4 s36-vs-s39 count: published 16132 | recomputed 16132 | match True
+sec4 s36-vs-s39 p: published 0.806610 | recomputed 0.806610 | match True
+sec4 s36-vs-s39 letter: published (b) NOT-DIFFERENT [OPPOSITE-DIRECTION] | recomputed (b) NOT-DIFFERENT [OPPOSITE-DIRECTION] | match True
+sec4 s36-vs-s51 2*L_s36: published 118 | recomputed 118 | match True
+sec4 s36-vs-s51 2*L_s51: published 113 | recomputed 113 | match True
+sec4 s36-vs-s51 C_obs: published 2.5 | recomputed 2.5 | match True
+sec4 s36-vs-s51 count: published 7150 | recomputed 7150 | match True
+sec4 s36-vs-s51 p: published 0.357532 | recomputed 0.357532 | match True
+sec4 s36-vs-s51 letter: published (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] | recomputed (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] | match True
+sec4 joint T3: published (b) NOT-SHIFTED-CONSISTENT | recomputed (b) NOT-SHIFTED-CONSISTENT | match True
+sec7 joint T3: published (b) NOT-SHIFTED-CONSISTENT | recomputed (b) NOT-SHIFTED-CONSISTENT | match True
+D1 s36 2*L: published 118 | recomputed 118 | match True
+D1 s36 block D values: published 50 50 75 60 95 41 58 71 49 73 79 57 | recomputed 50 50 75 60 95 41 58 71 49 73 79 57 | match True
+D1 s38 2*L: published 102 | recomputed 102 | match True
+D1 s38 block D values: published 51 48 70 49 36 61 68 51 51 47 65 58 | recomputed 51 48 70 49 36 61 68 51 51 47 65 58 | match True
+D1 s39 2*L: published 128 | recomputed 128 | match True
+D1 s39 block D values: published 52 73 62 67 85 63 67 65 71 61 62 61 | recomputed 52 73 62 67 85 63 67 65 71 61 62 61 | match True
+D1 s51 2*L: published 113 | recomputed 113 | match True
+D1 s51 block D values: published 41 77 56 79 60 57 58 46 55 51 70 49 | recomputed 41 77 56 79 60 57 58 46 55 51 70 49 | match True
+D3 (sum,128,S=16) 2*L pair: published 73/63 | recomputed 73/63 | match True
+D3 (sum,128,S=16) C: published 5.0 | recomputed 5.0 | match True
+D3 (sum,128,S=32) 2*L pair: published 121/122 | recomputed 121/122 | match True
+D3 (sum,128,S=32) C: published -0.5 | recomputed -0.5 | match True
+D3 (sum,128,S=default) 2*L pair: published 137/128 | recomputed 137/128 | match True
+D3 (sum,128,S=default) C: published 4.5 | recomputed 4.5 | match True
+D3 (max,128,S=16) 2*L pair: published 64/68 | recomputed 64/68 | match True
+D3 (max,128,S=16) C: published -2.0 | recomputed -2.0 | match True
+D3 (max,128,S=32) 2*L pair: published 110/122 | recomputed 110/122 | match True
+D3 (max,128,S=32) C: published -6.0 | recomputed -6.0 | match True
+D3 (max,128,S=default) 2*L pair: published 118/113 | recomputed 118/113 | match True
+D3 (max,128,S=default) C: published 2.5 | recomputed 2.5 | match True
+D3 (min,128,S=16) 2*L pair: published 70/65 | recomputed 70/65 | match True
+D3 (min,128,S=16) C: published 2.5 | recomputed 2.5 | match True
+D3 (min,128,S=32) 2*L pair: published 128/126 | recomputed 128/126 | match True
+D3 (min,128,S=32) C: published 1.0 | recomputed 1.0 | match True
+D3 (min,128,S=default) 2*L pair: published 121/125 | recomputed 121/125 | match True
+D3 (min,128,S=default) C: published -2.0 | recomputed -2.0 | match True
+D3 (sum,256,S=16) 2*L pair: published 77/93 | recomputed 77/93 | match True
+D3 (sum,256,S=16) C: published -8.0 | recomputed -8.0 | match True
+D3 (sum,256,S=32) 2*L pair: published 156/143 | recomputed 156/143 | match True
+D3 (sum,256,S=32) C: published 6.5 | recomputed 6.5 | match True
+D3 (sum,256,S=default) 2*L pair: published 150/143 | recomputed 150/143 | match True
+D3 (sum,256,S=default) C: published 3.5 | recomputed 3.5 | match True
+D3 (max,256,S=16) 2*L pair: published 84/73 | recomputed 84/73 | match True
+D3 (max,256,S=16) C: published 5.5 | recomputed 5.5 | match True
+D3 (max,256,S=32) 2*L pair: published 150/143 | recomputed 150/143 | match True
+D3 (max,256,S=32) C: published 3.5 | recomputed 3.5 | match True
+D3 (max,256,S=default) 2*L pair: published 135/142 | recomputed 135/142 | match True
+D3 (max,256,S=default) C: published -3.5 | recomputed -3.5 | match True
+D3 (min,256,S=16) 2*L pair: published 95/78 | recomputed 95/78 | match True
+D3 (min,256,S=16) C: published 8.5 | recomputed 8.5 | match True
+D3 (min,256,S=32) 2*L pair: published 142/166 | recomputed 142/166 | match True
+D3 (min,256,S=32) C: published -12.0 | recomputed -12.0 | match True
+D3 (min,256,S=default) 2*L pair: published 150/147 | recomputed 150/147 | match True
+D3 (min,256,S=default) C: published 1.5 | recomputed 1.5 | match True
+gate classify self-test last line: published TOTAL: 2649 assertions passed, 0 failed | recomputed TOTAL: 2649 assertions passed, 0 failed | match True
+gate gate-run1.txt green line: published True | recomputed True | match True
+gate gate-run2.txt green line: published True | recomputed True | match True
+gate full run-tests named red: published True | recomputed True | match True
+bar verdict pinned: published True | recomputed True | match True
+bar self-test pinned: published True | recomputed True | match True
+ledger reading-line count: published 8 | recomputed 8 | match True
+ledger has no s53 line: published False | recomputed False | match True
+evidence .sh count: published 0 | recomputed 0 | match True
+
+TOTAL: 117 rows, 0 mismatched
