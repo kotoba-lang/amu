@@ -3939,3 +3939,23 @@ set them. Queue unchanged: the W5 measurement session (first
 at/after 2026-10-29T00:00:00Z, its pre-GO custody steps named at
 s67) then T7 and the three frozen analysis halves. Evidence:
 `docs/evidence/gpu/anv-b3w5pregocensus-20261028/`.
+
+## Dated note (2026-10-28, JUN-59 session 72: the s71 carry-forward batch)
+
+The census DOUBLE-RUN at the frozen 20,000-trial contract VERIFIED:
+run1 == run2 byte-identical (10,611 bytes), TOTAL 44 rows / 0
+mismatched three-way (the six RNG count/p rows now reproduce at full
+trials -- 99/9/2844/367/3657/12283), SECTION B 2/2, hygiene 4/4;
+`derivation-census-s71.txt` committed (was uncommitted until
+verified). The s71 in-flight background runs had not survived their
+session (named). FULL run-tests.cljk run live: exit 1, RED AT BASE
+`kotoba.form` (ADR-0362, outside this diff) -- no green full suite
+claimed. Standing gates byte-identical to the s71 pins (classify
+2649/0; scoped GPU gate 123/12162/0/0 x2; bar self-test + ledger
+eval x2 -> VERDICT PENDING 1/4; `find ... '*.sh'` -> 0). This
+session started 2026-10-28T23:30Z, before the W5 slot opens at
+2026-10-29T00:00:00Z -- NOT the W5 measurement session (named).
+Rule 4 binds: nothing moves; accelerator-targets defaults stay
+:measured? false. Chain PR #1643 was merged 23:21:57Z; this tick
+starts `bot/amu-gpu-chain-20261028-4` with one fresh PR. Evidence:
+`docs/evidence/gpu/anv-b3w5pregocensus-20261028/record-s72-carryforward.txt`.
