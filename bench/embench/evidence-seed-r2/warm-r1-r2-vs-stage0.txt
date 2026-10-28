@@ -1,0 +1,46 @@
+# warm per-call ns (kexe-benchmark raw, calls 200 / wikisort 20 / xgboost 2, warmup 1; median of 5 rounds, alternating with stage-0) and cold single-call ns (runner protocol: calls 1 warmup 0; median of 5)
+# same host, interleaved; compiler under test first. Stage-0 binaries: build/seed/embench-stage0-same-host (bootstrap-reference).
+## R1 seed c0526b73
+port             warm-seed    warm-s0  ratio |  cold-sd  cold-s0  ratio | code-sd code-s0
+aha-mont64            2765       1745   1.58 |    15000    13000   1.15 |   3532     40
+crc32                13520      10570   1.28 |    30000    38000   0.79 |   4248     76
+depthconv            30650      30715   1.00 |    42000    41000   1.02 |   2648     76
+edn                  48155      49270   0.98 |    58000    63000   0.92 |   1432     88
+huffbench              100         90   1.11 |     9000     9000   1.00 |    840     88
+matmult-int          63375      29960   2.12 |    76000    44000   1.73 |   7160     92
+md5sum               31745      17595   1.80 |    42000    28000   1.50 |   8488     40
+nettle-aes            2125       1570   1.35 |    12000    13000   0.92 |   2264     80
+nettle-sha256        11335       8555   1.32 |    22000    17000   1.29 |   9516     40
+nsichneu             23335       8310   2.81 |    29000    17000   1.71 |    792     76
+picojpeg              1365       1045   1.31 |     8000     9000   0.89 |   1012     88
+qrduino                490        370   1.32 |     8000     7000   1.14 |    968     76
+sglib-combined       24400      12255   1.99 |    31000    23000   1.35 |   1604     76
+slre                   565         80   7.06 |     7000     8000   0.88 |   1333     76
+statemate              985        780   1.26 |    10000    11000   0.91 |    652     76
+tarfind              37780      23060   1.64 |    49000    30000   1.63 |   1928     40
+ud                    5955       4550   1.31 |    15000    13000   1.15 |   5692     40
+wikisort           1474000     788450   1.87 |  1517000   798000   1.90 |   3592     76
+xgboost         2374139500 2401000000   0.99 | 2455967000 2391447000   1.03 |  56732     76
+geomean warm 1.568 cold 1.165 load { 189.00 166.10 125.69 }
+## R2 seed (this rung)
+port             warm-seed    warm-s0  ratio |  cold-sd  cold-s0  ratio | code-sd code-s0
+aha-mont64            1945       1740   1.12 |    11000    10000   1.10 |   3264     40
+crc32                 7055      10910   0.65 |    18000    39000   0.46 |   3304     76
+depthconv            27375      30545   0.90 |    37000    40000   0.93 |   2088     76
+edn                  34270      49365   0.69 |    41000    59000   0.69 |   1072     88
+huffbench               85         95   0.89 |     7000     9000   0.78 |    616     88
+matmult-int          30900      30115   1.03 |    38000    45000   0.84 |   5752     92
+md5sum               18105      17980   1.01 |    28000    29000   0.97 |   4488     40
+nettle-aes            1520       1650   0.92 |    13000    12000   1.08 |   1592     80
+nettle-sha256         6200       8450   0.73 |    19000    19000   1.00 |   5868     40
+nsichneu              7930       8455   0.94 |    15000    15000   1.00 |    468     76
+picojpeg               795       1050   0.76 |     8000    10000   0.80 |    664     88
+qrduino                320        380   0.84 |     8000    10000   0.80 |    744     76
+sglib-combined       13805      12310   1.12 |    22000    21000   1.05 |   1360     76
+slre                    85         80   1.06 |     7000     9000   0.78 |    885     76
+statemate              770        795   0.97 |     9000     7000   1.29 |    432     76
+tarfind              21740      23235   0.94 |    29000    30000   0.97 |   1436     40
+ud                    4380       4750   0.92 |    15000    16000   0.94 |   4804     40
+wikisort            811550     798500   1.02 |   797000   816000   0.98 |   2680     76
+xgboost         2387539000 2380681500   1.00 | 2389688000 2407581000   0.99 |  55452     76
+geomean warm 0.911 cold 0.899 load { 178.88 168.93 131.45 }
