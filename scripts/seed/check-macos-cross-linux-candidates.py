@@ -3,6 +3,12 @@
 
 This is a Mac producer gate. It does not execute or qualify the Linux images.
 Python stages source bytes, checks identities, and observes native Amu calls.
+
+By default the candidates must equal the checked-in root and public images, so
+a source change is refused here as stale. --produce-candidates is for adopting
+such a change: it skips that comparison, records the receipt status
+MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED, and leaves every descriptor and image
+untouched. write-bootstrap-descriptors.py turns that receipt into the new pins.
 """
 
 import argparse
@@ -87,7 +93,7 @@ def check_product_bindings(full, arm, x86):
         raise ValueError("Mac x86 fixed point differs from checked-in public image")
 
 
-def main(mac_build, output):
+def main(mac_build, output, produce=False):
     if platform.system() != "Darwin" or platform.machine() not in ("arm64", "aarch64"):
         raise ValueError("Apple Silicon native host required")
     if mac_build.is_symlink() or not mac_build.is_dir():
@@ -130,7 +136,8 @@ def main(mac_build, output):
                     "--target", "x86_64-linux", "--output", "F-x86_64.elf",
                     "--format", "static")
     x86 = static_elf(output / "F-x86_64.elf", 62)
-    check_product_bindings(full, arm, x86)
+    if not produce:
+        check_product_bindings(full, arm, x86)
     gate.native_run(producer, output, "compile", "selfhost-unity.kotoba",
                     "--target", "x86_64-linux", "--output", "S-x86_64.elf",
                     "--format", "static")
@@ -138,7 +145,8 @@ def main(mac_build, output):
     if gate.verify_macho(producer) != final["signed"] or pin(DESCRIPTOR) != report["bootstrapDescriptor"]:
         raise ValueError("Mac producer inputs changed during cross build")
     report = {"schema": "amu.mac-cross-linux-candidates.v1",
-              "status": "MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED",
+              "status": ("MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED" if produce
+                         else "MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED"),
               "macSelfhostReport": pin(report_path), "producer": final["signed"],
               "fullSource": full, "selfhostSource": selfhost, "runnerSource": runner,
               "container": container, "aarch64Root": arm,
@@ -153,5 +161,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mac-build", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--produce-candidates", action="store_true",
+                        help="skip the comparison with the checked-in images (adopting a source change)")
     args = parser.parse_args()
-    main(args.mac_build.resolve(), args.output.resolve())
+    main(args.mac_build.resolve(), args.output.resolve(), args.produce_candidates)

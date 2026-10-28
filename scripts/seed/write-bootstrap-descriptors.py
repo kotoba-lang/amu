@@ -18,6 +18,16 @@ kept as is):
 * native-product.json
     image (the x86_64 full compiler).
 
+Two phases, because the cross gate and the descriptor-bound Mac gate refuse a
+source the descriptor does not carry yet:
+
+* --phase source (after a Mac gate run with explicit images on the new
+  source): root.json takes the new fullSource, packagerSource and expected
+  fixed point only. The compiler and packager pins stay the previous root, which
+  is the bootstrap producer of the next run. The other descriptors are not read.
+* --phase final (default; after the descriptor-bound Mac gate and the cross
+  gate): everything above.
+
 Modes: --check (default) reports which fields differ and exits 1 if any;
 --write rewrites the files. The signed Mach-O files differ in bytes between
 hosts (ad hoc signatures), so the packager's signed digest is read from the
@@ -70,6 +80,27 @@ def pin(path: Path, expected: dict, what: str):
     return {"bytes": size, "sha256": digest}
 
 
+def derive_source(mac_dir: Path):
+    """The new source's pins, from a Mac gate run alone."""
+    mac = load(mac_dir / MAC_RECEIPT)
+    need(mac.get("schema") == "amu.mac-aiueos-user-target.v3", "mac receipt schema")
+    need(mac.get("status") == "PASS_MAC_NATIVE_USER_TARGET_SELFHOST", "mac gate did not pass")
+    gens = mac["generations"]
+    fp = mac["fixedPointGeneration"]
+    need(isinstance(fp, int) and 2 <= fp <= len(gens), "fixedPointGeneration")
+    last, prev = gens[fp - 1], gens[fp - 2]
+    for key in ("container", "raw", "unsigned"):
+        need(last[key] == prev[key], f"F{fp - 1} and F{fp} differ in {key}: not a fixed point")
+    ps = mac["packagerSelfRebuild"]
+    need(ps["unsigned"] == ps["repackagedUnsigned"], "packager did not repackage itself byte for byte")
+    pin(mac_dir / f"F{fp}-signed.macho", last["signed"], f"F{fp} signed compiler")
+    pin(mac_dir / f"F{fp}-unsigned.macho", last["unsigned"], f"F{fp} unsigned compiler")
+    pin(mac_dir / "P1-unsigned.macho", ps["unsigned"], "packager unsigned")
+    return {"root": {"fullSource": dict(mac["source"]), "packagerSource": dict(ps["source"]),
+                     "container": last["container"]["sha256"],
+                     "packagerUnsigned": ps["unsigned"]["sha256"]}}
+
+
 def derive(mac_dir: Path, cross_dir: Path):
     mac = load(mac_dir / MAC_RECEIPT)
     cross = load(cross_dir / CROSS_RECEIPT)
@@ -77,7 +108,8 @@ def derive(mac_dir: Path, cross_dir: Path):
     need(mac.get("schema") == "amu.mac-aiueos-user-target.v3", "mac receipt schema")
     need(mac.get("status") == "PASS_MAC_NATIVE_USER_TARGET_SELFHOST", "mac gate did not pass")
     need(cross.get("schema") == "amu.mac-cross-linux-candidates.v1", "cross receipt schema")
-    need(cross.get("status") == "MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "cross gate status")
+    need(cross.get("status") in ("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED",
+                                 "MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED"), "cross gate status")
     need(cross.get("linuxProcessInThisGate") is False, "cross receipt records a Linux process")
 
     # the receipts must describe the same build
@@ -89,7 +121,7 @@ def derive(mac_dir: Path, cross_dir: Path):
     for key in ("container", "raw", "unsigned"):
         need(last[key] == prev[key], f"F{fp - 1} and F{fp} differ in {key}: not a fixed point")
     need(cross["container"] == last["container"], "cross container is not the fixed-point container")
-    need(cross["producer"] == mac["compiler"], "cross producer is not the mac gate's compiler")
+    need(cross["producer"] == last["signed"], "cross producer is not the mac gate's fixed-point compiler")
     need(cross["fullSource"]["unity"] == mac["source"], "cross and mac gates saw different sources")
     need(cross["fullSource"]["manifest"] == mac["manifest"], "cross and mac gates saw different manifests")
     ps = mac["packagerSelfRebuild"]
@@ -122,9 +154,14 @@ def derive(mac_dir: Path, cross_dir: Path):
     }
 
 
-def updated(old: dict, new: dict, which: str):
+def updated(old: dict, new: dict, which: str, phase: str = "final"):
     doc = json.loads(json.dumps(old))
-    if which == "root":
+    if which == "root" and phase == "source":
+        doc["fullSource"].update(new["fullSource"])
+        doc["packagerSource"].update(new["packagerSource"])
+        doc["expectedFixedPoint"]["compilerContainerSha256"] = new["container"]
+        doc["expectedFixedPoint"]["packagerUnsignedSha256"] = new["packagerUnsigned"]
+    elif which == "root":
         doc["compiler"].update(new["compiler"])
         doc["packager"].update(new["packager"])
         doc["fullSource"].update(new["fullSource"])
@@ -154,8 +191,9 @@ def main(argv):
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     ap.add_argument("--mac-build", type=Path, required=True,
                     help="output of check-aiueos-user-macos-native.py")
-    ap.add_argument("--cross-build", type=Path, required=True,
-                    help="output of check-macos-cross-linux-candidates.py")
+    ap.add_argument("--cross-build", type=Path,
+                    help="output of check-macos-cross-linux-candidates.py (final phase)")
+    ap.add_argument("--phase", choices=("source", "final"), default="final")
     ap.add_argument("--repo", type=Path, default=ROOT, help="repository whose descriptors are read")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="report differences (default)")
@@ -166,7 +204,12 @@ def main(argv):
              "linux": args.repo / "seed/bootstrap/aarch64-linux-static-root.json",
              "product": args.repo / "native-product.json"}
     try:
-        new = derive(args.mac_build, args.cross_build)
+        if args.phase == "source":
+            new = derive_source(args.mac_build)
+            files = {"root": files["root"]}
+        else:
+            need(args.cross_build is not None, "--cross-build is required in the final phase")
+            new = derive(args.mac_build, args.cross_build)
     except Refused as refusal:
         print(f"REFUSED: {refusal}", file=sys.stderr)
         return 2
@@ -174,7 +217,7 @@ def main(argv):
     differs = 0
     for which, path in files.items():
         old = load(path)
-        doc = updated(old, new[which], which)
+        doc = updated(old, new[which], which, args.phase)
         changes = [(k, a, b) for (k, a), (_, b) in zip(flat(old), flat(doc)) if a != b]
         for key, a, b in changes:
             print(f"{path.name}{key}: {str(a)[:16]} -> {str(b)[:16]}")
