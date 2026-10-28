@@ -2654,3 +2654,100 @@ windows (78 runs parsed each); derivation-census-s55.txt is the
 independent second parser (167 rows / 0 mismatched);
 bar-eval-s55.txt is the frozen evaluator's verdict; record.txt is
 the finding).
+
+## 2026-10-28 -- session 56 (JUN-59): the second named rank-pair set compression-profile read (analysis; T6 (b) NOT-SECONDPAIR-PROFILE-OUTER-WEIGHTED-CONSISTENT -- the outer-weighted profile does NOT consistently replicate at the halving-rule rank pairs)
+
+Session 55's third named candidate row ("any further named
+profile pair (other outer/inner rank pairs stay named candidate
+rows)") taken on the SECOND NAMED RANK-PAIR SET of the SAME four
+windows s36/s38/s39/s51 of the named-cell robust-scale level
+campaign (ANALYSIS only): does the outer-weighted compression
+profile of s55's T5 (a) replicate when the outer and inner
+quantile-pair ranks are moved by the pre-registered HALVING RULE
+-- OUTER2 = (x_(5), x_(71)) halfway between s54's (9,67) and the
+full range (1,75); INNER2 = (x_(33), x_(43)) halfway between
+s53's (28,48) and the center (38,38)? The rank pairs are named
+by the rule BEFORE any second-pair statistic was computed
+(protocol freeze stamp 2026-10-28T15:41:51Z). PRIMARY STATISTIC:
+the difference-in-differences 2*P2_obs = 2*C_out2 - 2*C_in2
+(D_out2 = x_(71) - x_(5), D_in2 = x_(43) - x_(33) per block of
+the SAME pooled 75; 2*L = 6th+7th order statistics of the 12
+block D values); THREE contrasts (s36 vs s38, s36 vs s39, s36 vs
+s51), ONE-SIDED each in the pre-registered direction P2 > 0
+(outer-weighted compression at the second pair set -- direction
+fixed by s55's published T5 (a) reading, QUOTE-ONLY), joint T6 =
+the pre-registered INTERSECTION-UNION rule (all three (a); NO
+multiplicity correction); 20,000 trials, seed 2026102806, frozen
+probe order, both axes on the same pseudo-blocks. NAMED, NOT
+HIDDEN: unlike s55, this probe DOES test a FRESH pre-registered
+prediction -- the second-pair levels were never published or
+computed anywhere.
+
+THE FINDING (DERIVED; publication-s56.txt, analysis-s56.py run
+twice byte-identical): T6 = (b) NOT-SECONDPAIR-PROFILE-OUTER-
+WEIGHTED-CONSISTENT (named: pair(s) not (a): s39, s51) -- the
+outer-weighted profile does NOT consistently replicate at the
+second pair set at the frozen threshold: s36-vs-s38 2*P2_obs 98
+(P2 +49.0; OUT2 2*L 713 -> 606 (2*C_out2 107), IN2 63 -> 54
+(2*C_in2 9); count 436 / 20,001; p 0.021849) (a) SECONDPAIR-
+OUTER-WEIGHTED-DIFFERENT, but s36-vs-s39 2*P2_obs 53 (P2 +26.5;
+OUT2 713 -> 659 (54), IN2 63 -> 62 (1); count 3,876 / 20,001; p
+0.193840) (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] and
+s36-vs-s51 2*P2_obs 94 (P2 +47.0; OUT2 713 -> 612 (101), IN2 63
+-> 56 (7); count 1,116 / 20,001; p 0.055847) (b) NOT-DIFFERENT
+[NONZERO-NOT-SIGNIFICANT]. ALL THREE point estimates sit in the
+pre-registered direction (98/53/94 all positive) but only the
+s38 contrast clears the frozen 0.05 threshold (s51 at p 0.0558
+is marginal). NAMED, NOT HIDDEN: (b) is CONSISTENT WITH the s55
+outer-weighted profile being rank-pair specific OR a power loss
+at the second pair set (the IN2 spreads sit near the center --
+2*L 63/54/62/56 -- where block D values are small and noisy);
+(b) does NOT overturn s55's T5 (a) (different rank pairs, a
+SEPARATE named family) and formally quantifies the rank-choice
+fragility that s55's "NAMED, NOT HIDDEN" caveats only asserted;
+this is an EIGHTH axis on the same window data, chosen AFTER the
+scale/center/inner/outer/profile results were known (the FAMILY
+is fresh, retro-corrects nothing); (a) or (b) names NO mechanism
+(thermal/scheduling/memory/driver state all UNMEASURED) and NOT
+whether any movement is physical or estimator structure; LOW
+POWER, n=2 windows per contrast, ONE host, ONE UTC day; the three
+contrasts share the s36 window and are dependent (the IUT does
+not care); 20,000 trials (NOT the s35-frozen 100,000 -- cost,
+same named deviation as sessions 40-55; p resolution 1/20,001
+~= 5e-5); threshold-artifact-vs-representation STAYS UNRESOLVED.
+Integrity (DERIVED): 4/4 windows clean (78 runs parsed each,
+VERIFY mismatch total 0); C1 (a) at ALL FOUR windows (c2 FLOOR;
+c8 0.01%/0.53%/0.26%/0.08% delta vs committed 32,915); all four
+windows' block-min vectors and anchor rows reproduce their
+published/quote-only priors EXACTLY. The bar: NO ledger line, NO
+day-slot consumption (no runs this session; the 2026-10-28 slot
+is s31's); frozen evaluator 38/0, ledger eval twice byte-
+identical -> VERDICT PENDING 1/4 (next executable day slot
+2026-10-29). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel.
+
+Gates (real runs this tick): classify self-test 2649/0
+(byte-identical to the s55 pin); scoped GPU gate GREEN
+123/12162/0/0 twice, both byte-identical to the s55 pin and to
+each other; full run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff -- touches NO .cljk namespace),
+stdout+stderr byte-identical to the s55 pins -- NO green full
+suite claimed; derivation census 159 rows / 0 mismatched, run
+twice byte-identical; find docs/evidence/gpu -name '*.sh' -> 0.
+
+Named candidate rows for later sessions: (first) a FIFTH-window
+replication on another UTC day (needs NEW hardware; the bar's
+next day slot 2026-10-29 is then reachable; it can carry both
+quantile-pair level axes AND the second-pair profile axis at
+once); then the s38 hi (sum,256,S=32) wander replication (needs
+NEW hardware at a future window); then any further named profile
+pair (other outer/inner rank pairs stay named candidate rows).
+
+Evidence: `docs/evidence/gpu/anv-b3pair2profile-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s56.txt
+is the derived read over the committed run logs of the four
+windows (78 runs parsed each); derivation-census-s56.txt is the
+independent second parser (159 rows / 0 mismatched);
+bar-eval-s56.txt is the frozen evaluator's verdict; record.txt is
+the finding).
