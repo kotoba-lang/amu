@@ -1317,3 +1317,49 @@ the frozen pre-registration incl. the T1 letters; publication-s33.txt
 is the measurement; bar-eval-s33.txt is the frozen evaluator's
 verdict; record.txt is the finding) and
 `docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 34 (JUN-59): the within-window min-statistic wander probe (the threshold-artifact side)
+
+Session 33's named residual ("NEITHER letter resolves
+threshold-artifact-vs-representation -- the frozen 1,000-tick class
+boundary sits INSIDE the measured F2 min-statistic wander") is taken
+on ONE observable axis: do K=12 independent 3-run blocks of the
+(1024,4033) anchor at n=253,906, B=3, in ONE session window at a
+byte-identical rebuilt binary (a6c31b6c -- the pair's seventh
+cross-session rebuild; 3/3 pins byte-identical, controls c2/c8
+bracketing) straddle the frozen 1,000-tick class boundary in their
+block-unit min statistics? ONE measurement slice, pre-registered
+before the runs (protocol freeze stamp 2026-10-28T01:39:28Z; ledger-
+construction decision L12 for multi-block sessions frozen there --
+block A is the only bar candidate), custody GO 01:42:47Z before
+builds and all runs. MEASURED: T1 = (a) STRADDLE -- block-unit min
+statistics A 993 / B 1,003 / C 982 / D 1,000 / E 991 / F 988 /
+G 991 / H 986 / I 992 / J 989 / K 989 / L 985 (range 982..1,003):
+blocks B (1,003) and D (1,000) classify CAPTURED, ten blocks
+INTERMEDIATE/MIXED. THE FINDING: the frozen class boundary IS
+crossed by within-window variation alone at byte-identical binaries
+-- the cross-session class flip (s26 CAPTURED -> s27 MIXED) needs no
+session-level effect to occur. NAMED, NOT HIDDEN: this does NOT
+prove threshold artifact (the wander may itself be physical; L2
+observational, no causal mechanism claimed) and
+threshold-artifact-vs-representation STAYS UNRESOLVED; the C3
+scoreboard is untouched. Descriptive: per-run minima 972..1,006
+(extends the quote-only band 971..1,001); no rate claim (2 of 12
+blocks here vs 1 of 11 prior is not a rate comparison); block A is
+day 28's FOURTH anchor reading (INTERMEDIATE/MIXED 1,145 min 993,
+in-band vs the frozen refs 1,129/1,132/1,131), appended to the
+ledger and classified descriptive by the frozen evaluator -- verdict
+UNCHANGED, PENDING 1/4 with s31 counted (settle-bar-eval.py twice
+byte-identical; fixture pin 38/0); next executable day slot
+2026-10-29. Host-side proxy elevated across all three arms this
+window (hi 488,151..618,664 = 1.58x..2.03x non-excursion priors)
+while GPU-side medians replicate in band -- named, cause UNMEASURED.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3minwander-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters and L12;
+publication-s34.txt is the measurement; bar-eval-s34.txt is the
+frozen evaluator's verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
