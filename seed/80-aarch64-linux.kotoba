@@ -220,9 +220,16 @@
   (let [g (xa-page M) at (xg-pos g)
         h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
+;; Runtime-profile admission is shared with x86, whose emitter supports float.
+;; This ARM emitter does not: refuse float SIR before emitting integer code.
+(defn- xa-check-float [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) sub (xg-si M i IF-A)]
+      (if (xg-fl-sir? op sub) (xg-err M 7101 sub)
+        (xa-check-float M (inc i))))))
 (defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
-              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+              (xg-check-fns S 1) (xg-check-sir 1) (xa-check-float 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
