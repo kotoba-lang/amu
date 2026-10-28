@@ -1667,3 +1667,59 @@ fourth-window read over the 78 committed run logs; bar-eval-s39.txt
 is the frozen evaluator's verdict; derivation-census-s39.txt is the
 independent second parser (52 rows / 0 mismatched); record.txt is
 the finding).
+
+## 2026-10-28 -- session 40 (JUN-59): the wander-noise repartition probe (analysis; NOISE-CONSISTENT)
+
+Session 39's first-named UNMEASURED item ("WHY the min statistic
+wanders (estimator noise vs physical drift vs both)") is taken on
+ONE observable axis: at the session-39 window, does the observed
+spread T (range of the 12 block-unit min statistics of one arm;
+s35/s36-frozen constructions UNCHANGED) EXCEED the spread that
+run-repartition resampling of the SAME window's committed runs
+produces (null: the 36 runs of one arm within one window are
+exchangeable across blocks -- all within-run and fresh-process
+run-to-run noise included)? ANALYSIS slice -- NO new hardware;
+DERIVED from the 234 committed run logs of the s36/s38/s39 windows
+(78 each). Resampling: 20,000 trials, random.Random(20261028)
+consumed in the frozen probe order (s39 hi, s39 tw, s36 hi, s36 tw,
+s38 hi, s38 tw), p = (1 + count(T* >= T_obs)) / (1 + 20,000);
+letters pre-registered (protocol freeze stamp 2026-10-28T04:40:07Z,
+BEFORE any statistic was computed): (a) NOISE-CONSISTENT / (b)
+EXCEEDS NULL (named which arm) / (c) NOT EVALUABLE. THE FINDING
+(DERIVED FROM MEASURED DATA): T1 = (a) NOISE-CONSISTENT -- at the
+s39 window neither arm exceeds the null (hi T_obs 14, block-mins
+981..995, p 0.827359; tw T_obs 8, 983..991, p 0.986451) and the
+pre-registered replications agree (s36 window (a): hi T_obs 18, p
+0.649868 / tw T_obs 14, p 0.739563; s38 window (a): hi T_obs 25, p
+0.059247 / tw T_obs 21, p 0.328534). Across all three probed
+windows and both arms no block-timescale (~3-run / few-second)
+structure beyond run-exchangeable sampling noise is detected.
+NAMED, NOT HIDDEN: (a) does NOT prove "estimator noise is the
+mechanism" -- the null is run-exchangeability at the fresh-process
+granularity and a physical driver acting UNIFORMLY within a window
+would also read (a); the s38 hi arm's p 0.059247 sits CLOSE ABOVE
+the frozen 0.05 threshold at the largest T_obs of the six probes
+(25) -- no trend, strength or near-miss claim; exchangeability of
+runs is itself an assumption; 20,000 trials (pure-Python cost,
+named in the freeze; p resolution 1/20,001); the three windows are
+ONE day / ONE host and the cross-window comparison is descriptive
+only; L2 observational, NO causal mechanism, direction UNMEASURED;
+estimator noise vs an unmeasured within-window-uniform physical
+variable STAYS UNRESOLVED and threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean (VERIFY
+mismatch 0, counts, knobs, S=8 fail-closed, cell map), C1 (a) at
+the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), and 6/6
+block-min vectors reproduce publication-s39.txt section 3 EXACTLY.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3wandernoise-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s40.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s40.txt is the independent second parser
+(90 rows / 0 mismatched); bar-eval-s40.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
