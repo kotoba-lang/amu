@@ -37,25 +37,35 @@ def host_profile(value):
     return value
 
 
-def main(output, profile):
-    require(platform.system() == "Linux" and platform.machine() == "x86_64",
-            "starter host must be native Linux x86_64; no emulation or fallback")
+def main(output, profile, experimental_arm64=False):
+    machine = "aarch64" if experimental_arm64 else "x86_64"
+    target = "aarch64-linux" if experimental_arm64 else "x86_64-linux"
+    require(platform.system() == "Linux" and platform.machine() == machine,
+            f"starter host must be Linux {machine}; no emulation or fallback")
     require(re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", profile), "invalid host profile label")
     descriptor_path = ROOT / "native-product.json"
     descriptor_pin = pin(descriptor_path)
     descriptor = json.loads(descriptor_path.read_text())
     require(descriptor["host"] == "x86_64-linux", "unexpected public host")
     require(descriptor["entry"] == "bin/amu", "unexpected public entry")
-    compiler = ROOT / "bin/amu"
+    compiler = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if experimental_arm64 else "bin/amu")
     compiler_pin = pin(compiler)
-    require(compiler_pin == descriptor["image"], "public image digest/size mismatch")
+    arm_descriptor_path = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
+    arm_descriptor_pin = pin(arm_descriptor_path) if experimental_arm64 else None
+    arm_descriptor = json.loads(arm_descriptor_path.read_text()) if experimental_arm64 else None
+    require(compiler_pin == (arm_descriptor["image"] if experimental_arm64 else descriptor["image"]),
+            "compiler image digest/size mismatch")
     require(not descriptor["legacyRuntimeFallback"], "legacy fallback descriptor refused")
     candidate_path = FIXTURES / "candidate.json"
     candidate_pin = pin(candidate_path)
     candidate = json.loads(candidate_path.read_text())
     require(candidate["schema"] == "amu.foundation-starter.candidate.v1", "unknown starter schema")
     require(candidate["host"] == descriptor["host"], "starter/public host mismatch")
-    require(candidate["compilerImage"] == compiler_pin, "starter/compiler pin mismatch")
+    require(candidate["compilerImage"] == descriptor["image"], "starter/compiler pin mismatch")
+    if experimental_arm64:
+        require(arm_descriptor["sourceUnity"] == descriptor["sourceUnity"] and
+                arm_descriptor["sourceManifest"] == descriptor["sourceManifest"],
+                "ARM root and public compiler source differ")
     manifest = ROOT / descriptor["sourceManifest"]
     sources = [line for line in manifest.read_text().splitlines()
                if line and not line.startswith("#")]
@@ -107,7 +117,7 @@ def main(output, profile):
         # flags selects xpj-command, whose format is kx64-v1, not static ELF.
         # Observe that unsupported combination explicitly below; do not claim
         # the byte staging here is an atomic compiler-enforced source lock.
-        call(name + "-compile", [compiler, "compile", source, "--target", "x86_64-linux",
+        call(name + "-compile", [compiler, "compile", source, "--target", target,
                                "--output", image, "--format", "static"], 0, compile_env)
         require(pin(source) == source_pin, f"{name}: staged source changed during compile")
         image.chmod(0o700)
@@ -143,7 +153,7 @@ def main(output, profile):
                                "--source-lock-sha256", "0" * 64], 1, compile_env,
          stderr_has=(b"E6015",))
     locked_output = output / "locked-static-refused.elf"
-    call("locked-static-denied", [compiler, "compile", source, "--target", "x86_64-linux",
+    call("locked-static-denied", [compiler, "compile", source, "--target", target,
                                  "--output", locked_output, "--format", "static",
                                  "--source-lock", lock, "--source-lock-sha256", pin(lock)["sha256"]],
          2, compile_env, stderr_has=(b"E1",))
@@ -154,6 +164,9 @@ def main(output, profile):
     require(not refused_output.exists(), "refused compile left an artifact")
     require(pin(compiler) == compiler_pin and pin(descriptor_path) == descriptor_pin,
             "compiler/descriptor changed during observation")
+    if experimental_arm64:
+        require(pin(arm_descriptor_path) == arm_descriptor_pin,
+                "ARM descriptor changed during observation")
     require(pin(candidate_path) == candidate_pin, "starter manifest changed during observation")
     require(fixtures == {name: pin(FIXTURES / name) for name in fixtures},
             "starter source changed during observation")
@@ -161,10 +174,13 @@ def main(output, profile):
         "schema": "amu.foundation-starter.observation.v1",
         "status": "PASS_STARTER_FUNCTIONAL_SMOKE",
         "qualificationReplacement": False, "publicReleaseReady": False,
+        "experimentalArm64": experimental_arm64,
+        "experimentalArmDescriptor": arm_descriptor_pin,
         "externalUsersObserved": 0,
         "host": {"profile": profile, "system": platform.system(),
                  "machine": platform.machine(), "kernel": platform.release()},
-        "compilerImage": compiler_pin, "compilerSourceRevision": descriptor["sourceRevision"],
+        "compilerImage": compiler_pin,
+        "compilerSourceRevision": None if experimental_arm64 else descriptor["sourceRevision"],
         "starterCandidate": candidate_pin,
         "upstreamRevision": candidate["upstreamRevision"],
         "descriptor": descriptor_pin, "sourceUnity": descriptor["sourceUnity"],
@@ -177,7 +193,9 @@ def main(output, profile):
         "compilerEnforcedSourceLockAtCheck": True,
         "compilerEnforcedSourceLockAtStaticELFCompile": False,
         "unsupportedLockedStaticCombinationRefused": True,
-        "scope": "Public CLI fixture smoke only; not self-rebuild/controller qualification,"
+        "scope": ("Experimental ARM root fixture smoke only; not a public ARM CLI. "
+                  if experimental_arm64 else "Public CLI fixture smoke only; ") +
+                 "Not self-rebuild/controller qualification,"
                  " independent third-party reproduction, OS/network acceptance or a benchmark."}
     (output / "starter-observation.json").write_text(json.dumps(observation, indent=2) + "\n")
     print(observation["status"], "public release qualification remains separate", flush=True)
@@ -188,5 +206,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True, help="new output directory")
     parser.add_argument("--host-profile", type=host_profile, required=True,
                         help="non-identifying host/OS label (lowercase letters, digits, hyphens)")
+    parser.add_argument("--experimental-arm64", action="store_true",
+                        help="observe the pinned Linux ARM64 root; not a qualified public profile")
     args = parser.parse_args()
-    main(args.output, args.host_profile)
+    main(args.output, args.host_profile, args.experimental_arm64)
