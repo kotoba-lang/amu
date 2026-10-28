@@ -1,0 +1,189 @@
+JUN-59 -- session 48 record (PARTIAL TICK -- STARTED, NOT
+FINISHED): THE PER-CELL WITHIN-BLOCK ROBUST-SCALE (MAD)
+REPARTITION PROBE. ANALYSIS slice -- NO new hardware (inputs are
+the COMMITTED run logs of the session-36/38/39 windows).
+2026-10-28 (UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): session 47's first-named candidate row
+   "a PER-CELL MAD probe (the IQR's named blind spot)" -- per
+   (window, arm), does ANY ok cell's within-block robust-scale
+   wander W_c = max_b D_{b,c} - min_b D_{b,c} over the 12 blocks
+   (D = MAD of the block's 75 samples = e_(38) about m = x_(38),
+   the frozen exact-median MAD, exact INTEGER; the s35/s36-frozen
+   3-run block unit UNCHANGED) EXCEED the within-window
+   run-repartition null? Primary per-probe statistic: MAX-T
+   M_obs = max_c W_c (max taken inside each trial too; family-wise
+   over 18 cells). Pre-registered in protocol.txt (freeze stamp
+   2026-10-28T09:04:56Z, BEFORE any statistic of this probe was
+   computed; protocol.txt written once, never rewritten).
+
+2. THE FINDING (DERIVED; publication-s48.txt, analysis-s48.py run
+   twice byte-identical): T1 = (a) PER-CELL-MAD-NOISE-CONSISTENT
+   at the s39 window -- hi M_obs = 46 ticks (max cell
+   (sum,128,S=32)), count 4,374 / 20,001, p = 0.218739; tw
+   M_obs = 39 (max cells (sum,128,S=32) and (max,128,S=32), a
+   tie), count 12,056, p = 0.602820 (both p > 0.05). Replications
+   (pre-registered, same rule): s36 = (a) (hi M_obs 41 (max cell
+   (min,256,S=default)), count 15,142, p = 0.757112; tw M_obs 39
+   (max,128,S=default), count 14,413, p = 0.720664); s38 = (a)
+   (hi M_obs 45 (sum,256,S=16), count 6,567, p = 0.328384;
+   tw M_obs 33 (min,128,S=default)+(min,256,S=16), count 19,816,
+   p = 0.990800). All SIX probes read (a) -- the THIRD consecutive
+   probe family with NO (b) anywhere: at these windows/powers NO
+   ok cell's within-block MAD wander exceeds run-exchangeable
+   sampling noise, family-wise over the 18 cells. 3 uncorrected
+   marginal p <= 0.05 cells across three probes (s39 hi
+   (sum,128,S=32) p 0.035198; s39 tw (min,256,S=default) p
+   0.049448; s36 hi (max,128,S=32) p 0.027699) -- UNCORRECTED, no
+   letter, nothing claimed. Integrity (DERIVED): 3/3 windows
+   clean; C1 (a) at the s39 window (c2 FLOOR; c8 32,829 vs
+   32,915, 0.26%); 6/6 block-min vectors EXACT; anchor row EXACT
+   at all three windows.
+
+3. VERIFIED BY TOOL OUTPUT (real runs this tick):
+   (a) publication-s48.txt produced by analysis-s48.py over the
+       234 committed run logs, run twice byte-identical (diff
+       exit 0).
+   (b) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin; classify-selftest.txt
+       byte-identical to session 47's artifact); scoped GPU gate
+       GREEN 123 tests / 12,162 assertions / 0 failures / 0
+       errors run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk
+       created/run/deleted, never committed; gate-run1.txt
+       byte-identical to session 47's artifact); FULL
+       run-tests.cljk LIVE: exit 1, RED AT BASE 'Could not find
+       namespace: kotoba.form' (ADR-0362, outside this diff --
+       touches NO .cljk namespace; gate-full-run-tests.txt
+       byte-identical to session 47's artifact) -- NO green full
+       suite claimed.
+   (c) BAR: NO reading -> NO ledger line, NO day-slot consumption
+       (settle-bar-ledger.txt byte-identical to HEAD, hash
+       66bab04c... checked); frozen evaluator --self-test 38/0
+       (pin), ledger eval twice byte-identical -> VERDICT
+       UNCHANGED PENDING 1/4 with s31 counted; next executable
+       day slot 2026-10-29 (bar-eval-s48.txt).
+
+4. STARTED, NOT FINISHED (moves to the next tick): the derivation
+   census -- derivation-census-s48.txt was NOT produced this tick.
+   Its scratch generator (independent second parser) is written
+   and its fixes staged, but the session's run-time budget ended
+   before the run; NAMED DEFECTS found before any row was
+   written: (d1) the section-5 probe-want parser assumed section
+   4's part indices (section-5's max-cell is inline in part 0 --
+   IndexError before any row existed); (d2) the section-6 D3
+   quote parser indexed "M(s47) = 197," as if "=" were glued to
+   the value (ValueError before any row existed); a pre-run
+   review catch: the section-6 D1 cell-key token carries a
+   trailing ":" (the s47 key-paren rstrip family). Consequently
+   this tick does NOT land: no commit, no push to the chain PR,
+   no ADR-0355 dated note. The evidence directory
+   docs/evidence/gpu/anv-b3percellmad-20261028/ currently holds
+   protocol.txt (frozen pre-registration), analysis-s48.py,
+   publication-s48.txt (verified), classify-selftest.txt,
+   gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt,
+   bar-eval-s48.txt, this record.
+
+5. STATES (the three states, exactly): ACCEPTED DESIGN ONLY: the
+   settling bar and its ledger, the letter thresholds of sessions
+   31-47 and the PER-CELL within-block-MAD max-T letters of THIS
+   session (protocol.txt sections 0-2). IMPLEMENTED: nothing in
+   the compiler -- the analysis/evaluator remain evidence-scoped
+   tooling. MEASURED (this tick): nothing new -- NO hardware ran;
+   numbers are DERIVED from the sessions 36/38/39 measured logs.
+   Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4
+   unchanged: NOTHING MOVES; NO vendor optimization exists for
+   Intel.
+
+6. UNMEASURED (named): what, if anything, physically moves the
+   wander/level/body/per-cell level/per-cell wander/per-cell
+   range/per-cell IQR/per-cell MAD (all eight probe families read
+   no structure beyond run-exchangeable noise at their tested
+   scales -- and one uncorrected (b) at the s38 hi per-cell WANDER
+   scale, session 45, mechanism UNMEASURED); other quantile pairs
+   and deviation centers remain UNTESTED (this probe's named blind
+   spot); within-run (25-sample) scale structure remains UNTESTED;
+   whether the s38 hi wander excess is physical/estimator/chance
+   -- UNMEASURED (an s38-window replication at a FUTURE window is
+   the only route from one uncorrected (b) to a letter that
+   survives multiplicity); the s31/s34/s36 excursion causes;
+   threshold-artifact-vs-representation; anything off the ANV
+   host. NAMED CANDIDATE ROWS for later sessions: a per-cell
+   robust-scale LEVEL probe (uniform-across-blocks shifts cancel
+   in W_c); other robust scales / deviation centers; the s38 hi
+   (sum,256,S=32) wander replication at a future window (needs
+   NEW hardware); a fourth-window extension of the whole probe
+   family (three windows are LOW POWER).
+
+7. THE TICK'S FINDING IN ONE LINE: THE PER-CELL WITHIN-BLOCK
+   ROBUST-SCALE (MAD) WANDER max-T READS (a)
+   PER-CELL-MAD-NOISE-CONSISTENT AT ALL SIX PROBES -- primary s39
+   window hi M_obs 46, count 4,374/20,001, p 0.218739; tw 39,
+   12,056, p 0.602820; s36 hi 41 p 0.757112 / tw 39 p 0.720664;
+   s38 hi 45 p 0.328384 / tw 33 p 0.990800 -- closing session
+   47's first-named candidate row at the primary window with its
+   own letter (T1 = (a)) and showing NO (b) at any probed
+   window/arm: at these windows/powers no cell's within-block MAD
+   wanders beyond run-exchangeable noise, family-wise over the 18
+   cells -- with the named blind spots and the LOW-POWER caveats
+   intact, the mechanism STAYS UNRESOLVED and
+   threshold-artifact-vs-representation STAYS UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical; no
+   ledger line this tick); nothing in Rule 4 moves.
+
+8. CHAIN: NOT LANDED this tick (see section 4 -- census
+   unfinished; per the one-tick rule this slice moves to the next
+   tick: finish the census run twice byte-identical, append the
+   ADR-0355 dated note, then commit + push to the ONE open chain
+   branch bot/amu-gpu-chain-20261028 (chain PR #1638); blocker
+   check (open kotoba-lang/amu PRs with a hermes/ head) was 0 at
+   the tick start and must be re-checked immediately before that
+   push). Linear: NOT RECORDED this tick (connector calls not
+   completed within the session budget) -- to be recorded on
+   JUN-59 when the slice lands. Evidence:
+   docs/evidence/gpu/anv-b3percellmad-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged). (JUN-55,
+   JUN-59)
+
+9. ADDENDUM -- TICK 2 (the landing tick, same day): the section-4
+   unfinished slice is FINISHED and this tick does land. (a) The
+   derivation census ran: derivation-census-s48.txt, 231 rows / 0
+   mismatched, run twice byte-identical (independent second
+   parser per the census header; observed per-cell within-block
+   MAD via pure-Python sorted() order statistics over the
+   explicitly pooled 75, cross-checked in-loop against the
+   np.partition kth=[37] path -- all 6 probes' cross-check rows
+   True; the resampling's MAD via np.partition kth=[37], NOT a
+   sort; the within-window repartition resampling and RNG call
+   order re-implemented; publication sections 1/2/3/3b/4/5/6-D1/
+   6-D2/6-D3/7 content re-derived; gate pins, bar pins, ledger
+   byte-identity checked). NAMED DEFECT of tick 2 (the census
+   generator's first run crashed BEFORE any census row was
+   persisted -- the census file is written only at the end): the
+   section-5 window-letter row looked up sec5[win + " letter"]
+   while the parser keys it sec5[win] (KeyError; one-token fix;
+   the committed census records the corrected runs only). (b)
+   GATES RE-RUN FRESH on the landing tick, pinned artifacts
+   untouched, every capture byte-identical to its pinned artifact
+   (gate-rerun-s48b.txt): gpu_regime_classify.py --self-test
+   2649/0; scoped GPU gate GREEN 123/12162/0/0;
+   run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+   outside this diff) -- still NO green full suite claimed. (c)
+   BAR unchanged (no reading -> no ledger line, byte-identical to
+   HEAD; VERDICT UNCHANGED PENDING 1/4 with s31 counted; next
+   executable day slot 2026-10-29). (d) LANDING: chain PR #1638
+   was found MERGED at the landing tick (squash-merged into
+   origin/main -- its content is in main; verified by tool
+   output). Per the chain rule (merged chain PR -> start the next
+   chain branch with one fresh PR) this land starts the NEXT
+   chain branch bot/amu-gpu-chain-20261028-2, branched from
+   origin/main, with ONE fresh chain PR (branch naming follows
+   the established same-day practice: -20261026-2, -20261027-2..
+   -10). The blocker-first check (open kotoba-lang/amu PRs with a
+   hermes/ head) was run immediately before the push: 0. Linear
+   comment recorded on JUN-59 at landing. Everything in sections
+   1-8 above stands unchanged; states and Rule 4 unchanged:
+   nothing in the compiler moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

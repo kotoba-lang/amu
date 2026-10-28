@@ -2129,3 +2129,69 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s47.txt is the independent second
 parser (171 rows / 0 mismatched); bar-eval-s47.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 48 (JUN-59): the per-cell within-block robust-scale (MAD) repartition probe (analysis; all six probes PER-CELL-MAD-NOISE-CONSISTENT)
+
+Session 47's first-named candidate row -- "a PER-CELL MAD probe
+(the IQR's named blind spot)" -- taken on one observable axis:
+per (window, arm), does any ok cell's within-block robust scale
+(D = e_(38) about m = x_(38) of the block's 75 samples -- the
+frozen exact-median MAD) wander across the 12 blocks beyond the
+within-window run-repartition null? Max-T over the 18 cells (the
+max taken inside each trial), 20,000 trials per probe, frozen
+probe order, exact integer arithmetic; letters pre-registered at
+freeze stamp 2026-10-28T09:04:56Z before any statistic was
+computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-MAD-NOISE-CONSISTENT at the s39 window -- hi M_obs 46
+(max cell (sum,128,S=32)), count 4,374/20,001, p 0.218739; tw
+M_obs 39 (max cells (sum,128,S=32), (max,128,S=32), a tie),
+count 12,056, p 0.602820 -- and the pre-registered replications
+agree: s36 (a) (hi 41, p 0.757112; tw 39, p 0.720664), s38 (a)
+(hi 45, p 0.328384; tw 33, p 0.990800). All SIX probes read (a)
+-- the third consecutive probe family with no (b) anywhere: at
+these windows/powers no cell's within-block MAD wander exceeds
+run-exchangeable sampling noise, family-wise over the 18 cells.
+NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+ONE robust scale -- the MAD about the median -- while other
+quantile pairs, other deviation centers and spread/tail-weight
+changes keeping e_(38) about x_(38) fixed are invisible (the
+s47 IQR and s46 RANGE see DIFFERENT things; none of the three
+dominates; other robust scales stay named candidate rows); a
+robust-scale LEVEL shift uniform across blocks cancels in W_c
+(descriptive D1 only); the 108 marginal p values are UNCORRECTED
+and carry NO letter (three cells sit below 0.05 letterless --
+s39 hi (sum,128,S=32) p 0.035198, s39 tw (min,256,S=default) p
+0.049448, s36 hi (max,128,S=32) p 0.027699 -- within chance,
+nothing claimed); six probes / three windows are UNCORRECTED and
+LOW POWER (three windows in one day, one host; max-T at n=12
+blocks); this letter and sessions 40-47's are DIFFERENT
+statistics over the SAME runs (NOT independent evidence);
+threshold-artifact-vs-representation STAYS UNRESOLVED. Integrity
+(DERIVED): 3/3 windows clean, C1 (a) at the s39 window (c2 FLOOR;
+c8 32,829 vs 32,915, 0.26%), 6/6 block-min vectors reproduce
+EXACTLY, anchor row EXACT at all three windows. Rule 4 binds:
+nothing moves; accelerator-targets defaults remain provisional
+(`:measured? false`); no vendor optimization exists for Intel.
+The bar: NO reading -> NO ledger line (byte-identical to HEAD),
+VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen evaluator
+twice byte-identical; fixture pin 38/0; next executable day slot
+2026-10-29).
+
+The slice ran in two ticks (record.txt's sections 4/8 document
+the partial first tick; its section 9 the landing tick): the
+derivation census (independent second parser) landed on the
+second tick -- derivation-census-s48.txt, 231 rows / 0
+mismatched, run twice byte-identical -- and the gate artifacts
+were re-run fresh at landing, byte-identical to the pinned
+artifacts (gate-rerun-s48b.txt).
+
+Evidence: `docs/evidence/gpu/anv-b3percellmad-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s48.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s48.txt is the independent second
+parser (231 rows / 0 mismatched); bar-eval-s48.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
