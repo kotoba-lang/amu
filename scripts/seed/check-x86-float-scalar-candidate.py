@@ -6,6 +6,7 @@ This is a bounded diagnostic, not compiler adoption or full float qualification.
 
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import platform
@@ -30,6 +31,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--compiler", type=Path, required=True)
     p.add_argument("--compiler-sha256", required=True)
+    p.add_argument("--cross-receipt", type=Path, required=True)
+    p.add_argument("--cross-sha256", required=True)
     p.add_argument("--output", type=Path, required=True)
     a = p.parse_args()
     if platform.system() != "Linux" or platform.machine() != "x86_64":
@@ -38,6 +41,18 @@ def main():
     compiler = a.compiler.resolve(strict=True)
     if not compiler.is_file() or digest(compiler)["sha256"] != a.compiler_sha256:
         raise SystemExit("compiler pin mismatch")
+    cross_path = a.cross_receipt.resolve(strict=True)
+    cross_pin = digest(cross_path)
+    if cross_pin["sha256"] != a.cross_sha256:
+        raise SystemExit("cross receipt pin mismatch")
+    cross = json.loads(cross_path.read_text())
+    if (cross.get("status") != "MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED" or
+            cross.get("x86FullCompiler") != digest(compiler)):
+        raise SystemExit("unexpected candidate identity")
+    spec = importlib.util.spec_from_file_location("cross_native_gate", ROOT / "scripts/seed/check-macos-cross-linux-native.py")
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    gate.source_unity(ROOT / "seed/FULL-MANIFEST", cross["fullSource"])
     output = a.output.absolute()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     env = {"PATH": "/nonexistent", "KEXE_ALLOW": "35,37,38,39",
@@ -130,7 +145,10 @@ def main():
 
     if digest(compiler)["sha256"] != a.compiler_sha256:
         raise SystemExit("compiler changed during observation")
+    if digest(cross_path) != cross_pin:
+        raise SystemExit("cross receipt changed during observation")
     report = {"status": "PASS_X86_FLOAT_SCALAR_CANDIDATE", "compiler": digest(compiler),
+              "crossReceipt": cross_pin, "sourceUnity": cross["fullSource"]["unity"],
               "floatCorpus": digest(ROOT / "seed/float-cases.json"),
               "fixture": digest(FIXTURES / "native/x86_float_test.kotoba"),
               "observer": digest(Path(__file__)), "host": {"system": platform.system(),

@@ -22,6 +22,30 @@ concurrency:
   group: native-definition-build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  # Temporary diagnostic for the unadopted merged KOTOBA-161 candidate.
+  # Remove this branch-specific job before any mainline PR.
+  candidate-x86-float:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/kotoba161-merged-x86-observe-20261029'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Observe unadopted candidate scalar float on x86_64 Linux
+        run: >-
+          python3 scripts/seed/check-x86-float-scalar-candidate.py
+          --compiler "$PWD/diagnostics/kotoba161-merged/F-x86_64.elf"
+          --compiler-sha256 f36948f44c75f53e28d5c7527e22eb831cb4c188f9413ac69b30c442e7e2aadd
+          --cross-receipt "$PWD/diagnostics/kotoba161-merged/cross.json"
+          --cross-sha256 141c74b765561d79b72e201545f4947f4004b7598c9b4bda6cb1c0e162eb21d0
+          --output "$RUNNER_TEMP/x86-float-candidate"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: x86-float-candidate
+          path: ${{ runner.temp }}/x86-float-candidate/
+          if-no-files-found: warn
   objects:
     strategy:
       fail-fast: false
