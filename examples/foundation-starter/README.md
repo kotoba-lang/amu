@@ -8,11 +8,15 @@ run without network authority.
 
 **Starter engineering preview, not a public trial release.** The compiler
 descriptor still records empty native generations and false qualification
-flags. Earlier main CI run `40613036690` recorded F1=F2=F3 and public-product
-receipts for a previous compiler and source unity; those receipts do not qualify
-the current candidate. Current-image qualification and the descriptor flags
-need upstream reconciliation. This starter still needs its own native smoke,
-second host profile, release review and external-user evidence.
+flags. [Main CI run 40735782572](https://github.com/kotoba-lang/amu/actions/runs/40735782572)
+passed its native jobs for upstream revision `0459bdc8d167025375bb0ca0837447356940a2d2`;
+the observed x86 compiler and source-unity hashes match this candidate. The
+starter's x86 functional smoke also passed in the PR CI for revision
+`33e7f02b3888240429870b8a8833e2c6361113a2`. These are bounded engineering
+observations, not a change to the descriptor's qualification flags. The full
+PR workflow was still running when this note was written. Current-image
+qualification and descriptor flags need upstream reconciliation. A second
+host profile, release review and independent user evidence remain open.
 
 Public compiler host: **native Linux x86_64**. macOS, Windows, Linux ARM64,
 WSL, containers and emulation are not qualified by this starter. Do not run
@@ -117,8 +121,11 @@ describes the environment; choosing it does not qualify the host.
 
 Expected terminal status is `PASS_STARTER_FUNCTIONAL_SMOKE`.
 `publicReleaseReady` remains **false**, even if the functional smoke passes.
-The manifest retains the source revision, image and observer hashes, host
-profile, actual native results and the descriptor's qualification state.
+The manifest retains the reviewed upstream revision, the descriptor's
+reported source revision, image and observer hashes, host profile, actual
+native results and the descriptor's qualification state. The descriptor's
+reported source revision is historical metadata; the exact compiler source
+revision remains unknown even when the source-unity digest matches.
 It records **zero external users**; an author-run smoke is not a user cohort.
 
 ## Run and change a small program yourself
