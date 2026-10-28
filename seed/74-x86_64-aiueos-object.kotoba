@@ -53,22 +53,46 @@
 ;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
 ;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
 (def XK-INTR-N 6)
+(def XK-INTR-W 12)
 (def XK-WINDOW-N 4)
+;; ids 6..11 (JUN-556 B): u8, u16 and u64 loads and stores at the 512-byte tier. Object and
+;; image routes only: the locked-project route keeps the four memory stubs and the ports.
+;; The six extra stubs are appended ONLY to a source that names one of them: every stub is a
+;; function, so appending them to all sources would change the bytes of every object the route
+;; emits (and so of every pinned aiueos object when it is rebuilt). A source that does not use
+;; them compiles to the bytes it always had.
+(def XK-WIDTH-FIRST 6)
 (def XU-LOCAL-CALL-FLAG 211)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
-          4 "kernel-out-u8" 5 "kernel-out-u32" ""))
+          4 "kernel-out-u8" 5 "kernel-out-u32"
+          6 "kernel-load-u8" 7 "kernel-store-u8" 8 "kernel-load-u16" 9 "kernel-store-u16"
+          10 "kernel-load-u64" 11 "kernel-store-u64" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
   (string-concat (xk-memory-lib)
     "\n(defn- kernel-out-u8 [p :i64 v :i64] :i64 v)\n(defn- kernel-out-u32 [p :i64 v :i64] :i64 v)\n"))
+(defn- xk-width-lib [] :string
+  (string-concat "(defn- kernel-load-u8 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u8 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-load-u16 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u16 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+      "(defn- kernel-load-u64 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u64 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n")))
+;; true when the guest source S names one of the six width accesses
+(defn- xk-uses-widths? [S :string] :bool
+  (or (or (>= (string-index-of S "kernel-load-u8") 0) (>= (string-index-of S "kernel-store-u8") 0))
+      (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
+          (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
+(defn- xk-lib-for [S :string] :string
+  (if (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib)) (xk-lib)))
+;; true when the compiled text carries the width block: its first stub is defined there
+(defn- xk-has-width-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-N))) k -1)))
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k -1)))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
@@ -114,6 +138,40 @@
     ;; the port to DX and leaves the original value in RAX, as the owner ABI.
     4 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xee) (xg-save t))
     5 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xef) (xg-save t))
+;; kernel-load-u8: byte at 512, the reference emit-kernel-load-u8 of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; movzx eax,byte [rdx+rax]; jmp +2; ud2
+    6 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x18870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0xf840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x6830f 6) (xg-bytes 0x204b60f 4) (xg-bytes 0x2eb 2)
+          (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u8: byte at 512, the reference emit-kernel-store-u8 of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov [rdx+rdi],al; jmp +2; ud2
+    7 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x17870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0xe840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x5830f 6) (xg-bytes 0x3a0488 3)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-load-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,2; jl; test rax,1; ja; movzx eax,word [rdx+rax]; jmp +2; ud2
+    8 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
+          (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x204b70f 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,2; jl; test rdi,1; ja; mov [rdx+rdi],ax; jmp +2; ud2
+    9 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
+          (xg-bytes 0xfe2948 3) (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048966 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-load-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,8; jl; test rax,7; ja; mov rax,[rdx+rax]; jmp +2; ud2
+    10 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
+          (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x2048b48 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,8; jl; test rdi,7; ja; mov [rdx+rdi],rax; jmp +2; ud2
+    11 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
+          (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
     (xg-err M 7101 OP-CALL)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
@@ -128,7 +186,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S XK-INTR-N false))
+  (xk-scan-count M S (if (xk-has-width-block? S) XK-INTR-W XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -360,7 +418,7 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (< (xk-intr M a) XK-WINDOW-N)
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (>= (xk-intr M a) XK-WIDTH-FIRST))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
@@ -503,7 +561,7 @@
                       (xo-elf (xg-fix generated 1) S NS cnt (xo-shim-len fuel) fuel)))))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)]
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
 ;; JUN-31: the image packaging step, in the same adopted compiler lineage.
@@ -589,7 +647,7 @@
                     (xg-err generated 7104 data)
                     (xi-elf (xi-patch-shim (xg-fix generated 1) data XI-DATA-SIZE) data fuel 0 false))))))
 (defn- xi-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)
         image (if (= (vector-at front MM-ERR) 0) (xi-build front text fuel) front)
         e (vector-at image MM-ERR)]
     (cond (> e 0) (xo-report image path out)
