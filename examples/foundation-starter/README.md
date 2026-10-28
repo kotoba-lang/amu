@@ -8,11 +8,10 @@ run without network authority.
 
 **Starter engineering preview, not a public trial release.** The compiler
 descriptor still records empty native generations and false qualification
-flags. Separately, main CI run `40613036690` contains successful native
-F1=F2=F3 and public-product receipts with exactly the same compiler bytes and
-source-unity digest. `candidate.json` pins those evidence identities. This
-descriptor/evidence mismatch needs upstream reconciliation; it must not be
-silently relabelled. This new starter still needs its own native smoke,
+flags. Earlier main CI run `40613036690` recorded F1=F2=F3 and public-product
+receipts for a previous compiler and source unity; those receipts do not qualify
+the current candidate. Current-image qualification and the descriptor flags
+need upstream reconciliation. This starter still needs its own native smoke,
 second host profile, release review and external-user evidence.
 
 Public compiler host: **native Linux x86_64**. macOS, Windows, Linux ARM64,
