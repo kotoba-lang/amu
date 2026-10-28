@@ -103,14 +103,12 @@ The observer also checks the current complete compiler source-unity digest.
 Choose an absolute, **new** output directory in your task workspace:
 
 ```sh
-python3 scripts/seed/native_build_queue.py -- \
-  python3 scripts/seed/check-foundation-starter.py \
+python3 scripts/seed/check-foundation-starter.py \
   --output /absolute/task-workspace/starter-observation \
   --host-profile linux-x86-64-your-os-version
 ```
 
-The existing shared native-build queue admits at most two cooperating
-builds. It does not stop other jobs. Each child compiler or guest gets
+The observer runs its compiler and guest calls sequentially. Each child gets
 `PATH=/nonexistent`; the observer launches `bin/amu` directly and never
 selects another compiler. Outputs include staged source locks, generated
 ELFs, stdout/stderr logs and `starter-observation.json`. Existing output
