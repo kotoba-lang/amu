@@ -1838,3 +1838,71 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s42.txt is the independent second parser
 (40 rows / 0 mismatched); bar-eval-s42.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 43 (JUN-59): the cross-window body-level repartition probe (analysis; BODY-LEVEL-CONSISTENT)
+
+Session 42's first-named candidate row ("a BODY-level probe of the
+same three windows (per-cell pooled-median level, not the min-tail
+-- body shifts are invisible to the block-min constructions by
+this probe's own named-not-hidden)") is taken on ONE observable
+axis: per arm, does the cross-window BODY LEVEL spread,
+S_obs = max_w L_w - min_w L_w over the three probed windows (s36,
+s38, s39), where L_w = median of the 12 block-body values of
+window w (block-body = median over the 18 ok cells of the block's
+per-cell pooled medians -- the min-tail summary replaced by the
+body; every upstream unit s35/s36-frozen and UNCHANGED), exceed
+the cross-window run-repartition null (the 108 runs of one arm
+across the three windows are exchangeable)? The half-tick
+(2*B = 9th + 10th order statistics) and quarter-tick (4*L = 6th +
+7th order statistics of the doubled block-bodies) constructions
+are computed in integer units, so every comparison is exact.
+ANALYSIS slice -- NO new hardware; DERIVED from the 234 committed
+run logs of the s36/s38/s39 windows (78 each). Resampling: 20,000
+trials, random.Random(20261028) consumed in the frozen probe order
+(hi then tw), per trial one shuffle of the 108 run ids split into
+three pseudo-windows of 36 and 12 blocks of 3 in draw order,
+p = (1 + count(S* >= S_obs)) / (1 + 20,000), one-sided; letters
+pre-registered (protocol freeze stamp 2026-10-28T06:07:08Z, BEFORE
+any statistic was computed): per arm (a) BODY-LEVEL-CONSISTENT /
+(b) EXCEEDS NULL (named which) / (c) NOT EVALUABLE. THE FINDING
+(DERIVED FROM MEASURED DATA): T1 = (a) BODY-LEVEL-CONSISTENT --
+neither arm's S exceeds the null (hi L 1138.25/1139.50/1137.25,
+S_obs 2.25, p 0.683016; tw L 1138.50/1137.25/1136.00, S_obs 2.50,
+p 0.610119; both > 0.05 at the frozen threshold). The BODY level
+needs no window-level effect to occur. NAMED, NOT HIDDEN: (a) does
+NOT prove "no physical window-level driver" -- a driver acting
+uniformly within AND across windows is invisible by construction;
+AND the BODY statistic is the MEDIAN OVER 18 HETEROGENEOUS CELLS
+(different ops/workgroups span 986..1,438 ticks even within one
+block) -- a window-level shift that moves only SOME cells' levels
+can cancel in the median over cells and is invisible to this
+construction (named limitation; a per-cell shift probe is a named
+candidate row); the body level (~1,136..1,140 ticks) sits ABOVE
+the frozen 1,000-tick class boundary while the min-tail sits AT
+it; this letter and sessions 40/41/42's letters are DIFFERENT
+nulls over the SAME runs (NOT independent evidence); three windows
+in ONE day on ONE host is LOW POWER (a null is not stationarity);
+20,000 trials (cost, named in the freeze; p resolution 1/20,001);
+L2 observational, NO causal mechanism, direction UNMEASURED; the
+wander's MECHANISM STAYS UNRESOLVED and threshold-artifact-vs-
+representation STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows
+clean (VERIFY mismatch 0, counts, knobs, S=8 fail-closed, cell
+map), C1 (a) at the s39 window (c2 FLOOR; c8 32,829 vs 32,915,
+0.26%), 6/6 block-min vectors reproduce the published values
+EXACTLY, and the NEW pre-registered anchor reproduction row is
+EXACT at all three windows (hi block A's (sum,128,S=16) pooled
+median and 18-cell min..max vs the quote-only anchor priors: s36
+1,142 / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 /
+986..1,432). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and
+no vendor optimization exists for Intel. The bar: NO reading -> NO
+ledger line (byte-identical to HEAD), VERDICT UNCHANGED PENDING
+1/4 with s31 counted (frozen evaluator twice byte-identical;
+fixture pin 38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3bodylevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s43.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s43.txt is the independent second parser
+(49 rows / 0 mismatched); bar-eval-s43.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).

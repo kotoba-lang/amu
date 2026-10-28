@@ -1,0 +1,188 @@
+JUN-59 -- session 43 protocol: THE CROSS-WINDOW BODY-LEVEL
+REPARTITION PROBE (does the window-to-window variation of the
+BODY level -- the median over the 18 ok cells of the block's
+per-cell pooled-median gpu_ticks -- exceed run-exchangeable
+sampling noise?).
+ANALYSIS slice -- NO new hardware (every input quantity was
+MEASURED in sessions 36/38/39; this session re-derives statistics
+from their COMMITTED run logs). Frozen BEFORE the first statistic
+of this probe was computed (freeze stamp 2026-10-28T06:07:08Z,
+this tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE row): SESSION 42'S FIRST-NAMED CANDIDATE ROW
+   "a BODY-level probe of the same three windows (per-cell
+   pooled-median level, not the min-tail -- body shifts are
+   invisible to the block-min constructions by this probe's own
+   named-not-hidden)" -- taken on ONE observable axis: per arm,
+   does the cross-window BODY LEVEL spread,
+   S_obs = max_w L_w - min_w L_w over the three probed windows
+   (s36, s38, s39), where L_w = median of the 12 block-body
+   values of window w, EXCEED the cross-window run-repartition
+   null? The block construction is the s35/s36-frozen one
+   UNCHANGED (block = 3 consecutive runs of one arm within one
+   window; per-cell pooled median = the pooled median gpu_ticks
+   of the block's 75 samples per ok cell = the exact 38th order
+   statistic); the CELL SUMMARY is the BODY, not the min-tail:
+   block-body = median over the 18 ok cells of the block's
+   per-cell pooled medians (session 42's block-min was the MIN
+   over the same 18 values -- this probe replaces ONLY that one
+   summary statistic; every upstream unit is unchanged).
+
+   THE NULL (frozen): RUN-EXCHANGEABILITY ACROSS WINDOWS -- the
+   108 runs of one arm across the three windows (36 per window)
+   are exchangeable; under the null ALL within-run, fresh-process
+   run-to-run AND window-to-window variation is sampling noise at
+   the fresh-process granularity. Resampling (frozen): per trial,
+   shuffle the 108 run ids (one random.Random(20261028), consumed
+   in the frozen probe order hi then tw), split into three groups
+   of 36 in draw order (pseudo-windows), each group into 12 blocks
+   of 3 in draw order; compute each pseudo-block's block-body; L*
+   per group = median of its 12 block-bodies; S* = max - min over
+   the three groups; p = (1 + count(S* >= S_obs)) / (1 + 20,000),
+   one-sided. TRIALS = 20,000 (NOT the s35-frozen 100,000 -- cost,
+   same named deviation as sessions 40/41/42; p resolution
+   1/20,001 ~= 5e-5).
+
+   EXACTNESS (frozen): the per-cell pooled median of 75 integer
+   samples is the exact 38th order statistic (an integer); the
+   median of 18 values is (9th + 10th order statistic) / 2 -- a
+   half-tick rational (2*B = 9th + 10th sum, integer); the median
+   of 12 block-bodies is (6th + 7th) / 2 of the half-ticks -- a
+   quarter-tick rational (4*L = 6th + 7th sum of the doubled
+   block-bodies, integer); BOTH the analysis and the census work
+   in QUARTER-TICK INTEGER units so every S* >= S_obs comparison
+   is exact integer arithmetic; publications report B, L and S in
+   ticks with two decimals (.00/.25/.50/.75). IMPLEMENTATION PATHS
+   (frozen): analysis-s43.py uses numpy 2.5.4 (np.median -- exact
+   at the 38th order statistic; np.sort for the 9th+10th and
+   6th+7th sums); derivation-census-s43.txt uses sorted() +
+   explicit order statistics and a 3-way merge selection for the
+   pooled 75 (a different exact path); both report identical
+   values; deterministic -- running each script twice yields
+   byte-identical output.
+
+   T1 LETTERS (pre-registered NOW, before any statistic of this
+   probe was computed):
+     per arm: (a) BODY-LEVEL-CONSISTENT (p > 0.05) / (b) EXCEEDS
+              NULL (p <= 0.05) / (c) NOT EVALUABLE;
+     joint T1 (the row answer): (a) BODY-LEVEL-CONSISTENT = both
+              arms read (a); (b) EXCEEDS NULL = at least one arm
+              reads (b) (named which); (c) NOT EVALUABLE on any
+              invalidation of protocol section 3.
+
+   NAMED, NOT HIDDEN (frozen): (a) does NOT prove "no physical
+   window-level driver" -- the null is run-exchangeability ACROSS
+   WINDOWS and a physical driver acting UNIFORMLY within AND
+   across windows is invisible to this design by construction;
+   AND the BODY statistic is the MEDIAN OVER 18 HETEROGENEOUS
+   CELLS (different ops/workgroups span 986..1,438 ticks even
+   within one block) -- a window-level shift that moves only SOME
+   cells' levels (per-cell structure) can cancel in the median
+   over cells and is invisible to this construction (NAMED
+   LIMITATION of the row question; D1 records the per-run-unit
+   analog descriptively only; a per-cell shift probe is a named
+   candidate row); the body level sits ABOVE the frozen 1,000-tick
+   class boundary while the min-tail sits AT it -- the
+   threshold-artifact-vs-representation ambiguity binds this probe
+   less directly than the block-min probes but STAYS UNRESOLVED;
+   (b) would implicate window-timescale structure in the BODY
+   LEVEL but NOT name it (thermal/scheduling/memory/driver state
+   all UNMEASURED); exchangeability ACROSS windows is a STRONGER
+   assumption than session 40's within-window exchangeability and
+   is itself an assumption; three windows ~30-60 min apart in ONE
+   day on ONE host is LOW POWER (a null at three windows is not
+   evidence of stationarity); this letter and sessions 40/41/42's
+   letters are DIFFERENT nulls over the SAME runs -- none confirms
+   nor overturns another, and the probes share the same 234 logs
+   and the same resampling skeleton (NOT independent evidence);
+   20,000 trials; L2 observational ONLY, NO causal mechanism,
+   direction UNMEASURED; threshold-artifact-vs-representation
+   STAYS UNRESOLVED under any letter.
+
+1. INPUTS (frozen): the 234 committed run logs of the three fixed
+   evidence directories -- anv-b3commonmode-20261028 (the s36
+   window, run window 2026-10-28T02:40:49Z), anv-b3joint3-20261028
+   (the s38 window, 03:39:14Z), anv-b3joint4-20261028 (the s39
+   window, 04:09:48Z) -- 78 per window (c2 3 + hi 36 + tw 36 + c8
+   3). Only the hi and tw arms enter the probe (36 runs each per
+   window, 108 per arm). The s34 window is EXCLUDED (hi-only
+   design; named -- the probe needs the same three windows for both
+   arms). Every input quantity was MEASURED on aiueos-6600hs Intel
+   BMG G31 ANV in sessions 36/38/39.
+   QUOTE-ONLY PRIOR EXPOSURE (named; the freeze guards
+   letter-shopping, not prior exposure): (i) hi block A's
+   (sum,128,S=16) cell pooled medians are published content of the
+   anchor readings (s36 1,142 / s38 1,132 / s39 1,146 -- the
+   settle-bar ledger "median" fields and publication-s36/s38/s39
+   section D) and its 18-cell min..max ranges are published there
+   too (s36 991..1,438 / s38 992..1,443 / s39 986..1,432); (ii)
+   the six block-min vectors, the six block-min LEVEL values (M),
+   the D1 per-run minima and the D3 block-min means are published
+   content of publication-s39.txt section 3 and
+   publication-s40/41/42.txt. NO committed file computed any
+   block-body (median over 18 per-cell pooled medians) value, any
+   BODY LEVEL L, any BODY SPREAD S, or any body-level resampling
+   of these runs before this freeze.
+
+2. THE RESAMPLING (frozen; section 0's construction UNCHANGED):
+   one random.Random(20261028) consumed in the frozen probe order
+   (hi first, tw second); per probe 20,000 trials, each trial one
+   rng.shuffle of a fresh list(range(108)); p as section 0;
+   quarter-tick integer exactness as section 0.
+
+3. INVALIDATION / EVALUABILITY (protocol section 3 of session
+   40/41/42, UNCHANGED, plus one pre-registered reproduction row):
+   per-window integrity over the committed logs -- VERIFY mismatch
+   total 0; 450 SAMPLE + 24 VERIFY per run; every SAMPLE's knob
+   fields == its arm table (c2 2/1/1, hi 3/1024/4033, tw
+   3/2048/8066, c8 8/1/1); S=8 fail-closed cells (6 per run)
+   pipeline FAIL + void 1; cell map identical across all 234 logs;
+   the six block-min vectors reproduce the publication-s39.txt
+   section 3 published/quote-only vectors EXACTLY (6/6); C1
+   re-derived at the s39 window: c2 FLOOR (all 18 pooled medians
+   <= 100), c8 (sum,128,S=16) pooled median within +/-5% of the
+   committed 32,915; NEW reproduction row: hi block A's
+   (sum,128,S=16) pooled median and 18-cell min..max reproduce the
+   quote-only anchor priors EXACTLY at all three windows (s36
+   1,142 / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 /
+   986..1,432). Any violation => letter (c).
+
+4. SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of
+   it is the row question):
+   (D1) per-run-unit body analog (36 points per (window, arm);
+        median over 18 per-cell medians of 25 -- NAMED DIFFERENT
+        UNIT L10, no letter): median and range of the 36 per-run
+        body values;
+   (D2) the six L values and the two S values (the scoreboard;
+        descriptive cross-window comparison -- three windows are
+        not a rate, variance or distribution);
+   (D3) per-window MEAN of the 12 block-bodies per arm (a second
+        level summary; descriptive only, no letter);
+   (D4) the anchor-cell level scoreboard: per (window, arm) the
+        (sum,128,S=16) pooled median of block A and its 18-cell
+        min..max (the reproduction row's values, quoted;
+        descriptive for the tw arm, which has no quote-only prior).
+
+5. THE BAR: NO hardware -> NO reading -> NO settle-bar-ledger line,
+   NO day-slot consumption (settle-bar-ledger.txt byte-identical to
+   HEAD); the frozen evaluator (settle-bar-eval.py) is the only
+   source of the bar letter (B2): --self-test fixture pin 38/0 and
+   ledger eval twice byte-identical. Next executable day slot
+   2026-10-29.
+
+6. ROUTE (frozen): analysis-s43.py parses ONLY the committed run
+   logs of the three fixed evidence directories and writes
+   publication-s43.txt in its own directory (run twice, diff exit
+   0); derivation-census-s43.txt is an independent second parser
+   (split-based parsing without regex; the per-cell pooled median
+   via 3-way merge selection over the sorted per-run 25-lists; the
+   half/quarter-tick medians via sorted() explicit order
+   statistics; the cross-window repartition resampling and the RNG
+   call order re-implemented) run twice byte-identical; gates:
+   gpu_regime_classify.py --self-test, the scoped GPU gate twice
+   (scratch runner, created/run/deleted, never committed), FULL
+   run-tests.cljk run live; find docs/evidence/gpu -name '*.sh' ->
+   0 (no POSIX shell execution files, ever). ZERO derivation edits;
+   ZERO new knob pairs; the instrument and corpus are the committed
+   bytes of sessions 28-39 (byte-copy checked in the windows' own
+   sessions).
