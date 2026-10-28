@@ -20,6 +20,51 @@ fallback. Python 3 is used only by the optional observation harness for
 staging, hashes and native-process output; it does not compile or evaluate
 Kotoba.
 
+## Obtain and verify the candidate
+
+The Amu repository is available under the [Apache License 2.0](../../LICENSE).
+This is an engineering-preview procedure, not a release download. On a native
+Linux x86_64 machine with Git and Python 3, first identify the full 40-character
+commit you have reviewed on [the starter draft PR](https://github.com/kotoba-lang/amu/pull/1640).
+Put that exact commit in `REVIEWED_REVISION` below; do not substitute a moving
+branch name. In a dedicated shell, run these commands in a new directory of
+your choice. `set -e` stops that shell if acquisition or any check fails:
+
+```sh
+set -e
+git clone --filter=blob:none --depth 1 --no-checkout https://github.com/kotoba-lang/amu.git amu-starter
+cd amu-starter
+git fetch --filter=blob:none --depth 1 origin pull/1640/head
+REVIEWED_REVISION=replace-with-reviewed-40-character-commit
+test "$(git rev-parse FETCH_HEAD)" = "$REVIEWED_REVISION"
+git sparse-checkout set --cone bin seed scripts examples
+git checkout --detach "$REVIEWED_REVISION"
+test "$(git rev-parse HEAD)" = "$REVIEWED_REVISION"
+python3 - <<'PY'
+import hashlib, json
+from pathlib import Path
+
+candidate = json.loads(Path('examples/foundation-starter/candidate.json').read_text())
+files = {'bin/amu': candidate['compilerImage']}
+files.update({f'examples/foundation-starter/{name}': spec
+              for name, spec in candidate['fixtures'].items()})
+for name, spec in files.items():
+    data = Path(name).read_bytes()
+    if len(data) != spec['bytes'] or hashlib.sha256(data).hexdigest() != spec['sha256']:
+        raise SystemExit(f'mismatch: {name}')
+    print(f'verified: {name}')
+PY
+```
+
+The fetched PR head must still match the commit you reviewed. If it changed,
+stop and review the new head before trying again. The pin manifest is part
+of the reviewed commit; matching it checks the local bytes, not the
+trustworthiness of an unreviewed commit. Stop on a mismatch.
+The observation packet below also checks compiler source unity. Partial clone
+may download omitted files later; keep network access available for those
+operations. Public release availability and independently qualified host
+profiles remain separate gates.
+
 ## What you will run
 
 | Source | Operation | Expected observation |
@@ -126,5 +171,6 @@ Report the release/commit, non-identifying OS/CPU profile, step, diagnostic
 and expected/actual result. Review logs before sharing them; do not attach
 private code, environment variables or credentials. No telemetry is sent.
 
-See [the five-minute technical walkthrough](DEMO.md) and
-[native product scope](../../docs/native-public-entry.md).
+See [the five-minute technical walkthrough](DEMO.md). To read the native
+product scope from this same reviewed commit, run
+`git show HEAD:docs/native-public-entry.md` (which may fetch that file).
