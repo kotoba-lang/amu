@@ -2266,3 +2266,73 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s49.txt is the independent second
 parser (59 rows / 0 mismatched); bar-eval-s49.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 50 (JUN-59): the per-cell robust-scale (IQR) LEVEL cross-window repartition probe (analysis; T1 (a) PER-CELL-IQR-LEVEL-CONSISTENT on both arms)
+
+Session 49's first-named candidate row -- "an IQR-level
+cross-window probe (the other robust scale's LEVEL axis)" -- taken
+on one observable axis: per arm, does any ok cell's cross-window
+robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+over the three windows (s36/s38/s39) exceed the cross-window
+run-repartition null (the 108 runs of one arm across the three
+windows exchangeable)? L_{w,c} = median of the 12 block D values
+of window w (D = x_(57) - x_(19) of the block's 75 samples -- the
+s47-frozen exclusive-hinge IQR; the s35/s36-frozen 3-run block
+unit unchanged), max-T over the 18 cells (the max taken inside
+each trial), 20,000 trials per arm, frozen RNG call order (hi
+then tw), exact integer arithmetic (2*L in half-tick units);
+letters pre-registered at freeze stamp 2026-10-28T11:02:52Z
+before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-IQR-LEVEL-CONSISTENT -- both arms read (a): hi M_obs
+35.5 ticks (max cell (min,256,S=16)), count 1,677/20,001, p
+0.083896; tw M_obs 34.0 ticks (max cell (max,128,S=default)),
+count 12,239/20,001, p 0.611969 (both p > 0.05 at the frozen
+threshold). NAMED, NOT HIDDEN: at these windows/powers NO ok
+cell's cross-window IQR-level spread exceeds run-exchangeable
+sampling noise family-wise over the 18 cells -- but this (a) does
+NOT overturn session 49's MAD-level (b): the two axes are
+DIFFERENT robust scales with DIFFERENT null geometries over the
+SAME runs (tw's (max,128,S=default) cell shows IQR-level L 151.5
+/ 120.5 / 117.5 across s36/s38/s39, spread 34.0 -- larger in
+absolute ticks than its s49 MAD-level spread 16.0 -- while the
+IQR-level max-T null is far wider than the MAD-level one; the
+observed shifts agree in direction, the nulls disagree); the
+per-cell MARGINAL p values are UNCORRECTED (2 marginal cells
+below 0.05 across the two arms, letterless: tw (max,128,S=default)
+p 0.000300, hi (min,256,S=16) p 0.009100 -- hi's max cell is the
+same (min,256,S=16) cell that topped s49's hi arm, p 0.083896 at
+the arm level is the closest an arm has come to the threshold on
+the level axes, descriptive only); this letter and sessions
+40-49's are DIFFERENT nulls over the SAME runs (NOT independent
+evidence); the cross-window null assumes exchangeability ACROSS
+WINDOWS, a STRONGER assumption than within-window exchangeability;
+three windows ~30-60 min apart in one day, one host is LOW POWER;
+20,000 trials (not the s35-frozen 100,000 -- cost, same named
+deviation as sessions 40-49); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all three
+windows. Rule 4 binds: nothing moves; accelerator-targets defaults
+remain provisional (`:measured? false`); no vendor optimization
+exists for Intel. The bar: NO reading -> NO ledger line
+(byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31
+counted (frozen evaluator twice byte-identical; fixture pin 38/0;
+next executable day slot 2026-10-29).
+
+The slice landed in one tick: the derivation census (independent
+second parser) -- derivation-census-s50.txt, 55 rows / 0
+mismatched, run twice byte-identical -- and all three gate
+families ran fresh at the landing tick, byte-identical to the
+pinned artifacts (classify 2649/0; scoped GPU gate GREEN
+123/12162/0/0 twice; full run-tests.cljk exit 1 RED AT BASE
+kotoba.form, named).
+
+Evidence: `docs/evidence/gpu/anv-b3percelliqrlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s50.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s50.txt is the independent second
+parser (55 rows / 0 mismatched); bar-eval-s50.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
