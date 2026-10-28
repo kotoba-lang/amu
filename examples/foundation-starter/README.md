@@ -243,3 +243,5 @@ Maintainers can pass `--experimental-arm64` to the observer on Linux ARM64 to
 exercise the pinned ARM bootstrap root. This is a diagnostic observation, not
 a supported public compiler profile or third-party qualification. Its receipt
 identifies the experimental mode and keeps `publicReleaseReady` false.
+The [ARM64 diagnostic preview](ARM64-PREVIEW.md) documents acquisition checks
+and direct first-run commands for review.
