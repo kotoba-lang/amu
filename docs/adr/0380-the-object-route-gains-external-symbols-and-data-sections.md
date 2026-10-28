@@ -50,47 +50,38 @@ mechanism with one more family.
   extern that takes a pointer must say so in its declaration parameters
   (`ptr`/`len` suffix names, as the windows do).
 
-### D1 call sequence (decided 2026-10-29; reading seed/74 for JUN-556)
+### D1 call sequence (decided 2026-10-29, corrected the same day after reading seed/70)
 
-An extern call has two hazards the stub mechanism does not have: the context
-register r9 is caller-saved in System V, and the stack alignment at a call site
-inside an export depends on the frame size. Decision: a fixed 34-byte wrapper
-around every extern call, with the arguments already in rdi, rsi, rdx, rcx, r8:
+The first version of this section proposed a 34-byte wrapper that aligned rsp and
+stashed r9. Reading the shared emitter (`seed/70-x86_64-linux.kotoba`) shows that
+was more than the code needs; the code, not the earlier text, is the authority:
 
-    mov  r11, rsp          ; the unaligned rsp, kept in a caller-saved scratch
-    and  rsp, -16
-    sub  rsp, 16
-    mov  [rsp], r11        ; the unaligned rsp
-    mov  [rsp+8], r9       ; the context register
-    call <symbol>          ; E8 rel32, R_X86_64_PLT32 -4
-    mov  r9, [rsp+8]
-    mov  rsp, [rsp]        ; rax (the result) is untouched
+* **Alignment is already guaranteed.** The shim does `sub rsp,8; call entry`, the
+  prologue is `push rbp; mov rbp,rsp; sub rsp,frame`, and `xg-frame` rounds the
+  frame to a multiple of 16. rsp is 16-byte aligned at every call site in a body.
+* **r9 is the one real hazard.** The fuel charge (`xg-fuel`) reads the context as
+  `mov rax,[r9+8]`, and System V lets a callee destroy r9. But the prologue
+  already stores r9 at `[rbp-8]` (`4c 89 4d f8`), so restoring it costs one load.
 
-No callee-saved register is claimed, so the register allocation of the route is
-unchanged; the wrapper is the same bytes at every call site, which keeps the
-verifier's rule "exactly this sequence before each PLT32 call" checkable. r9 is
-then intact after every call, which is also the answer to the E-side r9
-conflict for calls: only the seventh and later argument words still need a
-decision (E1/E2/E3), because they go on the stack above this block.
+So an extern call is the arguments loaded as for a local call (`xg-call-args`:
+rdi, rsi, rdx, rcx, r8), then
 
-Rejected: restoring r9 with a second `lea r9,[rip+ctx]` and PC32 after each call
-(one more relocation per call site, and the symbol table grows with the call
-count); aligning every frame to 16 (it changes the bytes of every pinned object).
+    call <symbol>        ; e8 00 00 00 00, R_X86_64_PLT32, addend -4
+    mov  r9, [rbp-8]     ; 4c 8b 4d f8
 
-Independent check (2026-10-29, Apple clang 21 integrated assembler,
-`clang -target x86_64-unknown-linux-gnu -c`, Intel syntax, `ext` undefined): the
-wrapper is **34 bytes** (an earlier draft of this ADR said 21; that was wrong),
+and the result is saved as any call result is. Assembled independently (Apple
+clang 21, `-target x86_64-unknown-linux-gnu`, Intel syntax, `ext` undefined):
+9 bytes `e8 00 00 00 00 4c 8b 4d f8`, one relocation, type 4 (PLT32), addend -4,
+at offset 1. Nothing executed it; the `native-cross` CI job must run an object
+that calls through it before D1 is claimed.
 
-    49 89 e3 | 48 83 e4 f0 | 48 83 ec 10 | 4c 89 1c 24 | 4c 89 4c 24 08 |
-    e8 00 00 00 00 | 4c 8b 4c 24 08 | 48 8b 24 24
+An extern takes at most **five** arguments. The route's own convention passes the
+sixth and later on the stack from `[rsp]`, while System V puts the sixth in r9;
+the two differ, so an extern with six or more would be called wrongly. This is a
+limit of D1, separate from JUN-556 E.
 
-with one relocation, `R_X86_64_PLT32` (type 4), addend -4, at wrapper offset 21.
-At the `call` rsp is 16-byte aligned, so the callee sees the ABI's rsp%16 == 8;
-on return rsp is back at the block, which is what the two restores read. This
-shows the encodings and the relocation only: no x86 machine ran the sequence, so
-the stack discipline is argued, not executed. The gate that the seed change must
-add assembles the same listing and compares bytes, and an x86_64 Linux CI job
-(`native-cross`) must run an object that calls through it.
+Rejected: aligning rsp at each call (unneeded); a second `lea r9,[rip+ctx]` with a
+PC32 relocation after each call (one more relocation per call site).
 
 ### D2 -- `.rodata`
 
