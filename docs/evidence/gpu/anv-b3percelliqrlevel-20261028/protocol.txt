@@ -1,0 +1,231 @@
+JUN-59 -- session 50 protocol: THE PER-CELL ROBUST-SCALE (IQR)
+LEVEL CROSS-WINDOW REPARTITION PROBE (does ANY of the 18 ok cells
+show a window-to-window shift of its per-cell ROBUST-SCALE LEVEL
+-- the cell's own within-block IQR, taken cell by cell and block
+by block -- that exceeds run-exchangeable sampling noise?).
+ANALYSIS slice -- NO new hardware (every input quantity was
+MEASURED in sessions 36/38/39; this session re-derives statistics
+from their COMMITTED run logs). Frozen BEFORE the first statistic
+of this probe was computed (freeze stamp 2026-10-28T11:02:52Z,
+this tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE row): SESSION 49'S FIRST-NAMED CANDIDATE ROW
+   "an IQR-level cross-window probe (the other robust scale's
+   LEVEL axis)" -- taken on ONE observable axis: per arm, does ANY
+   ok cell's cross-window robust-scale LEVEL spread exceed the
+   cross-window run-repartition null? The per-cell construction is
+   the s35/s36-frozen one with ONLY the cell summary replaced
+   (s49's per-cell LEVEL probe held each cell's within-block MAD
+   level -- the s48-frozen exact-median MAD; this probe holds each
+   cell's within-block IQR level -- the s47-frozen exclusive-hinge
+   IQR): block = 3 consecutive runs of one arm within one window
+   (the s35/s36-frozen block unit, 12 blocks per (window, arm));
+   per-cell within-block robust scale of a block D_{b,c} = IQR of
+   the block's 75 gpu_ticks samples for that ok cell (the 3 runs x
+   25 rounds pooled; sorted ascending x_(1)..x_(75); the TUKEY
+   HINGES WITH THE MEDIAN EXCLUDED -- the lower half x_(1)..x_(37),
+   the upper half x_(39)..x_(75), so Q1 = x_(19) and Q3 = x_(57)
+   -- D = Q3 - Q1 = x_(57) - x_(19), an exact INTEGER; the
+   s47-frozen exclusive definition UNCHANGED); per-cell
+   robust-scale window level L_{w,c} = median of the 12 block D
+   values of window w for cell c; per-cell cross-window spread
+   S_c = max_w L_{w,c} - min_w L_{w,c} over the three probed
+   windows (s36, s38, s39).
+
+   THE PRIMARY PER-ARM STATISTIC (frozen): the MAX-T over the
+   18 cells, M_obs = max_c 2*S_c (half-tick integer units) -- the
+   max over cells is taken INSIDE each resampling trial too
+   (M* = max_c 2*S*_c), so the reported p is family-wise
+   controlled over the 18 cells under the null (no multiplicity
+   correction is applied to the max-T itself; the per-cell
+   MARGINAL p values are descriptive only -- section 4).
+
+   THE NULL (frozen): RUN-EXCHANGEABILITY ACROSS WINDOWS -- the
+   108 runs of one arm across the three windows (36 per window)
+   are exchangeable; under the null ALL within-run, fresh-process
+   run-to-run AND window-to-window variation is sampling noise at
+   the fresh-process granularity. Resampling (frozen): per trial,
+   shuffle the 108 run ids (one random.Random(20261028), consumed
+   in the frozen probe order hi then tw), split into three groups
+   of 36 in draw order (pseudo-windows), each group into 12 blocks
+   of 3 in draw order; compute each pseudo-block's per-cell robust
+   scale D (all 18 cells, the s47-frozen IQR x_(57) - x_(19) of
+   the pooled 75); 2*L* per (pseudo-window, cell) = sum of the 6th
+   and 7th order statistics of the 12 block D values; 2*S*_c =
+   max_w 2*L*_{w,c} - min_w 2*L*_{w,c}; M* = max_c 2*S*_c;
+   p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided.
+   TRIALS = 20,000 (NOT the s35-frozen 100,000 -- cost, same
+   named deviation as sessions 40-49; p resolution 1/20,001
+   ~= 5e-5).
+
+   EXACTNESS (frozen): the per-block robust scale of 75 integer
+   samples is x_(57) - x_(19) (an integer); the per-cell
+   robust-scale level L_{w,c} = (6th + 7th order statistic)/2 of
+   12 integers -- a half-tick rational (2*L = 6th + 7th sum,
+   integer); S_c = max L - min L -- a half-tick rational (2*S =
+   max 2*L - min 2*L, integer); BOTH the analysis and the census
+   work in HALF-TICK INTEGER units so every M* >= M_obs and every
+   S*_c >= S_obs_c comparison is exact integer arithmetic;
+   publications report L, S and M in ticks with .0/.5 (fmt_ht).
+   IMPLEMENTATION PATHS (frozen): analysis-s50.py uses numpy
+   2.5.4 (int64 np.sort over the pooled 75, D = sorted[..., 56] -
+   sorted[..., 18] -- the s47-frozen implementation path for the
+   block robust spread, UNCHANGED; np.sort for the 6th+7th sums
+   and the max/min); the resampling is computed in vectorized
+   TRIAL BATCHES (the RNG call order -- one rng.shuffle per trial,
+   hi then tw -- is unchanged and frozen);
+   derivation-census-s50.txt is an independent second parser
+   (split-based parsing without regex; the observed per-cell
+   within-block IQR via pure-Python sorted() order statistics over
+   the explicitly pooled 75 -- D = sorted()[56] - sorted()[18] --
+   cross-checked in-loop against the np.partition kth=[18,56]
+   path; the resampling's D via the np.partition kth=[18,56] path,
+   NOT a sort; the 12-value level medians via sorted() explicit
+   order statistics; the cross-window repartition resampling and
+   the RNG call order re-implemented); both report identical
+   values; deterministic -- running each script twice yields
+   byte-identical output.
+
+   T1 LETTERS (pre-registered NOW, before any statistic of this
+   probe was computed):
+     per arm: (a) PER-CELL-IQR-LEVEL-CONSISTENT (p > 0.05) / (b)
+              EXCEEDS NULL (p <= 0.05; named which cell(s) achieve
+              M_obs and which cells' MARGINAL p <= 0.05) / (c) NOT
+              EVALUABLE;
+     joint T1 (the row answer): (a) PER-CELL-IQR-LEVEL-CONSISTENT
+              = both arms read (a); (b) EXCEEDS NULL = at least
+              one arm reads (b) (named which arm, which cell(s));
+              (c) NOT EVALUABLE on any invalidation of protocol
+              section 3.
+
+   NAMED, NOT HIDDEN (frozen): (a) does NOT prove "no physical
+   window-level driver" -- the null is run-exchangeability ACROSS
+   WINDOWS and a physical driver acting UNIFORMLY within AND
+   across windows is invisible to this design by construction;
+   AND each per-cell robust-scale level is itself a median of 12
+   block IQRs of 75 samples -- a window-level shift that moves
+   only the per-cell LOCATION level (the s44 construction), only
+   the MAD level (the s49 construction -- the IQR and the MAD are
+   DIFFERENT robust scales and NEITHER dominates: a shift of one
+   need not move the other), only other quantile pairs or
+   deviation centers, only spread or tail-weight changes keeping
+   x_(57) - x_(19) fixed, or only scales inside the
+   25-sample/3-run units is invisible to this construction; the
+   max-T at n=12 blocks per window is LOW POWER (a null is not
+   evidence of no per-cell robust-scale structure); three windows
+   ~30-60 min apart in ONE day on ONE host is LOW POWER (a null at
+   three windows is not evidence of stationarity); (b) would
+   implicate window-timescale PER-CELL ROBUST-SCALE (IQR) level
+   structure but NOT name it (thermal/scheduling/memory/driver
+   state all UNMEASURED) and would NOT say whether the named
+   cell's shift is physical or estimator structure; the 18
+   per-cell MARGINAL p values are UNCORRECTED (36 marginal tests
+   across two arms) and carry NO letter (the frozen row test is
+   the max-T); cells span 986..1,443 ticks in LOCATION level even
+   within one block -- the frozen 1,000-tick class boundary sits
+   INSIDE the per-cell level range, so the
+   threshold-artifact-vs-representation ambiguity binds per-cell
+   rows directly and STAYS UNRESOLVED; the D scale levels
+   themselves are measured in ticks and are descriptive;
+   exchangeability ACROSS WINDOWS is a STRONGER assumption than
+   session 40's within-window exchangeability and is itself an
+   assumption; this letter and sessions 40-49's letters are
+   DIFFERENT nulls over the SAME runs -- none confirms nor
+   overturns another, and the probes share the same 234 logs and
+   resampling skeleton (NOT independent evidence); 20,000 trials;
+   L2 observational ONLY; NO causal mechanism; direction
+   UNMEASURED; threshold-artifact-vs-representation STAYS
+   UNRESOLVED under any letter.
+
+1. INPUTS (frozen): the 234 committed run logs of the three fixed
+   evidence directories -- anv-b3commonmode-20261028 (the s36
+   window, run window 2026-10-28T02:40:49Z), anv-b3joint3-20261028
+   (the s38 window, 03:39:14Z), anv-b3joint4-20261028 (the s39
+   window, 04:09:48Z) -- 78 per window (c2 3 + hi 36 + tw 36 + c8
+   3). Only the hi and tw arms enter the probe (36 runs each per
+   window, 108 per arm). The s34 window is EXCLUDED (hi-only
+   design; named -- the probe needs the same three windows for
+   both arms). Every input quantity was MEASURED on aiueos-6600hs
+   Intel BMG G31 ANV in sessions 36/38/39.
+   QUOTE-ONLY PRIOR EXPOSURE (named; the freeze guards
+   letter-shopping, not prior exposure): (i) hi block A's
+   (sum,128,S=16) cell pooled medians and the 18-cell min..max
+   ranges are published content of the anchor readings (s36 1,142
+   / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 / 986..1,432);
+   (ii) the six block-min vectors and the block-min/body level and
+   spread values are published content of publication-s39..s43.txt;
+   (iii) the per-cell within-block RANGE/IQR/MAD wander max-T
+   values are published content of publication-s46/s47/s48.txt;
+   (iv) NAMED, NOT HIDDEN: the per-cell within-block IQR LEVELS
+   are themselves published descriptive content of
+   publication-s47.txt section 6 D1 ("D median = the per-cell
+   robust-scale LEVEL") per (window, arm), so this probe's
+   OBSERVED S_c values are derivable from published content by
+   subtraction -- the freeze guards letter-shopping of the
+   RESAMPLING result, not exposure of the observed levels; (v) the
+   s49 per-cell MAD-level cross-window max-T result (T1 = (b),
+   tw-driven) is published content of publication-s49.txt -- this
+   probe is its IQR-level companion over the same windows and the
+   same null. NO committed file computed the per-cell IQR-level
+   cross-window spread max-T M, any per-cell IQR-level MARGINAL
+   resample count, or any cross-window repartition resampling of
+   the IQR construction before this freeze.
+
+2. THE RESAMPLING (frozen; section 0's construction UNCHANGED):
+   one random.Random(20261028) consumed in the frozen probe order
+   (hi first, tw second); per probe 20,000 trials, each trial one
+   rng.shuffle of a fresh list(range(108)); p as section 0;
+   half-tick integer exactness as section 0.
+
+3. INVALIDATION / EVALUABILITY (protocol section 3 of session
+   40-49, UNCHANGED): per-window integrity over the committed
+   logs -- VERIFY mismatch total 0; 450 SAMPLE + 24 VERIFY per
+   run; every SAMPLE's knob fields == its arm table (c2 2/1/1, hi
+   3/1024/4033, tw 3/2048/8066, c8 8/1/1); S=8 fail-closed cells
+   (6 per run) pipeline FAIL + void 1; cell map identical across
+   all 234 logs; the six block-min vectors reproduce the
+   publication-s39.txt section 3 published/quote-only vectors
+   EXACTLY (6/6); C1 re-derived at the s39 window: c2 FLOOR (all
+   18 pooled medians <= 100), c8 (sum,128,S=16) pooled median
+   within +/-5% of the committed 32,915; the reproduction row:
+   hi block A's (sum,128,S=16) pooled median and 18-cell min..max
+   reproduce the quote-only anchor priors EXACTLY at all three
+   windows (s36 1,142 / 991..1,438; s38 1,132 / 992..1,443; s39
+   1,146 / 986..1,432). Any violation => letter (c).
+
+4. SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of
+   it is the row question; the 18-cell per-arm marginal p values
+   are UNCORRECTED for multiplicity and carry no letter):
+   (D1) the per-cell scoreboard, per arm, for each of the 18 ok
+        cells: its identity key (op, wg, S), L at s36/s38/s39,
+        S_c (printed in ticks), and the cell's MARGINAL resample
+        count and p (count of trials with S*_c >= S_obs_c over the
+        same 20,000 trials -- computed in the same frozen
+        resampling loop, descriptive only);
+   (D2) the max-T cell identity per arm (which cell(s) achieve
+        M_obs; ties named) and the top-3 cells by S_c per arm;
+   (D3) the s49 per-cell within-block MAD LEVEL cross-window max-T
+        M and p per arm quoted from publication-s49.txt section 4
+        (quote-only prior; the MAD-level companion of this probe's
+        IQR-level axis over the same windows and null -- quoted
+        for orientation only, no recomputation).
+
+5. THE BAR: NO hardware -> NO reading -> NO settle-bar-ledger
+   line, NO day-slot consumption (settle-bar-ledger.txt
+   byte-identical to HEAD); the frozen evaluator
+   (settle-bar-eval.py) is the only source of the bar letter
+   (B2): --self-test fixture pin 38/0 and ledger eval twice
+   byte-identical. Next executable day slot 2026-10-29.
+
+6. ROUTE (frozen): analysis-s50.py parses ONLY the committed run
+   logs of the three fixed evidence directories and writes
+   publication-s50.txt in its own directory (run twice, diff exit
+   0); derivation-census-s50.txt is an independent second parser
+   (as section 0's implementation paths) run twice byte-identical;
+   gates: gpu_regime_classify.py --self-test, the scoped GPU gate
+   twice (scratch runner scoped-gpu-gate.cljk, created, run,
+   deleted, never committed), FULL run-tests.cljk run live; find
+   docs/evidence/gpu -name '*.sh' -> 0 (no POSIX shell execution
+   files, ever). ZERO derivation edits; ZERO new knob pairs; the
+   instrument and corpus are the committed bytes of sessions 28-39
+   (byte-copy checked in the windows' own sessions).

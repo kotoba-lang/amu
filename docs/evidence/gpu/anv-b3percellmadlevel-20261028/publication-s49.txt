@@ -1,0 +1,191 @@
+JUN-59 session 49 -- THE PER-CELL ROBUST-SCALE (MAD) LEVEL
+CROSS-WINDOW REPARTITION PROBE (publication)
+(does ANY of the 18 ok cells show a window-to-window shift of
+its per-cell ROBUST-SCALE LEVEL -- the cell's own within-block
+MAD, taken cell by cell and block by block -- that exceeds
+run-exchangeable sampling noise? ONE observable axis per arm:
+the max-T M = max_c S_c over the 18 cells, S_c = max_w L_{w,c}
+- min_w L_{w,c} over the three probed windows (s36, s38, s39),
+L_{w,c} = median of the 12 block D values of window w,
+D_{b,c} = e_(38) about m = x_(38) of the block's 75 samples
+for cell c (the s48-frozen exact-median MAD), vs a cross-window
+run-repartition resampling null over the same arms' 108
+committed runs; the max over cells is taken INSIDE each
+resampling trial too (family-wise over the 18 cells).)
+Produced ONLY by analysis-s49.py over the COMMITTED run logs of
+three fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window); protocol.txt was
+frozen BEFORE any statistic of this probe was computed (freeze
+stamp 2026-10-28T10:09:54Z). ANALYSIS slice -- NO hardware ran
+this tick; every input quantity was MEASURED on aiueos-6600hs
+Intel BMG G31 ANV in sessions 36/38/39 (run windows
+2026-10-28T02:40:49Z, 03:39:14Z, 04:09:48Z respectively).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s39 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32829 vs committed 32915 (0.26% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs; block
+   order A..L; reproduction check vs the published/quote-only
+   vectors of publication-s39.txt section 3 -- mismatch => (c)):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   all three windows reproduce EXACTLY: True
+
+3b. ANCHOR REPRODUCTION ROW (pre-registered; hi block A's
+    (sum,128,S=16) pooled median and 18-cell min..max vs the
+    quote-only anchor priors of publication-s36/38/39 section
+    D -- mismatch => (c)):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    all three windows reproduce EXACTLY: True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   does ANY ok cell's cross-window robust-scale LEVEL spread
+   S_c = max_w L_{w,c} - min_w L_{w,c} (per-cell robust-scale
+   level L_{w,c} = median of the 12 block D values of window w;
+   D = e_(38) about m = x_(38) of the block's 75 samples for
+   that cell -- the s48-frozen exact-median MAD) EXCEED the
+   cross-window run-repartition null? Primary per-arm
+   statistic: M = max_c S_c (the max-T; the max is taken
+   inside each resampling trial too). 20000 trials, seed 20261028,
+   probe order hi then tw; p = (1 + count(M* >= M_obs))
+   / (1 + 20000), one-sided; L, S and M in half-tick exact
+   arithmetic, printed in ticks; S_c marginal counts/p are
+   descriptive (uncorrected) and shown in section 6 D1):
+   hi: M_obs = 10.0; max cell(s) = (min,256,S=16); count 9468 / 20001; p = 0.473426; p <= 0.05: False; arm letter (a) PER-CELL-MAD-LEVEL-CONSISTENT
+   tw: M_obs = 16.0; max cell(s) = (max,128,S=default); count 171 / 20001; p = 0.008600; p <= 0.05: True; arm letter (b) EXCEEDS NULL
+   T1 = (b) EXCEEDS NULL (named arms: tw)
+   named cells of tw achieving M_obs: (max,128,S=default); cells with MARGINAL p <= 0.05: (sum,128,S=default), (max,128,S=default)
+   NAMED, NOT HIDDEN: (a) does NOT prove 'no physical per-cell
+   window-level driver' -- the null is run-exchangeability
+   ACROSS WINDOWS and a driver acting uniformly within AND
+   across windows is invisible by construction; AND each per-
+   cell robust-scale level is itself a median of 12 block MADs
+   of 75 samples -- shifts of only the per-cell LOCATION level
+   (the s44 construction), only other quantile pairs or
+   deviation centers, only spread or tail-weight changes
+   keeping e_(38) about x_(38) fixed (the s46 RANGE, s47 IQR
+   and s48 within-window MAD-wander constructions see DIFFERENT
+   things -- none of them dominates), or only scales inside the
+   25-sample/3-run units are invisible to this construction;
+   the max-T at n=12 blocks per window is LOW POWER and three
+   windows ~30-60 min apart in ONE day on ONE host is LOW
+   POWER (a null is not stationarity, and not 'no per-cell
+   robust-scale structure'); (b) would implicate window-
+   timescale PER-CELL ROBUST-SCALE level structure but NOT
+   name it (thermal/scheduling/memory/driver state all
+   UNMEASURED); the 18 per-cell MARGINAL p values are
+   UNCORRECTED (36 marginal tests across two arms) and carry
+   NO letter (the frozen row test is the max-T); cells span
+   986..1,443 ticks in LOCATION level even within one block --
+   the frozen 1,000-tick class boundary sits INSIDE the per-
+   cell level range, so the threshold-artifact-vs-representation
+   ambiguity binds per-cell rows directly and STAYS UNRESOLVED;
+   exchangeability across windows is a STRONGER assumption than
+   session 40's within-window exchangeability and is itself an
+   assumption; this letter and sessions 40-48's letters are
+   DIFFERENT nulls over the SAME runs -- none confirms nor
+   overturns another, and the probes share the same 234 logs
+   and resampling skeleton (NOT independent evidence); 20,000
+   trials (NOT the s35-frozen 100,000 -- cost, same named
+   deviation as sessions 40-48; p resolution 1/20,001 ~= 5e-5);
+   L2 observational ONLY; NO causal mechanism; direction
+   UNMEASURED.
+
+5. REPLICATION FRAMING (frozen): hi is the primary arm and tw
+   the same-rule replication at the SAME three windows; the
+   joint T1 above is the row answer; the per-arm letters are
+   listed in section 4.
+
+6. DESCRIPTIVE (not the row question):
+   D1 the per-cell scoreboard (per arm, cells in cell-map
+      order; L at s36/s38/s39 in half-tick exact arithmetic;
+      S_c = max_w L - min_w L; marginal count/p = trials with
+      S*_c >= S_obs_c over the same 20,000 -- UNCORRECTED for
+      multiplicity (36 marginal tests), descriptive only, no
+      letter):
+      hi:
+      hi cell 0 (sum,128,S=16): L 31.0 / 28.5 / 32.0; S_c 3.5; marginal count 8582 p 0.429129
+      hi cell 1 (sum,128,S=32): L 62.0 / 60.0 / 60.0; S_c 2.0; marginal count 18132 p 0.906605
+      hi cell 2 (sum,128,S=default): L 57.0 / 57.5 / 57.0; S_c 0.5; marginal count 19954 p 0.997700
+      hi cell 3 (max,128,S=16): L 25.5 / 30.0 / 30.5; S_c 5.0; marginal count 4663 p 0.233188
+      hi cell 4 (max,128,S=32): L 62.5 / 61.5 / 58.5; S_c 4.0; marginal count 12936 p 0.646818
+      hi cell 5 (max,128,S=default): L 62.5 / 64.5 / 61.5; S_c 3.0; marginal count 15071 p 0.753562
+      hi cell 6 (min,128,S=16): L 28.5 / 27.0 / 29.0; S_c 2.0; marginal count 15172 p 0.758612
+      hi cell 7 (min,128,S=32): L 62.0 / 55.0 / 58.5; S_c 7.0; marginal count 4304 p 0.215239
+      hi cell 8 (min,128,S=default): L 55.5 / 60.0 / 56.0; S_c 4.5; marginal count 11958 p 0.597920
+      hi cell 9 (sum,256,S=16): L 33.0 / 36.5 / 34.0; S_c 3.5; marginal count 14093 p 0.704665
+      hi cell 10 (sum,256,S=32): L 63.0 / 64.5 / 68.0; S_c 5.0; marginal count 8371 p 0.418579
+      hi cell 11 (sum,256,S=default): L 69.5 / 71.5 / 66.0; S_c 5.5; marginal count 6996 p 0.349833
+      hi cell 12 (max,256,S=16): L 38.0 / 38.0 / 37.5; S_c 0.5; marginal count 19943 p 0.997150
+      hi cell 13 (max,256,S=32): L 66.5 / 65.5 / 68.0; S_c 2.5; marginal count 16012 p 0.800610
+      hi cell 14 (max,256,S=default): L 71.5 / 63.0 / 64.5; S_c 8.5; marginal count 2118 p 0.105945
+      hi cell 15 (min,256,S=16): L 44.0 / 35.5 / 34.0; S_c 10.0; marginal count 1102 p 0.055147
+      hi cell 16 (min,256,S=32): L 69.5 / 62.0 / 64.0; S_c 7.5; marginal count 3309 p 0.165492
+      hi cell 17 (min,256,S=default): L 64.5 / 64.0 / 66.0; S_c 2.0; marginal count 17798 p 0.889906
+      tw:
+      tw cell 0 (sum,128,S=16): L 29.5 / 28.5 / 29.0; S_c 1.0; marginal count 18950 p 0.947503
+      tw cell 1 (sum,128,S=32): L 60.5 / 55.5 / 59.5; S_c 5.0; marginal count 10977 p 0.548873
+      tw cell 2 (sum,128,S=default): L 56.5 / 49.0 / 61.5; S_c 12.5; marginal count 400 p 0.020049
+      tw cell 3 (max,128,S=16): L 27.5 / 32.5 / 31.5; S_c 5.0; marginal count 4338 p 0.216939
+      tw cell 4 (max,128,S=32): L 55.0 / 58.0 / 63.5; S_c 8.5; marginal count 2289 p 0.114494
+      tw cell 5 (max,128,S=default): L 71.5 / 55.5 / 56.5; S_c 16.0; marginal count 3 p 0.000200
+      tw cell 6 (min,128,S=16): L 30.0 / 25.0 / 29.5; S_c 5.0; marginal count 3828 p 0.191440
+      tw cell 7 (min,128,S=32): L 62.0 / 59.0 / 63.0; S_c 4.0; marginal count 14230 p 0.711514
+      tw cell 8 (min,128,S=default): L 56.5 / 60.5 / 58.0; S_c 4.0; marginal count 12365 p 0.618269
+      tw cell 9 (sum,256,S=16): L 37.0 / 42.5 / 35.5; S_c 7.0; marginal count 6846 p 0.342333
+      tw cell 10 (sum,256,S=32): L 67.5 / 67.0 / 65.0; S_c 2.5; marginal count 15275 p 0.763762
+      tw cell 11 (sum,256,S=default): L 62.0 / 68.5 / 67.0; S_c 6.5; marginal count 4402 p 0.220139
+      tw cell 12 (max,256,S=16): L 35.0 / 34.5 / 33.0; S_c 2.0; marginal count 17716 p 0.885806
+      tw cell 13 (max,256,S=32): L 65.0 / 69.5 / 70.5; S_c 5.5; marginal count 6609 p 0.330483
+      tw cell 14 (max,256,S=default): L 60.5 / 65.5 / 66.0; S_c 5.5; marginal count 6805 p 0.340283
+      tw cell 15 (min,256,S=16): L 36.5 / 39.5 / 34.5; S_c 5.0; marginal count 9609 p 0.480476
+      tw cell 16 (min,256,S=32): L 66.5 / 67.0 / 66.5; S_c 0.5; marginal count 19956 p 0.997800
+      tw cell 17 (min,256,S=default): L 70.0 / 66.0 / 67.5; S_c 4.0; marginal count 10236 p 0.511824
+   D2 the max-T cell identity and top-3 cells by S_c per arm
+      (ties in S_c named; descriptive only):
+      hi: max cell(s) (min,256,S=16) = 10.0; top3 (min,256,S=16)=10.0 (max,256,S=default)=8.5 (min,256,S=32)=7.5
+      tw: max cell(s) (max,128,S=default) = 16.0; top3 (max,128,S=default)=16.0 (sum,128,S=default)=12.5 (max,128,S=32)=8.5
+   D3 the session-48 per-cell within-block MAD WANDER max-T M
+      and p per (window, arm) (quote-only prior from
+      publication-s48.txt sections 4/5 -- the within-window
+      wander of the same D that this probe's cross-window LEVEL
+      complements; quoted for orientation only, NO
+      recomputation):
+      s36 hi: M(s48) = 41, p(s48) = 0.757112 (within-block MAD wander, different statistic)
+      s38 hi: M(s48) = 45, p(s48) = 0.328384 (within-block MAD wander, different statistic)
+      s39 hi: M(s48) = 46, p(s48) = 0.218739 (within-block MAD wander, different statistic)
+      s36 tw: M(s48) = 39, p(s48) = 0.720664 (within-block MAD wander, different statistic)
+      s38 tw: M(s48) = 33, p(s48) = 0.990800 (within-block MAD wander, different statistic)
+      s39 tw: M(s48) = 39, p(s48) = 0.602820 (within-block MAD wander, different statistic)
+
+7. VERDICT SUMMARY:
+   T1 = (b) EXCEEDS NULL
+   hi: M_obs = 10.0 (max cell(s) (min,256,S=16)); count 9468/20001; p 0.473426; letter (a) PER-CELL-MAD-LEVEL-CONSISTENT
+   tw: M_obs = 16.0 (max cell(s) (max,128,S=default)); count 171/20001; p 0.008600; letter (b) EXCEEDS NULL
+   evaluable inputs: vector reproduction EXACT (True); anchor row EXACT (True); s39 C1 ((a)); per-window integrity rows in section 1
+   NO hardware ran this tick (ANALYSIS slice; inputs are the
+   committed logs of sessions 36/38/39). NO settle-bar-ledger
+   line (NO reading -> NO line -> NO day-slot consumption).
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.
