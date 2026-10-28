@@ -2584,3 +2584,73 @@ windows (78 runs parsed each); derivation-census-s54.txt is the
 independent second parser (117 rows / 0 mismatched);
 bar-eval-s54.txt is the frozen evaluator's verdict; record.txt is
 the finding).
+
+## 2026-10-28 -- session 55 (JUN-59): the inner-vs-outer compression-profile read (analysis; T5 (a) COMPRESSION-PROFILE-OUTER-WEIGHTED-CONSISTENT -- the outer-pair level drops MORE than the inner-pair level in all three named contrasts)
+
+ANALYSIS session -- NO new hardware, NO new runs, NO builds: the
+four windows s36/s38/s39/s51 are prior sessions' committed logs
+only. The row question is session 54's first-named candidate
+("the INNER-vs-OUTER COMPRESSION-PROFILE read over the same
+windows -- the formal juxtaposition of the two named quantile-
+pair level axes"): the PROFILE axis, the difference-in-
+differences 2*P_obs = 2*C_out - 2*C_in where 2*C_out =
+2*Lout_s36 - 2*Lout_w (the s54-frozen outer pair D_out =
+x_(67) - x_(9)) and 2*C_in = 2*Lin_s36 - 2*Lin_w (the s53-frozen
+inner pair D_in = x_(48) - x_(28)), both per block over the SAME
+pooled 75 of the named cell; three contrasts (s36 vs s38, s36 vs
+s39, s36 vs s51), ONE-SIDED each in the pre-registered direction
+P > 0 (outer-weighted compression), joint T5 = the pre-registered
+IUT (all three (a); no multiplicity correction), frozen at
+2026-10-28T15:08:37Z before any statistic of the probe was
+computed.
+
+THE FINDING (DERIVED): T5 = (a) COMPRESSION-PROFILE-OUTER-
+WEIGHTED-CONSISTENT -- the named cell's quantile-pair spread
+compression IS consistently outer-weighted on the three named
+contrasts: 2*P_obs s36-vs-s38 51 (OUT 2*L 496 -> 429, IN 118 ->
+102; count 473/20,001; p 0.023699) (a) PROFILE-OUTER-WEIGHTED-
+DIFFERENT, -> s39 69 (OUT 496 -> 437, IN 118 -> 128; count
+103/20,001; p 0.005200) (a), -> s51 45 (OUT 496 -> 446, IN 118
+-> 113; count 784/20,001; p 0.039248) (a) -- all three (a).
+NAMED, NOT HIDDEN: this is the FIRST probe of the campaign whose
+axis is COMPOSED of two already-published axes, and the
+juxtaposition/direction were chosen AFTER s53's inner-pair (b)
+and s54's outer-pair (a) were published -- it does NOT test a new
+prediction (the point estimates 51/69/45 were already known
+positive, QUOTE-ONLY) and quantifies whether the outer-vs-inner
+gap exceeds the frozen resampling noise; (a) is CONSISTENT WITH a
+compression concentrated toward the tails/whole-body span
+x_(9)..x_(67) (the formalized outer-weighted profile) but does
+NOT decide physical-vs-estimator-structure (no mechanism named
+by any letter; LOW POWER n=2 windows per contrast, the three
+contrasts share the s36 window and are dependent, ONE host, ONE
+UTC day; s36-specific state alone can produce (a)); SEVENTH axis
+on the same window data, a SEPARATE named family; retro-corrects
+nothing; 20,000 trials (named cost deviation); threshold-
+artifact-vs-representation STAYS UNRESOLVED. Integrity: 4/4
+windows clean (VERIFY mismatch 0), C1 (a) at all four windows
+(c2 FLOOR; c8 0.01%/0.53%/0.26%/0.08% delta), vectors/anchors all
+four reproduce EXACTLY; the D1 inner/outer 2*L values reproduce
+the s53/s54 priors EXACTLY. The bar: NO ledger line, NO day-slot
+consumption (no runs); frozen evaluator 38/0, ledger eval twice
+byte-identical -> VERDICT PENDING 1/4 (next executable day slot
+2026-10-29). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel.
+
+Gates (real runs this tick): classify self-test 2649/0
+(byte-identical to the s51-s54 pins); scoped GPU gate GREEN
+123/12162/0/0 twice, both byte-identical to the s54 pins; full
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace), stdout+stderr
+byte-identical to the s54 pins -- NO green full suite claimed;
+derivation census 167 rows / 0 mismatched, run twice
+byte-identical; find docs/evidence/gpu -name '*.sh' -> 0.
+
+Evidence: `docs/evidence/gpu/anv-b3innerouterprofile-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s55.txt
+is the derived read over the committed run logs of the four
+windows (78 runs parsed each); derivation-census-s55.txt is the
+independent second parser (167 rows / 0 mismatched);
+bar-eval-s55.txt is the frozen evaluator's verdict; record.txt is
+the finding).
