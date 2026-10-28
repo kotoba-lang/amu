@@ -2336,3 +2336,51 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s50.txt is the independent second
 parser (55 rows / 0 mismatched); bar-eval-s50.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 51 (JUN-59): the fourth-window named-cell robust-scale LEVEL replication probe (measurement; T1 (a) REPLICATED-ON-BOTH-LEVEL-AXES)
+
+MEASUREMENT session -- NEW hardware: the s51 window ran on
+aiueos-6600hs Intel BMG G31 ANV at 2026-10-28T11:45:26Z..11:46:13Z
+(78 fresh processes; byte-pinned builds 4/4). The row question is
+session 50's first-named candidate: the PRE-REGISTERED DIRECTIONAL
+CONTRAST of one named cell (tw, (max,128,S=default)) between two
+named windows (s36 pre-shift vs s51 new), direction L_s51 < L_s36,
+on BOTH frozen robust-scale level axes (the s48 exact-median MAD,
+the s47 exclusive-hinge IQR), IUT joint rule, letters pre-registered
+at freeze stamp 2026-10-28T11:42:02Z (before the first s51 run).
+
+THE FINDING (DERIVED): T1 = (a) REPLICATED-ON-BOTH-LEVEL-AXES --
+MAD axis 2*L 143 -> 118 (C_obs 12.5; count 99/20,001; p 0.005000),
+IQR axis 2*L 303 -> 240 (C_obs 31.5; count 9/20,001; p 0.000500);
+the post-shift regime of s38/s39 continues at s51 rather than the
+s36 regime returning, on both axes. NAMED, NOT HIDDEN: the claim is
+narrow (one cell, one window pair, one direction, IUT over two
+axes, NEW data), the discovery family stays UNCORRECTED and is not
+retro-corrected; no mechanism is named (thermal/scheduling/memory/
+driver state all UNMEASURED; physical-vs-estimator UNRESOLVED); n=2
+windows ~8.5 h apart in ONE day on ONE host is LOW POWER; 20,000
+trials (named cost deviation); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity: 4/4 windows clean, s51 C1 (a)
+(c8 32,890 vs 32,915, 0.08%), prior vectors/anchors reproduce
+EXACTLY. The bar: ONE ledger line (s51 hi block A, median 1137
+min 988, class INTERMEDIATE/MIXED) -- day=2026-10-28, same-day
+duplicate of s31's COUNTED slot -> descriptive, no day-slot
+consumption; frozen evaluator 38/0, twice byte-identical ->
+VERDICT PENDING 1/4 (next executable day slot 2026-10-29).
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no vendor optimization exists
+for Intel.
+
+TWO-TICK LAND: the measurement + analysis tick, then the landing
+tick (fresh gate re-runs byte-identical to the pins -- classify
+2649/0, scoped GPU gate GREEN 123/12162/0/0 twice, full
+run-tests.cljk exit 1 RED AT BASE kotoba.form, named; derivation
+census re-run twice byte-identical, 205 rows / 0 mismatched).
+
+Evidence: `docs/evidence/gpu/anv-b3levelrep-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s51.txt
+is the derived read over the 234 committed run logs of the four
+windows; derivation-census-s51.txt is the independent second
+parser (205 rows / 0 mismatched); bar-eval-s51.txt is the frozen
+evaluator's verdict; gate-rerun-s51b.txt is the landing re-run
+record; record.txt is the finding).
