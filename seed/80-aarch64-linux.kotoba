@@ -59,13 +59,27 @@
   (-> M (xa-w 0xB500004A) (xa-w 0xD4200000) (xa-w 0xB100055F) (xa-w 0x540000A1)
       (xa-w 0xD2F0000B) (xa-w 0xEB0B013F) (xa-w 0x54000041) (xa-w 0xD4200000)
       (xa-w (xa-r3 0x9AC00C00))))
+(defn- xa-float-arith? [op :i64] :bool
+  (or (and (>= op BOP-F64-ADD) (<= op BOP-F64-DIV))
+      (and (>= op BOP-F32-ADD) (<= op BOP-F32-DIV))))
+(defn- xa-fp-begin [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xD53B440B) (xa-w 0xD53B442C) (xa-w 0xD51B441F)))
+(defn- xa-fp-end [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xD51B440B) (xa-w 0xD51B442C)))
 (defn- xa-bin-op [M :vector-i64 op :i64] :vector-i64
-  (case op
+  (if (xa-float-arith? op)
+    (let [sz (if (< op BOP-F32-ADD) 1 0)]
+      (cond-> (-> M (xa-fp-begin)
+                  (xa-w (enc-fmov-to-fp sz 0 9)) (xa-w (enc-fmov-to-fp sz 1 10))
+                  (xa-w (enc-fop2 (bit-and op 7) sz 0 0 1))
+                  (xa-w (enc-fmov-from-fp sz 9 0)) (xa-fp-end))
+        (= sz 0) (xa-w (enc-sxtw 9 9))))
+    (case op
     1 (xa-w M (xa-r3 0x8B000000)) 2 (xa-w M (xa-r3 0xCB000000))
     3 (xa-w M 0x9B0A7D29) 4 (xa-quot M)
     5 (xa-w M (xa-r3 0x8A000000)) 6 (xa-w M (xa-r3 0xAA000000)) 7 (xa-w M (xa-r3 0xCA000000))
     8 (xa-w M (xa-r3 0x9AC02000)) 9 (xa-w M (xa-r3 0x9AC02400)) 10 (xa-w M (xa-r3 0x9AC02800))
-    (xg-err M 7101 op)))
+    (xg-err M 7101 op))))
 ;; cset x9, cc: csinc x9, xzr, xzr, invert(cc)
 (defn- xa-cond [cc :i64] :i64 (case cc 1 0 2 11 3 12 4 13 5 10 0))
 (defn- xa-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
@@ -74,14 +88,20 @@
     ;; alternate modes disabled, then restore FPCR and FPSR independently.
     (let [sz (if (< cc CC-F32-EQ) 1 0)]
       (-> M (xa-lt 9 t) (xa-lt 10 (inc t))
-          (xa-w 0xD53B440B) (xa-w 0xD53B442C) (xa-w 0xD51B441F)
+          (xa-fp-begin)
           (xa-w (enc-fmov-to-fp sz 0 9)) (xa-w (enc-fmov-to-fp sz 1 10))
           (xa-w (enc-fcmp sz 0 1)) (xa-w (enc-cset 9 (enc-fcond (bit-and cc 7))))
-          (xa-w 0xD51B440B) (xa-w 0xD51B442C) (xa-st 9 t)))
+          (xa-fp-end) (xa-st 9 t)))
     (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xEB0A013F)
         (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t))))
 (defn- xa-un [M :vector-i64 op :i64 t :i64] :vector-i64
   (cond
+    (or (= op UOP-F64-SQRT) (= op UOP-F32-SQRT))
+    (let [sz (if (= op UOP-F64-SQRT) 1 0)]
+      (cond-> (-> M (xa-lt 9 t) (xa-fp-begin) (xa-w (enc-fmov-to-fp sz 0 9))
+                  (xa-w (enc-fop1 2 sz 0 0)) (xa-w (enc-fmov-from-fp sz 9 0)) (xa-fp-end))
+        (= sz 0) (xa-w (enc-sxtw 9 9))
+        true (xa-st 9 t)))
     (or (= op UOP-F64-NEG) (= op UOP-F32-NEG))
     (let [single (= op UOP-F32-NEG)]
       (cond-> (-> M (xa-lt 9 t) (xa-mov64 10 (if single 2147483648 -9223372036854775808))
@@ -243,15 +263,17 @@
         h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
 ;; Runtime-profile admission is shared with x86, whose emitter supports float.
-;; Only float comparisons and bitwise sign operations are implemented here.
+;; Float comparisons, basic arithmetic, sqrt and sign operations are implemented here.
 ;; Reject all other float instructions before emitting code.
-(defn- xa-float-sign? [op :i64 sub :i64] :bool
+(defn- xa-float-un? [op :i64 sub :i64] :bool
   (and (= op OP-UN) (or (= sub UOP-F64-NEG) (= sub UOP-F64-ABS)
-                         (= sub UOP-F32-NEG) (= sub UOP-F32-ABS))))
+                         (= sub UOP-F64-SQRT) (= sub UOP-F32-NEG)
+                         (= sub UOP-F32-ABS) (= sub UOP-F32-SQRT))))
 (defn- xa-check-float [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) sub (xg-si M i IF-A)]
-      (if (and (xg-fl-sir? op sub) (not (or (xa-float-sign? op sub)
+      (if (and (xg-fl-sir? op sub) (not (or (xa-float-un? op sub)
+                                               (and (= op OP-BIN) (xa-float-arith? sub))
                                                (and (= op OP-CMP) (xg-fl-cmp? sub))))) (xg-err M 7101 sub)
         (xa-check-float M (inc i))))))
 (defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
