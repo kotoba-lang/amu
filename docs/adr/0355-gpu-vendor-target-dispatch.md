@@ -3898,3 +3898,44 @@ for Intel. Queue unchanged: the W5 measurement session (first at/after
 2026-10-29T00:00:00Z, its pre-GO custody steps named at s67) then T7
 and the three frozen analysis halves. Evidence:
 `docs/evidence/gpu/anv-b3w5deferredgates2-20261028/record.txt`.
+
+## Dated note (2026-10-28, JUN-59 session 71: the prego derivation-census second-parser twin)
+
+The s69/s70-named ungated row -- the independent second-parser
+twin for the s69 pre-build's s51-compat validation -- taken to its
+implementation half (NO runs, NO compiles, NO GO stamp, no day
+slot, no ledger line; the W5 measurement half stays day-slot-gated
+to 2026-10-29T00:00:00Z, ~1h14m after this tick started). BUILT:
+`docs/evidence/gpu/anv-b3w5pregocensus-20261028/derivation-census-
+s71.py` -- the s63 census independence contract (no re module, no
+numpy, pure-Python sorted() order statistics, independent
+pure-Python shuffle loop re-implementing the frozen RNG contract
+`random.Random(20261028)` in the frozen probe order) over the four
+prior windows' committed logs, in three-way rows (published /
+prego report / census). VERIFIED this tick: the CENSUS_SMOKE
+plumbing run (TRIALS=20, scratch-only) -- 38/38 deterministic rows
+match three-way (integrity, C1, block-min vectors, anchors, T1 2*L
+pairs + joint letter, the full D2 18-cell table) and the six RNG
+rows match on every non-count field; SECTION B 2/2 (published D1
+content re-derived: 143/111/113/118 repro True inpair False;
+303/241/235/240 repro True inpair True); hygiene 4/4; standing
+gates all byte-identical to their s70 pins (classify 2649/0, bar
+self-test 38/0, ledger eval twice -> VERDICT PENDING 1/4, scoped
+GPU gate GREEN 123/12162/0/0 twice, `find ... '*.sh'` -> 0). NAMED,
+NOT HIDDEN: the census's 20,000-trial DOUBLE-RUN was still in
+flight at tick close (the pure-Python repartition is slower than
+the prego's numpy batches) -- its RNG-stream counts/p reproduction
+(99/9/2844/367/3657/12283) is UNVERIFIED until the double-run
+lands, and FULL run-tests.cljk was NOT run this tick (budget) --
+both are carry-forward before any push-equivalent claim. NAMED
+FINDING: the prego report's 44 rows contain NO D1 row (its D1
+regex is single-line against the publication's wrapped text, so
+that loop matched 0 rows), and its dormant D1 helper computes the
+pair-interval flag with L_s51 among the endpoints, contradicting
+the published `{L_s38, L_s39}` semantics -- the census implements
+the published semantics and reproduces the published flags. Rule 4
+binds: no row moves; accelerator-targets defaults stay as ADR-0358
+set them. Queue unchanged: the W5 measurement session (first
+at/after 2026-10-29T00:00:00Z, its pre-GO custody steps named at
+s67) then T7 and the three frozen analysis halves. Evidence:
+`docs/evidence/gpu/anv-b3w5pregocensus-20261028/`.
