@@ -1,6 +1,7 @@
 # ADR-0379 -- WGSL comes from the verified SPIR-V modules, written in Kotoba
 
-- Status: **proposed** (nothing here changes a seed, an artifact or a pin).
+- Status: **proposed**; slice 1 (`dot_rows`) is implemented and measured below.
+  Nothing here changes a seed, an artifact or a pin.
 - Date: 2026-10-28
 - Tracking: JUN-377 (ADR 0375 route W), JUN-375 (inference's side).
 - Follows: ADR 0372 (KIR v2), ADR 0375 (routes B, W, C).
@@ -53,41 +54,68 @@ module's words and writes WGSL text:
 * Option 2 stays the end state. The translator is the bridge that lets the
   numeric gates exist now.
 
-## Measured: the target output is valid and correct (2026-10-28)
+## Slice 1: `tools/spirv_to_wgsl.kotoba`, built and run on this Mac (2026-10-28)
 
-Hand-written WGSL for `dot_rows` (`tools/gpu_kernel_refs/dot-rows.wgsl`, the
-golden text the translator's output for `kir2-dot-rows` must equal up to
-identifier names), run through the browser's WebGPU on this Mac:
+`spw-translate` takes a module vector (as `spirv_encode.kotoba` builds it) and
+returns WGSL text, or text that starts with `//ERROR` for anything outside the
+subset. It makes one pass for the id table and decorations and a second pass
+over the function body, keeping a small stack to rebuild `if` and `loop`
+(`continuing` for the continue block) from `OpSelectionMerge`,
+`OpBranchConditional` and `OpLoopMerge`. Identifiers are generated (`b<n>`,
+`s<id>`, `f<id>`, `v<id>`, `i<id>`) because WGSL reserves words such as `meta`.
+
+Apple Silicon is a host for this: Amu's pinned Mac-native compiler
+(`seed/bootstrap/aarch64-macos/amu-full-root.macho`, the `diagnostic-candidate`
+row of `root.json`) and packager run here with no Linux. The route, as
+`scripts/seed/check-aiueos-user-macos-native.py` runs it:
+
+1. `amu compile unit.kotoba --target aarch64-macos --output u.kseed`
+2. `amu extract-native u.kseed --symbol main --output u.raw` (the `:offset`)
+3. `kotoba-packager-root.macho u.unsigned u.raw fs2-cli-stdio-general <offset>`
+4. `codesign -s - -f` on a copy, then run it with the output directory as fd 3.
+
+The unit is `spirv_encode`, `spirv_check`, `gpu_kernel_kir2`, `gpu_kernels_v2`
+and `spirv_to_wgsl` (ns lines dropped) plus a `main` that prints
+`(spw-translate (kir2-dot-rows))`. It compiles in about 13 s. On this host
+`spc-check` accepts the module (612 words) and `spirv-val --target-env vulkan1.1`
+accepts the words printed from it. Two limits of the Mac runtime showed up:
+`spv-write` (`:fs/app-data-bytes`) traps there, so the translator reads the
+module from memory and the unit prints text to stdout instead of writing files.
+
+The output is [`tools/gpu_kernel_refs/dot-rows.wgsl`](../../tools/gpu_kernel_refs/dot-rows.wgsl),
+the translator's own text. In the browser's WebGPU on this Mac:
 
 | item | value |
 |---|---|
 | device | Apple M1 Max, Metal 3 (WebGPU `info.architecture` `metal-3`) |
 | features offered | `shader-f16`, `subgroups`, `timestamp-query` |
+| compile messages | 0 |
 | shape | 4096 x 4096 f32, one 256-thread workgroup per row |
-| max relative error vs an f64 CPU sum | 1.5e-5 (rows sampled every 37) |
-| 200 back-to-back dispatches, one submit | 0.227 ms each, 296 GB/s of weight reads |
+| max relative error vs an f64 CPU sum (111 rows) | 1.5e-5, identical to a hand-written WGSL of the same kernel |
+| 200 back-to-back dispatches, one submit | 0.213 ms each, 314 GB/s of weight reads |
 
-The 296 GB/s is the cached figure for a 64 MiB matrix; it is not a model
+The 314 GB/s is the cached figure for a 64 MiB matrix; it is not a model
 decode rate and is not comparable to `llama-bench`.
 
 ## What this does not show
 
-* Nothing here was built or run by Amu. **This Mac cannot run the Amu
-  compiler:** `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` are Linux
-  x86-64 static ELFs, and the host has no Linux VM. The translator therefore
-  has not been written; the build and test phases of
-  `scripts/seed/check-gpu-kernel-spirv.py` are Linux phases.
-* No selfhost decode, batched prefill or serving loop runs through WGSL.
-  No vLLM or llama.cpp comparison was taken.
+* Only `dot_rows` is translated. The kdot family, the nex ops, Float16,
+  subgroup arithmetic, vectors beyond `vec3` extraction, `OpSelect`, atomics
+  and `break` / `continue` branches are refused by `//ERROR`, not handled.
+* There is no repeatable gate yet: the numeric check ran by hand in a browser
+  tab. The bridge to `scripts/seed/check-wasm32-browser.py` (headless Chrome,
+  no Node) is the next step.
+* No selfhost decode, batched prefill or serving loop runs through WGSL, and
+  no vLLM or llama.cpp comparison was taken.
 * The browser here is a test oracle, as `spirv-val` is for SPIR-V. It is not
   the product route.
+* The Mac runtime is a diagnostic profile (its own arena sizes, no file
+  write); JUN-417 owns qualifying it.
 
 ## Next steps
 
-1. A Linux host that can build and run Amu units (gad, or a VM): write
-   `spirv_to_wgsl.kotoba` for `dot_rows` first, with the golden text above.
-2. Browser gate: `createShaderModule` reports no error and the numbers match
-   the f64 twin, in headless Chrome with WebGPU
-   (`scripts/seed/check-wasm32-browser.py` already runs Amu modules there).
-3. Widen to the kdot family, then the nex ops, then the Float16 and subgroup
-   kernels, each with its feature report.
+1. A headless-Chrome gate that feeds the generated text to `createShaderModule`
+   and the f64 twin, replacing the by-hand check.
+2. Widen the subset kernel by kernel: the kdot family first, each with a
+   feature report (`shader-f16`, `subgroups`) the host can check.
+3. The language-neutral IR (option 2) once two or more back ends need it.

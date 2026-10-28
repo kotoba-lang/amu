@@ -1,0 +1,307 @@
+(ns spirv-to-wgsl (:export [spw-translate]))
+
+;; SPIR-V to WGSL (ADR 0379): the verified KIR v2 modules, as WGSL text.
+;; Input is a module vector as spirv_encode.kotoba builds it (M[0] words,
+;; word k at M[k + 1]); output is the WGSL source, or a string that starts
+;; with "//ERROR" when the module uses something outside the subset below.
+;;
+;; The subset is what the KIR v2 builder emits: storage buffers in std430,
+;; workgroup arrays, Function variables, structured control flow in the
+;; builder's shapes (OpSelectionMerge + OpBranchConditional, and glslang's
+;; four-block OpLoopMerge), scalar and vec3 values, the integer and float
+;; arithmetic and comparison opcodes in spw-binop, OpControlBarrier.
+;; Everything else is refused, never guessed at.
+;;
+;; Every WGSL identifier is generated from an id (`b<binding>` buffers,
+;; `s<id>` workgroup arrays, `f<id>` Function variables, `v<id>` values,
+;; `i<id>` builtin inputs): WGSL reserves words such as `meta`, and a name that
+;; came from a source kernel could collide with one.
+;;
+;; A unit that uses this file prepends its own ns line and drops this one,
+;; after spirv_encode.kotoba.
+
+(defn- cat3 [a :string b :string c :string] :string (string-concat a (string-concat b c)))
+(defn- cat4 [a :string b :string c :string d :string] :string (string-concat a (cat3 b c d)))
+(defn- cat5 [a :string b :string c :string d :string e :string] :string (string-concat a (cat4 b c d e)))
+
+(defn- idn [p :string id :i64] :string (string-concat p (string-from-i64 id)))
+
+;; X: eight slots per id. 0 opcode, 1 word offset of the defining instruction,
+;; 2 binding + 1, 3 builtin + 1, 4 NonWritable member 0 (structs).
+(defn- x-op [X :vector-i64 id :i64] :i64 (vector-at X (* id 8)))
+(defn- x-at [X :vector-i64 id :i64] :i64 (vector-at X (+ (* id 8) 1)))
+(defn- x-bind [X :vector-i64 id :i64] :i64 (- (vector-at X (+ (* id 8) 2)) 1))
+(defn- x-builtin [X :vector-i64 id :i64] :i64 (- (vector-at X (+ (* id 8) 3)) 1))
+(defn- x-nw [X :vector-i64 id :i64] :i64 (vector-at X (+ (* id 8) 4)))
+
+;; word j of the instruction that defines id
+(defn- xw [M :vector-i64 X :vector-i64 id :i64 j :i64] :i64 (spv-word M (+ (x-at X id) j)))
+
+;; opcodes with no result id
+(defn- no-result? [op :i64] :bool
+  (or (or (or (= op 3) (= op 4)) (or (= op 5) (= op 6)))
+      (or (or (= op 10) (= op 14)) (or (= op 15) (= op 16)))
+      (or (or (= op 17) (= op 56)) (or (= op 62) (= op 71)))
+      (or (or (= op 72) (= op 224)) (or (= op 246) (= op 247)))
+      (or (or (= op 249) (= op 250)) (or (= op 252) (= op 253)))))
+
+;; opcodes whose result id is word 1 (no result type)
+(defn- id-only? [op :i64] :bool
+  (or (or (and (>= op 19) (<= op 39)) (= op 248)) (= op 11)))
+
+;; ---------------------------------------------------------------------
+;; Pass 1: the id table and the decorations.
+
+(defn- spw-scan [M :vector-i64 X :vector-i64] :vector-i64
+  (let [n (spv-count M)]
+    (loop [k 5 V X]
+      (if (>= k n) V
+        (let [h (spv-word M k) wc (u64-shift-right h 16) op (bit-and h 65535)]
+          (if (= wc 0) V
+            (cond
+              (= op 71)
+              (let [t (spv-word M (+ k 1)) d (spv-word M (+ k 2))]
+                (cond (= d 33) (recur (+ k wc) (vector-assoc! V (+ (* t 8) 2) (+ (spv-word M (+ k 3)) 1)))
+                      (= d 11) (recur (+ k wc) (vector-assoc! V (+ (* t 8) 3) (+ (spv-word M (+ k 3)) 1)))
+                      :else (recur (+ k wc) V)))
+              (= op 72)
+              (let [t (spv-word M (+ k 1)) d (spv-word M (+ k 3))]
+                (if (and (= d 24) (= (spv-word M (+ k 2)) 0))
+                  (recur (+ k wc) (vector-assoc! V (+ (* t 8) 4) 1))
+                  (recur (+ k wc) V)))
+              (no-result? op) (recur (+ k wc) V)
+              :else
+              (let [rid (if (id-only? op) (spv-word M (+ k 1)) (spv-word M (+ k 2)))]
+                (recur (+ k wc) (vector-assoc! (vector-assoc! V (* rid 8) op) (+ (* rid 8) 1) k))))))))))
+
+;; ---------------------------------------------------------------------
+;; Types and values.
+
+(defn- scalar-ty [M :vector-i64 X :vector-i64 t :i64] :string
+  (let [op (x-op X t)]
+    (cond (= op 20) "bool"
+          (= op 21) (if (= (xw M X t 3) 1) "i32" "u32")
+          (= op 22) (if (= (xw M X t 2) 16) "f16" "f32")
+          :else "?")))
+
+(defn- ty [M :vector-i64 X :vector-i64 t :i64] :string
+  (let [op (x-op X t)]
+    (cond (= op 23) (cat4 "vec" (string-from-i64 (xw M X t 3)) "<" (cat3 (scalar-ty M X (xw M X t 2)) ">" ""))
+          (= op 28) (cat5 "array<" (scalar-ty M X (xw M X t 2)) ", " (string-from-i64 (xw M X (xw M X t 3) 3)) ">")
+          (= op 29) (cat3 "array<" (scalar-ty M X (xw M X t 2)) ">")
+          (= op 30) (idn "S" t)
+          :else (scalar-ty M X t))))
+
+(defn- const-int [M :vector-i64 X :vector-i64 id :i64] :i64 (xw M X id 3))
+
+;; an operand as a WGSL expression
+(defn- ex [M :vector-i64 X :vector-i64 id :i64] :string
+  (let [op (x-op X id)]
+    (cond (= op 43)
+          (let [t (xw M X id 1) tk (x-op X t) v (string-from-i64 (const-int M X id))]
+            (cond (= tk 22) (cat3 "bitcast<f32>(" v "u)")
+                  (and (= tk 21) (= (xw M X t 3) 1)) (cat3 "" v "i")
+                  :else (cat3 "" v "u")))
+          (= op 41) "true"
+          (= op 42) "false"
+          :else (idn "v" id))))
+
+;; the pointee struct of a variable, or 0
+(defn- var-pointee [M :vector-i64 X :vector-i64 v :i64] :i64
+  (xw M X (xw M X v 1) 3))
+
+(defn- var-class [M :vector-i64 X :vector-i64 v :i64] :i64 (xw M X v 3))
+
+;; a variable or an access chain as a WGSL place
+(defn- place [M :vector-i64 X :vector-i64 id :i64] :string
+  (let [op (x-op X id)]
+    (cond
+      (= op 59)
+      (let [c (var-class M X id)]
+        (cond (= c 7) (idn "f" id)
+              (= c 4) (idn "s" id)
+              (= c 12) (idn "b" (x-bind X id))
+              (= c 1) (idn "i" id)
+              (= c 6) (idn "p" id)
+              :else "?bad-storage-class"))
+      (= op 65)
+      (let [base (xw M X id 3) c (var-class M X base)]
+        (cond
+          (= c 12)
+          (let [st (var-pointee M X base) m0 (xw M X st 2)]
+            (if (= (x-op X m0) 29)
+              (cat4 (idn "b" (x-bind X base)) "[" (ex M X (xw M X id 5)) "]")
+              (cat3 (idn "b" (x-bind X base)) ".m" (string-from-i64 (const-int M X (xw M X id 4))))))
+          (= c 4) (cat4 (idn "s" base) "[" (ex M X (xw M X id 4)) "]")
+          :else "?bad-chain"))
+      :else "?bad-place")))
+
+;; ---------------------------------------------------------------------
+;; Operators.
+
+(defn- spw-binop [op :i64] :string
+  (cond (= op 128) "+" (= op 129) "+" (= op 130) "-" (= op 131) "-"
+        (= op 132) "*" (= op 133) "*" (= op 134) "/" (= op 136) "/"
+        (= op 137) "%" (= op 194) ">>" (= op 196) "<<" (= op 199) "&"
+        (= op 197) "|" (= op 198) "^"
+        (= op 170) "==" (= op 171) "!=" (= op 172) ">" (= op 174) ">="
+        (= op 176) "<" (= op 178) "<=" (= op 180) "==" (= op 183) "!="
+        (= op 184) "<" (= op 186) ">" (= op 188) "<=" (= op 190) ">="
+        (= op 166) "||" (= op 167) "&&"
+        :else ""))
+
+(defn- comp-name [i :i64] :string
+  (cond (= i 0) "x" (= i 1) "y" (= i 2) "z" :else "w"))
+
+;; the statement for one non-control instruction at k, "" for none, "//ERROR ..." when refused
+(defn- stmt [M :vector-i64 X :vector-i64 k :i64 op :i64] :string
+  (let [rid (spv-word M (+ k 2))]
+    (cond
+      (= op 59)
+      (if (= (var-class M X rid) 7)
+        (cat5 "  var " (idn "f" rid) ": " (scalar-ty M X (xw M X (xw M X rid 1) 3)) ";\n")
+        "")
+      (= op 61) (cat5 "  let " (idn "v" rid) " = " (place M X (spv-word M (+ k 3))) ";\n")
+      (= op 62) (cat5 "  " (place M X (spv-word M (+ k 1))) " = " (ex M X (spv-word M (+ k 2))) ";\n")
+      (= op 65) ""
+      (= op 81)
+      (cat5 "  let " (idn "v" rid) " = " (ex M X (spv-word M (+ k 3)))
+            (cat3 "." (comp-name (spv-word M (+ k 4))) ";\n"))
+      (= op 224)
+      (let [sem (const-int M X (spv-word M (+ k 3)))]
+        (if (> (bit-and sem 64) 0) "  storageBarrier();\n  workgroupBarrier();\n" "  workgroupBarrier();\n"))
+      (= op 253) "  return;\n"
+      (= op 249) ""
+      (= op 56) ""
+      (= op 54) ""
+      (= op 55) ""
+      (not (string=? (spw-binop op) ""))
+      (cat5 "  let " (idn "v" rid) " = "
+            (cat5 "(" (ex M X (spv-word M (+ k 3))) " " (spw-binop op) (cat3 " " (ex M X (spv-word M (+ k 4))) ")"))
+            ";\n")
+      :else (cat3 "//ERROR unsupported opcode " (string-from-i64 op) "\n"))))
+
+;; ---------------------------------------------------------------------
+;; Pass 2: the function body. The control stack ST has four slots a frame:
+;; kind (1 if, 2 loop), merge label, aux (an if's else label, a loop's
+;; continue label), state (if: 0 awaiting its condition, 1 then, 2 else;
+;; loop: 0 body, 1 continuing).
+
+(defn- st-set [ST :vector-i64 sp :i64 j :i64 v :i64] :vector-i64 (vector-assoc! ST (+ (* sp 4) j) v))
+(defn- st-get [ST :vector-i64 sp :i64 j :i64] :i64 (vector-at ST (+ (* sp 4) j)))
+
+(defn- spw-body [M :vector-i64 X :vector-i64 start :i64] :string
+  (let [n (spv-count M) ST (vector-alloc 256)]
+    (loop [k start out "" sp 0]
+      (if (>= k n) out
+        (let [h (spv-word M k) wc (u64-shift-right h 16) op (bit-and h 65535) nk (+ k wc)]
+          (cond
+            (= wc 0) (string-concat out "//ERROR zero word count\n")
+            (= op 247)
+            (let [S1 (st-set (st-set (st-set (st-set ST sp 0 1) sp 1 (spv-word M (+ k 1))) sp 2 0) sp 3 0)]
+              (recur nk out (+ sp 1)))
+            (= op 246)
+            (let [S1 (st-set (st-set (st-set (st-set ST sp 0 2) sp 1 (spv-word M (+ k 1))) sp 2 (spv-word M (+ k 2))) sp 3 0)]
+              (recur nk (string-concat out "  loop {\n") (+ sp 1)))
+            (= op 250)
+            (if (= sp 0) (string-concat out "//ERROR branch outside a construct\n")
+              (let [top (- sp 1) c (ex M X (spv-word M (+ k 1))) f (spv-word M (+ k 3))]
+                (cond
+                  (and (= (st-get ST top 0) 1) (= (st-get ST top 3) 0))
+                  (let [S1 (st-set (st-set ST top 2 f) top 3 1)]
+                    (recur nk (cat3 out "  if (" (cat3 c ") {\n" "")) sp))
+                  (and (= (st-get ST top 0) 2) (= f (st-get ST top 1)))
+                  (recur nk (cat3 out "  if (!(" (cat3 c ")) { break; }\n" "")) sp)
+                  :else (string-concat out "//ERROR unsupported branch shape\n"))))
+            (= op 248)
+            (let [l (spv-word M (+ k 1))]
+              (if (= sp 0) (recur nk out sp)
+                (let [top (- sp 1) kind (st-get ST top 0) merge (st-get ST top 1) aux (st-get ST top 2) state (st-get ST top 3)]
+                  (cond
+                    (and (= kind 1) (= l merge)) (recur nk (string-concat out "  }\n") top)
+                    (and (= kind 1) (= state 1) (= l aux))
+                    (let [S1 (st-set ST top 3 2)] (recur nk (string-concat out "  } else {\n") sp))
+                    (and (= kind 2) (= l merge))
+                    (recur nk (string-concat out (if (= state 1) "  }\n  }\n" "  }\n")) top)
+                    (and (= kind 2) (= state 0) (= l aux))
+                    (let [S1 (st-set ST top 3 1)] (recur nk (string-concat out "  continuing {\n") sp))
+                    :else (recur nk out sp)))))
+            :else (recur nk (string-concat out (stmt M X k op)) sp)))))))
+
+;; ---------------------------------------------------------------------
+;; Module-level declarations and the entry point.
+
+(defn- buffer-decl [M :vector-i64 X :vector-i64 v :i64] :string
+  (let [st (var-pointee M X v) m0 (xw M X st 2) access (if (= (x-nw X st) 1) "read" "read_write")]
+    (if (= (x-op X m0) 29)
+      (cat5 (cat4 "@group(0) @binding(" (string-from-i64 (x-bind X v)) ") var<storage, " access)
+            "> " (idn "b" (x-bind X v)) ": " (cat3 (ty M X m0) ";\n" ""))
+      (cat5 (cat4 "@group(0) @binding(" (string-from-i64 (x-bind X v)) ") var<storage, " access)
+            "> " (idn "b" (x-bind X v)) ": " (cat3 (idn "S" st) ";\n" "")))))
+
+(defn- struct-decl [M :vector-i64 X :vector-i64 st :i64] :string
+  (let [wc (u64-shift-right (spv-word M (x-at X st)) 16)]
+    (loop [j 2 out (cat3 "struct " (idn "S" st) " { ")]
+      (if (>= j wc) (string-concat out "};\n")
+        (recur (inc j) (cat5 out "m" (string-from-i64 (- j 2)) ": " (cat3 (ty M X (xw M X st j)) ", " "")))))))
+
+(defn- builtin-param [M :vector-i64 X :vector-i64 v :i64] :string
+  (let [b (x-builtin X v) t (var-pointee M X v)
+        nm (cond (= b 26) "workgroup_id" (= b 27) "local_invocation_id" (= b 28) "global_invocation_id"
+                 (= b 24) "num_workgroups" (= b 29) "local_invocation_index" :else "?")]
+    (cat5 "@builtin(" nm ") " (idn "i" v) (cat3 ": " (ty M X (xw M X (xw M X v 1) 3)) ""))))
+
+(defn- spw-decls [M :vector-i64 X :vector-i64] :string
+  (let [bound (spv-word M 3)]
+    (loop [id 1 out ""]
+      (if (>= id bound) out
+        (let [op (x-op X id)]
+          (cond
+            (and (= op 59) (= (var-class M X id) 12))
+            (let [st (var-pointee M X id) m0 (xw M X st 2)
+                  sd (if (= (x-op X m0) 29) "" (struct-decl M X st))]
+              (recur (inc id) (cat3 out sd (buffer-decl M X id))))
+            (and (= op 59) (= (var-class M X id) 4))
+            (recur (inc id)
+                   (cat5 out "var<workgroup> " (idn "s" id) ": " (cat3 (ty M X (xw M X (xw M X id 1) 3)) ";\n" "")))
+            :else (recur (inc id) out)))))))
+
+(defn- spw-params [M :vector-i64 X :vector-i64] :string
+  (let [bound (spv-word M 3)]
+    (loop [id 1 out ""]
+      (if (>= id bound) out
+        (if (and (= (x-op X id) 59) (= (var-class M X id) 1))
+          (recur (inc id) (cat3 out (if (string=? out "") "" ", ") (builtin-param M X id)))
+          (recur (inc id) out))))))
+
+;; the OpFunction of the entry point (the first) and the LocalSize
+(defn- first-fn [M :vector-i64] :i64
+  (let [n (spv-count M)]
+    (loop [k 5]
+      (if (>= k n) -1
+        (let [h (spv-word M k) wc (u64-shift-right h 16)]
+          (cond (= wc 0) -1
+                (= (bit-and h 65535) 54) k
+                :else (recur (+ k wc))))))))
+
+(defn- local-size [M :vector-i64] :string
+  (let [n (spv-count M)]
+    (loop [k 5]
+      (if (>= k n) "1"
+        (let [h (spv-word M k) wc (u64-shift-right h 16)]
+          (cond (= wc 0) "1"
+                (and (= (bit-and h 65535) 16) (= (spv-word M (+ k 2)) 17))
+                (cat5 (string-from-i64 (spv-word M (+ k 3))) ", " (string-from-i64 (spv-word M (+ k 4))) ", " (string-from-i64 (spv-word M (+ k 5))))
+                :else (recur (+ k wc))))))))
+
+(defn spw-translate [M :vector-i64] :string
+  (let [bound (spv-word M 3)
+        X (spw-scan M (vector-alloc (* bound 8)))
+        fk (first-fn M)]
+    (if (< fk 0) "//ERROR no function\n"
+      (let [body (spw-body M X fk)
+            decls (spw-decls M X)
+            params (spw-params M X)
+            text (cat5 decls "@compute @workgroup_size(" (local-size M) ")\n"
+                       (cat5 "fn main(" params ") {\n" body "}\n"))]
+        text))))
