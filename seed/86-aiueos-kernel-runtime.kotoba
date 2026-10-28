@@ -22,6 +22,10 @@
 (def KM-IN16 105)
 (def KM-EFFECTS 106)
 (def KM-INTR-N 107)
+;; v1/v2 keep their original intrinsic trailer and exact output bytes.
+;; Effects/port16 belong to the v3 desktop image contract only.
+(defn- km-count [] :i64
+  (if (string=? (io-arg 3) "x86_64-aiueos-kernel-v3") KM-INTR-N 104))
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -92,7 +96,7 @@
                       :else 0))))
 (defn- km-lib [] :string
   (loop [k 0 text ""]
-    (if (>= k KM-INTR-N) text
+    (if (>= k (km-count)) text
       (let [args (case (km-arity k) 0 "[]" 1 "[a :i64]" 2 "[a :i64 b :i64]"
                       3 "[a :i64 b :i64 c :i64]" 4 "[a :i64 b :i64 c :i64 d :i64]"
                       6 "[a :i64 b :i64 c :i64 d :i64 e :i64 f :i64]" "[a :i64 b :i64 c :i64 d :i64 e :i64]")]
@@ -100,7 +104,7 @@
           (string-concat (km-name k) (string-concat " " (string-concat args " :i64 0)\n"))))))))))
 (defn- km-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 201) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k KM-INTR-N)) k -1)))
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (km-count))) k -1)))
 ;; The image shim stores its loader-provided boot pointer at context+80.
 ;; The paired EFI packager owns a 160-byte v5 prefix plus a 16 KiB map.
 ;; Only this closed project/image profile can derive that ABI region; no
@@ -132,10 +136,10 @@
           (and (>= (km-intr M f) (+ UV-FIRST 2)) (< (km-intr M f) WG-FIRST)) (+ 4294967296 4096)
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
-  (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N KM-INTR-N)]
+  (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N (km-count))]
     (if (<= first 1) (xg-err M 7102 first)
       (loop [k 0]
-        (if (>= k KM-INTR-N) (mem-set M 201 first)
+        (if (>= k (km-count)) (mem-set M 201 first)
           (let [f (+ first k) sym (xg-f M f FF-SYM) sb (+ MM-SYM-BASE (* sym MM-SYM-W))
                 a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
             (if (and (string=? (string-substring S a b) (km-name k))
@@ -270,7 +274,7 @@
         (= k KM-OWNED-PAGE) (km-page M t false)
         (= k KM-OWNED-WINDOW) (km-page M t true)
         (= k KM-PCI-MMIO) (kr-pci-mmio M t)
-        (and (>= k KM-ISR-FIRST) (< k KM-INTR-N)) (iv-intrinsic M (- k KM-ISR-FIRST) t)
+        (and (>= k KM-ISR-FIRST) (< k (km-count))) (iv-intrinsic M (- k KM-ISR-FIRST) t)
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
               (xg-byte (if (= k KM-MEM-N) 238 239)) (xg-save t))
