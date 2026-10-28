@@ -1596,3 +1596,74 @@ third-window read over the 78 committed run logs; bar-eval-s38.txt
 is the frozen evaluator's verdict; derivation-census-s38.txt is the
 independent second parser (51 rows / 0 mismatched); record.txt is
 the finding).
+
+## 2026-10-28 -- session 39 (JUN-59): the fourth-window joint probe (measurement; JOINT NO-COUPLE)
+
+Session 38's named-not-hidden residual ("a FOURTH window (three
+windows show arm-flipping instability but do not establish what,
+if anything, is stable)") is taken on ONE observable axis: at a
+FOURTH session window, repeat the session-36/38 interleaved design
+exactly (12 adjacent (hi,tw) block-pairs, byte-identical rebuilt
+binaries) and apply the s37-frozen joint probe statistics there --
+(A) hi min-vs-host_ns, (B) tw min-vs-host_ns, (C) hi-vs-tw min
+(block unit n=12, Spearman + two-sided permutation p, 100,000
+trials, frozen seed 20261028 -- the s35-frozen algorithm
+UNCHANGED). MEASUREMENT slice -- NEW HARDWARE; pre-registered
+before the runs (protocol freeze stamp 2026-10-28T04:07:17Z; joint
+letters (a) JOINT NO-COUPLE / (b) ANY COUPLE / (c) NOT EVALUABLE;
+CO-MOVE iff |rho| >= 0.60 AND p <= 0.05). HARDWARE RAN (MEASURED,
+aiueos-6600hs Intel BMG G31 ANV): 78 fresh processes (c2 3 + hi 36
++ tw 36 + c8 3), run window 2026-10-28T04:09:48Z..04:10:05Z, rc=0
+78/78 + '# done cells=24' 78/78, stderr 0 bytes 78/78, VERIFY
+mismatch 0 everywhere, forcing 1,404/1,404, S=8 fail-closed
+468/468, custody GO 2026-10-28T04:09:00Z before builds and ALL runs
+(corpus 16/16 + 3/3 local-vs-host MATCH), 4/4 build pins
+BYTE-IDENTICAL (hi a6c31b6c = the (1024,4033) pair's TENTH
+cross-session rebuild / 11th measurement; tw bb901eb5 = the
+(2048,8066) twin's FIFTH rebuild / 6th measurement). THE FINDING
+(MEASURED): T1 = (a) JOINT NO-COUPLE -- none of the three axes
+reads CO-MOVE at this window: (A) hi proxy rho 0.194011 / p
+0.544405; (B) tw proxy rho 0.130749 / p 0.685753; (C) cross-arm rho
+-0.158646 / p 0.617304. Across the four probed windows the
+proxy-vs-wander coupling now reads s34 window NO-COUPLE (A-axis
+only) / s36 window (A) COUPLE / s38 window (B) COUPLE / s39 window
+JOINT NO-COUPLE: the two couplings seen so far occurred on TWO
+DIFFERENT arms at two windows and neither is present at this fourth
+window, so no replicable coupling exists on either arm, and the
+wander is not attributed to the host-side proxy at this window
+either. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction UNMEASURED); n=12 LOW POWER (a null at n=12
+is not evidence of independence -- the NO-COUPLE letter is a
+fourth-window fact, not an exclusion of physical coupling); L14
+~1s resolution; L15 shared blocks; the four-window scoreboard is
+descriptive only (four windows are not a rate); estimator noise vs
+an unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(MEASURED here): (D1) per-run analogs (A1 rho 0.126790 / p
+0.460595; B1 rho 0.095901 / p 0.576574 -- no letter, L10 different
+unit; per-run minima hi 967..995, tw 969..1,002 inside the
+quote-only band 966..1,023); this window's block-min wander bands
+are the NARROWEST of the four probe windows (hi 981..995, tw
+983..991 vs s34 982..1,003 / s36 980..998 / s38 982..1,007 --
+descriptive range comparison against quote-only priors, no
+variance or rate claim); (D3) hi block A is day 2026-10-28's
+SEVENTH anchor reading (INTERMEDIATE/MIXED, median 1,146, min 986,
+in-band vs the frozen refs 1,129/1,132/1,131), its ledger line
+appended as DESCRIPTIVE by the frozen evaluator (same-day
+duplicate) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen
+evaluator twice byte-identical; fixture pin 38/0; next executable
+day slot 2026-10-29); (D4) host_ns: c2 671,412 (marginally below
+every non-excursion prior, 0.998x of the lowest 672,374 -- within
+0.2%, no excursion), c8 2,388,174 in band, hi per-block
+304,598..310,559, tw 305,820..310,149 (no excursion this window;
+the s31, s34-window and s36 tw block-E excursion causes stay
+UNMEASURED). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and
+no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3joint4-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s39.txt is the derived
+fourth-window read over the 78 committed run logs; bar-eval-s39.txt
+is the frozen evaluator's verdict; derivation-census-s39.txt is the
+independent second parser (52 rows / 0 mismatched); record.txt is
+the finding).
