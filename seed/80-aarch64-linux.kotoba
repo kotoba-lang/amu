@@ -60,8 +60,8 @@
       (xa-w 0xD2F0000B) (xa-w 0xEB0B013F) (xa-w 0x54000041) (xa-w 0xD4200000)
       (xa-w (xa-r3 0x9AC00C00))))
 (defn- xa-float-arith? [op :i64] :bool
-  (or (and (>= op BOP-F64-ADD) (<= op BOP-F64-DIV))
-      (and (>= op BOP-F32-ADD) (<= op BOP-F32-DIV))))
+  (or (and (>= op BOP-F64-ADD) (<= op BOP-F64-MAX))
+      (and (>= op BOP-F32-ADD) (<= op BOP-F32-MAX))))
 (defn- xa-fp-begin [M :vector-i64] :vector-i64
   (-> M (xa-w 0xD53B440B) (xa-w 0xD53B442C) (xa-w 0xD51B441F)))
 (defn- xa-fp-end [M :vector-i64] :vector-i64
@@ -274,7 +274,7 @@
         h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
 ;; Runtime-profile admission is shared with x86, whose emitter supports float.
-;; Float comparisons, conversions, basic arithmetic, sqrt and sign operations are implemented here.
+;; Float comparisons, conversions, arithmetic, sqrt and sign operations are implemented here.
 ;; Reject all other float instructions before emitting code.
 (defn- xa-float-un? [op :i64 sub :i64] :bool
   (and (= op OP-UN) (or (= sub UOP-F64-NEG) (= sub UOP-F64-ABS)
