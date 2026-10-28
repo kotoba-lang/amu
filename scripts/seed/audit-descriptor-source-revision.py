@@ -56,6 +56,7 @@ def audit(descriptor_revision, source_override):
     matched = actual == expected
     return {"status": "MATCH" if matched else "MISMATCH", "descriptorRevision": descriptor_revision,
             "descriptorSourceRevision": d["sourceRevision"], "sourceRevisionTested": source_revision,
+            "comparedDeclaredSourceRevision": source_revision == d["sourceRevision"],
             "modules": len(paths), "expectedUnity": expected, "actualUnity": actual,
             "compilerBuildProvenanceVerified": False, "publicReleaseQualified": False}
 

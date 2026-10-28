@@ -49,12 +49,20 @@ class AuditTests(unittest.TestCase):
     def test_expected_source_matches_but_is_not_provenance(self):
         result = audit.audit(self.good, None)
         self.assertEqual(result["status"], "MATCH")
+        self.assertTrue(result["comparedDeclaredSourceRevision"])
         self.assertFalse(result["compilerBuildProvenanceVerified"])
         self.assertFalse(result["publicReleaseQualified"])
+
+    def test_matching_other_revision_does_not_claim_declared_revision_was_checked(self):
+        result = audit.audit(self.good, self.good)
+        self.assertEqual(result["status"], "MATCH")
+        self.assertFalse(result["comparedDeclaredSourceRevision"])
+        self.assertEqual(result["descriptorSourceRevision"], self.source)
 
     def test_changed_source_does_not_match(self):
         result = audit.audit(self.good, self.changed)
         self.assertEqual(result["status"], "MISMATCH")
+        self.assertFalse(result["comparedDeclaredSourceRevision"])
         self.assertNotEqual(result["expectedUnity"], result["actualUnity"])
 
     def test_mutable_or_missing_revision_refused(self):
@@ -62,6 +70,15 @@ class AuditTests(unittest.TestCase):
             audit.audit("HEAD", None)
         with self.assertRaises(subprocess.CalledProcessError):
             audit.audit(self.good, "0" * 40)
+
+    def test_shallow_checkout_without_source_commit_is_refused(self):
+        with tempfile.TemporaryDirectory(prefix="amu-source-audit-shallow-") as parent:
+            clone = Path(parent) / "checkout"
+            subprocess.run(["git", "clone", "--quiet", "--no-local", "--depth=1",
+                            str(self.root), str(clone)], check=True, capture_output=True)
+            audit.ROOT = clone
+            with self.assertRaises(subprocess.CalledProcessError):
+                audit.audit(self.changed, None)
 
     def test_duplicate_or_unsafe_manifest_refused(self):
         for text in ("seed/00-test.kotoba\nseed/00-test.kotoba\n", "seed/../secret.kotoba\n"):
