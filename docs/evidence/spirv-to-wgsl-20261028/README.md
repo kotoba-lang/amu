@@ -96,3 +96,25 @@ repack for the large matrices, worth about 2.4x on this host in the sweep
 above. Neither is a decode rate; the end-to-end test is the 24-layer decode
 guest of the 2026-10-19 receipt, which cannot run on main until the GPU route
 (ADR 0375 B) exists.
+
+## The repacked layout as a Kotoba kernel (same day)
+
+`tools/gpu_kernels_q8.kotoba` writes the repacked Q8_0 kdot with the KIR v2
+builder (`kir2-kdot-q8-repack wg`, wg 32, 64, 128 or 256); it is a new file, so
+no existing module or pin changes. `spc-check` accepts the module (1474 words
+for wg 32), the translator emits it with no refusal, and `q8gen3.js` runs the
+generated text (`wgsl/q8-repack-32.wgsl`, `wgsl/q8-repack-64.wgsl`) on the
+same synthetic Q8_0 data as the hand-written experiment, one run each:
+
+| rows x cols | wg | max relative error vs f64 | ms | GB/s of Q8_0 payload |
+|---|---|---|---|---|
+| 4096 x 4096 | 32 | 1.8e-5 | 0.330 | 54 |
+| 4096 x 4096 | 64 | 3.6e-5 | 0.302 | 59 |
+| 32768 x 4096 | 32 | 6.9e-5 | 0.889 | 161 |
+| 32768 x 4096 | 64 | 5.8e-5 | 0.840 | 170 |
+
+At 32768 rows that is 2.4 to 2.5 times the generated `kdot-f32-r1` (68 GB/s)
+and matches the hand-written experiment (164), so the translator costs nothing
+here. Only the Q8_0 arm exists in this kernel; the K-quants, IQ4_XS and the
+other tensor types are not repacked. As above: a kernel on a synthetic tensor
+in a harness with a dispatch floor, not a decode rate.
