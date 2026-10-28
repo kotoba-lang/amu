@@ -1723,3 +1723,58 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s40.txt is the independent second parser
 (90 rows / 0 mismatched); bar-eval-s40.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 41 (JUN-59): the cross-window T-spread repartition probe (analysis; WINDOW-CONSISTENT)
+
+Session 40's first-named candidate row ("whether window-to-window
+variation of T itself (8..25 across the six probes) exceeds noise")
+is taken on ONE observable axis: per arm, does the cross-window
+spread of T, R_obs = max_w T_w - min_w T_w over the three probed
+windows (s36, s38, s39), exceed the cross-window run-repartition
+null (the 108 runs of one arm across the three windows are
+exchangeable; s35/s36-frozen constructions UNCHANGED)? ANALYSIS
+slice -- NO new hardware; DERIVED from the 234 committed run logs
+of the s36/s38/s39 windows (78 each). Resampling: 20,000 trials,
+random.Random(20261028) consumed in the frozen probe order (hi then
+tw), per trial one shuffle of the 108 run ids split into three
+pseudo-windows of 36 and 12 blocks of 3 in draw order, p = (1 +
+count(R* >= R_obs)) / (1 + 20,000); letters pre-registered
+(protocol freeze stamp 2026-10-28T05:05:50Z, BEFORE any statistic
+was computed): per arm (a) WINDOW-CONSISTENT / (b) EXCEEDS NULL
+(named which) / (c) NOT EVALUABLE. THE FINDING (DERIVED FROM
+MEASURED DATA): T1 = (a) WINDOW-CONSISTENT -- neither arm's R
+exceeds the null (hi T 18/25/14, R_obs 11, p 0.275536; tw T
+14/21/8, R_obs 13, p 0.079396; both > 0.05 at the frozen
+threshold). The 8..25 spread of the six probe Ts is itself
+consistent with run-exchangeable sampling noise. NAMED, NOT HIDDEN:
+(a) does NOT prove "no physical window-level driver" -- a driver
+acting uniformly within AND across windows is invisible by
+construction; R tests the window-to-window variation of the SPREAD
+of the 12 block-mins ONLY -- window-level shifts in LEVEL do not
+enter R (named limitation of the row question); the tw arm's p
+0.079396 sits ABOVE the frozen 0.05 and CLOSER to it than hi's --
+no trend, strength or near-miss claim; exchangeability across
+windows is a STRONGER assumption than session 40's within-window
+one; three windows in ONE day on ONE host is LOW POWER (a null is
+not evidence of stationarity); session 40's per-window (a) letters
+and this letter are DIFFERENT nulls; 20,000 trials (cost, named in
+the freeze; p resolution 1/20,001); L2 observational, NO causal
+mechanism, direction UNMEASURED; the wander's MECHANISM STAYS
+UNRESOLVED and threshold-artifact-vs-representation STAYS
+UNRESOLVED. Integrity (DERIVED): 3/3 windows clean (VERIFY mismatch
+0, counts, knobs, S=8 fail-closed, cell map), C1 (a) at the s39
+window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), and 6/6 block-min
+vectors plus the six T values reproduce the published values
+EXACTLY. Rule 4 binds: nothing moves; accelerator-targets defaults
+remain provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3xwindt-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s41.txt is the derived
+read over the 234 committed run logs of the three windows;
+derivation-census-s41.txt is the independent second parser (40 rows
+/ 0 mismatched); bar-eval-s41.txt is the frozen evaluator's
+unchanged verdict; record.txt is the finding).
