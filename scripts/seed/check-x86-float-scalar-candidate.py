@@ -118,12 +118,14 @@ def main():
         artifacts.append({"name": name, "source": digest(src), "image": digest(image),
                           "expectedI64": expected})
 
-    for name in ("public-floating-result", "public-floating-parameter", "scalar-handle"):
+    for name, diagnostic in (("public-floating-result", b"E2104 type mismatch"),
+                             ("public-floating-parameter", b"E2104 type mismatch"),
+                             ("scalar-handle", b"E7102 unsupported scalar profile")):
         src = output / (name + ".kotoba")
         image = output / (name + ".elf")
         shutil.copyfile(FIXTURES / ("refusals/" + name + ".kotoba"), src)
         result = run(name + "-refusal", [compiler, "compile", src, "--target", "x86_64-linux", "--output", image])
-        if result.returncode == 0 or image.exists() or b"E710" not in result.stdout + result.stderr:
+        if result.returncode == 0 or image.exists() or diagnostic not in result.stdout + result.stderr:
             raise SystemExit(name + ": expected admission refusal missing")
 
     if digest(compiler)["sha256"] != a.compiler_sha256:
