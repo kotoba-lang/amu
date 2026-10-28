@@ -59,7 +59,8 @@ def main():
         raise SystemExit('runner compile failed')
     runner.chmod(0o700)
     examples = [('full-float', ROOT / 'test/fixtures/selfhost/x86-float/native/x86_float_test.kotoba', 511),
-                ('document-f64', ROOT / 'diagnostics/kotoba161-runtime-float/doc-f64.kotoba', 42)]
+                ('document-f64', ROOT / 'diagnostics/kotoba161-runtime-float/doc-f64.kotoba', 42),
+                ('float-stack', ROOT / 'diagnostics/kotoba161-runtime-float/float-stack.kotoba', 42)]
     cases = []
     for name, input_source, expected in examples:
         source = out / (name + '.kotoba'); shutil.copyfile(input_source, source)
@@ -77,6 +78,29 @@ def main():
         if result.returncode or not found or int(found[1]) != expected:
             raise SystemExit(name + ' execution mismatch')
         cases.append({'name': name, 'source': pin(source), 'image': pin(image), 'payload': pin(payload), 'expected': expected})
+    src = out / 'f32-range-trap.kotoba'
+    shutil.copyfile(ROOT / 'diagnostics/kotoba161-runtime-float/f32-range-trap.kotoba', src)
+    image = out / 'f32-range-trap.kx64'
+    result = run('f32-range-trap-compile', [compiler, 'compile', src, '--target', 'x86_64-linux', '--output', image, '--format', 'kx64-v1'])
+    if result.returncode or not image.is_file():
+        raise SystemExit('f32 range trap compile failed')
+    header, body = image.read_bytes().split(b'\n\n', 1)
+    match = re.fullmatch(rb'KX64V1 x86_64-linux sysv-ctx-v11 ([0-9]+) 0', header)
+    if not match or len(body) != int(match[1]) or body[0] != 0xe9:
+        raise SystemExit('f32 range trap invalid KX64')
+    payload = out / 'f32-range-trap.bin'; payload.write_bytes(body)
+    result = run('f32-range-trap-run', [runner, payload, '0', '0', 'x86_64', '-'], dict(env, KEXE_STRUCTURED_REPORT='1', KEXE_ALLOW='-'))
+    if result.returncode != 120 or b':status :trap' not in result.stdout or b'SIGILL' not in result.stderr:
+        raise SystemExit('f32 range trap did not fail closed')
+    cases.append({'name': 'f32-range-trap', 'source': pin(src), 'image': pin(image), 'payload': pin(payload), 'expectedTrap': True})
+    for name, diagnostic in [('kernel-floating-operation', b'E7102'), ('kernel-floating-result', b'E2104')]:
+        source = out / (name + '.kotoba')
+        shutil.copyfile(ROOT / 'test/fixtures/selfhost/x86-float/refusals' / (name + '.kotoba'), source)
+        image = out / (name + '.o')
+        result = run(name + '-refusal', [compiler, 'compile', source, '--target', 'x86_64-aiueos-kernel-v1', '--output', image])
+        if result.returncode == 0 or image.exists() or diagnostic not in result.stderr:
+            raise SystemExit(name + ' expected refusal missing')
+        cases.append({'name': name, 'source': pin(source), 'expectedDiagnostic': diagnostic.decode(), 'noArtifact': True})
     if pin(cross_path) != cross_pin or pin(compiler) != cross['x86FullCompiler']:
         raise SystemExit('candidate changed during run')
     report = {'status': 'PASS_X86_RUNTIME_FLOAT_DIAGNOSTIC', 'compiler': pin(compiler), 'crossReceipt': cross_pin,

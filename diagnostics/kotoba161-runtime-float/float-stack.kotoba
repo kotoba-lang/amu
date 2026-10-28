@@ -1,0 +1,7 @@
+(ns native.float-stack (:export [main]))
+(defn- combine [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 x :f64 y :f64] :f64
+  (f64-add (i64-to-f64-rounded (+ (+ (+ a b) (+ c d)) (+ e f))) (f64-add x y)))
+(defn- nested [x :f64] :f64 (f64-add x 1.0))
+(defn main [] :i64
+  (let [v (combine 1 2 3 4 5 6 1.5 (nested 1.5))]
+    (if (f64-eq v 25.0) 42 0)))
