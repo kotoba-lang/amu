@@ -1,0 +1,85 @@
+JUN-59 session 68 DEFERRED-GATE BATCH (the s67 carry-forward's named
+"next tick must run these before any push-equivalent claim" items -- NO
+runs, NO compiles, NO GO stamp, NO day-slot consumption, NO ledger line;
+a verification slice only). The W5 measurement row's measurement half
+REMAINS day-slot-gated (STARTED, NOT FINISHED): W5 is DEFINED as the
+window whose 78 fresh processes run in the first measurement session at
+or after 2026-10-29T00:00:00Z; this tick runs 2026-10-28T21:3x-21:4xZ,
+~2h2x before that slot opens (NAMED, not skipped silently).
+
+1. THE THREE DEFERRED ITEMS (s67 record.txt section 4), ALL RUN AND
+   VERIFIED THIS TICK:
+   (a) FULL run-tests.cljk, command
+       kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk
+       run LIVE from the worktree root: exit 1, RED AT BASE kotoba.form
+       (ADR-0362, outside this diff -- this tick touches NO .cljk
+       namespace). stderr: "Error: Could not find namespace: kotoba.form"
+       (nbb load failure at startup). stdout 0 bytes. Captures
+       scratch/gate-s68-full.out (0 bytes) and scratch/gate-s68-full.err
+       (879 bytes) are BYTE-IDENTICAL to the newest full-suite pins on
+       disk (scratch/gate-s64-full.out/.err -- s65/s66 left no full-suite
+       captures in scratch/; the pin chain s65->s66->s67 claimed identity
+       to the same artifacts). NO green full suite is claimed.
+   (b) settle-bar evaluator (the frozen
+       anv-b3settlebar-20261027/settle-bar-eval.py): --self-test exit 0,
+       "TOTAL: 38 assertions passed, 0 failed" (scratch/bar-s68-selftest.txt,
+       .err 0 bytes); ledger eval over docs/evidence/gpu/settle-bar-ledger.txt
+       run TWICE, exit 0 both, captures scratch/bar-s68-eval-run1.txt and
+       run2.txt BYTE-IDENTICAL to each other AND to the s66 pin
+       (scratch/bar-s66-eval-run1.txt) -> VERDICT: PENDING 1/4 unchanged
+       (counted day=2026-10-28 session=s31 only; 1 of 4 qualifying UTC
+       days). The bar's state is VERIFIED this tick (it was UNVERIFIED at
+       s67).
+   (c) find docs/evidence/gpu -name '*.sh' -> 0 files (exit 0, empty).
+2. STANDING GATES RE-RUN THIS TICK (real runs; every capture
+   byte-identical to its pinned artifact):
+   gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649 assertions
+     passed, 0 failed" (scratch/gate-s68-classify.txt, .err 0 bytes),
+     byte-identical to the s67 pin (scratch/gate-s67-classify.txt).
+   scoped GPU gate: scratch runner scratch/scoped-gpu-gate.cljk (the
+     eight GPU-owned test namespaces of run-tests.cljk -- the eight
+     accelerator-* namespaces -- same engine and classpath; created, run,
+     deleted, never committed) GREEN 123/12162/0/0 run 1 AND run 2
+     ("Ran 123 tests containing 12162 assertions." / "0 failures, 0
+     errors."), both captures 919 bytes, .err 0 bytes, byte-identical to
+     each other AND to the s67 pin (scratch/gate-s67-run1.txt). The "kbb:
+     2 dep(s) ..." classpath notice is terminal output, not part of the
+     capture (established convention).
+3. NAMED, NOT HIDDEN -- A PIN RECONSTRUCTION NOTE: the first scoped-gate
+   runner draft this tick carried run-tests.cljk's :end-run-tests
+   reporting override and its capture was 969 bytes with an extra "nbb:
+   123 tests, 12162 passed, 0 failed, 0 errors" summary line (the ONLY
+   diff vs the pin, verified by diff); the pinned runner has NO override
+   and the capture reproduces byte-identically without it. The runner was
+   rebuilt to the pinned shape and both runs re-taken (section 2). This
+   records the shape of the pinned runner for future ticks: ns + the
+   eight requires + the bare (t/run-tests ...) form, nothing else.
+4. BAR / SLOT: nothing this tick could produce a bar-qualifying reading
+   (no instrument runs; the 2026-10-28 slot is s31's and the W5 window
+   cannot open before 2026-10-29T00:00:00Z) -- NO ledger line and NO day
+   slot either way. VERDICT PENDING 1/4 unchanged (verified, section
+   1b).
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false for :arm/:unknown; the measured
+   rows keep ADR-0358's flags); NO vendor optimization exists for Intel.
+   No derivation census (a gate-only tick computes no statistics --
+   NAMED, not omitted).
+6. QUEUE (unchanged): next executable row is queue row 1's MEASUREMENT
+   half -- the W5 session in the first measurement session at or after
+   2026-10-29T00:00:00Z (78 fresh processes, frozen run order, custody
+   GO stamp before builds and runs -- INCLUDING the still-unstaged host
+   workdir ~/anv-b3w5xdayrep-20261029 as that session's own pre-GO
+   custody step (s67 record section 2), host-side 3/3 local-vs-host
+   comparison and corpus sha256sum -c 16/16 as its pre-GO checks, bar
+   line on hi block A of the W5 window) -- then its T7 read, then the
+   three frozen analysis halves (s64 T14 hi-wander, s65 T15
+   quantile-pair level axes, s66 T16 second-pair profile axis), each
+   already pre-registered. With this tick every s67-deferred gate is
+   green-or-honestly-red AT BASE before the W5 session opens; the queue
+   is clear for the measurement.
+
+Evidence: docs/evidence/gpu/anv-b3w5deferredgates-20261028/record.txt
+(this file) + the s68 gate captures in scratch/ (untracked, per the
+established convention). Chain: bot/amu-gpu-chain-20261028-3 (chain PR
+#1643, commit + push only). (JUN-55, JUN-59; Linear tracking JUN-499)

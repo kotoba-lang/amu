@@ -1,0 +1,67 @@
+(ns embench.qr-frame (:export [observe bounds-probe]))
+;; Active version-2 initframe algorithm; owned base and triangular reserve mask.
+;; Fragment only: data placement, masks, scoring and final format remain open.
+;; Copyright 2014-2019 Embecosm / University of Bristol, qrduino contributors.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+(defn- put [v :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! v i (bit-and x 255)))
+(defn- weight [i :i64] :i64
+ (if (< i 4) (if (< i 2) (if (= i 0) 128 64) (if (= i 2) 32 16)) (if (< i 6) (if (= i 4) 8 4) (if (= i 6) 2 1))))
+(defn- bit-index [x :i64 y :i64] :i64 (+ (quot x 8) (* y 4)))
+(defn- set-bit [v :vector-i64 x :i64 y :i64] :vector-i64
+ (let [i (bit-index x y)] (put v i (bit-or (vector-at v i) (weight (rem x 8))))))
+(defn- bit? [v :vector-i64 x :i64 y :i64] :bool
+ (not= (bit-and (vector-at v (bit-index x y)) (weight (rem x 8))) 0))
+(defn- reserve [v :vector-i64 x :i64 y :i64] :vector-i64
+ (let [lo (if (> x y) y x) hi (if (> x y) x y) bt (+ (quot (+ (* hi hi) hi) 2) lo) i (+ 128 (quot bt 8))]
+  (put v i (bit-or (vector-at v i) (weight (rem bt 8))))))
+(defn- finder-border [v :vector-i64 x :i64 y :i64 j :i64] :vector-i64
+ (if (= j 6) v
+  (finder-border (set-bit (set-bit (set-bit (set-bit v (+ x j) y) x (+ y j 1)) (+ x 6) (+ y j)) (+ x j 1) (+ y 6)) x y (+ j 1))))
+(defn- finder-white [v :vector-i64 x :i64 y :i64 j :i64] :vector-i64
+ (if (= j 5) v
+  (finder-white (reserve (reserve (reserve (reserve v (+ x j) (+ y 1)) (+ x 1) (+ y j 1)) (+ x 5) (+ y j)) (+ x j 1) (+ y 5)) x y (+ j 1))))
+(defn- finder-inner [v :vector-i64 x :i64 y :i64 j :i64] :vector-i64
+ (if (= j 4) v
+  (finder-inner (set-bit (set-bit (set-bit (set-bit v (+ x j) (+ y 2)) (+ x 2) (+ y j 1)) (+ x 4) (+ y j)) (+ x j 1) (+ y 4)) x y (+ j 1))))
+(defn- finder [v :vector-i64 x :i64 y :i64] :vector-i64
+ (finder-inner (finder-white (finder-border (set-bit v (+ x 3) (+ y 3)) x y 0) x y 1) x y 2))
+(defn- finders [v :vector-i64] :vector-i64 (finder (finder (finder v 0 0) 0 18) 18 0))
+(defn- align-border [v :vector-i64 x :i64 y :i64 j :i64] :vector-i64
+ (if (= j 2) v
+  (align-border (set-bit (set-bit (set-bit (set-bit v (+ x j) (- y 2)) (- x 2) (+ y j 1)) (+ x 2) (+ y j)) (+ x j 1) (+ y 2)) x y (+ j 1))))
+(defn- align-white [v :vector-i64 x :i64 y :i64 j :i64] :vector-i64
+ (if (= j 2) v
+  (align-white (reserve (reserve (reserve (reserve v (- x 1) (+ y j)) (+ x 1) (- y j)) (- x j) (- y 1)) (+ x j) (+ y 1)) x y (+ j 1))))
+(defn- align [v :vector-i64 x :i64 y :i64] :vector-i64 (align-white (align-border (set-bit v x y) x y -2) x y 0))
+(defn- align-row [v :vector-i64 x :i64 y :i64 delta :i64] :vector-i64
+ (if (> x (- delta 3)) (let [a (align v x y)] (if (< x delta) a (align-row a (- x delta) y delta))) v))
+(defn- aligns [v :vector-i64 y :i64 delta :i64] :vector-i64
+ (let [a (align-row v 18 y delta)] (if (<= y (+ delta 9)) a
+  (let [next (- y delta)] (aligns (align (align a 6 next) next 6) next delta)))))
+(defn- gap-y [v :vector-i64 y :i64] :vector-i64
+ (if (= y 7) v (gap-y (reserve (reserve (reserve v 7 y) 17 y) 7 (+ y 18)) (+ y 1))))
+(defn- gap-x [v :vector-i64 x :i64] :vector-i64
+ (if (= x 8) v (gap-x (reserve (reserve (reserve v x 7) (+ x 17) 7) x 17) (+ x 1))))
+(defn- format-first [v :vector-i64 x :i64] :vector-i64 (if (= x 9) v (format-first (reserve v x 8) (+ x 1))))
+(defn- format-x [v :vector-i64 x :i64] :vector-i64
+ (if (= x 8) v (format-x (reserve (reserve v (+ x 17) 8) 8 x) (+ x 1))))
+(defn- format-y [v :vector-i64 y :i64] :vector-i64
+ (if (= y 7) v (format-y (reserve v 8 (+ y 18)) (+ y 1))))
+(defn- timing [v :vector-i64 x :i64] :vector-i64
+ (if (= x 11) v
+  (let [a (if (= (rem x 2) 1) (reserve (reserve v (+ 8 x) 6) 6 (+ 8 x)) (set-bit (set-bit v (+ 8 x) 6) 6 (+ 8 x)))] (timing a (+ x 1)))))
+(defn- black-row [v :vector-i64 x :i64 y :i64] :vector-i64
+ (if (> x y) v (black-row (if (bit? v x y) (reserve v x y) v) (+ x 1) y)))
+(defn- black-mask [v :vector-i64 y :i64] :vector-i64
+ (if (= y 25) v (black-mask (black-row v 0 y) (+ y 1))))
+(defn- stages [v :vector-i64 stage :i64] :vector-i64
+ (if (= stage 0) v
+  (let [a (finders v)] (if (= stage 1) a
+   (let [b (aligns a 18 15)] (if (= stage 2) b
+    (let [c (set-bit b 8 17)] (if (= stage 3) c
+     (let [d (gap-x (gap-y c 0) 0)] (if (= stage 4) d
+      (let [e (format-y (format-x (format-first d 0) 0) 0)] (if (= stage 5) e
+       (let [f (timing e 0)] (if (or (= stage 6) (= stage 7)) f (black-mask f 0)))))))))))))))
+(defn observe [encoded :i64] :i64
+ (let [stage (quot encoded 256) cell (rem encoded 256) result (stages (vector-alloc 256) stage)] (vector-at result cell)))
+(defn bounds-probe [i :i64] :i64 (vector-at (vector-alloc 256) i))

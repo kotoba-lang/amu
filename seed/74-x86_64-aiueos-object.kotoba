@@ -53,22 +53,46 @@
 ;; sequences are kotoba-native's x86_64.cljk emit-kernel-load-u32 /
 ;; emit-kernel-store-u32 / emit-kernel-subregion, and so are the displacements.
 (def XK-INTR-N 6)
+(def XK-INTR-W 12)
 (def XK-WINDOW-N 4)
+;; ids 6..11 (JUN-556 B): u8, u16 and u64 loads and stores at the 512-byte tier. Object and
+;; image routes only: the locked-project route keeps the four memory stubs and the ports.
+;; The six extra stubs are appended ONLY to a source that names one of them: every stub is a
+;; function, so appending them to all sources would change the bytes of every object the route
+;; emits (and so of every pinned aiueos object when it is rebuilt). A source that does not use
+;; them compiles to the bytes it always had.
+(def XK-WIDTH-FIRST 6)
 (def XU-LOCAL-CALL-FLAG 211)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
-          4 "kernel-out-u8" 5 "kernel-out-u32" ""))
+          4 "kernel-out-u8" 5 "kernel-out-u32"
+          6 "kernel-load-u8" 7 "kernel-store-u8" 8 "kernel-load-u16" 9 "kernel-store-u16"
+          10 "kernel-load-u64" 11 "kernel-store-u64" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
   (string-concat (xk-memory-lib)
     "\n(defn- kernel-out-u8 [p :i64 v :i64] :i64 v)\n(defn- kernel-out-u32 [p :i64 v :i64] :i64 v)\n"))
+(defn- xk-width-lib [] :string
+  (string-concat "(defn- kernel-load-u8 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u8 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-load-u16 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u16 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+      "(defn- kernel-load-u64 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u64 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n")))
+;; true when the guest source S names one of the six width accesses
+(defn- xk-uses-widths? [S :string] :bool
+  (or (or (>= (string-index-of S "kernel-load-u8") 0) (>= (string-index-of S "kernel-store-u8") 0))
+      (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
+          (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
+(defn- xk-lib-for [S :string] :string
+  (if (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib)) (xk-lib)))
+;; true when the compiled text carries the width block: its first stub is defined there
+(defn- xk-has-width-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-N))) k -1)))
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k -1)))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
@@ -114,6 +138,40 @@
     ;; the port to DX and leaves the original value in RAX, as the owner ABI.
     4 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xee) (xg-save t))
     5 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xef) (xg-save t))
+;; kernel-load-u8: byte at 512, the reference emit-kernel-load-u8 of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; movzx eax,byte [rdx+rax]; jmp +2; ud2
+    6 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x18870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0xf840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x6830f 6) (xg-bytes 0x204b60f 4) (xg-bytes 0x2eb 2)
+          (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u8: byte at 512, the reference emit-kernel-store-u8 of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov [rdx+rdi],al; jmp +2; ud2
+    7 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x17870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0xe840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x5830f 6) (xg-bytes 0x3a0488 3)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-load-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,2; jl; test rax,1; ja; movzx eax,word [rdx+rax]; jmp +2; ud2
+    8 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
+          (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x204b70f 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,2; jl; test rdi,1; ja; mov [rdx+rdi],ax; jmp +2; ud2
+    9 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
+          (xg-bytes 0xfe2948 3) (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048966 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-load-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,8; jl; test rax,7; ja; mov rax,[rdx+rax]; jmp +2; ud2
+    10 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
+          (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x2048b48 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
+;; kernel-store-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
+;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,8; jl; test rdi,7; ja; mov [rdx+rdi],rax; jmp +2; ud2
+    11 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+          (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
+          (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
+          (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
     (xg-err M 7101 OP-CALL)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
@@ -128,7 +186,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S XK-INTR-N false))
+  (xk-scan-count M S (if (xk-has-width-block? S) XK-INTR-W XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -360,7 +418,7 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (< (xk-intr M a) XK-WINDOW-N)
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (>= (xk-intr M a) XK-WIDTH-FIRST))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
@@ -372,11 +430,11 @@
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most five
 ;; scalar parameters, scalar result. `main` carries no special meaning.
-(defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64
+(defn- xo-check-fns-n [M :vector-i64 S :string f :i64 multi :bool] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
     (let [kind (xg-f M f FF-KIND) n (xg-f M f FF-NPARAMS) sym (xg-f M f FF-SYM)
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
-      (cond (= kind FK-DEF) (xo-check-fns M S (inc f))
+      (cond (= kind FK-DEF) (xo-check-fns-n M S (inc f) multi)
             (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
                 (< n 0) (> n (if (= (xg-get M 4) 2) 16 5)) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
@@ -385,14 +443,18 @@
                 (let [name (string-substring S a b) v (iv-vector name) live (lv-id name)]
                   (cond (string=? name "main")
                           (if (or (not= (xg-get M 1) 0) (not= n 0)) (xg-err M 7102 f)
-                            (xo-check-fns (xg-set M 1 f) S (inc f)))
-                        (lv-typed? M f live) (xo-check-fns M S (inc f))
+                            (xo-check-fns-n (xg-set M 1 f) S (inc f) multi))
+                        (lv-typed? M f live) (xo-check-fns-n M S (inc f) multi)
                         (and (>= v 0) (= n 4) (= (xg-f M f FF-RTYPE) TY-I64)
                              (= (ck-pt M f 0) TY-I64) (= (ck-pt M f 1) TY-I64)
-                             (= (ck-pt M f 2) TY-I64) (= (ck-pt M f 3) TY-I64)) (xo-check-fns M S (inc f))
+                             (= (ck-pt M f 2) TY-I64) (= (ck-pt M f 3) TY-I64)) (xo-check-fns-n M S (inc f) multi)
                         :else (xg-err M 7102 f)))
-                (if (not= (xg-get M 1) 0) (xg-err M 7102 f) (xo-check-fns (xg-set M 1 f) S (inc f))))
-            :else (xo-check-fns M S (inc f))))))
+                (cond (= (xg-get M 1) 0) (xo-check-fns-n (xg-set M 1 f) S (inc f) multi)
+                      multi (xo-check-fns-n M S (inc f) multi)
+                      :else (xg-err M 7102 f)))
+            :else (xo-check-fns-n M S (inc f) multi)))))
+
+(defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64 (xo-check-fns-n M S f false))
 
 ;; ELF64 ET_REL emission. Layout: header, seven section headers, .text,
 ;; .data (the private 80-byte context), .rela.text (one entry), .symtab
@@ -402,10 +464,48 @@
       (xg-out size 8) (xg-out link 4) (xg-out info 4) (xg-out align 8) (xg-out entsize 8)))
 (defn- xo-sym [M :vector-i64 name :i64 info :i64 shndx :i64 value :i64 size :i64] :vector-i64
   (-> M (xg-out name 4) (xg-out info 1) (xg-out 0 1) (xg-out shndx 2) (xg-out value 8) (xg-out size 8)))
-(defn- xo-elf [M :vector-i64 S :string a :i64 b :i64 shim :i64 fuel :i64] :vector-i64
-  (let [n (- b a) tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
-        rela-off (+ data-off 80) sym-off (+ rela-off 24) str-off (+ sym-off 72)
-        str-len (+ n 10) shstr-off (+ str-off str-len)]
+;; The exports of an object, in definition order. E[0] is how many, E[i] the
+;; function id. NS[2i-1] and NS[2i] are the name span of export i.
+(def XO-MAX-EXPORTS 8)
+(defn- xo-collect [M :vector-i64 f :i64 E :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) E
+    (let [kind (xg-f M f FF-KIND)]
+      (if (and (or (= kind FK-DEFN) (= kind FK-PRIV)) (= (xg-f M f FF-EXPORT) 1))
+        (let [n (inc (vector-at E 0))]
+          (xo-collect M (inc f) (if (> n XO-MAX-EXPORTS) (vector-assoc! E 0 n)
+                                  (vector-assoc! (vector-assoc! E 0 n) n f))))
+        (xo-collect M (inc f) E)))))
+(defn- xo-spans [M :vector-i64 E :vector-i64 i :i64 NS :vector-i64] :vector-i64
+  (if (> i (vector-at E 0)) NS
+    (let [sym (xg-f M (vector-at E i) FF-SYM) sb (+ MM-SYM-BASE (* sym MM-SYM-W))]
+      (xo-spans M E (inc i)
+                (vector-assoc! (vector-assoc! NS (- (* 2 i) 1) (vector-at M (+ sb SF-START)))
+                               (* 2 i) (vector-at M (+ sb SF-END)))))))
+(defn- xo-shims [M :vector-i64 E :vector-i64 i :i64 fuel :i64] :vector-i64
+  (if (> i (vector-at E 0)) M (xo-shims (xo-shim M fuel (vector-at E i)) E (inc i) fuel)))
+;; the bytes the names take in .strtab: each name and its NUL
+(defn- xo-names-len [NS :vector-i64 i :i64 cnt :i64 acc :i64] :i64
+  (if (> i cnt) acc
+    (xo-names-len NS (inc i) cnt (+ acc (- (vector-at NS (* 2 i)) (vector-at NS (- (* 2 i) 1))) 1))))
+(defn- xo-relas [M :vector-i64 i :i64 cnt :i64 shim :i64] :vector-i64
+  (if (>= i cnt) M
+    (xo-relas (-> M (xg-out (+ (* i shim) 3) 8) (xg-out 4294967298 8) (xg-out -4 8)) (inc i) cnt shim)))
+(defn- xo-fsyms [M :vector-i64 NS :vector-i64 i :i64 cnt :i64 shim :i64 off :i64] :vector-i64
+  (if (> i cnt) M
+    (xo-fsyms (xo-sym M off 0x12 1 (* (dec i) shim) shim) NS (inc i) cnt shim
+              (+ off (- (vector-at NS (* 2 i)) (vector-at NS (- (* 2 i) 1))) 1))))
+(defn- xo-fnames [M :vector-i64 S :string NS :vector-i64 i :i64 cnt :i64] :vector-i64
+  (if (> i cnt) M
+    (xo-fnames (-> M (out-put-span S (vector-at NS (- (* 2 i) 1)) (vector-at NS (* 2 i))) (xg-out 0 1)) S NS (inc i) cnt)))
+
+;; cnt exports: cnt shims of shim bytes each, cnt relocations, cnt public symbols.
+;; With one export the bytes are the ones this function always wrote.
+(defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 shim :i64 fuel :i64] :vector-i64
+  (let [tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
+        rela-size (* 24 cnt) sym-size (* 24 (+ cnt 2))
+        rela-off (+ data-off 80) sym-off (+ rela-off rela-size) str-off (+ sym-off sym-size)
+        names (xo-names-len NS 1 cnt 0)
+        str-len (+ names 9) shstr-off (+ str-off str-len)]
     (-> M (mem-set MM-OUT-N 1)
         (xg-out 0x00010102464c457f 8) (xg-out 0 8)
         (xg-out 1 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0 8) (xg-out 0 8) (xg-out 64 8)
@@ -414,22 +514,24 @@
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
         (xo-shdr 7 1 3 0 data-off 80 0 0 8 0)
-        (xo-shdr 13 4 0x40 0 rela-off 24 4 1 8 24)
-        (xo-shdr 24 2 0 0 sym-off 72 5 2 8 24)
+        (xo-shdr 13 4 0x40 0 rela-off rela-size 4 1 8 24)
+        (xo-shdr 24 2 0 0 sym-off sym-size 5 2 8 24)
         (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
         (xo-shdr 40 3 0 0 shstr-off 50 0 0 1 0)
         (xg-out-code 1)
         (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8)
-        ;; The context symbol is LOCAL (P1 review): two objects linked into
-        ;; one kernel must not collide on a global `context`, so locals come
-        ;; first (null, context, export) and sh_info names the first global.
-        (xg-out 3 8) (xg-out 4294967298 8) (xg-out -4 8)
+        ;; Every shim has the same length, so shim i starts at i * shim and its
+        ;; context LEA displacement is at +3. The context symbol (index 1) is
+        ;; LOCAL (P1 review): two objects linked into one kernel must not collide
+        ;; on a global `context`, so locals come first (null, context, exports)
+        ;; and sh_info names the first global.
+        (xo-relas 0 cnt shim)
         (xo-sym 0 0 0 0 0)
-        (xo-sym (+ n 2) 0x01 2 0 80)
-        (xo-sym 1 0x12 1 0 shim)
-        (xg-out 0 1) (out-put-span S a b) (xg-out 0 1) (xg-out 0x747865746e6f63 8)
+        (xo-sym (+ names 1) 0x01 2 0 80)
+        (xo-fsyms NS 1 cnt shim 1)
+        (xg-out 0 1) (xo-fnames S NS 1 cnt) (xg-out 0x747865746e6f63 8)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
         (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)
         (xg-out 0x0062 2))))
@@ -447,19 +549,19 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
-          :else (let [f (xg-get admitted 1) sym (xg-f admitted f FF-SYM)
-                      sb (+ MM-SYM-BASE (* sym MM-SYM-W))
-                      a (vector-at admitted (+ sb SF-START)) b (vector-at admitted (+ sb SF-END))
-                      generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
-                                    (xg-index-labels 1) (xo-shim fuel f) (xg-code 1))]
-                  (xo-elf (xg-fix generated 1) S a b (xo-shim-len fuel) fuel)))))
+          :else (let [E (xo-collect admitted 1 (vector-alloc (+ XO-MAX-EXPORTS 2))) cnt (vector-at E 0)]
+                  (if (> cnt XO-MAX-EXPORTS) (xg-err admitted 7102 (xg-get admitted 1))
+                    (let [NS (xo-spans admitted E 1 (vector-alloc (+ (* 2 XO-MAX-EXPORTS) 2)))
+                          generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                        (xg-index-labels 1) (xo-shims E 1 fuel) (xg-code 1))]
+                      (xo-elf (xg-fix generated 1) S NS cnt (xo-shim-len fuel) fuel)))))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)]
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
 ;; JUN-31: the image packaging step, in the same adopted compiler lineage.
@@ -545,7 +647,7 @@
                     (xg-err generated 7104 data)
                     (xi-elf (xi-patch-shim (xg-fix generated 1) data XI-DATA-SIZE) data fuel 0 false))))))
 (defn- xi-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib)) front (xg-front text)
+  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)
         image (if (= (vector-at front MM-ERR) 0) (xi-build front text fuel) front)
         e (vector-at image MM-ERR)]
     (cond (> e 0) (xo-report image path out)
