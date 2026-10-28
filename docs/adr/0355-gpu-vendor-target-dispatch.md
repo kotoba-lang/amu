@@ -1961,3 +1961,67 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s44.txt is the independent second parser
 (45 rows / 0 mismatched); bar-eval-s44.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 45 (JUN-59): the per-cell wander repartition probe (analysis; T1 PER-CELL-NOISE-CONSISTENT, s38 replication (b) on hi)
+
+Session 44's first-named candidate row ("a PER-CELL WANDER probe
+-- the per-cell analog of session 40 -- does any cell's
+within-window block-level wander exceed WITHIN-window
+run-repartition noise?") taken on ONE observable axis: per
+(window, arm), does ANY ok cell's within-window block-level
+wander W_c = max_b V_{b,c} - min_b V_{b,c} (V = the block's
+per-cell pooled median, s35/s36-frozen unit, UNCHANGED) exceed
+the within-window run-repartition null? The primary per-probe
+statistic is the MAX-T M = max_c W_c with the max taken inside
+each resampling trial (family-wise over the 18 cells). ANALYSIS
+slice -- NO new hardware; inputs are the 234 committed run logs
+of sessions 36/38/39. Pre-registered (protocol freeze stamp
+2026-10-28T07:15:00Z, BEFORE any statistic was computed): per
+probe (a) PER-CELL-NOISE-CONSISTENT / (b) EXCEEDS NULL (named
+which cell(s)) / (c) NOT EVALUABLE; per-window letter (session
+40's rule); T1 = the s39 window letter; resampling 20,000 trials
+per probe, random.Random(20261028) consumed in the frozen probe
+order s39 hi / s39 tw / s36 hi / s36 tw / s38 hi / s38 tw,
+p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided; exact
+INTEGER arithmetic. THE FINDING (DERIVED): T1 = (a)
+PER-CELL-NOISE-CONSISTENT at the s39 window (hi M_obs 72, count
+9,423 / 20,001, p 0.471176; tw M_obs 70, count 9,877, p
+0.493875); replication s36 = (a) (hi 84, p 0.154792; tw 68, p
+0.644518); replication s38 = (b) EXCEEDS NULL on the hi arm --
+s38 hi M_obs 84 at cell (sum,256,S=32), count 947 / 20,001,
+p 0.047398 (marginals (sum,256,S=32) p 0.035348 and
+(min,256,S=default) p 0.042298, UNCORRECTED, no letter); s38 tw
+(a) p 0.994550. Session 44's named gap is closed on this axis at
+the primary window, while the pre-registered s38 replication
+reads (b) on hi. NAMED, NOT HIDDEN: six probe p values / three
+window letters are UNCORRECTED across probes/windows (one (b)
+among six uncorrected probes at p 0.047398 is within what
+multiple uncorrected tests produce; NO replication of the s38 hi
+cell exists -- descriptive co-location only: s40's block-min
+wander at s38 hi was the closest of its six probes to threshold,
+p 0.059247); the 108 UNCORRECTED marginal p values carry no
+letter; (a) is not proof of noise (a uniform driver is invisible
+by construction; W_c is a tail-to-tail range, not a scale
+estimate; per-cell SPREAD is a named candidate row) and (b) names
+no mechanism (thermal/scheduling/memory/driver state all
+UNMEASURED); the frozen 1,000-tick class boundary sits INSIDE the
+per-cell level range (986..1,443) and threshold-artifact-vs-
+representation STAYS UNRESOLVED; three windows in ONE day on ONE
+host is LOW POWER; this letter and sessions 40-44's letters are
+DIFFERENT statistics over the SAME runs (NOT independent
+evidence). Integrity (DERIVED): 3/3 windows clean, C1 (a) at the
+s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6 block-min
+vectors reproduce EXACTLY, anchor row EXACT at all three windows.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellwander-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s45.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s45.txt is the independent second
+parser (87 rows / 0 mismatched); bar-eval-s45.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
