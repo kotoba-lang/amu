@@ -109,6 +109,11 @@ selects another compiler. Outputs include staged source locks, generated
 ELFs, stdout/stderr logs and `starter-observation.json`. Existing output
 directories are refused.
 
+The host-profile label is 1–64 characters: start with a lowercase ASCII
+letter or digit, then use only lowercase ASCII letters, digits and hyphens.
+For example, use `linux-x86-64-ubuntu-24-04`, not `ubuntu-24.04`. The label
+describes the environment; choosing it does not qualify the host.
+
 Expected terminal status is `PASS_STARTER_FUNCTIONAL_SMOKE`.
 `publicReleaseReady` remains **false**, even if the functional smoke passes.
 The manifest retains the source revision, image and observer hashes, host
@@ -181,7 +186,9 @@ receives no capabilities.
 2. 「Obtain and verify the candidate」で、レビューした PR の40文字 commit を指定して
    取得し、compiler とサンプルの hash を照合します。不一致の場合は止めてください。
 3. 「Run the native observation packet」で新しい出力ディレクトリを指定して17ケースを
-   実行します。成功表示は機能確認であり、公開資格や第三者試用の完了ではありません。
+   実行します。host profile は英小文字・数字・ハイフンのみの1〜64文字で、先頭は英小文字か
+   数字です。例えば `ubuntu-24.04` ではなく `linux-x86-64-ubuntu-24-04` とします。
+   成功表示は機能確認であり、公開資格や第三者試用の完了ではありません。
 4. 「Run and change a small program yourself」で `hello.kotoba` を検査・コンパイル・
    実行し42を確認します。コピーを `(+ 40 3)` に変え、別の成果物を作ると43です。
 5. observation packet で `sum.kotoba` の55と、同じ成果物の fuel 1 による停止を比較します。
