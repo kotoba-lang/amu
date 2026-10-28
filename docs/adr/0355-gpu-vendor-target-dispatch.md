@@ -3793,3 +3793,27 @@ never rewritten; freeze-record-s66.txt is this tick's record --
 the analysis session owns record.txt there; the gate captures
 are byte-identical to the s65 pins). The analysis half of the
 row is UNMEASURED until the W5 runs exist.
+
+## Dated note (2026-10-28, JUN-59 session 67: the W5 route pre-flight)
+
+The W5 measurement row (the s57-frozen queue's first row) taken to its
+ROUTE/CUSTODY PRE-FLIGHT half only -- NO runs, NO compiles, NO GO stamp,
+no day slot, no ledger line (the frozen protocol forbids builds/runs
+before the session's GO stamp and the W5 slot opens
+2026-10-29T00:00:00Z, ~2h5x after this tick). VERIFIED this tick: the
+local custody inputs reproduce the s51 host-verify digests exactly
+(instrument a5e539f0..., corpus census eefba52e..., s51 manifest
+c568e32e...); the manifest cell-line digest is FULLY NAMED for the first
+time -- 873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+(sha256 of the 24 non-comment cell lines; the chain's files quote it
+truncated) -- and the s36/s51 cell lines are byte-equal; the 16-file
+corpus verifies locally 16/16 against the census; the host route
+(aiueos-6600hs / 100.98.24.37, user murakumo-ci) is reachable, host
+clock sane, the render-group fix holds, gcc and /dev/dri/renderD128 are
+present. NAMED: the W5 workdir ~/anv-b3w5xdayrep-20261029 is NOT yet
+staged on the host -- staging is the W5 session's own pre-GO custody
+step (not done here). FULL run-tests and the settle-bar self-test +
+ledger eval were NOT REACHED this tick (runtime budget) and are NOT
+claimed. Rule 4 binds: no row moves; accelerator-targets defaults stay
+as ADR-0358 set them. Evidence:
+`docs/evidence/gpu/anv-b3w5routepreflight-20261028/record.txt`.

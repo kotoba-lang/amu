@@ -1,0 +1,113 @@
+JUN-59 session 67 ROUTE PRE-FLIGHT (the W5 measurement row's preparation
+half -- NO runs, NO compiles, NO GO stamp, NO day-slot consumption, NO
+ledger line). Row: the s57-frozen W5 carry-forward's queue row 1 (the
+fifth-window measurement + T7 read), taken to its ROUTE/CUSTODY
+PRE-FLIGHT half only. The measurement half itself REMAINS day-slot-gated
+(STARTED, NOT FINISHED): W5 is DEFINED as the window whose 78 fresh
+processes run in the first measurement session at or after
+2026-10-29T00:00:00Z; this tick runs 2026-10-28T21:0xZ, ~2h5x before that
+slot opens (NAMED, not skipped silently). The frozen protocol forbids
+builds and runs before the session's own GO stamp, so this pre-flight
+touches nothing that could be a build, a run, or a bar-qualifying
+reading.
+
+1. LOCAL CUSTODY INPUTS (verified against the s51 host-verify digests,
+   tool: shasum -a 256 on the committed bytes in
+   docs/evidence/gpu/anv-b3levelrep-20261028/):
+   instrument source gpu-subgroup-reduce-anv-ndiv.c (committed as
+     .c.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+     == s51 host-verify local= and host= (MATCH expected).
+   expected-corpus.sha256 (the 16-digest corpus census):
+     eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+     == s51 host-verify (MATCH expected).
+   manifest cases-s51-a.txt: c568e32ef0363165c13e36d526de454f60afc34bc05e2bfe6033c26ac493f234
+     == s51 host-verify (MATCH expected).
+   MANIFEST CELL-LINE DIGEST FULLY NAMED (the chain's files quote
+     "873025d650afae23..." truncated): sha256 over the 24 non-comment
+     cell lines of cases-s51-a.txt =
+     873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+     -- reproduces the chain's 873025d650afae23... prefix exactly; and
+     diff of the cell lines vs cases-s36-a.txt
+     (anv-b3commonmode-20261028/) is EMPTY (CELLS-BYTE-EQUAL). The W5
+     session's fresh-header manifest must reproduce these cell lines
+     byte-for-byte (the s28/s31 header/cell split).
+   CORPUS: the 16 census entries verify LOCALLY 16/16 against the
+     committed corpus bytes (8 files in
+     anv-subgroupsize-81632-20261027/shaders + 8 in
+     anv-subgroupsize-batch64-20261027/shaders; shasum -a 256 -c
+     expected-corpus.sha256 --ignore-missing -> 8 OK + 8 OK).
+
+2. HOST ROUTE PROBE (read-only ssh, verbatim; tool output below; NO GPU
+   submission of any kind, NO vulkaninfo, NO enumeration beyond
+   filesystem reads):
+   $ ssh -o BatchMode=yes -o ConnectTimeout=15 murakumo-ci-6600hs 'date -u +%Y-%m-%dT%H:%M:%SZ; hostname; id -nG; ls -d ~/anv-b3w5xdayrep-20261029 2>/dev/null || echo NO-WORKDIR; command -v gcc || echo NO-GCC; ls /dev/dri/ 2>/dev/null || echo NO-DRI'
+   2026-10-28T21:18:49Z
+   aiueos-6600hs
+   murakumo-ci nix-users render kvm
+   NO-WORKDIR
+   /usr/bin/gcc
+   by-path
+   card0
+   renderD128
+   ssh_rc=0
+   VERIFIED: route reachable (ssh alias murakumo-ci-6600hs ->
+   100.98.24.37, user murakumo-ci); host clock sane (2026-10-28T21:18:49Z
+   == this tick's UTC); the s27-era render-node permission fix HOLDS
+   (id -nG includes render); gcc present (the s51 toolchain record's gcc
+   13.3.0 spot-check not re-run -- no compiles allowed before GO);
+   /dev/dri/card0 + renderD128 present. NAMED, NOT A BLOCKER: the W5
+   workdir ~/anv-b3w5xdayrep-20261029 is NOT YET STAGED on the host
+   (NO-WORKDIR) -- staging (mkdir + scp of instrument, manifest,
+   expected-corpus census and the 16-file corpus) is the W5 session's
+   own pre-GO custody step, exactly as at s51; this pre-flight deliberately
+   did not stage it (host writes belong to the session's custody record).
+
+3. NAMED LIMITS OF THIS PRE-FLIGHT: the host-side 3/3 local-vs-host
+   comparison and the corpus sha256sum -c 16/16 are the W5 session's
+   pre-GO checks and were NOT performed host-side here (only their LOCAL
+   halves, above); no GO stamp, no build-census, no run-window, no
+   publication, no statistics of any kind (no derivation census -- a
+   pre-flight computes no statistics, NAMED, not omitted); no probe
+   protocol was frozen this tick, so no device INFO/DEVCLASS request was
+   made.
+
+4. GATES (real runs this tick):
+   gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed,
+     0 failed (scratch/gate-s67-classify.txt; .err 0 bytes).
+   scoped GPU gate GREEN 123/12162/0/0, run 1 AND run 2, both 919
+     bytes, .err 0 bytes (scratch runner scratch/scoped-gpu-gate.cljk --
+     the eight GPU-owned test namespaces of run-tests.cljk, same engine
+     and classpath -- created/run/deleted, never committed); both
+     captures byte-identical to each other AND to the s66 pin
+     (docs/evidence/gpu/anv-b3w5pair2profile-20261029/gate-run1.txt;
+     "Ran 123 tests containing 12162 assertions." / "0 failures, 0
+     errors."); the "kbb: 2 dep(s) ..." classpath notice is terminal
+     output, not part of the capture (established convention).
+   FULL run-tests.cljk and the settle-bar evaluator self-test + ledger
+     eval: NOT REACHED this tick (runtime budget exhausted after the
+     scoped gate) -- NAMED, not omitted and NOT claimed. The bar's
+     state is therefore UNVERIFIED this tick; the last verified reading
+     (s66) was the frozen evaluator self-test 38/0 + ledger eval twice
+     byte-identical -> VERDICT PENDING 1/4. No ledger line and no day
+     slot either way (nothing this tick could produce a qualifying
+     reading). The next tick must run these before any push-equivalent
+     claim.
+   find docs/evidence/gpu -name '*.sh': run at the next tick alongside
+     the deferred gates (0 at s66; this tick adds only .txt files).
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false for :arm/:unknown; the measured
+   rows keep ADR-0358's flags); NO vendor optimization exists for Intel.
+
+6. QUEUE (unchanged): next executable row is queue row 1's MEASUREMENT
+   half -- the W5 session in the first measurement session at or after
+   2026-10-29T00:00:00Z (78 fresh processes, frozen run order, custody
+   GO stamp before builds and runs, bar line on hi block A of the W5
+   window) -- then its T7 read, then the three frozen analysis halves
+   (s64 T14 hi-wander, s65 T15 quantile-pair level axes, s66 T16
+   second-pair profile axis), each already pre-registered.
+
+Evidence: docs/evidence/gpu/anv-b3w5routepreflight-20261028/record.txt
+(this file) + the s67 gate captures in scratch/ (untracked, per the
+established convention). Chain: bot/amu-gpu-chain-20261028-3 (chain PR
+#1643, commit + push only). (JUN-55, JUN-59; Linear tracking JUN-499)
