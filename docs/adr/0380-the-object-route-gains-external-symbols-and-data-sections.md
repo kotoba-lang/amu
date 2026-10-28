@@ -1,0 +1,106 @@
+# ADR-0380 -- the aiueos object route gains external symbols and data sections
+
+- Status: **proposed**. Nothing here changes a seed, an artifact or a pin.
+- Date: 2026-10-29
+- Tracking: JUN-556 (D), JUN-551 (the zig cc inventory), JUN-548, JUN-417.
+- Follows: ADR 0373 (bounded kernel memory windows), ADR-0219/0220 in the
+  kotoba repository (C-free waves 1 and 2).
+
+## Context
+
+`seed/74-x86_64-aiueos-object.kotoba` emits one ELF64 ET_REL with exactly seven
+sections (`"" .text .data .rela.text .symtab .strtab .shstrtab`), up to eight
+public functions, one private 80-byte context in `.data`, and one relocation per
+export (the shim's `lea r9,[rip+.data]`). The consumer,
+`verify-kotoba-kernel-object.py` in the kotoba repository, refuses anything else.
+
+The 2026-10-29 inventory of `build-uefi.sh` (JUN-551) counted 40 `zig cc` calls.
+Of the 31 C files that are neither assembly nor generated, about 28 cannot move
+to this route as it is, because they need one of:
+
+| need | files (count from a regex pass; approximate) |
+|---|---|
+| calls to functions of other objects | kernel/main.c (272 distinct), pci.c (55), process.c (42), scheduler.c (10), framebuffer.c (9) |
+| writable globals | pci.c (137), tls13.c (34), scheduler.c (23), main.c (21), acpi.c (13) |
+| `const` tables | pci.c (14), tls13.c (4), uefi/*.c (2 each) |
+
+Argument counts above five (JUN-556 E) are a separate limit and not decided here.
+
+## Decision (proposed): three slices, each admitted fail-closed
+
+### D1 -- undefined function symbols, from a declared list
+
+A source names the foreign functions it may call. No new syntax in the shared
+frontend: the object route already appends a library of private stub functions
+(ADR 0373) and replaces their call sites with inline bytes. D1 uses the same
+mechanism with one more family.
+
+* A private function named `extern-<symbol>` with a body of `0` and 0..5
+  `:i64` parameters is an extern declaration. The backend replaces its call
+  site with `call rel32` (`E8 00000000`) and records an `R_X86_64_PLT32`
+  relocation, addend -4, against an undefined GLOBAL NOTYPE symbol `<symbol>`.
+* The declared set is closed: at most 16 externs per object, each name unique,
+  matching `[a-z_][a-z0-9_]*`, never one of the object's own exports.
+* The call follows the System V convention the route already uses for its
+  entry; the callee is the linker's business and is **unverified** by this
+  route. The verifier checks only that every undefined symbol is a declared
+  one and that every relocation against it is a PLT32 -4 at a `call` opcode.
+* An extern call needs the same rooted-base/paired-length admission as the
+  memory windows for any pointer argument the checker can see (E7106); an
+  extern that takes a pointer must say so in its declaration parameters
+  (`ptr`/`len` suffix names, as the windows do).
+
+### D2 -- `.rodata`
+
+`def` takes literals only (native.micro-infer packs a 729-entry matrix into
+nibbles for that reason). D2 adds an eighth section `.rodata` filled from a
+`(def-bytes NAME "...")` form handled by the backend, readable only through
+`kernel-load-u8` / `-u32` windows whose base is the `.rodata` symbol and whose
+length is the literal size. The table is addressed with `lea reg,[rip+sym]` and
+a PC32 relocation against the local `.rodata` symbol. Size cap: 64 KiB per
+object until a larger case is measured.
+
+### D3 -- writable globals (`.data` beyond the context, `.bss`)
+
+A fixed number of named cells (u8/u16/u32/u64) in `.bss`, zero-initialised, and
+a `.data` initialiser form for the few that are not zero. Access is through the
+same windows. Each is a LOCAL OBJECT symbol; none is exported. The 80-byte
+private context stays first and unchanged.
+
+## What the verifier must change
+
+`verify-kotoba-kernel-object.py` and the pin ledger (`local-changes.json`) move
+together with the seed, so the order is: seed change, then verifier change, then
+the receipt-driven pin adoption path the Mac gate already uses. Concretely:
+
+1. Section list: seven sections stay the default; `.rodata` and `.bss` are
+   allowed only when the object's declaration says so.
+2. Symbol table: undefined symbols are allowed only for names in the declared
+   list and only as GLOBAL NOTYPE; every other undefined symbol stays a refusal.
+3. Relocations: PLT32/-4 against a declared extern at a `call`, PC32/-4 against
+   the context or `.rodata`/`.bss` symbols at a `lea`; nothing else.
+4. Negative controls, one per refusal: an undeclared extern, a ninth export,
+   a `.rodata` write, an out-of-window `.bss` read, an extern named like an
+   export, a relocation of an unknown type.
+
+## What this does not show
+
+* No code is written. D1 is estimated at a few hundred lines in seed/74 plus
+  the verifier; D2 and D3 are larger because the window tiers must learn a
+  symbolic base.
+* Even with D1-D3, `uefi/*.c` cannot use this route: the UEFI entry uses the
+  Microsoft x64 convention and the route emits System V. That is the loader
+  decision (JUN-551 A/B/C), and the `.S` files have no Kotoba output path at
+  all.
+* The linkers (`ld.lld`, `lld-link`) stay: their replacement is
+  `package-aiueos-boot`, which today covers only the ordinary transition.
+* The counts in the context table come from a regex pass and need a per-file
+  review before a slice is scoped.
+
+## Order
+
+D1 first. It unlocks the callers with the largest external counts (main.c,
+process.c, scheduler.c) only after D3 gives them state, so the first measurable
+result is a small file that calls out and holds no globals; the inventory has
+none, which is itself the finding: **D1 alone replaces zero files**, D1+D3
+replace the small stateful kernel files, and the large ones need all three.
