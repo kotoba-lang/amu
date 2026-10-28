@@ -20,6 +20,14 @@ fallback. Python 3 is used only by the optional observation harness for
 staging, hashes and native-process output; it does not compile or evaluate
 Kotoba.
 
+## Check the host first
+
+Run `uname -s` and `uname -m`: this candidate expects `Linux` and `x86_64`.
+Also check that `git --version` and `python3 --version` succeed. These checks
+identify basic prerequisites; they do not prove the machine is native or that
+its host profile has been independently qualified. If they do not match, stop
+and record the results rather than trying a different compiler.
+
 ## Obtain and verify the candidate
 
 The Amu repository is available under the [Apache License 2.0](../../LICENSE).
@@ -168,15 +176,24 @@ receives no capabilities.
 
 ## 日本語の進め方
 
-1. 対応ホストは native Linux x86_64 です。これは公開資格が未完了の技術候補です。
-   `candidate.json` と実行記録の資格状態を確認してください。
-2. `hello.kotoba` を読み、Amuで検査・コンパイル・実行します。期待値は42です。
-3. コピーの `(+ 40 2)` を `(+ 40 3)` に変更し、新しい成果物を作って43を確認します。
-4. `sum.kotoba` の55と、同じ成果物の fuel 1 による停止を比較します。
-5. `hash.kotoba` で権限なしの拒否を確認し、ローカルSHA-256のwire 3だけを許可して
+1. 対応候補は native Linux x86_64 です。上の「Check the host first」で OS、CPU、
+   Git、Python 3 を確認します。一致しても host の公開資格を証明したことにはなりません。
+2. 「Obtain and verify the candidate」で、レビューした PR の40文字 commit を指定して
+   取得し、compiler とサンプルの hash を照合します。不一致の場合は止めてください。
+3. 「Run the native observation packet」で新しい出力ディレクトリを指定して17ケースを
+   実行します。成功表示は機能確認であり、公開資格や第三者試用の完了ではありません。
+4. 「Run and change a small program yourself」で `hello.kotoba` を検査・コンパイル・
+   実行し42を確認します。コピーを `(+ 40 3)` に変え、別の成果物を作ると43です。
+5. observation packet で `sum.kotoba` の55と、同じ成果物の fuel 1 による停止を比較します。
+   `hash.kotoba` では権限なしの拒否を確認し、ローカルSHA-256のwire 3だけを許可して
    結果64を確認します。ネットワーク・ファイル・推論の権限は追加しません。
-6. 上の `sum` の例で上限を20に変えると結果は210です。自分の小さな整数計算に
+6. 「Adapt the sum for your own range」で上限を20に変えると結果は210です。自分の小さな整数計算に
    置き換え、期待値・実際の結果・対象host/revisionを残します。
+
+問題が起きた場合は「If a step fails」を参照し、commit、OS/CPUの大まかな区分、
+失敗した手順、診断、期待値と実際の結果を記録します。公開できる内容は
+[Amu の issue](https://github.com/kotoba-lang/amu/issues) へ報告できます。ログから
+秘密情報や個人情報を除いてください。対応時間を約束する窓口ではありません。
 
 技術基盤は Kotoba Foundation の言語・Amu compiler・AIUEOS OS です。
 Awai Network / Itonami dapps はその基盤を使う応用・分散経済圏です。
@@ -196,7 +213,10 @@ Awai Network / Itonami dapps はその基盤を使う応用・分散経済圏で
 
 Report the release/commit, non-identifying OS/CPU profile, step, diagnostic
 and expected/actual result. Review logs before sharing them; do not attach
-private code, environment variables or credentials. No telemetry is sent.
+private code, environment variables or credentials. For an issue that can be
+shared publicly, use [the Amu issue tracker](https://github.com/kotoba-lang/amu/issues).
+The tracker is public; do not post sensitive information there. No telemetry
+is sent. An issue tracker link is not a promise of support response time.
 
 See [the five-minute technical walkthrough](DEMO.md). To read the native
 product scope from this same reviewed commit, run
