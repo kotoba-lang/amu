@@ -286,12 +286,13 @@
 
 ;; Admission inspects all SIR, including unreachable/unused functions.
 ;; Scalar ELF permits internal raw-bit f64/f32, but no handles/capabilities.
-;; Profile 3 (scalar ELF) alone admits floats; profiles 0 (scalar ints / kernel object), 1 (runtime guest) and 2 (closed project) refuse them.
+;; Diagnostic candidate: profile 1 (runtime guest) and profile 3 (scalar ELF)
+;; admit internal float carriers; profiles 0 and 2 still refuse them.
 (defn- xg-scalar [t :i64] :bool (or (= t TY-I64) (= t TY-BOOL)))
 (defn- xg-type [M :vector-i64 t :i64] :bool
   (case (xg-get M 4)
     3 (or (xg-scalar t) (= t TY-F64) (= t TY-F32))
-    1 (and (> t 0) (not= t TY-F64) (not= t TY-F32))
+    1 (> t 0)
     (xg-scalar t)))
 (defn- xg-types [M :vector-i64 f :i64 i :i64 n :i64] :bool
   (if (= i n) true (and (xg-type M (ck-pt M f i)) (xg-types M f (inc i) n))))
@@ -327,7 +328,7 @@
           allowed (if (= (xg-get M 4) 1) (and (>= op OP-FN) (<= op OP-COUNT))
                     (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))]
       (cond (not allowed) (xg-err M 7101 op)
-            (and (not= (xg-get M 4) 3) (xg-fl-sir? op a)) (xg-err M 7101 a)
+            (and (not= (xg-get M 4) 3) (not= (xg-get M 4) 1) (xg-fl-sir? op a)) (xg-err M 7101 a)
             (and (= op OP-BIN) (not (or (and (>= a 1) (<= a 10)) (xg-fl-bin? a)))) (xg-err M 7101 a)
             (and (= op OP-CMP) (not (or (and (>= a 1) (<= a 5)) (xg-fl-cmp? a)))) (xg-err M 7101 a)
             (and (= op OP-UN) (not (or (= a UOP-NOT) (= a UOP-BITNOT) (xg-fl-un? a)))) (xg-err M 7101 a)
