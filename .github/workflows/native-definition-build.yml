@@ -46,6 +46,33 @@ jobs:
           name: x86-float-candidate
           path: ${{ runner.temp }}/x86-float-candidate/
           if-no-files-found: warn
+  candidate-x86-fixed-point:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/kotoba161-merged-x86-observe-20261029'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Observe unadopted x86 native compiler fixed point
+        run: >-
+          python3 scripts/seed/check-macos-cross-linux-native.py
+          --candidate "$PWD/diagnostics/kotoba161-merged"
+          --output "$RUNNER_TEMP/x86-fixed-point"
+          --isa x86_64 --allow-unadopted
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: x86-merged-fixed-point
+          path: |
+            ${{ runner.temp }}/x86-fixed-point/native-fixed-point.json
+            ${{ runner.temp }}/x86-fixed-point/F-x86_64.elf
+            ${{ runner.temp }}/x86-fixed-point/F1.elf
+            ${{ runner.temp }}/x86-fixed-point/F2.elf
+            ${{ runner.temp }}/x86-fixed-point/S-x86_64.elf
+            ${{ runner.temp }}/x86-fixed-point/S1.elf
+            ${{ runner.temp }}/x86-fixed-point/S2.elf
+          if-no-files-found: warn
   objects:
     strategy:
       fail-fast: false
