@@ -82,6 +82,15 @@ def main():
     mx = run('mxcsr-observer', ['python3', ROOT / 'scripts/seed/observe-x86-mxcsr.py', '--runner', runner, '--payload', out / 'full-float.bin', '--output', out / 'mxcsr'], {'PATH': '/usr/bin:/bin'})
     if mx.returncode:
         raise SystemExit('caller MXCSR diagnostic failed')
+    original_payload = (out / 'full-float.bin').read_bytes()
+    restore = bytes.fromhex('0fae1424')  # ldmxcsr [rsp]
+    if restore not in original_payload:
+        raise SystemExit('MXCSR restore instruction not found in emitted guest')
+    mutant = out / 'mxcsr-mutant.bin'
+    mutant.write_bytes(original_payload.replace(restore, bytes.fromhex('90909090'), 1))
+    neg = run('mxcsr-mutant-observer', ['python3', ROOT / 'scripts/seed/observe-x86-mxcsr.py', '--runner', runner, '--payload', mutant, '--output', out / 'mxcsr-mutant'], {'PATH': '/usr/bin:/bin'})
+    if neg.returncode == 0 or b'float result or caller MXCSR preservation mismatch' not in neg.stderr or (out / 'mxcsr-mutant/mxcsr.json').exists():
+        raise SystemExit('MXCSR mutant negative control did not fail as expected')
     src = out / 'f32-range-trap.kotoba'
     shutil.copyfile(ROOT / 'diagnostics/kotoba161-runtime-float/f32-range-trap.kotoba', src)
     image = out / 'f32-range-trap.kx64'
