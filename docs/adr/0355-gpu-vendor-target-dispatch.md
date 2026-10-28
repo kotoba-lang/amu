@@ -3042,3 +3042,127 @@ Evidence: `docs/evidence/gpu/anv-b3pair4profile-20261028/`
 (protocol.txt is the frozen pre-registration -- written once,
 never rewritten; record.txt is this tick's record; the gate
 captures are byte-identical to the s58 pins).
+
+## 2026-10-28 -- session 60 (JUN-59): the fifth named rank-pair set (terminal halving-ladder step) compression-profile read (analysis; T10 (b) NOT-FIFTHPAIR-PROFILE-OUTER-WEIGHTED-CONSISTENT -- the outer-weighted profile does NOT consistently replicate at the terminal ladder rank pairs; the halving-ladder family is COMPLETE)
+
+Session 59's queue third named candidate row ("any further named
+profile pair (the halving ladder's fifth pair set, or the k=2
+inner3 variant's T8 re-read with OUTER3 held -- its inner axis is
+exactly this probe's IN4 axis -- stay named candidate rows)")
+taken FIRST on the FIFTH NAMED RANK-PAIR SET of the SAME four
+windows s36/s38/s39/s51 of the named-cell robust-scale level
+campaign (ANALYSIS only): does the outer-weighted compression
+profile of s55's T5 (a) hold at the TERMINAL step of the
+pre-registered HALVING LADDER, where the outer pair reaches the
+full range -- OUTER5 = (x_(1), x_(75)), halfway between s59's
+(2,74) [k=36] and the full range (1,75) [k=37] landing on
+k=36.5 and rounded half-away-from-zero to k=37 by the
+ALREADY-FROZEN s58 tie-break rule applied UNCHANGED (no new rule
+choice at this step; OUTER5 IS the degenerate full-range
+endpoint, so D_out5 is the pooled-75 sample RANGE and the outer
+walk is complete); INNER5 = (x_(37), x_(39)), the exact halving
+between s59's (36,40) [k=2] and the center (38,38) [k=0] landing
+on k=1 exactly (one halving step from the degenerate center),
+frozen BEFORE any fifth-pair statistic existed (protocol freeze
+stamp 2026-10-28T17:36:53Z). PRIMARY STATISTIC: the
+difference-in-differences 2*P5_obs = 2*C_out5 - 2*C_in5 (D_out5
+= x_(75) - x_(1), D_in5 = x_(39) - x_(37) per block of the SAME
+pooled 75; 2*L = 6th+7th order statistics of the 12 block D
+values); THREE contrasts (s36 vs s38, s36 vs s39, s36 vs s51),
+ONE-SIDED each in the pre-registered direction P5 > 0
+(outer-weighted compression at the fifth pair set -- direction
+fixed by s55's published T5 (a) reading and the ladder framing,
+QUOTE-ONLY; s56's T6 (b), s58's T8 (a) and s59's T9 (a) are KNOWN
+and did NOT change the direction), joint T10 = the pre-registered
+INTERSECTION-UNION rule (all three (a); NO multiplicity
+correction); 20,000 trials, seed 2026102810, frozen probe order,
+both axes on the same pseudo-blocks. NAMED, NOT HIDDEN: this
+probe DOES test a FRESH pre-registered prediction -- the
+fifth-pair levels were never published or computed anywhere (the
+campaign's FOURTH fresh prediction after s56, s58 and s59).
+
+THE FINDING (DERIVED; publication-s60.txt, analysis-s60.py run
+twice byte-identical): T10 = (b) NOT-FIFTHPAIR-PROFILE-OUTER-
+WEIGHTED-CONSISTENT (named: pair(s) not (a): s39, s51) -- only
+s36-vs-s38 clears the frozen threshold: 2*P5_obs 83 (P5 +41.5;
+OUT5 2*L 1060 -> 972 (2*C_out5 88), IN5 12 -> 7 (2*C_in5 5));
+count 49 / 20,001; p 0.002500) (a) FIFTHPAIR-OUTER-WEIGHTED-
+DIFFERENT, while s36-vs-s39 2*P5_obs 30 (P5 +15.0; OUT5 1060 ->
+1031 (29), IN5 12 -> 13 (-1)); count 2,110 / 20,001; p 0.105545)
+(b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT] and s36-vs-s51 55 (P5
++27.5; OUT5 1060 -> 1003 (57), IN5 12 -> 10 (2)); count 1,174 /
+20,001; p 0.058747) (b) NOT-DIFFERENT [NONZERO-NOT-SIGNIFICANT].
+ALL THREE point estimates sit in the pre-registered direction
+(83/30/55 all positive) but only s38 clears 0.05 (s51 p 0.0587
+marginal, the same flavor as s56's T6 (b) where s51 read p
+0.0558).
+
+NAMED, NOT HIDDEN: (b) at T10 FOLLOWING s56's T6 (b), s58's T8
+(a) and s59's T9 (a) is CONSISTENT WITH the outer-weighted
+profile breaking down at the ladder's terminal step -- the
+outer5 axis IS the sample range, driven by the single most
+extreme sample of each pooled 75 (the OUT5 level carries the
+whole signal 1060 -> 972/1031/1003 while the inner5 level is
+flat at its noise floor 2*L 12/7/13/10; P5 ~= C_out5 at this
+step) and the s39/s51 contrasts lost power against it (p
+0.1055/0.0587); (b) is equally CONSISTENT WITH a rank-pair-
+dependent outer-weighted compression that holds at ladder steps
+1/3/4 and attenuates at steps 2/5; a fifth-pair shift below the
+noise floor at s39/s51 cannot be excluded (POWER LOSS reading);
+NEITHER reading names a mechanism (thermal/scheduling/memory/
+driver state all UNMEASURED) and NOT whether any movement is
+physical or estimator structure; (b) does NOT overturn s55's T5
+(a), s58's T8 (a) or s59's T9 (a) (different rank pairs,
+SEPARATE named families); the ladder letter sequence now reads
+step1 (a) / step2 (b) / step3 (a) / step4 (a) / step5 (b) and
+the HALVING-LADDER FAMILY IS COMPLETE AT THIS PROBE (both axes
+sit at their degenerate endpoints' immediate neighborhood; no
+sixth step names a new pair) -- two of five steps dissent and
+the rank-pair question is NOT settled by the family; this is an
+ELEVENTH axis on the SAME window data and the campaign's FOURTH
+fresh pre-registered prediction (the fifth-pair levels had no
+priors); LOW POWER, n=2 windows per contrast, ONE host, ONE UTC
+day; threshold-artifact-vs-representation and
+physical-vs-estimator-structure STAY UNRESOLVED. Integrity
+(DERIVED): 4/4 windows clean (78 runs parsed each, VERIFY
+mismatch total 0); C1 (a) at ALL FOUR windows (c2 FLOOR; c8
+0.01%/0.53%/0.26%/0.08% delta vs committed 32,915); all four
+windows' block-min vectors and anchor rows reproduce their
+published/quote-only priors EXACTLY. BAR: NO ledger line and NO
+day-slot consumption (no runs this session; the 2026-10-28 slot
+is s31's); frozen evaluator --self-test 38/0, ledger eval twice
+byte-identical -> VERDICT PENDING 1/4 unchanged; next executable
+day slot 2026-10-29. RULE 4 unchanged: NOTHING MOVES --
+accelerator-targets defaults remain provisional (:measured?
+false); NO vendor optimization exists for Intel. Gates (real
+runs; every capture byte-identical to its pinned s59 artifact):
+gpu_regime_classify.py --self-test 2649/0; scoped GPU gate GREEN
+123/12162/0/0 run 1 AND run 2 (scratch runner
+scratch/scoped-gpu-gate.cljk -- eight GPU-owned namespaces,
+created/run/deleted, never committed); FULL run-tests.cljk LIVE:
+exit 1, RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- NO green full suite claimed;
+derivation-census-s60.txt: independent second parser
+(split-based, no re module, no numpy; pure-Python sorted() order
+statistics from ONE shared sort per pooled 75 --
+sorted(pooled75)[74] - sorted(pooled75)[0] and
+sorted(pooled75)[38] - sorted(pooled75)[36]; independent
+pure-Python shuffle loop under the frozen RNG contract
+random.Random(2026102810) consumed in the frozen probe order,
+BOTH axes on the SAME pseudo-blocks) re-deriving every published
+integer, count, p value and letter -- 159 rows / 0 mismatched,
+run twice byte-identical; find docs/evidence/gpu -name '*.sh' ->
+0.
+
+Named candidate rows for later sessions (the ladder row is
+RETIRED, complete): (first, STARTED) the fifth-window
+measurement + T7 read in the 2026-10-29 UTC slot (NEW hardware);
+then the s38 hi (sum,256,S=32) wander replication (NEW hardware
+-- W5's hi runs); then the k=2 inner3 variant's T8 re-read with
+OUTER3 held (its inner axis is the retired step-4 IN4 axis) and
+any non-ladder rank pairs (both ANALYSIS).
+
+Evidence: `docs/evidence/gpu/anv-b3pair5profile-20261028/`
+(protocol.txt is the frozen pre-registration -- written once,
+never rewritten; record.txt is this tick's record; the gate
+captures are byte-identical to the s59 pins).
