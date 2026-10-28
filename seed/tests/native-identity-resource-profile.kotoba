@@ -30,13 +30,13 @@
                     (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 resource)) V 0)]
     (and (= (vector-at D 1) 0) (= (vector-at D 0) (vector-count V)))))
 (defn- dirp-large-text [] :bool
-  (let [V (loop [i 0 v (vector-alloc 16384)]
-            (if (= i 16384) v (recur (inc i) (vector-assoc! v i (rem i 128)))))
+  (let [V (loop [i 0 v (vector-alloc 32768)]
+            (if (= i 32768) v (recur (inc i) (vector-assoc! v i (rem i 128)))))
         text (string-from-utf8 (bytes-from-vector-i64 V)) encoded (dc-string-bytes text)
         alphabet "0123456789abcdef"]
-    (and (= (string-length encoded) 32774) (= (string-substring encoded 0 6) "794000")
+    (and (= (string-length encoded) 65542) (= (string-substring encoded 0 6) "798000")
       (loop [i 0]
-        (if (= i 16384) true
+        (if (= i 32768) true
           (let [byte (rem i 128) at (+ 6 (* i 2))]
             (and (= (string-code-point-at encoded at) (string-code-point-at alphabet (quot byte 16)))
                  (= (string-code-point-at encoded (inc at)) (string-code-point-at alphabet (rem byte 16)))
