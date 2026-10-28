@@ -1268,7 +1268,52 @@ nothing; accelerator-targets defaults remain provisional
 for Intel.
 
 Evidence: `docs/evidence/gpu/anv-b3x1rec-20261028/` (protocol.txt is
-the frozen pre-registration incl. the X1R letters; publication-s32.txt
-is the measurement; bar-eval-s32.txt is the frozen evaluator's
+the frozen pre-registration incl. the X1R letters; publication-s32.txt is
+the measurement; bar-eval-s32.txt is the frozen evaluator's verdict;
+record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 33 (JUN-59): the representation-side re-read
+(the pair-twin class relation at the anchor grid)
+
+The bar's UTC-day 2026-10-28 slot is consumed by session 31 (COUNTED
+1/4; next executable day slot 2026-10-29) and the bar never judges
+the twin, so this tick takes session 29's named-not-probed residual
+("the REPRESENTATION side of threshold-artifact-vs-representation is
+NOT probed this session (the twin (2048,8066) did not run; scoreboard
+carried, not advanced)"), which session 30 named the priority. ONE
+measurement slice, pre-registered before the runs (protocol freeze
+stamp 2026-10-28T01:08:56Z): one 3-run block of the (1024,4033) pair
+and one of its same-ratio twin (2048,8066), both at the identical
+grid n=253,906, B=3, at byte-identical rebuilt binaries (hi
+a6c31b6c = the pair's sixth cross-session rebuild; tw bb901eb5 = the
+twin triple's second cross-session rebuild; 4/4 pins byte-identical),
+controls c2/c8 bracketing, custody GO 01:11:19Z before builds and all
+runs. MEASURED: T1 = (a) AGREE -- the pair block classifies
+INTERMEDIATE/MIXED 1,124 (18-cell 987..1,456) and the twin block
+INTERMEDIATE/MIXED 1,146 (994..1,453), same class at medians 1.96%
+apart; the s28 anchor-grid C3 (a) REPEATS and the scoreboard becomes
+s24 (b) / s25 (a) / s26 (b) / s27 (a) / s28 (a) / s33 (a) -- three
+splitting grids, three agreeing grids. NAMED, NOT HIDDEN: the AGREE
+does NOT resolve threshold-artifact-vs-representation -- the 1,000-tick
+class boundary sits inside the measured min-statistic wander (F2) and
+the letter is an observational discriminator only (L2). Descriptive
+same-day content: the twin's class is UNCHANGED across its three
+readings (1,145 min 985 / 1,141 min 983 / 1,146 min 994) while the
+pair once flipped (1,129 CAPTURED s26 -> MIXED since) -- three twin
+readings vs nine pair readings establish no rate difference and none
+is claimed; the hi block is day 28's THIRD anchor reading (in-band vs
+the frozen refs 1,129/1,132/1,131), appended to the ledger and
+classified descriptive by the frozen evaluator -- verdict UNCHANGED,
+PENDING 1/4 with s31 counted (settle-bar-eval.py run twice
+byte-identical; fixture pin 38/0). Every arm's host_ns in band (hi
+308,946 = 0.353x s31's excursion -- a third non-recurrence
+observation; cause UNMEASURED). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured? false`);
+no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3repr-20261028/` (protocol.txt is
+the frozen pre-registration incl. the T1 letters; publication-s33.txt
+is the measurement; bar-eval-s33.txt is the frozen evaluator's
 verdict; record.txt is the finding) and
 `docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
