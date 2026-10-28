@@ -2513,3 +2513,74 @@ windows (78 runs parsed each); derivation-census-s53.txt is the
 independent second parser (117 rows / 0 mismatched);
 bar-eval-s53.txt is the frozen evaluator's verdict; record.txt is
 the finding).
+
+## 2026-10-28 -- session 54 (JUN-59): the named-cell OUTER-QUANTILE-PAIR level probe (analysis; T4 (a) OUTER-SPREAD-LEVEL-SHIFTED-CONSISTENT -- the outer-pair level moves WITH the MAD/IQR scale level, unlike the inner pair)
+
+ANALYSIS session -- NO new hardware, NO new runs, NO builds: the
+four windows s36/s38/s39/s51 are prior sessions' committed logs
+only. The row question is session 53's first-named candidate
+("the OUTER-quantile-pair (x_(9),x_(67)) LEVEL probe over the same
+windows"): the NAMED OUTER-QUANTILE-PAIR axis D = x_(67) - x_(9)
+of each block's pooled 75 (ranks symmetric about the deviation-
+center x_(38), strictly OUTSIDE the s47-frozen IQR hinges
+x_(19), x_(57) -- the pair spans the tails and the whole body);
+the rank pair (9,67) is NAMED by this tick's pre-registration and
+is NOT canonical (no prior publication fixes a quantile pair
+beyond the IQR hinges and the s53 inner pair (28,48)); three
+contrasts (s36 vs s38, s36 vs s39, s36 vs s51), ONE-SIDED each in
+the pre-registered direction C > 0 (scale-drop continuation; fixed
+by the prior published MAD/IQR scale letters -- QUOTE-ONLY priors
+-- NOT by any outer-pair statistic), joint T4 = the pre-registered
+IUT (all three (a); no multiplicity correction), frozen at
+2026-10-28T14:35:25Z before any statistic of the probe was
+computed.
+
+THE FINDING (DERIVED): T4 = (a) OUTER-SPREAD-LEVEL-SHIFTED-
+CONSISTENT -- the named cell's outer-quantile-pair spread level
+DOES consistently continue the scale-drop regime its MAD/IQR
+levels showed on the same four windows (the FIRST (a) letter of
+the quantile-pair-level family): 2*L (half-tick) s36 496 -> s38
+429 (C_obs +33.5, the pre-registered direction; count 108/20,001;
+p 0.005450) -> (a) OUTER-DIFFERENT-CONTINUED; -> s39 437 (C_obs
++29.5; count 261/20,001; p 0.013099) -> (a); -> s51 446 (C_obs
++25.0; count 618/20,001; p 0.030948) -> (a); all three (a) =>
+joint (a). NAMED, NOT HIDDEN: (a) on the outer pair COMBINED WITH
+s53's inner-pair (b) is CONSISTENT WITH a change confined to the
+outer spread -- the compression reached the tails/whole-body span
+x_(9)..x_(67) (496 -> 429/437/446) but did NOT reach the inner
+quantile pair x_(28)..x_(48) (118/102/128/113 scattered, s53 (b))
+while the center held (2833/2845/2826/2825, s52 (b)) -- but does
+NOT decide physical-vs-estimator-structure (no mechanism named by
+any letter; LOW POWER, n=2 windows per contrast, the three
+contrasts share the s36 window and are dependent, ONE host, ONE
+UTC day; s36-specific state alone can produce (a)); the probe is
+a SIXTH axis on the same window data, chosen AFTER the scale/
+center/inner-pair results were known; the family stays separate
+and retro-corrects nothing (the discovery family behind the cell
+choice stays uncorrected); 20,000 trials (named cost deviation);
+threshold-artifact-vs-representation STAYS UNRESOLVED. Integrity:
+4/4 windows clean (VERIFY mismatch 0), C1 (a) at all four windows
+(c2 FLOOR; c8 0.01%/0.53%/0.26%/0.08% delta), vectors/anchors all
+four reproduce EXACTLY. The bar: NO ledger line, NO day-slot
+consumption (no runs); frozen evaluator 38/0, ledger eval twice
+byte-identical -> VERDICT PENDING 1/4 (next executable day slot
+2026-10-29). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel.
+
+Gates (real runs this tick): classify self-test 2649/0
+(byte-identical to the s51/s52/s53 pins); scoped GPU gate GREEN
+123/12162/0/0 twice, both byte-identical to the s53 pins; full
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace), stdout+stderr
+byte-identical to the s53 pins -- NO green full suite claimed;
+derivation census 117 rows / 0 mismatched, run twice
+byte-identical; find docs/evidence/gpu -name '*.sh' -> 0.
+
+Evidence: `docs/evidence/gpu/anv-b3outerlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s54.txt
+is the derived read over the committed run logs of the four
+windows (78 runs parsed each); derivation-census-s54.txt is the
+independent second parser (117 rows / 0 mismatched);
+bar-eval-s54.txt is the frozen evaluator's verdict; record.txt is
+the finding).
