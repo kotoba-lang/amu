@@ -1,0 +1,146 @@
+JUN-59 -- session 40 protocol: THE WANDER-NOISE REPARTITION PROBE
+(is the within-window block-min wander CONSISTENT WITH
+RUN-EXCHANGEABLE SAMPLING NOISE, or does it exceed what re-partitioning
+the same window's runs produces?).
+
+ANALYSIS slice -- NO new hardware this tick. Every input quantity was
+MEASURED in sessions 36/38/39 on the ANV host; this session only
+re-derives statistics from their COMMITTED run logs.
+
+FREEZE STAMP: 2026-10-28T04:40:07Z -- this file was written BEFORE any
+statistic of this probe (neither T_obs nor any resampled T*) was
+computed. Nothing below was changed after seeing any result.
+
+NAMED, NOT HIDDEN in the freeze: the s39-window input vectors are
+PUBLISHED content (publication-s39.txt section 3) and the s36/s38
+vectors are published in publication-s39.txt section 3 quote-only --
+the freeze guards against letter-shopping, not prior exposure; no
+committed file anywhere computed a run-repartition resampling of these
+vectors.
+
+------------------------------------------------------------------
+0. ROW QUESTION (ONE row)
+
+Session 39's first-named UNMEASURED item -- "WHY the min statistic
+wanders (estimator noise vs physical drift vs both)" -- taken on ONE
+observable axis: at the session-39 window, does the observed spread of
+the 12 block-unit min statistics EXCEED the spread that
+run-repartition resampling of the SAME window's committed runs
+produces, for both arms?
+
+------------------------------------------------------------------
+1. UNIT AND STATISTIC (the s35/s36-frozen constructions, UNCHANGED)
+
+- block = 3 consecutive runs of one arm in one window (runs 1-3 = A,
+  4-6 = B, ... 34-36 = L).
+- block value for one ok cell = pooled median of gpu_ticks over the
+  block's 75 samples (25 rounds x 3 runs).
+- block-min = min over the 18 ok cells of the block value
+  (min-over-18-medians-of-75, exactly the s34-s39 block-min).
+- X = the 12 hi block-min values; Y = the 12 tw block-min values.
+
+OBSERVED STATISTIC (frozen): T = RANGE = max - min over the 12
+block-min values of one arm at one window (the "wander band" width
+that sessions 34/36/38/39 quoted descriptively).
+
+------------------------------------------------------------------
+2. NULL AND RESAMPLING (frozen)
+
+H0 (named "run-exchangeable sampling noise"): the 36 runs of one arm
+within one window are exchangeable across blocks -- any block
+structure in the block-min wander is what re-partitioning the same
+window's runs produces from the same window's samples. This null
+includes ALL within-run and run-to-run process noise (each run is a
+fresh process); it is NOT limited to estimator noise.
+
+Resampling (frozen):
+- rng = random.Random(20261028), instantiated ONCE per script run and
+  consumed in the frozen probe order:
+    (1) s39 hi  (2) s39 tw  (3) s36 hi  (4) s36 tw  (5) s38 hi
+    (6) s38 tw
+- per trial: perm = list(range(36)); rng.shuffle(perm); split into 12
+  consecutive triples; each triple is a pseudo-block; recompute each
+  pseudo-block's block-min with the IDENTICAL construction of section
+  1; T* = max - min over the 12 pseudo-block-mins.
+- TRIALS = 20,000 per probe (pure-Python cost, NAMED -- not the
+  s35-frozen 100,000 of the Spearman permutation; p resolution
+  1/20,001 ~= 5e-5, far finer than the 0.05 letter threshold).
+- p = (1 + count(T* >= T_obs)) / (1 + 20,000), one-sided.
+
+------------------------------------------------------------------
+3. LETTERS (pre-registered; NOT changed after seeing any result)
+
+T1 THE ROW QUESTION (the s39 window, joint over the two arms):
+  (a) NOISE-CONSISTENT  -- both arms p > 0.05: the block-min wander
+      at this window is within what run-repartition of the same
+      window's runs produces.
+  (b) EXCEEDS NULL      -- at least one arm p <= 0.05 (named which):
+      block-timescale structure exists beyond run-exchangeable
+      sampling noise.
+  (c) NOT EVALUABLE     -- any invalidation trigger of section 4
+      fires.
+
+REPLICATION LETTERS (pre-registered, SAME rule per (window, arm), at
+the s36 and s38 windows -- named replications; NO cross-window joint
+letter; the three-window comparison is descriptive only):
+  (a)/(b)/(c) per (window, arm) with the same thresholds.
+
+------------------------------------------------------------------
+4. INVALIDATION (any one => letter (c) for that window)
+
+- VERIFY mismatch total over the window's logs > 0.
+- SAMPLE lines != 450 per run; VERIFY lines != 24 per run.
+- knob fields (batch, work_mul, ndiv) != the arm table in any SAMPLE.
+- S=8 fail-closed violation (not exactly 6 forced=8 cells, all
+  pipeline FAIL, void=1) in any run.
+- cell map not identical across the window's runs.
+- C1 discrepancy at the s39 window (c2 must classify FLOOR; c8
+  (sum,128,S=16) pooled median within +/-5% of the committed 32,915).
+- the window's X/Y block-min vectors do NOT reproduce the published
+  vectors byte-for-byte (s39: publication-s39.txt section 3; s36/s38:
+  the quote-only vectors in publication-s39.txt section 3).
+
+------------------------------------------------------------------
+5. NAMED, NOT HIDDEN (frozen caveats)
+
+(a) does NOT prove "estimator noise is the mechanism": the null is
+    RUN-EXCHANGEABILITY at the fresh-process granularity. A physical
+    driver that acts uniformly within the window (or slower than the
+    window) is INVISIBLE to this probe and would read (a). (a) means
+    "no block-timescale structure beyond run-repartition noise",
+    nothing stronger.
+(b) would implicate structure at the ~3-run / few-second block
+    timescale but NOT name it -- thermal, scheduling, memory state,
+    driver state all UNMEASURED; direction UNMEASURED; NO causal
+    mechanism either way (L2 observational).
+- Exchangeability of runs within a window is itself an assumption.
+- The min-over-18-cells construction is a multiple-comparison-shaped
+  statistic; the null replicates the SAME construction, so p is
+  calibrated to the statistic as defined.
+- 20,000 trials (not 100,000); p resolution 1/20,001.
+- All three windows are ONE day, ONE host (ANV), ONE instrument; the
+  windows are not independent days and the three-window comparison is
+  descriptive only (three windows are not a rate).
+- threshold-artifact-vs-representation STAYS UNRESOLVED under ANY
+  letter; no workgroup row and no :measured? flag moves (RULE 4).
+- The per-run unit (36 points/arm, min over 18 per-cell medians of
+  25) is a NAMED DIFFERENT UNIT (L10) and gets NO letter -- quoted
+  descriptively only.
+
+------------------------------------------------------------------
+6. ROUTE
+
+analysis-s40.py parses ONLY the committed run logs of the three fixed
+evidence directories (docs/evidence/gpu/anv-b3joint4-20261028 for the
+s39 window; docs/evidence/gpu/anv-b3commonmode-20261028 for the s36
+window; docs/evidence/gpu/anv-b3joint3-20261028 for the s38 window)
+and writes publication-s40.txt in THIS directory. Deterministic:
+running it twice yields byte-identical output. The derivation census
+is produced by a scratch generator (never committed) with an
+independent second parser (split-based parsing; the 3-way-merge
+median, the repartition resampling and the RNG call order
+re-implemented) over the same fixed evidence paths.
+
+This session runs NO hardware and appends NO settle-bar-ledger line
+(NO reading -> NO ledger line -> NO day-slot consumption; the ledger
+must be byte-identical to HEAD, verified in the census).

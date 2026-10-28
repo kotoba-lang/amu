@@ -1,0 +1,75 @@
+JUN-59 session 36 -- THE COMMON-MODE PROBE (publication)
+(do the block-unit min statistics of TWO interleaved arms CO-MOVE
+across 12 adjacent hi/tw block-pairs in ONE window? ONE observable
+axis: Spearman rho between the 12 hi block-unit min statistics and
+the 12 tw block-unit min statistics of session 36's single window.)
+Produced ONLY by analysis-s36.py over the 78 committed run logs in
+THIS directory (run-<tag>-r<R>.txt); protocol.txt was frozen before
+any build or run (freeze stamp 2026-10-28T02:36:45Z). HARDWARE RAN
+this session (the ANV host run window is run-window.txt); every
+input quantity below is MEASURED this session unless marked
+quote-only.
+
+1. INTEGRITY (computed over the 78 logs):
+   runs parsed: 78 (c2 3 + hi 36 + tw 36 + c8 3); SAMPLE lines 450 per run: True
+   knob fields == arm table in every SAMPLE: True
+   S=8 fail-closed (6 forced=8 cells pipeline FAIL, void=1, per run): True
+   cell map identical across all runs: True
+   VERIFY mismatch total over all 78 runs: 0 -- frozen
+   INVALIDATION criterion (protocol section 4): > 0 => letter (c)
+
+2. C1 RE-DERIVATION (environment pin):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32911 vs committed 32915 (0.01% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE TWO VECTORS (re-derived from the 78 logs; block-pair order A..L):
+   X = hi block-unit min statistic: A 991 B 989 C 981 D 998 E 993 F 985 G 984 H 997 I 994 J 994 K 980 L 982
+   Y = tw block-unit min statistic: A 988 B 985 C 994 D 993 E 994 F 995 G 992 H 984 I 987 J 984 K 993 L 981
+   hi range 980..998 (quote-only prior band 976..1003); tw range 981..995 (quote-only prior band 983..994)
+
+4. T1 THE ROW QUESTION (frozen letters, protocol section 0): do the two
+   arms' block-unit min statistics CO-MOVE across the 12 block-pairs?
+   Spearman rho(X, Y) = -0.251762
+   permutation p (two-sided, 100,000 trials, seed 20261028) = 0.425076 (count 42507 / 100,001)
+   |rho| >= 0.60: False; p <= 0.05: False
+   T1 = (b) NO-CO-MOVE
+   NAMED, NOT HIDDEN: NEITHER letter resolves
+   threshold-artifact-vs-representation. (a) is CONSISTENT WITH A
+   SHARED (COMMON-MODE) DRIVER -- physical or instrument-wide --
+   but is L2 OBSERVATIONAL ONLY (NO causal mechanism; estimator
+   noise is NOT excluded and may co-exist). (b) is CONSISTENT WITH
+   PER-ARM ESTIMATOR NOISE or arm-specific effects and excludes
+   ONLY a common-mode driver at this window and this power. ONE
+   window, ONE day, 12 pairs: LOW POWER; the block-pair adjacency
+   (~1s) is the common-mode resolution (L14) -- faster structure
+   is invisible to this design; no rate/variance/distribution
+   claim.
+
+5. DESCRIPTIVE (not the row question):
+   D1 hi block-min sequence A..L: 991 989 981 998 993 985 984 997 994 994 980 982
+      tw block-min sequence A..L: 988 985 994 993 994 995 992 984 987 984 993 981
+      per-run minima (72 values, NAMED DIFFERENT UNIT -- 25 rounds/cell, L10):
+        hi: 966..1023; tw: 971..1001
+        (quote-only prior per-run band 971..1006)
+   D2 bar-candidate (hi block A, protocol L12; the ONLY ledger line this
+      session): class INTERMEDIATE/MIXED, (sum,128,S=16) pooled median 1142, block-min 991, 18-cell 991..1438
+      -- the FIFTH same-UTC-day anchor reading of day 2026-10-28 (descriptive;
+      the day slot is session 31's, COUNTED 1/4); quote-only same-day priors
+      1,142 (min 985) / 1,128 (min 982) / 1,124 (min 987) / 1,145 (min 993);
+      frozen in-band refs 1,129 / 1,132 / 1,131 (quote-only).
+   D3 per-block host_ns at (sum,128,S=16):
+      hi: 311901 309627 308465 311051 309968 310649 307113 310719 310348 310720 308987 309547
+      tw: 310259 308936 311031 311871 465709 307253 310520 310319 309598 309477 307814 311300
+      c2 pooled 678956 (quote-only prior band 672,374..864,642); c8 pooled 2405977 (quote-only prior band 2,380,500..3,053,605)
+
+6. VERDICT SUMMARY:
+   T1 = (b) NO-CO-MOVE; rho = -0.251762; p = 0.425076
+   evaluable inputs: VERIFY mismatch 0 (0), samples ok (True), knobs ok (True), S=8 fail-closed (True), cell map ok (True), C1 (True)
+   HARDWARE RAN this session (78 fresh processes, run-window.txt).
+   The settling bar: one candidate line (hi block A) is appended as
+   DESCRIPTIVE (same-day duplicate) and classified by the frozen
+   evaluator (bar-eval-s36.txt) -- it consumes NO day slot. Rule 4
+   binds: nothing moves; accelerator-targets defaults remain
+   provisional (:measured? false); NO vendor optimization exists
+   for Intel.

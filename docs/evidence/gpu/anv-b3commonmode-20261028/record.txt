@@ -1,0 +1,205 @@
+JUN-59 -- session 36 record: THE COMMON-MODE PROBE (do two
+interleaved arms' block-min wander co-move in one window?).
+MEASUREMENT slice -- NEW HARDWARE RAN (the ANV host,
+aiueos-6600hs). 2026-10-28 (UTC). Chain PR #1638
+(bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): IN ONE SESSION WINDOW, DO THE BLOCK-UNIT
+   MIN STATISTICS OF TWO INTERLEAVED ARMS -- the (1024,4033) pair
+   arm (hi) and the (2048,8066) twin arm (tw), 12 ADJACENT
+   block-pairs (hi block k immediately followed by tw block k) at
+   byte-identical rebuilt binaries -- CO-MOVE ACROSS THE 12 PAIRS
+   (Spearman rho between the hi and tw block-min vectors)? Session
+   35's named candidate row ("a common-mode probe across two
+   interleaved arms in one window (physical drift would move both
+   arms' minima together, estimator noise would not -- NEW
+   HARDWARE, a named candidate row for a later session)") is the
+   row taken here. T1 letters pre-registered in protocol.txt
+   section 0 (freeze stamp 2026-10-28T02:36:45Z, BEFORE any build
+   or run): (a) CO-MOVE |rho| >= 0.60 AND permutation p <= 0.05
+   (two-sided, 100,000 trials, frozen seed 20261028 -- the
+   s35-frozen algorithm reused UNCHANGED), (b) NO-CO-MOVE
+   otherwise, (c) NAMED UNRESOLVED / NOT EVALUABLE on integrity
+   failure or C1 (b). NAMED, NOT HIDDEN in the freeze: NEITHER
+   letter resolves threshold-artifact-vs-representation; (a) is
+   CONSISTENT WITH a shared (physical or instrument-wide) common-
+   mode driver but is L2 observational only and does not exclude
+   estimator noise; (b) is CONSISTENT WITH per-arm estimator noise
+   or arm-specific effects and excludes only a common-mode driver
+   at this window/power; n=12 pairs in ONE window is LOW POWER and
+   the block-pair adjacency (~1s of host time) is the design's
+   common-mode resolution (L14 -- faster structure is invisible).
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3commonmode-20261028/ -- protocol.txt
+       (frozen before any build or run, freeze stamp
+       2026-10-28T02:36:45Z), cases-s36-a.txt (fresh header; 24
+       cell lines byte-copy, cells digest 873025d6...), the
+       byte-copied instrument (a5e539f0...) and expected-corpus
+       census (eefba52e...), the 78 committed run logs +
+       stderr logs, host-verify-s36.txt, build-census-s36.txt,
+       run-window.txt, analysis-s36.py + publication-s36.txt (run
+       twice, diff exit 0), derivation-census-s36.txt (independent
+       second parser, 53 rows / 0 mismatched, run twice
+       byte-identical), classify-selftest.txt, bar-eval-s36.txt,
+       gate-run1/2.txt, gate-full-run-tests.txt, this record.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- ONE line appended
+       (hi block A, the frozen L12 single candidate), classified
+       DESCRIPTIVE by the frozen evaluator (same-day duplicate; the
+       scratch-copy test preceded the append).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) HARDWARE RAN (MEASURED, aiueos-6600hs Intel BMG G31 ANV):
+       78 fresh processes (c2 3 + hi 36 + tw 36 + c8 3), frozen
+       interleaved run order (c2 r1-3, then for k=1..12 hi block k
+       then tw block k, then c8 r1-3), run window
+       2026-10-28T02:40:49Z..2026-10-28T02:41:27Z, rc=0 78/78
+       printed AND 78/78 '# done cells=24', stderr 0 bytes 78/78,
+       450 SAMPLE + 24 VERIFY each, knob fields == arm table
+       78/78 (every SAMPLE line), forcing 1,404/1,404 pipeline-ok
+       cell checks, S=8 fail-closed 468/468, VERIFY mismatch 0
+       everywhere (78 logs), cell map identical 78/78, host-mtime
+       cross-check 78/78 (worst 1s: 61 at 0s, 17 at 1s); custody GO
+       2026-10-28T02:40:47Z before the builds (02:40:47Z..49Z) and
+       ALL runs (corpus 16/16 OK + local-vs-host 3/3 MATCH); 4/4
+       build pins BYTE-IDENTICAL (hi a6c31b6c = the (1024,4033)
+       pair's EIGHTH cross-session rebuild / 9th measurement
+       session; tw bb901eb5 = the (2048,8066) pair's THIRD
+       cross-session rebuild / 4th measurement session; c2/c8 the
+       sessions 13-35 pins), build stderr 0 bytes 4/4.
+   (b) T1 THE ROW QUESTION (MEASURED HERE): T1 = (b) NO-CO-MOVE --
+       Spearman rho(X, Y) = -0.251762, permutation p = 0.425076
+       (count 42,507/100,001); |rho| >= 0.60 False, p <= 0.05
+       False. THE VECTORS: X (hi block-min A..L) 991 / 989 / 981 /
+       998 / 993 / 985 / 984 / 997 / 994 / 994 / 980 / 982 (range
+       980..998); Y (tw block-min A..L) 988 / 985 / 994 / 993 /
+       994 / 995 / 992 / 984 / 987 / 984 / 993 / 981 (range
+       981..995). THE FINDING: the two arms' block-min wander does
+       NOT co-move across the 12 block-pairs in this window. WITH
+       SESSION 35'S (b) (no co-move vs the host-side proxy at s34's
+       window), the wander is now not explained by EITHER the
+       host-side proxy OR a common-mode (per-window shared) driver
+       at the probed windows/powers -- consistent with per-arm
+       estimator noise or arm-specific effects. NAMED, NOT HIDDEN:
+       NO causal mechanism is claimed (L2 observational only); a
+       null at n=12 is NOT evidence of independence (LOW POWER);
+       only common-mode structure SLOWER than the block-pair
+       spacing was probed (L14); estimator noise vs an unmeasured
+       arm-specific physical variable STAYS UNRESOLVED; the s35
+       and s36 letters are from DIFFERENT windows (s34's and
+       s36's), so their conjunction is not a joint test at one
+       window (named); threshold-artifact-vs-representation STAYS
+       UNRESOLVED.
+   (c) C1 (a): c2 FLOOR; c8 (sum,128,S=16) pooled median 32,911 vs
+       32,915 (-0.01%).
+   (d) DESCRIPTIVE CONTENT (MEASURED HERE): (D1) per-run minima
+       (72 values; L10 different unit) hi 966..1,023 -- EXTENDING
+       the quote-only per-run band 971..1,006 on BOTH sides (new
+       extremes this session) -- and tw 971..1,001 (in band); (D2)
+       hi block A is day 2026-10-28's FIFTH anchor reading
+       (INTERMEDIATE/MIXED, (sum,128,S=16) pooled median 1,142,
+       block-min 991, 18-cell 991..1,438), in-band vs the frozen
+       refs 1,129/1,132/1,131; (D3) per-block host_ns: hi
+       307,113..311,901 (in the non-excursion band), tw
+       307,253..465,709 -- block E 465,709 = 1.50x its own
+       non-excursion blocks (~307k..312k), an L3 PROXY excursion
+       with cause UNMEASURED (X1 content; named, not hidden: the tw
+       arm has no prior within-window per-block series, so no
+       cross-session band is claimed for it); c2 pooled 678,956
+       (prior band 672,374..864,642); c8 pooled 2,405,977 (prior
+       band 2,380,500..3,053,605).
+   (e) B1/B2 THE BAR (the frozen evaluator, never hand-written):
+       the hi block A candidate line was appended AFTER a
+       scratch-copy test (the copy is not evidence); the frozen
+       evaluator classifies it DESCRIPTIVE (same-day-duplicate
+       exclusion -- the day's slot is session 31's, COUNTED 1/4);
+       settle-bar-eval.py --self-test 38/0 (pin); the ledger eval
+       run twice byte-identical (diff exit 0) -> "VERDICT: PENDING
+       1/4". Next executable day slot 2026-10-29.
+   (f) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin); scoped GPU gate GREEN 123
+       tests / 12,162 assertions / 0 failures / 0 errors run 1 AND
+       run 2 (scratch runner scoped-gpu-gate.cljk, copied in, run,
+       deleted -- never committed); FULL run-tests.cljk RUN LIVE
+       THIS TICK: exit 1, RED AT BASE 'Could not find namespace:
+       kotoba.form' at namespace load (ADR-0362, outside this diff
+       -- this diff touches NO .cljk namespace) -- NO green full
+       suite claimed; find docs/evidence/gpu -name '*.sh' -> 0.
+   (g) derivation-census-s36.txt: an independent second parser
+       (split-based parsing -- no regex; bucket-rank Spearman and
+       the frozen permutation algorithm re-implemented) re-derives
+       every cited number from the 78 committed logs and the
+       custody artifacts -- 53 rows, 0 mismatched -- including rho
+       -0.251762 and permutation count 42,507/100,001 exactly.
+
+4. NAMED, NOT HIDDEN (this tick): (i) the tw block E host_ns
+   excursion (465,709) is a L3 proxy observation with UNMEASURED
+   cause; it does not affect the row question (the row uses GPU-tick
+   min statistics, not host_ns) and no host_ns letter is claimed;
+   (ii) the hi per-run minima extend the quote-only per-run band on
+   both sides (966 and 1,023 vs 971..1,006) -- per-run values are
+   L10 descriptive and the frozen estimator unit is the 3-run
+   block; (iii) this session's letters and s35's come from
+   different windows (see 3(b)); (iv) the frozen evaluator's
+   same-day-duplicate exclusion means this session's bar content
+   cannot advance the bar regardless of its values.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31 protocol section 0),
+   the X1R letter thresholds (s32), the T1 letter thresholds
+   (s33/s34), the s35 T1 letter thresholds + frozen permutation
+   algorithm, and this session's T1 letter thresholds (s36
+   protocol section 0). Not implemented in the compiler; not
+   themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/
+   evaluator remain evidence-scoped tooling; the ledger is an
+   evidence file; nothing is wired into any namespace.
+   DERIVEable from MEASURED data (this tick): the common-mode
+   statistics (rho, p, letter (b)) over session 36's measured
+   samples; the vectors, C1, D1-D3 values (all MEASURED this
+   session). Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4
+   unchanged: NOTHING MOVES -- no workgroup row, no :measured?
+   flag, no selection answer; NO vendor optimization exists for
+   Intel and none is claimed.
+
+6. UNMEASURED (named): estimator noise vs an unmeasured
+   arm-specific physical variable (both remain consistent with the
+   s35+s36 letters); any common-mode driver FASTER than the ~1s
+   block-pair spacing (invisible to this design, L14); a same-window
+   joint probe of the proxy AND the cross-arm axis (s35 and s36
+   probed different windows); the s31 and s34-window and the s36 tw
+   block-E host-side excursions' causes; the threshold-artifact-
+   vs-representation question itself; the flip location inside
+   (252,604, 253,906]; any causal mechanism; anything off the ANV
+   host. The bar needs at least THREE more qualifying UTC days (V4
+   PENDING 1/4); whether FOUR qualifying days is ENOUGH (the bar
+   can return UNSETTLED).
+
+7. THE TICK'S FINDING IN ONE LINE: THE TWO ARMS' WANDER DOES NOT
+   CO-MOVE -- T1 = (b) NO-CO-MOVE, Spearman rho = -0.251762,
+   permutation p = 0.425076 over the 12 adjacent (hi block-min, tw
+   block-min) pairs of session 36's single window (78 fresh
+   processes MEASURED on the ANV host this tick; C1 (a), VERIFY 0,
+   4/4 pins byte-identical); with s35's proxy read the wander is
+   not explained by the host-side proxy OR a common-mode driver at
+   the probed windows/powers -- estimator noise vs arm-specific
+   physical effects STAYS UNRESOLVED (L2, LOW POWER n=12, L14
+   ~1s resolution, no causal mechanism) and
+   threshold-artifact-vs-representation stays UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical; one
+   descriptive same-day line appended), and nothing in Rule 4
+   moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3commonmode-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt + the ADR-0355 dated
+   note. (JUN-55, JUN-59)

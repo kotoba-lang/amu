@@ -1,0 +1,42 @@
+== JUN-59 session 31 build census (THE FIRST BAR-EXECUTING SESSION ==
+== -- THE FIRST CROSS-UTC-DAY READING OF THE (1024,4033) ANCHOR) ==
+Build window (host timeline): builds ran after the verify GO
+(2026-10-28T00:06:23Z) and before the first run (run-window.txt).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups: murakumo-ci nix-users render kvm). Workdir
+~/anv-b3xday-20261028, runs cwd=shaders/ (manifest passed as
+../cases-s31-a.txt; binaries ../anv-bb-<tag>).
+== toolchains (session 2's committed compile-toolchain.txt record of the ==
+== same host/toolchain; gcc re-printed on the host this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 28's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> ==
+== -o anv-bb-<tag> gpu-subgroup-reduce-anv-ndiv.c -lvulkan (3 arms, ==
+== one binary each) ==
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-28T00:06:23Z (start 00:06:23Z)
+build hi (-DBATCH=3 -DWORK_MUL=1024 -DNDIV=4033) rc=0 @2026-10-28T00:06:24Z (start 00:06:23Z)
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-28T00:06:24Z (start 00:06:24Z)
+build stderr byte counts (host build-<tag>.err): 0 0 0
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c  anv-bb-hi
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+BUILD REPLICATION PIN (declared in protocol.txt section 2 in advance;
+prior censuses parsed programmatically -- derivation-census-s31.txt):
+  BYTE-IDENTICAL: anv-bb-c2 e5ed903e5b9dfd64... == sessions 13-29's c2 (e5ed903e...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-c8 480925e58d28e7d3... == sessions 13-29's c8 (480925e5...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-hi a6c31b6c5c566308... == session 28's anv-bb-hi == session 27's
+    anv-bb-hi == session 26's anv-bb-mid (a6c31b6c...) -- the (1024,4033) pair's FOURTH
+    cross-session rebuild (FIFTH build of this pair overall, and its
+    FIRST build on UTC day 2026-10-28) -- PIN OK
+  3/3 pins BYTE-IDENTICAL (ALL THREE arms have a prior binary this
+  session -- named as such).
+  hi IS the (1024,4033) pair (3,1024,4033): session 26's mid / session
+  27's hi / session 28's hi / session 29's hi (blocks A-D) / this
+  session's 3 runs (THE READING).
+  NAMED, NOT HIDDEN: the GO stamp (00:06:23Z) and the c2 build stamp
+  (00:06:23Z) share the same seconds-granular timestamp; program order
+  governs (the GO stamp was printed before the first compile invocation
+  inside the same host driver transcript), named as in sessions 26/27.

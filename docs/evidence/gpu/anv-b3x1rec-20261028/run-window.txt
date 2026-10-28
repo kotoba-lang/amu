@@ -1,0 +1,50 @@
+JUN-59 session 32 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE WITHIN-DAY RECURRENCE READ OF THE SESSION-31 hi ARM HOST_NS
+EXCURSION (one same-UTC-day descriptive 3-run block of (3,1024,4033) at
+n=253,906, B=3 ON UTC DAY 2026-10-28 + controls c2/c8 bracketing the hi
+window).
+protocol.txt freeze stamp 2026-10-28T00:39:07Z (frozen BEFORE the
+first run; this run window starts after it).
+9 fresh processes (c2 3 + hi 3 + c8 3 -- the protocol section 1 arm
+table's 3 rows govern the count; run order frozen: c2 r1-3, hi r1-3,
+c8 r1-3). Per-run transcript (host date -u, taken immediately BEFORE
+the run invocation, seconds granular; rc, stderr byte count and line
+counts captured by the driver), verbatim from the driver's per-run
+steps (each run's stdout/stderr preserved verbatim in
+run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-28T00:40:59Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-28T00:40:59Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-28T00:40:59Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-28T00:41:00Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-28T00:41:00Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-28T00:41:00Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-28T00:41:00Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-28T00:41:01Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-28T00:41:02Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+rc=0 9/9 printed AND 9/9 '# done cells=24' (tail column above; the
+committed local logs re-checked: 9/9 '# done cells=24' after the scp).
+The samples/verifies/cells counts above are the driver's inline counts;
+they were independently re-derived from the COMMITTED local run logs by
+analysis-s32.py's parser (450 SAMPLE per run in 9/9, VERIFY 24 per run,
+cell map identical across runs) -- the two derivations agree.
+host-file-mtime cross-check (stat -c '%y' on the host run logs vs the
+per-run host-date stamps):
+  run-c2-r1.txt: host-date 2026-10-28T00:40:59Z mtime 2026-10-28T00:40:59Z delta 0s
+  run-c2-r2.txt: host-date 2026-10-28T00:40:59Z mtime 2026-10-28T00:40:59Z delta 0s
+  run-c2-r3.txt: host-date 2026-10-28T00:40:59Z mtime 2026-10-28T00:41:00Z delta 1s
+  run-hi-r1.txt: host-date 2026-10-28T00:41:00Z mtime 2026-10-28T00:41:00Z delta 0s
+  run-hi-r2.txt: host-date 2026-10-28T00:41:00Z mtime 2026-10-28T00:41:00Z delta 0s
+  run-hi-r3.txt: host-date 2026-10-28T00:41:00Z mtime 2026-10-28T00:41:00Z delta 0s
+  run-c8-r1.txt: host-date 2026-10-28T00:41:00Z mtime 2026-10-28T00:41:01Z delta 1s
+  run-c8-r2.txt: host-date 2026-10-28T00:41:01Z mtime 2026-10-28T00:41:02Z delta 1s
+  run-c8-r3.txt: host-date 2026-10-28T00:41:02Z mtime 2026-10-28T00:41:03Z delta 1s
+9/9 consistent (worst delta 1s -- seconds granularity of the stamp).
+Build window: 2026-10-28T00:40:45Z (3 compiles, rc=0 3/3, build stderr
+0 bytes 3/3 -- build-census-s32.txt). GO stamp 2026-10-28T00:40:34Z
+precedes the build window and the run window.
+Run window: 2026-10-28T00:40:59Z..00:41:02Z (9 fresh processes; run
+window end stamp 00:41:03Z).
+Session 31 ran 2026-10-28T00:06:33Z..00:06:39Z -- this session runs
+~34 minutes after session 31, ON THE SAME UTC DAY 2026-10-28 (the
+bar's day slot is s31's; this session is later same-UTC-day DESCRIPTIVE
+CONTENT under settle-bar.txt section 2 and cannot advance the bar).

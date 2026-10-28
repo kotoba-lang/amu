@@ -1,0 +1,148 @@
+JUN-59 -- session 35 protocol: THE WANDER CO-VARIATION READ (does the
+within-window min-statistic wander of session 34 co-vary with the
+host-side proxy?). ANALYSIS slice over session 34's COMMITTED measured
+run logs -- NO new hardware runs this session (named; the settling
+bar's UTC-day 2026-10-28 slot is ALREADY CONSUMED by session 31 and no
+same-day run would advance the bar). Frozen BEFORE the correlation
+statistic is computed (freeze stamp 2026-10-28T02:10:34Z, this tick;
+before analysis-s35.py is run). This file is written once and never
+rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE WITHIN-WINDOW CO-VARIATION
+   OF THE BLOCK-UNIT MIN STATISTIC WITH THE HOST-SIDE PROXY).
+   Session 34's named-not-hidden residual is the row taken here: "WHY
+   the block-min statistic wanders (estimator noise vs physical drift
+   vs both)" is UNMEASURED. The FIRST probe of that question available
+   from committed data: within session 34's single window (12 blocks
+   A..L of the (1024,4033) anchor at n=253,906, B=3, byte-identical
+   binary, 84 committed run logs), do the 12 BLOCK-UNIT MIN
+   STATISTICS co-vary with the 12 BLOCK-UNIT HOST-SIDE PROXY VALUES?
+
+   THE TWO VECTORS (frozen; both re-derived by analysis-s35.py from
+   the 84 committed run logs in ../anv-b3minwander-20261028/ and
+   cross-checked against publication-s34.txt's published values):
+     X = block-unit min statistic of block B in A..L = min over the 18
+         pipeline-ok cells of the pooled median gpu_ticks over the
+         block's 75 samples (3 runs x 25 rounds) -- session 34's
+         frozen statistic, exactly the quantity that decides
+         CAPTURED-vs-not at the frozen 1,000-tick threshold.
+     Y = block-unit host-side proxy of block B = pooled median host_ns
+         over the block's 75 samples at the cell (sum,128,S=16) --
+         session 34's X1 per-block definition (host_ns is the
+         HOST-side proxy L3; its cause is itself UNMEASURED).
+   Cross-check (frozen): X must reproduce publication-s34.txt's
+   published block minima (A 993 / B 1,003 / C 982 / D 1,000 / E 991 /
+   F 988 / G 991 / H 986 / I 992 / J 989 / K 989 / L 985) and Y its
+   published per-block host_ns (A 505,202 / B 618,664 / C 606,762 /
+   D 496,666 / E 489,032 / F 488,151 / G 501,315 / H 501,726 /
+   I 497,428 / J 507,036 / K 503,279 / L 503,138), EXACTLY (these are
+   quote-only frozen reference values from publication-s34.txt -- they
+   are s34's measurements, never this session's). Any mismatch =>
+   letter (c).
+
+   THE STATISTIC (frozen): Spearman rank correlation rho between X and
+   Y over the 12 blocks (tie-corrected average ranks; Pearson
+   correlation of the mid-ranks).
+
+   THE P-VALUE (frozen): two-sided Monte Carlo permutation test.
+   rng = random.Random(20261028); 100,000 trials; trial i: perm = list
+   (range(12)); rng.shuffle(perm); rho_perm = Spearman(X, [Y[perm[j]]
+   for j in range(12)]); count trials with abs(rho_perm) >=
+   abs(rho_obs) - 1e-12; p = (1 + count) / 100,001. The algorithm is
+   specified exactly so a second independent implementation
+   (derivation-census-s35.txt) reproduces the same p.
+
+   T1 LETTERS (pre-registered NOW, before the statistic is computed):
+     (a) CO-MOVE: abs(rho) >= 0.60 AND p <= 0.05 -- the within-window
+         min-statistic wander CO-MOVES with the host-side proxy.
+     (b) NO-CO-MOVE: evaluable but not (a).
+     (c) NAMED UNRESOLVED / NOT EVALUABLE: integrity failure (VERIFY
+         mismatch > 0 in any of the 84 logs, sample-count mismatch,
+         vector cross-check failure) or C1 (b) at re-derivation.
+
+   NAMED, NOT HIDDEN (frozen): NEITHER letter resolves
+   threshold-artifact-vs-representation. (a) is CONSISTENT WITH a
+   shared physical/host-state driver of the wander (weighing against
+   pure estimator-noise-only) but is L2 observational only -- NO
+   causal mechanism is claimed, the host-side proxy is itself L3 with
+   an UNMEASURED cause, and estimator noise is not excluded. (b)
+   excludes ONLY this proxy as the within-window driver at this window
+   -- estimator noise OR an unmeasured physical variable (thermal,
+   scheduling, memory state) both remain. ONE window, ONE day, 12
+   blocks: LOW POWER; a null result at n=12 is not evidence of
+   independence; NO rate, variance or distribution claim is made or
+   measurable from this window (L13). ALSO NAMED: the input vectors
+   are PUBLISHED session-34 content (publication-s34.txt) -- this
+   freeze guards against letter-shopping, not against prior exposure
+   to the inputs (checked this tick before the freeze: NO committed
+   file computes any correlation of these vectors; publication-s34.txt
+   contains no rho/correlation content).
+
+   SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of it
+   is the row question):
+   (D1) the SAME statistic at PER-RUN granularity (36 points: per-run
+        min statistic over the run's 18 cells of the 25-round medians,
+        per-run host_ns at (sum,128,S=16)) -- a NAMED DIFFERENT UNIT
+        (25 rounds/cell, NOT the frozen 3-run unit; L10), Spearman rho
+        + the same permutation algorithm/seed, descriptive only.
+   (D2) the run-order trend: Spearman rho of X vs block index 1..12
+        (descriptive; a drift trend would co-vary with TIME, not
+        necessarily with the proxy).
+   (D3) the recovery of session 34's OMITTED build census (section 7).
+
+1. INPUTS (frozen route): ONLY the 84 committed run logs of session
+   34 (docs/evidence/gpu/anv-b3minwander-20261028/run-<tag>-r<R>.txt,
+   c2 r1-3 + hi r1-36 + c8 r1-3) and publication-s34.txt's published
+   values as quote-only cross-check constants. ZERO derivation edits;
+   ZERO new knob pairs; ZERO new compiles; ZERO new GPU processes.
+
+2. THE FROZEN ESTIMATOR UNIT: each block = 3 fresh processes x 25
+   rounds per cell (session 34's block definition; block A = hi r1-3
+   ... block L = hi r34-36).
+
+3. QUOTE-ONLY REFERENCE VALUES (comparison only; never this session's
+   measurements): the bar's frozen refs 1,129/1,132/1,131; the quote-
+   only pair block-min band 976..1,001; per-run min band 971..1,001
+   (extended at s34 to 972..1,006); committed controls c2 31, c8
+   32,915; prior same-knob host_ns (sum,128,S=16) hi 309,848 /
+   310,008 / 309,647 / 308,129 / 875,403 (s31 excursion) / 304,999 /
+   308,946.
+
+4. INVALIDATION (frozen): any VERIFY mismatch > 0 in any of the 84
+   logs => that session's data is INVALID for this read and the letter
+   is (c). C1 re-derivation (c2 FLOOR, c8 within +/-5% of 32,915 at
+   (sum,128,S=16)) must pass for any letter other than (c).
+
+5. THE SETTLING BAR: this session produces NO reading (no new
+   hardware), therefore NO ledger line and NO day-slot consumption.
+   docs/evidence/gpu/settle-bar-ledger.txt stays byte-identical; the
+   frozen evaluator (settle-bar-eval.py, 38-assertion fixture pin)
+   runs over the unchanged ledger and its verdict must read PENDING
+   1/4 with s31 counted (run twice byte-identical). Next executable
+   day slot 2026-10-29.
+
+6. DETERMINISM: analysis-s35.py and the census generator are run
+   twice each; each pair must be byte-identical (diff exit 0).
+
+7. NAMED DEFECT TICKLED BY THIS SESSION (pre-stated, remediation is
+   descriptive content D3): session 34's record.txt, run-window.txt
+   and commit message cite build-census-s34.txt as committed evidence,
+   but that file is ABSENT from the committed tree (git ls-files: not
+   present; every peer session's dir carries its build-census-sN.txt).
+   The s34 claim "3/3 build pins BYTE-IDENTICAL" therefore lacks its
+   primary artifact in the tree. Remediation attempted this tick,
+   named NOT hidden: a RECOVERY file (build-census-s34-recovered-
+   s35.txt, produced at session 35 from the host workdir
+   ~/anv-b3minwander-20261028 artifacts that are unchanged since the
+   s34 build stamps -- host mtimes checked) records the binary digests
+   and compares them against the protocol-declared pins
+   (anv-bb-c2 e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 /
+   anv-bb-hi a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c /
+   anv-bb-c8 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807).
+   The recovery file is a SESSION-35 artifact and never pretends to be
+   the s34 file; the omission stays NAMED as a session-34 defect.
+
+8. RULE 4 binds: NOTHING MOVES -- no workgroup row, no :measured? flag
+   (accelerator-targets defaults remain provisional), no selection
+   answer; NO vendor optimization exists for Intel and none is
+   claimed.

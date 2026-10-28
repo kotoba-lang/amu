@@ -1,0 +1,206 @@
+JUN-59 -- session 41 record: THE CROSS-WINDOW T-SPREAD
+REPARTITION PROBE
+(does the window-to-window variation of the block-min spread T
+ITSELF exceed run-exchangeable sampling noise, or is the 8..25
+spread of the six probe Ts itself noise?).
+ANALYSIS slice -- NO new hardware this tick (every input quantity
+was MEASURED in sessions 36/38/39; this session re-derives
+statistics from their COMMITTED run logs).
+2026-10-28 (UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): SESSION 40'S FIRST-NAMED CANDIDATE ROW
+   "whether window-to-window variation of T itself (8..25 across
+   the six probes; s38 hi the largest at p 0.059247) exceeds noise
+   (cross-window comparison here is descriptive only -- a named
+   candidate row for a later session)" -- taken on ONE observable
+   axis: per arm, does the cross-window spread of T,
+   R_obs = max_w T_w - min_w T_w over the three probed windows
+   (s36, s38, s39), EXCEED the cross-window run-repartition null
+   (the 108 runs of one arm across the three windows are
+   exchangeable; all within-run, fresh-process run-to-run AND
+   window-to-window noise under the null is sampling noise at the
+   fresh-process granularity)? The unit and statistic are the
+   s35/s36-frozen constructions UNCHANGED (block = 3 consecutive
+   runs of one arm within one window; block value = pooled median
+   gpu_ticks of the block's 75 samples per ok cell; block-min = min
+   over the 18 ok cells; T_w = range of the 12 block-mins of window
+   w; R = max - min over the three T values of one arm).
+   Resampling: 20,000 trials, random.Random(20261028) consumed in
+   the frozen probe order (hi then tw), per trial one shuffle of
+   list(range(108)) split into three pseudo-windows of 36 in draw
+   order and 12 blocks of 3 in draw order, p = (1 + count(R* >=
+   R_obs)) / (1 + 20,000), one-sided. The T1 letters were
+   pre-registered in protocol.txt sections 0-2 (freeze stamp
+   2026-10-28T05:05:50Z, BEFORE any statistic of this probe was
+   computed): per arm (a) WINDOW-CONSISTENT / (b) EXCEEDS NULL
+   (named which) / (c) NOT EVALUABLE; joint T1 = (a) iff both arms
+   (a).
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3xwindt-20261028/ -- protocol.txt
+       (frozen before any statistic, freeze stamp
+       2026-10-28T05:05:50Z), analysis-s41.py + publication-s41.txt
+       (run twice, diff exit 0), derivation-census-s41.txt
+       (independent second parser, 40 rows / 0 mismatched, run
+       twice byte-identical), bar-eval-s41.txt, classify-selftest.
+       txt, gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt,
+       this record. NO run logs (no hardware), NO .sh files.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNCHANGED (NO
+       reading -> NO line -> NO day-slot consumption; byte-identical
+       to HEAD, verified in the census).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) DERIVED FROM MEASURED DATA (the 234 committed run logs of
+       the three windows -- 78 each: c2 3 + hi 36 + tw 36 + c8 3;
+       every input quantity was MEASURED on aiueos-6600hs Intel BMG
+       G31 ANV in sessions 36/38/39, run windows
+       2026-10-28T02:40:49Z / 03:39:14Z / 04:09:48Z): integrity
+       re-derived per window (VERIFY mismatch 0, SAMPLE 450 /
+       VERIFY 24 per run, knobs == arm table, S=8 fail-closed, cell
+       map identical -- 3/3 windows clean); C1 at the s39 window
+       (a): c2 FLOOR, c8 pooled median 32,829 vs committed 32,915
+       (0.26%); the six block-min vectors reproduce the
+       published/quote-only vectors of publication-s39.txt section 3
+       EXACTLY (6/6), and the six T values re-derive to session
+       40's published values EXACTLY (hi 18/25/14, tw 14/21/8).
+   (b) T1 THE ROW QUESTION (DERIVED): T1 = (a) WINDOW-CONSISTENT --
+       the window-to-window spread of T does not exceed the
+       cross-window run-repartition null on either arm: hi
+       T (s36, s38, s39) = 18, 25, 14, R_obs = 11, count 5,510 /
+       20,001, p = 0.275536; tw T = 14, 21, 8, R_obs = 13, count
+       1,587 / 20,001, p = 0.079396 (both p > 0.05 at the frozen
+       threshold). THE FINDING: at the three probed windows the
+       8..25 spread of the six T values is itself consistent with
+       run-exchangeable sampling noise -- session 40's descriptive
+       cross-window comparison does not need a window-level effect
+       to occur. NAMED, NOT HIDDEN: (a) does NOT prove "no physical
+       window-level driver" -- the null is run-exchangeability
+       ACROSS WINDOWS and a driver acting uniformly within AND
+       across windows is invisible by construction; R tests the
+       window-to-window variation of the SPREAD of the 12 block-mins
+       ONLY -- window-level shifts in LEVEL (mean/median) do not
+       enter R (named limitation of the row question; D3 records
+       level content descriptively); (b) would have implicated
+       window-timescale structure in the spread but NOT named it;
+       exchangeability across windows is a STRONGER assumption than
+       session 40's within-window exchangeability and is itself an
+       assumption; the tw arm's p = 0.079396 at R_obs = 13 sits
+       ABOVE the frozen 0.05 threshold and CLOSER to it than hi's
+       0.275536 -- letter (a) at the frozen threshold, NO trend,
+       strength or near-miss claim; three windows ~30-60 min apart
+       in ONE day on ONE host is LOW POWER (a null at three windows
+       is not evidence of stationarity); session 40's per-window
+       (a) letters and this letter are DIFFERENT nulls -- neither
+       confirms nor overturns the other; 20,000 trials (NOT the
+       s35-frozen 100,000 -- cost, same named deviation as session
+       40; p resolution 1/20,001 ~= 5e-5); L2 observational ONLY,
+       NO causal mechanism, direction UNMEASURED; the per-run-unit
+       ranges (D1) are a NAMED DIFFERENT UNIT (L10, no letter).
+   (c) B1/B2 THE BAR: NO reading this tick -> NO ledger line, NO
+       day-slot consumption (settle-bar-ledger.txt byte-identical to
+       HEAD, verified in the census); frozen evaluator --self-test
+       38 fixture checks ok (pin), ledger eval twice byte-identical
+       -> VERDICT UNCHANGED PENDING 1/4 with s31 counted; next
+       executable day slot 2026-10-29.
+   (d) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin); scoped GPU gate GREEN 123
+       tests / 12,162 assertions / 0 failures / 0 errors recorded
+       run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk,
+       created, run, deleted -- never committed); FULL run-tests.cljk
+       RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not find
+       namespace: kotoba.form' at namespace load (ADR-0362, outside
+       this diff -- this diff touches NO .cljk namespace) -- NO
+       green full suite claimed; find docs/evidence/gpu -name '*.sh'
+       -> 0.
+   (e) derivation-census-s41.txt: an independent second parser
+       (split-based parsing without regex; the observed pooled
+       median via a 3-way merge selection over the sorted per-run
+       25-lists -- the pooled 75 never sorted as a unit; the
+       resampling pooled median via the np.sort order-statistic
+       path, not np.median's; the cross-window repartition
+       resampling and the RNG call order re-implemented) re-derives
+       every cited number from the 234 committed logs -- 40 rows,
+       0 mismatched -- and verifies the ledger is byte-identical to
+       HEAD, the gate artifacts and the no-.sh policy; run twice
+       byte-identical.
+
+4. NAMED, NOT HIDDEN (this tick): (i) no NAMED DEFECTS in the
+   committed analysis or census this tick (first drafts: the unused
+   perm_buf buffer line was removed before the first run; the
+   census generator's merge median was fixed to sort the three
+   per-run 25-lists before heapq.merge -- heapq.merge requires
+   sorted inputs -- in the pre-run review, before any census value
+   existed; no value was quoted from either draft); (ii) the (a)
+   letter is a LOW-POWER fact at THREE windows in ONE day on ONE
+   host and is NOT evidence of window stationarity -- see (b);
+   (iii) 20,000 trials (not the s35-frozen 100,000): cost, named in
+   the freeze; p resolution 1/20,001 ~= 5e-5; (iv) the per-run-unit
+   ranges (D1) are a NAMED DIFFERENT UNIT (L10) and carry no
+   letter; (v) the s34 window is EXCLUDED (hi-only design; the
+   probe needs the same three windows for both arms).
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31), the X1R letter
+   thresholds (s32), the T1 letter thresholds (s33-s36), the joint
+   letter thresholds (s37), the repartition-null letters of session
+   40 and the cross-window letters of THIS session (protocol.txt
+   sections 0-2). Not implemented in the compiler; not themselves
+   measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/
+   evaluator remain evidence-scoped tooling; the ledger is an
+   evidence file; nothing is wired into any namespace.
+   MEASURED (this tick): nothing new -- NO hardware ran; the
+   numbers are DERIVED from the sessions 36/38/39 measured logs.
+   Provisional workgroup defaults in kotoba.compiler.accelerator-
+   targets remain provisional (:measured? false) -- not
+   optimization evidence. RULE 4 unchanged: NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer; NO
+   vendor optimization exists for Intel and none is claimed.
+
+6. UNMEASURED (named): what, if anything, physically moves the
+   wander (this probe plus session 40 only show no structure beyond
+   run-exchangeable noise at the block and window spread scales;
+   estimator noise vs an unmeasured physical variable STAYS
+   UNRESOLVED -- a within-window-uniform and cross-window-uniform
+   driver is invisible to both designs by construction, and
+   window-level LEVEL shifts are invisible to R specifically); any
+   common-mode driver faster than the ~1s block-pair spacing (L14);
+   the s31, s34-window and s36 tw block-E host-side excursions'
+   causes; the threshold-artifact-vs-representation question itself;
+   the flip location inside (252,604, 253,906]; any causal
+   mechanism; anything off the ANV host. The bar needs at least
+   THREE more qualifying UTC days (V4 PENDING 1/4); whether FOUR
+   qualifying days is ENOUGH (the bar can return UNSETTLED).
+   NAMED CANDIDATE ROWS for later sessions: a LEVEL-shift probe of
+   the same three windows (D3's descriptive medians suggest little
+   level movement, but no letter exists -- R does not test level);
+   a fourth-window extension of THIS cross-window probe (three
+   windows are LOW POWER).
+
+7. THE TICK'S FINDING IN ONE LINE: THE WINDOW-TO-WINDOW SPREAD OF
+   THE BLOCK-MIN SPREAD T READS (a) WINDOW-CONSISTENT ON BOTH ARMS
+   -- at the s36/s38/39 windows R_obs = 11 (hi) and 13 (tw) do not
+   exceed the cross-window run-repartition null (hi count 5,510 /
+   20,001, p 0.275536; tw count 1,587 / 20,001, p 0.079396 -- tw's
+   p sits ABOVE the frozen 0.05 and CLOSER to it than hi's, named
+   not hidden, no trend claim), so session 40's descriptive "T
+   wanders 8..25 across six probes" comparison does not need a
+   window-level effect to occur and the MECHANISM behind the wander
+   STAYS UNRESOLVED ((a) is not proof of noise: a uniform physical
+   driver is invisible by construction and window-level LEVEL
+   shifts are outside R's question), threshold-artifact-vs-
+   representation stays UNRESOLVED, and the bar stays PENDING 1/4
+   (frozen evaluator, twice byte-identical; no ledger line this
+   tick); nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3xwindt-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged) + the
+   ADR-0355 dated note. (JUN-55, JUN-59)

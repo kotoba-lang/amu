@@ -1,0 +1,64 @@
+session 49 tick 2 (landing tick, 2026-10-28) -- the pinned gate
+artifacts (classify-selftest.txt, gate-run1.txt, gate-run2.txt,
+gate-full-run-tests.txt) were copied into this evidence directory
+at landing (byte-identical to session 48's pinned artifacts and to
+this slice's tick-1 captures -- all four pairs verified with cmp:
+CLASSIFY-BYTE-IDENTICAL / GATE-BYTE-IDENTICAL (x2) /
+FULL-ERR-BYTE-IDENTICAL), and the three gate families were ALSO
+re-run FRESH from the worktree root at the landing tick (the
+session-48 landing pattern), every fresh capture compared
+byte-for-byte against its pinned artifact via cmp. Scratch
+captures live in the worktree scratch/ dir, DELETED at landing
+(the scratch runner included), never committed.
+
+1. command: python3 scripts/gpu_regime_classify.py --self-test
+   (stdout captured to scratch/gate-s49b-classify.txt)
+   exit: 0
+   last line: TOTAL: 2649 assertions passed, 0 failed
+   cmp scratch/gate-s49b-classify.txt classify-selftest.txt -> identical
+   (CLASSIFY-BYTE-IDENTICAL)
+
+2. command: kbb --backend sci --classpath "src:test:$(kbb
+   -Spath -M:test)" scratch/scoped-gpu-gate.cljk
+   (the scratch runner is the eight GPU-owned test namespaces of
+   run-tests.cljk, same engine and classpath; stdout captured to
+   scratch/gate-s49b-run1.txt)
+   exit: 0
+   output:
+     Ran 123 tests containing 12162 assertions.
+     0 failures, 0 errors.
+   cmp scratch/gate-s49b-run1.txt gate-run1.txt -> identical
+   (GATE-BYTE-IDENTICAL)
+   cmp scratch/gate-s49b-run1.txt scratch/gate-s49-run1.txt ->
+   identical (ALSO-IDENTICAL-TO-TICK1-CAPTURE)
+   note: the "kbb: 2 dep(s) are not :local/root ..." line belongs
+   to the $(kbb -Spath -M:test) classpath sub-invocation and is
+   not part of the capture (established capture convention:
+   runner stdout / runner error output only; the same convention
+   the pinned artifacts were captured under -- tick 1 and this
+   run both left the runner .err captures at 0 bytes).
+
+3. command: kbb --backend sci --classpath "src:test:$(kbb
+   -Spath -M:test)" run-tests.cljk
+   (stdout -> scratch/gate-s49b-full.txt, stderr ->
+   scratch/gate-s49b-full.err)
+   exit: 1 (RED AT BASE, outside this diff)
+   stderr:
+     ----- Error --------------------------------------
+     Message:  Could not find namespace: kotoba.form
+     ...
+     Error: Could not find namespace: kotoba.form
+         at file:///Users/junkawasaki/github/kotoba-lang/org-babashka-nbb/lib/nbb_main.js:13:216
+
+     Node.js v26.0.0
+   cmp scratch/gate-s49b-full.err gate-full-run-tests.txt -> identical
+   (FULL-ERR-BYTE-IDENTICAL)
+   named: kotoba.form is RED AT BASE (ADR-0362, outside this
+   diff -- this slice touches NO .cljk namespace); NO green full
+   suite is claimed.
+
+SUMMARY: all three gate families reproduce byte-identically on
+fresh runs at the landing tick; the scoped GPU gate is GREEN
+(123 tests / 12,162 assertions / 0 failures / 0 errors) and the
+full run-tests.cljk remains RED AT BASE kotoba.form, named, not
+hidden.

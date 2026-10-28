@@ -1188,3 +1188,1151 @@ Evidence: `docs/evidence/gpu/anv-b3settlebar-20261027/` (settle-bar.txt
 is the frozen pre-registration; record.txt is the finding;
 derivation-census-s30.txt re-derives every cited measured number from
 sessions 26-29's committed run logs).
+
+## 2026-10-28 -- session 31 (JUN-59): the first bar-executing session
+-- the first cross-UTC-day anchor reading
+
+The bar's L4 axis is spanned for the first time. This tick runs
+natively on UTC day 2026-10-28 (protocol freeze stamp 00:04:50Z, run
+window 00:06:33Z..00:06:39Z) -- sessions 2-29 all ran on 2026-10-27 --
+and takes ONE reading in the bar's frozen unit: one 3-run block of the
+(1024,4033) anchor (BATCH=3, WORK_MUL=1024, NDIV=4033, n=253,906,
+B=3) at a byte-identical rebuilt binary (a6c31b6c... -- the pair's
+fourth cross-session rebuild), with the archived controls c2/c8
+bracketing the window. MEASURED: the reading classifies
+INTERMEDIATE/MIXED at (sum,128,S=16) pooled median 1,142 (18-cell
+985..1,436) over 3 runs x 25 rounds per cell, IN-BAND vs the frozen
+references 1,129 / 1,132 / 1,131; C1 (a) (c2 FLOOR 31; c8 32,688 vs
+committed 32,915, -0.69%); VERIFY mismatch 0 everywhere (9 fresh
+processes, rc=0 9/9, forcing 162/162, S=8 fail-closed 54/54,
+host-mtime cross-check 9/9). QUALIFYING under the bar (B1 (a)): the
+reading is COUNTED 1/4 -- the first qualifying reading of its UTC day
+-- and the frozen evaluator `settle-bar-eval.py` over the append-only
+ledger (created this tick, `docs/evidence/gpu/settle-bar-ledger.txt`)
+returns VERDICT: PENDING 1/4 (run twice byte-identical; fixture
+self-test pin 38/0). Nothing settles at one day: at least three more
+qualifying UTC days are needed and FLAGGED days do not shorten the
+count. Named, not hidden: the ledger-construction decision (the ledger
+starts with the first bar-executing session; sessions 26-29's readings
+are the bar's quote-only reference basis, not backfilled entries --
+the alternative reading is arguable and was frozen out before the runs
+in protocol section 0) and an X1 host-side excursion (hi host_ns
+875,403 = ~2.83x every same-knob prior while both controls and every
+GPU-side bracket replicate in band -- host_ns is the L3 proxy, cause
+UNMEASURED). The reading's min 985 sits inside the measured
+min-statistic wander (971..1,001) -- whether day 28's class is day
+structure or that wander is UNMEASURED. Rule 4 binds: the bar moves
+nothing; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization exists
+for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3xday-20261028/` (protocol.txt is
+the frozen pre-registration incl. the ledger-construction decision;
+publication-s31.txt is the measurement; bar-eval-s31.txt is the
+frozen evaluator's verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 32 (JUN-59): the within-day recurrence read
+of the session-31 hi host_ns excursion
+
+The bar's UTC-day 2026-10-28 slot is consumed by session 31 (COUNTED
+1/4; next executable day slot 2026-10-29), so this tick takes one of
+s31's named residuals instead of bar content: the X1 host-side
+excursion (hi host_ns 875,403 = ~2.83x every same-knob prior, cause
+UNMEASURED). ONE measurement slice, pre-registered before the runs
+(protocol freeze stamp 2026-10-28T00:39:07Z): a second same-UTC-day
+3-run block of the (1024,4033) anchor (B=3, n=253,906) at a
+byte-identical rebuilt binary (a6c31b6c... -- the pair's fifth
+cross-session rebuild; 3/3 pins byte-identical), controls c2/c8
+bracketing, custody GO 00:40:34Z before builds and all runs. MEASURED:
+the excursion DID NOT RECUR -- hi pooled host_ns 304,999 = frozen X1R
+letter (a) REVERTED (0.984x-0.990x every same-knob prior
+309,848/310,008/309,647/308,129; 0.348x session-31's 875,403; per-run
+304,729..305,961), with C1 (a), VERIFY 0 everywhere (9 fresh
+processes, rc=0 9/9, forcing 162/162, host-mtime cross-check 9/9).
+Descriptive same-day content: the second 2026-10-28 anchor reading
+classifies INTERMEDIATE/MIXED at 1,128 (18-cell 982..1,421), in-band
+vs the frozen refs 1,129/1,132/1,131; the F2 min-statistic wander
+carries (block min 982, per-run minima 986/972/989 inside 971..1,001).
+Under settle-bar.txt section 2 the block is NAMED DESCRIPTIVE CONTENT:
+its ledger line (appended after a scratch-copy evaluator test) is
+classified descriptive by the frozen evaluator (same-day-duplicate
+exclusion) and the verdict is UNCHANGED -- PENDING 1/4 with s31
+counted (settle-bar-eval.py run twice byte-identical; fixture pin
+38/0). Named, not hidden: one non-recurrence observation bounds
+nothing about cause -- the excursion's cause remains UNMEASURED and no
+causal mechanism is claimed (two observations of the same knob in one
+day: one excursion, one non-recurrence). Rule 4 binds: the bar moves
+nothing; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization exists
+for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3x1rec-20261028/` (protocol.txt is
+the frozen pre-registration incl. the X1R letters; publication-s32.txt is
+the measurement; bar-eval-s32.txt is the frozen evaluator's verdict;
+record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 33 (JUN-59): the representation-side re-read
+(the pair-twin class relation at the anchor grid)
+
+The bar's UTC-day 2026-10-28 slot is consumed by session 31 (COUNTED
+1/4; next executable day slot 2026-10-29) and the bar never judges
+the twin, so this tick takes session 29's named-not-probed residual
+("the REPRESENTATION side of threshold-artifact-vs-representation is
+NOT probed this session (the twin (2048,8066) did not run; scoreboard
+carried, not advanced)"), which session 30 named the priority. ONE
+measurement slice, pre-registered before the runs (protocol freeze
+stamp 2026-10-28T01:08:56Z): one 3-run block of the (1024,4033) pair
+and one of its same-ratio twin (2048,8066), both at the identical
+grid n=253,906, B=3, at byte-identical rebuilt binaries (hi
+a6c31b6c = the pair's sixth cross-session rebuild; tw bb901eb5 = the
+twin triple's second cross-session rebuild; 4/4 pins byte-identical),
+controls c2/c8 bracketing, custody GO 01:11:19Z before builds and all
+runs. MEASURED: T1 = (a) AGREE -- the pair block classifies
+INTERMEDIATE/MIXED 1,124 (18-cell 987..1,456) and the twin block
+INTERMEDIATE/MIXED 1,146 (994..1,453), same class at medians 1.96%
+apart; the s28 anchor-grid C3 (a) REPEATS and the scoreboard becomes
+s24 (b) / s25 (a) / s26 (b) / s27 (a) / s28 (a) / s33 (a) -- three
+splitting grids, three agreeing grids. NAMED, NOT HIDDEN: the AGREE
+does NOT resolve threshold-artifact-vs-representation -- the 1,000-tick
+class boundary sits inside the measured min-statistic wander (F2) and
+the letter is an observational discriminator only (L2). Descriptive
+same-day content: the twin's class is UNCHANGED across its three
+readings (1,145 min 985 / 1,141 min 983 / 1,146 min 994) while the
+pair once flipped (1,129 CAPTURED s26 -> MIXED since) -- three twin
+readings vs nine pair readings establish no rate difference and none
+is claimed; the hi block is day 28's THIRD anchor reading (in-band vs
+the frozen refs 1,129/1,132/1,131), appended to the ledger and
+classified descriptive by the frozen evaluator -- verdict UNCHANGED,
+PENDING 1/4 with s31 counted (settle-bar-eval.py run twice
+byte-identical; fixture pin 38/0). Every arm's host_ns in band (hi
+308,946 = 0.353x s31's excursion -- a third non-recurrence
+observation; cause UNMEASURED). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured? false`);
+no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3repr-20261028/` (protocol.txt is
+the frozen pre-registration incl. the T1 letters; publication-s33.txt
+is the measurement; bar-eval-s33.txt is the frozen evaluator's
+verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 34 (JUN-59): the within-window min-statistic wander probe (the threshold-artifact side)
+
+Session 33's named residual ("NEITHER letter resolves
+threshold-artifact-vs-representation -- the frozen 1,000-tick class
+boundary sits INSIDE the measured F2 min-statistic wander") is taken
+on ONE observable axis: do K=12 independent 3-run blocks of the
+(1024,4033) anchor at n=253,906, B=3, in ONE session window at a
+byte-identical rebuilt binary (a6c31b6c -- the pair's seventh
+cross-session rebuild; 3/3 pins byte-identical, controls c2/c8
+bracketing) straddle the frozen 1,000-tick class boundary in their
+block-unit min statistics? ONE measurement slice, pre-registered
+before the runs (protocol freeze stamp 2026-10-28T01:39:28Z; ledger-
+construction decision L12 for multi-block sessions frozen there --
+block A is the only bar candidate), custody GO 01:42:47Z before
+builds and all runs. MEASURED: T1 = (a) STRADDLE -- block-unit min
+statistics A 993 / B 1,003 / C 982 / D 1,000 / E 991 / F 988 /
+G 991 / H 986 / I 992 / J 989 / K 989 / L 985 (range 982..1,003):
+blocks B (1,003) and D (1,000) classify CAPTURED, ten blocks
+INTERMEDIATE/MIXED. THE FINDING: the frozen class boundary IS
+crossed by within-window variation alone at byte-identical binaries
+-- the cross-session class flip (s26 CAPTURED -> s27 MIXED) needs no
+session-level effect to occur. NAMED, NOT HIDDEN: this does NOT
+prove threshold artifact (the wander may itself be physical; L2
+observational, no causal mechanism claimed) and
+threshold-artifact-vs-representation STAYS UNRESOLVED; the C3
+scoreboard is untouched. Descriptive: per-run minima 972..1,006
+(extends the quote-only band 971..1,001); no rate claim (2 of 12
+blocks here vs 1 of 11 prior is not a rate comparison); block A is
+day 28's FOURTH anchor reading (INTERMEDIATE/MIXED 1,145 min 993,
+in-band vs the frozen refs 1,129/1,132/1,131), appended to the
+ledger and classified descriptive by the frozen evaluator -- verdict
+UNCHANGED, PENDING 1/4 with s31 counted (settle-bar-eval.py twice
+byte-identical; fixture pin 38/0); next executable day slot
+2026-10-29. Host-side proxy elevated across all three arms this
+window (hi 488,151..618,664 = 1.58x..2.03x non-excursion priors)
+while GPU-side medians replicate in band -- named, cause UNMEASURED.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3minwander-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters and L12;
+publication-s34.txt is the measurement; bar-eval-s34.txt is the
+frozen evaluator's verdict; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger).
+
+## 2026-10-28 -- session 35 (JUN-59): the wander co-variation read (analysis; no new hardware)
+
+Session 34's named residual ("WHY the block-min statistic wanders
+(estimator noise vs physical drift vs both)" is UNMEASURED) is taken
+on ONE observable axis, from session 34's COMMITTED measured run logs
+only (84 logs; NO new hardware this session -- named): within s34's
+single window (12 blocks A..L of the (1024,4033) anchor at n=253,906,
+B=3, byte-identical binary), do the 12 block-unit min statistics
+co-vary with the 12 block-unit host-side proxy values (host_ns at
+(sum,128,S=16))? ONE analysis slice, pre-registered before the
+statistic was computed (protocol freeze stamp 2026-10-28T02:10:34Z;
+frozen Spearman + permutation letters (a) CO-MOVE |rho| >= 0.60 and
+p <= 0.05 / (b) NO-CO-MOVE otherwise; the input vectors are published
+s34 content and the freeze guards against letter-shopping, not prior
+exposure -- named). DERIVED FROM MEASURED DATA: T1 = (b) NO-CO-MOVE
+-- rho = -0.038597, permutation p = 0.907841 (100,000 trials, frozen
+seed 20261028); the vectors reproduce publication-s34.txt's published
+values exactly (X A 993..L 985; Y A 505,202..L 503,138), C1 (a),
+VERIFY 0 over the 84 logs. THE FINDING: the within-window min-
+statistic wander does NOT co-vary with the host-side proxy -- the
+wander is not explained by host-side variation at this window.
+NAMED, NOT HIDDEN: this excludes ONLY this proxy (estimator noise vs
+an unmeasured physical variable STAYS UNRESOLVED; L2 observational,
+no causal mechanism; n=12 in one window is LOW POWER) and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive:
+per-run unit (36 points, NAMED DIFFERENT UNIT) also reads no
+co-movement (rho -0.098788, p 0.566724); run-order trend rho
+-0.473687, p 0.122189 (not significant, no trend claim). NO reading,
+NO ledger line, NO day-slot consumption -- the bar stays PENDING 1/4
+with s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0); next executable day slot 2026-10-29. NAMED DEFECT (session
+34's commit): build-census-s34.txt was cited as evidence but omitted
+from the tree; recovered this tick as the session-35 artifact
+build-census-s34-recovered-s35.txt from the host workdir's unchanged
+artifacts (mtimes at the s34 build stamps) -- 3/3 digests match the
+protocol-declared pins byte-identically, substantiating the s34
+"3/3 pins BYTE-IDENTICAL" claim retroactively while the omission
+stays named. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and no
+vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3wandercov-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters; publication-
+s35.txt is the derived read; bar-eval-s35.txt is the frozen
+evaluator's verdict; build-census-s34-recovered-s35.txt is the named
+recovery; record.txt is the finding) and
+`docs/evidence/gpu/settle-bar-ledger.txt` (the append-only ledger,
+untouched this tick).
+
+## 2026-10-28 -- session 36 (JUN-59): the common-mode probe (two interleaved arms, one window)
+
+Session 35's named candidate row ("a common-mode probe across two
+interleaved arms in one window (physical drift would move both arms'
+minima together, estimator noise would not -- NEW HARDWARE, a named
+candidate row for a later session)") is taken on ONE observable
+axis: in ONE session window on the ANV host, do the block-unit min
+statistics of TWO interleaved arms -- the (1024,4033) pair arm (hi)
+and the (2048,8066) twin arm (tw), 12 ADJACENT block-pairs (hi
+block k immediately followed by tw block k) at byte-identical
+rebuilt binaries -- CO-MOVE across the 12 pairs (Spearman rho
+between the hi and tw block-min vectors)? ONE measurement slice,
+pre-registered before the runs (protocol freeze stamp
+2026-10-28T02:36:45Z; frozen letters (a) CO-MOVE |rho| >= 0.60 and
+p <= 0.05 / (b) NO-CO-MOVE otherwise / (c) NOT EVALUABLE; the
+s35-frozen Spearman + permutation algorithm reused UNCHANGED).
+HARDWARE RAN (MEASURED, aiueos-6600hs Intel BMG G31 ANV): 78 fresh
+processes (c2 3 + hi 36 + tw 36 + c8 3) in the frozen interleaved
+order, run window 2026-10-28T02:40:49Z..02:41:27Z, rc=0 78/78 +
+'# done cells=24' 78/78, stderr 0 bytes 78/78, 450 SAMPLE + 24
+VERIFY each, knob fields == arms, forcing 1,404/1,404, S=8
+fail-closed 468/468, VERIFY mismatch 0 everywhere, host-mtime
+cross-check 78/78 (worst 1s), custody GO 2026-10-28T02:40:47Z
+before builds and ALL runs (corpus 16/16 + 3/3 local-vs-host
+MATCH); 4/4 build pins BYTE-IDENTICAL (hi a6c31b6c = the pair's
+EIGHTH cross-session rebuild / 9th measurement; tw bb901eb5 = the
+twin's THIRD cross-session rebuild / 4th measurement; c2/c8 the
+sessions 13-35 pins). THE FINDING (MEASURED): T1 = (b) NO-CO-MOVE
+-- Spearman rho = -0.251762, permutation p = 0.425076 (100,000
+trials, frozen seed 20261028; count 42,507/100,001); hi block-min
+A..L 991/989/981/998/993/985/984/997/994/994/980/982 (980..998) vs
+tw 988/985/994/993/994/995/992/984/987/984/993/981 (981..995), C1
+(a) (c2 FLOOR; c8 32,911 = 0.01% of 32,915). The two arms' block-min
+wander does NOT co-move in this window; with session 35's (b) (no
+co-move vs the host-side proxy at s34's window) the wander is not
+explained by EITHER the host-side proxy OR a common-mode driver at
+the probed windows/powers -- consistent with per-arm estimator noise
+or arm-specific effects. NAMED, NOT HIDDEN: L2 observational only,
+NO causal mechanism; n=12 pairs in ONE window is LOW POWER (a null
+is not evidence of independence); only common-mode structure slower
+than the ~1s block-pair spacing was probed (L14); the s35 and s36
+letters come from DIFFERENT windows (named); estimator noise vs an
+unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(MEASURED here): (D1) per-run minima hi 966..1,023 EXTEND the
+quote-only band 971..1,006 on both sides (new extremes; per-run
+unit L10), tw 971..1,001 in band; (D2) hi block A is day
+2026-10-28's FIFTH anchor reading (INTERMEDIATE/MIXED, median 1,142,
+min 991, 18-cell 991..1,438), in-band vs the frozen refs
+1,129/1,132/1,131; its ledger line appended as DESCRIPTIVE by the
+frozen evaluator (same-day-duplicate exclusion; scratch-copy tested
+first) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted
+(settle-bar-eval.py twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29); (D3) tw block E host_ns 465,709 =
+1.50x its non-excursion blocks -- an L3 proxy excursion, cause
+UNMEASURED (X1 content). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3commonmode-20261028/` (protocol.txt
+is the frozen pre-registration incl. the T1 letters; publication-
+s36.txt is the measured read; run-window.txt / build-census-s36.txt
+/ host-verify-s36.txt are the custody chain; bar-eval-s36.txt is the
+frozen evaluator's verdict; derivation-census-s36.txt is the
+independent second parser (53 rows / 0 mismatched); record.txt is
+the finding) and `docs/evidence/gpu/settle-bar-ledger.txt` (the
+append-only ledger, one line appended -- hi block A, descriptive).
+
+## 2026-10-28 -- session 37 (JUN-59): the same-window joint probe (analysis; no new hardware)
+
+Session 36's named-not-hidden residual ("a same-window joint probe
+of the proxy AND the cross-arm axis (s35 and s36 probed different
+windows)") is taken on ONE observable axis: at session 36's single
+window (the same 12 adjacent (hi,tw) block-pairs, byte-identical
+binaries), probe BOTH axes plus the second arm's proxy axis on
+three frozen sub-statistics (block unit n=12, Spearman + two-sided
+permutation p, 100,000 trials, frozen seed 20261028 -- the
+s35-frozen algorithm UNCHANGED): (A) hi min-vs-host_ns, (B) tw
+min-vs-host_ns, (C) hi-vs-tw min. ANALYSIS slice over session 36's
+78 committed run logs -- NO hardware ran; pre-registered before the
+statistics were computed (protocol freeze stamp
+2026-10-28T03:06:03Z; joint letter (a) JOINT NO-COUPLE / (b) ANY
+COUPLE / (c) NOT EVALUABLE; a coupling reads CO-MOVE iff |rho| >=
+0.60 AND p <= 0.05; (C) doubles as an integrity anchor and
+reproduces s36's published rho -0.251762 / count 42,507 / p
+0.425076 EXACTLY). THE FINDING (DERIVED from s36's measured logs):
+T1 = (b) ANY COUPLE, named: (A) THE HI ARM'S PROXY AXIS IS THE ONE
+COUPLING -- rho = 0.774082, p = 0.004060 (count 405/100,001);
+(B) tw proxy rho 0.017575 / p 0.960310 NO-CO-MOVE; (C) cross-arm
+rho -0.251762 / p 0.425076 NO-CO-MOVE. Session 35's (b) DOES NOT
+REPLICATE at this window: the proxy-vs-wander coupling is NOT
+window-stable and NOT arm-stable across the two probed windows, so
+"the wander is not explained by the host-side proxy" binds at s34's
+window ONLY. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction of coupling UNMEASURED); (A) reads over the hi
+arm's NARROW host_ns band at this window (307,113..311,051 = 1.3%
+spread, vs s34's 488,151..618,664 excursion window) -- a rank
+coupling on a near-flat proxy series whose physical meaning is
+UNRESOLVED; n=12 LOW POWER; L14 ~1s resolution; estimator noise vs
+an unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(DERIVED here): (D1) per-run-unit analogs read NO co-movement at
+the frozen letters (A1 rho 0.316427 p 0.058799; B1 rho 0.047843 p
+0.780062; L10 different unit); (D2) (B) without the s36-named tw
+block-E host excursion (465,709, cause UNMEASURED) stays
+NO-CO-MOVE (rho -0.164385, p 0.626894). The bar: NO reading -> NO
+ledger line, NO day-slot consumption -- VERDICT UNCHANGED PENDING
+1/4 (frozen evaluator, twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3jointprobe-20261028/` (protocol.txt
+is the frozen pre-registration incl. the joint letters; publication-
+s37.txt is the derived read over s36's logs; bar-eval-s37.txt is the
+frozen evaluator's verdict; derivation-census-s37.txt is the
+independent second parser (51 rows / 0 mismatched); record.txt is
+the finding).
+
+## 2026-10-28 -- session 38 (JUN-59): the third-window joint probe (measurement; the coupling flips arms)
+
+Session 37's named-not-hidden residual ("a THIRD window probing
+both axes (2 windows do not make a pattern)") is taken on ONE
+observable axis: at a THIRD session window, repeat the session-36
+interleaved design exactly (12 adjacent (hi,tw) block-pairs,
+byte-identical rebuilt binaries) and apply the s37-frozen joint
+probe statistics there -- (A) hi min-vs-host_ns, (B) tw
+min-vs-host_ns, (C) hi-vs-tw min (block unit n=12, Spearman +
+two-sided permutation p, 100,000 trials, frozen seed 20261028 --
+the s35-frozen algorithm UNCHANGED). MEASUREMENT slice -- NEW
+HARDWARE; pre-registered before the runs (protocol freeze stamp
+2026-10-28T03:36:21Z; joint letters (a) JOINT NO-COUPLE / (b) ANY
+COUPLE / (c) NOT EVALUABLE; CO-MOVE iff |rho| >= 0.60 AND p <=
+0.05). HARDWARE RAN (MEASURED, aiueos-6600hs Intel BMG G31 ANV):
+78 fresh processes (c2 3 + hi 36 + tw 36 + c8 3), run window
+2026-10-28T03:39:14Z..03:39:31Z, rc=0 78/78 + '# done cells=24'
+78/78, stderr 0 bytes 78/78, VERIFY mismatch 0 everywhere, forcing
+1,404/1,404, S=8 fail-closed 468/468, custody GO
+2026-10-28T03:38:24Z before builds and ALL runs (corpus 16/16 +
+3/3 local-vs-host MATCH), 4/4 build pins BYTE-IDENTICAL (hi
+a6c31b6c = the (1024,4033) pair's NINTH cross-session rebuild /
+10th measurement; tw bb901eb5 = the (2048,8066) twin's FOURTH
+rebuild / 5th measurement). THE FINDING (MEASURED): T1 = (b) ANY
+COUPLE WITH A FLIPPED ARM -- (B) THE TW ARM'S PROXY AXIS IS THE
+ONE COUPLING (rho 0.748269 / p 0.007040 / count 703 of 100,001);
+(A) the hi proxy axis reads NO-CO-MOVE (rho -0.056141 / p
+0.864691) -- session 37's (A) coupling DOES NOT REPLICATE at this
+window; (C) cross-arm rho -0.536433 / p 0.074439 NO-CO-MOVE.
+Across the three probed windows the proxy-vs-wander coupling is
+NOT window-stable and NOT arm-stable in both directions (s34
+window neither arm / s36 window hi arm / s38 window tw arm), so
+no replicable coupling exists on either arm and no
+window-general exclusion or attribution of the wander is
+available. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction UNMEASURED); this window's (B) coupling
+reads over the tw arm's 1.3%-spread host_ns band (306,491..-
+310,599) -- the s37 near-flat-band caveat binds here too (rank
+coupling on a near-flat proxy series; physical meaning
+UNRESOLVED); (C)'s rho -0.536433 is nearer the 0.60 threshold
+than prior windows but reads NO-CO-MOVE at the frozen letters and
+no strength trend is claimed; n=12 LOW POWER; L14 ~1s resolution;
+estimator noise vs an unmeasured arm-specific physical variable
+STAYS UNRESOLVED and threshold-artifact-vs-representation STAYS
+UNRESOLVED. Descriptive (MEASURED here): (D1) per-run analogs
+(A1 rho -0.211887 / p 0.213358; B1 rho 0.477382 / p 0.003360 --
+below the letter bar; L10 different unit; per-run minima hi
+967..1,010, tw 969..1,001); (D3) hi block A is day 2026-10-28's
+SIXTH anchor reading (INTERMEDIATE/MIXED, median 1,132, min 992,
+in-band vs the frozen refs 1,129/1,132/1,131), its ledger line
+appended as DESCRIPTIVE by the frozen evaluator (same-day
+duplicate) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted
+(frozen evaluator twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29); (D4) all host_ns in band this
+window (no excursion). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3joint3-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s38.txt is the derived
+third-window read over the 78 committed run logs; bar-eval-s38.txt
+is the frozen evaluator's verdict; derivation-census-s38.txt is the
+independent second parser (51 rows / 0 mismatched); record.txt is
+the finding).
+
+## 2026-10-28 -- session 39 (JUN-59): the fourth-window joint probe (measurement; JOINT NO-COUPLE)
+
+Session 38's named-not-hidden residual ("a FOURTH window (three
+windows show arm-flipping instability but do not establish what,
+if anything, is stable)") is taken on ONE observable axis: at a
+FOURTH session window, repeat the session-36/38 interleaved design
+exactly (12 adjacent (hi,tw) block-pairs, byte-identical rebuilt
+binaries) and apply the s37-frozen joint probe statistics there --
+(A) hi min-vs-host_ns, (B) tw min-vs-host_ns, (C) hi-vs-tw min
+(block unit n=12, Spearman + two-sided permutation p, 100,000
+trials, frozen seed 20261028 -- the s35-frozen algorithm
+UNCHANGED). MEASUREMENT slice -- NEW HARDWARE; pre-registered
+before the runs (protocol freeze stamp 2026-10-28T04:07:17Z; joint
+letters (a) JOINT NO-COUPLE / (b) ANY COUPLE / (c) NOT EVALUABLE;
+CO-MOVE iff |rho| >= 0.60 AND p <= 0.05). HARDWARE RAN (MEASURED,
+aiueos-6600hs Intel BMG G31 ANV): 78 fresh processes (c2 3 + hi 36
++ tw 36 + c8 3), run window 2026-10-28T04:09:48Z..04:10:05Z, rc=0
+78/78 + '# done cells=24' 78/78, stderr 0 bytes 78/78, VERIFY
+mismatch 0 everywhere, forcing 1,404/1,404, S=8 fail-closed
+468/468, custody GO 2026-10-28T04:09:00Z before builds and ALL runs
+(corpus 16/16 + 3/3 local-vs-host MATCH), 4/4 build pins
+BYTE-IDENTICAL (hi a6c31b6c = the (1024,4033) pair's TENTH
+cross-session rebuild / 11th measurement; tw bb901eb5 = the
+(2048,8066) twin's FIFTH rebuild / 6th measurement). THE FINDING
+(MEASURED): T1 = (a) JOINT NO-COUPLE -- none of the three axes
+reads CO-MOVE at this window: (A) hi proxy rho 0.194011 / p
+0.544405; (B) tw proxy rho 0.130749 / p 0.685753; (C) cross-arm rho
+-0.158646 / p 0.617304. Across the four probed windows the
+proxy-vs-wander coupling now reads s34 window NO-COUPLE (A-axis
+only) / s36 window (A) COUPLE / s38 window (B) COUPLE / s39 window
+JOINT NO-COUPLE: the two couplings seen so far occurred on TWO
+DIFFERENT arms at two windows and neither is present at this fourth
+window, so no replicable coupling exists on either arm, and the
+wander is not attributed to the host-side proxy at this window
+either. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction UNMEASURED); n=12 LOW POWER (a null at n=12
+is not evidence of independence -- the NO-COUPLE letter is a
+fourth-window fact, not an exclusion of physical coupling); L14
+~1s resolution; L15 shared blocks; the four-window scoreboard is
+descriptive only (four windows are not a rate); estimator noise vs
+an unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(MEASURED here): (D1) per-run analogs (A1 rho 0.126790 / p
+0.460595; B1 rho 0.095901 / p 0.576574 -- no letter, L10 different
+unit; per-run minima hi 967..995, tw 969..1,002 inside the
+quote-only band 966..1,023); this window's block-min wander bands
+are the NARROWEST of the four probe windows (hi 981..995, tw
+983..991 vs s34 982..1,003 / s36 980..998 / s38 982..1,007 --
+descriptive range comparison against quote-only priors, no
+variance or rate claim); (D3) hi block A is day 2026-10-28's
+SEVENTH anchor reading (INTERMEDIATE/MIXED, median 1,146, min 986,
+in-band vs the frozen refs 1,129/1,132/1,131), its ledger line
+appended as DESCRIPTIVE by the frozen evaluator (same-day
+duplicate) -- VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen
+evaluator twice byte-identical; fixture pin 38/0; next executable
+day slot 2026-10-29); (D4) host_ns: c2 671,412 (marginally below
+every non-excursion prior, 0.998x of the lowest 672,374 -- within
+0.2%, no excursion), c8 2,388,174 in band, hi per-block
+304,598..310,559, tw 305,820..310,149 (no excursion this window;
+the s31, s34-window and s36 tw block-E excursion causes stay
+UNMEASURED). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and
+no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3joint4-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s39.txt is the derived
+fourth-window read over the 78 committed run logs; bar-eval-s39.txt
+is the frozen evaluator's verdict; derivation-census-s39.txt is the
+independent second parser (52 rows / 0 mismatched); record.txt is
+the finding).
+
+## 2026-10-28 -- session 40 (JUN-59): the wander-noise repartition probe (analysis; NOISE-CONSISTENT)
+
+Session 39's first-named UNMEASURED item ("WHY the min statistic
+wanders (estimator noise vs physical drift vs both)") is taken on
+ONE observable axis: at the session-39 window, does the observed
+spread T (range of the 12 block-unit min statistics of one arm;
+s35/s36-frozen constructions UNCHANGED) EXCEED the spread that
+run-repartition resampling of the SAME window's committed runs
+produces (null: the 36 runs of one arm within one window are
+exchangeable across blocks -- all within-run and fresh-process
+run-to-run noise included)? ANALYSIS slice -- NO new hardware;
+DERIVED from the 234 committed run logs of the s36/s38/s39 windows
+(78 each). Resampling: 20,000 trials, random.Random(20261028)
+consumed in the frozen probe order (s39 hi, s39 tw, s36 hi, s36 tw,
+s38 hi, s38 tw), p = (1 + count(T* >= T_obs)) / (1 + 20,000);
+letters pre-registered (protocol freeze stamp 2026-10-28T04:40:07Z,
+BEFORE any statistic was computed): (a) NOISE-CONSISTENT / (b)
+EXCEEDS NULL (named which arm) / (c) NOT EVALUABLE. THE FINDING
+(DERIVED FROM MEASURED DATA): T1 = (a) NOISE-CONSISTENT -- at the
+s39 window neither arm exceeds the null (hi T_obs 14, block-mins
+981..995, p 0.827359; tw T_obs 8, 983..991, p 0.986451) and the
+pre-registered replications agree (s36 window (a): hi T_obs 18, p
+0.649868 / tw T_obs 14, p 0.739563; s38 window (a): hi T_obs 25, p
+0.059247 / tw T_obs 21, p 0.328534). Across all three probed
+windows and both arms no block-timescale (~3-run / few-second)
+structure beyond run-exchangeable sampling noise is detected.
+NAMED, NOT HIDDEN: (a) does NOT prove "estimator noise is the
+mechanism" -- the null is run-exchangeability at the fresh-process
+granularity and a physical driver acting UNIFORMLY within a window
+would also read (a); the s38 hi arm's p 0.059247 sits CLOSE ABOVE
+the frozen 0.05 threshold at the largest T_obs of the six probes
+(25) -- no trend, strength or near-miss claim; exchangeability of
+runs is itself an assumption; 20,000 trials (pure-Python cost,
+named in the freeze; p resolution 1/20,001); the three windows are
+ONE day / ONE host and the cross-window comparison is descriptive
+only; L2 observational, NO causal mechanism, direction UNMEASURED;
+estimator noise vs an unmeasured within-window-uniform physical
+variable STAYS UNRESOLVED and threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean (VERIFY
+mismatch 0, counts, knobs, S=8 fail-closed, cell map), C1 (a) at
+the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), and 6/6
+block-min vectors reproduce publication-s39.txt section 3 EXACTLY.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3wandernoise-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s40.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s40.txt is the independent second parser
+(90 rows / 0 mismatched); bar-eval-s40.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 41 (JUN-59): the cross-window T-spread repartition probe (analysis; WINDOW-CONSISTENT)
+
+Session 40's first-named candidate row ("whether window-to-window
+variation of T itself (8..25 across the six probes) exceeds noise")
+is taken on ONE observable axis: per arm, does the cross-window
+spread of T, R_obs = max_w T_w - min_w T_w over the three probed
+windows (s36, s38, s39), exceed the cross-window run-repartition
+null (the 108 runs of one arm across the three windows are
+exchangeable; s35/s36-frozen constructions UNCHANGED)? ANALYSIS
+slice -- NO new hardware; DERIVED from the 234 committed run logs
+of the s36/s38/s39 windows (78 each). Resampling: 20,000 trials,
+random.Random(20261028) consumed in the frozen probe order (hi then
+tw), per trial one shuffle of the 108 run ids split into three
+pseudo-windows of 36 and 12 blocks of 3 in draw order, p = (1 +
+count(R* >= R_obs)) / (1 + 20,000); letters pre-registered
+(protocol freeze stamp 2026-10-28T05:05:50Z, BEFORE any statistic
+was computed): per arm (a) WINDOW-CONSISTENT / (b) EXCEEDS NULL
+(named which) / (c) NOT EVALUABLE. THE FINDING (DERIVED FROM
+MEASURED DATA): T1 = (a) WINDOW-CONSISTENT -- neither arm's R
+exceeds the null (hi T 18/25/14, R_obs 11, p 0.275536; tw T
+14/21/8, R_obs 13, p 0.079396; both > 0.05 at the frozen
+threshold). The 8..25 spread of the six probe Ts is itself
+consistent with run-exchangeable sampling noise. NAMED, NOT HIDDEN:
+(a) does NOT prove "no physical window-level driver" -- a driver
+acting uniformly within AND across windows is invisible by
+construction; R tests the window-to-window variation of the SPREAD
+of the 12 block-mins ONLY -- window-level shifts in LEVEL do not
+enter R (named limitation of the row question); the tw arm's p
+0.079396 sits ABOVE the frozen 0.05 and CLOSER to it than hi's --
+no trend, strength or near-miss claim; exchangeability across
+windows is a STRONGER assumption than session 40's within-window
+one; three windows in ONE day on ONE host is LOW POWER (a null is
+not evidence of stationarity); session 40's per-window (a) letters
+and this letter are DIFFERENT nulls; 20,000 trials (cost, named in
+the freeze; p resolution 1/20,001); L2 observational, NO causal
+mechanism, direction UNMEASURED; the wander's MECHANISM STAYS
+UNRESOLVED and threshold-artifact-vs-representation STAYS
+UNRESOLVED. Integrity (DERIVED): 3/3 windows clean (VERIFY mismatch
+0, counts, knobs, S=8 fail-closed, cell map), C1 (a) at the s39
+window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), and 6/6 block-min
+vectors plus the six T values reproduce the published values
+EXACTLY. Rule 4 binds: nothing moves; accelerator-targets defaults
+remain provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3xwindt-20261028/` (protocol.txt
+is the frozen pre-registration; publication-s41.txt is the derived
+read over the 234 committed run logs of the three windows;
+derivation-census-s41.txt is the independent second parser (40 rows
+/ 0 mismatched); bar-eval-s41.txt is the frozen evaluator's
+unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 42 (JUN-59): the cross-window level-shift repartition probe (analysis; LEVEL-CONSISTENT)
+
+Session 41's first-named candidate row ("a LEVEL-shift probe of the
+same three windows (D3's descriptive medians suggest little level
+movement, but no letter exists -- R does not test level)") is taken
+on ONE observable axis: per arm, does the cross-window LEVEL spread,
+S_obs = max_w M_w - min_w M_w over the three probed windows (s36,
+s38, s39), where M_w = median of the 12 block-mins of window w,
+exceed the cross-window run-repartition null (the 108 runs of one
+arm across the three windows are exchangeable; s35/s36-frozen
+constructions UNCHANGED; the 12-value median computed in half-tick
+integer units, 2*M = 6th + 7th order statistics, so every
+comparison is exact)? ANALYSIS slice -- NO new hardware; DERIVED
+from the 234 committed run logs of the s36/s38/s39 windows (78
+each). Resampling: 20,000 trials, random.Random(20261028) consumed
+in the frozen probe order (hi then tw), per trial one shuffle of the
+108 run ids split into three pseudo-windows of 36 and 12 blocks of 3
+in draw order, p = (1 + count(S* >= S_obs)) / (1 + 20,000),
+one-sided; letters pre-registered (protocol freeze stamp
+2026-10-28T05:33:45Z, BEFORE any statistic was computed): per arm
+(a) LEVEL-CONSISTENT / (b) EXCEEDS NULL (named which) / (c) NOT
+EVALUABLE. THE FINDING (DERIVED FROM MEASURED DATA): T1 = (a)
+LEVEL-CONSISTENT -- neither arm's S exceeds the null (hi M
+990.0/987.0/986.5, S_obs 3.5, p 0.470676; tw M 990.0/991.0/988.0,
+S_obs 3.0, p 0.485476; both > 0.05 at the frozen threshold). The
+D3 level content needs no window-level effect to occur. NAMED, NOT
+HIDDEN: (a) does NOT prove "no physical window-level driver" -- a
+driver acting uniformly within AND across windows is invisible by
+construction; AND the LEVEL is the median of the 12 BLOCK-MINS,
+where block-min is itself a TAIL statistic -- a window-level shift
+that moves only the BODY of the gpu_ticks distribution and not the
+min-tail is invisible to this construction (named limitation; a
+BODY-level probe is a named candidate row); the block-min level
+sits near the frozen 1,000-tick class boundary and inherits the
+threshold-artifact-vs-representation ambiguity; this letter and
+session 41's R (spread) letter are DIFFERENT nulls over the SAME
+runs (NOT independent evidence); three windows in ONE day on ONE
+host is LOW POWER (a null is not stationarity); 20,000 trials
+(cost, named in the freeze; p resolution 1/20,001); L2
+observational, NO causal mechanism, direction UNMEASURED; the
+wander's MECHANISM STAYS UNRESOLVED and threshold-artifact-vs-
+representation STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows
+clean (VERIFY mismatch 0, counts, knobs, S=8 fail-closed, cell
+map), C1 (a) at the s39 window (c2 FLOOR; c8 32,829 vs 32,915,
+0.26%), and 6/6 block-min vectors plus the six M values reproduce
+the published values EXACTLY. Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+The bar: NO reading -> NO ledger line (byte-identical to HEAD),
+VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen evaluator
+twice byte-identical; fixture pin 38/0; next executable day slot
+2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3levelshift-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s42.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s42.txt is the independent second parser
+(40 rows / 0 mismatched); bar-eval-s42.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 43 (JUN-59): the cross-window body-level repartition probe (analysis; BODY-LEVEL-CONSISTENT)
+
+Session 42's first-named candidate row ("a BODY-level probe of the
+same three windows (per-cell pooled-median level, not the min-tail
+-- body shifts are invisible to the block-min constructions by
+this probe's own named-not-hidden)") is taken on ONE observable
+axis: per arm, does the cross-window BODY LEVEL spread,
+S_obs = max_w L_w - min_w L_w over the three probed windows (s36,
+s38, s39), where L_w = median of the 12 block-body values of
+window w (block-body = median over the 18 ok cells of the block's
+per-cell pooled medians -- the min-tail summary replaced by the
+body; every upstream unit s35/s36-frozen and UNCHANGED), exceed
+the cross-window run-repartition null (the 108 runs of one arm
+across the three windows are exchangeable)? The half-tick
+(2*B = 9th + 10th order statistics) and quarter-tick (4*L = 6th +
+7th order statistics of the doubled block-bodies) constructions
+are computed in integer units, so every comparison is exact.
+ANALYSIS slice -- NO new hardware; DERIVED from the 234 committed
+run logs of the s36/s38/s39 windows (78 each). Resampling: 20,000
+trials, random.Random(20261028) consumed in the frozen probe order
+(hi then tw), per trial one shuffle of the 108 run ids split into
+three pseudo-windows of 36 and 12 blocks of 3 in draw order,
+p = (1 + count(S* >= S_obs)) / (1 + 20,000), one-sided; letters
+pre-registered (protocol freeze stamp 2026-10-28T06:07:08Z, BEFORE
+any statistic was computed): per arm (a) BODY-LEVEL-CONSISTENT /
+(b) EXCEEDS NULL (named which) / (c) NOT EVALUABLE. THE FINDING
+(DERIVED FROM MEASURED DATA): T1 = (a) BODY-LEVEL-CONSISTENT --
+neither arm's S exceeds the null (hi L 1138.25/1139.50/1137.25,
+S_obs 2.25, p 0.683016; tw L 1138.50/1137.25/1136.00, S_obs 2.50,
+p 0.610119; both > 0.05 at the frozen threshold). The BODY level
+needs no window-level effect to occur. NAMED, NOT HIDDEN: (a) does
+NOT prove "no physical window-level driver" -- a driver acting
+uniformly within AND across windows is invisible by construction;
+AND the BODY statistic is the MEDIAN OVER 18 HETEROGENEOUS CELLS
+(different ops/workgroups span 986..1,438 ticks even within one
+block) -- a window-level shift that moves only SOME cells' levels
+can cancel in the median over cells and is invisible to this
+construction (named limitation; a per-cell shift probe is a named
+candidate row); the body level (~1,136..1,140 ticks) sits ABOVE
+the frozen 1,000-tick class boundary while the min-tail sits AT
+it; this letter and sessions 40/41/42's letters are DIFFERENT
+nulls over the SAME runs (NOT independent evidence); three windows
+in ONE day on ONE host is LOW POWER (a null is not stationarity);
+20,000 trials (cost, named in the freeze; p resolution 1/20,001);
+L2 observational, NO causal mechanism, direction UNMEASURED; the
+wander's MECHANISM STAYS UNRESOLVED and threshold-artifact-vs-
+representation STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows
+clean (VERIFY mismatch 0, counts, knobs, S=8 fail-closed, cell
+map), C1 (a) at the s39 window (c2 FLOOR; c8 32,829 vs 32,915,
+0.26%), 6/6 block-min vectors reproduce the published values
+EXACTLY, and the NEW pre-registered anchor reproduction row is
+EXACT at all three windows (hi block A's (sum,128,S=16) pooled
+median and 18-cell min..max vs the quote-only anchor priors: s36
+1,142 / 991..1,438; s38 1,132 / 992..1,443; s39 1,146 /
+986..1,432). Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no row moves and
+no vendor optimization exists for Intel. The bar: NO reading -> NO
+ledger line (byte-identical to HEAD), VERDICT UNCHANGED PENDING
+1/4 with s31 counted (frozen evaluator twice byte-identical;
+fixture pin 38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3bodylevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s43.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s43.txt is the independent second parser
+(49 rows / 0 mismatched); bar-eval-s43.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 44 (JUN-59): the per-cell body-shift repartition probe (analysis; PER-CELL-CONSISTENT)
+
+Session 43's first-named candidate row ("a PER-CELL body-shift
+probe of the same three windows -- per-cell window-level shifts
+cancel in this probe's median-over-18-cells construction") taken
+on ONE observable axis: per arm, does ANY of the 18 ok cells show
+a cross-window per-cell LEVEL spread S_c = max_w L_{w,c} -
+min_w L_{w,c} (per-cell level L_{w,c} = median of the 12 block
+per-cell pooled medians of window w; block/per-cell pooled median
+units s35/s36-frozen, UNCHANGED) exceeding the cross-window
+run-repartition null? The primary per-arm statistic is the MAX-T
+M = max_c S_c with the max taken inside each resampling trial
+(family-wise over the 18 cells). ANALYSIS slice -- NO new
+hardware; inputs are the 234 committed run logs of sessions
+36/38/39. Pre-registered (protocol freeze stamp
+2026-10-28T06:35:39Z, BEFORE any statistic was computed): per arm
+(a) PER-CELL-CONSISTENT / (b) EXCEEDS NULL (named which cell(s))
+/ (c) NOT EVALUABLE; resampling 20,000 trials,
+random.Random(20261028) consumed in the frozen probe order hi
+then tw, p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided.
+THE FINDING (DERIVED): T1 = (a) PER-CELL-CONSISTENT on both arms
+-- hi M_obs 23.0 ticks (max cell (sum,256,S=32)), count 3,205 /
+20,001, p 0.160292; tw M_obs 18.5 (same cell), count 10,573 /
+20,001, p 0.528674 (both p > 0.05). Session 43's named gap is
+closed on this axis: no per-cell LEVEL shift beyond
+run-exchangeable sampling noise is visible at these windows/
+powers. NAMED, NOT HIDDEN: (a) is not proof of noise (a uniform
+driver is invisible by construction; per-cell SPREAD/quantile
+shifts are invisible to this LEVEL construction -- a per-cell
+wander probe and a per-cell spread probe are named candidate
+rows); the 36 UNCORRECTED marginal p values carry no letter --
+two hi cells sit below 0.05 ((min,256,S=16) p 0.013949,
+(sum,256,S=32) p 0.042248) and NOTHING is claimed from them; the
+frozen 1,000-tick class boundary sits INSIDE the per-cell level
+range (986..1,443) and threshold-artifact-vs-representation
+STAYS UNRESOLVED; three windows in ONE day on ONE host is LOW
+POWER; this letter and sessions 40-43's letters are DIFFERENT
+nulls over the SAME runs (NOT independent evidence). Integrity
+(DERIVED): 3/3 windows clean, C1 (a) at the s39 window (c2 FLOOR;
+c8 32,829 vs 32,915, 0.26%), 6/6 block-min vectors reproduce
+EXACTLY, anchor row EXACT at all three windows. Rule 4 binds:
+nothing moves; accelerator-targets defaults remain provisional
+(`:measured? false`); no row moves and no vendor optimization
+exists for Intel. The bar: NO reading -> NO ledger line
+(byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31
+counted (frozen evaluator twice byte-identical; fixture pin 38/0;
+next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellshift-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s44.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s44.txt is the independent second parser
+(45 rows / 0 mismatched); bar-eval-s44.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 45 (JUN-59): the per-cell wander repartition probe (analysis; T1 PER-CELL-NOISE-CONSISTENT, s38 replication (b) on hi)
+
+Session 44's first-named candidate row ("a PER-CELL WANDER probe
+-- the per-cell analog of session 40 -- does any cell's
+within-window block-level wander exceed WITHIN-window
+run-repartition noise?") taken on ONE observable axis: per
+(window, arm), does ANY ok cell's within-window block-level
+wander W_c = max_b V_{b,c} - min_b V_{b,c} (V = the block's
+per-cell pooled median, s35/s36-frozen unit, UNCHANGED) exceed
+the within-window run-repartition null? The primary per-probe
+statistic is the MAX-T M = max_c W_c with the max taken inside
+each resampling trial (family-wise over the 18 cells). ANALYSIS
+slice -- NO new hardware; inputs are the 234 committed run logs
+of sessions 36/38/39. Pre-registered (protocol freeze stamp
+2026-10-28T07:15:00Z, BEFORE any statistic was computed): per
+probe (a) PER-CELL-NOISE-CONSISTENT / (b) EXCEEDS NULL (named
+which cell(s)) / (c) NOT EVALUABLE; per-window letter (session
+40's rule); T1 = the s39 window letter; resampling 20,000 trials
+per probe, random.Random(20261028) consumed in the frozen probe
+order s39 hi / s39 tw / s36 hi / s36 tw / s38 hi / s38 tw,
+p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided; exact
+INTEGER arithmetic. THE FINDING (DERIVED): T1 = (a)
+PER-CELL-NOISE-CONSISTENT at the s39 window (hi M_obs 72, count
+9,423 / 20,001, p 0.471176; tw M_obs 70, count 9,877, p
+0.493875); replication s36 = (a) (hi 84, p 0.154792; tw 68, p
+0.644518); replication s38 = (b) EXCEEDS NULL on the hi arm --
+s38 hi M_obs 84 at cell (sum,256,S=32), count 947 / 20,001,
+p 0.047398 (marginals (sum,256,S=32) p 0.035348 and
+(min,256,S=default) p 0.042298, UNCORRECTED, no letter); s38 tw
+(a) p 0.994550. Session 44's named gap is closed on this axis at
+the primary window, while the pre-registered s38 replication
+reads (b) on hi. NAMED, NOT HIDDEN: six probe p values / three
+window letters are UNCORRECTED across probes/windows (one (b)
+among six uncorrected probes at p 0.047398 is within what
+multiple uncorrected tests produce; NO replication of the s38 hi
+cell exists -- descriptive co-location only: s40's block-min
+wander at s38 hi was the closest of its six probes to threshold,
+p 0.059247); the 108 UNCORRECTED marginal p values carry no
+letter; (a) is not proof of noise (a uniform driver is invisible
+by construction; W_c is a tail-to-tail range, not a scale
+estimate; per-cell SPREAD is a named candidate row) and (b) names
+no mechanism (thermal/scheduling/memory/driver state all
+UNMEASURED); the frozen 1,000-tick class boundary sits INSIDE the
+per-cell level range (986..1,443) and threshold-artifact-vs-
+representation STAYS UNRESOLVED; three windows in ONE day on ONE
+host is LOW POWER; this letter and sessions 40-44's letters are
+DIFFERENT statistics over the SAME runs (NOT independent
+evidence). Integrity (DERIVED): 3/3 windows clean, C1 (a) at the
+s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6 block-min
+vectors reproduce EXACTLY, anchor row EXACT at all three windows.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no row moves and no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellwander-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s45.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s45.txt is the independent second
+parser (87 rows / 0 mismatched); bar-eval-s45.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 46 (JUN-59): the per-cell within-block spread repartition probe (analysis; all six probes PER-CELL-SPREAD-NOISE-CONSISTENT)
+
+Session 45's first-named candidate row -- "a PER-CELL SPREAD probe
+of the same three windows (per-cell within-run/within-block scale
+is untested)" -- taken on one observable axis: per (window, arm),
+does any ok cell's within-block sample spread (D = max - min of
+the block's 75 samples; the s35/s36-frozen block unit unchanged)
+wander across the 12 blocks beyond the within-window
+run-repartition null? Max-T over the 18 cells (the max taken
+inside each trial), 20,000 trials per probe, frozen probe order,
+exact integer arithmetic; letters pre-registered at freeze stamp
+2026-10-28T07:51:32Z before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-SPREAD-NOISE-CONSISTENT at the s39 window -- hi M_obs
+295 (max cell (min,256,S=default)), count 14,383/20,001, p
+0.719164; tw M_obs 360 (max cell (max,128,S=32)), count 13,881,
+p 0.694065 -- and the pre-registered replications agree:
+s36 (a) (hi 474, p 0.196340; tw 360, p 0.682666), s38 (a) (hi
+356, p 0.728164; tw 290, p 0.403480). All SIX probes read (a) --
+the first probe family in this campaign with no (b) anywhere:
+at these windows/powers no cell's within-block sample-scale
+wander exceeds run-exchangeable sampling noise, family-wise over
+the 18 cells. NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+a tail-to-tail range, a scale surrogate -- IQR/MAD, spread LEVEL
+shifts uniform across blocks, and within-run (25-sample) scale
+are invisible to this construction (named candidate rows); the
+108 uncorrected marginal p values carry no letter (four probes
+carry cells with marginal p <= 0.05 -- within chance, nothing
+claimed); six probes / three windows are UNCORRECTED and LOW
+POWER (three windows in one day, one host); this letter and
+sessions 40-45's are DIFFERENT statistics over the SAME runs (NOT
+independent evidence); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all
+three windows. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellspread-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s46.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s46.txt is the independent second
+parser (126 rows / 0 mismatched); bar-eval-s46.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 47 (JUN-59): the per-cell within-block robust-scale (IQR) repartition probe (analysis; all six probes PER-CELL-IQR-NOISE-CONSISTENT)
+
+Session 46's first-named candidate row -- "a PER-CELL ROBUST-SCALE
+probe (IQR/MAD of the block's 75 -- the range's named blind spot)"
+-- taken on one observable axis: per (window, arm), does any ok
+cell's within-block robust scale (D = x_(57) - x_(19) of the
+block's 75 samples -- the frozen Tukey exclusive hinges; the
+s35/s36-frozen block unit unchanged) wander across the 12 blocks
+beyond the within-window run-repartition null? Max-T over the 18
+cells (the max taken inside each trial), 20,000 trials per probe,
+frozen probe order, exact integer arithmetic; letters
+pre-registered at freeze stamp 2026-10-28T08:20:41Z before any
+statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-IQR-NOISE-CONSISTENT at the s39 window -- hi M_obs 197
+(max cell (min,128,S=16)), count 15,784/20,001, p 0.789211; tw
+M_obs 190 (max cell (max,128,S=16)), count 19,754, p 0.987701 --
+and the pre-registered replications agree: s36 (a) (hi 213,
+p 0.657217; tw 231, p 0.573471), s38 (a) (hi 219, p 0.191390;
+tw 210, p 0.783511). All SIX probes read (a) -- the second
+consecutive probe family with no (b) anywhere: at these
+windows/powers no cell's within-block robust-scale wander exceeds
+run-exchangeable sampling noise, family-wise over the 18 cells.
+NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+ONE robust scale -- the IQR at the frozen exclusive hinges --
+while MAD, other quantile pairs and spread changes keeping
+x_(19)/x_(57) fixed are invisible (named candidate rows); a
+robust-scale LEVEL shift uniform across blocks cancels in W_c
+(descriptive D1 only); six probes / three windows are UNCORRECTED
+and LOW POWER (three windows in one day, one host); this letter
+and sessions 40-46's are DIFFERENT statistics over the SAME runs
+(NOT independent evidence); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all
+three windows. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percelliqr-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s47.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s47.txt is the independent second
+parser (171 rows / 0 mismatched); bar-eval-s47.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 48 (JUN-59): the per-cell within-block robust-scale (MAD) repartition probe (analysis; all six probes PER-CELL-MAD-NOISE-CONSISTENT)
+
+Session 47's first-named candidate row -- "a PER-CELL MAD probe
+(the IQR's named blind spot)" -- taken on one observable axis:
+per (window, arm), does any ok cell's within-block robust scale
+(D = e_(38) about m = x_(38) of the block's 75 samples -- the
+frozen exact-median MAD) wander across the 12 blocks beyond the
+within-window run-repartition null? Max-T over the 18 cells (the
+max taken inside each trial), 20,000 trials per probe, frozen
+probe order, exact integer arithmetic; letters pre-registered at
+freeze stamp 2026-10-28T09:04:56Z before any statistic was
+computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-MAD-NOISE-CONSISTENT at the s39 window -- hi M_obs 46
+(max cell (sum,128,S=32)), count 4,374/20,001, p 0.218739; tw
+M_obs 39 (max cells (sum,128,S=32), (max,128,S=32), a tie),
+count 12,056, p 0.602820 -- and the pre-registered replications
+agree: s36 (a) (hi 41, p 0.757112; tw 39, p 0.720664), s38 (a)
+(hi 45, p 0.328384; tw 33, p 0.990800). All SIX probes read (a)
+-- the third consecutive probe family with no (b) anywhere: at
+these windows/powers no cell's within-block MAD wander exceeds
+run-exchangeable sampling noise, family-wise over the 18 cells.
+NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+ONE robust scale -- the MAD about the median -- while other
+quantile pairs, other deviation centers and spread/tail-weight
+changes keeping e_(38) about x_(38) fixed are invisible (the
+s47 IQR and s46 RANGE see DIFFERENT things; none of the three
+dominates; other robust scales stay named candidate rows); a
+robust-scale LEVEL shift uniform across blocks cancels in W_c
+(descriptive D1 only); the 108 marginal p values are UNCORRECTED
+and carry NO letter (three cells sit below 0.05 letterless --
+s39 hi (sum,128,S=32) p 0.035198, s39 tw (min,256,S=default) p
+0.049448, s36 hi (max,128,S=32) p 0.027699 -- within chance,
+nothing claimed); six probes / three windows are UNCORRECTED and
+LOW POWER (three windows in one day, one host; max-T at n=12
+blocks); this letter and sessions 40-47's are DIFFERENT
+statistics over the SAME runs (NOT independent evidence);
+threshold-artifact-vs-representation STAYS UNRESOLVED. Integrity
+(DERIVED): 3/3 windows clean, C1 (a) at the s39 window (c2 FLOOR;
+c8 32,829 vs 32,915, 0.26%), 6/6 block-min vectors reproduce
+EXACTLY, anchor row EXACT at all three windows. Rule 4 binds:
+nothing moves; accelerator-targets defaults remain provisional
+(`:measured? false`); no vendor optimization exists for Intel.
+The bar: NO reading -> NO ledger line (byte-identical to HEAD),
+VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen evaluator
+twice byte-identical; fixture pin 38/0; next executable day slot
+2026-10-29).
+
+The slice ran in two ticks (record.txt's sections 4/8 document
+the partial first tick; its section 9 the landing tick): the
+derivation census (independent second parser) landed on the
+second tick -- derivation-census-s48.txt, 231 rows / 0
+mismatched, run twice byte-identical -- and the gate artifacts
+were re-run fresh at landing, byte-identical to the pinned
+artifacts (gate-rerun-s48b.txt).
+
+Evidence: `docs/evidence/gpu/anv-b3percellmad-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s48.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s48.txt is the independent second
+parser (231 rows / 0 mismatched); bar-eval-s48.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 49 (JUN-59): the per-cell robust-scale (MAD) LEVEL cross-window repartition probe (analysis; T1 (b) EXCEEDS NULL, driven by the tw arm)
+
+Session 48's first-named candidate row -- "a per-cell
+robust-scale LEVEL probe (uniform-across-blocks shifts cancel in
+W_c; D levels descriptive only in D1, no letter)" -- taken on one
+observable axis: per arm, does any ok cell's cross-window
+robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+over the three windows (s36/s38/s39) exceed the cross-window
+run-repartition null (the 108 runs of one arm across the three
+windows exchangeable)? L_{w,c} = median of the 12 block D values
+of window w (D = e_(38) about m = x_(38) of the block's 75
+samples -- the s48-frozen exact-median MAD; the s35/s36-frozen
+3-run block unit unchanged), max-T over the 18 cells (the max
+taken inside each trial), 20,000 trials per arm, frozen RNG call
+order (hi then tw), exact integer arithmetic (2*L in half-tick
+units); letters pre-registered at freeze stamp
+2026-10-28T10:09:54Z before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (b) EXCEEDS
+NULL -- the FIRST (b) row letter of the s40-49 campaign --
+driven by the tw arm: tw M_obs 16.0 ticks (max cell
+(max,128,S=default)), count 171/20,001, p 0.008600 (<= 0.05 at
+the frozen threshold), its per-cell robust-scale level L at that
+cell 71.5 / 55.5 / 56.5 ticks across s36/s38/s39 (its spread
+16.0); marginal (sum,128,S=default) p 0.020049, letterless. The
+hi arm reads (a) PER-CELL-MAD-LEVEL-CONSISTENT (M_obs 10.0, max
+cell (min,256,S=16), count 9,468/20,001, p 0.473426).
+NAMED, NOT HIDDEN: (b) implicates window-timescale per-cell
+robust-scale LEVEL structure on the tw arm but names NO mechanism
+(thermal / scheduling / memory / driver state all UNMEASURED) and
+NOT whether the shift is physical or estimator structure; the two
+arm probes are UNCORRECTED across arms (the row answer is the
+pre-registered joint T1); the 36 marginal p values are
+UNCORRECTED (3 marginal cells below 0.05 across the two arms,
+letterless); this letter and sessions 40-48's are DIFFERENT
+nulls over the SAME runs (NOT independent evidence) -- s44's
+per-cell LOCATION level probe read (a) over the same windows and
+s45-48's within-window wander/spread/IQR/MAD probes read (a) at
+their scales; the cross-window null assumes exchangeability
+ACROSS WINDOWS, a STRONGER assumption than within-window
+exchangeability, and a (b) can also reflect violation of that
+assumption rather than a per-cell scale mechanism; three windows
+~30-60 min apart in one day, one host is LOW POWER; 20,000
+trials (not the s35-frozen 100,000 -- cost, same named deviation
+as sessions 40-48); threshold-artifact-vs-representation STAYS
+UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a) at the
+s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6 block-min
+vectors reproduce EXACTLY, anchor row EXACT at all three windows.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no vendor optimization exists
+for Intel. The bar: NO reading -> NO ledger line (byte-identical
+to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen
+evaluator twice byte-identical; fixture pin 38/0; next executable
+day slot 2026-10-29).
+
+The slice ran in two ticks (record.txt's sections 4/8 document
+the partial first tick; its section 9 the landing tick): the
+derivation census (independent second parser) landed on the
+second tick -- derivation-census-s49.txt, 59 rows / 0
+mismatched, run twice byte-identical -- and the gate artifacts
+were re-run fresh at landing, byte-identical to the pinned
+artifacts (gate-rerun-s49b.txt).
+
+Evidence: `docs/evidence/gpu/anv-b3percellmadlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s49.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s49.txt is the independent second
+parser (59 rows / 0 mismatched); bar-eval-s49.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 50 (JUN-59): the per-cell robust-scale (IQR) LEVEL cross-window repartition probe (analysis; T1 (a) PER-CELL-IQR-LEVEL-CONSISTENT on both arms)
+
+Session 49's first-named candidate row -- "an IQR-level
+cross-window probe (the other robust scale's LEVEL axis)" -- taken
+on one observable axis: per arm, does any ok cell's cross-window
+robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+over the three windows (s36/s38/s39) exceed the cross-window
+run-repartition null (the 108 runs of one arm across the three
+windows exchangeable)? L_{w,c} = median of the 12 block D values
+of window w (D = x_(57) - x_(19) of the block's 75 samples -- the
+s47-frozen exclusive-hinge IQR; the s35/s36-frozen 3-run block
+unit unchanged), max-T over the 18 cells (the max taken inside
+each trial), 20,000 trials per arm, frozen RNG call order (hi
+then tw), exact integer arithmetic (2*L in half-tick units);
+letters pre-registered at freeze stamp 2026-10-28T11:02:52Z
+before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-IQR-LEVEL-CONSISTENT -- both arms read (a): hi M_obs
+35.5 ticks (max cell (min,256,S=16)), count 1,677/20,001, p
+0.083896; tw M_obs 34.0 ticks (max cell (max,128,S=default)),
+count 12,239/20,001, p 0.611969 (both p > 0.05 at the frozen
+threshold). NAMED, NOT HIDDEN: at these windows/powers NO ok
+cell's cross-window IQR-level spread exceeds run-exchangeable
+sampling noise family-wise over the 18 cells -- but this (a) does
+NOT overturn session 49's MAD-level (b): the two axes are
+DIFFERENT robust scales with DIFFERENT null geometries over the
+SAME runs (tw's (max,128,S=default) cell shows IQR-level L 151.5
+/ 120.5 / 117.5 across s36/s38/s39, spread 34.0 -- larger in
+absolute ticks than its s49 MAD-level spread 16.0 -- while the
+IQR-level max-T null is far wider than the MAD-level one; the
+observed shifts agree in direction, the nulls disagree); the
+per-cell MARGINAL p values are UNCORRECTED (2 marginal cells
+below 0.05 across the two arms, letterless: tw (max,128,S=default)
+p 0.000300, hi (min,256,S=16) p 0.009100 -- hi's max cell is the
+same (min,256,S=16) cell that topped s49's hi arm, p 0.083896 at
+the arm level is the closest an arm has come to the threshold on
+the level axes, descriptive only); this letter and sessions
+40-49's are DIFFERENT nulls over the SAME runs (NOT independent
+evidence); the cross-window null assumes exchangeability ACROSS
+WINDOWS, a STRONGER assumption than within-window exchangeability;
+three windows ~30-60 min apart in one day, one host is LOW POWER;
+20,000 trials (not the s35-frozen 100,000 -- cost, same named
+deviation as sessions 40-49); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all three
+windows. Rule 4 binds: nothing moves; accelerator-targets defaults
+remain provisional (`:measured? false`); no vendor optimization
+exists for Intel. The bar: NO reading -> NO ledger line
+(byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31
+counted (frozen evaluator twice byte-identical; fixture pin 38/0;
+next executable day slot 2026-10-29).
+
+The slice landed in one tick: the derivation census (independent
+second parser) -- derivation-census-s50.txt, 55 rows / 0
+mismatched, run twice byte-identical -- and all three gate
+families ran fresh at the landing tick, byte-identical to the
+pinned artifacts (classify 2649/0; scoped GPU gate GREEN
+123/12162/0/0 twice; full run-tests.cljk exit 1 RED AT BASE
+kotoba.form, named).
+
+Evidence: `docs/evidence/gpu/anv-b3percelliqrlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s50.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s50.txt is the independent second
+parser (55 rows / 0 mismatched); bar-eval-s50.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).

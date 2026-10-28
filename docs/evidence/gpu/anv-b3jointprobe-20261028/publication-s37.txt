@@ -1,0 +1,78 @@
+JUN-59 session 37 -- THE SAME-WINDOW JOINT PROBE (publication)
+(at ONE window, do the block-unit min statistics couple to the
+host-side proxy within each arm AND across the two arms? ONE
+observable axis: the joint coupling pattern over the three frozen
+sub-statistics A/B/C at session 36's single window -- (A) rho(hi
+block-min, hi block host_ns), (B) rho(tw block-min, tw block
+host_ns), (C) rho(hi block-min, tw block-min), all block unit
+n=12.)
+Produced ONLY by analysis-s37.py over session 36's 78 committed
+run logs in ../anv-b3commonmode-20261028/ (run-<tag>-r<R>.txt);
+protocol.txt was frozen before the statistic was computed (freeze
+stamp 2026-10-28T03:06:03Z). NO HARDWARE RAN this session (named;
+every input quantity was MEASURED in session 36).
+
+1. INTEGRITY (computed over the 78 logs):
+   runs parsed: 78 (c2 3 + hi 36 + tw 36 + c8 3); SAMPLE lines 450 per run: True
+   knob fields == arm table in every SAMPLE: True
+   S=8 fail-closed (6 forced=8 cells pipeline FAIL, void=1, per run): True
+   cell map identical across all runs: True
+   VERIFY mismatch total over all 78 runs: 0 -- frozen
+   INVALIDATION criterion (protocol section 4): > 0 => letter (c)
+
+2. C1 RE-DERIVATION (environment pin, from the s36 logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32911 vs committed 32915 (0.01% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE FOUR VECTORS (re-derived from the 78 logs; block order A..L):
+   X = hi block-min:     A 991 B 989 C 981 D 998 E 993 F 985 G 984 H 997 I 994 J 994 K 980 L 982
+   Y = tw block-min:     A 988 B 985 C 994 D 993 E 994 F 995 G 992 H 984 I 987 J 984 K 993 L 981
+   HH = hi block host_ns: A 311901 B 309627 C 308465 D 311051 E 309968 F 310649 G 307113 H 310719 I 310348 J 310720 K 308987 L 309547
+   TH = tw block host_ns: A 310259 B 308936 C 311031 D 311871 E 465709 F 307253 G 310520 H 310319 I 309598 J 309477 K 307814 L 311300
+   quote-only anchor (publication-s36.txt section 3 + D3, byte-exact): True
+
+4. T1 THE ROW QUESTION (frozen letters, protocol section 0): the joint
+   coupling pattern of (A) hi proxy, (B) tw proxy, (C) cross-arm at
+   session 36's single window (block unit, n=12; Spearman rho +
+   two-sided permutation p, 100,000 trials, seed 20261028):
+   (A) hi proxy:  rho = 0.774082, p = 0.004060 (count 405 / 100,001), |rho| >= 0.60: True, p <= 0.05: True, CO-MOVE: True
+   (B) tw proxy:  rho = 0.017575, p = 0.960310 (count 96031 / 100,001), |rho| >= 0.60: False, p <= 0.05: False, CO-MOVE: False
+   (C) cross-arm: rho = -0.251762, p = 0.425076 (count 42507 / 100,001), |rho| >= 0.60: False, p <= 0.05: False, CO-MOVE: False
+   (C) integrity anchor vs s36's published letter: rho -0.251762 / count 42507 / p 0.425076 reproduced exactly: True
+   T1 = (b) ANY COUPLE
+   NAMED, NOT HIDDEN: NEITHER letter resolves
+   threshold-artifact-vs-representation. (a) says the s35 (b) +
+   s36 (b) pattern REPLICATES at one common window -- consistent
+   with per-arm estimator noise or arm-specific effects, and
+   excludes ONLY these three couplings at this window and this
+   power. (b) names which coupling reads CO-MOVE at this window --
+   L2 OBSERVATIONAL ONLY (NO causal mechanism; a shared driver
+   could move both members of a pair). ONE window, ONE day, 12
+   blocks: LOW POWER; the three sub-statistics share the same 12
+   blocks (L15 -- not independent tests); the block-pair adjacency
+   (~1s) is the resolution (L14); no rate/variance/distribution
+   claim.
+
+5. DESCRIPTIVE (not the row question):
+   D1 per-run-unit analogs (36 points per arm; 25 rounds/cell;
+      NAMED DIFFERENT UNIT L10 -- no letter):
+      (A1) hi per-run min vs per-run host_ns: rho = 0.316427, p = 0.058799
+      (B1) tw per-run min vs per-run host_ns: rho = 0.047843, p = 0.780062
+      per-run min ranges: hi 966..1023, tw 971..1001
+   D2 (B) without block E (tw block E host_ns 465709 = the session-36
+      named L3 excursion, cause UNMEASURED; leave-one-out NAMED in the
+      freeze, descriptive only, the T1 letter always uses all 12 blocks):
+      rho = -0.164385, p = 0.626894 (count 62689 / 100,001)
+
+6. VERDICT SUMMARY:
+   T1 = (b) ANY COUPLE
+   (A) rho 0.774082 / p 0.004060 CO-MOVE True; (B) rho 0.017575 / p 0.960310 CO-MOVE False; (C) rho -0.251762 / p 0.425076 CO-MOVE False
+   evaluable inputs: VERIFY mismatch 0 (0), samples ok (True), knobs ok (True), S=8 fail-closed (True), cell map ok (True), C1 (True), s36 anchor (True)
+   NO HARDWARE RAN this session (analysis over session 36's 78 committed
+   logs; every input quantity was MEASURED in session 36).
+   The settling bar: NO reading -> NO ledger line, NO day-slot
+   consumption (bar-eval-s37.txt, the frozen evaluator over the
+   unchanged ledger). Rule 4 binds: nothing moves; accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel.

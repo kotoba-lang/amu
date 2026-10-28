@@ -1,0 +1,47 @@
+JUN-59 session 33 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE REPRESENTATION-SIDE RE-READ -- THE (1024,4033)-vs-(2048,8066)
+PAIR-TWIN CLASS RELATION AT THE ANCHOR GRID (one 3-run block per arm
+at n=253,906, B=3 ON UTC DAY 2026-10-28 + controls c2/c8 bracketing
+the hi+tw window).
+protocol.txt freeze stamp 2026-10-28T01:08:56Z (frozen BEFORE the
+first run; this run window starts after it).
+12 fresh processes (c2 3 + hi 3 + tw 3 + c8 3 -- the protocol section 1
+arm table's 4 rows govern the count; run order frozen: c2 r1-3, hi r1-3,
+tw r1-3, c8 r1-3). Per-run transcript (host date -u, taken immediately
+BEFORE the run invocation, seconds granular; rc, stderr byte count and
+line counts captured by the driver), verbatim from the driver's per-run
+steps (each run's stdout/stderr preserved verbatim in
+run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-28T01:11:21Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-28T01:11:22Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-28T01:11:22Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-28T01:11:23Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-28T01:11:23Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-28T01:11:24Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  tw-r1 rc=0 host-date=2026-10-28T01:11:24Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  tw-r2 rc=0 host-date=2026-10-28T01:11:25Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  tw-r3 rc=0 host-date=2026-10-28T01:11:25Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-28T01:11:25Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-28T01:11:27Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-28T01:11:28Z stderr_bytes=0 samples=450 verifies=24 tail='# done cells=24'
+rc=0 12/12 printed AND 12/12 '# done cells=24' (tail column above;
+the committed local logs re-checked after the scp).
+The samples/verifies/cells counts above are the driver's inline counts;
+they are independently re-derived from the COMMITTED local run logs by
+analysis-s33.py's parser (450 SAMPLE per run in 12/12, VERIFY 24 per run,
+cell map identical across runs) and in derivation-census-s33.txt -- the
+derivations agree.
+host-file-mtime cross-check (stat -c '%y' on the host run logs vs the
+per-run host-date stamps):
+  run-c2-r1.txt: host-date 2026-10-28T01:11:21Z mtime 2026-10-28T01:11:22Z delta 1s
+  run-c2-r2.txt: host-date 2026-10-28T01:11:22Z mtime 2026-10-28T01:11:22Z delta 0s
+  run-c2-r3.txt: host-date 2026-10-28T01:11:22Z mtime 2026-10-28T01:11:23Z delta 1s
+  run-hi-r1.txt: host-date 2026-10-28T01:11:23Z mtime 2026-10-28T01:11:23Z delta 0s
+  run-hi-r2.txt: host-date 2026-10-28T01:11:23Z mtime 2026-10-28T01:11:23Z delta 0s
+  run-hi-r3.txt: host-date 2026-10-28T01:11:24Z mtime 2026-10-28T01:11:24Z delta 0s
+  run-tw-r1.txt: host-date 2026-10-28T01:11:24Z mtime 2026-10-28T01:11:24Z delta 0s
+  run-tw-r2.txt: host-date 2026-10-28T01:11:25Z mtime 2026-10-28T01:11:25Z delta 0s
+  run-tw-r3.txt: host-date 2026-10-28T01:11:25Z mtime 2026-10-28T01:11:25Z delta 0s
+  run-c8-r1.txt: host-date 2026-10-28T01:11:25Z mtime 2026-10-28T01:11:26Z delta 1s
+  run-c8-r2.txt: host-date 2026-10-28T01:11:27Z mtime 2026-10-28T01:11:28Z delta 1s
+  run-c8-r3.txt: host-date 2026-10-28T01:11:28Z mtime 2026-10-28T01:11:29Z delta 1s

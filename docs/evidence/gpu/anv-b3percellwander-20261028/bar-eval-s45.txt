@@ -1,0 +1,79 @@
+== JUN-59 session 45 bar evaluation (THE PER-CELL ==
+== WANDER REPARTITION PROBE) -- ANALYSIS session, ==
+== NO reading, NO ledger line, NO day-slot consumption; ==
+== the settle-bar evaluator is the ONLY source of the ==
+== bar letter (B2) ==
+
+-- frozen fixture self-test --
+fixture pending-empty: verdict 'PENDING 0/4' (want 'PENDING 0/4'); counted 0 descriptive 0 flagged 0
+  check verdict: got 'PENDING 0/4' want 'PENDING 0/4' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture pending-3: verdict 'PENDING 3/4' (want 'PENDING 3/4'); counted 3 descriptive 0 flagged 0
+  check verdict: got 'PENDING 3/4' want 'PENDING 3/4' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture settled-captured: verdict 'SETTLED CAPTURED' (want 'SETTLED CAPTURED'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'SETTLED CAPTURED' want 'SETTLED CAPTURED' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture settled-mixed: verdict 'SETTLED INTERMEDIATE/MIXED' (want 'SETTLED INTERMEDIATE/MIXED'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'SETTLED INTERMEDIATE/MIXED' want 'SETTLED INTERMEDIATE/MIXED' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture class-split: verdict 'UNSETTLED CLASS-SPLIT' (want 'UNSETTLED CLASS-SPLIT'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'UNSETTLED CLASS-SPLIT' want 'UNSETTLED CLASS-SPLIT' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture band-split: verdict 'UNSETTLED BAND' (want 'UNSETTLED BAND'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'UNSETTLED BAND' want 'UNSETTLED BAND' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture contradiction-floor: verdict 'CONTRADICTION FLOOR' (want 'CONTRADICTION FLOOR'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'CONTRADICTION FLOOR' want 'CONTRADICTION FLOOR' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture contradiction-oor: verdict 'CONTRADICTION OUT-OF-BAND' (want 'CONTRADICTION OUT-OF-BAND'); counted 4 descriptive 0 flagged 0
+  check verdict: got 'CONTRADICTION OUT-OF-BAND' want 'CONTRADICTION OUT-OF-BAND' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+fixture flagged-excluded: verdict 'SETTLED INTERMEDIATE/MIXED' (want 'SETTLED INTERMEDIATE/MIXED'); counted 4 descriptive 0 flagged 2
+  check verdict: got 'SETTLED INTERMEDIATE/MIXED' want 'SETTLED INTERMEDIATE/MIXED' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+  check flagged-count: got 2 want 2 -> ok
+fixture same-day-duplicate: verdict 'SETTLED INTERMEDIATE/MIXED' (want 'SETTLED INTERMEDIATE/MIXED'); counted 4 descriptive 1 flagged 0
+  check verdict: got 'SETTLED INTERMEDIATE/MIXED' want 'SETTLED INTERMEDIATE/MIXED' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+  check descriptive-count: got 1 want 1 -> ok
+  check first-of-day-wins: got 'INTERMEDIATE/MIXED' want 'INTERMEDIATE/MIXED' -> ok
+fixture same-day-after-flag: verdict 'SETTLED INTERMEDIATE/MIXED' (want 'SETTLED INTERMEDIATE/MIXED'); counted 4 descriptive 0 flagged 1
+  check verdict: got 'SETTLED INTERMEDIATE/MIXED' want 'SETTLED INTERMEDIATE/MIXED' -> ok
+  check counted<=4: got True want True -> ok
+  check counted-days-unique: got True want True -> ok
+  check flagged-count: got 1 want 1 -> ok
+  check day-slot-not-consumed: got 's31b' want 's31b' -> ok
+TOTAL: 38 assertions passed, 0 failed
+
+-- ledger evaluation (run 1) --
+ledger: docs/evidence/gpu/settle-bar-ledger.txt
+counted    day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985
+descriptive day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982
+descriptive day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987
+descriptive day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993
+descriptive day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991
+descriptive day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992
+descriptive day=2026-10-28 session=s39 class=INTERMEDIATE/MIXED median=1146 min=986
+VERDICT: PENDING 1/4
+
+-- ledger evaluation (run 2) --
+ledger: docs/evidence/gpu/settle-bar-ledger.txt
+counted    day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985
+descriptive day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982
+descriptive day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987
+descriptive day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993
+descriptive day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991
+descriptive day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992
+descriptive day=2026-10-28 session=s39 class=INTERMEDIATE/MIXED median=1146 min=986
+VERDICT: PENDING 1/4
