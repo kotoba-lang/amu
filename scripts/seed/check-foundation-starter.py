@@ -180,7 +180,10 @@ def main(output, profile, experimental_arm64=False):
         "host": {"profile": profile, "system": platform.system(),
                  "machine": platform.machine(), "kernel": platform.release()},
         "compilerImage": compiler_pin,
-        "compilerSourceRevision": None if experimental_arm64 else descriptor["sourceRevision"],
+        # The descriptor revision is historical metadata, not proof that its
+        # tree produces the current source unity or compiler image.
+        "compilerSourceRevision": None,
+        "publicDescriptorSourceRevision": descriptor["sourceRevision"],
         "starterCandidate": candidate_pin,
         "upstreamRevision": candidate["upstreamRevision"],
         "descriptor": descriptor_pin, "sourceUnity": descriptor["sourceUnity"],
