@@ -2195,3 +2195,74 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s48.txt is the independent second
 parser (231 rows / 0 mismatched); bar-eval-s48.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 49 (JUN-59): the per-cell robust-scale (MAD) LEVEL cross-window repartition probe (analysis; T1 (b) EXCEEDS NULL, driven by the tw arm)
+
+Session 48's first-named candidate row -- "a per-cell
+robust-scale LEVEL probe (uniform-across-blocks shifts cancel in
+W_c; D levels descriptive only in D1, no letter)" -- taken on one
+observable axis: per arm, does any ok cell's cross-window
+robust-scale LEVEL spread S_c = max_w L_{w,c} - min_w L_{w,c}
+over the three windows (s36/s38/s39) exceed the cross-window
+run-repartition null (the 108 runs of one arm across the three
+windows exchangeable)? L_{w,c} = median of the 12 block D values
+of window w (D = e_(38) about m = x_(38) of the block's 75
+samples -- the s48-frozen exact-median MAD; the s35/s36-frozen
+3-run block unit unchanged), max-T over the 18 cells (the max
+taken inside each trial), 20,000 trials per arm, frozen RNG call
+order (hi then tw), exact integer arithmetic (2*L in half-tick
+units); letters pre-registered at freeze stamp
+2026-10-28T10:09:54Z before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (b) EXCEEDS
+NULL -- the FIRST (b) row letter of the s40-49 campaign --
+driven by the tw arm: tw M_obs 16.0 ticks (max cell
+(max,128,S=default)), count 171/20,001, p 0.008600 (<= 0.05 at
+the frozen threshold), its per-cell robust-scale level L at that
+cell 71.5 / 55.5 / 56.5 ticks across s36/s38/s39 (its spread
+16.0); marginal (sum,128,S=default) p 0.020049, letterless. The
+hi arm reads (a) PER-CELL-MAD-LEVEL-CONSISTENT (M_obs 10.0, max
+cell (min,256,S=16), count 9,468/20,001, p 0.473426).
+NAMED, NOT HIDDEN: (b) implicates window-timescale per-cell
+robust-scale LEVEL structure on the tw arm but names NO mechanism
+(thermal / scheduling / memory / driver state all UNMEASURED) and
+NOT whether the shift is physical or estimator structure; the two
+arm probes are UNCORRECTED across arms (the row answer is the
+pre-registered joint T1); the 36 marginal p values are
+UNCORRECTED (3 marginal cells below 0.05 across the two arms,
+letterless); this letter and sessions 40-48's are DIFFERENT
+nulls over the SAME runs (NOT independent evidence) -- s44's
+per-cell LOCATION level probe read (a) over the same windows and
+s45-48's within-window wander/spread/IQR/MAD probes read (a) at
+their scales; the cross-window null assumes exchangeability
+ACROSS WINDOWS, a STRONGER assumption than within-window
+exchangeability, and a (b) can also reflect violation of that
+assumption rather than a per-cell scale mechanism; three windows
+~30-60 min apart in one day, one host is LOW POWER; 20,000
+trials (not the s35-frozen 100,000 -- cost, same named deviation
+as sessions 40-48); threshold-artifact-vs-representation STAYS
+UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a) at the
+s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6 block-min
+vectors reproduce EXACTLY, anchor row EXACT at all three windows.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no vendor optimization exists
+for Intel. The bar: NO reading -> NO ledger line (byte-identical
+to HEAD), VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen
+evaluator twice byte-identical; fixture pin 38/0; next executable
+day slot 2026-10-29).
+
+The slice ran in two ticks (record.txt's sections 4/8 document
+the partial first tick; its section 9 the landing tick): the
+derivation census (independent second parser) landed on the
+second tick -- derivation-census-s49.txt, 59 rows / 0
+mismatched, run twice byte-identical -- and the gate artifacts
+were re-run fresh at landing, byte-identical to the pinned
+artifacts (gate-rerun-s49b.txt).
+
+Evidence: `docs/evidence/gpu/anv-b3percellmadlevel-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s49.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s49.txt is the independent second
+parser (59 rows / 0 mismatched); bar-eval-s49.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
