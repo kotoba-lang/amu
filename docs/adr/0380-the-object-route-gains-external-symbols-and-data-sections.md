@@ -54,7 +54,7 @@ mechanism with one more family.
 
 An extern call has two hazards the stub mechanism does not have: the context
 register r9 is caller-saved in System V, and the stack alignment at a call site
-inside an export depends on the frame size. Decision: a fixed 21-byte wrapper
+inside an export depends on the frame size. Decision: a fixed 34-byte wrapper
 around every extern call, with the arguments already in rdi, rsi, rdx, rcx, r8:
 
     mov  r11, rsp          ; the unaligned rsp, kept in a caller-saved scratch
@@ -77,9 +77,20 @@ Rejected: restoring r9 with a second `lea r9,[rip+ctx]` and PC32 after each call
 (one more relocation per call site, and the symbol table grows with the call
 count); aligning every frame to 16 (it changes the bytes of every pinned object).
 
-The encodings above are written for review, not copied from a verified table:
-the first gate must assemble them independently and compare, before any seed
-change.
+Independent check (2026-10-29, Apple clang 21 integrated assembler,
+`clang -target x86_64-unknown-linux-gnu -c`, Intel syntax, `ext` undefined): the
+wrapper is **34 bytes** (an earlier draft of this ADR said 21; that was wrong),
+
+    49 89 e3 | 48 83 e4 f0 | 48 83 ec 10 | 4c 89 1c 24 | 4c 89 4c 24 08 |
+    e8 00 00 00 00 | 4c 8b 4c 24 08 | 48 8b 24 24
+
+with one relocation, `R_X86_64_PLT32` (type 4), addend -4, at wrapper offset 21.
+At the `call` rsp is 16-byte aligned, so the callee sees the ABI's rsp%16 == 8;
+on return rsp is back at the block, which is what the two restores read. This
+shows the encodings and the relocation only: no x86 machine ran the sequence, so
+the stack discipline is argued, not executed. The gate that the seed change must
+add assembles the same listing and compares bytes, and an x86_64 Linux CI job
+(`native-cross`) must run an object that calls through it.
 
 ### D2 -- `.rodata`
 
