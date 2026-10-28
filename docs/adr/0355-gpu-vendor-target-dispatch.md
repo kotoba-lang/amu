@@ -1778,3 +1778,63 @@ read over the 234 committed run logs of the three windows;
 derivation-census-s41.txt is the independent second parser (40 rows
 / 0 mismatched); bar-eval-s41.txt is the frozen evaluator's
 unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 42 (JUN-59): the cross-window level-shift repartition probe (analysis; LEVEL-CONSISTENT)
+
+Session 41's first-named candidate row ("a LEVEL-shift probe of the
+same three windows (D3's descriptive medians suggest little level
+movement, but no letter exists -- R does not test level)") is taken
+on ONE observable axis: per arm, does the cross-window LEVEL spread,
+S_obs = max_w M_w - min_w M_w over the three probed windows (s36,
+s38, s39), where M_w = median of the 12 block-mins of window w,
+exceed the cross-window run-repartition null (the 108 runs of one
+arm across the three windows are exchangeable; s35/s36-frozen
+constructions UNCHANGED; the 12-value median computed in half-tick
+integer units, 2*M = 6th + 7th order statistics, so every
+comparison is exact)? ANALYSIS slice -- NO new hardware; DERIVED
+from the 234 committed run logs of the s36/s38/s39 windows (78
+each). Resampling: 20,000 trials, random.Random(20261028) consumed
+in the frozen probe order (hi then tw), per trial one shuffle of the
+108 run ids split into three pseudo-windows of 36 and 12 blocks of 3
+in draw order, p = (1 + count(S* >= S_obs)) / (1 + 20,000),
+one-sided; letters pre-registered (protocol freeze stamp
+2026-10-28T05:33:45Z, BEFORE any statistic was computed): per arm
+(a) LEVEL-CONSISTENT / (b) EXCEEDS NULL (named which) / (c) NOT
+EVALUABLE. THE FINDING (DERIVED FROM MEASURED DATA): T1 = (a)
+LEVEL-CONSISTENT -- neither arm's S exceeds the null (hi M
+990.0/987.0/986.5, S_obs 3.5, p 0.470676; tw M 990.0/991.0/988.0,
+S_obs 3.0, p 0.485476; both > 0.05 at the frozen threshold). The
+D3 level content needs no window-level effect to occur. NAMED, NOT
+HIDDEN: (a) does NOT prove "no physical window-level driver" -- a
+driver acting uniformly within AND across windows is invisible by
+construction; AND the LEVEL is the median of the 12 BLOCK-MINS,
+where block-min is itself a TAIL statistic -- a window-level shift
+that moves only the BODY of the gpu_ticks distribution and not the
+min-tail is invisible to this construction (named limitation; a
+BODY-level probe is a named candidate row); the block-min level
+sits near the frozen 1,000-tick class boundary and inherits the
+threshold-artifact-vs-representation ambiguity; this letter and
+session 41's R (spread) letter are DIFFERENT nulls over the SAME
+runs (NOT independent evidence); three windows in ONE day on ONE
+host is LOW POWER (a null is not stationarity); 20,000 trials
+(cost, named in the freeze; p resolution 1/20,001); L2
+observational, NO causal mechanism, direction UNMEASURED; the
+wander's MECHANISM STAYS UNRESOLVED and threshold-artifact-vs-
+representation STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows
+clean (VERIFY mismatch 0, counts, knobs, S=8 fail-closed, cell
+map), C1 (a) at the s39 window (c2 FLOOR; c8 32,829 vs 32,915,
+0.26%), and 6/6 block-min vectors plus the six M values reproduce
+the published values EXACTLY. Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+The bar: NO reading -> NO ledger line (byte-identical to HEAD),
+VERDICT UNCHANGED PENDING 1/4 with s31 counted (frozen evaluator
+twice byte-identical; fixture pin 38/0; next executable day slot
+2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3levelshift-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s42.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s42.txt is the independent second parser
+(40 rows / 0 mismatched); bar-eval-s42.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
