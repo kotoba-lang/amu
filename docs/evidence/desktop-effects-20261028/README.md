@@ -14,3 +14,14 @@ remain unqualified. No JVM, NBB, C compiler or loader fallback was used.
 `mac-selfhost.json` and `source-pin.json` retain the earlier source-only
 candidate observation; they do not describe the updated root adoption.
 The GUI consumer is kotoba-lang/kotoba#965.
+
+Review additionally found that adding stub declarations affected old v1/v2
+output bytes. The three new intrinsics are now limited to v3; both v1/v2
+outputs compare exactly with the pinned old compiler. `kernel-v3.json` is the
+unchanged strict layout/guest/admission gate (including legacy byte equality).
+The Mac producer also builds the selfhost-subset compiler; no dependency on
+project-only helpers was added to that subset.
+
+`gui-compiler-equivalence.json` shows that the repaired final compiler emits
+the same native GUI kernel bytes as the fully observed review image. Final
+native Linux/controller/full-corpus CI remains mandatory before merge.

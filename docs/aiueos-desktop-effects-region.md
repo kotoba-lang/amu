@@ -22,7 +22,8 @@ for intrinsic provenance.
 
 `kernel-out-u16(port,value)` emits `66 EF` after loading DX/AX;
 `kernel-in-u16(port)` clears EAX and emits `66 ED`, returning a zero-extended
-16-bit value. These remain kernel-image intrinsics, not ordinary app I/O or
+16-bit value. These are v3 kernel-image intrinsics; v1/v2 retain their original trailer
+and byte-identical reference output. They are not ordinary app I/O or
 an end-user capability grant. The GUI consumer requires 16-bit AC97 codec
 register access; using 32-bit writes is not an equivalent implementation.
 
