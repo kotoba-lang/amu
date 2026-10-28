@@ -3817,3 +3817,31 @@ ledger eval were NOT REACHED this tick (runtime budget) and are NOT
 claimed. Rule 4 binds: no row moves; accelerator-targets defaults stay
 as ADR-0358 set them. Evidence:
 `docs/evidence/gpu/anv-b3w5routepreflight-20261028/record.txt`.
+
+## Dated note (2026-10-28, JUN-59 session 68: the deferred-gate batch)
+
+The s67 carry-forward's named "next tick must run these before any
+push-equivalent claim" items, all run and verified this tick -- NO runs,
+NO compiles, NO GO stamp, no day slot, no ledger line (a verification
+slice only; the W5 slot opens 2026-10-29T00:00:00Z, ~2h2x after this
+tick). VERIFIED: FULL run-tests.cljk LIVE exit 1, RED AT BASE
+`kotoba.form` (ADR-0362, outside this diff -- this tick touches NO
+`.cljk` namespace), captures byte-identical to the newest full-suite
+pins on disk (s64) -- NO green full suite claimed; the frozen settle-bar
+evaluator self-test 38/0 + ledger eval twice byte-identical AND
+byte-identical to the s66 pin -> VERDICT PENDING 1/4 unchanged (the
+bar's state is VERIFIED again, it was UNVERIFIED at s67);
+`find docs/evidence/gpu -name '*.sh'` -> 0. Standing gates re-run and
+byte-identical to their pins: classify self-test 2649/0; scoped GPU gate
+GREEN 123/12162/0/0 twice (919-byte captures). NAMED, NOT HIDDEN: the
+pinned scoped runner shape is ns + the eight accelerator-* requires +
+the bare `(t/run-tests ...)` form -- a draft carrying run-tests.cljk's
+`:end-run-tests` override produced a 969-byte capture with one extra
+summary line (the only diff vs the pin) and was rebuilt to the pinned
+shape; both runs re-taken. Rule 4 binds: no row moves;
+accelerator-targets defaults remain provisional (`:measured? false`);
+no vendor optimization exists for Intel. Queue unchanged: the W5
+measurement session (first at/after 2026-10-29T00:00:00Z, its pre-GO
+custody steps named at s67) then T7 and the three frozen analysis
+halves. Evidence:
+`docs/evidence/gpu/anv-b3w5deferredgates-20261028/record.txt`.
