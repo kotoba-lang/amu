@@ -20,7 +20,7 @@ kept as is):
     Not derived here, because the Mac receipts do not prove them: the native x86
     compilerGenerations, sourceRevision (a git commit), qualification text.
 
---install (with --write, final phase) also copies the verified artifacts to
+--install (with --write) also copies the verified artifacts to
 the paths the descriptors name: the signed Mac compiler and packager, the
 aarch64 root ELF and bin/amu (bin/kotoba and bin/kotoba-compiler are links).
 
@@ -29,8 +29,12 @@ source the descriptor does not carry yet:
 
 * --phase source (after a Mac gate run with explicit images on the new
   source): root.json takes the new fullSource, packagerSource and expected
-  fixed point only. The compiler and packager pins stay the previous root, which
-  is the bootstrap producer of the next run. The other descriptors are not read.
+  fixed point. The compiler pin stays the previous root, which is the bootstrap
+  producer of the next run. The packager pin stays too, unless the packager's
+  own source changed: then it moves to the receipt's fixed-point packager,
+  because the next run must package with the new one (a packager change takes
+  a staged run first: the old packager builds the new one, whose own run is the
+  receipt). The other descriptors are not read.
 * --phase final (default; after the descriptor-bound Mac gate and the cross
   gate): everything above.
 
@@ -102,7 +106,11 @@ def derive_source(mac_dir: Path):
     pin(mac_dir / f"F{fp}-signed.macho", last["signed"], f"F{fp} signed compiler")
     pin(mac_dir / f"F{fp}-unsigned.macho", last["unsigned"], f"F{fp} unsigned compiler")
     pin(mac_dir / "P1-unsigned.macho", ps["unsigned"], "packager unsigned")
-    return {"root": {"fullSource": dict(mac["source"]), "packagerSource": dict(ps["source"]),
+    pk_digest, pk_size = sha(mac_dir / "P1-signed.macho")
+    return {"install": [(mac_dir / "P1-signed.macho", "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
+                         {"bytes": pk_size, "sha256": pk_digest})],
+            "root": {"fullSource": dict(mac["source"]), "packagerSource": dict(ps["source"]),
+                     "packager": {"bytes": pk_size, "sha256": pk_digest},
                      "container": last["container"]["sha256"],
                      "packagerUnsigned": ps["unsigned"]["sha256"]}}
 
@@ -172,6 +180,8 @@ def derive(mac_dir: Path, cross_dir: Path):
 def updated(old: dict, new: dict, which: str, phase: str = "final"):
     doc = json.loads(json.dumps(old))
     if which == "root" and phase == "source":
+        if doc["packagerSource"]["sha256"] != new["packagerSource"]["sha256"]:
+            doc["packager"].update(new["packager"])
         doc["fullSource"].update(new["fullSource"])
         doc["packagerSource"].update(new["packagerSource"])
         doc["expectedFixedPoint"]["compilerContainerSha256"] = new["container"]
@@ -234,9 +244,12 @@ def main(argv):
         print(f"REFUSED: {refusal}", file=sys.stderr)
         return 2
 
-    if args.install and not (args.write and args.phase == "final"):
-        print("REFUSED: --install needs --write and the final phase", file=sys.stderr)
+    if args.install and not args.write:
+        print("REFUSED: --install needs --write", file=sys.stderr)
         return 2
+    # decided before anything is written: the descriptor still holds the old packager source
+    packager_changed = (args.phase == "source" and
+                        load(files["root"])["packagerSource"]["sha256"] != new["root"]["packagerSource"]["sha256"])
     differs = 0
     for which, path in files.items():
         old = load(path)
@@ -249,6 +262,8 @@ def main(argv):
             path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if args.install:
         for src, rel, expected in new["install"]:
+            if args.phase == "source" and not packager_changed:
+                break
             digest, size = sha(src)
             need(digest == expected["sha256"] and size == expected["bytes"], f"{src.name} changed before install")
             dst = args.repo / rel
