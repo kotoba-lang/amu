@@ -3626,3 +3626,84 @@ never rewritten; freeze-record-s64.txt is this tick's record --
 the analysis session owns record.txt there; the gate captures
 are byte-identical to the s63 pins). The analysis half of the
 row is UNMEASURED until the W5 runs exist.
+
+## 2026-10-28 (session 65, JUN-59) -- the quantile-pair level
+axes (the s53/s54 named pairs) at W5 PRE-REGISTRATION FREEZE
+(DESIGN slice; STARTED, NOT FINISHED)
+
+Session 65 took the s57-frozen W5 carry-forward's remaining
+analysis-row queue to its first row's design half: the W5 reads
+of the two OTHER named quantile-pair level axes -- INNER
+(28,48) (the s53-named pair) and OUTER (9,67) (the s54-named
+pair) -- of the named cell (max,128,S=default) are now
+PRE-REGISTERED in
+`docs/evidence/gpu/anv-b3w5qpairevel-20261029/protocol.txt`
+(freeze stamp 2026-10-28T20:10:55Z), frozen BEFORE any
+fifth-window run exists -- no committed file contains any W5
+quantity. The frozen row: T15, the two-axis read at the named
+window pair (s36, W5) -- per axis the directional contrast
+2*C_obs = 2*L_s36 - 2*L_W5 of the block-level quantile-pair
+spread level (block = 3 consecutive tw runs; 2*L = 6th+7th
+order statistics of the 12 block D values, INTEGER half-tick
+units) against the two-window run-repartition null of the 72 tw
+runs of s36 and W5 (20,000 trials per probe, ONE
+random.Random(2026102815) -- distinct from T7's 20261029 and
+T14's 2026102814 -- frozen probe order inner then outer), the
+pre-registered direction C_obs > 0 on BOTH axes fixed by
+published MAD/IQR scale letters and the s54 outer drops
+(QUOTE-ONLY) and NOT by any W5 statistic; letters per axis
+(a) LEVEL-REPLICATED-CONTINUED / (b) NOT-REPLICATED (named
+sub-cases) / (c) NOT EVALUABLE; joint T15 = the pre-registered
+INTERSECTION-UNION rule (BOTH axes (a); NO multiplicity
+correction). NAMED, NOT HIDDEN: the two axes' published priors
+DIFFER in kind -- the OUTER level dropped at every post-shift
+window (496/429/437/446, s54 T4 (a)) while the INNER level
+SCATTERED (118/102/128/113, s53 T3 (b), one contrast
+opposite-direction) -- so the joint (a) is demanding on the
+inner axis, and a joint (b) driven by the inner axis is
+CONSISTENT WITH the s53-era scatter near the inner pair's noise
+floor AND EQUALLY CONSISTENT WITH genuine non-replication at
+the inner pair (the per-axis letters are named). The row's
+ANALYSIS half is day-slot-gated and was NOT run this tick: it
+needs W5's tw runs, and W5 is the window whose 78 fresh
+processes run in the first measurement session at or after
+2026-10-29T00:00:00Z -- this tick ran ~3h50m before that slot
+opens (NAMED, not skipped silently; the queue's first row -- the
+W5 measurement + T7 read -- is gated the same way and its freeze
+was done at s57; the s38-hi wander replication is frozen at
+s64). NAMED, NOT HIDDEN: STILL LOW POWER (n=2 windows, 12
+blocks each, ONE host, ONE named cell); (a) names NO mechanism
+and NOT physical-vs-estimator-structure;
+threshold-artifact-vs-representation STAYS UNRESOLVED. Gates
+(real runs this tick): classify self-test 2649/0 (byte-identical
+to the s64 pin); scoped GPU gate GREEN 123/12162/0/0 twice
+(byte-identical to the s64 pin and each other); full
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace), captures byte-identical
+to the s64 pins -- NO green full suite claimed; settle-bar
+evaluator 38/0 + ledger eval twice byte-identical -> VERDICT
+PENDING 1/4 unchanged (no runs, no ledger line, no day slot;
+next executable slot 2026-10-29); no derivation census (a
+freeze-only tick computes no statistics -- named, not omitted);
+find docs/evidence/gpu -name '*.sh' -> 0. Rule 4 binds: nothing
+moves; accelerator-targets defaults remain provisional
+(`:measured? false`); no vendor optimization exists for Intel.
+
+Named rows for later sessions: (first, STARTED) the
+fifth-window measurement + T7 read in the 2026-10-29 UTC slot
+(NEW hardware; the slot opens 2026-10-29T00:00:00Z, ~3h50m
+after this tick -- NAMED, not skipped silently); (STARTED at
+the s64 freeze) the s38 hi (sum,256,S=32) wander replication
+ANALYSIS half (needs W5's hi runs); (STARTED at this freeze)
+this row's ANALYSIS half (needs W5's tw runs); then the
+second-pair profile axis at W5 (the s56 halving-rule pairs;
+its own freeze; need W5 data); any further named profile pair
+-- which requires a NEW named rank-pair vocabulary or selection
+rule (none exists yet -- naming one is future design work).
+
+Evidence: `docs/evidence/gpu/anv-b3w5qpairevel-20261029/`
+(protocol.txt is the frozen pre-registration -- written once,
+never rewritten; freeze-record-s65.txt is this tick's record --
+the analysis session owns record.txt there; the gate captures
+are byte-identical to the s64 pins). The analysis half of the
+row is UNMEASURED until the W5 runs exist.
