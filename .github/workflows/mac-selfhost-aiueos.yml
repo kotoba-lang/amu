@@ -16,6 +16,9 @@ on:
       - 'scripts/seed/check-macos-arena-scope-refusal.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
+      - 'scripts/seed/write-bootstrap-descriptors.py'
+      - 'scripts/seed/test-write-bootstrap-descriptors.py'
+      - 'scripts/seed/check-descriptor-writer-ci.py'
       - 'scripts/seed/check-macos-core-adoption.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
       - 'scripts/seed/native_build_queue.py'
@@ -97,6 +100,11 @@ jobs:
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-cross"
+      - name: Descriptor writer controls on disposable receipt-derived fixture
+        run: |
+          python3 scripts/seed/check-descriptor-writer-ci.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --cross-build "$RUNNER_TEMP/mac-cross"
       - name: Summarize native crash if the root gate failed
         if: failure()
         run: |
