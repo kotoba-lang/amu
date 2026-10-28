@@ -10,11 +10,13 @@ run without network authority.
 descriptor still records empty native generations and false qualification
 flags. [Main CI run 40735782572](https://github.com/kotoba-lang/amu/actions/runs/40735782572)
 passed its native jobs for upstream revision `0459bdc8d167025375bb0ca0837447356940a2d2`;
-the observed x86 compiler and source-unity hashes match this candidate. The
-starter's x86 functional smoke also passed in the PR CI for revision
-`33e7f02b3888240429870b8a8833e2c6361113a2`. These are bounded engineering
-observations, not a change to the descriptor's qualification flags. The full
-PR workflow was still running when this note was written. Current-image
+the observed x86 compiler and source-unity hashes match this candidate. At
+PR revision `e967ae44c1117a4a19b6a82579f0b826db7603b1`, the
+[Linux native workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510291)
+and [Mac and Linux cross workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510318)
+completed successfully. These results apply to that revision; check the PR
+for the current revision and its checks. They are bounded engineering
+observations, not a change to the descriptor's qualification flags. Current-image
 qualification and descriptor flags need upstream reconciliation. A second
 host profile, release review and independent user evidence remain open.
 
@@ -124,8 +126,11 @@ Expected terminal status is `PASS_STARTER_FUNCTIONAL_SMOKE`.
 The manifest retains the reviewed upstream revision, the descriptor's
 reported source revision, image and observer hashes, host profile, actual
 native results and the descriptor's qualification state. The descriptor's
-reported source revision is historical metadata; the exact compiler source
-revision remains unknown even when the source-unity digest matches.
+reported source revision is historical metadata. Reconstructing its 48 source
+modules yields SHA-256 `18e98b761f744f27d567a9cd0a50a6fcd9e27a27ca800d9653d17f5701f0dabf`,
+which differs from the pinned source unity `c6d60c8a...`. Reconstructing the
+modules at the candidate's upstream revision yields the pinned unity; this
+match alone does not establish the binary's source-to-image provenance.
 It records **zero external users**; an author-run smoke is not a user cohort.
 
 ## Run and change a small program yourself
