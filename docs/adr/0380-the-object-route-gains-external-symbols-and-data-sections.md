@@ -57,7 +57,7 @@ register r9 is caller-saved in System V, and the stack alignment at a call site
 inside an export depends on the frame size. Decision: a fixed 21-byte wrapper
 around every extern call, with the arguments already in rdi, rsi, rdx, rcx, r8:
 
-    mov  r11, rsp          ; 4C 89 DC? (encoding checked by the gate, not here)
+    mov  r11, rsp          ; the unaligned rsp, kept in a caller-saved scratch
     and  rsp, -16
     sub  rsp, 16
     mov  [rsp], r11        ; the unaligned rsp
