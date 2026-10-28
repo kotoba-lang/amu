@@ -77,11 +77,10 @@ Expect `:result 42`. Edit the copied expression from `(+ 40 2)` to
 Do not overwrite the original fixture or the first output.
 
 To observe the same examples and their resource/authority refusals, choose a
-second new absolute output directory and use the native queue:
+second new absolute output directory and run the observer directly:
 
 ```sh
-python3 scripts/seed/native_build_queue.py -- \
-  python3 scripts/seed/check-foundation-starter.py --experimental-arm64 \
+python3 scripts/seed/check-foundation-starter.py --experimental-arm64 \
   --host-profile linux-arm64-your-os-version \
   --output /absolute/task-workspace/arm-observation
 ```
