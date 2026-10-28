@@ -34,6 +34,21 @@ Mac CI job runs it. The aiueos-side verifier takes the export list
 FUNC"; it is a comment, and editing it moves the source pin, so it waits for
 the next change to that file.
 
+**Object route, window accesses at other widths (JUN-556 B).** Besides
+`kernel-load-u32` and friends, a source may use `kernel-load-u8`,
+`kernel-store-u8`, `kernel-load-u16`, `kernel-store-u16`, `kernel-load-u64` and
+`kernel-store-u64`, each at the 512-byte tier with the same rooted-base and
+paired-length rules (E7106 otherwise). They follow kotoba-native's
+`emit-kernel-load-u8`, `emit-kernel-store-u8` and `emit-memwidth-window`: the
+length is at most 512, the base is non-null, the index is below the length,
+and above one byte `length - index >= width` (without wrapping) and the index
+is aligned; every branch lands on a `ud2` before memory is touched. The six
+stubs are appended only to a source that names one of them, so every other
+source compiles to the bytes it always had (the exports gate pins one). Locked
+projects and the image route's source library are not changed. The machine
+code is decoded by `scripts/seed/check-aiueos-object-windows.py` (Mac CI job),
+not executed.
+
 The image emitter currently admits the existing scalar kernel profile with
 one zero-argument export. It retains the complete admitted source and all
 helper functions. Multiple exports (ISR/live ValueRuntime included), the
