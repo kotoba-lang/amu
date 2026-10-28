@@ -3869,3 +3869,32 @@ claim; the bar state is UNVERIFIED this tick (last verified s68:
 VERDICT PENDING 1/4). Rule 4 binds: no row moves;
 accelerator-targets defaults stay as ADR-0358 set them. Evidence:
 `docs/evidence/gpu/anv-b3w5prego-20261028/`.
+
+## Dated note (2026-10-28, JUN-59 session 70: the determinism double-run + deferred-gate batch 2)
+
+The s69 carry-forward's named items, all run and verified this tick --
+NO runs, NO compiles, NO GO stamp, no day slot, no ledger line (a
+verification slice only; the W5 slot opens 2026-10-29T00:00:00Z, ~1h3x
+after this tick). VERIFIED: the analysis-prego.py `--compat-s51`
+determinism DOUBLE-RUN (two real runs, 2m44.7s wall each, exit 0) --
+run1 == run2 byte-identical AND both reproduce the committed
+`compat-s51-validation.txt` byte-identically (git clean) -- so the
+generator's DETERMINISM claim is now verified (it was unverified at
+s69); FULL run-tests.cljk LIVE exit 1, RED AT BASE `kotoba.form`
+(ADR-0362, outside this diff -- this tick touches NO `.cljk`
+namespace), captures byte-identical to the s68 pins -- NO green full
+suite claimed; the frozen settle-bar evaluator self-test 38/0 + ledger
+eval twice byte-identical AND byte-identical to the s68 pin -> VERDICT
+PENDING 1/4 unchanged (the bar's state is VERIFIED again, it was
+UNVERIFIED at s69); classify self-test 2649/0 and scoped GPU gate GREEN
+123/12162/0/0 twice (919-byte captures, pinned runner shape), every
+capture byte-identical to its pin; `find docs/evidence/gpu -name '*.sh'`
+-> 0. NAMED, NOT HIDDEN: the W5-dependent parts of the pre-build stay
+UNVALIDATED until the W5 logs exist, and the derivation-census
+second-parser twin is still NOT built (s69's named optional row; not
+done here). Rule 4 binds: no row moves; accelerator-targets defaults
+remain provisional (`:measured? false`); no vendor optimization exists
+for Intel. Queue unchanged: the W5 measurement session (first at/after
+2026-10-29T00:00:00Z, its pre-GO custody steps named at s67) then T7
+and the three frozen analysis halves. Evidence:
+`docs/evidence/gpu/anv-b3w5deferredgates2-20261028/record.txt`.

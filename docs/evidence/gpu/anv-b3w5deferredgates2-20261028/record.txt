@@ -1,0 +1,104 @@
+JUN-59 session 70 THE DETERMINISM DOUBLE-RUN + SECOND DEFERRED-GATE
+BATCH (the s69 carry-forward's named items 3(a) and 3(b) -- NO runs, NO
+compiles, NO GO stamp, NO host writes, NO day-slot consumption, NO
+ledger line; a verification slice only). The W5 measurement row's
+measurement half REMAINS day-slot-gated (STARTED, NOT FINISHED): W5 is
+DEFINED as the window whose 78 fresh processes run in the first
+measurement session at or after 2026-10-29T00:00:00Z; this tick runs
+2026-10-28T22:1x-22:2xZ, ~1h3x before that slot opens (NAMED, not
+skipped silently).
+
+1. THE DETERMINISM DOUBLE-RUN (s69 record section 3a), RUN AND
+   VERIFIED THIS TICK:
+   analysis-prego.py --compat-s51 run TWICE (real runs 2m44.7s and
+   2m44.7s wall, exit 0 both; python3 3.12.8 + numpy 2.5.4 -- the
+   frozen interpreter path), outputs copied per run to
+   scratch/prego-s70-compat-run1.txt and -run2.txt (6342 bytes each,
+   stdout/stderr 0 bytes both runs). VERIFIED: run1 == run2
+   byte-identical (cmp silent), AND run1 == run2 == the committed
+   docs/evidence/gpu/anv-b3w5prego-20261028/compat-s51-validation.txt
+   byte-identical (cmp silent; git status for the prego dir clean --
+   the committed file is reproduced exactly, not rewritten). Each run
+   reports TOTAL: 44 rows, 0 failed. The generator's own DETERMINISM
+   line ("this generator run twice yields byte-identical output") is
+   now VERIFIED by this double-run; it was UNVERIFIED at s69.
+
+2. THE STANDING GATES (s69 record section 3b), ALL RE-RUN AND VERIFIED
+   THIS TICK (real runs; every capture byte-identical to its pinned
+   artifact):
+   (a) FULL run-tests.cljk, command
+       kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk
+       run LIVE from the worktree root: exit 1, RED AT BASE kotoba.form
+       (ADR-0362, outside this diff -- this tick touches NO .cljk
+       namespace). stderr: "Error: Could not find namespace: kotoba.form"
+       (nbb load failure at startup). Captures scratch/gate-s70-full.out
+       (0 bytes) and scratch/gate-s70-full.err (879 bytes) are
+       BYTE-IDENTICAL to the newest full-suite pins (scratch/
+       gate-s68-full.out/.err). NO green full suite is claimed.
+   (b) settle-bar evaluator (the frozen
+       anv-b3settlebar-20261027/settle-bar-eval.py): --self-test exit 0,
+       "TOTAL: 38 assertions passed, 0 failed"
+       (scratch/bar-s70-selftest.txt, .err 0 bytes), byte-identical to
+       the s68 pin; ledger eval over docs/evidence/gpu/
+       settle-bar-ledger.txt run TWICE, exit 0 both, captures
+       scratch/bar-s70-eval-run1.txt and run2.txt (740 bytes each)
+       BYTE-IDENTICAL to each other AND to the s68 pin -> VERDICT:
+       PENDING 1/4 unchanged (counted day=2026-10-28 session=s31 only;
+       1 of 4 qualifying UTC days). The bar's state is VERIFIED this
+       tick (it was UNVERIFIED at s69).
+   (c) find docs/evidence/gpu -name '*.sh' -> 0 files (exit 0, empty).
+   (d) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed" (scratch/gate-s70-classify.txt,
+       .err 0 bytes), byte-identical to the s68 pin.
+   (e) scoped GPU gate: scratch runner scratch/scoped-gpu-gate.cljk
+       (the pinned shape -- ns + the eight accelerator-* requires + the
+       bare (t/run-tests ...) form, NO :end-run-tests override; created,
+       run, deleted, never committed) GREEN 123/12162/0/0 run 1 AND run
+       2 ("Ran 123 tests containing 12162 assertions." / "0 failures,
+       0 errors."), both captures 919 bytes, .err 0 bytes,
+       BYTE-IDENTICAL to each other AND to the s68 pin. The "kbb: 2
+       dep(s) ..." classpath notice is terminal output, not part of the
+       capture (established convention).
+
+3. NAMED, NOT HIDDEN -- NOT DONE this tick (ONE row per tick; the
+   gate batch was the row):
+   (a) the W5-dependent parts of the s69 pre-build remain UNVALIDATED
+       (no W5 logs exist): T7 at the (s36, W5) pair, five-window D3,
+       D1/D2/D4 at W5, and the w5-mode publication text;
+   (b) the derivation-census second-parser twin is STILL NOT built
+       (s69 named it as "a later pre-slot tick or the W5 session's own
+       work"; this tick ran gates and did not build it -- NAMED, not
+       omitted).
+   Nothing this tick computed any new statistic of any probe.
+
+4. BAR / SLOT: nothing this tick could produce a bar-qualifying reading
+   (no instrument runs; the 2026-10-28 slot is s31's and the W5 window
+   cannot open before 2026-10-29T00:00:00Z) -- NO ledger line and NO
+   day slot either way. VERDICT PENDING 1/4 unchanged (verified,
+   section 2b).
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false for :arm/:unknown; the measured
+   rows keep ADR-0358's flags); NO vendor optimization exists for
+   Intel. No derivation census (a gate-only tick computes no
+   statistics -- NAMED, not omitted).
+
+6. QUEUE (unchanged): next executable row is queue row 1's MEASUREMENT
+   half -- the W5 session in the first measurement session at or after
+   2026-10-29T00:00:00Z (78 fresh processes, frozen run order, custody
+   GO stamp before builds and runs -- INCLUDING the still-unstaged host
+   workdir ~/anv-b3w5xdayrep-20261029 as that session's own pre-GO
+   custody step (s67 record section 2), host-side 3/3 local-vs-host
+   comparison and corpus sha256sum -c 16/16 as its pre-GO checks, bar
+   line on hi block A of the W5 window) -- then its T7 read, then the
+   three frozen analysis halves (s64 T14 hi-wander, s65 T15
+   quantile-pair level axes, s66 T16 second-pair profile axis), each
+   already pre-registered. With this tick EVERY s69-deferred item is
+   verified and every standing gate is green-or-honestly-red AT BASE
+   before the W5 session opens; the queue is clear for the measurement.
+
+Evidence: docs/evidence/gpu/anv-b3w5deferredgates2-20261028/record.txt
+(this file) + the s70 captures in scratch/ (untracked, per the
+established convention). Chain: bot/amu-gpu-chain-20261028-3 (chain PR
+#1643, commit + push only). (JUN-55, JUN-59; Linear tracking JUN-499)
