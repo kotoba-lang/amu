@@ -43,7 +43,9 @@ jobs:
             isa: x86_64
             compiler: bin/amu
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    # 11 to 20+ minutes observed (main 11, #1652 19, #1654 twice over 20): the limit
+    # was cancelling a job whose gates had all printed PASS_.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
