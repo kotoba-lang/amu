@@ -67,6 +67,27 @@ a `.data` initialiser form for the few that are not zero. Access is through the
 same windows. Each is a LOCAL OBJECT symbol; none is exported. The 80-byte
 private context stays first and unchanged.
 
+### D4 -- MMIO, port and privileged-instruction intrinsics (added 2026-10-29)
+
+Reading `ioapic.c`, `apic.c`, `smp.c` and `loader.c` (JUN-556) showed that D1-D3
+do not reach even the small stateful kernel files: they use `volatile` MMIO at a
+fixed physical address, `outb`, `pause`, `cpuid`, `mov cr4`, `xgetbv`/`xsetbv`.
+The route has no intrinsic for any of them (ports come from the locked-project
+route's kernel suffix only). D4 adds them in the style of the memory windows:
+
+* each is a private stub whose call the backend replaces with inline bytes;
+* an MMIO access names its base as a literal in the declaration and a bounded
+  register offset, and traps (ud2) outside it, as the windows do;
+* port and control-register forms take a literal port or register, never a
+  computed one; `cpuid`/`xgetbv`/`xsetbv`/`pause` are fixed sequences;
+* the verifier recognises exactly these byte sequences and refuses any other
+  privileged opcode in `.text` (`out`, `in`, `mov cr*`, `wrmsr`, `rdmsr`
+  excepted where an existing Kotoba extern already owns them).
+
+The first file this can reach is `apic.c` (D1 plus one MMIO window). It sits on
+the interrupt path, so replacing it needs a QEMU/OVMF boot on a Linux host
+before anything is claimed. Order: D1, D3, D4, then E.
+
 ## What the verifier must change
 
 `verify-kotoba-kernel-object.py` and the pin ledger (`local-changes.json`) move
