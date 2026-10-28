@@ -2751,3 +2751,70 @@ windows (78 runs parsed each); derivation-census-s56.txt is the
 independent second parser (159 rows / 0 mismatched);
 bar-eval-s56.txt is the frozen evaluator's verdict; record.txt is
 the finding).
+
+## 2026-10-28 (session 57, JUN-59) -- the fifth-window
+cross-UTC-day replication PRE-REGISTRATION FREEZE (DESIGN slice;
+STARTED, NOT FINISHED)
+
+Session 57 took the queue's FIRST named candidate row to its
+design half: the FIFTH-window cross-UTC-day named-cell
+robust-scale level replication is now PRE-REGISTERED in
+`docs/evidence/gpu/anv-b3w5xdayrep-20261029/protocol.txt` (freeze
+stamp 2026-10-28T16:15:35Z), frozen BEFORE any fifth-window run
+exists -- no committed file contains any W5 quantity. The row's
+MEASUREMENT half is day-slot-gated and was NOT run this tick:
+W5 is DEFINED as the window measured at or after
+2026-10-29T00:00:00Z (the bar's 2026-10-29 UTC day slot; this
+tick ran 7h45m before that slot opened -- NAMED, not skipped
+silently; a window run on 2026-10-28 would share the one UTC day
+every prior letter already covers and burn the row as a
+same-day-descriptive bar line). Frozen contract: T7 = the
+pre-registered directional contrast 2*C_obs = 2*L_s36 - 2*L_W5 >
+0 of the tw (max,128,S=default) cell on BOTH frozen level axes
+(the s48 exact-median MAD e_(38) and the s47 exclusive-hinge IQR
+x_(57)-x_(19); block = 3 consecutive runs, 12 blocks, pooled 75;
+2*L = 6th+7th order statistics of the 12 block D values), vs the
+two-window run-repartition null over the 72 tw runs of s36 and W5
+(20,000 trials, ONE random.Random(20261029) in the frozen probe
+order MAD then IQR), joint T7 = INTERSECTION-UNION (both axes
+(a) = (a) CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES), per-axis
+letters (a) REPLICATED-CONTINUED / (b) NOT-REPLICATED (named
+sub-cases) / (c) NOT EVALUABLE. NAMED, NOT HIDDEN: every letter
+of sessions 40-56 was computed on windows ALL run in the ONE UTC
+day 2026-10-28 on ONE host -- T7 is the campaign's FIRST test of
+whether the s36-to-post-shift movement survives the UTC-day
+boundary; STILL LOW POWER (n=2 windows, 12 blocks, ONE host);
+(a) names NO mechanism and NOT physical-vs-estimator-structure;
+threshold-artifact-vs-representation STAYS UNRESOLVED. The W5
+data additionally carries (each later row keeps its OWN freeze):
+the quantile-pair level axes at W5, the second-pair profile axis
+at W5, the s38 hi (sum,256,S=32) wander replication on W5's hi
+runs (queue row 2), and any further named profile pair (queue
+row 3). Gates (real runs this tick): classify self-test 2649/0
+(byte-identical to the s56 pin); scoped GPU gate GREEN
+123/12162/0/0 twice (byte-identical to the s56 pin and each
+other); full run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff -- touches NO .cljk namespace),
+captures byte-identical to the s56 pins -- NO green full suite
+claimed; settle-bar evaluator 38/0 + ledger eval twice
+byte-identical -> VERDICT PENDING 1/4 unchanged (no runs, no
+ledger line, no day slot; next executable slot 2026-10-29); no
+derivation census (a freeze-only tick computes no statistics --
+named, not omitted); find docs/evidence/gpu -name '*.sh' -> 0.
+Rule 4 binds: nothing moves; accelerator-targets defaults remain
+provisional (`:measured? false`); no vendor optimization exists
+for Intel.
+
+Named candidate rows for later sessions (unchanged order):
+(first, now STARTED) the fifth-window measurement + T7 read in
+the 2026-10-29 UTC slot (NEW hardware); then the s38 hi
+(sum,256,S=32) wander replication (NEW hardware -- W5's hi runs);
+then any further named profile pair (other outer/inner rank pairs
+stay named candidate rows).
+
+Evidence: `docs/evidence/gpu/anv-b3w5xdayrep-20261029/`
+(protocol.txt is the frozen pre-registration -- written once,
+never rewritten; freeze-record-s57.txt is this tick's record --
+the W5 measurement session owns record.txt there; the gate
+captures are byte-identical to the s56 pins). The measurement
+half of the row is UNMEASURED until the 2026-10-29 UTC slot.
