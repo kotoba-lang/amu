@@ -1480,3 +1480,54 @@ frozen evaluator's verdict; derivation-census-s36.txt is the
 independent second parser (53 rows / 0 mismatched); record.txt is
 the finding) and `docs/evidence/gpu/settle-bar-ledger.txt` (the
 append-only ledger, one line appended -- hi block A, descriptive).
+
+## 2026-10-28 -- session 37 (JUN-59): the same-window joint probe (analysis; no new hardware)
+
+Session 36's named-not-hidden residual ("a same-window joint probe
+of the proxy AND the cross-arm axis (s35 and s36 probed different
+windows)") is taken on ONE observable axis: at session 36's single
+window (the same 12 adjacent (hi,tw) block-pairs, byte-identical
+binaries), probe BOTH axes plus the second arm's proxy axis on
+three frozen sub-statistics (block unit n=12, Spearman + two-sided
+permutation p, 100,000 trials, frozen seed 20261028 -- the
+s35-frozen algorithm UNCHANGED): (A) hi min-vs-host_ns, (B) tw
+min-vs-host_ns, (C) hi-vs-tw min. ANALYSIS slice over session 36's
+78 committed run logs -- NO hardware ran; pre-registered before the
+statistics were computed (protocol freeze stamp
+2026-10-28T03:06:03Z; joint letter (a) JOINT NO-COUPLE / (b) ANY
+COUPLE / (c) NOT EVALUABLE; a coupling reads CO-MOVE iff |rho| >=
+0.60 AND p <= 0.05; (C) doubles as an integrity anchor and
+reproduces s36's published rho -0.251762 / count 42,507 / p
+0.425076 EXACTLY). THE FINDING (DERIVED from s36's measured logs):
+T1 = (b) ANY COUPLE, named: (A) THE HI ARM'S PROXY AXIS IS THE ONE
+COUPLING -- rho = 0.774082, p = 0.004060 (count 405/100,001);
+(B) tw proxy rho 0.017575 / p 0.960310 NO-CO-MOVE; (C) cross-arm
+rho -0.251762 / p 0.425076 NO-CO-MOVE. Session 35's (b) DOES NOT
+REPLICATE at this window: the proxy-vs-wander coupling is NOT
+window-stable and NOT arm-stable across the two probed windows, so
+"the wander is not explained by the host-side proxy" binds at s34's
+window ONLY. NAMED, NOT HIDDEN: L2 observational only, NO causal
+mechanism (direction of coupling UNMEASURED); (A) reads over the hi
+arm's NARROW host_ns band at this window (307,113..311,051 = 1.3%
+spread, vs s34's 488,151..618,664 excursion window) -- a rank
+coupling on a near-flat proxy series whose physical meaning is
+UNRESOLVED; n=12 LOW POWER; L14 ~1s resolution; estimator noise vs
+an unmeasured arm-specific physical variable STAYS UNRESOLVED and
+threshold-artifact-vs-representation STAYS UNRESOLVED. Descriptive
+(DERIVED here): (D1) per-run-unit analogs read NO co-movement at
+the frozen letters (A1 rho 0.316427 p 0.058799; B1 rho 0.047843 p
+0.780062; L10 different unit); (D2) (B) without the s36-named tw
+block-E host excursion (465,709, cause UNMEASURED) stays
+NO-CO-MOVE (rho -0.164385, p 0.626894). The bar: NO reading -> NO
+ledger line, NO day-slot consumption -- VERDICT UNCHANGED PENDING
+1/4 (frozen evaluator, twice byte-identical; fixture pin 38/0; next
+executable day slot 2026-10-29). Rule 4 binds: nothing moves;
+accelerator-targets defaults remain provisional (`:measured?
+false`); no row moves and no vendor optimization exists for Intel.
+
+Evidence: `docs/evidence/gpu/anv-b3jointprobe-20261028/` (protocol.txt
+is the frozen pre-registration incl. the joint letters; publication-
+s37.txt is the derived read over s36's logs; bar-eval-s37.txt is the
+frozen evaluator's verdict; derivation-census-s37.txt is the
+independent second parser (51 rows / 0 mismatched); record.txt is
+the finding).
