@@ -65,21 +65,31 @@ def verify_abi(blob, expected_symbol):
     for offset in range(0, len(section_bytes(sym_index)), 24):
         name, info, other, shndx, value, size = struct.unpack_from("<IBBHQQ", section_bytes(sym_index), offset)
         symbols.append((string_at(symbol_strings, name), info, other, shndx, value, size))
-    probes = [item for item in symbols if item[0] == expected_symbol]
-    assert len(probes) == 1, f"requires exactly one {expected_symbol} symbol"
-    _, info, other, shndx, _, size = probes[0]
-    assert info == 0x12 and other == 0 and shndx == by_name[".text"] and size != 0, \
-        "export must be a default-visibility GLOBAL FUNC defined in .text"
+    # expected_symbol is one name, or several joined by commas (a multi-export
+    # object, JUN-556); each must be exactly one GLOBAL FUNC in .text.
+    expected_symbols = expected_symbol.split(",")
+    assert 1 <= len(expected_symbols) <= 8 and len(set(expected_symbols)) == len(expected_symbols), "export list"
+    for name in expected_symbols:
+        probes = [item for item in symbols if item[0] == name]
+        assert len(probes) == 1, f"requires exactly one {name} symbol"
+        _, info, other, shndx, _, size = probes[0]
+        assert info == 0x12 and other == 0 and shndx == by_name[".text"] and size != 0, \
+            "export must be a default-visibility GLOBAL FUNC defined in .text"
     assert not any(item[3] == 0 and item[0] for item in symbols), "undefined/imported symbols are forbidden"
     rela = sections[by_name[".rela.text"]]
-    assert rela[1] == 4 and rela[9] == 24 and rela[6] == sym_index and rela[7] == by_name[".text"] and rela[5] == 24, \
-        "requires exactly one .rela.text entry"
-    rel_offset, rel_info, addend = struct.unpack("<QQq", section_bytes(by_name[".rela.text"]))
-    symbol_index, relocation_type = rel_info >> 32, rel_info & 0xFFFFFFFF
-    assert symbol_index < len(symbols) and relocation_type == 2 and addend == -4, \
-        "relocation must be R_X86_64_PC32 with addend -4"
-    assert symbols[symbol_index][3] == by_name[".data"], "relocation target must be defined in .data"
-    assert rel_offset + 4 <= len(section_bytes(by_name[".text"])), "relocation offset exceeds .text"
+    count = len(expected_symbols)
+    assert rela[1] == 4 and rela[9] == 24 and rela[6] == sym_index and rela[7] == by_name[".text"] and rela[5] == 24 * count, \
+        "requires exactly one .rela.text entry per export"
+    context_symbols = set()
+    for entry in range(count):
+        rel_offset, rel_info, addend = struct.unpack_from("<QQq", section_bytes(by_name[".rela.text"]), entry * 24)
+        symbol_index, relocation_type = rel_info >> 32, rel_info & 0xFFFFFFFF
+        assert symbol_index < len(symbols) and relocation_type == 2 and addend == -4, \
+            "relocation must be R_X86_64_PC32 with addend -4"
+        assert symbols[symbol_index][3] == by_name[".data"], "relocation target must be defined in .data"
+        assert rel_offset + 4 <= len(section_bytes(by_name[".text"])), "relocation offset exceeds .text"
+        context_symbols.add(symbol_index)
+    assert len(context_symbols) == 1, "every relocation must name the same context symbol"
 
 
 def main(compiler, output, seccomp_if_available=False):
@@ -118,6 +128,9 @@ def main(compiler, output, seccomp_if_available=False):
                         "(defn kotoba_aiueos_loop [] :i64 (sum 10 0))\n", "kotoba_aiueos_loop"),
         "big-fuel": ("(ns kernel-big (:export [kotoba_aiueos_big]))\n(defn kotoba_aiueos_big [] :i64 7)\n",
                      "kotoba_aiueos_big"),
+        "two-exports": ("(ns kernel-two (:export [kotoba_aiueos_a kotoba_aiueos_b]))\n"
+                        "(defn kotoba_aiueos_a [] :i64 1)\n(defn kotoba_aiueos_b [x :i64] :i64 (+ x 2))\n",
+                        "kotoba_aiueos_a,kotoba_aiueos_b"),
     }
     rows = []
     for name, (source, symbol) in cases.items():
@@ -134,8 +147,8 @@ def main(compiler, output, seccomp_if_available=False):
     # both paths must stay ABI-identical.
     refusals = {
         "no-export": "(ns refused)\n(defn- helper [] :i64 1)\n",
-        "two-exports": "(ns refused (:export [kotoba_aiueos_a kotoba_aiueos_b]))\n"
-                       "(defn kotoba_aiueos_a [] :i64 1)\n(defn kotoba_aiueos_b [] :i64 2)\n",
+        "nine-exports": "(ns refused (:export [" + " ".join(f"kotoba_aiueos_{i}" for i in range(9)) + "]))\n"
+                       + "".join(f"(defn kotoba_aiueos_{i} [] :i64 {i})\n" for i in range(9)),
         "six-params": "(ns refused (:export [kotoba_aiueos_six]))\n"
                       "(defn kotoba_aiueos_six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (+ a b c d e f))\n",
         "float": "(ns refused (:export [kotoba_aiueos_f]))\n"
