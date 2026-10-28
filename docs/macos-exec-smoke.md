@@ -60,7 +60,10 @@ Code and receipts supersede the sentence above on two points. Read against
 
 Still open, and not claimed here: the Mac runtime is a diagnostic profile, not
 a qualified one (`arena-scope` segfaults under `fs2-cli-stdio-general`, exit
-139); the Mac root's status is `diagnostic-candidate`, and updating the pinned
+139: the generated code loads context ABI slots 224 and 232, the scope enter
+and leave routines of `docs/native-source-lock-and-scalar-scopes.md`, and calls
+them; the Mac wrapper installs neither, so the call lands on address 0, as the
+crash report shows. JUN-546); the Mac root's status is `diagnostic-candidate`, and updating the pinned
 descriptors still needs a hand-run staged bootstrap (JUN-545); the AIUEOS
 release bundle's own build is tracked separately; physical hardware and release
 qualification are separate gates.
