@@ -2025,3 +2025,55 @@ is the derived read over the 234 committed run logs of the three
 windows; derivation-census-s45.txt is the independent second
 parser (87 rows / 0 mismatched); bar-eval-s45.txt is the frozen
 evaluator's unchanged verdict; record.txt is the finding).
+
+## 2026-10-28 -- session 46 (JUN-59): the per-cell within-block spread repartition probe (analysis; all six probes PER-CELL-SPREAD-NOISE-CONSISTENT)
+
+Session 45's first-named candidate row -- "a PER-CELL SPREAD probe
+of the same three windows (per-cell within-run/within-block scale
+is untested)" -- taken on one observable axis: per (window, arm),
+does any ok cell's within-block sample spread (D = max - min of
+the block's 75 samples; the s35/s36-frozen block unit unchanged)
+wander across the 12 blocks beyond the within-window
+run-repartition null? Max-T over the 18 cells (the max taken
+inside each trial), 20,000 trials per probe, frozen probe order,
+exact integer arithmetic; letters pre-registered at freeze stamp
+2026-10-28T07:51:32Z before any statistic was computed.
+
+THE FINDING (DERIVED from the 234 committed run logs measured in
+sessions 36/38/39; ANALYSIS slice, no hardware): T1 = (a)
+PER-CELL-SPREAD-NOISE-CONSISTENT at the s39 window -- hi M_obs
+295 (max cell (min,256,S=default)), count 14,383/20,001, p
+0.719164; tw M_obs 360 (max cell (max,128,S=32)), count 13,881,
+p 0.694065 -- and the pre-registered replications agree:
+s36 (a) (hi 474, p 0.196340; tw 360, p 0.682666), s38 (a) (hi
+356, p 0.728164; tw 290, p 0.403480). All SIX probes read (a) --
+the first probe family in this campaign with no (b) anywhere:
+at these windows/powers no cell's within-block sample-scale
+wander exceeds run-exchangeable sampling noise, family-wise over
+the 18 cells. NAMED, NOT HIDDEN: (a) is not proof of noise (a
+within-window-uniform driver is invisible by construction); D is
+a tail-to-tail range, a scale surrogate -- IQR/MAD, spread LEVEL
+shifts uniform across blocks, and within-run (25-sample) scale
+are invisible to this construction (named candidate rows); the
+108 uncorrected marginal p values carry no letter (four probes
+carry cells with marginal p <= 0.05 -- within chance, nothing
+claimed); six probes / three windows are UNCORRECTED and LOW
+POWER (three windows in one day, one host); this letter and
+sessions 40-45's are DIFFERENT statistics over the SAME runs (NOT
+independent evidence); threshold-artifact-vs-representation
+STAYS UNRESOLVED. Integrity (DERIVED): 3/3 windows clean, C1 (a)
+at the s39 window (c2 FLOOR; c8 32,829 vs 32,915, 0.26%), 6/6
+block-min vectors reproduce EXACTLY, anchor row EXACT at all
+three windows. Rule 4 binds: nothing moves; accelerator-targets
+defaults remain provisional (`:measured? false`); no vendor
+optimization exists for Intel. The bar: NO reading -> NO ledger
+line (byte-identical to HEAD), VERDICT UNCHANGED PENDING 1/4 with
+s31 counted (frozen evaluator twice byte-identical; fixture pin
+38/0; next executable day slot 2026-10-29).
+
+Evidence: `docs/evidence/gpu/anv-b3percellspread-20261028/`
+(protocol.txt is the frozen pre-registration; publication-s46.txt
+is the derived read over the 234 committed run logs of the three
+windows; derivation-census-s46.txt is the independent second
+parser (126 rows / 0 mismatched); bar-eval-s46.txt is the frozen
+evaluator's unchanged verdict; record.txt is the finding).
