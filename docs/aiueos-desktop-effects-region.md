@@ -28,5 +28,7 @@ register access; using 32-bit writes is not an equivalent implementation.
 
 The source is a diagnostic candidate. Its Mac source fixed point and existing
 user-target controls, plus the exact GUI consumer's QEMU native audio/pixel
-observations, are recorded separately. No root descriptor, public compiler,
-CDCI role, Linux native qualification or release pin is promoted by this PR.
+observations, are recorded separately. Review rebuilt the Mac root and deterministic ARM/x86 public candidate images
+from this full source, keeping their descriptors and source pins consistent.
+CDCI role binaries are unchanged. Independent native Linux/controller CI and
+physical hardware/release qualification are separate gates.
