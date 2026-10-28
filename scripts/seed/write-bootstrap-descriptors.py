@@ -16,7 +16,13 @@ kept as is):
 * seed/bootstrap/aarch64-linux-static-root.json
     image, sourceUnity, producedBy.macFixedPointContainer.
 * native-product.json
-    image (the x86_64 full compiler).
+    image (the x86_64 full compiler), rootImage, sourceUnity, sourceModuleCount.
+    Not derived here, because the Mac receipts do not prove them: the native x86
+    compilerGenerations, sourceRevision (a git commit), qualification text.
+
+--install (with --write, final phase) also copies the verified artifacts to
+the paths the descriptors name: the signed Mac compiler and packager, the
+aarch64 root ELF and bin/amu (bin/kotoba and bin/kotoba-compiler are links).
 
 Two phases, because the cross gate and the descriptor-bound Mac gate refuse a
 source the descriptor does not carry yet:
@@ -137,6 +143,13 @@ def derive(mac_dir: Path, cross_dir: Path):
     del unsigned
 
     return {
+        "install": [
+            (mac_dir / f"F{fp}-signed.macho", "seed/bootstrap/aarch64-macos/amu-full-root.macho", compiler),
+            (mac_dir / "P1-signed.macho", "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
+             {"bytes": pk_size, "sha256": pk_digest}),
+            (cross_dir / "F-aarch64.elf", "seed/bootstrap/aarch64-linux-static-root.elf", arm),
+            (cross_dir / "F-x86_64.elf", "bin/amu", x86),
+        ],
         "root": {
             "compiler": compiler,
             "packager": {"bytes": pk_size, "sha256": pk_digest},
@@ -150,7 +163,9 @@ def derive(mac_dir: Path, cross_dir: Path):
             "sourceUnity": dict(cross["fullSource"]["unity"]),
             "macContainer": dict(cross["container"]),
         },
-        "product": {"image": x86},
+        "product": {"image": x86, "rootImage": arm,
+                    "sourceUnity": dict(cross["fullSource"]["unity"]),
+                    "sourceModuleCount": cross["fullSource"]["modules"]},
     }
 
 
@@ -176,6 +191,9 @@ def updated(old: dict, new: dict, which: str, phase: str = "final"):
         doc["producedBy"]["macFixedPointContainer"].update(new["macContainer"])
     else:
         doc["image"].update(new["image"])
+        doc["rootImage"].update(new["rootImage"])
+        doc["sourceUnity"].update(new["sourceUnity"])
+        doc["sourceModuleCount"] = new["sourceModuleCount"]
     return doc
 
 
@@ -195,6 +213,8 @@ def main(argv):
                     help="output of check-macos-cross-linux-candidates.py (final phase)")
     ap.add_argument("--phase", choices=("source", "final"), default="final")
     ap.add_argument("--repo", type=Path, default=ROOT, help="repository whose descriptors are read")
+    ap.add_argument("--install", action="store_true",
+                    help="with --write in the final phase, copy the verified artifacts to the paths the descriptors name")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="report differences (default)")
     mode.add_argument("--write", action="store_true", help="rewrite the descriptors")
@@ -214,6 +234,9 @@ def main(argv):
         print(f"REFUSED: {refusal}", file=sys.stderr)
         return 2
 
+    if args.install and not (args.write and args.phase == "final"):
+        print("REFUSED: --install needs --write and the final phase", file=sys.stderr)
+        return 2
     differs = 0
     for which, path in files.items():
         old = load(path)
@@ -224,6 +247,18 @@ def main(argv):
         differs += len(changes)
         if args.write and changes:
             path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if args.install:
+        for src, rel, expected in new["install"]:
+            digest, size = sha(src)
+            need(digest == expected["sha256"] and size == expected["bytes"], f"{src.name} changed before install")
+            dst = args.repo / rel
+            if dst.is_file() and sha(dst)[0] == digest:
+                continue
+            tmp = dst.with_name(dst.name + ".installing")
+            tmp.write_bytes(src.read_bytes())
+            tmp.chmod(0o755)
+            tmp.replace(dst)
+            print(f"installed {rel}")
     print("DESCRIPTORS_CURRENT" if differs == 0 else
           ("DESCRIPTORS_WRITTEN" if args.write else f"DESCRIPTORS_DIFFER {differs}"))
     return 0 if (differs == 0 or args.write) else 1

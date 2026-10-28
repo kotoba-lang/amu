@@ -10,7 +10,9 @@ native.py, check-macos-cross-linux-candidates.py) and runs, on copies:
 3. a descriptor with a wrong digest is reported as differing (exit 1), --write
    repairs it to the committed bytes, and a second --check is current;
 4. the source phase on the same receipt is current, an unknown cross-gate
-   status is refused, and the final phase without a cross build is refused.
+   status is refused, and the final phase without a cross build is refused;
+5. --install is refused without --write, installs nothing when the repository
+   already holds the verified bytes, and restores a corrupted binary.
 """
 
 import argparse
@@ -22,6 +24,9 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "scripts/seed/write-bootstrap-descriptors.py"
+BINARIES = ("seed/bootstrap/aarch64-macos/amu-full-root.macho",
+            "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
+            "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu")
 FILES = ("seed/bootstrap/aarch64-macos/root.json",
          "seed/bootstrap/aarch64-linux-static-root.json", "native-product.json")
 
@@ -106,6 +111,22 @@ def main(argv):
         receipt.write_text(receipt.read_text().replace("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "SOMETHING_ELSE"))
         r = run(args.mac_build, cross)
         expect("an unknown cross status is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
+
+    r = run(args.mac_build, args.cross_build, ROOT, "--install")
+    expect("--install without --write is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        for rel in FILES + BINARIES:
+            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / rel, repo / rel)
+        r = run(args.mac_build, args.cross_build, repo, "--write", "--install")
+        expect("--install leaves a current repository alone",
+               r.returncode == 0 and "installed" not in r.stdout and "DESCRIPTORS_CURRENT" in r.stdout, r.stdout + r.stderr)
+        flip(repo / "bin/amu", 1000)
+        r = run(args.mac_build, args.cross_build, repo, "--write", "--install")
+        expect("--install restores a corrupted binary",
+               r.returncode == 0 and "installed bin/amu" in r.stdout
+               and (repo / "bin/amu").read_bytes() == (ROOT / "bin/amu").read_bytes(), r.stdout + r.stderr)
 
     print("PASS_BOOTSTRAP_DESCRIPTOR_WRITER" if not failures else f"FAILED {failures}")
     return 0 if not failures else 1
