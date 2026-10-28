@@ -89,8 +89,13 @@ def main(product, out, complete):
     run("refuse-worker", [aliases[2], "worker"], 2, diagnostic="E1")
     assert not (out / "refused.kseed").exists()
     lock_boundary = check_source_locks(aliases, out / "source-lock-boundary")
+    # The descriptor's sourceRevision is a claim, not a verified binding to
+    # this source unity. Its writer cannot derive a Git commit from the native
+    # build receipts. Keep the old key as null until that binding is proven.
     report = dict(status="PASS_PUBLIC_NATIVE_PRODUCT", image=descriptor["image"],
-                  sourceRevision=descriptor["sourceRevision"], aliases=len(aliases),
+                  sourceRevision=None,
+                  publicDescriptorSourceRevision=descriptor["sourceRevision"],
+                  aliases=len(aliases),
                   nativeResult=42, remainingFuel=1000000, calls=calls,
                   completeReceiptSHA256=sha(proof_path),
                   currentSourceUnity=proof["sourceUnity"],
