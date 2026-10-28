@@ -96,6 +96,17 @@
         (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t))))
 (defn- xa-un [M :vector-i64 op :i64 t :i64] :vector-i64
   (cond
+    (and (>= op UOP-F64-TO-I64) (<= op UOP-F32-TO-I64))
+    (let [g (-> M (xa-lt 9 t) (xa-fp-begin))
+          h (case op
+              UOP-F64-TO-I64 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-fcvtzs 1 9 0)))
+              UOP-F32-TO-I64 (-> g (xa-w (enc-fmov-to-fp 0 0 9)) (xa-w (enc-fcvtzs 0 9 0)))
+              UOP-I64-TO-F64 (-> g (xa-w (enc-scvtf 1 0 9)) (xa-w (enc-fmov-from-fp 1 9 0)))
+              UOP-I64-TO-F32 (-> g (xa-w (enc-scvtf 0 0 9)) (xa-w (enc-fmov-from-fp 0 9 0)) (xa-w (enc-sxtw 9 9)))
+              UOP-F64-TO-F32 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-fcvt 1 0 0)) (xa-w (enc-fmov-from-fp 0 9 0)) (xa-w (enc-sxtw 9 9)))
+              UOP-F32-TO-F64 (-> g (xa-w (enc-fmov-to-fp 0 0 9)) (xa-w (enc-fcvt 0 0 0)) (xa-w (enc-fmov-from-fp 1 9 0)))
+              (xg-err g 7101 op))]
+      (-> h (xa-fp-end) (xa-st 9 t)))
     (or (= op UOP-F64-SQRT) (= op UOP-F32-SQRT))
     (let [sz (if (= op UOP-F64-SQRT) 1 0)]
       (cond-> (-> M (xa-lt 9 t) (xa-fp-begin) (xa-w (enc-fmov-to-fp sz 0 9))
@@ -263,12 +274,13 @@
         h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
 ;; Runtime-profile admission is shared with x86, whose emitter supports float.
-;; Float comparisons, basic arithmetic, sqrt and sign operations are implemented here.
+;; Float comparisons, conversions, basic arithmetic, sqrt and sign operations are implemented here.
 ;; Reject all other float instructions before emitting code.
 (defn- xa-float-un? [op :i64 sub :i64] :bool
   (and (= op OP-UN) (or (= sub UOP-F64-NEG) (= sub UOP-F64-ABS)
                          (= sub UOP-F64-SQRT) (= sub UOP-F32-NEG)
-                         (= sub UOP-F32-ABS) (= sub UOP-F32-SQRT))))
+                         (= sub UOP-F32-ABS) (= sub UOP-F32-SQRT)
+                         (and (>= sub UOP-F64-TO-I64) (<= sub UOP-F32-TO-I64)))))
 (defn- xa-check-float [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) sub (xg-si M i IF-A)]
