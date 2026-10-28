@@ -217,7 +217,8 @@ Awai Network / Itonami dapps はその基盤を使う応用・分散経済圏で
 
 ## If a step fails
 
-- Wrong host: stop; use a qualified native Linux x86_64 environment.
+- Wrong host: stop; this preview targets native Linux x86_64 only. A matching
+  host is not by itself a qualified release or independent reproduction.
 - Digest/source-unity mismatch: stop and retain the exact revision and hashes.
   Do not disable the pin check or silently use a different image.
 - Compiler diagnostic: retain the named `E...` and the command. Unsupported
