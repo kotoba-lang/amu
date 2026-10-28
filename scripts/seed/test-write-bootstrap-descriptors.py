@@ -8,7 +8,9 @@ native.py, check-macos-cross-linux-candidates.py) and runs, on copies:
 2. three refusals: one digit of the mac receipt, one byte of the x86 compiler,
    one byte of the signed fixed-point compiler;
 3. a descriptor with a wrong digest is reported as differing (exit 1), --write
-   repairs it to the committed bytes, and a second --check is current.
+   repairs it to the committed bytes, and a second --check is current;
+4. the source phase on the same receipt is current, an unknown cross-gate
+   status is refused, and the final phase without a cross build is refused.
 """
 
 import argparse
@@ -89,6 +91,21 @@ def main(argv):
         expect("--write repairs it", r.returncode == 0 and product.read_text() == original, r.stdout + r.stderr)
         r = run(args.mac_build, args.cross_build, repo)
         expect("a second check is current", r.returncode == 0 and "DESCRIPTORS_CURRENT" in r.stdout, r.stdout)
+
+    r = subprocess.run([sys.executable, "-I", str(WRITER), "--phase", "source",
+                        "--mac-build", str(args.mac_build)], capture_output=True, text=True)
+    expect("the source phase is current on the same receipt", r.returncode == 0 and "DESCRIPTORS_CURRENT" in r.stdout,
+           r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, "-I", str(WRITER), "--mac-build", str(args.mac_build)],
+                       capture_output=True, text=True)
+    expect("the final phase needs a cross build", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
+    with tempfile.TemporaryDirectory() as tmp:
+        cross = Path(tmp) / "cross"
+        shutil.copytree(args.cross_build, cross)
+        receipt = cross / "cross.json"
+        receipt.write_text(receipt.read_text().replace("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "SOMETHING_ELSE"))
+        r = run(args.mac_build, cross)
+        expect("an unknown cross status is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
 
     print("PASS_BOOTSTRAP_DESCRIPTOR_WRITER" if not failures else f"FAILED {failures}")
     return 0 if not failures else 1
