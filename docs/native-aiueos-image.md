@@ -137,3 +137,17 @@ the callee is the linker's business and is unverified by this route, and
 undefined symbols, so no extern-declaring object can enter the image until that
 verifier and its ledger follow. An extern's arguments are not checked as
 memory windows (pointer arguments are the open E7106 design in ADR 0380).
+
+## Data cells (JUN-556 D3, ADR 0380)
+
+Private functions `cell-load-<k> []` and `cell-store-<k> [v]` (k below 64, canonical decimal, placeholder body
+`0`) name an 8-byte cell at `.data` offset `80 + 8k`, after the private context. A load compiles to
+`mov rax,[rip+disp]` and a store to `mov [rip+disp],rax`; each access has an `R_X86_64_PC32` relocation against the
+context symbol with addend `80 + 8k - 4` and a zero displacement. `.data` is `80 + 8 * (highest named cell + 1)`
+bytes of zeros; sections and symbols are unchanged, and a source without a cell compiles to the bytes it always
+did. A malformed name, a wrong parameter count, a body other than `0`, or a cell on the image route is refused
+(E7102). `scripts/seed/check-aiueos-object-cells.py` reads the object back with an independent ELF parser.
+
+Not shown: no x86 machine ran these accesses, and `verify-kotoba-kernel-object.py` in the kotoba repository does not
+accept cell relocations or a `.data` larger than the 80-byte context yet, so an object with cells cannot enter the image
+until it does.
