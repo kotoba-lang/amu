@@ -25,8 +25,9 @@ unrelated fields are preserved):
 
 --install (with --write) also copies the verified artifacts to
 the paths the descriptors name: the signed Mac compiler and packager, the
-aarch64 root ELF and bin/amu-linux-x86_64. The Mac bin/amu symlink follows
-the installed Mac root; Linux aliases follow bin/amu-linux-x86_64.
+aarch64 root ELF and bin/amu-linux-x86_64. The public Mac CLI is rebuilt and
+repinned separately; identity/public gates refuse stale root/packager bindings.
+Linux aliases follow bin/amu-linux-x86_64.
 
 Two phases, because the cross gate and the descriptor-bound Mac gate refuse a
 source the descriptor does not carry yet:

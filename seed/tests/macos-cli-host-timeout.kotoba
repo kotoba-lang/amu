@@ -1,0 +1,6 @@
+(ns seed.macos-cli-host-timeout (:export [main]))
+(defn main [] :i64
+  (let [root (hc-arg 0) child (hc-arg 1)
+        r (hc-spawn 0 root (string-concat root "/timeout.stdout") child 1 (hc-field "child"))]
+    (if (and (hc-ok? r) (= (vector-at r 1) 124) (= (vector-at r 2) 14))
+      (hc-out "PASS_NATIVE_CHILD_DEADLINE\n") 1)))
