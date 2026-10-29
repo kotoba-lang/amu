@@ -143,7 +143,9 @@ def main(compiler, out):
     # Observation (pinned, not a claim of equivalence): a closure keeps its own identity; the hand-inlined body is the leaf.
     inlined = cids("closure-inlined", [fn("f", ["n"], "(+ n 1)")])
     assert inlined["f"][0] == golden("leaf") and inlined["f"][0] != clo["f"][0]
-    report["observations"] = dict(closureLetFn=clo["f"][0], handInlined=inlined["f"][0], equal=False)
+    report["observations"] = dict(closureLetFn=clo["f"][0], handInlined=inlined["f"][0], equal=False,
+                                  closureReferenceParity=False,
+                                  note="native-only closure identity; the reference lambda-lifts and leaks the module lambda counter; no parity claimed")
     # A captured outer local is a binder reference: its name does not matter, which binder it is does.
     cap = cids("closure-capture", [fn("f", ["n"], "(let [k 5 g (fn [x] (+ x k))] (g n))")])
     assert cap["f"][0] == golden("closure-capture")

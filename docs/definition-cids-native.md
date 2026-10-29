@@ -52,12 +52,18 @@ counter as `let` binders (before the body), the scope is restored afterwards. A 
 CID. Renaming the lambda parameter, the let name or the definition does not move the CID; changing the body, or which
 binder is captured, does. No core module (20/21/30) and not 05-source-loops changed (the loop/closure guard lives in the bridge): the frontend already checked closures.
 
-This is **new native identity, not a reproduction of a reference format**: the reference alpha-normalizer
-(osaho `kotoba.kir.alpha-normalization`, amu `definition_identity.cljk`) has no `fn` binder (five binders: params, `let`,
-`result-match-of`, `variant-match`, `option-match`), and the reference's own closure KIR (module lambda IDs) could not be
-observed here. Parity with the reference route is open (JUN-587). The reference portable test states that
-`(app (lam [x] (+ x 1)) n)` and `(let [g (fn [x] (+ x 1))] (g n))` mint equal CIDs; natively `app`/`lam`/`ref` are still
-refused (item A1), so that pair cannot be compared yet.
+This is **a candidate native-only identity, NOT compatible with the reference, and no parity is claimed** (not with the
+reference route, not with the 2026-09-08 CIDs, not for JUN-587 corpus pairs). Measured 2026-10-29 on the JVM reference
+(local measurement only; kotoba-sema a3303527, osaho e20c9aff): the reference LAMBDA-LIFTS a closure
+(`run = (let [g (pair 1 0)] (__kotoba_invoke$arity1 g n))` plus `__kotoba_lambda_1_arity1` and a module-wide dispatcher) and the
+module lambda counter leaks into the CID: the identical `run` source gets a different CID when another closure precedes it
+in the module. It is stable under renaming and `(app (lam ..) n)` equals the `let`/`fn` spelling there. The native CID is
+position-independent and differs from the reference's. The reference alpha-normalizer (osaho
+`kotoba.kir.alpha-normalization`, amu `definition_identity.cljk`) has no `fn` binder either (five binders: params, `let`,
+`result-match-of`, `variant-match`, `option-match`). Which closure identity is right (lambda-lifted reference vs a
+position-independent form) is an owner decision that must precede any closure parity claim. Natively `app`/`lam`/`ref` are
+still refused (item A1), so that pair cannot be compared. Data: JUN-588 comments; measurement files
+`jun588-b1-reference-measurement*` in the shared session notes.
 
 Observation (pinned in the gate, not an equivalence claim): `(let [g (fn [x] (+ x 1))] (g n))` and the hand-inlined
 `(+ n 1)` get DIFFERENT CIDs natively (`bafyreighx...` vs `bafyreids3...`); a closure keeps its own identity.
