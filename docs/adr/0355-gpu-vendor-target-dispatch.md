@@ -4423,3 +4423,51 @@ counted-day slot (its own freeze), and the tail-side
 vocabulary (named limitation). Evidence:
 docs/evidence/gpu/anv-b3w7daybar-20261031/ (protocol.txt,
 freeze-record-s85.txt).
+
+## Dated note (2026-10-29, JUN-59 session 86: the tail-side
+## half-pair vocabulary)
+
+The s81 DL freeze's named limitation 4(b) ("probing which tail
+moves needs a SEPARATE future vocabulary (asymmetric pairs)"),
+queued at s85 carry-forward (e), taken to its DESIGN half; NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO ledger
+line, NO statistic of any run log. vocabulary.txt (freeze
+stamp 2026-10-29T07:22:17Z; pre-freeze freshness greps
+07:18:55Z-07:19:25Z: 24 tokens x 0 hits -- pair forms, name
+tokens TS-L4..TS-R32, pair tokens; bare rank tokens NOT
+claimed fresh, named not hidden) freezes the TAIL-SIDE
+HALF-PAIRS: per k in the DL k set {4,8,16,32} (named ONLY
+from s81 -- no new k selection), TS-Lk = (x_(38-k), x_(38))
+and TS-Rk = (x_(38), x_(38+k)); span control (the s81 4(a)
+conflation objection answered by construction), mirror
+closure (r <-> 76-r), DL decomposition (HL_k + HR_k = D_k
+exactly), disjoint from all 20 named pairs, closed at eight
+pairs. The selection rule for future rows is frozen (s81
+rule 3 adopted). NAMED, NOT HIDDEN: NO direction is
+pre-registered (the s61/s62/s63 asymmetry is quote-only
+motivation); the narrow-span caveat (s81 4(c)) extends to
+half-pairs (TS-L4/TS-R4 and TS-L8/TS-R8 in the noise band;
+informative families k=16/32); estimators/contrast stay
+per-row. Standing gates (real runs == the s85 pins):
+tailpair-vocab-s86.py run twice byte-identical (3,188 bytes,
+sha256 7c9d9892... both) + self-test 271/0; classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff
+-- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice ==
+pins -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` ->
+0. The bar: NO reading -> NO ledger line, NO day-slot
+consumption (settle-bar-ledger.txt == HEAD). Rule 4 binds:
+nothing moves; the ADR-0358 row states are unchanged; NO
+vendor optimization exists for Intel. Carry-forward to
+session 87: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half
+and W7's measurement half --, then the T18 analysis half,
+the W7 measurement half (behind W6's ledger line), any
+further counted-day slot (its own freeze), any tail-side row
+(this vocabulary is the route; a NEW pre-registration).
+Evidence: docs/evidence/gpu/anv-b3tailvocab-20261029/
+(vocabulary.txt, tailpair-vocab-s86.py/.txt,
+tailvocab-s86-selftest.txt/.err, freeze-record-s86.txt, the
+s86 gate captures).
