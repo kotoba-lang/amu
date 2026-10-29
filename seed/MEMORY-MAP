@@ -124,10 +124,13 @@
 ;; TOK growth (2026-10-23): full29 x86 generation after the kernel helper guard reached E101 region1
 ;; at 655360 tokens. The static profile raises TOK by131072 entries and shifts every later region by524288 words.
 ;; MM-WORDS29491200 stays below2^25; table widths, normal core, heap size, grants, results and fuel remain unchanged.
+;; SIR growth (2026-10-29, JUN-556 D1): the resource-producer unity (seed/FULL-MANIFEST plus the identity tests) filled the
+;; SIR table (E3001) with 146 trivial functions to spare. The static profile raises SIR by 98304 records (+393216 words);
+;; every later base, MM-HEAP-END and MM-WORDS shift equally (heap size unchanged, MM-WORDS 31457280 < 2^25).
 ;; The complete44 public static build also appends its native runtime. It
 ;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
 ;; the normal adopted18 source, widths and heap size remain unchanged.
-;; These six rows are consumed by seed/gen-static-ns.kotoba. That native
+;; These seven rows are consumed by seed/gen-static-ns.kotoba. That native
 ;; generator derives every downstream base and checks the2^25 vector bound.
 ;; BEGIN STATIC OVERRIDES
 ;; [:s MM-TOK-CAP 786432]
@@ -136,6 +139,7 @@
 ;; [:s MM-FIX-CAP 262144]
 ;; [:s MM-LITB-CAP 1048576]
 ;; [:s MM-OUT-CAP 12582912]
+;; [:s MM-SIR-CAP 589824]
 ;; END STATIC OVERRIDES
 ;; Historical LITB growth (2026-10-23, JUN-353): the combined compiler (seed/FULL-MANIFEST) reached 523 KiB of literal bytes and
 ;; vector-literal tables (lowering adds the tables to the same region); MM-LITB-CAP 1048576 (+524288), every later base,
