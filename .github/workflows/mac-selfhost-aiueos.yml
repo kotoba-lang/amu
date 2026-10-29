@@ -66,6 +66,12 @@ jobs:
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-kernel-v3"
+      - name: Check the boot packager's layout admission rule and its controls
+        run: |
+          python3 scripts/seed/check-aiueos-layout-rule-macos-native.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
+            --output "$RUNNER_TEMP/mac-layout-rule"
       - name: Verify the selected 18-module core adoption on Mac
         run: |
           python3 scripts/seed/check-macos-core-adoption.py \
