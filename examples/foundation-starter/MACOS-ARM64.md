@@ -49,8 +49,8 @@ The ordinary Mac host accepts a single canonical `.kotoba` source up to1MiB.
 Compile/run require exactly one exported `main [] :i64`. Its complete signed
 integer result is printed followed by a newline; it is not truncated to an
 8-bit process exit code. User stdout/stderr and CLI arguments are available.
-Guests receive no filesystem/process grants, no inherited descriptors >=3,
-and a5-second execution deadline. Native compiler helpers use a private
+Guests receive no filesystem/process grants. `run` closes inherited descriptors
+>=3 and applies a5-second execution deadline to its child. Native compiler helpers use a private
 source snapshot and exact KSL1 lock, managed inside the CLI.
 
 Native programs embed their source in the signed Mach-O. `run PROGRAM`

@@ -44,8 +44,8 @@ This public Mac host chooses its native target and accepts a single canonical
 Kotoba source (up to 1 MiB), with one exported `main [] :i64` for compile/run.
 Native programs include their source. `run PROGRAM` recompiles that source,
 checks the complete generated image and runs the regenerated private image.
-Guest filesystem/process capabilities are denied; execution is limited to
-5 seconds. Arguments follow `--`. Full Mac runtime and independent-user release
+Guest filesystem/process capabilities are denied; `run` closes inherited
+descriptors >=3 and limits child execution to5 seconds. Arguments follow `--`. Full Mac runtime and independent-user release
 qualification remain separate.
 
 The full bootstrap compiler remains available at
