@@ -584,9 +584,7 @@
   (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
     (and (>= argument 0)
          (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
-           (and (drv-pj-lock-digest? text) (ksl-valid? text) (string=? (ksl-entry text) path)
-                (= (ksl-root-count text) 0) (= (ksl-file-count text) 1)
-                (string=? (ksl-hash text path) (sh-text source)))))))
+           (and (drv-pj-lock-digest? text) (ksl-single-source? text path source))))))
 ;; A pin alone must not change a plain unity into a project/interface build.
 ;; Verify the exact cached source, then use the same frontend/lowering path.
 ;; Imported modules and every declared source root retain the project route.

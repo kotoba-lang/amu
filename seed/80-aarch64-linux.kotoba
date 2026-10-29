@@ -241,11 +241,14 @@
 ;; compile SRC --target aarch64-linux --output NEW --format packed --payload KSEED
 ;;   (SRC is the runner source; KSEED a container whose `main` takes no arguments)
 (defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64 profile :i64] :i64
-  (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+  (let [original (drv-read src)]
+    (if (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (not (drv-single-lock? original src)))
+      (drv-fail0 E-PROJ-UNPINNED)
+  (let [guest (string-concat original (ck-r6b-lib original))
         ;; --format launcher (mode 4): the runtime ends with xa-rt-launch, not the standard start
         rt (string-concat (xa-rt-core-profile profile) (if (= mode 4) (xa-rt-launch) (xa-rt-start)))
         s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode V cs cl off)]
-    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out profile))))
+    (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out profile))))))
 (defn- xa-packed [src :string out :string kseed :string profile :i64] :i64
   (let [V (io-read-bytes kseed) H (out-load-hdr (mem-new) V (out-v-len V) "main") e (vector-at H MM-ERR)]
     (cond (= e 5002) (drv-fail0 E-NOSYM)
@@ -256,11 +259,14 @@
 (defn- xa-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
         mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)
-        profile (xs-runtime-profile (if (= mode 2) 10 8))]
+        locked (= (drv-pj-has 1 (io-argc) "--source-lock") 1)
+        profile (if locked (xs-locked-profile 8 0) (xs-runtime-profile (if (= mode 2) 10 8)))]
     (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
               (and (= mode 2) (not (string=? (io-arg 8) "--payload")))
               (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
             (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher [--payload KSEED]\n")] 2)
+          (and locked (or (not= mode 0) (not= (drv-pj-has 1 (io-argc) "--source-lock-sha256") 1)))
+            (drv-fail0 E-PROJ-UNPINNED)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9) profile))
           :else (xa-compile src out mode (vector-alloc 1) 0 0 0 profile))))

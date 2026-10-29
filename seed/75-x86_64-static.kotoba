@@ -206,14 +206,34 @@
 (defn- xs-profile-prelude [profile :i64] :string
   (string-concat "(def KXRT-VECTORS "
     (string-concat (mem-u2dec (if (= profile 1) 67108864 4194304)) ")\n")))
+;; The locked single-source route has no source roots. The exact bytes read
+;; below are validated once and then passed to the existing static frontend.
+(defn- xs-locked-profile [index :i64 profile :i64] :i64
+  (if (>= index (io-argc)) profile
+    (if (>= (+ index 1) (io-argc)) -1
+      (let [flag (io-arg index) value (io-arg (+ index 1))]
+        (cond (or (string=? flag "--source-lock") (string=? flag "--source-lock-sha256"))
+                (xs-locked-profile (+ index 2) profile)
+              (string=? flag "--runtime-profile")
+                (cond (string=? value "standard-v1") (xs-locked-profile (+ index 2) 0)
+                      (string=? value "large-vectors-v1") (xs-locked-profile (+ index 2) 1)
+                      :else -1)
+              :else -1)))))
 (defn- xs-command [mode :i64] :i64
-  (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8)]
+  (let [src (io-arg 1) out (io-arg 5)
+        locked (= (drv-pj-has 1 (io-argc) "--source-lock") 1)
+        profile (if locked (xs-locked-profile 8 0) (xs-runtime-profile 8))]
     (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (drv-fail0 E-USAGE)
+          (and locked (or (not= mode 0) (= (drv-pj-has 1 (io-argc) "--source-path") 1)
+                          (not= (drv-pj-has 1 (io-argc) "--source-lock-sha256") 1)))
+            (drv-fail0 E-PROJ-UNPINNED)
           (= (io-exists src) 0) (drv-fail0 E-READ)
-          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+          :else (let [original (drv-read src)]
+             (if (and locked (not (drv-single-lock? original src))) (drv-fail0 E-PROJ-UNPINNED)
+             (let [guest (string-concat original (ck-r6b-lib original))
                       rt (string-concat (xs-rt-core-profile profile)
                                         (cond (= mode 4) (xs-rt-launch) (= mode 5) (xs-rt-b2) :else (xs-rt-start)))
                       s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) mode)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
-                        :else (xs-write-profile m out profile))))))
+                        :else (xs-write-profile m out profile))))))))

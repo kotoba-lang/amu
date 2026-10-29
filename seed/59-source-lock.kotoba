@@ -169,3 +169,10 @@
                  :else false)))))))
 (defn- ksl-valid? [text :string] :bool
   (if (ksl-mapped? text) (ksl-valid-v2? text) (ksl-valid-v1? text)))
+
+;; Validate the exact source value that the caller will compile. This does
+;; not authenticate the lock itself; the caller must verify its own digest.
+(defn- ksl-single-source? [text :string path :string source :string] :bool
+  (and (ksl-valid? text) (string=? (ksl-entry text) path)
+       (= (ksl-root-count text) 0) (= (ksl-file-count text) 1)
+       (string=? (ksl-hash text path) (sh-text source))))
