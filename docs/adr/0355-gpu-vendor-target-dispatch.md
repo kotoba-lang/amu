@@ -4951,3 +4951,61 @@ docs/evidence/gpu/anv-b3w6runprego-20261029/ (run-window-prego.py +
 runwindow-prego-selftest.txt/.err + compat-prego-validation.txt/.err +
 runwindow-prego-plan.txt/.err + record.txt + the s95 gate captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 96: the W6 pre-GO custody
+## checker pre-build)
+The W6 measurement row's CUSTODY-PATH IMPLEMENTATION preparation
+half (the s69/s90/s95 pre-build precedent applied to the s80
+protocol section-2 CUSTODY surface and the settle-bar.txt section-2
+FLAGGED criteria's custody/build half; NO hardware runs, NO builds,
+NO compiles, NO GO stamp, NO host writes, NO network connections,
+NO day-slot consumption, NO ledger line). The measurement half
+itself REMAINS day-slot-gated (first session at/after
+2026-10-30T00:00:00Z; this tick runs 2026-10-29T13:4xZ-14:0xZ,
+~10.0h before the slot opens) -- STARTED, NOT FINISHED.
+custody-prego.py (pure stdlib, NO RNG, no clock; submits nothing to
+any GPU) checks the eight named custody surfaces of a window's
+record text (host-verify MATCH lines + chain digests, manifest cell
+chain 873025d6..., corpus census 16/16 both committed shapes, GO
+ordering vs builds/runs, the four pinned compiles at the frozen knob
+sets, the s51-frozen build pins BYTE-IDENTICAL, the 78-run window,
+VERIFY 1872/mismatch total) and derives the frozen FLAGGED criteria
+(2)(3)(4) fail-closed in frozen precedence ((1) C1 is the s90
+reading pair's surface -- named scope cut); any other failing row
+refuses with REFUSED-RECORD-INCONSISTENT, never a qualifying line.
+VERIFIED (real tool output): --compat over the three committed 78-run
+windows (s36/s51/W5) TOTAL 81 rows 0 mismatched, flags none none
+none, twice byte-identical (7,716 bytes, sha256 54bd8175...);
+--self-test TOTAL 42/0 twice byte-identical (2,404 bytes, sha256
+1f757c19...; MOCK fixtures, never measurements). NAMED, NOT HIDDEN:
+the source draft (this session's earlier interrupted segment,
+13:39Z) had never run -- first execution found three defects, fixed
+and named in the record (chain parameter computed but unused
+[engine]; fixture row count 28 vs the engine's 27 [fixture]; the
+loader assumed per-window artifact bytes where W5 committed none --
+now a named canonical-copy fallback with artifact-provenance lines,
+manifest absence still a hard error). ADOPTION: the W6 session
+adopts this file as its custody checker (custody-s<NN>.py), re-runs
+--compat in its own record and checks its fresh records BEFORE the
+ledger line; W7 the same (surface window-generic per s80/s85). The
+execution path (ssh, staging, GO) stays session-owned as at s51/s73.
+Standing gates == the s88 pins: classify 2649/0 (17,925 bytes);
+scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes); FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh'
+-> 0; settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO
+ledger line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization exists
+for Intel. Carry-forward to session 97: the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (s92 pre-build + s84 freeze), the T20
+analysis half (s93 pre-build + s88 freeze), the W7 measurement half
+(behind W6's ledger line), any further counted-day slot (its own
+freeze), and a cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6custodyrego-20261029/ (custody-prego.py +
+custody-prego-selftest-run1/2.txt/.err + custody-prego-compat-run1/2
+.txt/.err + record.txt + the s96 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
