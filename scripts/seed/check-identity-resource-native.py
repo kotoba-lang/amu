@@ -60,7 +60,10 @@ def main(compiler, out):
     assert pin(compiler) == product['rootImage' if machine == 'aarch64' else 'image']
     out.mkdir(parents=True, exist_ok=False)
     (out / 'observer.py').write_bytes(Path(__file__).read_bytes())
-    paths = [p for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines() if p and not p.startswith('#')][:-1] + EXTRA
+    # Include the complete production compiler closure plus identity fixtures;
+    # the static SIR capacity must cover their combined compilation.
+    paths = [p for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines()
+             if p and not p.startswith('#')][:-1] + EXTRA
     parts = []
     for p in paths:
         text = (ROOT / p).read_text()

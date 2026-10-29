@@ -9,7 +9,8 @@ SHARDS = {
              'kototama-receipt', 'b2-image', 'kototama-i64', 'b2-libc',
              'fs2-x86', 'aiueos-boot', 'clock-entropy', 'aiueos-image'),
     'extensions': ('label-proof-index', 'runtime-profile', 'ccf-filter',
-                   'kernel-memory', 'flock-vector'),
+                   'kernel-memory', 'flock-vector', 'kototama-cache-abi',
+                   'kototama-cache-host'),
 }
 
 def select(plan, shard):
@@ -74,9 +75,9 @@ def verify(manifest, root, workflow_result):
             if row['exit']!=0 or row['argv']!=argv:
                 raise ValueError('refused native gate or changed original argv')
         seen.extend(names)
-    if len(seen)!=17 or len(set(seen))!=17:
+    if len(seen)!=19 or len(set(seen))!=19:
         raise ValueError('incomplete native x86 qualification')
-    return dict(schema='amu.native-gate-partition-review.v1',status='PASS',executedGates=17,
+    return dict(schema='amu.native-gate-partition-review.v1',status='PASS',executedGates=19,
                 originalArgvPreserved=True,capacityPerRunner=2,nativeVerdictAuthority=False,
                 qualificationReplacement=False)
 
