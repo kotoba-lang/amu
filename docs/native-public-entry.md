@@ -1,12 +1,44 @@
 # Current Amu selfhost native entries
 
-`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve directly to the
-selfhost-built macOS ARM64 Mach-O in
-`seed/bootstrap/aarch64-macos/amu-full-root.macho`. Its source and image
-pins are in `seed/bootstrap/aarch64-macos/root.json`. There is no launcher
-or platform fallback. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md)
-for explicit FD3 scope, check, compile, native packaging and execution.
-The bounded first run does not qualify the complete Mac runtime or release.
+`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the
+Amu-built native Mac ARM64 host CLI at
+`seed/bootstrap/aarch64-macos/amu-cli.macho`, pinned by `cli.json` in that
+directory. It implements ordinary `check`, `compile` and `run`, selects the
+Mac target explicitly, and manages a private source snapshot, KSL1 lock,
+native compilation, packaging and platform signing. The user supplies no
+FD3. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md).
+
+The CLI contains the exact adopted lexer/reader/namer/checker to validate
+one exported `main [] :i64`; it delegates compilation to the hash-pinned full
+root. The low-level compiler at `amu-full-root.macho` and packager remain
+pinned by `root.json`, retain their FD3-scoped bootstrap interfaces, and are
+not substituted by another compiler or hosted launcher. Their native fixed
+points and the public CLI's fresh native payload reproduction are checked
+separately. A changed root, packager or CLI source invalidates the public
+CLI gate until it is rebuilt and repinned.
+
+The native CLI host has filesystem/process authority for its explicit local
+operations. Generated programs have only CLI/stdout/stderr grants. Children
+receive a minimal environment and no inherited FD >=3; compiler helpers alone
+receive the private work directory as FD3. An exec-preserved kernel timer
+bounds guests to5s, compiler helpers to120s and platform signing to30s.
+The original compiler/runtime resource limits and Linux gates remain intact.
+
+`compile` includes the exact source in an LC_NOTE-named region of the signed
+Mach-O. `run PROGRAM` treats supplied bytes as untrusted data: it recompiles
+the embedded source with the pinned compiler, checks the entire signed image
+against the input, and executes the regenerated private image. It never
+executes an arbitrary supplied program. Program output includes the complete
+signed i64 result followed by a newline; successful return exits0.
+Source is limited to1MiB, raw code to4MiB. Symlink/nonregular input, unsupported
+flags, incompatible main ABI and existing output paths refuse. Import/project
+CLI parity, full Darwin runtime and independent-user release remain open.
+
+Native Darwin ABI provenance: Apple's [syscall declarations](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/syscalls.master),
+[process information implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c),
+and [ARM64 fork return registers](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/arm64/status.c).
+`seed/macos-fs2-runtime-packager.kotoba` emits the adapter using the existing
+native Kotoba packager, with no assembler, C compiler or loader dependency.
 
 The unchanged static Linux x86_64 ELF is `bin/amu-linux-x86_64`, with
 `bin/kotoba-linux-x86_64` and `bin/kotoba-compiler-linux-x86_64` aliases.
@@ -16,7 +48,7 @@ Linux ARM root is pinned by `seed/bootstrap/aarch64-linux-static-root.json`.
 
 The complete source manifest has 49 modules, including all18 normal adopted
 core modules. The core adoption image is unchanged.
-The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
+The static compiler profile is TOK786432/NODE786432/MM-WORDS31457280,
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
 removed to reduce the graph. No new comparative performance score is claimed.
 
