@@ -14,6 +14,7 @@ on:
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-externs.py'
       - 'scripts/seed/check-aiueos-object-records.py'
+      - 'scripts/seed/check-aiueos-object-celladdr.py'
       - 'scripts/seed/check-aiueos-object-cells.py'
       - 'scripts/seed/check-aiueos-object-mmio.py'
       - 'scripts/seed/check-aiueos-object-globals.py'
@@ -167,6 +168,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-records.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-records"
+      - name: AIUEOS kernel object route hands out the address of a data cell (JUN-556 D6)
+        run: |
+          python3 scripts/seed/check-aiueos-object-celladdr.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-celladdr"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \

@@ -103,6 +103,14 @@
 (def XK-RECORD 100000)
 (def FF-REC-MARK 1000)
 (def XO-REC-SPAN 131072)
+;; JUN-556 D6 (scratch): private cell-addr-<k> [] returns the ADDRESS of cell k (lea rax,[rip+disp32], the same
+;; R_X86_64_PC32 relocation against the context symbol as a cell access, addend 80 + 8k - 4). It is how an extern
+;; is handed a place to write: the cells k, k+1, ... that the function also loads are the region, and the object's
+;; .data covers exactly the cells some stub names, so the author must load every cell the callee may write. The
+;; address is an ordinary value, not a rooted base, so no window or record access accepts it. The mark is
+;; 200000 + k.
+(def XK-CELL-ADDR 120000)
+(def FF-CELL-ADDR-MARK 200000)
 (def XO-MAX-EXTERNS 16)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
@@ -138,6 +146,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-STORE-MARK XO-MMIO-N))) (+ XK-MMIO-STORE f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (+ XK-CELL-STORE f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
           (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
           :else -1)))
@@ -255,7 +264,8 @@
           (xk-record-access dir wi off)
           (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (>= k XK-RECORD) (xk-record-intrinsic M k t)
+  (cond (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
+        (>= k XK-RECORD) (xk-record-intrinsic M k t)
         (>= k XK-MMIO-STORE)
           (-> M (xg-load t 0x858b48) (xg-bytes 0xb948 2)
               (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-STORE) FF-EXPORT) FF-MMIO-STORE-MARK)) 8)
@@ -522,7 +532,7 @@
     (if (>= c (vector-at M MM-SIR-N)) false
       (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xk-fn-start M c) st))
         (let [k2 (xk-intr M (xg-si M c IF-A))]
-          (if (and (or (>= k2 XK-RECORD) (xk-window-k? k2)) (= (xk-src M c (xg-si M c IF-B) 0) src)
+          (if (and (or (and (>= k2 XK-RECORD) (< k2 XK-CELL-ADDR)) (xk-window-k? k2)) (= (xk-src M c (xg-si M c IF-B) 0) src)
                    (or (xk-window-k? k2) (not= (xk-record-n M (xg-si M c IF-A)) n)))
             true (recur (inc c))))
         (recur (inc c))))))
@@ -540,7 +550,7 @@
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
-              (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (not (xk-record-ok? M i)))
+              (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
@@ -606,6 +616,8 @@
           (let [k (xo-cell-number S (+ a 10) b)] (if (< k 0) -1 (+ FF-CELL-LOAD-MARK k)))
         (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-") (= (xg-f M f FF-NPARAMS) 1))
           (let [k (xo-cell-number S (+ a 11) b)] (if (< k 0) -1 (+ FF-CELL-STORE-MARK k)))
+        (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-addr-") (= (xg-f M f FF-NPARAMS) 0))
+          (let [k (xo-cell-number S (+ a 10) b)] (if (< k 0) -1 (+ FF-CELL-ADDR-MARK k)))
         :else -1))
 (defn- xo-mmio-index [S :string i :i64 b :i64] :i64
   (if (not= (- b i) 8) -1
@@ -653,6 +665,7 @@
 (defn- xo-cell-name? [S :string a :i64 b :i64] :bool
   (or (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-name-"))
       (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-load-"))
+      (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-addr-"))
       (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-"))
       (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-"))
       (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))
@@ -717,7 +730,9 @@
     (xo-zero-sites (if (xo-ext-site? M i) (xg-patch M (vector-at M (+ MM-FIX-BASE (* i MM-FIX-W))) 0 4) M) (inc i))))
 (defn- xo-max [a :i64 b :i64] :i64 (if (> a b) a b))
 (defn- xo-cell-addend [m :i64] :i64
-  (- (+ 80 (* 8 (if (>= m FF-CELL-STORE-MARK) (- m FF-CELL-STORE-MARK) (- m FF-CELL-LOAD-MARK)))) 4))
+  (- (+ 80 (* 8 (cond (>= m FF-CELL-ADDR-MARK) (- m FF-CELL-ADDR-MARK)
+                      (>= m FF-CELL-STORE-MARK) (- m FF-CELL-STORE-MARK)
+                      :else (- m FF-CELL-LOAD-MARK)))) 4))
 (defn- xo-xrelas [M :vector-i64 cnt :i64 X :vector-i64 i :i64] :vector-i64
   (if (>= i (vector-at M MM-FIX-N)) M
     (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) m (xg-f M (vector-at M (+ b 2)) FF-EXPORT)]
@@ -737,6 +752,7 @@
                  (cond (and (>= m FF-CELL-LOAD-MARK) (< m (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-LOAD-MARK)))
                        (and (>= m FF-CELL-STORE-MARK) (< m (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-STORE-MARK)))
                        (and (>= m FF-CELL-NAME-MARK) (< m (+ FF-CELL-NAME-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-NAME-MARK)))
+                       (and (>= m FF-CELL-ADDR-MARK) (< m (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-ADDR-MARK)))
                        :else acc)))))
 (defn- xo-zero-words [M :vector-i64 n :i64] :vector-i64
   (if (<= n 0) M (xo-zero-words (xg-out M 0 8) (dec n))))
