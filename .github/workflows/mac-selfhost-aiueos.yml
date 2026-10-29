@@ -15,6 +15,11 @@ on:
       - 'scripts/seed/check-aiueos-object-externs.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-macos-arena-scope.py'
+      - 'scripts/seed/check-definition-cid-native.py'
+      - 'scripts/seed/check-definition-cids-native.py'
+      - 'scripts/seed/macos_native_image.py'
+      - 'seed/DEFINITION-CIDS-MANIFEST'
+      - 'seed/tests/definition-cid-vectors.json'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
       - 'scripts/seed/write-bootstrap-descriptors.py'
@@ -123,6 +128,16 @@ jobs:
           python3 scripts/seed/check-aiueos-object-externs.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-externs"
+      - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
+        run: |
+          python3 -I scripts/seed/check-definition-cid-native.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-definition-cid"
+      - name: Native definition-cids on the Mac fixed point (JUN-586)
+        run: |
+          python3 -I scripts/seed/check-definition-cids-native.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-definition-cids"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
@@ -152,6 +167,15 @@ jobs:
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json
+          if-no-files-found: warn
+      - name: Upload Mac definition-cids receipts (JUN-586)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-definition-cids
+          path: |
+            ${{ runner.temp }}/mac-definition-cid/observations.json
+            ${{ runner.temp }}/mac-definition-cids/observations.json
           if-no-files-found: warn
       - name: Upload user-v3 Mac receipt
         if: always()

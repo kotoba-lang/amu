@@ -12,9 +12,13 @@ import platform
 import re
 import subprocess
 import time
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+_spec = importlib.util.spec_from_file_location("macos_native_image", ROOT / "scripts/seed/macos_native_image.py")
+macos = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(macos)
 MODULES = ["seed/03-source-sha256.kotoba", "seed/04-definition-cid.kotoba",
            "seed/tests/native-definition-cid.kotoba"]
 
@@ -25,16 +29,21 @@ def pin(path):
 
 
 def main(compiler, out):
-    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
-    out.mkdir(parents=True, exist_ok=False)
+    darwin = macos.available()
+    assert darwin or (platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64"))
+    out.mkdir(parents=True, exist_ok=False, mode=0o700)
+    if darwin:
+        # JUN-586: the Mac root compiles, the Mac packager wraps; main's result is the exit code.
+        _, packager = macos.root_images()
     vectors_path = ROOT / "seed/tests/definition-cid-vectors.json"
     vectors = json.loads(vectors_path.read_text())
     assert len(vectors["vectors"]) == 10
     source = out / "definition-cid.kotoba"
     source.write_bytes(b"(ns seed.definition-cid (:export [main]))\n" +
                        b"\n".join((ROOT / p).read_bytes() for p in MODULES))
-    target = "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux"
-    image = out / "definition-cid.elf"
+    target = ("aarch64-macos" if darwin else
+              "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux")
+    image = out / ("definition-cid.macho" if darwin else "definition-cid.elf")
     env = dict(PATH="/nonexistent", KEXE_STACK_BYTES="8388608", KEXE_FUEL="1000000000")
     report = dict(schema="amu.native-definition-cid-codec.v1", host=[platform.system(), platform.machine()],
                   compiler=pin(compiler), modules={p: pin(ROOT / p) for p in MODULES},
@@ -44,16 +53,21 @@ def main(compiler, out):
 
     def run(name, argv, process_env, result=None, cid=None, canonical=None, unexpected_cid=False):
         started = time.monotonic()
-        p = subprocess.run(list(map(str, argv)), env=process_env, cwd=out, capture_output=True, timeout=300)
+        if darwin and argv[0] != compiler:
+            p = macos.run(argv[0], out, argv[1:], timeout=300)
+        else:
+            p = subprocess.run(list(map(str, argv)), env=process_env, cwd=out, capture_output=True, timeout=300)
         for stream, raw in [("stdout", p.stdout), ("stderr", p.stderr)]:
             (out / (name + "." + stream)).write_bytes(raw)
         row = dict(name=name, exit=p.returncode, seconds=time.monotonic() - started,
                    stdoutSHA256=hashlib.sha256(p.stdout).hexdigest(), stderrSHA256=hashlib.sha256(p.stderr).hexdigest())
         report["calls"].append(row)
         (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
-        assert p.returncode == 0 and not p.stderr, (name, p.returncode, p.stderr[-800:])
+        expected_exit = (result or 0) if darwin and argv[0] != compiler else 0
+        assert p.returncode == expected_exit and not p.stderr, (name, p.returncode, p.stderr[-800:])
         if result is not None:
-            assert re.search(rb":result " + str(result).encode() + rb"\b", p.stdout), (name, p.stdout[-1000:])
+            if not darwin:
+                assert re.search(rb":result " + str(result).encode() + rb"\b", p.stdout), (name, p.stdout[-1000:])
             actual = re.findall(rb"^b[a-z2-7]+$", p.stdout, re.M)
             if unexpected_cid:
                 assert len(actual) == 1, (name, actual)
@@ -63,9 +77,13 @@ def main(compiler, out):
                 assert p.stdout.splitlines()[0] == canonical.encode(), (name, "canonical bytes differ")
         print(json.dumps(row), flush=True)
 
-    run("build", [compiler, "compile", source, "--target", target, "--output", image, "--format", "static"],
-        dict(env, KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,37,38,39"))
-    image.chmod(0o755)
+    if darwin:
+        image, unsigned = macos.build(compiler, packager, out, source.name, "definition-cid")
+        report["unsignedImage"] = pin(unsigned)
+    else:
+        run("build", [compiler, "compile", source, "--target", target, "--output", image, "--format", "static"],
+            dict(env, KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,37,38,39"))
+        image.chmod(0o755)
     report["image"] = pin(image)
     execution_env = dict(env, KEXE_ALLOW="37,38", KEXE_STRUCTURED_REPORT="1")
     for vector in vectors["vectors"]:
@@ -136,11 +154,14 @@ def main(compiler, out):
         assert original.count(old) == 1, (name, "mutation anchor drift")
         changed = out / ("mutant-" + name + ".kotoba")
         changed.write_text(original.replace(old, new))
-        mutant = out / ("mutant-" + name + ".elf")
-        run("build-mutant-" + name,
-            [compiler, "compile", changed, "--target", target, "--output", mutant, "--format", "static"],
-            dict(env, KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,37,38,39"))
-        mutant.chmod(0o755)
+        if darwin:
+            mutant, _ = macos.build(compiler, packager, out, changed.name, "mutant-" + name)
+        else:
+            mutant = out / ("mutant-" + name + ".elf")
+            run("build-mutant-" + name,
+                [compiler, "compile", changed, "--target", target, "--output", mutant, "--format", "static"],
+                dict(env, KEXE_CAP_RESOURCES_35=str(out), KEXE_ALLOW="35,37,38,39"))
+            mutant.chmod(0o755)
         run("detect-mutant-" + name, [mutant, cases[probe] if probe else "native-boundary-tests"], execution_env,
             0 if probe else 1, unexpected_cid=bool(probe))
         report["mutationControls"].append(dict(removedGuard=name, source=pin(changed), image=pin(mutant),
