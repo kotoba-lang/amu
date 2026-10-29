@@ -13,7 +13,7 @@ on:
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
-      - 'scripts/seed/check-macos-arena-scope-refusal.py'
+      - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
       - 'scripts/seed/write-bootstrap-descriptors.py'
@@ -96,10 +96,10 @@ jobs:
             python3 scripts/seed/check-macos-exec-smoke-native.py \
               --mac-build "$RUNNER_TEMP/mac-root" \
               --output "$RUNNER_TEMP/mac-smoke"
-      - name: Mac runtime refuses arena-scope with exit 70 (JUN-546)
+      - name: Mac runtime implements arena-scope (JUN-546)
         run: |
-          python3 scripts/seed/check-macos-arena-scope-refusal.py \
-            --output "$RUNNER_TEMP/mac-scope-refusal"
+          python3 scripts/seed/check-macos-arena-scope.py \
+            --output "$RUNNER_TEMP/mac-scope"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
