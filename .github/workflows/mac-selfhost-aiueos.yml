@@ -12,6 +12,7 @@ on:
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
+      - 'scripts/seed/check-aiueos-object-externs.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
@@ -117,6 +118,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows"
+      - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
+        run: |
+          python3 scripts/seed/check-aiueos-object-externs.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-externs"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \

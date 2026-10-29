@@ -116,3 +116,24 @@ separate acceptance gates; see `evidence/aiueos-aot-adoption-20261024/`.
 Earlier adoption receipts predate the current call-site/base-length policy
 and retain their historical source binding. The current image route calls
 the same canonical memory checker as the object route.
+
+## Declared extern functions (JUN-556 D1, ADR 0380)
+
+A private function named `extern-<symbol>` in a source for the object route
+declares a function of another object. Each call of it is emitted as the
+arguments in rdi, rsi, rdx, rcx, r8, `call rel32` (displacement 0), and
+`mov r9,[rbp-8]` (a callee may destroy the context register the fuel charge
+reads), with an `R_X86_64_PLT32` addend -4 relocation against an undefined
+GLOBAL NOTYPE symbol `<symbol>` that comes after the exports in `.symtab`
+(`sh_info` still names the first global). At most 16 externs and five parameters
+each; more is refused (E7102). A source with no declaration compiles to the same
+bytes as before. The Mac gate `scripts/seed/check-aiueos-object-externs.py`
+reads the object back with an independent ELF parser and checks the symbols,
+the three relocations of a two-extern source and the bytes after every call.
+
+Not shown: no x86 machine has run an object that calls through this sequence,
+the callee is the linker's business and is unverified by this route, and
+`verify-kotoba-kernel-object.py` in the kotoba repository still refuses
+undefined symbols, so no extern-declaring object can enter the image until that
+verifier and its ledger follow. An extern's arguments are not checked as
+memory windows (pointer arguments are the open E7106 design in ADR 0380).
