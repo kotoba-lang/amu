@@ -1,0 +1,348 @@
+;; Exact decimal compiler input (candidate, not a qualified selfbuild).
+;; Alpha-renamed canonical compiler/decimal_bits.kotoba; no namespace form
+;; because this is a unity module. All names use dc-, with no host parser,
+;; floating intermediate, emitted guest decimal parsing or C runtime call.
+;; Binding and qualification state: seed/decimal-literals.json.
+
+;; BEGIN canonical decimal-bits core
+;; The reader stores float literals as their raw i64 bits. Keeping this
+;; parser's result as option-i64 avoids requiring an option-f64 native ABI.
+;; The conversion itself uses exact base-2^32 limbs and ties-to-even rounding;
+;; no host parser or floating-point intermediate participates.
+
+(defn- dc-copy-limbs [source :vector-i64 count :i64] :vector-i64
+  (loop [index 0 output (vector-alloc 0)]
+    (if (>= index count)
+      output
+      (recur (+ index 1)
+             (vector-conj output (vector-at source index))))))
+
+(defn- dc-normalize [value :vector-i64] :vector-i64
+  (loop [count (vector-count value)]
+    (if (and (> count 0) (= (vector-at value (- count 1)) 0))
+      (recur (- count 1))
+      (if (= count (vector-count value))
+        value
+        (dc-copy-limbs value count)))))
+
+(defn- dc-small [value :i64] :vector-i64
+  (dc-normalize
+   (vector-conj
+    (vector-conj (vector-alloc 0) (bit-and value 4294967295))
+    (u64-shift-right value 32))))
+
+(defn- dc-multiply-add [value :vector-i64 multiplier :i64 addend :i64] :vector-i64
+  (let [count (vector-count value)]
+    (loop [index 0 carry addend result (vector-alloc 0)]
+      (if (>= index count)
+        (dc-normalize (vector-conj result carry))
+        (let [product (+ (* (vector-at value index) multiplier) carry)]
+          (recur (+ index 1)
+                 (u64-shift-right product 32)
+                 (vector-conj result (bit-and product 4294967295))))))))
+
+(defn- dc-shift-left [value :vector-i64 amount :i64] :vector-i64
+  (if (or (= amount 0) (= (vector-count value) 0))
+    value
+    (let [word-shift (quot amount 32)
+          bit-shift (- amount (* word-shift 32))
+          count (vector-count value)]
+      (loop [zeros 0 output (vector-alloc 0)]
+        (if (< zeros word-shift)
+          (recur (+ zeros 1) (vector-conj output 0))
+          (loop [index 0 carry 0 result output]
+            (if (>= index count)
+              (dc-normalize (vector-conj result carry))
+              (let [limb (vector-at value index)
+                    shifted (bit-or
+                             (bit-and (i64-shift-left limb bit-shift) 4294967295)
+                             carry)
+                    next-carry (if (= bit-shift 0)
+                                 0
+                                 (u64-shift-right limb (- 32 bit-shift)))]
+                (recur (+ index 1)
+                       next-carry
+                       (vector-conj result shifted))))))))))
+
+(defn- dc-bit-length [value :vector-i64] :i64
+  (let [count (vector-count value)]
+    (if (= count 0)
+      0
+      (loop [word (vector-at value (- count 1)) bits 0]
+        (if (= word 0)
+          (+ (* 32 (- count 1)) bits)
+          (recur (u64-shift-right word 1) (+ bits 1)))))))
+
+(defn- dc-power-of-ten [exponent :i64] :i64
+  (loop [index 0 value 1]
+    (if (>= index exponent)
+      value
+      (recur (+ index 1) (* value 10)))))
+
+(defn- dc-multiply-power-of-ten [value :vector-i64 exponent :i64] :vector-i64
+  (loop [current value remaining exponent]
+    (cond
+      (>= remaining 9)
+      (recur (dc-multiply-add current 1000000000 0) (- remaining 9))
+      (> remaining 0)
+      (recur (dc-multiply-add current 10 0) (- remaining 1))
+      :else current)))
+
+(defn- dc-compare-limbs [left :vector-i64 right :vector-i64] :i64
+  (let [left-count (vector-count (dc-normalize left))
+        right-count (vector-count (dc-normalize right))]
+    (cond
+      (< left-count right-count) -1
+      (> left-count right-count) 1
+      :else
+      (loop [index (- left-count 1)]
+        (cond
+          (< index 0) 0
+          (< (vector-at left index) (vector-at right index)) -1
+          (> (vector-at left index) (vector-at right index)) 1
+          :else (recur (- index 1)))))))
+
+(defn- dc-subtract-limbs [remainder :vector-i64 divisor :vector-i64] :vector-i64
+  (loop [index 0 borrow 0 result (vector-alloc 0)]
+    (if (>= index (vector-count remainder))
+      result
+      (let [right (if (< index (vector-count divisor))
+                    (vector-at divisor index)
+                    0)
+            difference (- (- (vector-at remainder index) right) borrow)]
+        (recur (+ index 1)
+               (if (< difference 0) 1 0)
+               (vector-conj result (bit-and difference 4294967295)))))))
+
+(defn- dc-shift-right-one [value :vector-i64] :vector-i64
+  (loop [index 0 result (vector-alloc 0)]
+    (if (>= index (vector-count value))
+      result
+      (let [high (if (< (+ index 1) (vector-count value))
+                   (vector-at value (+ index 1))
+                   0)
+            shifted (bit-or
+                     (u64-shift-right (vector-at value index) 1)
+                     (bit-and (i64-shift-left high 31) 4294967295))]
+        (recur (+ index 1)
+               (vector-conj result shifted))))))
+
+(defn- dc-quotient-57 [remainder :vector-i64 divisor :vector-i64] :i64
+  (loop [bit 56 quotient 0
+         current-remainder remainder
+         scaled-divisor (dc-shift-left divisor 56)]
+    (if (< bit 0)
+      quotient
+      (let [fits? (>= (dc-compare-limbs current-remainder scaled-divisor) 0)
+            next-remainder (if fits?
+                             (dc-subtract-limbs current-remainder scaled-divisor)
+                             current-remainder)]
+        (recur (- bit 1)
+               (if fits?
+                 (bit-or quotient (i64-shift-left 1 bit))
+                 quotient)
+               next-remainder
+               (dc-shift-right-one scaled-divisor))))))
+
+(defn- dc-remainder-57 [numerator :vector-i64 divisor :vector-i64] :vector-i64
+  ;; Same 57-step scan as quotient-57; the division remainder comes out
+  ;; (numerator - quotient*divisor). Only the ties-to-even comparison needs it,
+  ;; so the quotient itself is not accumulated (review T4).
+  (loop [bit 56
+         current-remainder numerator
+         scaled-divisor (dc-shift-left divisor 56)]
+    (if (< bit 0)
+      current-remainder
+      (let [fits? (>= (dc-compare-limbs current-remainder scaled-divisor) 0)
+            next-remainder (if fits?
+                             (dc-subtract-limbs current-remainder scaled-divisor)
+                             current-remainder)]
+        (recur (- bit 1)
+               next-remainder
+               (dc-shift-right-one scaled-divisor))))))
+
+(defn- dc-scale-numerator [numerator :vector-i64 exponent :i64] :vector-i64
+  (if (< exponent 0)
+    (dc-shift-left numerator (- 0 exponent))
+    numerator))
+
+(defn- dc-scale-denominator [denominator :vector-i64 exponent :i64] :vector-i64
+  (if (> exponent 0)
+    (dc-shift-left denominator exponent)
+    denominator))
+
+(defn- dc-binary-scale [numerator :vector-i64 denominator :vector-i64] :i64
+  (let [initial (- (- (dc-bit-length numerator) (dc-bit-length denominator)) 53)
+        quotient (dc-quotient-57 (dc-scale-numerator numerator initial)
+                              (dc-scale-denominator denominator initial))
+        adjusted (if (>= quotient 9007199254740992)
+                   (+ initial 1)
+                   initial)]
+    (if (< adjusted -1074) -1074 adjusted)))
+
+(defn- dc-rounded-significand [numerator :vector-i64 denominator :vector-i64
+                            exponent :i64] :i64
+  (let [scaled-numerator (dc-scale-numerator numerator exponent)
+        scaled-denominator (dc-scale-denominator denominator exponent)
+        quotient (dc-quotient-57 scaled-numerator scaled-denominator)
+        ;; ties-to-even compares twice the DIVISION REMAINDER with the
+        ;; denominator (review T4). Comparing 2*numerator with one denominator
+        ;; is wrong once the quotient is large (around 2^52): it is positive
+        ;; even for exact values, so 1.0 would round up to 2^52+1 and encode
+        ;; 1.0000000000000002.
+        remainder (dc-remainder-57 scaled-numerator scaled-denominator)
+        halfway (dc-compare-limbs (dc-shift-left remainder 1) scaled-denominator)]
+    (cond
+      (> halfway 0) (+ quotient 1)
+      (= halfway 0) (+ quotient (bit-and quotient 1))
+      :else quotient)))
+
+(defn- dc-positive-f64-bits [numerator :vector-i64 denominator :vector-i64] :i64
+  (let [exponent (dc-binary-scale numerator denominator)
+        significand (dc-rounded-significand numerator denominator exponent)
+        carry? (= significand 9007199254740992)
+        normalized-significand (if carry? 4503599627370496 significand)
+        normalized-exponent (if carry? (+ exponent 1) exponent)]
+    (cond
+      (> normalized-exponent 971) -1
+      (< normalized-significand 4503599627370496) normalized-significand
+      :else
+      (+ (i64-shift-left (+ normalized-exponent 1075) 52)
+         (- normalized-significand 4503599627370496)))))
+
+(defn- dc-digit? [point :i64] :bool (and (>= point 48) (<= point 57)))
+
+(defn- dc-digit-end [text :string index :i64 length :i64] :i64
+  (loop [cursor index]
+    (if (and (< cursor length) (dc-digit? (string-code-point-at text cursor)))
+      (recur (+ cursor 1))
+      cursor)))
+
+(defn- dc-integer-range [text :string start :i64 end :i64] :i64
+  (loop [cursor start value 0]
+    (if (>= cursor end)
+      value
+      (recur (+ cursor 1)
+             (+ (* value 10) (- (string-code-point-at text cursor) 48))))))
+
+(defn- dc-accumulate-digits [value :vector-i64 text :string start :i64 end :i64]
+  :vector-i64
+  (loop [cursor start current value]
+    (if (>= cursor end)
+      current
+      (let [next (if (> (- end cursor) 9) (+ cursor 9) end)
+            multiplier (dc-power-of-ten (- next cursor))
+            part (dc-integer-range text cursor next)]
+        (recur next (dc-multiply-add current multiplier part))))))
+
+(defn- dc-point-at [text :string index :i64 length :i64] :i64
+  (if (< index length)
+    (string-code-point-at text index)
+    0))
+
+(defn- dc-decimal-value-bits [negative? :bool digits :vector-i64 exponent10 :i64]
+  [:option :i64]
+  (let [sign (if negative? -9223372036854775808 0)]
+    (cond
+      (= (vector-count digits) 0)
+      (option-some-of [:option :i64] sign)
+
+      (> exponent10 330)
+      (option-none-of [:option :i64])
+
+      :else
+      (let [numerator (if (>= exponent10 0)
+                        (dc-multiply-power-of-ten digits exponent10)
+                        digits)
+            denominator (if (< exponent10 0)
+                          (dc-multiply-power-of-ten (dc-small 1) (- 0 exponent10))
+                          (dc-small 1))
+            bits (dc-positive-f64-bits numerator denominator)]
+        (if (< bits 0)
+          (option-none-of [:option :i64])
+          (option-some-of [:option :i64] (bit-or sign bits)))))))
+
+(defn- dc-ascii-only? [text :string length :i64] :bool
+  (loop [index 0]
+    (if (>= index length)
+      true
+      (let [point (string-code-point-at text index)]
+        (if (> point 127)
+          false
+          (recur (+ index 1)))))))
+
+(defn- dc-decimal-f64-bits [text :string] [:option :i64]
+  "Parse the sealed decimal subset and return raw binary64 bits, if finite."
+  (let [length (string-byte-length text)]
+    (if (or (= length 0) (> length 64) (not (dc-ascii-only? text length)))
+      (option-none-of [:option :i64])
+      (let [first (dc-point-at text 0 length)
+            start (if (or (= first 43) (= first 45)) 1 0)
+            integer-end (dc-digit-end text start length)
+            fraction-start (if (= (dc-point-at text integer-end length) 46)
+                             (+ integer-end 1)
+                             integer-end)
+            fraction-end (dc-digit-end text fraction-start length)
+            exponent? (or (= (dc-point-at text fraction-end length) 101)
+                          (= (dc-point-at text fraction-end length) 69))
+            exponent-start (if exponent? (+ fraction-end 1) fraction-end)
+            exponent-sign (dc-point-at text exponent-start length)
+            exponent-digits (if (or (= exponent-sign 43) (= exponent-sign 45))
+                              (+ exponent-start 1)
+                              exponent-start)
+            exponent-end (if exponent?
+                           (dc-digit-end text exponent-digits length)
+                           fraction-end)
+            exponent-length (- exponent-end exponent-digits)
+            exponent-value (if (and exponent? (<= exponent-length 3))
+                             (dc-integer-range text exponent-digits exponent-end)
+                             0)
+            signed-exponent (if (= exponent-sign 45)
+                              (- 0 exponent-value)
+                              exponent-value)
+            valid? (and (> length 0)
+                        (> (+ (- integer-end start)
+                              (- fraction-end fraction-start)) 0)
+                        (= exponent-end length)
+                        (or (not exponent?)
+                            (and (> exponent-length 0)
+                                 (<= exponent-length 3))))
+            digits (dc-accumulate-digits
+                    (dc-accumulate-digits (vector-alloc 0) text start integer-end)
+                    text fraction-start fraction-end)]
+        (if valid?
+          (dc-decimal-value-bits (= first 45) digits
+                              (- signed-exponent (- fraction-end fraction-start)))
+          (option-none-of [:option :i64]))))))
+;; END canonical decimal-bits core
+
+;; The canonical reader's finite f64 token shape: decimal point or exponent
+;; is required. Operators, namespace symbols and plain integers stay outside
+;; this lowering. The exact parser enforces64 bytes and3 exponent digits.
+(defn- dc-float-shape? [text :string start :i64 length :i64] :bool
+  (let [integer-end (dc-digit-end text start length)
+        dot (= (dc-point-at text integer-end length) 46)
+        fraction-start (if dot (+ integer-end 1) integer-end)
+        fraction-end (if dot (dc-digit-end text fraction-start length) integer-end)
+        marker (dc-point-at text fraction-end length)
+        exponent (or (= marker 101) (= marker 69))
+        sign (dc-point-at text (+ fraction-end 1) length)
+        exponent-start (if exponent
+                         (if (or (= sign 43) (= sign 45)) (+ fraction-end 2) (+ fraction-end 1))
+                         fraction-end)
+        exponent-end (if exponent (dc-digit-end text exponent-start length) fraction-end)]
+    (and (= exponent-end length)
+         (or (not exponent) (> exponent-end exponent-start))
+         (if dot (or (> integer-end start) (> fraction-end fraction-start))
+                 (and exponent (> integer-end start))))))
+
+(defn- dc-literal-bits [text :string] [:option :i64]
+  (let [length (string-byte-length text)
+        first (dc-point-at text 0 length)
+        start (if (or (= first 43) (= first 45)) 1 0)
+        initial (dc-point-at text start length)]
+    (if (and (> length 0) (<= length 64)
+             (or (dc-digit? initial) (= initial 46))
+             (dc-float-shape? text start length))
+      (dc-decimal-f64-bits text)
+      (option-none-of [:option :i64]))))

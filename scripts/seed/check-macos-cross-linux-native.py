@@ -65,19 +65,22 @@ def source_unity(manifest, expected):
     return raw, identity
 
 
-def main(candidate, output, isa):
+def main(candidate, output, isa, allow_unadopted=False):
     expected_machine = {"aarch64": ("aarch64", "arm64"), "x86_64": ("x86_64",)}
     if platform.system() != "Linux" or platform.machine() not in expected_machine[isa]:
         raise ValueError("native Linux " + isa + " kernel required")
     if candidate.is_symlink() or not candidate.is_dir():
         raise ValueError("regular candidate directory required")
     record = json.loads((candidate / "cross.json").read_text())
-    if record.get("schema") != "amu.mac-cross-linux-candidates.v1" or record.get("status") != "MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED":
+    accepted_statuses = {"MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED"}
+    if allow_unadopted:
+        accepted_statuses.add("MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED")
+    if record.get("schema") != "amu.mac-cross-linux-candidates.v1" or record.get("status") not in accepted_statuses:
         raise ValueError("unexpected Mac candidate record")
     if pin(ROOT / "seed/x86_64-kx64-runner.kotoba") != record["runnerSource"]:
         raise ValueError("runner source changed since Mac generation")
     full_bytes, full_pin = source_unity(FULL, record["fullSource"])
-    if record["fullSource"]["modules"] != 49:
+    if record["fullSource"]["modules"] != 50:
         raise ValueError("unexpected complete manifest")
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     full = output / "full-unity.kotoba"
@@ -160,6 +163,7 @@ def main(candidate, output, isa):
     receipt = {"schema": "amu.mac-cross-native-fixed-point.v1",
                "status": "PASS_MAC_CROSS_NATIVE_FIXED_POINT",
                "isa": isa, "macCandidate": pin(candidate / "cross.json"),
+               "macCandidateStatus": record["status"],
                "source": full_pin, "generations": generations, "calls": calls,
                "selfhostGenerations": selfhost_generations,
                "linuxWasIndependentVerifier": True,
@@ -175,5 +179,7 @@ if __name__ == "__main__":
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--isa", choices=("aarch64", "x86_64"), required=True)
+    parser.add_argument("--allow-unadopted", action="store_true",
+                        help="observe an explicitly unadopted candidate without promoting it")
     args = parser.parse_args()
-    main(args.candidate.resolve(), args.output.resolve(), args.isa)
+    main(args.candidate.resolve(), args.output.resolve(), args.isa, args.allow_unadopted)

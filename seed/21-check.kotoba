@@ -1188,53 +1188,38 @@
           (= code 7) (ck-r6m-map2 M n)
           (>= code 5) (ck-r6m-i32sh M n code)
           :else (ck-r6m-ods1 M n code))))
-;; a decimal literal [-]d+.d+ (the lexer reads it as a symbol): with m = its digits as an integer and k
-;; its fraction digits, m below 2^53 (at most 15 digits) and 10^k exact (k <= 15), the f64 value is the correctly rounded
-;; quotient m / 10^k, i.e. (f64-div (i64-to-f64-rounded m) (i64-to-f64-rounded 10^k)) (both conversions exact, the division
-;; rounded once), usable wherever an :f64 is (f64-add 1.5 x). Any other spelling stays a symbol (E2102). The reference's
-;; + = < .. on :f64 (dual-backend 10-f64) stay refused: R6C pins them as recorded narrowings (seed/tests/r6c/feat n02 n03;
-;; lang/guest-grammar.edn :equality). R0 of the scanner: m * 32 + k, or -1.
-(defn- ck-r6m-flscan [S :string a :i64 b :i64] :i64
-  (let [neg (and (< a b) (= (string-code-point-at S a) 45))
-        a1 (if neg (+ a 1) a)]
-    (loop [i a1 m 0 nd 0 k -1]
-      (if (>= i b)
-        (if (and (pos? k) (> nd k) (<= nd 15)) (+ (* (if neg (- 0 m) m) 32) k) -1)
-        (let [c (string-code-point-at S i)]
-          (cond (and (>= c 48) (<= c 57)) (recur (+ i 1) (+ (* m 10) (- c 48)) (+ nd 1) (if (>= k 0) (+ k 1) k))
-                (and (= c 46) (< k 0) (pos? nd)) (recur (+ i 1) m nd 0)
-                :else -1))))))
+;; Decimal literals are rounded to their final binary64 bits at compile
+;; time by the same canonical integer parser as the native Form reader.
+;; No emitted division or runtime text parse participates. The typed option
+;; retains signed zero; unsupported/malformed/non-finite tokens remain E2102.
+(defn- ck-r6m-flscan [S :string a :i64 b :i64] [:option :i64]
+  (dc-literal-bits (string-substring S a b)))
 (defn- ck-r6m-flit? [M :vector-i64 S :string n :i64] :bool
   (let [s (nm-sym-of M n)
         a (nm-sf M s SF-START)
         b (nm-sf M s SF-END)]
-    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN)) (> b a) (< b (+ a 24)) (nm-ne (ck-r6m-flscan S a b) -1))))
-(defn- ck-r6m-pow10 [k :i64] :i64 (loop [i 0 p 1] (if (>= i k) p (recur (+ i 1) (* p 10)))))
-;; a call node (h x) whose head symbol is a gensym spelled by hash hh (a FLOAT operation of ck-fl-code); R0 = the list
-(defn- ck-r6m-hcall [M :vector-i64 tok :i64 hh :i64 x :i64 y :i64] :vector-i64
-  (let [M1 (nm-gensym M (nm-tf M tok TF-START) 0)
-        g (ck-r M1)
-        M2 (ck-n-ref (nm-set-sf M1 g SF-HASH hh) tok g)
-        hn (ck-r M2)
-        M3 (if (pos? y) (ck-chain3 M2 hn x y) (ck-chain2 M2 hn x))]
-    (ck-n-list M3 tok hn)))
+    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN))
+         (> b a) (<= (- b a) 64)
+         (option-some?-of [:option :i64] (ck-r6m-flscan S a b)))))
 (defn- ck-r6m-flit [M :vector-i64 S :string n :i64] :vector-i64
   (let [s (nm-sym-of M n)
-        v (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
-        k (bit-and v 31)
-        m (quot (- v k) 32)
-        tok (nm-nf M n NF-TOK)
-        M1 (ck-n-int M tok m)
-        mi (ck-r M1)
-        M2 (ck-r6m-hcall M1 tok 7348910623852123541 mi 0)   ; i64-to-f64-rounded
-        mf (ck-r M2)
-        M3 (ck-n-int M2 tok (ck-r6m-pow10 k))
-        pi (ck-r M3)
-        M4 (ck-r6m-hcall M3 tok 7348910623852123541 pi 0)
-        pf (ck-r M4)
-        M5 (ck-r6m-hcall M4 tok 4429907561435325029 mf pf)   ; f64-div
-        d (ck-r M5)]
-    (ck-become M5 n d)))
+        parsed (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
+        tok (nm-nf M n NF-TOK)]
+    (if (not (option-some?-of [:option :i64] parsed))
+      (ck-err M E-CHECK-SYM n 0)
+      (let [bits (option-value-of [:option :i64] parsed 0)
+            M1 (ck-n-int M tok bits)
+            value (ck-r M1)
+            ;; Cache254 is reserved for the f64 type;233 is the existing
+            ;; __r6-as head. Avoid the overlapping head/keyword cache indexes.
+            M2 (ck-r6b-nkw M1 tok KW-F64 254)
+            type (ck-r M2)
+            M3 (ck-r6b-nhead M2 tok HD-R6-AS 233)
+            head (ck-r M3)
+            M4 (ck-chain3 M3 head type value)
+            M5 (ck-n-list M4 tok head)
+            expression (ck-r M5)]
+        (ck-become M5 n expression)))))
 
 ;; list (code a b c) of fresh nodes (0 = absent; a b c are linked in order); R0 = the list
 (defn- ck-r6m-l [M :vector-i64 tok :i64 code :i64 a :i64 b :i64 c :i64] :vector-i64
@@ -4797,7 +4782,12 @@
                                       (recur b used (if pd (bit-or defd (bit-or (ck-r6b-name-bit (nm-hash S i b)) (bit-or (ck-r6f-name-bit S i b) (ck-r6m-name-bit S i b)))) defd) false))
                       :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false))))))
         r2 (if (pos? (bit-and r (bit-or ck-r6b-g-exi ck-r6f-g-symp))) (bit-or r ck-r6b-g-doc) r)]   ; R6F: symbol? needs doc
-    (if (pos? (bit-and r2 (bit-or ck-r6b-g-doc ck-r6f-g-kwo))) (bit-or r2 ck-r6b-g-kw) r2)))   ; R6F: kwo needs kw
+    ;; Document f64 and canonical codecs use the existing exact decimal and
+    ;; UTF-8 groups. Their source is appended after scanning the user module.
+    (let [r3 (if (pos? (bit-and r2 ck-r6b-g-doc))
+               (bit-or r2 (bit-or ck-r6b-g-dec ck-r6b-g-utf8)) r2)]
+      (if (pos? (bit-and r3 (bit-or ck-r6b-g-doc ck-r6f-g-kwo)))
+        (bit-or r3 ck-r6b-g-kw) r3))))   ; R6F: kwo needs kw
 
 ;; the module's keyword table: " :k1 :k2 .. " (each spelling once), the 11 document kinds first
 ;; R6D: table acc0 plus the spellings of module text S it does not have yet (first occurrence order)
@@ -4821,7 +4811,11 @@
 
 (defn- ck-r6b-pick [m :i64 g :i64 t :string] :string (if (zero? (bit-and m g)) "" t))
 
-(defn- ck-r6b-kwtab [S :string] :string (ck-r6b-kwadd " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map " S))
+(defn- ck-r6b-kwtab [S :string] :string
+  (ck-r6b-kwadd
+    (if (pos? (bit-and (ck-r6b-scan S) ck-r6b-g-doc))
+      " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map :f64-text/non-finite :f64-text/no-roundtrip "
+      " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map ") S))
 ;; R6D (agent R6D, 2026-10-03): the keyword TEXT table is a link-time union. A keyword made in one module and turned into
 ;; text in another trapped (the R6B table was per module). 60-proj gives the ENTRY module the union T of every linked
 ;; module's spellings (ck-r6b-kwmerge in compile order; separate mode: the cumulative K lines of the objects), forces its
@@ -5393,6 +5387,141 @@
 (defn- ck-r6b-t-kw3 [] :string
   "(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kiget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kiput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))\n")
 (defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (string-concat (ck-r6b-t-kw2) (ck-r6b-t-kw3)))))
+;; Canonical runtime fragments: source bindings in seed/runtime/document-runtime.json.
+(defn- ck-r6b-t-doc-runtime0 [] :string
+  (string-concat ";; Runtime source fragment embedded in seed/21-check.kotoba, not a unity module.\n" (string-concat ";; The formatter is an alpha-renamed copy of compiler/f64_text.kotoba, with\n" (string-concat ";; its exact decimal parser imported from the seed's existing decimal group.\n" (string-concat ";; No host printer/parser or C runtime is involved. See document-runtime.json\n" (string-concat ";; for source bindings; this candidate has not been executed or qualified.\n" "(defn- __krft_decimal-bits [text :string] [:option :i64]\n"))))))
+(defn- ck-r6b-t-doc-runtime1 [] :string
+  (string-concat "  (let [parsed (decimal-f64-parse text)]\n" (string-concat "    (if (option-some?-of [:option :f64] parsed)\n" (string-concat "      (option-some-of [:option :i64]\n" (string-concat "        (__r6-as :i64 (option-value-of [:option :f64] parsed (__r6-as :f64 0))))\n" (string-concat "      (option-none-of [:option :i64]))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime2 [] :string
+  (string-concat ";; Generate exact decimal digits with integer arithmetic, then choose the first\n" (string-concat ";; ties-to-even rounded prefix that parses back to the original bits. Every\n" (string-concat ";; finite binary64 has such a prefix by17 significant digits. No host float\n" (string-concat ";; printer, float arithmetic, platform locale, C runtime or numeric cast is used.\n" (string-concat "(defn- __krft_finite-bits? [bits :i64] :bool\n" "  (not (= (bit-and (u64-shift-right bits 52) 2047) 2047)))\n"))))))
+(defn- ck-r6b-t-doc-runtime3 [] :string
+  (string-concat "\n" (string-concat "(defn- __krft_digit [value :i64] :string\n" (string-concat "  (string-substring \"0123456789\" value (+ value 1)))\n" (string-concat "(defn- __krft_multiply [text :string factor :i64] :string\n" (string-concat "  (loop [i (- (string-byte-length text) 1) carry 0 out \"\"]\n" "    (if (< i 0)\n"))))))
+(defn- ck-r6b-t-doc-runtime4 [] :string
+  (string-concat "      (if (= carry 0) out (string-concat (__krft_digit carry) out))\n" (string-concat "      (let [value (+ (* (- (string-code-point-at text i) 48) factor) carry)\n" (string-concat "            next-carry (quot value 10)]\n" (string-concat "        (recur (- i 1) next-carry\n" (string-concat "               (string-concat (__krft_digit (- value (* next-carry 10))) out))))))\n" "(defn- __krft_multiply-power [text :string factor :i64 exponent :i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime5 [] :string
+  (string-concat "  (loop [i 0 current text]\n" (string-concat "    (if (>= i exponent) current\n" (string-concat "      (recur (+ i 1) (__krft_multiply current factor)))))\n" (string-concat "(defn- __krft_zeros [count :i64] :string\n" (string-concat "  (loop [i 0 out \"\"]\n" "    (if (>= i count) out (recur (+ i 1) (string-concat out \"0\")))))\n"))))))
+(defn- ck-r6b-t-doc-runtime6 [] :string
+  (string-concat "(defn- __krft_increment [text :string] :string\n" (string-concat "  (loop [i (- (string-byte-length text) 1) suffix \"\"]\n" (string-concat "    (if (< i 0)\n" (string-concat "      (string-concat \"1\" suffix)\n" (string-concat "      (let [d (- (string-code-point-at text i) 48)]\n" "        (if (= d 9)\n"))))))
+(defn- ck-r6b-t-doc-runtime7 [] :string
+  (string-concat "          (recur (- i 1) (string-concat \"0\" suffix))\n" (string-concat "          (string-concat (string-substring text 0 i)\n" (string-concat "            (string-concat (__krft_digit (+ d 1)) suffix)))))))\n" (string-concat "(defn- __krft_nonzero-after? [text :string start :i64] :bool\n" (string-concat "  (loop [i start]\n" "    (if (>= i (string-byte-length text)) false\n"))))))
+(defn- ck-r6b-t-doc-runtime8 [] :string
+  (string-concat "      (if (not (= (string-code-point-at text i) 48)) true (recur (+ i 1))))))\n" (string-concat "(defn- __krft_round-prefix [text :string count :i64 mode :i64] :string\n" (string-concat "  (let [length (string-byte-length text)\n" (string-concat "        prefix (string-substring text 0 (if (< count length) count length))]\n" (string-concat "    (if (>= count length)\n" "      prefix\n"))))))
+(defn- ck-r6b-t-doc-runtime9 [] :string
+  (string-concat "      (let [next (- (string-code-point-at text count) 48)\n" (string-concat "            last (- (string-code-point-at text (- count 1)) 48)\n" (string-concat "            up (cond (= mode -1) false\n" (string-concat "                     (= mode 1) (__krft_nonzero-after? text count)\n" (string-concat "                     :else (or (> next 5)\n" "                               (and (= next 5)\n"))))))
+(defn- ck-r6b-t-doc-runtime10 [] :string
+  (string-concat "                                    (or (__krft_nonzero-after? text (+ count 1)) (= (bit-and last 1) 1)))))\n" (string-concat "            rounded (if up (__krft_increment prefix) prefix)]\n" (string-concat "        rounded))))\n" (string-concat "(defn- __krft_trim-zeroes [text :string] :string\n" (string-concat "  (loop [n (string-byte-length text)]\n" "    (if (and (> n 1) (= (string-code-point-at text (- n 1)) 48))\n"))))))
+(defn- ck-r6b-t-doc-runtime11 [] :string
+  (string-concat "      (recur (- n 1))\n" (string-concat "      (string-substring text 0 n))))\n" (string-concat "(defn- __krft_render [rounded :string original-order :i64 count :i64 negative :bool] :string\n" (string-concat "  (let [carry (> (string-byte-length rounded) count)\n" (string-concat "        digits (__krft_trim-zeroes (if carry (string-substring rounded 0 count) rounded))\n" "        order (if carry (+ original-order 1) original-order)\n"))))))
+(defn- ck-r6b-t-doc-runtime12 [] :string
+  (string-concat "        length (string-byte-length digits)\n" (string-concat "        point (+ order 1)\n" (string-concat "        body (cond\n" (string-concat "               (or (< order -6) (>= order 21))\n" (string-concat "               (string-concat (string-substring digits 0 1)\n" "                 (string-concat\n"))))))
+(defn- ck-r6b-t-doc-runtime13 [] :string
+  (string-concat "                   (if (> length 1) (string-concat \".\" (string-substring digits 1 length)) \"\")\n" (string-concat "                   (string-concat \"e\" (string-from-i64 order))))\n" (string-concat "               (<= point 0)\n" (string-concat "               (string-concat \"0.\" (string-concat (__krft_zeros (- 0 point)) digits))\n" (string-concat "               (>= point length)\n" "               (string-concat digits (string-concat (__krft_zeros (- point length)) \".0\"))\n"))))))
+(defn- ck-r6b-t-doc-runtime14 [] :string
+  (string-concat "               :else\n" (string-concat "               (string-concat (string-substring digits 0 point)\n" (string-concat "                              (string-concat \".\" (string-substring digits point length))))]\n" (string-concat "    (if negative (string-concat \"-\" body) body)))\n" (string-concat "(defn- __krft_shortest [digits :string order :i64 bits :i64] [:result :string :keyword]\n" "  (loop [count 1]\n"))))))
+(defn- ck-r6b-t-doc-runtime15 [] :string
+  (string-concat "    (if (> count 17)\n" (string-concat "      (result-err-of [:result :string :keyword] :f64-text/no-roundtrip)\n" (string-concat "      ;; At a power-of-two boundary the rounding interval is asymmetric.\n" (string-concat "      ;; Check both adjacent decimal lattice points as well as the nearest\n" (string-concat "      ;; ties-to-even point; the nearest alone may miss a shorter spelling.\n" "      (let [nearest (__krft_render (__krft_round-prefix digits count 0) order count (< bits 0))\n"))))))
+(defn- ck-r6b-t-doc-runtime16 [] :string
+  (string-concat "            low (__krft_render (__krft_round-prefix digits count -1) order count (< bits 0))\n" (string-concat "            high (__krft_render (__krft_round-prefix digits count 1) order count (< bits 0))\n" (string-concat "            parsed (__krft_decimal-bits nearest)\n" (string-concat "            low-parsed (__krft_decimal-bits low)\n" (string-concat "            high-parsed (__krft_decimal-bits high)]\n" "        (cond\n"))))))
+(defn- ck-r6b-t-doc-runtime17 [] :string
+  (string-concat "          (and (option-some?-of [:option :i64] parsed)\n" (string-concat "               (= (option-value-of [:option :i64] parsed 0) bits))\n" (string-concat "          (result-ok-of [:result :string :keyword] nearest)\n" (string-concat "          (and (option-some?-of [:option :i64] low-parsed)\n" (string-concat "               (= (option-value-of [:option :i64] low-parsed 0) bits))\n" "          (result-ok-of [:result :string :keyword] low)\n"))))))
+(defn- ck-r6b-t-doc-runtime18 [] :string
+  (string-concat "          (and (option-some?-of [:option :i64] high-parsed)\n" (string-concat "               (= (option-value-of [:option :i64] high-parsed 0) bits))\n" (string-concat "          (result-ok-of [:result :string :keyword] high)\n" (string-concat "          :else (recur (+ count 1)))))))\n" (string-concat "\n" "(defn- __krft_format-bits [bits :i64] [:result :string :keyword]\n"))))))
+(defn- ck-r6b-t-doc-runtime19 [] :string
+  (string-concat "  \"Shortest round-trip finite decimal; integral values retain an EDN float\n" (string-concat "  marker. Signed zero is preserved here; document identity normalizes it at\n" (string-concat "  the canonical-byte boundary. NaN and infinities return a typed refusal.\"\n" (string-concat "  (if (not (__krft_finite-bits? bits))\n" (string-concat "    (result-err-of [:result :string :keyword] :f64-text/non-finite)\n" "    (let [magnitude (bit-and bits 9223372036854775807)]\n"))))))
+(defn- ck-r6b-t-doc-runtime20 [] :string
+  (string-concat "      (if (= magnitude 0)\n" (string-concat "        (result-ok-of [:result :string :keyword] (if (< bits 0) \"-0.0\" \"0.0\"))\n" (string-concat "        (let [exponent (bit-and (u64-shift-right bits 52) 2047)\n" (string-concat "              fraction (bit-and bits 4503599627370495)\n" (string-concat "              mantissa (if (= exponent 0) fraction (+ fraction 4503599627370496))\n" "              binary-exponent (if (= exponent 0) -1074 (- exponent 1075))\n"))))))
+(defn- ck-r6b-t-doc-runtime21 [] :string
+  (string-concat "              places (if (< binary-exponent 0) (- 0 binary-exponent) 0)\n" (string-concat "              digits (__krft_multiply-power (string-from-i64 mantissa)\n" (string-concat "                                     (if (< binary-exponent 0) 5 2)\n" (string-concat "                                     (if (< binary-exponent 0) (- 0 binary-exponent) binary-exponent))\n" (string-concat "              order (- (- (string-byte-length digits) places) 1)]\n" "          (__krft_shortest digits order bits))))))\n"))))))
+(defn- ck-r6b-t-doc-runtime22 [] :string
+  (string-concat "\n" (string-concat "(defn- __kr_df64text [bits :i64] :string\n" (string-concat "  (let [result (__krft_format-bits bits)]\n" (string-concat "    (if (result-ok?-of [:result :string :keyword] result)\n" (string-concat "      (result-value-of [:result :string :keyword] result \"\")\n" "      (__kr_dtraps))))\n"))))))
+(defn- ck-r6b-t-doc-runtime23 [] :string
+  (string-concat "(defn- __kr_df64canon [d :string i :i64 end :i64] :string\n" (string-concat "  (let [parsed (__krft_decimal-bits (string-substring d i end))]\n" (string-concat "    (if (option-some?-of [:option :i64] parsed)\n" (string-concat "      (let [bits (option-value-of [:option :i64] parsed 0)\n" (string-concat "            normalized (if (= (bit-and bits 9223372036854775807) 0) 0 bits)]\n" "        (string-concat \"f\" (string-concat (string-from-i64 normalized) \";\")))\n"))))))
+(defn- ck-r6b-t-doc-runtime24 [] :string
+  (string-concat "      (__kr_dtraps))))\n" (string-concat "(defn- document-f64 [value :f64] :document\n" (string-concat "  (__r6-dd (__kr_df64text (__r6-as :i64 value))))\n" (string-concat "(defn- document-f64-value [d :document] [:option :f64]\n" (string-concat "  (let [text (__r6-ds d)]\n" "    (if (= (__kr_dkindn text) 3)\n"))))))
+(defn- ck-r6b-t-doc-runtime25 [] :string
+  (string-concat "      (decimal-f64-parse text)\n" (string-concat "      (option-none-of [:option :f64]))))\n" (string-concat ";; Runtime source fragment embedded in 21-check, not a seed unity module.\n" (string-concat ";; The wire contract is osaho document-canonical-bytes, not DAG-CBOR.\n" (string-concat ";; State is local to a single read: [byte-cursor, nodes, aggregate-text-bytes].\n" ";; This candidate is not executed or qualified; SHA-256 is a separate fragment.\n"))))))
+(defn- ck-r6b-t-doc-runtime26 [] :string
+  (string-concat "\n" (string-concat "(defn- __kr_drcharge [state :vector-i64 slot :i64 amount :i64 limit :i64] :i64\n" (string-concat "  (let [next (+ (vector-at state slot) amount)]\n" (string-concat "    (if (or (< amount 0) (> next limit))\n" (string-concat "      (__kr_dtrap)\n" "      (let [written (vector-assoc! state slot next)] next))))\n"))))))
+(defn- ck-r6b-t-doc-runtime27 [] :string
+  (string-concat "\n" (string-concat "(defn- __kr_drtake [text :string state :vector-i64] :i64\n" (string-concat "  (let [cursor (vector-at state 0)]\n" (string-concat "    (if (>= cursor (string-byte-length text))\n" (string-concat "      (__kr_dtrap)\n" "      (let [point (string-code-point-at text cursor)\n"))))))
+(defn- ck-r6b-t-doc-runtime28 [] :string
+  (string-concat "            written (vector-assoc! state 0 (+ cursor 1))]\n" (string-concat "        point))))\n" (string-concat "\n" (string-concat "(defn- __kr_drdecimal [text :string state :vector-i64 separator :i64] :i64\n" (string-concat "  (let [first (__kr_drtake text state)\n" "        negative (= first 45)\n"))))))
+(defn- ck-r6b-t-doc-runtime29 [] :string
+  (string-concat "        signed (or negative (= first 43))]\n" (string-concat "    (loop [point (if signed (__kr_drtake text state) first) value 0 digits 0]\n" (string-concat "      (if (= point separator)\n" (string-concat "        (cond (= digits 0) (__kr_dtrap)\n" (string-concat "              negative value\n" "              (= value -9223372036854775808) (__kr_dtrap)\n"))))))
+(defn- ck-r6b-t-doc-runtime30 [] :string
+  (string-concat "              :else (- 0 value))\n" (string-concat "        (if (or (< point 48) (> point 57)\n" (string-concat "                (< value -922337203685477580)\n" (string-concat "                (and (= value -922337203685477580) (> point 56)))\n" (string-concat "          (__kr_dtrap)\n" "          (recur (__kr_drtake text state)\n"))))))
+(defn- ck-r6b-t-doc-runtime31 [] :string
+  (string-concat "                 (- (* value 10) (- point 48)) (+ digits 1)))))))\n" (string-concat "\n" (string-concat "(defn- __kr_drtext [text :string state :vector-i64] :string\n" (string-concat "  (let [length (__kr_drdecimal text state 58)\n" (string-concat "        start (vector-at state 0)]\n" "    (if (or (< length 0) (> length 65536)\n"))))))
+(defn- ck-r6b-t-doc-runtime32 [] :string
+  (string-concat "            (> length (- (string-byte-length text) start)))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (let [payload (string-substring text start (+ start length))\n" (string-concat "            charged (__kr_drcharge state 2 length 65536)\n" (string-concat "            written (vector-assoc! state 0 (+ start length))]\n" "        payload))))\n"))))))
+(defn- ck-r6b-t-doc-runtime33 [] :string
+  (string-concat "\n" (string-concat "(defn- __kr_drkeyword [text :string state :vector-i64] :string\n" (string-concat "  (let [keyword (__kr_drtext text state)\n" (string-concat "        length (string-byte-length keyword)]\n" (string-concat "    (if (and (> length 0) (<= length 512)\n" "             (= (string-code-point-at keyword 0) 58)\n"))))))
+(defn- ck-r6b-t-doc-runtime34 [] :string
+  (string-concat "             (__kr_dsymsok keyword 1))\n" (string-concat "      keyword\n" (string-concat "      (__kr_dtraps))))\n" (string-concat "\n" (string-concat "(defn- __kr_drsequence [text :string state :vector-i64 depth :i64 tag :i64] :string\n" "  (let [count (__kr_drdecimal text state 58)\n"))))))
+(defn- ck-r6b-t-doc-runtime35 [] :string
+  (string-concat "        empty (cond (= tag 118) \"[]\" (= tag 108) \"()\" :else \"#{}\")]\n" (string-concat "    (if (or (< count 0) (> count 32))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (loop [index 0 output empty previous \"\"]\n" (string-concat "        (if (>= index count) output\n" "          (let [value (__kr_drwalk text state (+ depth 1) false)\n"))))))
+(defn- ck-r6b-t-doc-runtime36 [] :string
+  (string-concat "                canonical (if (= tag 101) (__kr_dcanon value) \"\")]\n" (string-concat "            (if (and (= tag 101) (> index 0)\n" (string-concat "                     (>= (string-compare previous canonical) 0))\n" (string-concat "              (__kr_dtraps)\n" (string-concat "              (recur (+ index 1) (__kr_dvadd output value) canonical))))))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime37 [] :string
+  (string-concat "(defn- __kr_drmap [text :string state :vector-i64 depth :i64] :string\n" (string-concat "  (let [count (__kr_drdecimal text state 58)]\n" (string-concat "    (if (or (< count 0) (> count 32))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (loop [index 0 output \"{}\" previous \"\"]\n" "        (if (>= index count) output\n"))))))
+(defn- ck-r6b-t-doc-runtime38 [] :string
+  (string-concat "          (let [marker (__kr_drtake text state)\n" (string-concat "                key (cond (= marker 75) (__kr_drkeyword text state)\n" (string-concat "                          (= marker 68) (__kr_drwalk text state (+ depth 1) true)\n" (string-concat "                          :else (__kr_dtraps))\n" (string-concat "                value (__kr_drwalk text state (+ depth 1) false)]\n" "            (if (and (> index 0)\n"))))))
+(defn- ck-r6b-t-doc-runtime39 [] :string
+  (string-concat "                     (>= (__kr_dkeycmp previous key 0 (string-byte-length key)) 0))\n" (string-concat "              (__kr_dtraps)\n" (string-concat "              (recur (+ index 1)\n" (string-concat "                     (__kr_dvadd output (string-concat key (string-concat \" \" value)))\n" (string-concat "                     key))))))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime40 [] :string
+  (string-concat "(defn- __kr_drwalk [text :string state :vector-i64 depth :i64 map-key :bool] :string\n" (string-concat "  (let [tag (__kr_drtake text state)\n" (string-concat "        keyword-key (and map-key (= tag 107))]\n" (string-concat "    (if (and (not keyword-key) (> depth 8))\n" (string-concat "      (__kr_dtraps)\n" "      (let [charged (if keyword-key 0 (__kr_drcharge state 1 1 4096))]\n"))))))
+(defn- ck-r6b-t-doc-runtime41 [] :string
+  (string-concat "        (cond\n" (string-concat "          (= tag 110) \"nil\"\n" (string-concat "          (= tag 98) (let [value (__kr_drtake text state)]\n" (string-concat "                       (cond (= value 116) \"true\" (= value 102) \"false\"\n" (string-concat "                             :else (__kr_dtraps)))\n" "          (= tag 105) (string-from-i64 (__kr_drdecimal text state 59))\n"))))))
+(defn- ck-r6b-t-doc-runtime42 [] :string
+  (string-concat "          (= tag 102) (__kr_df64text (__kr_drdecimal text state 59))\n" (string-concat "          (= tag 115) (__kr_desc (__kr_drtext text state))\n" (string-concat "          (= tag 107) (__kr_drkeyword text state)\n" (string-concat "          (= tag 121) (let [value (__kr_drtext text state)]\n" (string-concat "                       (if (> (string-byte-length value) 512) (__kr_dtraps)\n" "                         (__kr_dsym value)))\n"))))))
+(defn- ck-r6b-t-doc-runtime43 [] :string
+  (string-concat "          (or (= tag 118) (= tag 108) (= tag 101))\n" (string-concat "          (__kr_drsequence text state depth tag)\n" (string-concat "          (= tag 109) (__kr_drmap text state depth)\n" (string-concat "          :else (__kr_dtraps))))))\n" (string-concat "\n" "(defn- __kr_drdecode [text :string] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime44 [] :string
+  (string-concat "  (let [state (vector-alloc 3)\n" (string-concat "        document (__kr_drwalk text state 0 false)]\n" (string-concat "    (if (= (vector-at state 0) (string-byte-length text))\n" (string-concat "      document\n" (string-concat "      (__kr_dtraps))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime45 [] :string
+  (string-concat "(defn- __kr_drhexval [point :i64] :i64\n" (string-concat "  (cond (and (>= point 48) (<= point 57)) (- point 48)\n" (string-concat "        (and (>= point 97) (<= point 102)) (- point 87)\n" (string-concat "        :else (__kr_dtrap)))\n" (string-concat "\n" "(defn- __kr_drhex [hex :string] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime46 [] :string
+  (string-concat "  (let [length (string-byte-length hex)]\n" (string-concat "    (if (or (> length 1048576) (not (= (bit-and length 1) 0)))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (let [decoded (loop [cursor 0 bytes (vector-alloc 0)]\n" (string-concat "                      (if (>= cursor length) bytes\n" "                        (let [high (__kr_drhexval (string-code-point-at hex cursor))\n"))))))
+(defn- ck-r6b-t-doc-runtime47 [] :string
+  (string-concat "                              low (__kr_drhexval (string-code-point-at hex (+ cursor 1)))]\n" (string-concat "                          (recur (+ cursor 2) (vector-conj bytes (+ (* high 16) low))))))]\n" (string-concat "        (string-from-utf8 (bytes-from-vector-i64 decoded))))))\n" (string-concat "\n" (string-concat "(defn- __kr_dprint [document :string] :string\n" "  (let [canonical (__kr_dcanon document)\n"))))))
+(defn- ck-r6b-t-doc-runtime48 [] :string
+  (string-concat "        validated (__kr_drdecode canonical)\n" (string-concat "        bytes (string-to-utf8 canonical)\n" (string-concat "        count (bytes-count bytes)]\n" (string-concat "    (if (> count 32768) (__kr_dtraps)\n" (string-concat "      (loop [index 0 output \"\"]\n" "        (if (>= index count) output\n"))))))
+(defn- ck-r6b-t-doc-runtime49 [] :string
+  (string-concat "          (let [value (bytes-at bytes index)]\n" (string-concat "            (recur (+ index 1)\n" (string-concat "                   (string-concat output\n" (string-concat "                     (string-concat (__kr_dhexd (quot value 16))\n" (string-concat "                                    (__kr_dhexd (bit-and value 15)))))))))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime50 [] :string
+  (string-concat "(defn- document-print [document :document] :string\n" (string-concat "  (__kr_dprint (__r6-ds document)))\n" (string-concat "(defn- document-read [hex :string] :document\n" (string-concat "  (__r6-dd (__kr_drdecode (__kr_drhex hex))))\n" (string-concat ";; Runtime fragment embedded literally in 21-check; no runtime source reads.\n" ";; FIPS 180-4 sections 4.1.2, 4.2.2, 5.1.1, 5.3.3 and 6.2.\n"))))))
+(defn- ck-r6b-t-doc-runtime51 [] :string
+  (string-concat ";; Integer words carry unsigned 32-bit values in i64. Read input bytes without\n" (string-concat ";; changing them; only the fresh, private state/schedule vectors are mutated.\n" (string-concat ";; Padding is virtual, so neither a padded input copy nor a per-block schedule\n" (string-concat ";; allocation is needed. Existing typed-byte/resource bounds apply unchanged.\n" (string-concat ";; No hash capability, host crypto, text conversion or C runtime is called.\n" "(defn- __krsh_u32 [x :i64] :i64 (bit-and x 4294967295))\n"))))))
+(defn- ck-r6b-t-doc-runtime52 [] :string
+  (string-concat "(defn- __krsh_rotate [x :i64 n :i64] :i64\n" (string-concat "  (__krsh_u32 (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n)))))\n" (string-concat "(defn- __krsh_padded-byte [data :bytes length :i64 total :i64 at :i64] :i64\n" (string-concat "  (cond (< at length) (bytes-at data at)\n" (string-concat "        (= at length) 128\n" "        (>= at (- total 8))\n"))))))
+(defn- ck-r6b-t-doc-runtime53 [] :string
+  (string-concat "        (bit-and (u64-shift-right (* length 8) (* 8 (- (- total 1) at))) 255)\n" (string-concat "        :else 0))\n" (string-concat "(defn- __krsh_word [data :bytes length :i64 total :i64 at :i64] :i64\n" (string-concat "  (+ (i64-shift-left (__krsh_padded-byte data length total at) 24)\n" (string-concat "     (i64-shift-left (__krsh_padded-byte data length total (+ at 1)) 16)\n" "     (i64-shift-left (__krsh_padded-byte data length total (+ at 2)) 8)\n"))))))
+(defn- ck-r6b-t-doc-runtime54 [] :string
+  (string-concat "     (__krsh_padded-byte data length total (+ at 3))))\n" (string-concat "(defn- __krsh_schedule [data :bytes at :i64 total :i64 work :vector-i64] :vector-i64\n" (string-concat "  (let [length (bytes-count data)\n" (string-concat "        first (loop [i 0 current work]\n" (string-concat "                (if (= i 16) current\n" "                  (recur (+ i 1) (vector-assoc! current i (__krsh_word data length total (+ at (* i 4)))))))]\n"))))))
+(defn- ck-r6b-t-doc-runtime55 [] :string
+  (string-concat "    (loop [i 16 current first]\n" (string-concat "      (if (= i 64) current\n" (string-concat "        (let [a (vector-at current (- i 15)) b (vector-at current (- i 2))\n" (string-concat "              small0 (bit-xor (bit-xor (__krsh_rotate a 7) (__krsh_rotate a 18)) (u64-shift-right a 3))\n" (string-concat "              small1 (bit-xor (bit-xor (__krsh_rotate b 17) (__krsh_rotate b 19)) (u64-shift-right b 10))\n" "              next (__krsh_u32 (+ (vector-at current (- i 16)) small0\n"))))))
+(defn- ck-r6b-t-doc-runtime56 [] :string
+  (string-concat "                           (vector-at current (- i 7)) small1))]\n" (string-concat "          (recur (+ i 1) (vector-assoc! current i next)))))))\n" (string-concat "(defn- __krsh_compress [state :vector-i64 work :vector-i64 constants :vector-i64] :vector-i64\n" (string-concat "  (loop [i 0 a (vector-at state 0) b (vector-at state 1)\n" (string-concat "         c (vector-at state 2) d (vector-at state 3)\n" "         e (vector-at state 4) f (vector-at state 5)\n"))))))
+(defn- ck-r6b-t-doc-runtime57 [] :string
+  (string-concat "         g (vector-at state 6) h (vector-at state 7)]\n" (string-concat "    (if (= i 64)\n" (string-concat "      (-> state\n" (string-concat "          (vector-assoc! 0 (__krsh_u32 (+ (vector-at state 0) a)))\n" (string-concat "          (vector-assoc! 1 (__krsh_u32 (+ (vector-at state 1) b)))\n" "          (vector-assoc! 2 (__krsh_u32 (+ (vector-at state 2) c)))\n"))))))
+(defn- ck-r6b-t-doc-runtime58 [] :string
+  (string-concat "          (vector-assoc! 3 (__krsh_u32 (+ (vector-at state 3) d)))\n" (string-concat "          (vector-assoc! 4 (__krsh_u32 (+ (vector-at state 4) e)))\n" (string-concat "          (vector-assoc! 5 (__krsh_u32 (+ (vector-at state 5) f)))\n" (string-concat "          (vector-assoc! 6 (__krsh_u32 (+ (vector-at state 6) g)))\n" (string-concat "          (vector-assoc! 7 (__krsh_u32 (+ (vector-at state 7) h))))\n" "      (let [big1 (bit-xor (bit-xor (__krsh_rotate e 6) (__krsh_rotate e 11)) (__krsh_rotate e 25))\n"))))))
+(defn- ck-r6b-t-doc-runtime59 [] :string
+  (string-concat "            choose (bit-xor (bit-and e f) (bit-and (__krsh_u32 (bit-not e)) g))\n" (string-concat "            first (__krsh_u32 (+ h big1 choose (vector-at constants i) (vector-at work i)))\n" (string-concat "            big0 (bit-xor (bit-xor (__krsh_rotate a 2) (__krsh_rotate a 13)) (__krsh_rotate a 22))\n" (string-concat "            majority (bit-xor (bit-xor (bit-and a b) (bit-and a c)) (bit-and b c))\n" (string-concat "            second (__krsh_u32 (+ big0 majority))]\n" "        (recur (+ i 1) (__krsh_u32 (+ first second)) a b c (__krsh_u32 (+ d first)) e f g)))))\n"))))))
+(defn- ck-r6b-t-doc-runtime60 [] :string
+  (string-concat "(defn- __krsh_hex-state [state :vector-i64] :string\n" (string-concat "  (loop [i 0 output \"\"]\n" (string-concat "    (if (= i 32) output\n" (string-concat "      (let [byte (bit-and (u64-shift-right (vector-at state (quot i 4))\n" (string-concat "                                         (* 8 (- 3 (bit-and i 3)))) 255)\n" "            high (quot byte 16) low (bit-and byte 15)]\n"))))))
+(defn- ck-r6b-t-doc-runtime61 [] :string
+  (string-concat "        (recur (+ i 1)\n" (string-concat "          (string-concat output\n" (string-concat "            (string-concat (string-substring \"0123456789abcdef\" high (+ high 1))\n" (string-concat "                           (string-substring \"0123456789abcdef\" low (+ low 1)))))))))\n" (string-concat "(defn- __krsh_sha256-hex [data :bytes] :string\n" "  (let [length (bytes-count data)\n"))))))
+(defn- ck-r6b-t-doc-runtime62 [] :string
+  (string-concat "        total (bit-and (+ length 72) -64)\n" (string-concat "        initial [0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a\n" (string-concat "                 0x510e527f 0x9b05688c 0x1f83d9ab 0x5be0cd19]\n" (string-concat "        constants [0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5 0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5\n" (string-concat "                   0xd807aa98 0x12835b01 0x243185be 0x550c7dc3 0x72be5d74 0x80deb1fe 0x9bdc06a7 0xc19bf174\n" "                   0xe49b69c1 0xefbe4786 0x0fc19dc6 0x240ca1cc 0x2de92c6f 0x4a7484aa 0x5cb0a9dc 0x76f988da\n"))))))
+(defn- ck-r6b-t-doc-runtime63 [] :string
+  (string-concat "                   0x983e5152 0xa831c66d 0xb00327c8 0xbf597fc7 0xc6e00bf3 0xd5a79147 0x06ca6351 0x14292967\n" (string-concat "                   0x27b70a85 0x2e1b2138 0x4d2c6dfc 0x53380d13 0x650a7354 0x766a0abb 0x81c2c92e 0x92722c85\n" (string-concat "                   0xa2bfe8a1 0xa81a664b 0xc24b8b70 0xc76c51a3 0xd192e819 0xd6990624 0xf40e3585 0x106aa070\n" (string-concat "                   0x19a4c116 0x1e376c08 0x2748774c 0x34b0bcb5 0x391c0cb3 0x4ed8aa4a 0x5b9cca4f 0x682e6ff3\n" (string-concat "                   0x748f82ee 0x78a5636f 0x84c87814 0x8cc70208 0x90befffa 0xa4506ceb 0xbef9a3f7 0xc67178f2]\n" "        work (vector-alloc 64)\n"))))))
+(defn- ck-r6b-t-doc-runtime64 [] :string
+  (string-concat "        final (loop [at 0 state initial scratch work]\n" (string-concat "                (if (= at total) state\n" (string-concat "                  (let [prepared (__krsh_schedule data at total scratch)]\n" (string-concat "                    (recur (+ at 64) (__krsh_compress state prepared constants) prepared))))]\n" (string-concat "    (__krsh_hex-state final)))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime65 [] :string
+  (string-concat "(defn- document-sha256 [document :document] :string\n" (string-concat "  (let [canonical (__kr_dcanon (__r6-ds document))\n" (string-concat "        checked (__kr_drdecode canonical)]\n" "    (__krsh_sha256-hex (string-to-utf8 (__kr_dcanon checked)))))\n"))))
+(defn- ck-r6b-t-doc-runtime [] :string (string-concat (ck-r6b-t-doc-runtime0) (string-concat (ck-r6b-t-doc-runtime1) (string-concat (ck-r6b-t-doc-runtime2) (string-concat (ck-r6b-t-doc-runtime3) (string-concat (ck-r6b-t-doc-runtime4) (string-concat (ck-r6b-t-doc-runtime5) (string-concat (ck-r6b-t-doc-runtime6) (string-concat (ck-r6b-t-doc-runtime7) (string-concat (ck-r6b-t-doc-runtime8) (string-concat (ck-r6b-t-doc-runtime9) (string-concat (ck-r6b-t-doc-runtime10) (string-concat (ck-r6b-t-doc-runtime11) (string-concat (ck-r6b-t-doc-runtime12) (string-concat (ck-r6b-t-doc-runtime13) (string-concat (ck-r6b-t-doc-runtime14) (string-concat (ck-r6b-t-doc-runtime15) (string-concat (ck-r6b-t-doc-runtime16) (string-concat (ck-r6b-t-doc-runtime17) (string-concat (ck-r6b-t-doc-runtime18) (string-concat (ck-r6b-t-doc-runtime19) (string-concat (ck-r6b-t-doc-runtime20) (string-concat (ck-r6b-t-doc-runtime21) (string-concat (ck-r6b-t-doc-runtime22) (string-concat (ck-r6b-t-doc-runtime23) (string-concat (ck-r6b-t-doc-runtime24) (string-concat (ck-r6b-t-doc-runtime25) (string-concat (ck-r6b-t-doc-runtime26) (string-concat (ck-r6b-t-doc-runtime27) (string-concat (ck-r6b-t-doc-runtime28) (string-concat (ck-r6b-t-doc-runtime29) (string-concat (ck-r6b-t-doc-runtime30) (string-concat (ck-r6b-t-doc-runtime31) (string-concat (ck-r6b-t-doc-runtime32) (string-concat (ck-r6b-t-doc-runtime33) (string-concat (ck-r6b-t-doc-runtime34) (string-concat (ck-r6b-t-doc-runtime35) (string-concat (ck-r6b-t-doc-runtime36) (string-concat (ck-r6b-t-doc-runtime37) (string-concat (ck-r6b-t-doc-runtime38) (string-concat (ck-r6b-t-doc-runtime39) (string-concat (ck-r6b-t-doc-runtime40) (string-concat (ck-r6b-t-doc-runtime41) (string-concat (ck-r6b-t-doc-runtime42) (string-concat (ck-r6b-t-doc-runtime43) (string-concat (ck-r6b-t-doc-runtime44) (string-concat (ck-r6b-t-doc-runtime45) (string-concat (ck-r6b-t-doc-runtime46) (string-concat (ck-r6b-t-doc-runtime47) (string-concat (ck-r6b-t-doc-runtime48) (string-concat (ck-r6b-t-doc-runtime49) (string-concat (ck-r6b-t-doc-runtime50) (string-concat (ck-r6b-t-doc-runtime51) (string-concat (ck-r6b-t-doc-runtime52) (string-concat (ck-r6b-t-doc-runtime53) (string-concat (ck-r6b-t-doc-runtime54) (string-concat (ck-r6b-t-doc-runtime55) (string-concat (ck-r6b-t-doc-runtime56) (string-concat (ck-r6b-t-doc-runtime57) (string-concat (ck-r6b-t-doc-runtime58) (string-concat (ck-r6b-t-doc-runtime59) (string-concat (ck-r6b-t-doc-runtime60) (string-concat (ck-r6b-t-doc-runtime61) (string-concat (ck-r6b-t-doc-runtime62) (string-concat (ck-r6b-t-doc-runtime63) (string-concat (ck-r6b-t-doc-runtime64) (ck-r6b-t-doc-runtime65)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+
 (defn- ck-r6b-t-doc0 [] :string
   (string-concat "(defn- __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
   (string-concat "(defn- __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))\n"
@@ -5452,12 +5581,12 @@
 (defn- ck-r6b-t-doc8 [] :string
   (string-concat "(defn- __kr_dlenrange [acc :string tag :string d :string i :i64 e :i64] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (- e i))) \":\") (string-substring d i e)))\n"
   (string-concat "(defn- __kr_dcanonitems [acc :string d :string i :i64 mp :bool ky :bool] :string (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcanonitems acc d (+ i 1) mp ky) (__kr_dcloser c) acc :else (let [e (__kr_dend d i) a2 (if ky (if (__kr_dkwat d i) (__kr_dlenrange acc \"K\" d i e) (__kr_dcanonat (string-concat acc \"D\") d i)) (__kr_dcanonat acc d i))] (__kr_dcanonitems a2 d e mp (and mp (not ky)))))))\n"
-  (string-concat "(defn- __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc \"n\") (= k 1) (string-concat acc (if (__kr_dregeq d i e \"true\" 0) \"bt\" \"bf\")) (= k 2) (string-concat (string-concat (string-concat acc \"i\") (string-substring d i e)) \";\") (= k 3) (__kr_dtraps) (= k 4) (__kr_dlentext acc \"s\" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc \"k\" d i e) (= k 6) (__kr_dlenrange acc \"y\" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) \"v\" (= k 8) \"l\" (= k 9) \"e\" :else \"m\")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) \":\")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))\n"
+  (string-concat "(defn- __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc \"n\") (= k 1) (string-concat acc (if (__kr_dregeq d i e \"true\" 0) \"bt\" \"bf\")) (= k 2) (string-concat (string-concat (string-concat acc \"i\") (string-substring d i e)) \";\") (= k 3) (string-concat acc (__kr_df64canon d i e)) (= k 4) (__kr_dlentext acc \"s\" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc \"k\" d i e) (= k 6) (__kr_dlenrange acc \"y\" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) \"v\" (= k 8) \"l\" (= k 9) \"e\" :else \"m\")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) \":\")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))\n"
   (string-concat "(defn- __kr_dcanon [d :string] :string (__kr_dcanonat (__kr_dempty) d 0))\n"
   (string-concat "(defn- __kr_drcmp [a :string i :i64 b :string k :i64 l :i64] :i64 (cond (= i (string-length a)) (if (= k l) 0 -1) (= k l) 1 :else (let [x (string-code-point-at a i) y (string-code-point-at b k)] (cond (< x y) -1 (> x y) 1 :else (__kr_drcmp a (+ i (__kr_dw x)) b (+ k (__kr_dw y)) l)))))\n"
   "(defn- __kr_dkeycmp [key :string m :string i :i64 e :i64] :i64 (if (and (= (string-code-point-at key 0) 58) (__kr_dkwat m i)) (__kr_drcmp key 0 m i e) (string-compare (__kr_dcanon key) (__kr_dcanonat (__kr_dempty) m i))))\n"))))))
 (defn- ck-r6b-t-doc9 [] :string
-  (string-concat "(defn- __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (__kr_dregeq m i ke key 0) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))\n"
+  (string-concat "(defn- __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (string=? (__kr_dcanonat (__kr_dempty) m i) (__kr_dcanon key)) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))\n"
   (string-concat "(defn- __kr_dmapslot [m :string key :string i :i64 u :bool] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapslot m key (+ i 1) u) (__kr_dcloser c) i :else (let [ke (__kr_dend m i) o (__kr_dkeycmp key m i ke)] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_dmapslot m key (__kr_dend m (+ ke 1)) u))))))\n"
   (string-concat "(defn- __kr_dinsert [m :string q :i64 entry :string] :string (cond (= q (__kr_dclose m)) (if (= q (__kr_dopen m)) (string-concat (string-substring m 0 q) (string-concat entry (string-substring m q (string-length m)))) (string-concat (string-concat (string-substring m 0 q) \" \") (string-concat entry (string-substring m q (string-length m))))) :else (string-concat (string-substring m 0 q) (string-concat (string-concat entry \" \") (string-substring m q (string-length m))))))\n"
   (string-concat "(defn- __kr_dmapput [m :string key :string value :string u :bool] :string (__kr_dbounded (__kr_dinsert m (__kr_dmapslot m key 1 u) (string-concat (string-concat key \" \") value))))\n"
@@ -5480,7 +5609,7 @@
 (defn- ck-r6b-t-doc12 [] :string
   (string-concat "(defn- __kr_dvremove [v0 :string i :i64] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dcut v p (__kr_dend v p)))))\n"
   (string-concat "(defn- __kr_dvdrop [v0 :string n :i64] :string (let [v (__kr_dreq v0 7 7)] (cond (< n 0) (__kr_dtraps) (> n (__kr_dforms v)) (__kr_dtraps) (= n 0) v :else (let [p (__kr_ditem v 1 n)] (if (< p 0) \"[]\" (string-concat \"[\" (string-substring v p (string-length v))))))))\n"
-  (string-concat "(defn- __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (__kr_dregeq s i e x 0) (= 0 0) (__kr_dsetcontains s x e))))))\n"
+  (string-concat "(defn- __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (string=? (__kr_dcanonat (__kr_dempty) s i) (__kr_dcanon x)) (= 0 0) (__kr_dsetcontains s x e))))))\n"
   (string-concat "(defn- __kr_dsetc [s :string x :string] :bool (__kr_dsetcontains (__kr_dreq s 9 9) x 2))\n"
   (string-concat "(defn- __kr_ditemslot [s :string cx :string i :i64 u :bool] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_ditemslot s cx (+ i 1) u) (__kr_dcloser c) i :else (let [o (string-compare cx (__kr_dcanonat (__kr_dempty) s i))] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_ditemslot s cx (__kr_dend s i) u))))))\n"
   "(defn- __kr_dsetput [s :string x :string] :string (__kr_dbounded (__kr_dinsert s (__kr_ditemslot s (__kr_dcanon x) 2 (= 0 0)) x)))\n"))))))
@@ -5497,7 +5626,7 @@
   (string-concat "(defn- __kr_dmz [] :string \"{}\")\n"
   (string-concat "(defn- __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))\n"
   (string-concat "(defn- __kr_dkind [d :string] :string (let [k (__kr_dkindn d)] (cond (= k 0) \":null\" (= k 1) \":bool\" (= k 2) \":i64\" (= k 3) \":f64\" (= k 4) \":string\" (= k 5) \":keyword\" (= k 6) \":symbol\" (= k 7) \":vector\" (= k 8) \":list\" (= k 9) \":set\" :else \":map\")))\n"
-  "(defn- __kr_deq [a :string b :string] :bool (string=? a b))\n"))))))
+  "(defn- __kr_deq [a :string b :string] :bool (string=? (__kr_dcanon a) (__kr_dcanon b)))\n"))))))
 (defn- ck-r6b-t-doc15 [] :string
   (string-concat "(defn- __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))\n"
   (string-concat "(defn- __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))\n"
@@ -5535,7 +5664,7 @@
   "(defn- document-count [d :document] :i64 (__kr_dcount (__r6-ds d)))\n"))))))
 (defn- ck-r6b-t-doc20 [] :string
   (string-concat "(defn- document-kind [d :document] :keyword (__r6-as :keyword (__r6-kwh (__kr_dkind (__r6-ds d)))))\n"
-  (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__r6-ds a) (__r6-ds b)))\n"
+  (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__kr_dcanon (__r6-ds a)) (__kr_dcanon (__r6-ds b))))\n"
   (string-concat "(defn- document-set-contains? [s :document x :document] :bool (__kr_dsetc (__r6-ds s) (__r6-ds x)))\n"
   (string-concat "(defn- document-contains [m :document k :document] :bool (__kr_dcontains (__r6-ds m) (__r6-ds k)))\n"
   (string-concat "(defn- document-get [m :document k :document] [:option :document] (__r6-dopt (__kr_dget (__r6-ds m) (__r6-ds k))))\n"
@@ -5581,7 +5710,7 @@
   (string-concat "(defn- rest [d :document] :document (loop [i 1 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-item d i))))))\n"
   (string-concat "(defn- __r6-dkeys [d :document] :document (loop [i 0 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-dnth (__r6-item d i) 0))))))\n"
   "(defn- __r6-dnth [d :document i :i64] :document (let [o (if (= (__kr_dkindn (__r6-ds d)) 8) (document-list-at d i) (document-vector-at d i))] (if (option-some?-of [:option :document] o) (option-value-of [:option :document] o (document-null)) (__r6-dd (__r6-traps)))))\n")))))
-(defn- ck-r6b-t-doc [] :string (string-concat (ck-r6b-t-doc0) (string-concat (ck-r6b-t-doc1) (string-concat (ck-r6b-t-doc2) (string-concat (ck-r6b-t-doc3) (string-concat (ck-r6b-t-doc4) (string-concat (ck-r6b-t-doc5) (string-concat (ck-r6b-t-doc6) (string-concat (ck-r6b-t-doc7) (string-concat (ck-r6b-t-doc8) (string-concat (ck-r6b-t-doc9) (string-concat (ck-r6b-t-doc10) (string-concat (ck-r6b-t-doc11) (string-concat (ck-r6b-t-doc12) (string-concat (ck-r6b-t-doc13) (string-concat (ck-r6b-t-doc14) (string-concat (ck-r6b-t-doc15) (string-concat (ck-r6b-t-doc16) (string-concat (ck-r6b-t-doc17) (string-concat (ck-r6b-t-doc18) (string-concat (ck-r6b-t-doc19) (string-concat (ck-r6b-t-doc20) (string-concat (ck-r6b-t-doc21) (string-concat (ck-r6b-t-doc22) (string-concat (ck-r6b-t-doc23) (string-concat (ck-r6b-t-doc24) (string-concat (ck-r6b-t-doc25) (ck-r6b-t-doc26))))))))))))))))))))))))))))
+(defn- ck-r6b-t-doc [] :string (string-concat (string-concat (ck-r6b-t-doc0) (string-concat (ck-r6b-t-doc1) (string-concat (ck-r6b-t-doc2) (string-concat (ck-r6b-t-doc3) (string-concat (ck-r6b-t-doc4) (string-concat (ck-r6b-t-doc5) (string-concat (ck-r6b-t-doc6) (string-concat (ck-r6b-t-doc7) (string-concat (ck-r6b-t-doc8) (string-concat (ck-r6b-t-doc9) (string-concat (ck-r6b-t-doc10) (string-concat (ck-r6b-t-doc11) (string-concat (ck-r6b-t-doc12) (string-concat (ck-r6b-t-doc13) (string-concat (ck-r6b-t-doc14) (string-concat (ck-r6b-t-doc15) (string-concat (ck-r6b-t-doc16) (string-concat (ck-r6b-t-doc17) (string-concat (ck-r6b-t-doc18) (string-concat (ck-r6b-t-doc19) (string-concat (ck-r6b-t-doc20) (string-concat (ck-r6b-t-doc21) (string-concat (ck-r6b-t-doc22) (string-concat (ck-r6b-t-doc23) (string-concat (ck-r6b-t-doc24) (string-concat (ck-r6b-t-doc25) (ck-r6b-t-doc26))))))))))))))))))))))))))) (ck-r6b-t-doc-runtime)))
 (defn- ck-r6b-t-sfb0 [] :string
   "(defn- string-find-byte [s :string b :i64 i :i64] :i64 (cond (< b 0) (vector-at [0] 1) (> b 127) (vector-at [0] 1) (< i 0) (vector-at [0] 1) (> i (string-length s)) (vector-at [0] 1) :else (loop [j i] (if (>= j (string-length s)) -1 (let [c (string-code-point-at s j)] (if (= c b) j (recur (+ j (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4)))))))))\n")
 (defn- ck-r6b-t-sfb [] :string (ck-r6b-t-sfb0))
@@ -5916,7 +6045,7 @@
 (def ck-r6f-g-f32 32768)
 (defn- ck-r6f-t-f32 [] :string
   (string-concat "(defn- f32-to-bits [x :f32] :i64 (__r6-as :i64 x))\n"
-  "(defn- f32-from-bits [b :i64] :f32 (if (or (< b -2147483648) (> b 2147483647)) (__r6-as :f32 (vector-at [0] 1)) (__r6-as :f32 b)))\n"))
+  "(defn- f32-from-bits [b :i64] :f32 (do (assert (and (>= b -2147483648) (<= b 2147483647))) (__r6-as :f32 b)))\n"))
 ;; R6F: reference string-kit heads (lang/guest-grammar.edn, context ABI v7/v8/v10) and `mod` as library defn-s, one group
 ;; bit per function (a module that defines a function of the same name keeps its own: ck-r6b-scan's defd rule). Byte
 ;; offsets throughout (the seed's strings are UTF-8, string-code-point-at reads at a byte offset).

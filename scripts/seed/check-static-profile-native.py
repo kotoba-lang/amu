@@ -24,13 +24,15 @@ def main(build,complete,out):
   good=work/'static.kotoba';run('generate',[tool,normal,policy,good]);assert good.read_bytes()==(ROOT/'seed/00-ns-static.kotoba').read_bytes()
   run('existing-output',[tool,normal,policy,good],1);assert good.read_bytes()==(ROOT/'seed/00-ns-static.kotoba').read_bytes()
   text=policy.read_text();cases={'zero-node':text.replace(';; [:s MM-NODE-CAP 786432]',';; [:s MM-NODE-CAP 0]'),
+    'zero-sir':text.replace(';; [:s MM-SIR-CAP 589824]',';; [:s MM-SIR-CAP 0]'),
+    'missing-sir':text.replace(';; [:s MM-SIR-CAP 589824]\n',''),
     'vector-budget':text.replace(';; [:s MM-NODE-CAP 786432]',';; [:s MM-NODE-CAP 33554432]'),
     'duplicate-override':text+'\n;; [:s MM-NODE-CAP 786432]\n',
     'missing-override':text.replace(';; [:s MM-OUT-CAP 12582912]\n','')}
   for name,bad in cases.items():
    assert bad!=text;p=work/(name+'.policy');p.write_text(bad);destination=work/(name+'.kotoba');run(name,[tool,normal,p,destination],1);assert not destination.exists()
   denied=work/'denied.kotoba';r=run('no-fs-grant',[tool,normal,policy,denied],120,{**env,'KEXE_ALLOW':'37,38,39'});assert b':wire 35 :refused :not-granted' in r.stderr and not denied.exists()
-  routes.append(dict(compiler=pin(compiler),generator=pin(tool),output=pin(good),refusals=6))
+  routes.append(dict(compiler=pin(compiler),generator=pin(tool),output=pin(good),refusals=8))
  assert routes[0]['output']==routes[1]['output']
  report=dict(status='PASS_NATIVE_STATIC_PROFILE_GENERATOR',source=graph,inputs={p:pin(ROOT/p) for p in ['seed/MEMORY-MAP','seed/00-ns.kotoba','seed/gen-static-ns.kotoba']},routes=routes,nativeGeneration=True,PythonGeneration=False)
  (out/'native-static-profile.json').write_text(json.dumps(report,indent=2)+'\n');print(report['status'])

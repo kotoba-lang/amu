@@ -1,0 +1,59 @@
+;; Native compiler unit fragment: replace72-x86-cross-entry in the complete
+;; X86_64-LINUX-MANIFEST, retaining its driver and shared compiler sources.
+;; Keep the original default-driver helper below. No hosted unit runner.
+;; Expected main result 15; no execution or qualification is recorded yet.
+
+(defn- xg-default [] :i64 (drv-main))
+
+(defn- t-float-row [M :vector-i64 profile :i64 operation :i64 subcode :i64] :vector-i64
+    (-> M (mem-set MM-ERR 0) (mem-set 196 profile) (mem-set MM-SIR-N 2)
+        (mem-set (+ MM-SIR-BASE MM-SIR-W IF-OP) operation)
+        (mem-set (+ MM-SIR-BASE MM-SIR-W IF-A) subcode)))
+;; Reuse one bounded compiler arena; do not allocate a whole arena per case.
+(defn- t-admission [M :vector-i64 profile :i64 operation :i64 subcode :i64 expected :i64] :vector-i64
+  (let [m (xg-check-sir (t-float-row M profile operation subcode) 1)
+        ok (and (= (vector-at m MM-R0) 1) (= (vector-at m MM-ERR) expected))]
+    (mem-set m MM-R0 (if ok 1 0))))
+(defn- t-family [M :vector-i64 operation :i64 start :i64 end :i64] :vector-i64
+  (loop [sub start current M]
+    (if (> sub end) current
+      (recur (+ sub 1)
+        (-> current (t-admission 3 operation sub 0) (t-admission 0 operation sub 7101)
+                    (t-admission 1 operation sub 7101) (t-admission 2 operation sub 7101))))))
+(defn- t-families [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-R0 1) (t-family OP-BIN 16 21) (t-family OP-BIN 24 29)
+      (t-family OP-CMP 8 13) (t-family OP-CMP 16 21)
+      (t-family OP-UN 16 18) (t-family OP-UN 24 26) (t-family OP-UN 32 37)))
+(defn- t-gaps [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-R0 1)
+      (t-admission 3 OP-BIN 15 7101) (t-admission 3 OP-BIN 22 7101) (t-admission 3 OP-BIN 23 7101)
+      (t-admission 3 OP-BIN 30 7101) (t-admission 3 OP-CMP 7 7101) (t-admission 3 OP-CMP 14 7101)
+      (t-admission 3 OP-CMP 15 7101) (t-admission 3 OP-CMP 22 7101)
+      (t-admission 3 OP-UN 19 7101) (t-admission 3 OP-UN 23 7101)
+      (t-admission 3 OP-UN 27 7101) (t-admission 3 OP-UN 31 7101) (t-admission 3 OP-UN 38 7101)))
+(defn- t-type [M :vector-i64 profile :i64 type :i64 expected :bool] :vector-i64
+  (let [m (xg-set M 4 profile)
+        ok (and (= (vector-at m MM-R0) 1) (= (xg-type m type) expected))]
+    (mem-set m MM-R0 (if ok 1 0))))
+(defn- t-profile-types [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-R0 1) (t-type 3 TY-F64 true) (t-type 3 TY-F32 true)
+      (t-type 3 TY-I64 true) (t-type 3 TY-BOOL true)
+      (t-type 0 TY-F64 false) (t-type 0 TY-F32 false) (t-type 1 TY-F64 false) (t-type 1 TY-F32 false)
+      (t-type 2 TY-F64 false) (t-type 2 TY-F32 false)
+      (t-type 0 TY-I64 true) (t-type 2 TY-I64 true) (t-type 2 TY-BOOL true)))
+(defn- t-frame [M :vector-i64 floating :bool slots :i64 expected :i64] :vector-i64
+  (let [m (-> (t-float-row M 3 OP-BIN (if floating BOP-F64-ADD BOP-ADD))
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-SIR) 1)
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-NSLOTS) slots)
+              (mem-set (+ MM-FN-BASE MM-FN-W FF-DEPTH) 0))
+        ok (and (= (vector-at m MM-R0) 1) (= (xg-frame m 1) expected))]
+    (mem-set m MM-R0 (if ok 1 0))))
+(defn- t-frame-bounds [M :vector-i64] :vector-i64
+  (-> M (mem-set MM-R0 1) (t-frame false 0 16) (t-frame true 0 32)
+      (t-frame false 511 4096) (t-frame true 511 4112)))
+(defn- seed-main [] :i64
+  (let [m1 (t-families (mem-new)) a (vector-at m1 MM-R0)
+        m2 (t-gaps m1) b (vector-at m2 MM-R0)
+        m3 (t-profile-types m2) c (vector-at m3 MM-R0)
+        m4 (t-frame-bounds m3) d (vector-at m4 MM-R0)]
+    (+ a (* b 2) (* c 4) (* d 8))))
