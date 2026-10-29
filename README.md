@@ -7,8 +7,8 @@ It has no dylib dependency. The unchanged native Linux x86_64 executable
 is available explicitly as `bin/amu-linux-x86_64`.
 
 The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
-in a 48-module compiler with native Linux emitters, browser Wasm, bounded
-Kototama i64 AOT/receipts, native CDCI/FS2 and the AIUEOS image/EFI route.
+in a 49-module compiler with native Linux emitters, browser Wasm, bounded
+Kototama i64 AOT/receipts/cache, native CDCI/FS2 and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
 correctness evidence; it publishes no new performance score.

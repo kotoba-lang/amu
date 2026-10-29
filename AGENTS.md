@@ -7,8 +7,15 @@
   features, new targets and benchmark publication. Details:
   `docs/selfhost-priority.md` (owner decision 2026-10-22).
 - Remove CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js and
-  C compiler/loader/runtime dependencies from that closure. CLJK is not a
-  retained final syntax-sugar surface. C-loader pinning is not acceptance.
+  C compiler/loader/runtime dependencies from that implementation closure.
+  C-loader pinning is not acceptance.
+- CLJK and EDN remain accepted as permanent INPUT reader sugar (owner
+  decision 2026-10-29, JUN-579; supersedes the 2026-10-22 "CLJK is not
+  retained" wording). The reader is implemented in Kotoba, and each sugar
+  spelling must desugar to the same canonical Kotoba form and mint the same
+  Definition CID as pure `.kotoba`
+  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). CLJC/CLJS/CLJ still
+  retire.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
@@ -160,6 +167,23 @@ the adopted core and existing emitters authoritative. The native ordered
 gate checks raw observations, named resource refusals and actual metering
 removal; Python only stages bytes/processes. The unsigned process receipt
 is not a signed VM receipt, fresh node admission or an in-process unwind ABI.
+
+## Budget-independent local cache (JUN-371)
+
+`seed/85-kototama-i64-cache.kotoba` retains that closed language and reuses
+the same emitters, but separates immutable code identity from the fresh
+stdin72 invocation context. Cache identity binds Program CID, compiler/source
+digests, decoder/value/fuel/profile/ABI, target baseline CPU, optimizer and
+empty imports. Never persist authority, approvals, lease or mutable fuel in
+the code cache. Reject a missing/mismatched context before any guest code.
+
+The dedicated pinned factory builds `seed/cache/host.kotoba` with a fixed
+compiler/source policy, using the existing native CDCI supervisor primitives.
+It is a bounded local x86 host, separate from the two mandatory CDCI roles.
+Keep the private16-slot/1MiB-image/concurrency1/compile120s/guest5s bounds and
+fresh empty-authority admission on every hit. Runtime deadlines are host
+failures, never fabricated fuel receipts. Remote signatures, effectful grants,
+Cell integration and an ARM supervisor require separate qualification.
 
 ## Locked shared components (JUN-93)
 

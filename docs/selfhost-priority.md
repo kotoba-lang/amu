@@ -2,8 +2,10 @@
 
 Decision updated by the owner on 2026-10-22. It outranks new features, new
 targets and benchmark publication. This contract supersedes the earlier
-CLJK syntax-sugar retention, hosted bootstrap exceptions and C-loader pinning
-requirements. Historical checkpoints below record earlier work, not current
+hosted bootstrap exceptions and C-loader pinning requirements. The CLJK
+syntax-sugar part was reversed by the owner on 2026-10-29 (JUN-579): CLJK and
+EDN stay as input reader sugar that normalizes to the same Kotoba form and
+Definition CID; the compiler's own implementation stays CLJK-free. Historical checkpoints below record earlier work, not current
 instructions or proof of completed migration.
 
 ## The goal
@@ -11,8 +13,8 @@ instructions or proof of completed migration.
 **Canonical source is `.kotoba`. Amu builds and rebuilds its own native
 compiler, CLI, project/build graph, packager and operational tooling without
 CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js, or a C
-compiler, loader or runtime.** CLJK is a migration input, not a final authoring
-surface or acceptance requirement. Port required behavior into Kotoba and
+compiler, loader or runtime.** CLJK is an accepted input sugar (since 2026-10-29), not
+an implementation language or acceptance requirement for the compiler closure. Port required behavior into Kotoba and
 retire the old source, launchers and dependency declarations.
 
 Emitting machine code or naming a file `.kotoba` does not prove this closure.
@@ -37,8 +39,7 @@ apply to end-user apps.
    current selfhost, Q9 or CDCI qualification.
 3. **Remove legacy build and execution dependencies.** Replace hosted compiler
    seams, C loaders, seed/image launchers and packagers with Kotoba / Amu
-   selfhost implementations. Do not pin a C loader as the solution, retain
-   CLJK as syntax sugar, or keep GraalVM builders for a required comparison
+   selfhost implementations. Do not pin a C loader as the solution or keep GraalVM builders for a required comparison
    route. Missing native functionality is an explicit blocker.
 4. **Benchmarks follow selfhost.** Embench and other compiler measurements are
    published as selfhost results only when taken with a selfhost-built
@@ -76,7 +77,7 @@ lock-unaware-builder boundary; none of its pending cases is a native pass.
 
 The final graph contains canonical `.kotoba` implementations. Existing CLJK
 fixtures, readers and host-specific branches are migration inventory; they
-do not establish a requirement to retain the old surface. Preserve recorded
+do not make the old implementation a requirement; the CLJK/EDN input sugar itself is retained (2026-10-29). Preserve recorded
 behavior, semantic identity, authority and resource boundaries while porting
 the whole component. Source admission is distinct from execution and full
 self-reconstruction.
@@ -85,7 +86,7 @@ The migration proceeds through these gates:
 
 1. **Port the language and component boundary.** Migrate required source and
    fixtures to `.kotoba`, preserving recorded semantics, Definition CIDs and
-   named refusals. Remove the requirement for a permanent paired CLJK surface.
+   named refusals. A CLJK sugar spelling is kept as input only if it mints the same Definition CID as its Kotoba form.
 2. **Grow the native Kotoba compiler closure.** The original adopted seed
    was a 16-module compiler. The current product retains the extended18
    core in a complete29 native closure, with actual x86 execution recorded

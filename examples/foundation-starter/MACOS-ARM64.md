@@ -29,7 +29,7 @@ otool -L bin/amu
 ```
 
 Expected compiler SHA-256:
-`361f32e1adc9665d11986fc8e6053dcd3ace4efde5f28a8d885850b11a7dab92`.
+`a7424fba0a88860560c963e5393de8201456f8eb6378863c42546947c3121cc6`.
 Expected packager SHA-256:
 `45d1271c70ce2e4fb33113af25278c23af20f007a618e82782222f4b72e215f8`.
 `file` must identify ARM64 Mach-O and `otool -L` must list no dylibs.

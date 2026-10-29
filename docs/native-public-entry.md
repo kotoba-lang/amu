@@ -14,7 +14,7 @@ The unchanged static Linux x86_64 ELF is `bin/amu-linux-x86_64`, with
 its Linux qualification flags do not qualify the Mac entry. The separate
 Linux ARM root is pinned by `seed/bootstrap/aarch64-linux-static-root.json`.
 
-The complete source manifest has 48 modules, including all18 normal adopted
+The complete source manifest has 49 modules, including all18 normal adopted
 core modules. The core adoption image is unchanged.
 The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
@@ -22,8 +22,8 @@ removed to reduce the graph. No new comparative performance score is claimed.
 
 ## Native qualification
 
-Use the [current source-bound qualification record](qualification/starter-native-20261029.json)
-with `native-product.json`. The record binds native CI receipts and their
+The [historical 48-module qualification record](qualification/starter-native-20261029.json)
+does not qualify the current 49-module image in `native-product.json`. The record binds native CI receipts and their
 artifact digests to exact source and compiler bytes. It distinguishes
 compiler reproduction, controller execution, workflow completion and
 independent user/host qualification. A new image needs its own record;
