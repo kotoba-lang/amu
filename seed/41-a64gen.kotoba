@@ -21233,7 +21233,7 @@
 (defn- t2-obj [M :vector-i64 v :i64] :i64 (let [o (if (> v 0) (t2-g M (+ t2-a-obj v)) 0)] (if (> o 0) o v)))
 (defn- t2-ret0? [M :vector-i64 g :i64] :bool
   (or (and (= g (t2-g M t2-s-f)) (= (t2-g M t2-s-ret0self) 1))
-      (and (> g 0) (< g MM-FN-CAP) (not= g (t2-g M t2-s-f)) (= (t2-g M (+ t2-a-ret0 g)) 1))))
+      (and (> g 0) (< g MM-FN-CAP) (not= g (t2-g M t2-s-f)) (= (t2-g M (+ t2-a-ret0 g)) 1) (not (gn-clamp-open M g)))))
 ;; meet of the current obj o of v with a computed object x (0 = no information)
 (defn- t2-obj-meet [o :i64 x :i64 v :i64] :i64 (cond (= x 0) o (= o 0) x (= o x) o :else v))
 (defn- t2-obj-new [M :vector-i64 v :i64] :i64
@@ -24726,7 +24726,9 @@
   (if (or (>= g (vector-at M MM-FN-N)) (>= g MM-FN-CAP)) (t2-s M t2-s-last changed)
     (if (= (t2-g M (+ t2-a-mcd g)) 1) (t2-mcd-pass M (inc g) changed)
       (let [p (gn-fnf M g FF-SIR)
-            x (if (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g)) (t2-mcd-scan M (inc p)) 1)]
+            ;; an import stub's SIR is a typing self call, not the export's code (JUN-595): may change descriptors
+            x (if (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g) (not (gn-clamp-open M g)))
+                (t2-mcd-scan M (inc p)) 1)]
         (if (= x 1) (t2-mcd-pass (t2-s M (+ t2-a-mcd g) 1) (inc g) 1) (t2-mcd-pass M (inc g) changed))))))
 (defn- t2-mcd-init [M :vector-i64] :vector-i64
   (let [M0 (-> M (t2-wzero t2-a-mcd 0 MM-FN-CAP) (t2-wzero t2-a-ret0 0 MM-FN-CAP) (t2-s t2-a-mcd 1))]
@@ -24869,7 +24871,9 @@
   (let [n (gn-min (vector-at M MM-FN-N) MM-FN-CAP)
         ;; private functions start at "no call seen", everything else (public, lambdas, adapters) unknown
         M0 (loop [f 0 m M] (if (>= f MM-FN-CAP) m
-                             (recur (inc f) (let [v (if (and (< f n) (= (gn-fnf m f FF-KIND) FK-PRIV) (not (lw-tmpl? m f)) (not (lw-spec? m f)))
+                             ;; import stubs (JUN-595) are unknown: their SIR is not the export's code
+                             (recur (inc f) (let [v (if (and (< f n) (= (gn-fnf m f FF-KIND) FK-PRIV) (not (lw-tmpl? m f)) (not (lw-spec? m f))
+                                                             (not (gn-clamp-open m f)))
                                                       t2-mlinf 0)]
                                               (-> m (t2-wfill (+ t2-a-pmin (* 4 f)) 0 4 v) (t2-s (+ t2-a-rmin f) v)
                                                   (t2-wfill (+ t2-a-prng (* 8 f)) 0 8 (if (= v 0) t2-rg-unk t2-mlinf)))))))]
@@ -24906,7 +24910,7 @@
 (defn- t2-r0-fn [M :vector-i64 f :i64] :vector-i64
   (let [p (gn-fnf M f FF-SIR)]
     (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f) (< (gn-sir M p IF-B) 1)
-            (lw-spec? M f) (lw-tmpl? M f))
+            (lw-spec? M f) (lw-tmpl? M f) (gn-clamp-open M f))   ; JUN-595: an import stub's SIR is no proof
       (t2-s M t2-s-last 0)
       (let [ns (gn-sir M p IF-C)
             M0 (loop [s 1 m M] (if (or (> s ns) (>= s 256)) m (recur (inc s) (t2-s m (+ t2-a-hmin 512 s) (if (= s 1) 1 (if (<= s (gn-sir M p IF-B)) 0 2))))))
