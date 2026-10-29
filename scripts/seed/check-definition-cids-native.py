@@ -80,17 +80,20 @@ def main(compiler, out):
     assert mutant_text != text
     mutant = build("mutant-encoder", mutant_text)
 
-    def cids(name, source, image=cli, code=0):
+    def cids(name, source, image=cli, code=0, groups=False):
         p = out / (name + ".kotoba")
         p.write_text("\n".join(source) + "\n")
-        stdout, stderr = run("cids-" + name, [image, "definition-cids", p], code)
+        argv = [image, "definition-cids", p] + (["--groups"] if groups else [])
+        stdout, stderr = run("cids-" + name + ("-groups" if groups else ""), argv, code)
         if code:
             assert stdout == "" and stderr.startswith("DSB:"), (name, stdout, stderr)
             return {}
         lines = stdout.splitlines()
-        assert lines[0] == "DCP1 6 2", lines[0]
-        rows = [r.split() for r in lines[1:]]
-        assert all(len(r) == 4 for r in rows) and len({r[0] for r in rows}) == len(rows)
+        # ADR 0300: `name<TAB>CID` per definition in declaration order, then SCANNED<TAB>n/n.
+        assert lines[-1] == f"SCANNED\t{len(lines) - 1}/{len(lines) - 1}", lines[-1]
+        rows = [r.split("\t") for r in lines[:-1]]
+        assert all(len(r) == (4 if groups else 2) for r in rows) and len({r[0] for r in rows}) == len(rows)
+        assert all(r[0] != "DCP1" for r in rows)
         return {r[0]: r[1:] for r in rows}
 
     def golden(name):
@@ -98,6 +101,10 @@ def main(compiler, out):
         assert len(stdout.strip()) == 59
         return stdout.strip()
 
+    order = out / "order.kotoba"
+    order.write_text(fn("zeta", ["x"], "(+ x 1)") + "\n" + fn("alpha", ["x"], "(+ x 2)") + "\n")
+    stdout, _ = run("order", [cli, "definition-cids", order])
+    assert [l.split("\t")[0] for l in stdout.splitlines()] == ["zeta", "alpha", "SCANNED"], stdout
     const = cids("const", [fn("main", [], "42")])
     assert const["main"][0] == golden("const")
     leaf = cids("leaf", [fn("f", ["x"], "(+ x 1)")])
@@ -110,16 +117,23 @@ def main(compiler, out):
     assert edit["f"][0] == golden("leaf2") and edit["main"][0] == golden("caller2")
     assert edit["main"][0] != caller["main"][0]
     assert cids("self", [fn("f", ["x"], "(if (= x 0) 1 (f (- x 1)))")])["f"][0] == golden("self")
-    two = cids("cycle2", cycle(2))
+    # --groups keeps group/SCC information: same CIDs, plus group CID and member index.
+    flat, grouped = cids("cycle2-flat", cycle(2)), cids("cycle2", cycle(2), groups=True)
+    assert {k: v[0] for k, v in grouped.items()} == {k: v[0] for k, v in flat.items()}
+    assert {v[2] for v in grouped.values()} == {"0", "1"} and grouped["a"][1] == grouped["b"][1] != "-"
+    two = grouped
     assert two["b"][0] == golden("cycle2-first") and two["a"][0] == golden("cycle2-second")
-    eight = cids("cycle8", cycle(8))
+    eight = cids("cycle8", cycle(8), groups=True)
     for i in range(8):
         assert eight[chr(104 - i)][0] == golden("c8-" + str(i))
     # Negative controls: the gate must refuse / detect, not merely pass.
-    cids("refuse-unbound", [fn("f", ["x"], "(missing x)")], code=1)
-    cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=1)
+    cids("refuse-unbound", [fn("f", ["x"], "(missing x)")], code=66)
+    cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
     # A producer with a changed payload field is refused by its own canonical validator (04) -- no CID leaks.
-    cids("mutant-encoder", [fn("f", ["x"], "(+ x 1)")], image=mutant, code=1)
+    cids("mutant-encoder", [fn("f", ["x"], "(+ x 1)")], image=mutant, code=66)
+    # Usage errors are not "no identity": distinct exit code.
+    run("usage-extra-arg", [cli, "definition-cids", order, "--nope"], 2)
+    run("usage-missing-file-arg", [cli, "definition-cids"], 2)
     # The unchanged core driver still answers its own commands through this entry.
     ok = out / "ok.kotoba"
     ok.write_text(fn("f", ["x"], "(+ x 1)") + "\n")
