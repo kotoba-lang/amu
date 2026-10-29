@@ -31,6 +31,7 @@ def main(out):
     d = json.loads((ROOT / 'seed/bootstrap/aarch64-macos/cli.json').read_text())
     root = json.loads((ROOT / 'seed/bootstrap/aarch64-macos/root.json').read_text())
     assert d['schema'] == 'amu.macos-native-cli.v1'
+    assert d['image']['sha256'] in (ROOT / 'examples/foundation-starter/MACOS-ARM64.md').read_text(), 'first-run guide has a stale CLI digest'
     assert d['compiler'] == root['compiler'] and d['packager'] == root['packager']
     for role in ('compiler', 'packager', 'image'):
         assert mac.verify_macho(ROOT / d[role]['path']) == {k: d[role][k] for k in ('bytes','sha256')}

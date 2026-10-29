@@ -48,7 +48,7 @@ Linux ARM root is pinned by `seed/bootstrap/aarch64-linux-static-root.json`.
 
 The complete source manifest has 49 modules, including all18 normal adopted
 core modules. The core adoption image is unchanged.
-The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
+The static compiler profile is TOK786432/NODE786432/MM-WORDS31457280,
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
 removed to reduce the graph. No new comparative performance score is claimed.
 

@@ -1,0 +1,61 @@
+name: native-definition-cids
+# Candidate `definition-cids` command (JUN-583/JUN-584), qualified independently. It does not replace any
+# selfhost gate or change MANIFEST/FULL-MANIFEST/compiler-core.json. Amu native images only; no JVM/nbb/Node.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "seed/0[3-6]-*.kotoba"
+      - "seed/99-definition-cids-entry.kotoba"
+      - "seed/DEFINITION-CIDS-MANIFEST"
+      - "seed/CORE-STATIC-MANIFEST"
+      - "seed/tests/native-checked-definition-oracle.kotoba"
+      - "seed/bootstrap/**"
+      - "bin/amu-linux-x86_64"
+      - "scripts/seed/check-definition-cids-native.py"
+      - ".github/workflows/native-definition-cids.yml"
+  push:
+    branches: [main]
+    paths:
+      - "seed/DEFINITION-CIDS-MANIFEST"
+      - "seed/99-definition-cids-entry.kotoba"
+      - "scripts/seed/check-definition-cids-native.py"
+      - ".github/workflows/native-definition-cids.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-definition-cids-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  cids:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            isa: x86_64
+            compiler: bin/amu-linux-x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted source and compiler pins
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Native definition-cids against the independent oracle, with negative controls
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --slot-dir "$RUNNER_TEMP/native-build-slots" --
+          python3 scripts/seed/check-definition-cids-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/definition-cids"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: definition-cids-${{ matrix.isa }}
+          path: ${{ runner.temp }}/definition-cids
+          if-no-files-found: warn
