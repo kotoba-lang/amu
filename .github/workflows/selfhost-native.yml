@@ -297,6 +297,12 @@ jobs:
           path: ${{ runner.temp }}/kototama-receipt-arm64
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kototama-cache-abi-arm64
+          path: ${{ runner.temp }}/kototama-cache-abi-arm64
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: static-launcher-arm64
           path: ${{ runner.temp }}/launcher/static-launcher.json
@@ -516,6 +522,12 @@ jobs:
             ${{ runner.temp }}/b2-libc/*.stdout
             ${{ runner.temp }}/b2-libc/*.stderr
             ${{ runner.temp }}/b2-libc/artifacts
+            ${{ runner.temp }}/kototama-cache-abi-x86_64/report.json
+            ${{ runner.temp }}/kototama-cache-abi-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-cache-abi-x86_64/gate.stderr
+            ${{ runner.temp }}/kototama-cache-host-x86_64/report.json
+            ${{ runner.temp }}/kototama-cache-host-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-cache-host-x86_64/gate.stderr
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json
@@ -559,7 +571,7 @@ jobs:
         with:
           name: native-scheduling-x86-extensions
           path: ${{ runner.temp }}/x86-shards/extensions
-      - name: Require all17 original native gates and argv at capacity2 per runner
+      - name: Require all19 original native gates and argv at capacity2 per runner
         run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()

@@ -1,0 +1,152 @@
+;; JUN-371: budget-independent code. Only the sealed process envelope reads
+;; a fresh invocation; guest expressions retain the v2 core/fuel semantics.
+;; stdin: 72 bytes, EOF: magic KTI64C3\0, budget, stack limit, arena0,
+;; authority0, 32 cache-key bytes. Invalid/missing context exits76, no receipt.
+(defn- k3-hex-digit [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 102)) (- c 87) :else -1))
+(defn- k3-hex? [s :string] :bool
+  (and (= (string-length s) 64)
+       (loop [i 0] (if (= i 64) true
+         (and (>= (k3-hex-digit (string-code-point-at s i)) 0) (recur (inc i)))))))
+(defn- k3-hbyte [s :string i :i64] :i64
+  (+ (* 16 (k3-hex-digit (string-code-point-at s (* i 2))))
+     (k3-hex-digit (string-code-point-at s (inc (* i 2))))))
+(defn- k3-hword [s :string i :i64] :i64
+  (loop [j 0 acc 0] (if (= j 8) acc
+    (recur (inc j) (bit-or acc (i64-shift-left (k3-hbyte s (+ i j)) (* 8 j)))))))
+;; CIDv1, one-byte codec, sha2-256, lower-case unpadded base32.
+(defn- k3-cid [codec :i64 digest :string] :string
+  (let [alphabet "abcdefghijklmnopqrstuvwxyz234567"]
+    (loop [i 0 acc 0 bits 0 out "b"]
+      (cond (>= bits 5)
+            (let [n (- bits 5) digit (bit-and (u64-shift-right acc n) 31)]
+              (recur i (bit-and acc (dec (i64-shift-left 1 n))) n
+                     (string-concat out (string-substring alphabet digit (inc digit)))))
+            (< i 36)
+            (recur (inc i) (+ (* acc 256) (case i 0 1 1 codec 2 18 3 32 (k3-hbyte digest (- i 4)))) (+ bits 8) out)
+            (= bits 0) out
+            :else (let [digit (bit-and (i64-shift-left acc (- 5 bits)) 31)]
+                    (string-concat out (string-substring alphabet digit (inc digit))))))))
+(defn- k3-binding [program :string compiler :string source :string target :string] :string
+  (let [a (string-concat "KTI64CACHE3\n" (string-concat program "\n"))
+        b (string-concat a (string-concat compiler "\n"))
+        c (string-concat b (string-concat source "\n"))
+        d (string-concat c target)]
+    (string-concat d "\nkototama.vm/program-v1\ncanonical-dag-cbor/ascii-bounded-v1\ni64-wrap/v1\nexpression-charge/v1\nkototama.pure-i64-cache/v3\nstdin72-receipt64/v3\nbaseline-isa\nadopted-core-default\nimports-empty\nentry-zero-arity\n")))
+(defn- k3-x-equal [M :vector-i64 offset :i64 value :i64 invalid :i64] :vector-i64
+  (-> M (xg-bytes 0x418b49 3) (xg-byte offset) (xg-bytes 0xb948 2) (xg-bytes value 8)
+      (xg-bytes 0xc83948 3) (xg-rel 0x850f 2 2 invalid)))
+(defn- k3-x-start [M :vector-i64 label :i64 stack :i64 key :string] :vector-i64
+  (let [read (+ label 6) eof (+ label 7) invalid (+ label 8)]
+    (-> M (xg-rel 0x0d8d4c 3 3 0) (xg-bytes 0xd23145 3)
+        (xg-label read) (xg-bytes 0xc031 2) (xg-bytes 0xff31 2)
+        (xg-bytes 0x1011748d4b 5) (xg-byte 0xba) (xg-bytes 72 4) (xg-bytes 0xd2294c 3)
+        (xg-bytes 0x050f 2) (xg-bytes 0xfcf88348 4) (xg-rel 0x840f 2 2 read)
+        (xg-bytes 0xc08548 3) (xg-rel 0x8e0f 2 2 invalid)
+        (xg-bytes 0xc20149 3) (xg-bytes 0x48fa8349 4) (xg-rel 0x850f 2 2 read)
+        (xg-label eof) (xg-bytes 0xc031 2) (xg-bytes 0xff31 2) (xg-bytes 0x58718d49 4)
+        (xg-byte 0xba) (xg-bytes 1 4) (xg-bytes 0x050f 2)
+        (xg-bytes 0xfcf88348 4) (xg-rel 0x840f 2 2 eof)
+        (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 invalid)
+        (k3-x-equal 16 0x003343343649544b invalid)
+        (xg-bytes 0x18418b49 4) (xg-bytes 0xc08548 3) (xg-rel 0x880f 2 2 invalid)
+        (xg-bytes 0xb948 2) (xg-bytes 9007199254740991 8) (xg-bytes 0xc83948 3) (xg-rel 0x870f 2 2 invalid)
+        (xg-bytes 0x018949 3) (xg-bytes 0x08418949 4)
+        (xg-bytes 0x20418b49 4) (xg-byte 0xb9) (xg-bytes stack 4)
+        (xg-bytes 0xc83948 3) (xg-rel 0x820f 2 2 invalid)
+        (xg-bytes 0x000400003d48 6) (xg-rel 0x870f 2 2 invalid)
+        (xg-bytes 0x28418b49 4) (xg-bytes 0x30410b49 4)
+        (xg-bytes 0xc08548 3) (xg-rel 0x850f 2 2 invalid)
+        (k3-x-equal 56 (k3-hword key 0) invalid) (k3-x-equal 64 (k3-hword key 8) invalid)
+        (k3-x-equal 72 (k3-hword key 16) invalid) (k3-x-equal 80 (k3-hword key 24) invalid)
+        (k2-x-start label stack)
+        (xg-label invalid) (xg-byte 0xbf) (xg-bytes 76 4) (xg-byte 0xb8) (xg-bytes 60 4) (xg-bytes 0x050f 2))))
+(defn- k3-a-branch [M :vector-i64 invalid :i64 condition :i64] :vector-i64
+  (-> M (xa-fixrec 13 invalid) (xa-w (bit-or 0x54000000 condition))))
+(defn- k3-a-equal [M :vector-i64 offset :i64 value :i64 invalid :i64] :vector-i64
+  (-> M (xa-w (bit-or 0xF94000E9 (i64-shift-left (quot offset 8) 10)))
+      (xa-mov64 16 value) (xa-w 0xEB10013F) (k3-a-branch invalid 1)))
+(defn- k3-a-start [M :vector-i64 label :i64 stack :i64 key :string] :vector-i64
+  (let [read (+ label 6) eof (+ label 7) invalid (+ label 8)]
+    (-> M (xa-abs 7 16 0) (xa-mov64 10 0) (xg-label read)
+        (xa-mov64 0 0) (xa-w 0x910040E1) (xa-w 0x8B0A0021) (xa-mov64 2 72) (xa-w 0xCB0A0042)
+        (xa-mov64 8 63) (xa-w 0xD4000001) (xa-w 0xB100101F) (k3-a-branch read 0)
+        (xa-w 0xF100001F) (k3-a-branch invalid 13) (xa-w 0x8B00014A)
+        (xa-w 0xF101215F) (k3-a-branch read 1)
+        (xg-label eof) (xa-mov64 0 0) (xa-w 0x910160E1) (xa-mov64 2 1) (xa-mov64 8 63) (xa-w 0xD4000001)
+        (xa-w 0xB100101F) (k3-a-branch eof 0) (xa-fixrec 13 invalid) (xa-w 0xB5000000)
+        (k3-a-equal 16 0x003343343649544b invalid)
+        (xa-w 0xF9400CE9) (xa-w 0xF100013F) (k3-a-branch invalid 11)
+        (xa-mov64 16 9007199254740991) (xa-w 0xEB10013F) (k3-a-branch invalid 8)
+        (xa-w 0xF90000E9) (xa-w 0xF90004E9)
+        (xa-w 0xF94010E9) (xa-mov64 16 stack) (xa-w 0xEB10013F) (k3-a-branch invalid 3)
+        (xa-mov64 16 262144) (xa-w 0xEB10013F) (k3-a-branch invalid 8)
+        (xa-w 0xF94014E9) (xa-w 0xF94018EA) (xa-w 0xAA0A0129) (xa-fixrec 13 invalid) (xa-w 0xB5000009)
+        (k3-a-equal 56 (k3-hword key 0) invalid) (k3-a-equal 64 (k3-hword key 8) invalid)
+        (k3-a-equal 72 (k3-hword key 16) invalid) (k3-a-equal 80 (k3-hword key 24) invalid)
+        (k2-a-start label stack) (xg-label invalid) (xa-mov64 0 76) (xa-mov64 8 93) (xa-w 0xD4000001))))
+(defn- k3-rw [M :vector-i64] :vector-i64
+  (let [off (xg-get M 3) addr (+ 0x400000 off)]
+    (-> M (xg-out 1 4) (xg-out 6 4) (xg-out off 8) (xg-out addr 8)
+        (xg-out addr 8) (xg-out 89 8) (xg-out 89 8) (xg-out 4096 8))))
+(defn- k3-build [M :vector-i64 S :string arm :bool key :string] :vector-i64
+  (let [a (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 4 0)
+              (xg-check-fns S 1) (xg-check-sir 1)) label (vector-at a MM-LABEL-N) stack (k2-stack a)]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (or (= (xg-get a 1) 0) (not= (vector-at a MM-CAPS) 0) (>= (+ label 9) MM-LABEL-CAP)) (xg-err a 7202 2)
+          :else (let [g0 (-> a (lw-labels 9) (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1))
+                      g (if arm (k2-a-code (k3-a-start g0 label stack key) 1 label)
+                                (k2-x-code (k3-x-start g0 label stack key) 1 label))
+                      data (bit-and (+ 8191 (xg-pos g)) -4096) h (xg-set g 3 data)
+                      fixed (if arm (xa-fix h 1) (xg-fix h 1))]
+                  (if (>= (+ data 90) MM-OUT-CAP) (xg-err fixed 7104 data)
+                    (-> (if arm (xa-elf-header (mem-set fixed MM-OUT-N 1)) (xg-elf-header (mem-set fixed MM-OUT-N 1)))
+                        (xg-elf-rx) (k3-rw) (xg-elf-stack) (xg-pad 4096) (xg-out-code 1) (xg-pad data)
+                        (xg-pad (+ data 89))))))))
+(defn- k3-command [] :i64
+  (let [src (io-arg 1) target (io-arg 3) out (io-arg 5) compiler (io-arg 7) source (io-arg 9)]
+    (cond (not (and (= (io-argc) 12) (string=? (io-arg 2) "--target") (string=? (io-arg 4) "--output")
+                    (string=? (io-arg 6) "--compiler-sha256") (string=? (io-arg 8) "--source-sha256")
+                    (string=? (io-arg 10) "--profile") (string=? (io-arg 11) "kototama.pure-i64-cache/v3")
+                    (k3-hex? compiler) (k3-hex? source)
+                    (or (string=? target "aarch64-linux") (string=? target "x86_64-linux"))
+                    (> (string-length out) 0) (= (io-exists out) 0))) (kt-refuse "cache usage/profile/target/digest/output refused")
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [V (io-read-bytes src) len (vector-count V)]
+                  (if (or (= len 0) (> len 65536)) (kt-refuse "input byte limit")
+                    (let [D (kt-read (-> (vector-alloc 32784) (vector-assoc! 2 1) (vector-assoc! 3 len)) V 0)]
+                      (if (not (kt-program? D V)) (kt-refuse "noncanonical or outside pure-i64 profile")
+                        (let [S (kt-source D V) M (kt-front S) program (k3-cid 113 (sh-bytes V))
+                              binding (k3-binding program compiler source target) key (sh-text binding)]
+                          (cond (not= (vector-at M MM-ERR) 0) (drv-fail M src)
+                                (> (k2-stack M) 262144) (kt-refuse "static stack bound")
+                                :else (let [built (k3-build M S (string=? target "aarch64-linux") key)]
+                                        (if (not= (vector-at built MM-ERR) 0) (xg-report built src out)
+                                          (let [n (dec (vector-at built MM-OUT-N)) wrote (out-write-v built out (+ MM-OUT-BASE 1) n)
+                                                bytes (loop [i 0 acc (vector-alloc n)] (if (= i n) acc
+                                                  (recur (inc i) (vector-assoc! acc i (vector-at built (+ MM-OUT-BASE 1 i))))))
+                                                report (string-concat binding (string-concat key (string-concat "\n"
+                                                  (string-concat (k3-cid 85 (sh-bytes bytes)) (string-concat "\n" (string-concat (mem-u2dec (k2-stack M)) "\n"))))))
+                                                w (io-out report)]
+                                            (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))))))))
+
+;; Dedicated pinned local cache host factory. Only closed 256-bit pins are
+;; elaborated into the reviewed role; requests cannot select another compiler.
+(defn- k3-host-policy [compiler :string source :string] :string
+  (loop [i 0 out "\n(defn- kn-policy-word [i :i64] :i64 (case i "]
+    (if (= i 8) (string-concat out " 0))\n")
+      (let [word (k3-hword (if (< i 4) compiler source) (* (rem i 4) 8))]
+        (recur (inc i) (string-concat out (string-concat (mem-u2dec i) (string-concat " " (string-concat (mem-u2dec word) " ")))))))))
+(defn- k3-host-command [] :i64
+  (cond (not (and (= (io-argc) 10) (string=? (io-arg 4) "--compiler-sha256")
+                 (string=? (io-arg 6) "--source-sha256") (string=? (io-arg 8) "--output")
+                 (k3-hex? (io-arg 5)) (k3-hex? (io-arg 7)))) (drv-usage)
+        (or (= (io-exists (io-arg 1)) 0) (= (io-exists (io-arg 2)) 0) (= (io-exists (io-arg 3)) 0)) (drv-fail0 E-READ)
+        (= (io-exists (io-arg 9)) 1) (drv-fail0 E-WRITE)
+        :else (let [guest (drv-pj-lock-text (io-read-bytes (io-arg 1))) common (drv-pj-lock-text (io-read-bytes (io-arg 2))) host (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
+          (if (and (string=? (sh-text guest) "a0a543a1b0ab45a017aa7abe5cc1b24737a30cd27007a52e00def46879c01d5d") (string=? (sh-text common) "80dd98a427bd22d488aad21cef0ad47fd553ef9c0f57dd32e859763f373c403c") (string=? (sh-text host) "7fdb846d06c9c935bdc47d37b67d8261e73aead4e8a5d4af69a4f1f4b7840143"))
+            (let [policy (k3-host-policy (io-arg 5) (io-arg 7)) text (string-concat guest (string-concat common (string-concat host policy)))
+                  built (xs-build (xg-front text) text (string-length guest) 3)]
+              (if (= (vector-at built MM-ERR) 0) (xs-write built (io-arg 9)) (xg-report built (io-arg 3) (io-arg 9))))
+            (drv-fail0 E-PROJ-UNPINNED)))))

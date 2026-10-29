@@ -17,8 +17,8 @@ class NativeGateShardTests(unittest.TestCase):
         before=copy.deepcopy(self.plan)
         original={row['name']:row for row in self.plan['phases']['x86']}
         selected=[row for shard in S.SHARDS for row in S.select(self.plan,shard)['phases']['x86']]
-        self.assertEqual(len(selected),17)
-        self.assertEqual(len({row['name'] for row in selected}),17)
+        self.assertEqual(len(selected),19)
+        self.assertEqual(len({row['name'] for row in selected}),19)
         self.assertEqual({row['name']:row for row in selected},original)
         self.assertEqual(self.plan,before)
         selected[0]['argv'].append('--invalid-test-token')
@@ -68,11 +68,11 @@ class NativeGateShardTests(unittest.TestCase):
             (folder/'pg-x86/schedule.json').write_text(json.dumps(dict(
                 status='COMPLETED',exit=0,jobs=2,capacity=2,gates=rows)))
 
-    def test_join_accepts_all_seventeen_original_process_records(self):
+    def test_join_accepts_all_nineteen_original_process_records(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);self.proofs(root)
             result=S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
-            self.assertEqual(result['executedGates'],17)
+            self.assertEqual(result['executedGates'],19)
             self.assertFalse(result['qualificationReplacement'])
 
     def test_join_refuses_a_missing_execution_despite_success_header(self):
