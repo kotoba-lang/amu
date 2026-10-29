@@ -16,8 +16,9 @@ baseline lacks, while real compiles still use the hardware.
 
 Built from the new source by the pinned Mac root, then by its own output:
 
-* Full compiler: container `5000126e…` for F1 = F2 = F3; the previous source's container `1bdd51b9…` was reproduced first
-  as the control.
+* Full compiler: container `5000126e…` for F1 = F2 = F3 on the source before merging main (the previous source's container
+  `1bdd51b9…` was reproduced first as the control); after merging main (JUN-371 native cache) the re-pinned source gives
+  `18592ff6…` for F1 = F2, and every check below was re-run on that state.
 * 18-module core (`seed/MANIFEST`): unity `5b12da97…`, G1 = G2 = G3 native `9b893ba0…`, container `74de9bf3…`
   (`check-macos-core-adoption.py`: `PASS_MAC_CORE_ADOPTION_FIXED_POINT`).
 * `official-nettle-sha256.kotoba` compiled three ways: the previous compiler and the new compiler with

@@ -99,6 +99,8 @@
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
+        (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)
+        (string=? (io-arg 0) "compile-kototama-cache") (k3-command)
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
