@@ -3,14 +3,14 @@
   "decision": "docs/adr/0370-embench-measured-compiler-core.md",
   "role": "compiler-core-for-amu-selfhost-and-public-kotoba-compile",
   "manifest": "seed/MANIFEST",
-  "moduleCount": 18,
-  "sourceUnityBytes": 2814131,
-  "sourceUnitySHA256": "a27634518117679f11a9800df2c03ef1566c7e71b25d239db33783b31a811db7",
+  "moduleCount": 19,
+  "sourceUnityBytes": 2862638,
+  "sourceUnitySHA256": "4d2dbda32924cedaeaa3c9390055fb07ffcd03b8b79fc6bff0b65f78954b5225",
   "sources": [
     {
       "path": "seed/00-ns.kotoba",
       "bytes": 14894,
-      "sha256": "0123d4bdee61401482e367f35b36f55bc475516b60907f8fdb81118c285b3d41"
+      "sha256": "f087c10cc950d6e723563eac7c6608f7881f8afee7f6bc1afe0fc285af04edc8"
     },
     {
       "path": "seed/01-mem.kotoba",
@@ -29,8 +29,8 @@
     },
     {
       "path": "seed/10-lex.kotoba",
-      "bytes": 24859,
-      "sha256": "60218be358ff7e0dcbfe1cff197522d56f0a148c0150402f1b68eb1c198cb968"
+      "bytes": 24987,
+      "sha256": "0176ebab88543cc2db05240676caea32126d20115284a7ee031e62570af963af"
     },
     {
       "path": "seed/11-read.kotoba",
@@ -43,14 +43,19 @@
       "sha256": "18f0236ceaccb41a8a92fd19a871355cb6f255819e492bed850c66ee82ee540f"
     },
     {
+      "path": "seed/19-decimal.kotoba",
+      "bytes": 15296,
+      "sha256": "580557b45a067b866a09b6d7c49811662dc2f96cd4d64e0af4df0952ee5fe2f4"
+    },
+    {
       "path": "seed/20-names.kotoba",
       "bytes": 39952,
       "sha256": "fa68a968842cd769e0a170950ec15964e87fc7dfc34351f0319b21c6721d0c29"
     },
     {
       "path": "seed/21-check.kotoba",
-      "bytes": 386124,
-      "sha256": "3b3c08803e15aab2f8173486d879f31d9906680f546b4e2f7b53461f21cff035"
+      "bytes": 419206,
+      "sha256": "7dfcffdfedfbdb09709fbfd711b04d76b4beac29b6c566914f592bf23a851ddf"
     },
     {
       "path": "seed/30-lower.kotoba",
@@ -143,7 +148,7 @@
   },
   "qualification": {
     "full18Retained": true,
-    "full47Retained": true,
+    "full47Retained": false,
     "nativeArmFullFixedPoint": false,
     "coreGenerationAgreement": true,
     "previousCoreBytesPreserved": false,
@@ -153,7 +158,7 @@
     "coldC0Verified": false,
     "performanceMeasured": false
   },
-  "qualificationAsOf": "2026-10-26 JST: source-bound Mac core G1=G2=G3 and uncached native ARM full/C0 reproduce the selected18 core; immutable native x86 controller qualification is bound separately. Integrated full and final-head native CI are merge gates.",
+  "qualificationAsOf": "2026-10-29 JST: Mac full compiler and staged ARM core fixed points passed; native runtime, controller and exact-head CI remain pending.",
   "previousIdentity": {
     "moduleCount": 18,
     "sourceCommit": "63715214761cb8b2a59df4d5fe708a952b8de98f",
@@ -646,7 +651,7 @@
       }
     }
   },
-  "adoptionReceipt": "seed/adoption-aiueos-llm-v1-20261026.json",
+  "adoptionReceipt": "seed/adoption-reader-delimiters-candidate-20261029.json",
   "nativeTcpSpawnIntegration": {
     "evidence": "docs/evidence/tcp-spawn-native-20261023/",
     "sourceIdentityCommit": "028019bc1ef3c8dbb5dafc08c3de9cc3c9774ab8",
@@ -720,7 +725,7 @@
     "evidence": "docs/evidence/native-cdci-20261023/scope.json",
     "historical": true
   },
-  "sourceCommit": "b8757adfa6bd66519046bf54d91698ba593866b4",
+  "sourceCommit": "849555cb45d2c1d8d6fecf0d25b9983fdd38593a",
   "historicalQualifications": {
     "nativeSourceLockCandidate": {
       "baseMain": "1585cb488ea9a0b4f87c1fd319ea71fa3ceb09a0",
@@ -956,12 +961,9 @@
     }
   },
   "nativeCDCIQualification": {
-    "state": "qualified-native-core-and-controller-artifacts",
-    "evidence": "docs/evidence/aiueos-layout-main-review-20261026/controller-composition.json",
-    "workflow": "https://github.com/kotoba-lang/amu/actions/runs/40292548615",
-    "sourceHead": "a13c1154a5d97acea623b66f5d77bb2a45aadbe5",
-    "currentSourceByteIdentityVerified": true,
-    "integratedFullMergeGate": "https://github.com/kotoba-lang/amu/actions/runs/40306976023"
+    "state": "unqualified-candidate",
+    "currentSourceByteIdentityVerified": false,
+    "reason": "reader core changed; exact-head native controller and x86 qualification pending"
   },
   "qualificationTimeZone": "Asia/Tokyo",
   "nativeProofIndexPreviousIdentity": {
@@ -1660,5 +1662,21 @@
       "workflow": "https://github.com/kotoba-lang/amu/actions/runs/40223651906",
       "sourceHead": "3bb81695c15549b280b368cb95145bb0a5840c18"
     }
+  },
+  "candidateStatus": "unadopted reader candidate: exact-head native CI, controller and release qualification pending",
+  "historicalCDCIQualificationBeforeFloatCandidate": {
+    "state": "qualified-native-core-and-controller-artifacts",
+    "evidence": "docs/evidence/aiueos-layout-main-review-20261026/controller-composition.json",
+    "workflow": "https://github.com/kotoba-lang/amu/actions/runs/40292548615",
+    "sourceHead": "a13c1154a5d97acea623b66f5d77bb2a45aadbe5",
+    "currentSourceByteIdentityVerified": true,
+    "integratedFullMergeGate": "https://github.com/kotoba-lang/amu/actions/runs/40306976023",
+    "historical": true
+  },
+  "readerCandidatePreviousIdentity": {
+    "sourceCommit": "733a05e8c944458d6dd37ef318b3930c791ff26c",
+    "sourceUnityBytes": 2862510,
+    "sourceUnitySHA256": "d273e7120a95a51226c7b4cdeec971acc87c2c49e398164f318ea84fe2de84af",
+    "adoptionReceipt": "seed/adoption-float-site-candidate-20261029.json"
   }
 }

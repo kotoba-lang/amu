@@ -1,0 +1,61 @@
+name: native-reader-delimiters
+# Source-level candidate test; does not qualify or replace the production compiler images.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'seed/00-ns-static.kotoba'
+      - 'seed/01-mem.kotoba'
+      - 'seed/02-io.kotoba'
+      - 'seed/10-lex.kotoba'
+      - 'seed/tests/native-reader-delimiters.kotoba'
+      - 'seed/bootstrap/**'
+      - 'bin/amu-linux-x86_64'
+      - 'scripts/seed/check-reader-delimiters-*.py'
+      - 'scripts/seed/check-macos-arena-scope.py'
+      - 'scripts/seed/check-aiueos-user-macos-native.py'
+      - '.github/workflows/native-reader-delimiters.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'seed/10-lex.kotoba'
+      - 'seed/tests/native-reader-delimiters.kotoba'
+      - 'scripts/seed/check-reader-delimiters-*.py'
+      - '.github/workflows/native-reader-delimiters.yml'
+permissions:
+  contents: read
+concurrency:
+  group: native-reader-delimiters-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            compiler: bin/amu-linux-x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run native reader corpus and unfixed-lexer control
+        run: >-
+          python3 scripts/seed/check-reader-delimiters-linux.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/reader-delimiters"
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run native reader corpus and unfixed-lexer control
+        run: >-
+          python3 scripts/seed/check-reader-delimiters-macos.py
+          --output "$RUNNER_TEMP/reader-delimiters"

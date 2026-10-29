@@ -60,11 +60,10 @@ def main(compiler, out):
     assert pin(compiler) == product['rootImage' if machine == 'aarch64' else 'image']
     out.mkdir(parents=True, exist_ok=False)
     (out / 'observer.py').write_bytes(Path(__file__).read_bytes())
-    # The profile fixture builds the whole compiler plus the identity fixtures in one unity, which is
-    # at the SIR table capacity. The local code cache (JUN-371) is not used by this profile, so it is
-    # left out; the production closure is unchanged and the 49-module compiler itself fits.
+    # Include the complete production compiler closure plus identity fixtures;
+    # the static SIR capacity must cover their combined compilation.
     paths = [p for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines()
-             if p and not p.startswith('#') and p != 'seed/85-kototama-i64-cache.kotoba'][:-1] + EXTRA
+             if p and not p.startswith('#')][:-1] + EXTRA
     parts = []
     for p in paths:
         text = (ROOT / p).read_text()

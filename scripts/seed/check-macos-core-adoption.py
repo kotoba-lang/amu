@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the selected 18-module core from the signed Mac Amu fixed point."""
+"""Rebuild the selected 19-module core from the signed Mac Amu fixed point."""
 
 import argparse
 import importlib.util
@@ -46,8 +46,8 @@ def main(mac_build, output):
         raise ValueError("wrong core manifest")
     names = [name for name in (ROOT / adoption["sourceManifest"]).read_text().splitlines()
              if name and not name.startswith("#")]
-    if len(names) != 18 or len(names) != len(set(names)):
-        raise ValueError("core manifest must contain 18 unique modules")
+    if len(names) != 19 or len(names) != len(set(names)) or "seed/19-decimal.kotoba" not in names:
+        raise ValueError("core manifest must contain 19 unique modules including decimal")
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     sources = []
     with (output / "adopted-unity.kotoba").open("wb") as stream:

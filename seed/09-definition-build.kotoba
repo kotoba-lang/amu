@@ -157,7 +157,7 @@
 (defn- dcb-build [K :vector-i64 S :string A :vector-i64 R [:list :string]
                   directory :string compiler :string enabled :bool fuel :i64 path :string out :string] :i64
   (let [front (dcn-front S)
-        admitted (-> front (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
+        admitted (-> front (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 3)
                     (xg-check-fns S 1) (xg-check-sir 1))]
     (if (or (not= (vector-at admitted MM-ERR) 0) (= (xg-get admitted 1) 0)
             (not= (vector-at admitted MM-CAPS) 0)) (xg-report (xg-err admitted 7102 0) path out)

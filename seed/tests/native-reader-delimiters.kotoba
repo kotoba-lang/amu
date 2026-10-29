@@ -1,0 +1,16 @@
+;; JUN-579: malformed delimiters in an unselected branch must not disappear.
+(defn- reader-error [source :string] :i64
+  (arena-scope
+    (vector-at (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length source)) source) MM-ERR)))
+
+(defn- seed-main [] :i64
+  (cond
+    (not= (reader-error "(defn main [] :i64 #?(:other [1] :kotoba 2))") 0) 1
+    (not= (reader-error "(defn main [] :i64 #?(:other [{1 (2)}] :kotoba 2))") 0) 2
+    (not= (reader-error "(defn main [] :i64 #?(:other [\"})]\"] :kotoba 2))") 0) 3
+    (= (reader-error "(defn main [] :i64 #?(:other [1) :kotoba 2))") 0) 4
+    (= (reader-error "(defn main [] :i64 #?(:other [({1 2])} :kotoba 2))") 0) 5
+    (= (reader-error "(defn main [] :i64 #?(:other #{1] :kotoba 2))") 0) 6
+    (= (reader-error "(defn main [] :i64 #?(:other #(1] :kotoba 2))") 0) 7
+    (= (reader-error "(defn main [] :i64 #?(:other [1] :kotoba 2])") 0) 8
+    :else 0))

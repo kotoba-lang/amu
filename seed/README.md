@@ -6,6 +6,18 @@
 > route is `scripts/seed/selfhost-bootstrap.py` on arm64 Linux.
 
 
+The current PR also contains an **unqualified17-module candidate**. It adds
+`19-decimal.kotoba`, uses exact compile-time decimal literal bits in the shared
+checker, and connects native document runtime candidates. Its source bindings
+are in `decimal-literals.json` and `runtime/document-runtime.json`. The historical
+16-module bootstrap/fixed-point receipts below do not qualify this changed
+closure. Current acceptance requires the complete loaderless Amu selfhost
+route in `../docs/selfhost-priority.md`; no hosted/C-loader recipe below is a
+current acceptance command. The positive/refusal corpora have not run on that
+required route.
+
+## Historical adopted checkpoint
+
 This directory contains the complete 16-module source based on the adopted
 compiler at `fc49cb2ee6fea1a41a5abbc8ed5b52aaa9f19471`, with an integration
 safety fix: explicit `--policy` is refused with E2170 until structured policy
