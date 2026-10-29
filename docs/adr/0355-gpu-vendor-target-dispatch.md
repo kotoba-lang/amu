@@ -4371,3 +4371,55 @@ fourth day slot (its own future freeze), and the tail-side
 vocabulary (named limitation). Evidence:
 docs/evidence/gpu/anv-b3w6dlrep-20261030/ (protocol.txt,
 freeze-record-s84.txt).
+
+## Dated note (2026-10-29, JUN-59 session 85: the fourth
+## counted-day bar measurement pre-registration (W7))
+
+The s84 record section-6(c) carry-forward item "the fourth
+counted-day bar measurement (its own future freeze; its day
+follows W6's actual run day)" taken to its DESIGN half; NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO ledger
+line; the row's MEASUREMENT half is slot-gated behind W6's
+ledger line -- STARTED, NOT FINISHED. protocol.txt (freeze
+stamp 2026-10-29T06:39:16Z, before any W6 quantity exists and
+before any W7 quantity exists; pre-freeze freshness greps over
+docs/evidence/gpu: "anv-b3w7daybar"/"20261031"/"2*L_W7"/
+whole-word "W7"/"W7 =" all 0 hits) pre-registers W7 = the
+window whose 78 fresh processes run in the first measurement
+session that starts at or after 00:00:00Z of the first UTC day
+STRICTLY AFTER the UTC day named on W6's ledger line (planned
+2026-10-31 if W6's line takes 2026-10-30; follows W6's actual
+run day if the runs slip): ONE ledger line = hi block A (the
+frozen L12 single bar candidate) at the settle-bar.txt
+section-2 READING, COUNTED iff the first qualifying reading of
+its UTC day, FLAGGED construction named and consuming no slot;
+the s57 section-6 route UNCHANGED (custody 3/3 + corpus 16/16
+before the GO stamp; the four s51-frozen build pins 4/4
+BYTE-IDENTICAL; the 78 runs in the frozen run order). THE
+THREE CONTINGENCIES FROZEN (named, not hidden): (i) W6 slips
+-> W7's day follows W6's actual line day; (ii) W6 FLAGGED ->
+ W7's line delivers the THIRD counted reading and the rest is
+NEW pre-registered work (no silent extension); (iii) W6's
+ledger line ABSENT -> this freeze STANDS DOWN (fail-closed).
+NO analysis row rides this freeze (T18 binds only (s36, W6);
+W7 is in no frozen pair or contrast); the minimal 9-run
+bar-only alternative RE-REJECTED on the s80 4(b) reasons
+adopted here. Standing gates (real runs == the s84 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 86:
+the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half and
+this freeze's measurement half --, then the T18 analysis half,
+the W7 measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3w7daybar-20261031/ (protocol.txt,
+freeze-record-s85.txt).

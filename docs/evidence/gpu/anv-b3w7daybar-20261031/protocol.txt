@@ -1,0 +1,235 @@
+JUN-59 -- session 85 protocol (PRE-REGISTRATION FREEZE ONLY):
+THE ANCHOR-CLASS SETTLING BAR'S FOURTH COUNTED-DAY MEASUREMENT
+(the W7 window at the bar's next unconsumed UTC day slot -- the
+settle-bar PENDING 2/4 needs TWO more counted day slots; the
+third is the s80-frozen W6 measurement at the 2026-10-30 slot;
+nothing was frozen for the fourth; THIS ROW IS THE DESIGN HALF
+OF THE CARRY-FORWARD ITEM the s80 section-4(c) / s84 record
+section-6(c) named "the fourth counted-day bar measurement (its
+own future freeze; its day follows W6's actual run day)").
+DESIGN slice this tick: the pre-registration of the measurement;
+the MEASUREMENT half is slot-gated behind W6's ledger line (its
+day follows W6's actual run day; this tick runs
+2026-10-29T06:3xZ, ~17.3 h before W6's 2026-10-30T00:00:00Z
+slot opens and W6's run day is not yet known) -- STARTED, NOT
+FINISHED. Frozen BEFORE any W6 quantity exists AND before any
+W7 quantity exists (freeze stamp 2026-10-29T06:39:16Z; the
+pre-freeze freshness greps over docs/evidence/gpu at
+2026-10-29T06:37:59Z-06:38:19Z were "anv-b3w7daybar" 0 hits,
+"20261031" 0 hits, "2*L_W7" 0 hits, whole-word "W7" 0 hits,
+"W7 =" 0 hits -- the only "session 85" hit is the s84 record's
+carry-forward line naming this work; bare "2*L_W6" hits (4) are
+the s84 T18 freeze's own future tokens -- named, not hidden).
+This file is written once and never rewritten. The session that
+runs W7 writes its own record.txt in this directory (this
+tick's record is freeze-record-s85.txt; named in advance to
+avoid a second writer colliding on record.txt).
+
+0. ROW QUESTION (ONE row: ONE design decision -- no measurement
+   this tick): the s84 record section-6 carry-forward item (c)
+   -- "the fourth counted-day bar measurement (its own future
+   freeze; its day follows W6's actual run day)" -- taken as far
+   as one design slice can take it: PRE-REGISTER THE BAR'S NEXT
+   COUNTED-DAY MEASUREMENT AFTER W6 (the fourth day slot).
+
+   NAMED WINDOW (frozen): W7 = the window whose 78 fresh
+   processes run in the first measurement session that starts at
+   or after 00:00:00Z of the first UTC day STRICTLY AFTER the
+   UTC day named on W6's ledger line in settle-bar-ledger.txt
+   (W6's line day -- read from the append-only ledger at
+   execution time, never hand-written; the s80 W6 definition
+   binds W6's line to the first measurement session at/after
+   2026-10-30T00:00:00Z). Planned day 2026-10-31 if W6 runs and
+   its line takes 2026-10-30 (this directory name carries the
+   planned day; the workdir and the ledger line take the ACTUAL
+   run day if the runs slip). NAMED, NOT HIDDEN: three
+   contingencies, all frozen here --
+   (i) W6's runs slip past 2026-10-30: W7's day follows W6's
+       actual line day by the same strict-next-day rule (the s84
+       section-6(c) phrasing "its day follows W6's actual run
+       day", binding here);
+   (ii) W6's session is FLAGGED (its ledger line carries a flag
+       and consumes no day slot -- settle-bar.txt section 2):
+       W7 still runs under this freeze and its line delivers the
+       bar's THIRD counted reading instead of the fourth; the
+       remaining slot is then NEW pre-registered work (NO SILENT
+       EXTENSION, settle-bar.txt section 2 V2);
+   (iii) W6's ledger line is ABSENT (its session never appended
+       one -- crash/lost session): this freeze STANDS DOWN -- no
+       W7 session runs under it -- and the slot's measurement is
+       re-pre-registered after W6's outcome is known.
+   FAIL-CLOSED: W7 never starts before W6's line exists in the
+   ledger, so W7's day is strictly after a day the ledger has
+   spoken for and the frozen COUNTED rule (section 1) delivers a
+   fresh day slot.
+
+   COUNTED-DAY STATE AT FREEZE TIME (named; the evaluator is
+   the only source of the verdict): day=2026-10-28 session=s31
+   and day=2026-10-29 session=s73 are COUNTED; the frozen
+   evaluator reads VERDICT: PENDING 2/4 (re-derived twice this
+   tick, byte-identical). Per settle-bar.txt section 2 (COUNTED:
+   the FIRST qualifying reading of each UTC day) NO run on UTC
+   day 2026-10-29 can advance the bar; the third slot opens at
+   2026-10-30T00:00:00Z (W6, s80) and the fourth slot opens on
+   the first UTC day strictly after W6's line day (this row).
+
+1. THE READING (frozen; the settle-bar.txt section-2 READING
+   construction UNCHANGED): ONE ledger line in the W7 session --
+   hi block A of W7 (the frozen L12 single bar candidate; the
+   bar never judges the twin, L11; every other block produces
+   NO line):
+     day     = the W7 run's UTC day (planned 2026-10-31; the
+               ACTUAL run day is recorded if the runs slip);
+     session = the running session's tag s<NN>;
+     class   = the bar's frozen section-4 threshold read on hi
+               block A's 18 pipeline-ok cells (FLOOR <= 100
+               ticks at all 18; CAPTURED >= 1000 at all 18;
+               anything else INTERMEDIATE/MIXED);
+     median  = hi block A's (sum,128,S=16) pooled median (3
+               fresh processes pooled over 25 rounds per cell --
+               the frozen estimator unit of every cross-session
+               reading in settle-bar.txt (F3));
+     min     = the minimum of hi block A's 18 per-cell pooled
+               medians;
+     flag    = none for a qualifying reading.
+   COUNTED rule (frozen): W7's line is COUNTED iff it is the
+   first qualifying reading of its UTC day in ledger order; if
+   any other session's qualifying reading precedes it the same
+   day, the frozen evaluator classifies it same-day descriptive
+   instead -- the evaluator (anv-b3settlebar-20261027/settle-
+   bar-eval.py, frozen fixture set) is ALWAYS the only source of
+   the verdict, re-derived from the full append-only ledger,
+   never hand-written. FLAGGED (frozen; named in the ledger, NO
+   reading, NO day-slot consumption): C1 fired (b), or VERIFY
+   mismatch > 0, or the build pin is not byte-identical, or the
+   custody GO is missing/after the builds. The day's first LATER
+   qualifying session may still count.
+
+2. THE RUN SET AND ROUTE (frozen): the s57 route
+   (anv-b3w5xdayrep-20261029/protocol.txt section 6) UNCHANGED
+   except the workdir (~/anv-b3w7daybar-<ACTUAL-RUN-DAY, default
+   20261031>) and the script names (the running session's
+   s<NN>), on the ANV host (aiueos-6600hs / aiueos-6600hs-1,
+   user murakumo-ci): custody first (host-verify: the local-vs-
+   host sha256 of the instrument source, the manifest and the
+   expected-corpus census must MATCH 3/3 -- the expectation
+   chain of sessions 2-39's committed corpus census, instrument
+   byte-copy a5e539f0ad1c5d73... -- and the corpus sha256sum -c
+   must pass 16/16 BEFORE a GO stamp; the GO stamp must precede
+   the builds and ALL runs), then the four pinned compiles (gcc
+   -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> -o anv-bb-<tag>
+   gpu-subgroup-reduce-anv-ndiv.c -lvulkan: c2 2/1/1, hi
+   3/1024/4033, tw 3/2048/8066, c8 8/1/1; build-census-s<NN>.txt
+   records the digests vs the four s51-frozen build pins -- c2
+   e5ed903e5b9dfd64..., hi a6c31b6c5c566308..., tw
+   bb901eb5b1e98940..., c8 480925e58d28e7d3... -- 4/4
+   BYTE-IDENTICAL required), then the 78 runs in the frozen run
+   order (c2 r1-3, then for k = 1..12 hi block k (r 3k-2..3k)
+   immediately followed by tw block k, then c8 r1-3; per-run
+   host date -u taken immediately BEFORE the run invocation;
+   run-window.txt is the transcript; each run's stdout/stderr
+   preserved verbatim in run-<tag>-r<R>.txt / .stderr.txt).
+   ZERO derivation edits; ZERO new knob pairs; the instrument
+   and corpus are the committed bytes of sessions 28-39 (byte-
+   copy checked at the W7 tick in host-verify).
+
+3. EVALUABILITY (frozen; the s57 section-3 integrity machinery
+   re-derived at the W7 window): VERIFY mismatch total 0
+   everywhere; 450 SAMPLE + 24 VERIFY per run; every SAMPLE's
+   knob fields == its arm table (c2 2/1/1, hi 3/1024/4033, tw
+   3/2048/8066, c8 8/1/1); S=8 fail-closed cells (6 per run)
+   pipeline FAIL + void 1; the cell map identical to the
+   committed maps with the named cell (max,128,S=default)
+   present as ok-map cell 5 (raw idx 7); C1 re-derived at the W7
+   window -- c2 FLOOR (all 18 pooled medians <= 100) and c8
+   (sum,128,S=16) pooled median within +/-5% of the committed
+   32,915 -- must fire branch (a) or the session is FLAGGED
+   (section 1). The W7 anchor row is NEW measurement and is
+   never compared to a prior EXACTLY (the s57 section-3 rule,
+   unchanged).
+
+4. NAMED, NOT HIDDEN (frozen):
+   (a) NO ANALYSIS ROW RIDES THIS FREEZE. The T18 ANALYSIS half
+       (s84) binds only the (s36, W6) window pair -- W7 is in NO
+       frozen window pair and NO frozen contrast; any future row
+       naming W7 is its own pre-registration (the s81 selection
+       rule for DL pairs; the s57/s65/s84 freeze shape for level
+       rows). W7's committed logs remain available for future
+       rows.
+   (b) THE ALTERNATIVE RUN SET, CONSIDERED AND REJECTED (the
+       s80 section-4(b) reasoning, re-derived and adopted here
+       for this window): a minimal bar-only session (c2 3 + hi
+       block A 3 + c8 3 = 9 runs) satisfies the settle-bar.txt
+       section-2 READING just as well (the reading unit is ONE
+       3-run block; hi block A is identical under both
+       constructions). REJECTED because (i) the custody/build-
+       pin/instrument/corpus machinery and every window-shape
+       integrity check (block-min vectors, 18-cell scoreboard,
+       cell-map identity over the full run set) is the committed
+       five-window route -- a 9-run window matches NO prior
+       window and cannot support any future pre-registered
+       window-level row naming W7 without re-measuring; (ii) the
+       marginal cost of the full window is one sub-minute burst
+       (the W5 run window ran its 78 processes in ~43 s wall).
+       NAMED, NOT HIDDEN: the bar's cost is unchanged either way.
+   (c) FURTHER DAY SLOTS ARE NOT FROZEN HERE. If W7's line
+       leaves the bar UNSETTLED (V2), or W6 is FLAGGED so W7
+       delivers only the third counted reading (section 0 (ii)),
+       every remaining slot is a NEW pre-registered measurement
+       on its own future UTC day (settle-bar.txt section 2 V2:
+       NO SILENT EXTENSION -- a split at four does NOT extend to
+       eight by default; FLAGGED days do not count and do not
+       shorten the count; the number FOUR is a DESIGN CHOICE,
+       settle-bar.txt section 2 COST).
+   (d) The bar's named limitations D1-D5 (settle-bar.txt section
+       4) apply unchanged: the class threshold sits inside the
+       measured min-statistic noise floor; a SETTLED class would
+       mean "stable at this threshold at this unit", not "the
+       regime is physically discrete"; the in-band references
+       (1,129 / 1,132 / 1,131) move only through a NEW
+       pre-registered bar; nothing here moves any Rule 4 row or
+       :measured? flag and no causal mechanism is named.
+
+5. THE BAR (frozen): ONE ledger line appended to
+   docs/evidence/gpu/settle-bar-ledger.txt in the W7 session,
+   ONLY after the standing gate set verifies (the s73/s75
+   pattern: the line is never appended before the gates). If
+   W7's line is the bar's fourth COUNTED reading, the frozen
+   evaluator's verdict becomes one of CONTRADICTION (V1),
+   UNSETTLED (V2) or SETTLED <class> (V3) -- which one is the
+   evaluator's alone; NEVER hand-write a verdict; the evaluator
+   run twice byte-identical is the only verdict source. If W7's
+   line is the third counted reading (section 0 (ii)), the
+   verdict becomes PENDING 3/4 and nothing settles before the
+   remaining slot (section 4(c)).
+
+6. IMPLEMENTATION PATHS (frozen; deterministic scripts only):
+   the running session's reading-s<NN>.py parses the committed
+   W7 run logs and writes publication-s<NN>.txt (the hi block A
+   anchor reading -- (sum,128,S=16) pooled median, 18-cell
+   min..max, bar class vs the frozen refs 1,129/1,132/1,131 --
+   plus the section-3 integrity rows); run twice, diff exit 0,
+   byte-identical; derivation-census-s<NN>.py is the
+   independent second parser (split-based parsing, no re
+   module; the observed estimators pure-Python sorted() order
+   statistics over the explicitly pooled 75, cross-checked
+   in-loop against the np.partition kth paths), run twice byte-
+   identical, every published integer cross-checked; the
+   standing gate set (gpu_regime_classify.py --self-test; the
+   scoped GPU gate twice via the scratch runner, created/run/
+   deleted, never committed; FULL run-tests.cljk run live; the
+   settle-bar evaluator --self-test and the ledger eval twice
+   byte-identical; find docs/evidence/gpu -name '*.sh' -> 0 --
+   no POSIX shell execution files, ever).
+
+7. RULE 4 (frozen): NOTHING MOVES. accelerator-targets defaults
+   remain provisional (:measured? false); no vendor optimization
+   exists for Intel; no workgroup default is replaced. WHAT THIS
+   FREEZE CARRIES FORWARD (named, queued for later sessions,
+   each with its OWN pre-registration when taken -- none of it
+   is frozen here): (a) the W6 measurement half at the
+   2026-10-30 slot (s80) and its T18 ANALYSIS half (s84); (b)
+   the W7 measurement half (this freeze; day-slot-gated behind
+   W6's ledger line); (c) any further counted-day slot (its own
+   future freeze -- section 4(c)); (d) the tail-side vocabulary
+   (s81 named limitation 4(b); not queued).
