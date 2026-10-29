@@ -5334,3 +5334,42 @@ s84), T20's analysis half (s93 + s88) and W7's measurement half
 cross-day tail-movement row (not queued).  Evidence:
 docs/evidence/gpu/anv-b3w6adoptionprego-20261029/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 103 (JUN-59): the W6 CUSTODY-TO-LEDGER
+WIRING REHEARSAL -- the s97/s98 contracts' one hand-wired
+composition (decide_ledger_inputs ledger-pin/ledger-go VERBATIM
+into ledger-s<NN>.py --emit) executed on real committed window
+bytes for the first time (previously MOCK-only): the three
+committed 78-run windows each re-derive their committed
+settle-bar-ledger.txt line BYTE-EXACT through the full
+checker-to-emitter path (s36 1142/991, s51 1137/988, s73
+1131/998), and the frozen precedence (pin-missing over custody-go)
+and fail-closed REFUSED-INPUT-UNDECIDED refusals hold on real
+bytes.  ZERO defects found.  Verified: composition run twice
+BYTE-IDENTICAL (25 capture pairs, 0 differing; 31 claim rows, 0
+mismatched); adoption gate CONSISTENT (matched 25, mismatched 0)
+twice byte-identical; adoption copies sha256 == the manifest
+ledger token (scratch, created/run/deleted).  Standing gates ==
+the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test + ledger eval twice == pins -> VERDICT: PENDING 2/4
+unchanged; find docs/evidence/gpu -name '*.sh' -> 0;
+settle-bar-ledger.txt == HEAD.  The bar: preparation session ->
+NO reading -> NO ledger line, NO day-slot consumption.  Rule 4
+binds: NOTHING MOVES; NO vendor optimization exists for Intel.
+Named limits: flag=none is the only positive flag path with
+committed data (the flagged input paths replayed as explicit
+--emit inputs on the s73 stand-in); driver and adoption copies
+were scratch and are deleted.  Carry-forward to session 104: the
+W6 measurement half (the s80 freeze; the first measurement
+session at/after 2026-10-30T00:00:00Z adopts the seven tools
+manifest-checked) -- the gate for T18's analysis half (s92 +
+s84), T20's analysis half (s93 + s88) and W7's measurement half
+(s85) --; then any further counted-day slot (its own freeze) and
+a cross-day tail-movement row (not queued).  With s102+s103 no
+honest pre-slot preparation row remains; a pre-slot tick should
+say so rather than pad.  Evidence:
+docs/evidence/gpu/anv-b3w6wiringrehearsal-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
