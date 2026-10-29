@@ -33,6 +33,7 @@
 (def FS2-KIND9-BYTES 256)
 (def FS2-LOCK-BYTES 792)
 (def FS2-EF-BYTES 1172)
+(def FS35-BYTES 1768)
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
 
@@ -756,6 +757,79 @@
       (vector-assoc! 291 (b-direct (+ start 1164) (+ RUNTIME-START 52)))
       (vector-assoc! 292 (b-direct (+ start 1168) da-start))))
 
+;; JUN-593: legacy wire-35 text requests (the Linux kxrt-fs grammar) for the
+;; fs2-cli-stdio-general runtime: read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
+;; UNLOCK beneath FD 3 (O_NOFOLLOW_ANY|O_RESOLVE_BENEATH, renameatx_np with
+;; RENAME_NOFOLLOW_ANY); every other request falls through unchanged to the FS2
+;; chain. One-time derivation: docs/evidence/mac-fs35-20261029/fs35.derivation.s.
+(defn- fs35-helper-words [start :i64 chain :i64] :vector-i64
+  (-> (vector-alloc 442)
+      (append-runtime-words 0 [
+       0xf1008c3f 0x540036c1 0xf100045f 0x54003681 0xf100047f 0x54003641 0xf9400809 0xd2c0010a
+       0xea0a013f 0x540035c0 0xb40035a4 0xf9409009 0xf9400129 0xeb09009f 0x54003528 0xd12803ff
+       0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xa90607e0 0xa9070fe2
+       0xf90043e4 0xaa0003f3 0xf9409668 0xd1000489 0x8b091108 0xa9400901 0xaa0203f6 0xb40031d6
+       0xaa1303e0 0x94000198 0xaa0003f5 0x394002a8 0x34003128 0xd2800017 0x910012e9 0xeb16013f
+       0x540011a8 0xb8776aa9 0x528a6bea 0x72aa08aa 0x6b0a013f 0x54000060 0x910006f7 0x17fffff7
+       0x910012f8 0xf1001aff 0x54000343 0xd1001af9 0xb8796aa9 0x9100132a 0x786a6aab 0x528b08ac
+       0x72aa692c 0x6b0c013f 0x54000081 0x528a6a8c 0x6b0c017f 0x54001540 0x5288aa4c 0x72a829cc])
+      (append-runtime-words 64 [
+       0x6b0c013f 0x54000081 0x5288a9ac 0x6b0c017f 0x54001ec0 0x5289caac 0x72a9e98c 0x6b0c013f
+       0x54000081 0x5289686c 0x6b0c017f 0x54002480 0xf10016ff 0x540002e3 0xd10016f9 0xb8796aa9
+       0x9100132a 0x386a6aab 0x528a4aec 0x72aa892c 0x6b0c013f 0x54000061 0x7101157f 0x54001620
+       0x528a68cc 0x72a9cb2c 0x6b0c013f 0x54000061 0x71010d7f 0x540012e0 0x528988cc 0x72a869ec
+       0x6b0c013f 0x54000061 0x71012d7f 0x54001d20 0xd42006e0 0xf100083f 0x5400078b 0xf10ffc3f
+       0x5400074c 0x39400009 0x7100bd3f 0x540006e1 0xd2800023 0xd2800024 0xeb01007f 0x540003e0
+       0x38636809 0x34000629 0x7100bd3f 0x540000a0 0xd100046a 0x382a6849 0x91000463 0x17fffff7
+       0xcb04006a 0xb400052a 0xf100055f 0x54000081 0x38646809 0x7100b93f 0x54000480 0xf100095f])
+      (append-runtime-words 128 [
+       0x54000101 0x38646809 0x9100048b 0x386b680c 0x7100b93f 0x54000061 0x7100b99f 0x54000360
+       0xd100046a 0x528005e9 0x382a6849 0x91000463 0xaa0303e4 0x17ffffe1 0xcb04006a 0xb400026a
+       0xf100055f 0x54000081 0x38646809 0x7100b93f 0x540001c0 0xf100095f 0x54000101 0x38646809
+       0x9100048b 0x386b680c 0x7100b93f 0x54000061 0x7100b99f 0x540000a0 0xd100042a 0x382a685f
+       0xd2800000 0xd65f03c0 0x92800000 0xd65f03c0 0xaa1e03fa 0xaa1503e0 0xaa1703e1 0x910803e2
+       0x97ffffbd 0xaa1a03fe 0xd65f03c0 0xd2800060 0x910803e1 0xd28039f0 0xf2a40010 0xd4001001
+       0xd65f03c0 0xd28000d0 0xf2a40010 0xd4001001 0xd65f03c0 0xaa1603f7 0x97ffffee 0xb5002020
+       0xd2820082 0xf2a42002 0xd2800003 0x97fffff0 0x54001f82 0xaa0003f4 0xf940ce77 0xd2a20008])
+      (append-runtime-words 192 [
+       0xd1000508 0xeb0802ff 0x54001ec8 0xcb170118 0xf940ca79 0x8b170339 0xd280001a 0xcb1a0302
+       0xb4000142 0xaa1403e0 0x8b1a0321 0xd2800070 0xf2a40010 0xd4001001 0x540001a2 0xb40001e0
+       0x8b00035a 0x17fffff6 0xaa1403e0 0x910403e1 0xd2800022 0xd2800070 0xf2a40010 0xd4001001
+       0x54000062 0xb5001be0 0x14000004 0xf100101f 0x54fffd60 0x140000db 0xaa1403e0 0x97ffffd2
+       0x54001b02 0x8b1a02eb 0xf900ce6b 0xaa1303e0 0xaa3703e1 0xaa1a03e2 0x140000bd 0xeb16031f
+       0x54ffef81 0xaa1903f7 0x97ffffba 0xb5001520 0xd2820082 0xf2a42002 0xd2800003 0x97ffffbc
+       0x54001482 0x97ffffc0 0x54001442 0x140000a3 0xeb16031f 0x54ffede1 0xaa1903f7 0x97ffffad
+       0xb5001380 0xd2820082 0xf2a42002 0xd2800003 0x97ffffaf 0x540012e2 0xaa0003f4 0xd2800bf0])
+      (append-runtime-words 256 [
+       0xf2a40010 0xd4001001 0x9a9f27fb 0xaa1403e0 0x97ffffad 0x540011e2 0xb40011db 0x1400008f
+       0xaa1903f7 0x97ffff9b 0xb50015c0 0xd282c0a2 0xf2a42002 0xd2803483 0x97ffff9d 0x54001522
+       0xaa0003f4 0x8b1802b9 0xcb1802da 0xd280001b 0xeb1a037f 0x540001c0 0xaa1403e0 0x8b1b0321
+       0xcb1b0342 0xd2800090 0xf2a40010 0xd4001001 0x54000082 0xb4001360 0x8b00037b 0x17fffff5
+       0xf100101f 0x54fffe60 0x14000096 0xaa1403e0 0x97ffff8d 0x54001262 0xf940ce77 0xd2a20008
+       0xcb1a0108 0xeb0802ff 0x540011c8 0xf940ca69 0x8b170129 0xd280000a 0xeb1a015f 0x540000a0
+       0x386a6b2b 0x382a692b 0x9100054a 0x17fffffb 0x8b1a02eb 0xf900ce6b 0xaa1303e0 0xaa3703e1
+       0xaa1a03e2 0x1400006a 0xaa1903f7 0x97ffff69 0xb5000b00 0x8b1802a0 0xcb1802c1 0x911803e2])
+      (append-runtime-words 320 [
+       0x97ffff25 0xb5000a60 0xd2800060 0x910803e1 0xd2800062 0x911803e3 0xd2800204 0xd2803d10
+       0xf2a40010 0xd4001001 0x54000942 0x1400004b 0xeb16031f 0x54ffe2e1 0xaa1903f7 0x97ffff55
+       0xb5000880 0xf95a0268 0xb5000848 0xd28240c2 0xf2a42002 0xd2803003 0x97ffff55 0x540007a2
+       0xaa0003f4 0xd28000c1 0xd2801070 0xf2a40010 0xd4001001 0x54000083 0xaa1403e0 0x97ffff52
+       0x14000034 0x91000688 0xf91a0268 0xd10006e9 0xf91a0669 0xd286820a 0x8b0a026a 0x910803eb
+       0xd280000c 0xeb09019f 0x54000580 0x386c696d 0x382c694d 0x9100058c 0x17fffffb 0xeb16031f
+       0x54ffde81 0xaa1903f7 0x97ffff32 0xb5000420 0xf95a0268 0xb40003e8 0xd10006e9 0xf95a066a
+       0xeb0a013f 0x54000361 0xd286820a 0x8b0a026a 0x910803eb 0xd280000c 0xeb09019f 0x540000e0])
+      (append-runtime-words 384 [
+       0x386c696d 0x386c694e 0x6b0e01bf 0x54000221 0x9100058c 0x17fffff9 0xd1000514 0xaa1403e0
+       0xd2800101 0xd2801070 0xf2a40010 0xd4001001 0x9a9f27fb 0xaa1403e0 0x97ffff23 0x9a9f27fc
+       0xf91a027f 0x8a1c037b 0xb400005b 0x14000003 0x52800616 0x14000002 0x52800636 0xf940ce68
+       0xd2a20009 0xd1000529 0xeb09011f 0x540003a8 0xf940ca69 0x38286936 0x9100050b 0xf900ce6b
+       0xaa1303e0 0xaa2803e1 0xd2800022 0xf9401e70 0xd63f0200 0xa94573fb 0xa9446bf9 0xa94363f7
+       0xa9425bf5 0xa94153f3 0xa9407bfd 0x912803ff 0xd65f03c0 0xa94607e0 0xa9470fe2 0xf94043e4
+       0xa94573fb 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd 0x912803ff 0x14000000
+       0xd42006c0 0xd4202020])
+      (vector-assoc! 33 (bl-direct (+ start 132) (+ RUNTIME-START 52)))
+      (vector-assoc! 439 (b-direct (+ start 1756) chain))))
+
 ;; ADRP x7, __DATA: wrapper PC is in the first 4 KiB page. The target is
 ;; 16 KiB-aligned, and the checked image size is far within ADRP's range.
 (defn- data-adrp [text-bytes :i64] :i64
@@ -769,6 +843,7 @@
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
+        fs35 (string=? mode "fs2-cli-stdio-general")
         extra (mh-extra-start raw-bytes)
         result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
@@ -829,7 +904,8 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (if host (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
+                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 extra
+                                           :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
                   (b-direct (+ RUNTIME-START 48) (+ VECTOR-RUNTIME-START 80))))
@@ -869,7 +945,10 @@
               (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
               (words-at (+ at extra) (mh-result-words extra))
               (generated-at (+ at start) source)))
-        result))))
+        (if fs35
+          (words-at result (+ at extra)
+            (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+          result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
   (if (and (= (vector-count reply) (+ total-bytes 5))
@@ -913,7 +992,8 @@
               (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
           [0 70 83 50 0])
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
-          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5)) 0)))
+          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
+            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
