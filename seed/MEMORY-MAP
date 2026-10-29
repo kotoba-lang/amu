@@ -127,11 +127,18 @@
 ;; The complete44 public static build also appends its native runtime. It
 ;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
 ;; the normal adopted18 source, widths and heap size remain unchanged.
-;; These six rows are consumed by seed/gen-static-ns.kotoba. That native
+;; SIR growth (2026-10-29): the whole-compiler identity-resource producer
+;; (FULL-MANIFEST without its entry, plus the native test modules) reached E3001
+;; at SIR491520 once the plain emitters inlined vector, pair and string access.
+;; Grow only the static SIR capacity by98304 records (393216 words; MM-WORDS
+;; 31457280 < 2^25). The normal adopted18 source, widths, heap size and every
+;; guest image remain unchanged.
+;; These seven rows are consumed by seed/gen-static-ns.kotoba. That native
 ;; generator derives every downstream base and checks the2^25 vector bound.
 ;; BEGIN STATIC OVERRIDES
 ;; [:s MM-TOK-CAP 786432]
 ;; [:s MM-NODE-CAP 786432]
+;; [:s MM-SIR-CAP 589824]
 ;; [:s MM-CODE-CAP 2097152]
 ;; [:s MM-FIX-CAP 262144]
 ;; [:s MM-LITB-CAP 1048576]

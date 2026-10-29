@@ -7,7 +7,7 @@ The separate native ARM root is pinned in
 `seed/bootstrap/aarch64-linux-static-root.json`.
 
 All18 normal adopted core modules and their adoption image are unchanged.
-The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
+The static compiler profile is TOK786432/NODE786432/SIR589824/MM-WORDS31457280,
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
 removed to reduce the graph. No new comparative performance score is claimed.
 

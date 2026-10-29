@@ -105,6 +105,23 @@ Both rounds:
   `seed/cdci/policy.json` (roles marked as needing fresh native
   qualification) follow, with the root, product and macOS source-phase
   descriptors.
+* **SIR budget**: every whole-compiler build counts against `MM-SIR-CAP`, and
+  the identity-resource gate's producer (FULL-MANIFEST without its entry, plus
+  the native test modules) went from 151 (x86 target) / 133 (aarch64 target)
+  spare dummy functions on main to none with these emitter paths (E3001). The
+  emitters' fixed instruction runs are now constant tables read through
+  OP-TAB (`xr-run`, `xa-run`; byte-identical output), and the static profile
+  grows only its SIR capacity, as it grew TOK, NODE, LITB and OUT before:
+  `seed/MEMORY-MAP` gains `[:s MM-SIR-CAP 589824]` (+98,304 records, MM-WORDS
+  31,457,280 < 2^25), `seed/gen-static-ns.kotoba` requires that seventh row,
+  and `seed/00-ns-static.kotoba` is its native output. The normal adopted
+  `seed/00-ns.kotoba`, the core source and container, the heap size and every
+  guest image are unchanged; the amu-selfhost role (built from
+  `seed/CORE-STATIC-MANIFEST`, which uses the static namespace) has a new
+  image that still compiles `seed/MANIFEST` to `0efb5556…`. With it the
+  producer has room for 992 more dummy functions on the x86 target (at least
+  160 on both targets; the first limit is then E101 region 6, not SIR), against
+  151 on main before this change.
 * **Check**: `scripts/seed/check-inline-vectors.py` with
   `seed/inline-vector-cases.json` (39 programs x 2 fuel budgets x 2 targets:
   19 vector programs from round 1, 16 string and 4 pair programs from round 2;
@@ -123,10 +140,10 @@ locally with two test-only patches (`seccomp(2)` accepted without installing a
 filter, `openat2(2)` passed through); this is measurement tooling outside the
 build closure and does not qualify anything.
 
-* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`7f11dd28…`, 8,622,592
+* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`7f7ba81c…`, 8,618,496
   bytes; round 1 `f8332459…`, 8,593,920; base 9,458,176); aarch64 packed root
-  F1 = F2 (`bdf47cfd…`, 3,572,224 bytes; round 1 `172f588b…`, base 3,625,472)
-  with container `c577a483…`, derived under qemu from a round 2 candidate
+  F1 = F2 (`59556e92…`, 3,568,128 bytes; round 1 `172f588b…`, base 3,625,472)
+  with container `0d610f94…`, derived under qemu from a round 2 candidate
   root (itself derived from the round 1 root) after main's #1666 was merged;
   the x86_64 compiler that root emits is byte-identical to `bin/amu`, and so
   are its x86 images of the 24 pinned cases.
@@ -134,10 +151,13 @@ build closure and does not qualify anything.
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
   `check-public-native-product`, `check-native-kotoba-early`,
-  `check-native-identities`, the io-read/durable-sleep/spawn/private-store/
-  sleep-resume runtime checks and all 17 x86 gate-plan groups (including the
-  zero-watermark and runtime-profile mutation gates, whose source anchors
-  name the flat allocator text).
+  `check-native-identities`, `check-static-profile-native`, the four
+  source-identity gates (checked-source, source-vectors, identity-resource,
+  definition-effects; identity-resource also with the aarch64 root under
+  qemu), the io-read/durable-sleep/spawn/private-store/sleep-resume runtime
+  checks and all 17 x86 gate-plan groups (including the zero-watermark and
+  runtime-profile mutation gates, whose source anchors name the flat
+  allocator text).
 * All 24 pinned runtime cases (`seed/static-cases.json`) pass as static images
   on both targets, with `bin/amu` and with the new aarch64 root.
 * `check-inline-vectors.py`: PASS on both targets (156 runs), with `bin/amu`
