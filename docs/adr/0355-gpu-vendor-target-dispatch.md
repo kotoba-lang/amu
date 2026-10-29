@@ -4006,3 +4006,44 @@ NOT re-run this tick (named; no .cljk namespace touched). Rule 4
 binds: nothing moves; accelerator-targets defaults stay
 :measured? false. Evidence:
 docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s76.txt.
+
+## Dated note (2026-10-29, JUN-59 session 77: the T14 hi-wander analysis half)
+
+The s64-frozen pre-registered T14 row -- the s38-hi
+(sum,256,S=32) per-cell wander replication at (W5, hi), the
+s57 queue's second named candidate and the only route from one
+uncorrected (b) to a letter that survives multiplicity -- is
+taken to its ANALYSIS half over the committed W5 logs. THE ROW
+ANSWER: T14 = (b) NOT-REPLICATED
+[ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT] -- the named cell's 12 block
+pooled medians V = 1102 1090 1120 1093 1092 1143 1117 1109 1131
+1094 1162 1115, W_obs = 72 ticks vs the within-window
+run-repartition null (ONE random.Random(2026102814), 20,000
+trials, one fresh-list shuffle per trial): count 3019 / 20,001,
+p = 0.150992 one-sided upper, null median 61.0 -- W_obs is ABOVE
+the null median but NOT significant at the pre-registered 0.05,
+so the s45 s38-hi (b) wander-excess does NOT replicate on NEW
+cross-day data (a (b) is NOT evidence of no per-cell structure;
+frozen caveats unchanged). DOUBLE-RUNS: analysis-s77.py run twice
+byte-identical (publication-s77.txt 9,491 bytes, sha256
+f49d51f0..., cmp exit 0) and derivation-census-s77.py -- the
+independent second parser (split-based parsing, no regex;
+observed medians pure-Python sorted()[37] cross-checked vs
+np.partition kth=37; resampling np.partition kth=37, NOT
+np.median; RNG re-implemented) -- run twice byte-identical with
+"TOTAL: 57 rows, 0 mismatched | B: 0 | C: 0" (sha256
+5fa5633a...), every published integer/count/p/letter of the T14
+publication cross-checked including the RNG rows. Standing
+gates: classify --self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pin; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff) with the 879-byte
+.err byte-identical to the s64 pin -- no green full suite
+claimed; settle-bar self-test 38/0 == pin and ledger eval twice
+== pin -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` ->
+0. THE BAR: NO hardware runs at this analysis session -> NO
+ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 78: the T15 quantile-pair level axes
+and T16 second-pair profile axis analysis halves. Evidence:
+docs/evidence/gpu/anv-b3w5hiwander-20261029/record.txt.
