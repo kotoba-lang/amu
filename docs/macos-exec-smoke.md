@@ -58,18 +58,43 @@ Code and receipts supersede the sentence above on two points. Read against
   its receipt records `linuxProcessInThisGate: false`. The produced ELFs were
   not executed on Linux in that gate (`MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED`).
 
+## Status update, 2026-10-29 (JUN-546)
+
+Code supersedes the 2026-10-28 refusal. The Mac runtime now **implements
+`arena-scope`**: context ABI slot 224 pushes four allocator counters on a
+256-deep LIFO and slot 232 pops them, following the Linux runtimes
+(`seed/76-x86_64-static-rt.kotoba`, `seed/77-aarch64-static-rt.kotoba`). The
+saved counters are the pair count (behind ctx+0x120), the pool use (ctx+0x198),
+the vector handle count (ctx+0x3e88) and the vector item use (ctx+0x3e98).
+The context tag is checked; enter at depth 256 and leave at depth 0 fail; every
+saved counter is validated against the live one before any restore. A failure
+writes `seed: arena-scope failed (Mac runtime)` to stderr and exits 70, the
+Linux status for a scope failure. The Mac item arena is a bump allocator that
+assumes everything above its use is zero (Linux zeroes up to a high-water mark
+at allocation instead), so leave zeroes the item words it releases. The routines
+are hand-assembled AArch64 words in `seed/macos-fs2-runtime-packager.kotoba`
+(derived once with the system assembler, like the rest of that runtime) placed in
+a gap of the runtime text; their LIFO lives at ctx+0x1000, DATA no other routine
+of the image touches (checked by disassembling the runtime and the FS2
+callbacks, and by the fixed point below).
+
+`scripts/seed/check-macos-arena-scope.py` (Mac CI job) compiles, packages,
+signs and runs the repository oracles `seed/tests/native-arena-scope.kotoba`
+(600,000 scoped allocations that fit only if every counter is restored,
+nested scopes, f64 results; depth 256 passes, depth 257 exits 70) and
+`seed/tests/native-zero-watermark.kotoba`, a nested-scope program, a raw
+leave-without-enter main (exit 70), and the unscoped negative control, which
+still traps at the original budget. The packager source changed, so
+`root.json` moved through the two-phase writer (`--phase source`, JUN-545):
+the new packager is the pinned one and `expectedFixedPoint.packagerUnsignedSha256`
+follows it. The pinned **compiler** image is unchanged and still carries the
+earlier runtime (it never calls arena-scope); adopting the new runtime into it is
+the writer's `--phase final`. A compiler packaged with the new runtime
+reproduces the same container (`46daf3fa…`) and its own unsigned image
+(a local run, not a receipt).
+
 Still open, and not claimed here: the Mac runtime is a diagnostic profile, not
-a qualified one. `arena-scope` is **refused, not implemented**: the generated
-code loads context ABI slots 224 and 232, the scope enter and leave routines of
-`docs/native-source-lock-and-scalar-scopes.md`, and calls them. Before JUN-546
-the Mac wrapper installed neither, so the call landed on address 0 (SIGSEGV,
-exit 139, as the crash report shows). Both slots now point at a routine that
-writes `seed: arena-scope unsupported (Mac runtime, JUN-546)` to stderr and
-exits 70, the status the Linux runtimes use for a scope failure;
-`scripts/seed/check-macos-arena-scope-refusal.py` holds it in the Mac CI job.
-A real implementation would save and restore this runtime's own allocator
-counters in a bounded LIFO and is still open. The Mac root's status stays
-`diagnostic-candidate`; updating the pinned descriptors is now a two-phase,
-receipt-driven step (`scripts/seed/write-bootstrap-descriptors.py`, JUN-545 and
-JUN-547); the AIUEOS release bundle's own build is tracked separately (JUN-548);
-physical hardware and release qualification are separate gates.
+a qualified one. The Mac root's status stays `diagnostic-candidate`; updating the
+remaining pinned descriptors is receipt-driven (`scripts/seed/write-bootstrap-descriptors.py`,
+JUN-545 and JUN-547); the AIUEOS release bundle's own build is tracked separately
+(JUN-548); physical hardware and release qualification are separate gates.

@@ -72,6 +72,8 @@ def check(cli, out):
     for i, value in enumerate((0, -1, 256, 9223372036854775807, -9223372036854775808)):
         p = source('integer' + str(i), f'(defn main [] :i64 {value})')
         run('integer' + str(i), 'run', p.name, stdout=f'{value}\n'.encode())
+    scoped = source('scoped', '(defn main [] :i64 (arena-scope (+ (arena-scope 40) 2)))')
+    run('scoped-result', 'run', scoped.name, stdout=b'42\n')
     for name, body in {
         'string': '(defn main [] :string "hello")',
         'bool': '(defn main [] :bool true)',
@@ -127,6 +129,19 @@ def check(cli, out):
     fake.chmod(0o700)
     run('untrusted-executable', 'run', fake, expected=1, diagnostic=b'EINPUT')
     assert not marker.exists()
+    isolated = out / 'provenance'
+    isolated.mkdir()
+    isolated_cli = isolated / 'amu-cli.macho'
+    shutil.copy2(cli.resolve(), isolated_cli)
+    run('missing-compiler', 'check', hello, expected=70, diagnostic=b'EPROVENANCE', image=isolated_cli)
+    for name in ('amu-full-root.macho', 'kotoba-packager-root.macho'):
+        shutil.copy2(cli.resolve().parent / name, isolated / name)
+        with (isolated / name).open('r+b') as f:
+            first_byte = f.read(1)
+            f.seek(0)
+            f.write(bytes([first_byte[0] ^ 1]))
+        run('corrupted-' + name, 'check', hello, expected=70, diagnostic=b'EPROVENANCE', image=isolated_cli)
+        shutil.copy2(cli.resolve().parent / name, isolated / name)
     assert set(Path('/private/tmp').glob('amu-*')) == before_tmp, 'private CLI directories leaked'
     result = dict(schema='amu.macos-cli-product-observation.v1', status='PASS_ORDINARY_MACOS_CLI',
                   cli=mac.pin(cli), calls=calls, manualFD3=False, hostedFallback=False,
