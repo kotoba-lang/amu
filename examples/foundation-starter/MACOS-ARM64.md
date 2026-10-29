@@ -1,127 +1,125 @@
 # Try Kotoba / Amu on an Apple Silicon Mac
 
-`bin/amu` is a native ARM64 Mach-O built and rebuilt by Amu selfhost.
-`bin/kotoba` and `bin/kotoba-compiler` resolve to that same executable.
-No Linux VM, Rosetta, Node, JVM, C compiler or hosted launcher is needed.
-The native Kotoba packager emits the runnable Mach-O; macOS `codesign`
-adds its required ad-hoc signature.
+`bin/amu` is a native ARM64 Mach-O built by Amu selfhost. The
+`bin/kotoba` and `bin/kotoba-compiler` aliases use that same native CLI.
+Checking, compilation, packaging and host operations run as Amu-built
+native code; macOS `codesign` supplies the platform's ad-hoc signature.
 
-This is a bounded native first run, not qualification of the complete Mac
-runtime, all CLI commands or an independent-user release. The existing
-Linux starter's fuel/capability expectations are Linux runtime checks and
-must not be claimed as Mac results.
+## Get and try it
 
-## Get and verify the native entry
-
-Use a new checkout so existing work is preserved:
+Use a new checkout:
 
 ```sh
 git clone https://github.com/kotoba-lang/amu.git amu-mac
 cd amu-mac
 git rev-parse HEAD
-test "$(uname -s)" = Darwin
-test "$(uname -m)" = arm64
-file bin/amu
-shasum -a 256 bin/amu seed/bootstrap/aarch64-macos/kotoba-packager-root.macho
+bin/amu check examples/foundation-starter/hello.kotoba
+bin/amu compile examples/foundation-starter/hello.kotoba
+bin/amu run examples/foundation-starter/hello.kotoba
+bin/amu run ./hello
+./hello
+```
+
+`check` prints `ok`. `compile` creates `hello` in the current directory.
+Each of the last three commands prints **42** and exits **0**. No `3< ...`,
+`--target`, source lock, extraction, packaging or signing command is needed.
+No Linux VM, Rosetta, Node, JVM, C compiler or hosted launcher is needed.
+
+To choose an output path, use `-o PATH` or `--output PATH`. Existing output
+files are preserved; choose a new path if `EOUTPUT` is reported. Input/output
+paths may contain spaces or Unicode. Symlink and nonregular inputs refuse.
+
+Try a source change independently of the checked-in example:
+
+```sh
+printf '(ns hello (:export [main]))\n(defn main [] :i64 43)\n' > hello43.kotoba
+bin/amu check hello43.kotoba
+bin/amu compile hello43.kotoba -o hello43
+bin/amu run hello43.kotoba
+bin/amu run ./hello43
+```
+
+Both `run` commands print **43** and exit0. A previously compiled `hello`
+continues to print42 because its own captured source is part of the artifact.
+Guest arguments follow `--`: `bin/amu run FILE.kotoba -- ARG...`.
+
+## Current supported scope
+
+The ordinary Mac host accepts a single canonical `.kotoba` source up to1MiB.
+Compile/run require exactly one exported `main [] :i64`. Its complete signed
+integer result is printed followed by a newline; it is not truncated to an
+8-bit process exit code. User stdout/stderr and CLI arguments are available.
+Guests receive no filesystem/process grants. `run` closes inherited descriptors
+>=3 and applies a5-second execution deadline to its child. Native compiler helpers use a private
+source snapshot and exact KSL1 lock, managed inside the CLI.
+
+Native programs embed their source in the signed Mach-O. `run PROGRAM`
+recompiles that source with the pinned compiler, compares the complete signed
+image, and executes the regenerated private image. An arbitrary executable
+or a changed artifact refuses. Do not put secrets in source you distribute.
+
+Unsupported flags/targets and project imports refuse. Complete Darwin runtime,
+project/package/resolver parity and independent-user release qualification
+remain open. Linux starter fuel/capability results are separate Linux checks.
+The low-level `amu-full-root.macho` retains its explicit-target/FD3 interface
+for bootstrap development; it is not needed for this first run.
+
+## Verify provenance
+
+```sh
+file -L bin/amu
+shasum -a 256 bin/amu
 codesign --verify --strict bin/amu
-codesign --verify --strict seed/bootstrap/aarch64-macos/kotoba-packager-root.macho
 otool -L bin/amu
 ```
 
-Expected compiler SHA-256:
-`a7424fba0a88860560c963e5393de8201456f8eb6378863c42546947c3121cc6`.
-Expected packager SHA-256:
-`45d1271c70ce2e4fb33113af25278c23af20f007a618e82782222f4b72e215f8`.
-`file` must identify ARM64 Mach-O and `otool -L` must list no dylibs.
-Stop on a digest or signature mismatch. Source/image pins and fixed-point
-scope are in `seed/bootstrap/aarch64-macos/root.json`.
+Expected CLI SHA-256:
+`0ab0bbe958ca245546c3e3ae9cff3ab9d077a07dc5e64992f43c57e22e75502c`.
+`file -L` identifies ARM64 Mach-O; `otool -L` lists no dylibs.
+The source recipe, image, compiler and packager pins are in
+[`cli.json`](../../seed/bootstrap/aarch64-macos/cli.json).
+The full compiler/packager selfhost fixed points are separately recorded in
+[`root.json`](../../seed/bootstrap/aarch64-macos/root.json).
 
-## Check, compile, package and execute
+The CLI verifies the complete compiler and packager SHA-256 before invoking
+them. A missing/changed dependency reports `EPROVENANCE`; it does not select
+a program from `PATH` or fall back to another host.
 
-Run this from the checkout. The work directory is private and separate
-from the repository. FD3 explicitly grants that directory to the native
-compiler and packager; it does not grant the rest of the filesystem.
+## Give this task to an AI agent
 
-```sh
-AMU="$PWD/bin/amu"
-PACKAGER="$PWD/seed/bootstrap/aarch64-macos/kotoba-packager-root.macho"
-TRIAL=$(mktemp -d "${TMPDIR:-/tmp/}amu-mac-first-run.XXXXXX")
-cd "$TRIAL"
-printf '(ns hello (:export [main]))\n(defn main [] :i64 42)\n' > hello.kotoba
-"$AMU" check hello.kotoba 3< .
-"$AMU" compile hello.kotoba --target aarch64-macos --output hello.kseed 3< .
-"$AMU" extract-native hello.kseed --symbol main --output hello.raw 3< .
-```
+Copy this request as-is, choosing a fresh checkout destination:
 
-For this literal program, extraction prints `:offset 0, :length 12, :arity 0`.
-Use that native-reported offset (0) in the packager:
+> Clone https://github.com/kotoba-lang/amu into a new directory, preserving
+> all existing work. Read its AGENTS.md and record the commit, macOS version,
+> CPU architecture and bin/amu digest. On an arm64 Mac, follow the ordinary
+> check/compile/run commands in examples/foundation-starter/MACOS-ARM64.md.
+> Confirm ok, then printed42 with exit0 for source and compiled-artifact run.
+> Create a separate source returning43 and confirm printed43 with exit0.
+> Test an incompatible main return type, an unknown flag and an existing
+> output path: each must refuse without overwriting an existing file. Do not
+> add FD3, a hosted launcher, JVM/Node/C compiler or a target workaround.
+> If a command fails, preserve the exact sanitized reproduction and search
+> existing Amu GitHub issues before filing a focused public issue. Include
+> revision, platform, digest, command, expected/actual stdout and exit status;
+> omit usernames, absolute personal paths, secrets and unrelated logs.
+> If a small fix is possible, make it on a separate branch, add meaningful
+> native positive/refusal checks, commit/push and open a PR linked to the
+> issue. Explain the trigger, resulting behavior, verification and remaining
+> limits. Do not merge or claim independent release qualification. If GitHub
+> write access is unavailable, return a patch and ready-to-submit issue/PR
+> text. Finish with links and a precise distinction between observed,
+> fixed locally, CI-passed, submitted and merged states.
 
-```sh
-"$PACKAGER" hello-unsigned.macho hello.raw fs2-cli-stdio-general 0 3< .
-cp hello-unsigned.macho hello.macho
-chmod 700 hello.macho
-codesign --force --sign - hello.macho
-codesign --verify --strict hello.macho
-./hello.macho 3< .
-echo "$?"
-```
+Use [Amu issues](https://github.com/kotoba-lang/amu/issues) and
+[Amu pull requests](https://github.com/kotoba-lang/amu/pulls) for public reports.
+A successful author/maintainer-agent trial is not independent-user evidence.
 
-The program returns its integer through the process exit status: **42**.
-It does not print `42`. If your shell uses `set -e`, temporarily disable it
-while observing this intentionally nonzero exit status.
-
-Change `42` to `43` in `hello.kotoba`, then repeat compile, extract, package,
-copy, sign and execute. Extraction still reports offset 0 for this fixture;
-the native program must now exit **43**. Compiling only creates a `.kseed`
-container; running that container directly is not a supported Mac command.
-
-## Pinned input and refusal checks
-
-KSL1 uses a virtual absolute source name. `/hello.kotoba` here refers to the
-FD3 directory's `hello.kotoba`, not the host filesystem root. The lock file
-and output names remain basenames:
+Maintainers can reproduce the public image and run all ordinary CLI controls:
 
 ```sh
-SOURCE_SHA=$(shasum -a 256 hello.kotoba | cut -d ' ' -f 1)
-printf 'KSL1\nentry /hello.kotoba\nfile %s /hello.kotoba\n' "$SOURCE_SHA" > hello.ksl
-LOCK_SHA=$(shasum -a 256 hello.ksl | cut -d ' ' -f 1)
-"$AMU" check /hello.kotoba --source-lock hello.ksl --source-lock-sha256 "$LOCK_SHA" 3< .
-"$AMU" compile /hello.kotoba --target aarch64-macos --output pinned.kseed \
-  --source-lock hello.ksl --source-lock-sha256 "$LOCK_SHA" 3< .
-"$AMU" check /hello.kotoba --source-lock hello.ksl \
-  --source-lock-sha256 0000000000000000000000000000000000000000000000000000000000000000 3< .
+python3 scripts/seed/check-public-macos-product.py --output /a/new/output-directory
 ```
 
-The last command must exit 1 with `E6015`. Omitting `--target` from compile
-must exit 1 with `E2` and create no output. Do not suppress these refusals.
-
-Current limitation ([KOTOBA-169](https://linear.app/kotobalabs/issue/KOTOBA-169)):
-slash-containing output or source-lock names can trigger SIGTRAP in the Mac
-runtime instead of a named refusal. Use basename output/lock names within
-FD3. Arbitrary paths and a complete Mac filesystem API are not supported.
-
-## Report a trial or a small fix
-
-Record the checkout revision, macOS/CPU, compiler and packager hashes,
-commands, exits 42 and 43, and sanitized diagnostics. Search existing
-[Amu issues](https://github.com/kotoba-lang/amu/issues) before filing a public
-report. Do not include home-directory paths, usernames, secrets or unrelated
-logs. Identify the result as Mac native first-run observation; it is not
-an independent qualification when performed by the author or their agent.
-
-For a small reproducible fix, use a separate branch, explain before/after
-behavior, include positive and refusal verification, and open an Amu PR
-linking the issue. Keep capability, compiler/runtime and release changes
-outside a documentation-only fix. If you cannot push, provide the patch,
-commands and a ready-to-use issue/PR body instead of claiming submission.
-
-Maintainers can observe all three actual aliases, source/image pins,
-pinned check/compile, wrong-lock and missing-target refusals, native package
-signatures and 42 → 43 using:
-
-```sh
-python3 scripts/seed/check-public-macos-product.py --output /a/new/private/output-directory
-```
-
-Python only stages bytes and records native processes in that check. It
-does not compile, emit machine code or supply a runtime fallback.
+That observer only stages/hashes bytes and observes native processes.
+It rebuilds the native CLI, compares every public payload byte, exercises
+all three aliases and checks positive/refusal/resource cases.

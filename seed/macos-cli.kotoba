@@ -1,0 +1,182 @@
+;; Native public Darwin host CLI. The adopted frontend below is used only
+;; for the freshly checked main ABI; compilation stays in the pinned full root.
+;; Host privileges never become grants in an emitted ordinary program.
+(defn- mc-error [message :string code :i64] :i64
+  (let [w (hc-err (string-concat "amu: " (string-concat message "\n")))] code))
+(defn- mc-join [a :string b :string] :string (string-concat a (string-concat "/" b)))
+(defn- mc-parent [s :string] :string
+  (let [v (hc-bytes s) at (loop [i 0 last 0]
+         (if (= i (vector-count v)) last
+           (recur (+ i 1) (if (= (vector-at v i) 47) i last))))]
+    (if (= at 0) "/" (hc-text (hc-slice v 0 at)))))
+(defn- mc-absolute [cwd :string path :string] :string
+  (if (and (> (string-length path) 0) (= (string-code-point-at path 0) 47)) path (mc-join cwd path)))
+(defn- mc-path? [s :string] :bool
+  (let [v (hc-bytes s) n (vector-count v)]
+    (and (> n 0) (< n 4095)
+      (loop [i 0] (cond (= i n) true (< (vector-at v i) 32) false
+                         (= (vector-at v i) 127) false :else (recur (+ i 1)))))))
+(defn- mc-ends? [s :string tail :string] :bool
+  (let [a (hc-bytes s) b (hc-bytes tail) n (vector-count a) m (vector-count b)]
+    (and (>= n m) (loop [i 0] (cond (= i m) true
+      (not= (vector-at a (+ (- n m) i)) (vector-at b i)) false :else (recur (+ i 1)))))))
+(defn- mc-default-output [source :string] :string
+  (let [v (hc-bytes source) at (loop [i 0 last 0]
+      (if (= i (vector-count v)) last
+        (recur (+ i 1) (if (= (vector-at v i) 47) (+ i 1) last))))
+        n (- (vector-count v) (if (mc-ends? source ".kotoba") 7 0))]
+    (if (> n at) (hc-text (hc-slice v at (- n at))) "a.out")))
+(defn- mc-read-data [reply :vector-i64] :vector-i64
+  (hc-slice reply 1 (- (vector-count reply) 1)))
+(defn- mc-pinned? [path :string digest :string] :bool
+  (let [r (hc-read path)] (and (hc-ok? r) (string=? (sh-bytes (mc-read-data r)) digest))))
+(defn- mc-exit [reply :vector-i64] :i64
+  (if (hc-ok? reply) (vector-at reply 1) 70))
+(defn- mc-argv [a :string] :string (hc-field a))
+(defn- mc-clean [dir :string] :i64
+  (let [w (loop [i 0]
+            (if (= i 9) 0
+              (let [r (hc-path-call 4 (mc-join dir (case i
+                0 "source.kotoba" 1 "source.ksl" 2 "program.kseed" 3 "program.raw"
+                4 "extract.log" 5 "compile.log" 6 "check.log" 7 "program.macho" "sign.log")))]
+                (recur (+ i 1)))))
+        r (hc-path-call 5 dir)] 0))
+;; Exact adopted lexer/reader/namer/checker and its refinement rounds. This
+;; reads the captured source, never a caller-supplied interface or ABI claim.
+(defn- mc-checked [M :vector-i64 S :string H :vector-i64] :vector-i64
+  (if (> (vector-at M MM-ERR) 0) M
+    (let [next (ck-run-h M S H)]
+      (if (ck-hint-again? H next) (mc-checked (drv-reread next S) S H) next))))
+(defn- mc-main-abi? [original :string] :bool
+  (let [S (string-concat original (ck-r6b-lib original))
+        M0 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S)
+        M1 (if (= (vector-at M0 MM-ERR) 0) (rd-run M0 S) M0)]
+    (if (or (> (vector-at M1 MM-ERR) 0) (= (pj-needed M1 S) 1)) false
+      (let [M (mc-checked (nm-run M1 S) S (ck-hint-new))
+            f (if (= (vector-at M MM-ERR) 0) (pj-fn-named M S "main") 0)]
+        (and (> f 0) (= (pj-ff M f FF-KIND) FK-DEFN)
+             (= (pj-ff M f FF-NPARAMS) 0) (= (pj-ff M f FF-RTYPE) TY-I64)
+             (= (pj-ff M f FF-EXPORT) 1)
+             (= (pj-sf M (pj-ff M f FF-SYM) SF-ABORT) 0)
+             (or (>= (+ f 1) (vector-at M MM-FN-N))
+                 (not= (pj-ff M (+ f 1) FF-SYM) (pj-ff M f FF-SYM))))))))
+(defn- mc-lock [digest :string] :string
+  (string-concat "KSL1\nentry /source.kotoba\nfile " (string-concat digest " /source.kotoba\n")))
+(defn- mc-log [path :string] :i64
+  (let [r (hc-read path)] (if (hc-ok? r) (hc-out (hc-text (mc-read-data r))) 0)))
+(defn- mc-decimal-at [v :vector-i64 start :i64] :i64
+  (loop [i start n 0]
+    (if (or (>= i (vector-count v)) (< (vector-at v i) 48) (> (vector-at v i) 57)) n
+      (if (> n 4194304) -1 (recur (+ i 1) (+ (* n 10) (- (vector-at v i) 48)))))))
+(defn- mc-offset [log :vector-i64] :i64
+  (let [s (hc-text log) at (string-index-of s ":offset ")]
+    (if (< at 0) -1 (mc-decimal-at log (+ at 8)))))
+(defn- mc-u64 [v :vector-i64 at :i64] :i64
+  (loop [i 0 n 0] (if (= i 8) n
+    (recur (+ i 1) (bit-or n (i64-shift-left (vector-at v (+ at i)) (* i 8)))))))
+(defn- mc-source [input :vector-i64 artifact :bool] :vector-i64
+  (if (not artifact) input
+    (if (< (vector-count input) 544) []
+      (let [start (mc-u64 input 528) size (mc-u64 input 536)]
+        (if (and (= (mc-u64 input 504) 171798691889)
+                 (string=? (hc-text (hc-slice input 512 13)) "AMU-SOURCE-V1")
+                 (>= start 8192) (> size 0) (<= size 1048576)
+                 (<= start (vector-count input)) (<= size (- (vector-count input) start)))
+          (hc-slice input start size) [])))))
+(defn- mc-sign [dir :string image :string] :i64
+  (let [r (hc-path-call 6 image)]
+    (if (not (hc-ok? r)) (mc-error "EHOST cannot make native program executable" 70)
+      (mc-exit (hc-spawn 2 dir (mc-join dir "sign.log") "/usr/bin/codesign" 10
+        (string-concat (mc-argv "codesign")
+          (string-concat (mc-argv "--force") (string-concat (mc-argv "--sign")
+          (string-concat (mc-argv "-") (string-concat (mc-argv "--identifier")
+          (string-concat (mc-argv "org.kotoba.amu.program.v1") (string-concat (mc-argv "--timestamp=none")
+          (string-concat (mc-argv "--digest-algorithm=sha256") (string-concat (mc-argv "--") (mc-argv image)))))))))))))))
+(defn- mc-compile [dir :string compiler :string packager :string lock-hash :string] :i64
+  (let [compiled (hc-spawn 1 dir (mc-join dir "compile.log") compiler 11
+          (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "compile")
+          (string-concat (mc-argv "/source.kotoba") (string-concat (mc-argv "--target")
+          (string-concat (mc-argv "aarch64-macos") (string-concat (mc-argv "--output")
+          (string-concat (mc-argv "program.kseed") (string-concat (mc-argv "--source-lock")
+          (string-concat (mc-argv "source.ksl") (string-concat (mc-argv "--source-lock-sha256")
+          (mc-argv lock-hash))))))))))))]
+    (if (not= (mc-exit compiled) 0) (mc-exit compiled)
+      (let [extracted (hc-spawn 1 dir (mc-join dir "extract.log") compiler 7
+        (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "extract-native")
+        (string-concat (mc-argv "program.kseed") (string-concat (mc-argv "--symbol")
+        (string-concat (mc-argv "main") (string-concat (mc-argv "--output") (mc-argv "program.raw"))))))))
+        log (hc-read (mc-join dir "extract.log"))
+        offset (if (hc-ok? log) (mc-offset (mc-read-data log)) -1)]
+        (if (or (not= (mc-exit extracted) 0) (< offset 0)) (mc-error "EHOST native extraction failed" 70)
+          (let [packed (hc-spawn 1 dir "" packager 6
+            (string-concat (mc-argv "amu-packager") (string-concat (mc-argv "program.macho")
+            (string-concat (mc-argv "program.raw") (string-concat (mc-argv "amu-program")
+            (string-concat (mc-argv (hc-dec offset)) (mc-argv "/source.kotoba")))))))]
+            (if (not= (mc-exit packed) 0) (mc-error "EHOST native packaging failed" 70)
+              (mc-sign dir (mc-join dir "program.macho")))))))))
+(defn- mc-guest-args [start :i64] :string
+  (loop [i start out (mc-argv "amu-program")]
+    (if (>= i (hc-argc)) out (recur (+ i 1) (string-concat out (mc-argv (hc-arg i)))))))
+(defn- mc-operation [command :string source :vector-i64 input :vector-i64 artifact :bool dir :string compiler :string packager :string output :string guest-start :i64] :i64
+  (let [lock (hc-bytes (mc-lock (sh-bytes source)))
+        wrote (hc-write (mc-join dir "source.kotoba") source)
+        locked (if (hc-ok? wrote) (hc-write (mc-join dir "source.ksl") lock) [1 22 0])]
+    (cond (not (hc-ok? locked)) (mc-error "EHOST cannot stage private source snapshot" 70)
+      (string=? command "check")
+        (let [r (hc-spawn 1 dir (mc-join dir "check.log") compiler 7
+          (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "check")
+          (string-concat (mc-argv "/source.kotoba") (string-concat (mc-argv "--source-lock")
+          (string-concat (mc-argv "source.ksl") (string-concat (mc-argv "--source-lock-sha256")
+          (mc-argv (sh-bytes lock)))))))))]
+          (if (= (mc-exit r) 0) (hc-out "ok\n") (mc-exit r)))
+      (not (mc-main-abi? (hc-text source))) (mc-error "EABI expected one exported main [] :i64 in a single canonical Kotoba source" 1)
+      :else (let [status (mc-compile dir compiler packager (sh-bytes lock))
+                  image (mc-join dir "program.macho")]
+        (cond (not= status 0) status
+          (string=? command "compile")
+            (let [r (hc-read image)]
+              (if (and (hc-ok? r) (hc-ok? (hc-write output (mc-read-data r)))
+                       (hc-ok? (hc-path-call 6 output)))
+                (hc-out (string-concat "compiled " (string-concat output "\n")))
+                (mc-error "EOUTPUT cannot create output (existing files are preserved)" 1)))
+          :else
+            (let [r (hc-read image)]
+              (if (and artifact (or (not (hc-ok? r))
+                    (not (string=? (sh-bytes input) (sh-bytes (mc-read-data r))))))
+                (mc-error "EARTIFACT supplied program differs from its freshly compiled source" 1)
+                (let [result (hc-spawn 0 dir "" image (+ 1 (- (hc-argc) guest-start)) (mc-guest-args guest-start))
+                      status (mc-exit result)]
+                  (if (= status 124) (mc-error "ETIME native program exceeded 5 seconds" 124) status)))))))))
+(defn- mc-work [command :string source-path :string output :string guest-start :i64 info :vector-i64] :i64
+  (let [root (mc-parent (hc-info-exe info)) compiler (mc-join root "amu-full-root.macho")
+        packager (mc-join root "kotoba-packager-root.macho")
+        input-reply (hc-read (mc-absolute (hc-info-cwd info) source-path))
+        artifact (and (string=? command "run") (not (mc-ends? source-path ".kotoba")))]
+    (cond (not (hc-ok? input-reply)) (mc-error "EINPUT expected a bounded regular input file (symlinks are refused)" 1)
+      (not (mc-pinned? compiler MC-COMPILER-SHA256)) (mc-error "EPROVENANCE full compiler digest mismatch" 70)
+      (not (mc-pinned? packager MC-PACKAGER-SHA256)) (mc-error "EPROVENANCE native packager digest mismatch" 70)
+      :else (let [input (mc-read-data input-reply) source (mc-source input artifact)
+                  dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
+        (cond (or (= (vector-count source) 0) (> (vector-count source) 1048576))
+                (mc-error "EINPUT expected source <= 1 MiB or an Amu native program with embedded source" 1)
+          (not (hc-ok? (hc-path-call 3 dir))) (mc-error "EHOST cannot create private work directory" 70)
+          :else (let [status (mc-operation command source input artifact dir compiler packager
+                                  (mc-absolute (hc-info-cwd info) output) guest-start)
+                      clean (mc-clean dir)] status))))))
+(defn- mc-usage [] :i64
+  (mc-error "usage: amu check FILE.kotoba | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [-- ARG...]" 2))
+(defn- seed-main [] :i64
+  (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
+        output-flag (and (= n 4) (or (string=? (hc-arg 2) "-o") (string=? (hc-arg 2) "--output")))
+        output (if output-flag (hc-arg 3) (mc-default-output source))
+        guest-start (if (= n 2) 2 3)]
+    (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu run FILE.kotoba|PROGRAM [-- ARG...]\n")
+      (not (mc-path? source)) (mc-usage)
+      (or (and (string=? command "check") (= n 2) (mc-ends? source ".kotoba"))
+          (and (string=? command "compile") (or (= n 2) output-flag)
+               (mc-ends? source ".kotoba") (mc-path? output))
+          (and (string=? command "run") (or (= n 2) (and (>= n 3) (string=? (hc-arg 2) "--"))) (< n 64)))
+        (let [info (hc-call 0 [])]
+          (if (hc-ok? info) (mc-work command source output guest-start info) (mc-error "EHOST cannot resolve native host context" 70)))
+      :else (mc-usage))))

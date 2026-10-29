@@ -105,11 +105,48 @@
       (dc-collection "set" (typed-list-new [:list :string]) true)
       (dco-interface (typed-list-new [:list :string] (dc-kw "i64")))
       (dco-vec (typed-list-new [:list :string] (dc-str group))))))
+;; B1 closures (JUN-588). Hand-authored sealed bodies for local `fn`: the parameter takes the next binder index
+;; before the body, a let binder after its value, captured outer locals are the outer binder's name, and the sealed
+;; head is the symbol fn with a vector of binder names. Nothing here calls 05 or 06.
+(defn- dco-fn [param :string body :string] :string
+  (dco-list (typed-list-new [:list :string] (dco-sym "fn") (dco-vec (typed-list-new [:list :string] (dco-sym param))) body)))
+(defn- dco-plus [a :string b :string] :string
+  (dco-list (typed-list-new [:list :string] (dco-sym "+") a b)))
+(defn- dco-letv [pairs [:list :string] body :string] :string
+  (dco-list (typed-list-new [:list :string] (dco-sym "let") (dco-vec pairs) body)))
+(defn- dco-call1 [head :string arg :string] :string
+  (dco-list (typed-list-new [:list :string] head arg)))
+(defn- dco-unary [body :string deps [:list :string]] :string
+  (dco-payload (typed-list-new [:list :string] (dco-sym "k0")) (typed-list-new [:list :string] (dc-kw "i64")) body deps))
+(defn- dco-closure [] :string
+  (dco-unary (dco-letv (typed-list-new [:list :string] (dco-sym "k2") (dco-fn "k1" (dco-plus (dco-sym "k1") (dc-int "1"))))
+    (dco-call1 (dco-sym "k2") (dco-sym "k0"))) (typed-list-new [:list :string])))
+(defn- dco-closure-capture [] :string
+  (dco-unary (dco-letv (typed-list-new [:list :string] (dco-sym "k1") (dc-int "5")
+      (dco-sym "k3") (dco-fn "k2" (dco-plus (dco-sym "k2") (dco-sym "k1"))))
+    (dco-call1 (dco-sym "k3") (dco-sym "k0"))) (typed-list-new [:list :string])))
+(defn- dco-closure-dep [] :string
+  (let [cid (dc-definition-cid (dco-leaf 1))]
+    (dco-unary (dco-letv (typed-list-new [:list :string] (dco-sym "k2") (dco-fn "k1" (dco-call1 (dco-ref cid) (dco-sym "k1"))))
+      (dco-call1 (dco-sym "k2") (dco-sym "k0"))) (typed-list-new [:list :string] (dc-str cid)))))
+(defn- dco-closure-nested [] :string
+  (dco-unary (dco-letv (typed-list-new [:list :string] (dco-sym "k4")
+      (dco-fn "k1" (dco-letv (typed-list-new [:list :string] (dco-sym "k3")
+          (dco-fn "k2" (dco-plus (dco-sym "k2") (dco-sym "k1"))))
+        (dco-call1 (dco-sym "k3") (dco-sym "k0")))))
+    (dco-call1 (dco-sym "k4") (dc-int "1"))) (typed-list-new [:list :string])))
+(defn- dco-closure-two [] :string
+  (dco-unary (dco-letv (typed-list-new [:list :string] (dco-sym "k1") (dc-int "1") (dco-sym "k2") (dc-int "2")
+      (dco-sym "k4") (dco-fn "k3" (dco-plus (dco-sym "k3") (dco-plus (dco-sym "k1") (dco-sym "k2")))))
+    (dco-call1 (dco-sym "k4") (dco-sym "k0"))) (typed-list-new [:list :string])))
 (defn- dco-expected [name :string] :string
   (cond (= name "const") (dco-payload (typed-list-new [:list :string]) (typed-list-new [:list :string])
                           (dc-int "42") (typed-list-new [:list :string]))
         (= name "leaf") (dco-leaf 1) (= name "leaf2") (dco-leaf 2)
         (= name "caller") (dco-caller 1) (= name "caller2") (dco-caller 2)
+        (= name "closure") (dco-closure) (= name "closure-capture") (dco-closure-capture)
+        (= name "closure-dep") (dco-closure-dep) (= name "closure-nested") (dco-closure-nested)
+        (= name "closure-two") (dco-closure-two)
         (= name "binders") (dco-binders) (= name "result") (dco-result) (= name "option") (dco-option)
         (= name "external-first") (dco-external-member 1 0) (= name "external-second") (dco-external-member 1 1)
         (= name "external2-first") (dco-external-member 2 0) (= name "external2-second") (dco-external-member 2 1)

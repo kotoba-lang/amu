@@ -14,9 +14,13 @@ import json
 import os
 import platform
 import subprocess
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+_spec = importlib.util.spec_from_file_location("macos_native_image", ROOT / "scripts/seed/macos_native_image.py")
+macos = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(macos)
 MANIFEST = ROOT / "seed/DEFINITION-CIDS-MANIFEST"
 ORACLE = ["seed/00-ns-static.kotoba", "seed/01-mem.kotoba", "seed/02-io.kotoba",
           "seed/03-source-sha256.kotoba", "seed/04-definition-cid.kotoba",
@@ -38,9 +42,13 @@ def cycle(n):
 
 
 def main(compiler, out):
-    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
-    target = "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux"
-    out.mkdir(parents=True, exist_ok=False)
+    darwin = macos.available()
+    assert darwin or (platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64"))
+    target = ("aarch64-macos" if darwin else
+              "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux")
+    out.mkdir(parents=True, exist_ok=False, mode=0o700)
+    # JUN-586: on Apple Silicon the Mac root compiles and the Mac packager wraps each image.
+    packager = macos.root_images()[1] if darwin else None
     paths = [p for p in MANIFEST.read_text().splitlines() if p and not p.startswith("#")]
     assert paths[-1] == "seed/99-definition-cids-entry.kotoba"
     assert not set(paths) & {"seed/99-entry.kotoba"}
@@ -50,13 +58,17 @@ def main(compiler, out):
                   host=[platform.system(), platform.machine()], compiler=pin(compiler), target=target,
                   modules={p: pin(ROOT / p) for p in paths}, calls=[],
                   scope="pure checked-source bridge, payload-v2 profile6/desugar2, SCC<=8; no admission",
-                  macosQualified=False, x86CliAlreadyHasCommand="unknown", productionCompilerClosureChanged=False)
+                  macosQualified=darwin, x86CliAlreadyHasCommand="unknown", productionCompilerClosureChanged=False)
 
     def save():
         (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
 
     def run(name, argv, code=0):
-        p = subprocess.run(list(map(str, argv)), cwd=out, env=env, capture_output=True, timeout=900)
+        if darwin:
+            # FD 3 is the file root; the Mac runtime takes basenames only (KOTOBA-169).
+            p = macos.run(argv[0], out, [a.name if isinstance(a, Path) else a for a in argv[1:]])
+        else:
+            p = subprocess.run(list(map(str, argv)), cwd=out, env=env, capture_output=True, timeout=900)
         report["calls"].append(dict(name=name, exit=p.returncode, stdoutSHA256=hashlib.sha256(p.stdout).hexdigest(),
                                     stderrSHA256=hashlib.sha256(p.stderr).hexdigest()))
         save()
@@ -67,6 +79,11 @@ def main(compiler, out):
     def build(name, text):
         src = out / (name + ".kotoba")
         src.write_text(text)
+        if darwin:
+            image, unsigned = macos.build(compiler, packager, out, src.name, name)
+            report.setdefault("unsignedImages", {})[name] = pin(unsigned)
+            save()
+            return image
         image = out / (name + ".elf")
         run("build-" + name, [compiler, "compile", src, "--target", target, "--output", image, "--format", "static"])
         image.chmod(0o755)
@@ -79,6 +96,14 @@ def main(compiler, out):
                                '(dc-entry "effect-rowx" (dcp-effect-row effects))', 1)
     assert mutant_text != text
     mutant = build("mutant-encoder", mutant_text)
+    # B1 mutants (JUN-588): the sealed closure head, and a closure encoder that does not bind its parameters.
+    head_text = text.replace('(dcp-list (typed-list-new [:list :string] (dcp-sym "fn") (dcp-vec names) value))',
+                             '(dcp-list (typed-list-new [:list :string] (dcp-sym "fnx") (dcp-vec names) value))', 1)
+    assert head_text != text
+    mutant_head = build("mutant-fn-head", head_text)
+    keep_text = text.replace(':string (dcp-bind M A n))\n(defn- dcp-fn [', ':string (dcp-sym "k0"))\n(defn- dcp-fn [', 1)
+    assert keep_text != text
+    mutant_keep = build("mutant-fn-unbound", keep_text)
 
     def cids(name, source, image=cli, code=0, groups=False):
         p = out / (name + ".kotoba")
@@ -126,11 +151,54 @@ def main(compiler, out):
     eight = cids("cycle8", cycle(8), groups=True)
     for i in range(8):
         assert eight[chr(104 - i)][0] == golden("c8-" + str(i))
+    # B1 local closures (JUN-588). Expected CIDs are hand-authored payloads in the oracle image, never the producer.
+    clo = cids("closure", [fn("f", ["n"], "(let [g (fn [x] (+ x 1))] (g n))")])
+    assert clo["f"][0] == golden("closure")
+    # Renaming the lambda parameter, the let name and the definition leaves the CID alone; the body does not.
+    assert cids("closure-renamed", [fn("zz", ["m"], "(let [h (fn [y] (+ y 1))] (h m))")])["zz"] == clo["f"]
+    assert cids("closure-body", [fn("f", ["n"], "(let [g (fn [x] (+ x 2))] (g n))")])["f"][0] != clo["f"][0]
+    # Observation (pinned, not a claim of equivalence): a closure keeps its own identity; the hand-inlined body is the leaf.
+    inlined = cids("closure-inlined", [fn("f", ["n"], "(+ n 1)")])
+    assert inlined["f"][0] == golden("leaf") and inlined["f"][0] != clo["f"][0]
+    report["observations"] = dict(closureLetFn=clo["f"][0], handInlined=inlined["f"][0], equal=False,
+                                  closureReferenceParity=False,
+                                  note="native-only closure identity; the reference lambda-lifts and leaks the module lambda counter; no parity claimed")
+    # A captured outer local is a binder reference: its name does not matter, which binder it is does.
+    cap = cids("closure-capture", [fn("f", ["n"], "(let [k 5 g (fn [x] (+ x k))] (g n))")])
+    assert cap["f"][0] == golden("closure-capture")
+    assert cids("closure-capture-renamed", [fn("f", ["n"], "(let [m 5 q (fn [z] (+ z m))] (q n))")]) == cap
+    pick_k = cids("closure-capture-k", [fn("f", ["n"], "(let [k 5 j 6 g (fn [x] (+ x k))] (g n))")])
+    pick_j = cids("closure-capture-j", [fn("f", ["n"], "(let [k 5 j 6 g (fn [x] (+ x j))] (g n))")])
+    assert pick_k["f"][0] != pick_j["f"][0]
+    assert cids("closure-param-vs-capture-a", [fn("f", ["n"], "(let [g (fn [x] (+ x n))] (g n))")])["f"][0] != \
+        cids("closure-param-vs-capture-b", [fn("f", ["n"], "(let [g (fn [x] (+ x x))] (g n))")])["f"][0]
+    # A top-level definition referenced inside the body is a direct dependency (by CID).
+    dep = cids("closure-dep", [fn("h", ["x"], "(+ x 1)"), fn("f", ["n"], "(let [g (fn [y] (h y))] (g n))")])
+    assert dep["h"][0] == golden("leaf") and dep["f"][0] == golden("closure-dep")
+    dep2 = cids("closure-dep-edit", [fn("h", ["x"], "(+ x 2)"), fn("f", ["n"], "(let [g (fn [y] (h y))] (g n))")])
+    assert dep2["f"][0] != dep["f"][0]
+    assert cids("closure-nested", [fn("f", ["n"], "(let [g (fn [x] (let [h (fn [y] (+ y x))] (h n)))] (g 1))")])["f"][0] \
+        == golden("closure-nested")
+    assert cids("closure-two", [fn("f", ["n"], "(let [a 1 b 2 g (fn [x] (+ x (+ a b)))] (g n))")])["f"][0] \
+        == golden("closure-two")
     # Negative controls: the gate must refuse / detect, not merely pass.
     cids("refuse-unbound", [fn("f", ["x"], "(missing x)")], code=66)
     cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
+    # Closure refusals stay fail-closed (exit 66, empty stdout, a named DSB: diagnostic), never a wrong CID.
+    cids("refuse-closure-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x missing))] (g n))")], code=66)
+    cids("refuse-closure-in-loop", [fn("f", ["n"], "(loop [i 0] (if (< i n) (let [g (fn [x] (+ x i))] (recur (+ i (g 1)))) i))")], code=66)
+    cids("refuse-loop-in-closure", [fn("f", ["n"], "(let [g (fn [x] (loop [i 0] (if (< i x) (recur (+ i 1)) i)))] (g n))")], code=66)
+    cids("refuse-closure-operator", [fn("f", ["n"], "((fn [x] (+ x 1)) n)")], code=66)
+    cids("refuse-closure-callback", ["(defn ap [g [:fn [:i64] :i64] x :i64] :i64 (g x))",
+                                     fn("f", ["n"], "(ap (fn [x] (+ x 1)) n)")], code=66)
     # A producer with a changed payload field is refused by its own canonical validator (04) -- no CID leaks.
     cids("mutant-encoder", [fn("f", ["x"], "(+ x 1)")], image=mutant, code=66)
+    # The closure encoder mutants must not reproduce the oracle CID (head spelling), and the one that never binds
+    # the parameter must not produce a CID (the body's reference is then unbound: refused).
+    moved = cids("mutant-fn-head", [fn("f", ["n"], "(let [g (fn [x] (+ x 1))] (g n))")], image=mutant_head)
+    assert moved["f"][0] != golden("closure")
+    assert cids("mutant-fn-head-plain", [fn("f", ["x"], "(+ x 1)")], image=mutant_head)["f"][0] == golden("leaf")
+    cids("mutant-fn-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x 1))] (g n))")], image=mutant_keep, code=66)
     # Usage errors are not "no identity": distinct exit code.
     run("usage-extra-arg", [cli, "definition-cids", order, "--nope"], 2)
     run("usage-missing-file-arg", [cli, "definition-cids"], 2)

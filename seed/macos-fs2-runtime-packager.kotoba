@@ -33,8 +33,16 @@
 (def FS2-KIND9-BYTES 256)
 (def FS2-LOCK-BYTES 792)
 (def FS2-EF-BYTES 1172)
+(def FS35-BYTES 1768)
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
+
+;; Only the public host CLI receives this service. Bootstrap/guest modes do not.
+(defn- mh-extra-start [raw-bytes :i64] :i64
+  (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4))
+     FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES FS2-EF-BYTES))
+(defn- mh-data-bytes [mode :string] :i64
+  (if (string=? mode "amu-cli-host") 32768 DATA-BYTES))
 
 ;; The general build mode accepts an explicit extracted main offset. It is
 ;; bounded by the image size and the scoped FS2 output limit; admission and
@@ -127,22 +135,24 @@
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
+   (if (string=? mode "amu-program") 0xd2c01c08
+     (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
        (if (string=? mode "cli") 0xd2c00808
-         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008))))) 0xf9000a68
+         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008)))))) 0xf9000a68
    (adr8 1184 RAW-START) 0xf900c268
    (bit-or 0xd2800008 (i64-shift-left (bit-and raw-bytes 65535) 5))
    (bit-or 0xf2a00008 (i64-shift-left (u64-shift-right raw-bytes 16) 5))
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bl-direct 1204 SLICE-SETUP-START)
+   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes) SLICE-SETUP-START))
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
-   (if cli-image 0xd2800030 0xf100a81f)
+   (if (string=? mode "amu-program") (b-direct 1212 (mh-extra-start raw-bytes))
+     (if cli-image 0xd2800030 0xf100a81f))
    (if cli-image 0xf2a40010 (b-ne 48 56))
    ;; Earlier string fixtures require a pair; vector fixtures instead prove
    ;; that at least one checked vector handle was minted.
@@ -747,6 +757,79 @@
       (vector-assoc! 291 (b-direct (+ start 1164) (+ RUNTIME-START 52)))
       (vector-assoc! 292 (b-direct (+ start 1168) da-start))))
 
+;; JUN-593: legacy wire-35 text requests (the Linux kxrt-fs grammar) for the
+;; fs2-cli-stdio-general runtime: read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
+;; UNLOCK beneath FD 3 (O_NOFOLLOW_ANY|O_RESOLVE_BENEATH, renameatx_np with
+;; RENAME_NOFOLLOW_ANY); every other request falls through unchanged to the FS2
+;; chain. One-time derivation: docs/evidence/mac-fs35-20261029/fs35.derivation.s.
+(defn- fs35-helper-words [start :i64 chain :i64] :vector-i64
+  (-> (vector-alloc 442)
+      (append-runtime-words 0 [
+       0xf1008c3f 0x540036c1 0xf100045f 0x54003681 0xf100047f 0x54003641 0xf9400809 0xd2c0010a
+       0xea0a013f 0x540035c0 0xb40035a4 0xf9409009 0xf9400129 0xeb09009f 0x54003528 0xd12803ff
+       0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xa90607e0 0xa9070fe2
+       0xf90043e4 0xaa0003f3 0xf9409668 0xd1000489 0x8b091108 0xa9400901 0xaa0203f6 0xb40031d6
+       0xaa1303e0 0x94000198 0xaa0003f5 0x394002a8 0x34003128 0xd2800017 0x910012e9 0xeb16013f
+       0x540011a8 0xb8776aa9 0x528a6bea 0x72aa08aa 0x6b0a013f 0x54000060 0x910006f7 0x17fffff7
+       0x910012f8 0xf1001aff 0x54000343 0xd1001af9 0xb8796aa9 0x9100132a 0x786a6aab 0x528b08ac
+       0x72aa692c 0x6b0c013f 0x54000081 0x528a6a8c 0x6b0c017f 0x54001540 0x5288aa4c 0x72a829cc])
+      (append-runtime-words 64 [
+       0x6b0c013f 0x54000081 0x5288a9ac 0x6b0c017f 0x54001ec0 0x5289caac 0x72a9e98c 0x6b0c013f
+       0x54000081 0x5289686c 0x6b0c017f 0x54002480 0xf10016ff 0x540002e3 0xd10016f9 0xb8796aa9
+       0x9100132a 0x386a6aab 0x528a4aec 0x72aa892c 0x6b0c013f 0x54000061 0x7101157f 0x54001620
+       0x528a68cc 0x72a9cb2c 0x6b0c013f 0x54000061 0x71010d7f 0x540012e0 0x528988cc 0x72a869ec
+       0x6b0c013f 0x54000061 0x71012d7f 0x54001d20 0xd42006e0 0xf100083f 0x5400078b 0xf10ffc3f
+       0x5400074c 0x39400009 0x7100bd3f 0x540006e1 0xd2800023 0xd2800024 0xeb01007f 0x540003e0
+       0x38636809 0x34000629 0x7100bd3f 0x540000a0 0xd100046a 0x382a6849 0x91000463 0x17fffff7
+       0xcb04006a 0xb400052a 0xf100055f 0x54000081 0x38646809 0x7100b93f 0x54000480 0xf100095f])
+      (append-runtime-words 128 [
+       0x54000101 0x38646809 0x9100048b 0x386b680c 0x7100b93f 0x54000061 0x7100b99f 0x54000360
+       0xd100046a 0x528005e9 0x382a6849 0x91000463 0xaa0303e4 0x17ffffe1 0xcb04006a 0xb400026a
+       0xf100055f 0x54000081 0x38646809 0x7100b93f 0x540001c0 0xf100095f 0x54000101 0x38646809
+       0x9100048b 0x386b680c 0x7100b93f 0x54000061 0x7100b99f 0x540000a0 0xd100042a 0x382a685f
+       0xd2800000 0xd65f03c0 0x92800000 0xd65f03c0 0xaa1e03fa 0xaa1503e0 0xaa1703e1 0x910803e2
+       0x97ffffbd 0xaa1a03fe 0xd65f03c0 0xd2800060 0x910803e1 0xd28039f0 0xf2a40010 0xd4001001
+       0xd65f03c0 0xd28000d0 0xf2a40010 0xd4001001 0xd65f03c0 0xaa1603f7 0x97ffffee 0xb5002020
+       0xd2820082 0xf2a42002 0xd2800003 0x97fffff0 0x54001f82 0xaa0003f4 0xf940ce77 0xd2a20008])
+      (append-runtime-words 192 [
+       0xd1000508 0xeb0802ff 0x54001ec8 0xcb170118 0xf940ca79 0x8b170339 0xd280001a 0xcb1a0302
+       0xb4000142 0xaa1403e0 0x8b1a0321 0xd2800070 0xf2a40010 0xd4001001 0x540001a2 0xb40001e0
+       0x8b00035a 0x17fffff6 0xaa1403e0 0x910403e1 0xd2800022 0xd2800070 0xf2a40010 0xd4001001
+       0x54000062 0xb5001be0 0x14000004 0xf100101f 0x54fffd60 0x140000db 0xaa1403e0 0x97ffffd2
+       0x54001b02 0x8b1a02eb 0xf900ce6b 0xaa1303e0 0xaa3703e1 0xaa1a03e2 0x140000bd 0xeb16031f
+       0x54ffef81 0xaa1903f7 0x97ffffba 0xb5001520 0xd2820082 0xf2a42002 0xd2800003 0x97ffffbc
+       0x54001482 0x97ffffc0 0x54001442 0x140000a3 0xeb16031f 0x54ffede1 0xaa1903f7 0x97ffffad
+       0xb5001380 0xd2820082 0xf2a42002 0xd2800003 0x97ffffaf 0x540012e2 0xaa0003f4 0xd2800bf0])
+      (append-runtime-words 256 [
+       0xf2a40010 0xd4001001 0x9a9f27fb 0xaa1403e0 0x97ffffad 0x540011e2 0xb40011db 0x1400008f
+       0xaa1903f7 0x97ffff9b 0xb50015c0 0xd282c0a2 0xf2a42002 0xd2803483 0x97ffff9d 0x54001522
+       0xaa0003f4 0x8b1802b9 0xcb1802da 0xd280001b 0xeb1a037f 0x540001c0 0xaa1403e0 0x8b1b0321
+       0xcb1b0342 0xd2800090 0xf2a40010 0xd4001001 0x54000082 0xb4001360 0x8b00037b 0x17fffff5
+       0xf100101f 0x54fffe60 0x14000096 0xaa1403e0 0x97ffff8d 0x54001262 0xf940ce77 0xd2a20008
+       0xcb1a0108 0xeb0802ff 0x540011c8 0xf940ca69 0x8b170129 0xd280000a 0xeb1a015f 0x540000a0
+       0x386a6b2b 0x382a692b 0x9100054a 0x17fffffb 0x8b1a02eb 0xf900ce6b 0xaa1303e0 0xaa3703e1
+       0xaa1a03e2 0x1400006a 0xaa1903f7 0x97ffff69 0xb5000b00 0x8b1802a0 0xcb1802c1 0x911803e2])
+      (append-runtime-words 320 [
+       0x97ffff25 0xb5000a60 0xd2800060 0x910803e1 0xd2800062 0x911803e3 0xd2800204 0xd2803d10
+       0xf2a40010 0xd4001001 0x54000942 0x1400004b 0xeb16031f 0x54ffe2e1 0xaa1903f7 0x97ffff55
+       0xb5000880 0xf95a0268 0xb5000848 0xd28240c2 0xf2a42002 0xd2803003 0x97ffff55 0x540007a2
+       0xaa0003f4 0xd28000c1 0xd2801070 0xf2a40010 0xd4001001 0x54000083 0xaa1403e0 0x97ffff52
+       0x14000034 0x91000688 0xf91a0268 0xd10006e9 0xf91a0669 0xd286820a 0x8b0a026a 0x910803eb
+       0xd280000c 0xeb09019f 0x54000580 0x386c696d 0x382c694d 0x9100058c 0x17fffffb 0xeb16031f
+       0x54ffde81 0xaa1903f7 0x97ffff32 0xb5000420 0xf95a0268 0xb40003e8 0xd10006e9 0xf95a066a
+       0xeb0a013f 0x54000361 0xd286820a 0x8b0a026a 0x910803eb 0xd280000c 0xeb09019f 0x540000e0])
+      (append-runtime-words 384 [
+       0x386c696d 0x386c694e 0x6b0e01bf 0x54000221 0x9100058c 0x17fffff9 0xd1000514 0xaa1403e0
+       0xd2800101 0xd2801070 0xf2a40010 0xd4001001 0x9a9f27fb 0xaa1403e0 0x97ffff23 0x9a9f27fc
+       0xf91a027f 0x8a1c037b 0xb400005b 0x14000003 0x52800616 0x14000002 0x52800636 0xf940ce68
+       0xd2a20009 0xd1000529 0xeb09011f 0x540003a8 0xf940ca69 0x38286936 0x9100050b 0xf900ce6b
+       0xaa1303e0 0xaa2803e1 0xd2800022 0xf9401e70 0xd63f0200 0xa94573fb 0xa9446bf9 0xa94363f7
+       0xa9425bf5 0xa94153f3 0xa9407bfd 0x912803ff 0xd65f03c0 0xa94607e0 0xa9470fe2 0xf94043e4
+       0xa94573fb 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd 0x912803ff 0x14000000
+       0xd42006c0 0xd4202020])
+      (vector-assoc! 33 (bl-direct (+ start 132) (+ RUNTIME-START 52)))
+      (vector-assoc! 439 (b-direct (+ start 1756) chain))))
+
 ;; ADRP x7, __DATA: wrapper PC is in the first 4 KiB page. The target is
 ;; 16 KiB-aligned, and the checked image size is far within ADRP's range.
 (defn- data-adrp [text-bytes :i64] :i64
@@ -755,16 +838,19 @@
       (bit-or (i64-shift-left (bit-and pages 3) 29)
               (i64-shift-left (quot pages 4) 5)))))
 
-(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool] :vector-i64
+(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool source :vector-i64] :vector-i64
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
-        total-bytes (+ text-bytes DATA-BYTES)]
-    (-> v
+        total-bytes (+ text-bytes (mh-data-bytes mode))
+        host (string=? mode "amu-cli-host")
+        fs35 (string=? mode "fs2-cli-stdio-general")
+        extra (mh-extra-start raw-bytes)
+        result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
       ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) 9)
-      (u32-at (+ at 20) 472) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (string=? mode "amu-program") 10 9))
+      (u32-at (+ at 20) (if (string=? mode "amu-program") 512 472)) (u32-at (+ at 24) 2097157)
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -778,9 +864,9 @@
       (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
       (text-at (+ at 184) "__DATA")
       (u64-at (+ at 200) (+ 4294967296 text-bytes))
-      (u64-at (+ at 208) DATA-BYTES)
+      (u64-at (+ at 208) (mh-data-bytes mode))
       (u64-at (+ at 216) text-bytes)
-      (u64-at (+ at 224) DATA-BYTES)
+      (u64-at (+ at 224) (mh-data-bytes mode))
       (u32-at (+ at 232) 3) (u32-at (+ at 236) 3)
       (u32-at (+ at 248) 25) (u32-at (+ at 252) 72)
       (text-at (+ at 256) "__LINKEDIT")
@@ -818,7 +904,8 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
+                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 extra
+                                           :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
                   (b-direct (+ RUNTIME-START 48) (+ VECTOR-RUNTIME-START 80))))
@@ -844,7 +931,24 @@
                 (fs2-ef-helper-words
                   (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES)
                   fs2-start))
-      (generated-at (+ at RAW-START) raw))))
+      (generated-at (+ at RAW-START) raw))]
+    (if host
+      (-> result
+          (words-at (+ at extra) (mh-startup-words extra))
+          (words-at (+ at extra 64)
+            (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
+      (if (string=? mode "amu-program")
+        (let [start (+ extra 512)]
+          (-> result
+              (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
+              (text-at (+ at 512) "AMU-SOURCE-V1")
+              (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
+              (words-at (+ at extra) (mh-result-words extra))
+              (generated-at (+ at start) source)))
+        (if fs35
+          (words-at result (+ at extra)
+            (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+          result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
   (if (and (= (vector-count reply) (+ total-bytes 5))
@@ -861,7 +965,7 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (string=? mode "fs2-cli-stdio-general")
+        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -882,10 +986,23 @@
         entry-offset (if general selected-entry
                        (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
                          MAC-PACKAGER-ENTRY-OFFSET 0))
-        fs2-end (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)) FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES FS2-EF-BYTES)
+        source (if (string=? mode "amu-program")
+          (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes
+            (string-concat fs2-prefix (string-concat "A" (string-concat
+              (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
+          [0 70 83 50 0])
+        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
+          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
+            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
-        total-bytes (+ text-bytes DATA-BYTES)]
+        total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
+            (and (string=? mode "amu-cli-host")
+              (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
+                (or (= words 0) (> (+ 64 (* words 4)) 8192))))
+            (and (string=? mode "amu-program")
+              (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
+                (or (= words 0) (> (* words 4) 512))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -904,6 +1021,10 @@
                  (not= raw-bytes 172)))
             (> (+ offset total-bytes) MAX-FS2-VALUE)
             (> (+ total-bytes 5) MAX-FS2-VALUE)
+            (and (string=? mode "amu-program")
+              (or (< (vector-count source) 6) (> (vector-count source) 1048581)
+                  (not= (vector-at source 0) 0) (not= (vector-at source 1) 70)
+                  (not= (vector-at source 2) 83) (not= (vector-at source 3) 50) (not= (vector-at source 4) 0)))
             (> fs2-end text-bytes)
             (not (= (vector-at raw 0) 0)) (not (= (vector-at raw 1) 70))
             (not (= (vector-at raw 2) 83)) (not (= (vector-at raw 3) 50))
@@ -914,6 +1035,440 @@
                    (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
                    (text-at 6 path)
                    (byte-at (+ 6 length) 0)
-                   (body-at offset raw text-bytes mode entry-offset general))
+                   (body-at offset raw text-bytes mode entry-offset general source))
             response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
         (if (acknowledged-image? v1 offset (vector-i64-from-bytes response) total-bytes) 0 3)))))
+
+;; Small fixed-instruction builder for the Darwin host adapter. This emits
+;; only the code below; it is not an assembler dependency or compiler route.
+;; Labels and branches are resolved by this Amu-built Kotoba packager.
+(defn- mh-new [base :i64] :vector-i64
+  (vector-assoc! (vector-alloc 4096) 2 base))
+(defn- mh-i [s :vector-i64 word :i64] :vector-i64
+  (let [n (vector-at s 0)]
+    (if (>= n 2816) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
+(defn- mh-label [s :vector-i64 label :i64] :vector-i64
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
+(defn- mh-b [s :vector-i64 opcode :i64 label :i64] :vector-i64
+  (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) opcode)
+            (vector-assoc! (+ at 2) label) (vector-assoc! 1 (+ f 1))
+            (mh-i opcode)))))
+(defn- mh-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
+  (let [low (-> s
+      (mh-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
+      (mh-i (bit-or 0xf2a00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 16) 65535) 5)))))]
+    (if (> value 4294967295)
+      (-> low
+          (mh-i (bit-or 0xf2c00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 32) 65535) 5))))
+          (mh-i (bit-or 0xf2e00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 48) 65535) 5)))))
+      low)))
+(defn- mh-mov [s :vector-i64 rd :i64 rn :i64] :vector-i64
+  (mh-i s (bit-or 0xaa0003e0 (bit-or rd (i64-shift-left rn 16)))))
+(defn- mh-add [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (mh-i s (bit-or 0x91000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- mh-sub [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (mh-i s (bit-or 0xd1000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- mh-ar [s :vector-i64 rd :i64 rn :i64 rm :i64 shift :i64] :vector-i64
+  (mh-i s (bit-or 0x8b000000 (bit-or rd (bit-or (i64-shift-left rn 5)
+         (bit-or (i64-shift-left rm 16) (i64-shift-left shift 10)))))))
+(defn- mh-ldr [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
+(defn- mh-str [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
+(defn- mh-lb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
+(defn- mh-sb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
+(defn- mh-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
+  (mh-i s (bit-or 0xf100001f (bit-or (i64-shift-left rn 5) (i64-shift-left value 10)))))
+(defn- mh-cmp [s :vector-i64 rn :i64 rm :i64] :vector-i64
+  (mh-i s (bit-or 0xeb00001f (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16)))))
+(defn- mh-sys [s :vector-i64 number :i64] :vector-i64
+  (-> s (mh-imm 16 (+ 33554432 number)) (mh-i 0xd4001001)))
+(defn- mh-jump [s :vector-i64 target :i64] :vector-i64
+  (mh-i s (b-direct (+ (vector-at s 2) (* 4 (vector-at s 0))) target)))
+(defn- mh-call [s :vector-i64 target :i64] :vector-i64
+  (mh-i s (bl-direct (+ (vector-at s 2) (* 4 (vector-at s 0))) target)))
+(defn- mh-hex-byte [s :vector-i64 value :i64 offset :i64] :vector-i64
+  (let [one (-> s
+    (mh-i (bit-or 0xd344fc0b (i64-shift-left value 5)))
+    (mh-add 11 11 48) (mh-cmpi 11 57) (mh-add 12 11 7)
+    (mh-i 0x9a8b818b) (mh-sb 11 22 offset))]
+    (-> one (mh-imm 12 15)
+        (mh-i (bit-or 0x8a0c000b (i64-shift-left value 5)))
+        (mh-add 11 11 48) (mh-cmpi 11 57) (mh-add 12 11 7)
+        (mh-i 0x9a8b818b) (mh-sb 11 22 (+ offset 1)))))
+(defn- mh-text [s :vector-i64 text :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 text)) n (vector-count b)]
+    (loop [i 0 out s]
+      (if (> i n) out
+        (let [word (loop [j 0 value 0]
+                     (if (= j 4) value
+                       (recur (+ j 1) (bit-or value
+                         (i64-shift-left (if (< (+ i j) n) (vector-at b (+ i j)) 0) (* j 8))))))]
+          (recur (+ i 4) (mh-i out word)))))))
+(defn- mh-finish [s :vector-i64] :vector-i64
+  (let [words (vector-at s 0)
+        valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3)))) ) 0) false (recur (+ i 1))))))
+        base (loop [i 0 out (vector-alloc words)]
+               (if (= i words) out
+                 (recur (+ i 1) (vector-assoc! out i (vector-at s (+ 256 i))))))]
+    (if (not valid) [] (loop [i 0 out base]
+      (if (= i (vector-at s 1)) out
+        (let [at (+ 3072 (* i 3)) pc (vector-at s at)
+              op (vector-at s (+ at 1))
+              delta (- (- (vector-at s (+ 8 (vector-at s (+ at 2)))) 1) pc)
+              mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
+              bits (bit-and delta mask)
+              word (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))]
+          (recur (+ i 1) (vector-assoc! out pc word))))))))
+
+(defn- mh-startup-words [start :i64] :vector-i64
+  [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
+   0xf9400a68 0xd2a00209 0xaa090108 0xf9000a68 0xa8c17bfd 0xd65f03c0])
+
+;; AMUH1: NUL AMUH 1 op, then bounded UTF-8/NUL fields or binary tail.
+;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
+;; wire35 owns file/host-info operations, wire20 owns only child execution.
+;; Scratch is private to this host image at ctx+16384, outside the old ABI.
+(defn- mh-service-words [base :i64 fallback :i64] :vector-i64
+  (let [s (-> (mh-new base)
+    ;; Other capabilities retain the existing CLI/stdio dispatch.
+    (mh-cmpi 1 35) (mh-b 0x54000000 1)
+    (mh-cmpi 1 20) (mh-b 0x54000000 1) (mh-jump fallback)
+    (mh-label 1)
+    (mh-sub 31 31 128)
+    (mh-i 0xa9007bfd) (mh-i 0xa90153f3) (mh-i 0xa9025bf5)
+    (mh-i 0xa90363f7) (mh-i 0xa9046bf9) (mh-i 0xa90573fb)
+    (mh-mov 19 0) (mh-mov 28 1) (mh-mov 27 4)
+    (mh-str 2 31 96) (mh-str 3 31 104)
+    ;; Initialize the bounded 20MiB native byte scratch before any request.
+    (mh-ldr 21 19 16384) (mh-b (bit-or 0xb5000000 21) 2)
+    (mh-imm 0 0) (mh-imm 1 20971520) (mh-imm 2 3) (mh-imm 3 4098)
+    (mh-i 0x92800004) (mh-imm 5 0) (mh-sys 197) (mh-b 0x54000002 98)
+    (mh-mov 21 0) (mh-str 21 19 16384)
+    (mh-label 2) (mh-ldr 2 31 96) (mh-ldr 3 31 104)
+    (mh-imm 8 8388608) (mh-ar 22 21 8 0)
+    (mh-imm 8 16777216) (mh-ar 23 21 8 0)
+    (mh-cmpi 28 20) (mh-b 0x54000000 8)
+    (mh-cmpi 2 8) (mh-b 0x54000001 98)
+    (mh-cmpi 3 8) (mh-b 0x54000001 98)
+    ;; Validate the complete vector descriptor and every byte before use.
+    (mh-b (bit-or 0xb4000000 27) 90)
+    (mh-ldr 8 19 16008) (mh-cmp 27 8) (mh-b 0x54000008 90)
+    (mh-ldr 8 19 16000) (mh-sub 9 27 1) (mh-ar 8 8 9 4)
+    (mh-ldr 9 8 0) (mh-ldr 20 8 8)
+    (mh-cmpi 20 7) (mh-b 0x54000003 90)
+    (mh-imm 10 8388608) (mh-cmp 20 10) (mh-b 0x54000008 90)
+    (mh-ldr 10 19 16024) (mh-cmp 9 10) (mh-b 0x54000008 90)
+    (mh-ar 11 9 20 0) (mh-cmp 11 10) (mh-b 0x54000008 90)
+    (mh-ldr 10 19 16016) (mh-ar 10 10 9 3)
+    (mh-imm 9 0) (mh-label 3)
+    (mh-cmp 9 20) (mh-b 0x54000002 4)
+    (mh-ar 11 10 9 3) (mh-ldr 8 11 0) (mh-cmpi 8 255) (mh-b 0x54000008 90)
+    (mh-ar 11 21 9 0) (mh-sb 8 11 0) (mh-add 9 9 1) (mh-b 0x14000000 3)
+    ;; Wire20 retains its existing string->string catalogue contract.
+    (mh-label 8) (mh-cmpi 2 1) (mh-b 0x54000001 98)
+    (mh-cmpi 3 1) (mh-b 0x54000001 98)
+    (mh-b (bit-or 0xb4000000 27) 90)
+    (mh-ldr 8 19 288) (mh-ldr 8 8 0) (mh-cmp 27 8) (mh-b 0x54000008 90)
+    (mh-ldr 8 19 296) (mh-sub 9 27 1) (mh-ar 8 8 9 4) (mh-ldr 20 8 8) (mh-ldr 26 8 0)
+    (mh-cmpi 20 7) (mh-b 0x54000003 90)
+    (mh-imm 8 65536) (mh-cmp 20 8) (mh-b 0x54000008 90)
+    (mh-mov 0 19) (mh-mov 1 26) (mh-mov 2 20) (mh-call (+ RUNTIME-START 52))
+    (mh-mov 26 0) (mh-imm 9 0)
+    (mh-label 9) (mh-cmp 9 20) (mh-b 0x54000002 4)
+    (mh-ar 10 26 9 0) (mh-lb 8 10 0) (mh-ar 10 21 9 0) (mh-sb 8 10 0)
+    (mh-add 9 9 1) (mh-b 0x14000000 9)
+    (mh-label 4)
+    (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
+    (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
+    (mh-lb 8 21 2) (mh-cmpi 8 77) (mh-b 0x54000001 90)
+    (mh-lb 8 21 3) (mh-cmpi 8 85) (mh-b 0x54000001 90)
+    (mh-lb 8 21 4) (mh-cmpi 8 72) (mh-b 0x54000001 90)
+    (mh-lb 8 21 5) (mh-cmpi 8 1) (mh-b 0x54000001 90)
+    ;; Independently check the effective grant, not a caller's opcode.
+    (mh-cmpi 28 20) (mh-b 0x54000000 5)
+    (mh-imm 9 34359738368) (mh-b 0x14000000 6)
+    (mh-label 5) (mh-imm 9 1048576)
+    (mh-label 6) (mh-ldr 8 19 16) (mh-i 0x8a090108)
+    (mh-b (bit-or 0xb4000000 8) 91)
+    (mh-sb 31 22 0) (mh-lb 8 21 6)
+    (mh-cmpi 28 20) (mh-b 0x54000001 7)
+    (mh-cmpi 8 9) (mh-b 0x54000001 91) (mh-b 0x14000000 60)
+    (mh-label 7) (mh-cmpi 8 9) (mh-b 0x54000000 91)
+    (mh-cmpi 8 0) (mh-b 0x54000000 10)
+    (mh-cmpi 8 1) (mh-b 0x54000000 30)
+    (mh-cmpi 8 2) (mh-b 0x54000000 40)
+    (mh-cmpi 8 3) (mh-b 0x54000000 50)
+    (mh-cmpi 8 4) (mh-b 0x54000000 51)
+    (mh-cmpi 8 5) (mh-b 0x54000000 52)
+    (mh-cmpi 8 6) (mh-b 0x54000000 53)
+    (mh-cmpi 8 7) (mh-b 0x54000000 54)
+    (mh-cmpi 8 8) (mh-b 0x54000000 55)
+    (mh-cmpi 8 10) (mh-b 0x54000000 57) (mh-b 0x14000000 90)
+    ;; INFO: actual executable vnode path, cwd and 128 bits of kernel entropy.
+    (mh-label 10) (mh-cmpi 20 7) (mh-b 0x54000001 90)
+    (mh-sys 20) (mh-mov 1 0) (mh-imm 0 2) (mh-imm 2 11)
+    (mh-imm 3 0) (mh-add 4 22 1) (mh-imm 5 4096)
+    (mh-sys 336) (mh-b 0x54000002 92)
+    (mh-imm 25 1) (mh-label 11)
+    (mh-cmpi 25 4095) (mh-b 0x54000002 90)
+    (mh-ar 8 22 25 0) (mh-lb 9 8 0) (mh-add 25 25 1)
+    (mh-b (bit-or 0xb5000000 9) 11)
+    (mh-b (bit-or 0x10000000 0) 110) (mh-imm 1 1048576) (mh-imm 2 0)
+    (mh-sys 5) (mh-b 0x54000002 92) (mh-mov 24 0)
+    (mh-imm 1 50) (mh-ar 2 22 25 0) (mh-sys 92)
+    (mh-b 0x54000002 93) (mh-mov 0 24) (mh-sys 6)
+    (mh-imm 26 0) (mh-label 12)
+    (mh-cmpi 26 4095) (mh-b 0x54000002 90)
+    (mh-ar 8 22 25 0) (mh-ar 8 8 26 0) (mh-lb 9 8 0)
+    (mh-add 26 26 1) (mh-b (bit-or 0xb5000000 9) 12)
+    (mh-ar 25 25 26 0) (mh-ar 0 22 25 0) (mh-imm 1 16)
+    (mh-sys 500) (mh-b 0x54000002 92) (mh-add 25 25 16)
+    (mh-b 0x14000000 95)
+    ;; Path parser subroutine: X26 path, X27 first byte after NUL.
+    (mh-label 20) (mh-add 26 21 7) (mh-mov 27 26)
+    (mh-imm 9 0) (mh-label 21)
+    (mh-add 10 9 7) (mh-cmp 10 20) (mh-b 0x54000002 90)
+    (mh-cmpi 9 4095) (mh-b 0x54000002 90)
+    (mh-lb 8 27 0) (mh-add 27 27 1)
+    (mh-b (bit-or 0xb4000000 8) 22)
+    (mh-cmpi 8 32) (mh-b 0x54000003 90)
+    (mh-add 9 9 1) (mh-b 0x14000000 21)
+    (mh-label 22) (mh-cmpi 9 0) (mh-b 0x54000000 90) (mh-i 0xd65f03c0)
+    ;; General bounded NUL-field parser, including empty argv fields.
+    (mh-label 23) (mh-mov 27 26) (mh-imm 9 0)
+    (mh-label 24) (mh-ar 10 21 20 0) (mh-cmp 27 10) (mh-b 0x54000002 90)
+    (mh-cmpi 9 4095) (mh-b 0x54000002 90)
+    (mh-lb 8 27 0) (mh-add 27 27 1) (mh-b (bit-or 0xb4000000 8) 25)
+    (mh-add 9 9 1) (mh-b 0x14000000 24)
+    (mh-label 25) (mh-i 0xd65f03c0)
+    ;; READ: open no-follow/nonblocking, regular file, bounded exact bytes.
+    (mh-label 30) (mh-b 0x94000000 20)
+    (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90)
+    (mh-mov 0 26) (mh-imm 1 16777476) (mh-imm 2 0) (mh-sys 5)
+    (mh-b 0x54000002 92) (mh-mov 24 0)
+    (mh-mov 1 23) (mh-sys 339) (mh-b 0x54000002 93)
+    (mh-i 0x79400ae8) (mh-imm 9 61440) (mh-i 0x8a090108)
+    (mh-imm 9 32768) (mh-cmp 8 9) (mh-b 0x54000001 94)
+    (mh-ldr 26 23 96) (mh-imm 8 8388607) (mh-cmp 26 8) (mh-b 0x54000008 94)
+    (mh-imm 25 0) (mh-label 31)
+    (mh-cmp 25 26) (mh-b 0x54000002 32)
+    (mh-mov 0 24) (mh-add 1 22 1) (mh-ar 1 1 25 0)
+    (mh-i 0xcb190342) (mh-sys 3) (mh-b 0x54000002 33)
+    (mh-b (bit-or 0xb4000000 0) 94) (mh-ar 25 25 0 0) (mh-b 0x14000000 31)
+    (mh-label 33) (mh-cmpi 0 4) (mh-b 0x54000000 31) (mh-b 0x14000000 93)
+    (mh-label 32) (mh-mov 0 24) (mh-add 1 23 1024) (mh-imm 2 1) (mh-sys 3)
+    (mh-b 0x54000003 34) (mh-cmpi 0 4) (mh-b 0x54000000 32) (mh-b 0x14000000 93)
+    (mh-label 34) (mh-b (bit-or 0xb5000000 0) 94)
+    (mh-mov 0 24) (mh-sys 6) (mh-add 25 26 1) (mh-b 0x14000000 95)
+    ;; WRITE (exclusive): path/NUL then exact binary tail.
+    (mh-label 40) (mh-b 0x94000000 20)
+    (mh-str 26 23 272)
+    (mh-mov 0 26) (mh-imm 1 16780037) (mh-imm 2 384) (mh-sys 5)
+    (mh-b 0x54000002 92) (mh-mov 24 0)
+    (mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 45)
+    (mh-ar 26 21 20 0) (mh-imm 25 0) (mh-label 41)
+    (mh-cmp 27 26) (mh-b 0x54000002 42)
+    (mh-mov 0 24) (mh-mov 1 27) (mh-i 0xcb1b0342)
+    (mh-sys 4) (mh-b 0x54000002 43) (mh-b (bit-or 0xb4000000 0) 44)
+    (mh-ar 27 27 0 0) (mh-b 0x14000000 41)
+    (mh-label 43) (mh-cmpi 0 4) (mh-b 0x54000000 41) (mh-b 0x14000000 45)
+    (mh-label 42) (mh-mov 0 24) (mh-sys 6) (mh-b 0x54000002 46)
+    (mh-imm 25 1) (mh-b 0x14000000 95)
+    ;; Only a successful O_EXCL open owns the path. Preserve errno across
+    ;; close/unlink, including short/zero writes and close failures.
+    (mh-label 44) (mh-imm 0 5)
+    (mh-label 45) (mh-str 0 23 256) (mh-mov 0 24) (mh-sys 6) (mh-b 0x14000000 47)
+    (mh-label 46) (mh-str 0 23 256)
+    (mh-label 47) (mh-ldr 0 23 272) (mh-sys 10) (mh-ldr 0 23 256) (mh-b 0x14000000 92)
+    ;; mkdir(0700), unlink, rmdir, chmod(0700), rename, stat via open/fstat.
+    (mh-label 50) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26) (mh-imm 1 448)
+    (mh-sys 136) (mh-b 0x54000002 92)
+    (mh-mov 0 26) (mh-imm 1 448) (mh-sys 15) (mh-b 0x54000002 92) (mh-b 0x14000000 56)
+    (mh-label 51) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26)
+    (mh-sys 10) (mh-b 0x54000002 92) (mh-b 0x14000000 56)
+    (mh-label 52) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26)
+    (mh-sys 137) (mh-b 0x54000002 92) (mh-b 0x14000000 56)
+    (mh-label 53) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26) (mh-imm 1 448)
+    (mh-sys 15) (mh-b 0x54000002 92) (mh-b 0x14000000 56)
+    (mh-label 54) (mh-b 0x94000000 20) (mh-mov 24 26)
+    (mh-mov 26 27) (mh-b 0x94000000 23) (mh-cmpi 9 0) (mh-b 0x54000000 90)
+    (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90)
+    (mh-mov 0 24) (mh-mov 1 26)
+    (mh-sys 128) (mh-b 0x54000002 92) (mh-b 0x14000000 56)
+    (mh-label 55) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26)
+    (mh-imm 1 16777476) (mh-imm 2 0) (mh-sys 5) (mh-b 0x54000002 92)
+    (mh-mov 24 0) (mh-mov 1 23) (mh-sys 339) (mh-b 0x54000002 93)
+    (mh-mov 0 24) (mh-sys 6)
+    (mh-str 31 22 0) (mh-i 0x79400ae8) (mh-str 8 22 8) (mh-ldr 8 23 96) (mh-str 8 22 16)
+    (mh-imm 25 24) (mh-b 0x14000000 95)
+    (mh-label 56) (mh-imm 25 1) (mh-b 0x14000000 95)
+    ;; Self FD metadata supports native child-isolation audits (no contents).
+    (mh-label 57) (mh-cmpi 20 9) (mh-b 0x54000001 90)
+    (mh-lb 0 21 7) (mh-lb 8 21 8) (mh-ar 0 0 8 8)
+    (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92) (mh-b 0x54000002 92)
+    (mh-sb 0 22 1) (mh-imm 25 2) (mh-b 0x14000000 95)
+    ;; EXEC: mode (0 guest, 1 compiler FD3, 2 signing), argc (1..64),
+    ;; cwd, capture-output-or-empty, executable, exactly argc argv fields.
+    (mh-label 60) (mh-cmpi 20 10) (mh-b 0x54000003 90)
+    (mh-imm 8 65536) (mh-cmp 20 8) (mh-b 0x54000008 90)
+    (mh-lb 8 21 7) (mh-cmpi 8 2) (mh-b 0x54000008 91) (mh-str 8 23 512)
+    (mh-lb 8 21 8) (mh-cmpi 8 1) (mh-b 0x54000003 90)
+    (mh-cmpi 8 64) (mh-b 0x54000008 90) (mh-str 8 23 520)
+    (mh-add 26 21 9) (mh-b 0x94000000 23)
+    (mh-cmpi 9 0) (mh-b 0x54000000 90) (mh-str 26 23 528)
+    (mh-mov 26 27) (mh-b 0x94000000 23) (mh-str 26 23 536)
+    (mh-mov 26 27) (mh-b 0x94000000 23)
+    (mh-cmpi 9 0) (mh-b 0x54000000 90) (mh-str 26 23 544)
+    (mh-imm 25 0) (mh-label 61)
+    (mh-ldr 8 23 520) (mh-cmp 25 8) (mh-b 0x54000002 62)
+    (mh-mov 26 27) (mh-b 0x94000000 23)
+    (mh-add 8 23 1024) (mh-ar 8 8 25 3) (mh-str 26 8 0)
+    (mh-add 25 25 1) (mh-b 0x14000000 61)
+    (mh-label 62) (mh-add 8 23 1024) (mh-ar 8 8 25 3) (mh-str 31 8 0)
+    (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90)
+    ;; Relocate internal descriptors above stdio/FD3 before forking.
+    (mh-ldr 0 23 528) (mh-imm 1 17826048) (mh-imm 2 0) (mh-sys 5)
+    (mh-b 0x54000002 92) (mh-mov 24 0)
+    (mh-imm 1 67) (mh-imm 2 64) (mh-sys 92) (mh-b 0x54000002 93)
+    (mh-mov 26 0) (mh-mov 0 24) (mh-sys 6) (mh-mov 24 26)
+    (mh-i 0x92800019) (mh-str 25 23 560)
+    (mh-ldr 26 23 536) (mh-lb 8 26 0) (mh-b (bit-or 0xb4000000 8) 63)
+    (mh-mov 0 26) (mh-imm 1 16780037) (mh-imm 2 384) (mh-sys 5)
+    (mh-b 0x54000002 93) (mh-mov 25 0)
+    (mh-imm 1 67) (mh-imm 2 64) (mh-sys 92) (mh-b 0x54000002 68)
+    (mh-mov 26 0) (mh-mov 0 25) (mh-sys 6) (mh-mov 25 26)
+    (mh-mov 0 25) (mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 68)
+    (mh-str 25 23 560)
+    (mh-label 63) (mh-sys 2) (mh-b 0x54000002 68)
+    ;; XNU arm64 returns x1=1 in the child, x1=0 in the parent.
+    (mh-b (bit-or 0xb5000000 1) 70) (mh-mov 26 0)
+    (mh-mov 0 24) (mh-sys 6)
+    (mh-cmpi 25 0) (mh-b 0x5400000b 64)
+    (mh-mov 0 25) (mh-sys 6)
+    (mh-label 64) (mh-mov 0 26) (mh-add 1 23 576)
+    (mh-imm 2 0) (mh-imm 3 0) (mh-sys 7) (mh-b 0x54000003 65)
+    (mh-cmpi 0 4) (mh-b 0x54000000 64) (mh-b 0x14000000 92)
+    (mh-label 65) (mh-ldr 8 23 576) (mh-imm 9 127) (mh-i 0x8a090109)
+    (mh-b (bit-or 0xb4000000 9) 66)
+    (mh-cmpi 9 14) (mh-b 0x54000000 67) (mh-add 8 9 128) (mh-b 0x14000000 69)
+    (mh-label 66) (mh-i 0xd3483d08) (mh-b 0x14000000 69)
+    (mh-label 67) (mh-imm 8 124)
+    (mh-label 69) (mh-sb 31 22 0) (mh-sb 8 22 1) (mh-sb 9 22 2)
+    (mh-imm 25 3) (mh-b 0x14000000 95)
+    (mh-label 68) (mh-str 0 23 256)
+    (mh-cmpi 25 0) (mh-b 0x5400000b 26) (mh-mov 0 25) (mh-sys 6)
+    (mh-label 26) (mh-ldr 0 23 256) (mh-b 0x14000000 93)
+    ;; Child: set cwd, enumerate its complete FD table and close all extras.
+    (mh-label 70) (mh-mov 0 24) (mh-sys 13) (mh-b 0x54000002 89)
+    (mh-sys 20) (mh-mov 28 0) (mh-mov 1 28) (mh-imm 0 2)
+    (mh-imm 2 1) (mh-imm 3 0) (mh-imm 4 0) (mh-imm 5 0)
+    (mh-sys 336) (mh-b 0x54000002 89)
+    (mh-imm 8 1048576) (mh-cmp 0 8) (mh-b 0x54000008 89)
+    (mh-mov 5 0) (mh-mov 1 28) (mh-imm 0 2) (mh-imm 2 1)
+    (mh-imm 3 0) (mh-add 4 23 4095) (mh-add 4 4 1)
+    (mh-sys 336) (mh-b 0x54000002 89) (mh-mov 26 0) (mh-imm 27 0)
+    (mh-label 71) (mh-cmp 27 26) (mh-b 0x54000002 72)
+    (mh-add 8 23 4095) (mh-add 8 8 1) (mh-ar 8 8 27 0)
+    (mh-i 0xb9400108) (mh-cmpi 8 3) (mh-b 0x54000003 73)
+    (mh-cmp 8 24) (mh-b 0x54000000 73)
+    (mh-cmp 8 25) (mh-b 0x54000000 73)
+    (mh-mov 0 8) (mh-sys 6)
+    (mh-label 73) (mh-add 27 27 8) (mh-b 0x14000000 71)
+    (mh-label 72) (mh-ldr 8 23 512) (mh-cmpi 8 1) (mh-b 0x54000001 74)
+    (mh-mov 0 24) (mh-imm 1 3) (mh-sys 90) (mh-b 0x54000002 89)
+    (mh-label 74) (mh-mov 0 24) (mh-sys 6)
+    (mh-cmpi 25 0) (mh-b 0x5400000b 75)
+    (mh-mov 0 25) (mh-imm 1 1) (mh-sys 90) (mh-b 0x54000002 89)
+    (mh-mov 0 25) (mh-sys 6)
+    ;; Minimal environment; no caller secrets or runtime override variables.
+    (mh-label 75) (mh-b (bit-or 0x10000000 8) 111) (mh-str 8 23 768)
+    (mh-b (bit-or 0x10000000 8) 112) (mh-str 8 23 776)
+    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784) (mh-str 31 23 792)
+    (mh-imm 8 0x003d524944504d54) (mh-str 8 27 0)
+    (mh-add 27 27 7) (mh-ldr 26 23 528)
+    (mh-label 76) (mh-lb 8 26 0) (mh-sb 8 27 0)
+    (mh-add 26 26 1) (mh-add 27 27 1) (mh-b (bit-or 0xb5000000 8) 76)
+    ;; An exec-preserved kernel timer bounds the child even if the CLI dies.
+    (mh-str 31 23 640) (mh-str 31 23 648) (mh-str 31 23 656)
+    (mh-imm 0 14) (mh-add 1 23 640) (mh-imm 2 0) (mh-sys 46) (mh-b 0x54000002 89)
+    (mh-imm 8 8192) (mh-str 8 23 656)
+    (mh-imm 0 2) (mh-add 1 23 656) (mh-imm 2 0) (mh-sys 48) (mh-b 0x54000002 89)
+    (mh-str 31 23 672) (mh-str 31 23 680) (mh-str 31 23 696)
+    (mh-ldr 8 23 512) (mh-b (bit-or 0xb4000000 8) 77)
+    (mh-cmpi 8 1) (mh-b 0x54000000 78) (mh-imm 8 30) (mh-b 0x14000000 79)
+    (mh-label 77) (mh-imm 8 5) (mh-b 0x14000000 79)
+    (mh-label 78) (mh-imm 8 120)
+    (mh-label 79) (mh-str 8 23 688)
+    (mh-imm 0 0) (mh-add 1 23 672) (mh-imm 2 0) (mh-sys 83) (mh-b 0x54000002 89)
+    (mh-ldr 0 23 544) (mh-add 1 23 1024) (mh-add 2 23 768) (mh-sys 59)
+    (mh-label 89) (mh-imm 0 2) (mh-b (bit-or 0x10000000 1) 114)
+    (mh-imm 2 (string-length "amu: EHOST child setup/exec failed\n")) (mh-sys 4) (mh-imm 0 127) (mh-sys 1) (mh-i 0xd4200000)
+    ;; Error paths keep errno, close any live file, and return a typed reply.
+    (mh-label 94) (mh-imm 0 22)
+    (mh-label 93) (mh-str 0 23 256) (mh-mov 0 24) (mh-sys 6) (mh-ldr 0 23 256)
+    (mh-b 0x14000000 92)
+    (mh-label 90) (mh-imm 0 22) (mh-b 0x14000000 92)
+    (mh-label 91) (mh-imm 0 13)
+    (mh-label 92) (mh-sb 0 22 1) (mh-imm 8 1) (mh-sb 8 22 0) (mh-sb 31 22 2) (mh-imm 25 3)
+    ;; Copy the bounded reply to a freshly minted native vector handle.
+    (mh-label 95) (mh-cmpi 28 20) (mh-b 0x54000000 80)
+    (mh-mov 0 19) (mh-mov 1 25) (mh-ldr 16 19 200) (mh-i 0xd63f0200)
+    (mh-b (bit-or 0xb4000000 0) 98) (mh-mov 27 0)
+    (mh-ldr 8 19 16000) (mh-sub 9 0 1) (mh-ar 8 8 9 4) (mh-ldr 9 8 0)
+    (mh-ldr 10 19 16016) (mh-ar 26 10 9 3) (mh-imm 9 0)
+    (mh-label 96) (mh-cmp 9 25) (mh-b 0x54000002 97)
+    (mh-ar 10 22 9 0) (mh-lb 8 10 0) (mh-ar 10 26 9 3) (mh-str 8 10 0)
+    (mh-add 9 9 1) (mh-b 0x14000000 96)
+    (mh-label 80) (mh-lb 8 22 0) (mh-lb 9 22 1) (mh-lb 10 22 2)
+    (mh-add 8 8 48) (mh-sb 8 22 0)
+    (mh-hex-byte 9 1) (mh-hex-byte 10 3)
+    (mh-ldr 26 19 408) (mh-imm 8 268435451) (mh-cmp 26 8) (mh-b 0x54000008 98)
+    (mh-ldr 8 19 400) (mh-ar 8 8 26 0) (mh-imm 9 0)
+    (mh-label 81) (mh-ar 10 22 9 0) (mh-lb 11 10 0)
+    (mh-ar 10 8 9 0) (mh-sb 11 10 0) (mh-add 9 9 1)
+    (mh-cmpi 9 5) (mh-b 0x54000003 81)
+    (mh-add 9 26 5) (mh-str 9 19 408)
+    (mh-mov 0 19) (mh-i 0xaa3a03e1) (mh-imm 2 5) (mh-ldr 16 19 56) (mh-i 0xd63f0200)
+    (mh-mov 27 0)
+    (mh-label 97) (mh-mov 0 27)
+    (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 128) (mh-i 0xd65f03c0)
+    (mh-label 98) (mh-imm 0 2) (mh-b (bit-or 0x10000000 1) 115)
+    (mh-imm 2 (string-length "amu: EHOST invalid host ABI or exhausted buffer\n"))
+    (mh-sys 4) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000)
+    (mh-label 110) (mh-text ".")
+    (mh-label 111) (mh-text "PATH=/usr/bin:/bin")
+    (mh-label 112) (mh-text "LANG=C")
+    (mh-label 114) (mh-text "amu: EHOST child setup/exec failed\n")
+    (mh-label 115) (mh-text "amu: EHOST invalid host ABI or exhausted buffer\n"))]
+    (mh-finish s)))
+
+;; Public programs print the complete signed i64 main result and exit zero.
+;; No file/process grant is added. Unsigned division also handles INT64_MIN.
+(defn- mh-result-words [base :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-sub 31 31 64) (mh-mov 20 0) (mh-cmpi 0 0) (mh-b 0x5400000a 1)
+    (mh-i 0xcb0003e0) (mh-label 1)
+    (mh-add 1 31 63) (mh-imm 8 10) (mh-sb 8 1 0) (mh-imm 3 10)
+    (mh-label 2) (mh-i 0x9ac30804) (mh-i 0x9b038085)
+    (mh-add 5 5 48) (mh-sub 1 1 1) (mh-sb 5 1 0)
+    (mh-mov 0 4) (mh-b (bit-or 0xb5000000 0) 2)
+    (mh-cmpi 20 0) (mh-b 0x5400000a 3)
+    (mh-sub 1 1 1) (mh-imm 8 45) (mh-sb 8 1 0)
+    (mh-label 3) (mh-add 2 31 64) (mh-i 0xcb010042)
+    (mh-label 4) (mh-imm 0 1) (mh-sys 4) (mh-b 0x54000002 5)
+    (mh-b (bit-or 0xb4000000 0) 6) (mh-ar 1 1 0 0)
+    (mh-i 0xcb000042) (mh-b (bit-or 0xb5000000 2) 4)
+    (mh-imm 0 0) (mh-sys 1) (mh-i 0xd4200000)
+    (mh-label 5) (mh-cmpi 0 4) (mh-b 0x54000000 4)
+    (mh-label 6) (mh-imm 0 74) (mh-sys 1) (mh-i 0xd4200000))))
