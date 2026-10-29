@@ -4234,3 +4234,52 @@ own future freeze), any DL rank-pair row (its own pre-
 registration), and the tail-side vocabulary (named limitation).
 Evidence: docs/evidence/gpu/anv-b3dladder-20261029/
 (freeze-record-s81.txt).
+
+## Dated note (2026-10-29, JUN-59 session 82: the DL level-axis descriptive reference row)
+
+The s81-frozen DOUBLING LADDER vocabulary's FIRST STATISTIC (the
+s81 carry-forward item "any DL rank-pair row" taken to its
+descriptive-reference half; protocol.txt of
+docs/evidence/gpu/anv-b3dlprofile-20261029/ frozen at stamp
+2026-10-29T05:22:05Z BEFORE any statistic of the row existed;
+the pre-freeze freshness greps were 0/0 hits). T17, DESCRIPTIVE
+ONLY -- NO letter, NO null, NO direction (the DL pairs carry no
+pre-existing directional hypothesis; the honest first statistic
+is the reference vectors a future inferential DL row quotes as
+priors): the tw arm's named cell (max,128,S=default), per-block
+D = x_(b)-x_(a) over each block's pooled 75 gpu_ticks, 2*L =
+6th+7th order statistics of the 12 block D values, five
+committed windows s36/s38/s39/s51/W5 -- DL4 (x_(34),x_(42)) 2*L
+46/47/48/38/40 (W5 INSIDE the post-shift band 38..47); DL8
+(x_(30),x_(46)) 97/84/99/79/83 (INSIDE 79..84); DL16
+(x_(22),x_(54)) 238/187/201/188/178 (W5 OUTSIDE-BELOW 187..188);
+DL32 (x_( 6),x_(70)) 655/537/572/564/658 (W5 OUTSIDE-ABOVE
+537..564). Span-dependent picture, named not hidden, NO letter:
+the two NARROW self-mirror pairs sit inside the post-shift band
+at W5 while the two WIDE pairs leave it in OPPOSITE directions
+-- the narrow-vs-wide opposition of T15's INNER/OUTER set, now
+visible inside one data-independent vocabulary; mechanism
+UNMEASURED; n=12 blocks x 5 windows, ONE host. VERIFIED (real
+tool output): analysis-s82.py (deterministic, no RNG) run twice
+BYTE-IDENTICAL (7,870 bytes, sha256 d858cc17..., cmp exit 0);
+parser validity pins EXACT (the published s78 INNER
+118/102/128/113/100 and OUTER 496/429/437/446/502 vectors and
+both W5 block-D vectors reproduced byte-for-value); integrity
+390 logs / VERIFY 0 / 8-8 block-min vectors / 4-4 anchors / C1
+(a). Standing gates (real runs == the s81 pins): classify
+2649/0; scoped GPU gate GREEN 123/12162/0/0 twice; FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 83: the
+W6 measurement half (first session at/after
+2026-10-30T00:00:00Z), the fourth day slot (its own future
+freeze), an inferential DL row or this publication's derivation
+census (each its own pre-registration), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3dlprofile-20261029/
+(freeze-record-s82.txt).
