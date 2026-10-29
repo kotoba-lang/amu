@@ -4323,3 +4323,51 @@ W6 measurement half (first session at/after
 freeze), an inferential DL row (its own pre-registration), and
 the tail-side vocabulary (named limitation). Evidence:
 docs/evidence/gpu/anv-b3dlprofile-20261029/ (record-s83.txt).
+
+## Dated note (2026-10-29, JUN-59 session 84: the T18 inferential
+## DL row pre-registration)
+
+The s83 record section-9(c) carry-forward item "an INFERENTIAL
+DL row (its own pre-registration; the s82 vectors are its
+quote-only priors; its freeze names its convention)" taken to
+its DESIGN half; NO hardware runs, NO compiles, NO GO stamp,
+NO ledger line; the row's ANALYSIS half is day-slot-gated
+behind the W6 measurement half -- STARTED, NOT FINISHED.
+protocol.txt (freeze stamp 2026-10-29T06:14:31Z, before any
+statistic of the row exists and before any W6 quantity exists)
+pre-registers T18 at the fresh W6 window: per-pair contrast
+2*C_obs = 2*L_s36 - 2*L_W6 over the WHOLE closed DL vocabulary
+(DL4/DL8/DL16/DL32, named only from the s81 freeze),
+pre-registered direction C_obs > 0 per pair fixed by the s82
+quote-only priors alone (DL8 3/4 post-s36 windows below s36;
+DL16 4/4; DL32 3/4 with the W5 exception named -- the demanding
+axis; DL4 2/4 and uninformative per the s81 section-4(c)
+caveat), the s78/T15 two-window run-exchangeability null
+verbatim (72 tw runs, ONE random.Random(2026102918), probe
+order DL4/DL8/DL16/DL32, 20,000 trials per probe, p =
+(1+count(C* >= C_obs))/(1+20,000) one-sided), per-pair letters
+(a)/(b)/(c), joint T18 = IUT over the three informative steps
+DL8/DL16/DL32 (s81 rule 3(d): the row's own multiplicity
+convention). THE CONVENTION IS NAMED EXPLICITLY (the s83
+requirement): the post-shift band is the closed interval
+[MIN, MAX] of {2*L_s38, 2*L_s39, 2*L_s51} -- MIN..MAX, NOT the
+s82 publication's printed min..median (the s83 correction
+record) -- and every band placement is descriptive, never a
+test. Standing gates (real runs == the s83 pins): classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 85:
+the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- now the only gate between this freeze
+and its analysis half --, then the T18 analysis half, the
+fourth day slot (its own future freeze), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3w6dlrep-20261030/ (protocol.txt,
+freeze-record-s84.txt).
