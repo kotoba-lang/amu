@@ -13,6 +13,9 @@ on:
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-externs.py'
+      - 'scripts/seed/check-aiueos-object-cells.py'
+      - 'scripts/seed/check-aiueos-object-mmio.py'
+      - 'scripts/seed/check-aiueos-object-globals.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-definition-cid-native.py'
@@ -129,6 +132,21 @@ jobs:
           python3 scripts/seed/check-aiueos-object-externs.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-externs"
+      - name: AIUEOS kernel object route has 8-byte data cells (JUN-556 D3)
+        run: |
+          python3 scripts/seed/check-aiueos-object-cells.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-cells"
+      - name: AIUEOS kernel object route has fixed-address MMIO accesses (JUN-556 D4)
+        run: |
+          python3 scripts/seed/check-aiueos-object-mmio.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-mmio"
+      - name: AIUEOS kernel object route exports data cells as GLOBAL symbols (JUN-556 D3b)
+        run: |
+          python3 scripts/seed/check-aiueos-object-globals.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-globals"
       - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
         run: |
           python3 -I scripts/seed/check-macos-fs35.py \
