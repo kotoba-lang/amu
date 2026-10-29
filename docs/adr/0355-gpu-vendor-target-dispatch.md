@@ -5373,3 +5373,39 @@ honest pre-slot preparation row remains; a pre-slot tick should
 say so rather than pad.  Evidence:
 docs/evidence/gpu/anv-b3w6wiringrehearsal-20261029/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 104 (JUN-59): the PRE-SLOT STAND-DOWN -- NO
+row taken (the s103 pre-registration's "say so rather than pad"
+tick; NO design slice, NO implementation slice, NO measurement).
+W6 is defined (s80) by SESSION START at/after
+2026-10-30T00:00:00Z; this session started 22:31:38Z, 1h28m22s
+(5,302 s) before the slot opens (state-s104.txt: "session
+qualifies as W6 session? False") -- running the 78 processes
+here would be an UNREGISTERED window whose ledger line would
+still consume the 2026-10-30 day slot under the frozen
+first-qualifying-reading rule.  Verified this tick: blocker-
+first 0 hermes/ head PRs; exactly one chain PR (#1665,
+MERGEABLE); git diff empty; settle-bar-ledger.txt == HEAD;
+find docs/evidence/gpu -name '*.sh' -> 0.  Standing gates ==
+the s88 pins: classify 2649/0 (17,925 bytes, cmp exit 0);
+scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes == each
+other == both pins); FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace; .err 879 bytes == pin) -- no green full suite
+claimed; settle-bar self-test + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged (counted day=2026-10-28
+session=s31; counted day=2026-10-29 session=s73).  The bar: NO
+row -> NO hardware runs -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  NAMED:
+this record is a stand-down, not a preparation row; ONE
+stand-down record suffices (further pre-slot ticks report
+without committing).  Carry-forward: the W6 measurement half to
+the FIRST session starting at/after 2026-10-30T00:00:00Z (the
+s80 freeze; adoption-check-prego.py --check first, fail-closed)
+-- the gate for T18's analysis half (s92 + s84), T20's analysis
+half (s93 + s88) and W7's measurement half (s85) --; then any
+further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6preslotstanddown-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
