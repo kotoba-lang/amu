@@ -362,11 +362,12 @@
         (= (lx-ch S p) 92) (if (>= (+ p 1) (string-length S)) -1 (lx-sk-str S (+ p 1 (lx-cpw (lx-ch S (+ p 1))))))
         :else (lx-sk-str S (+ p (lx-cpw (lx-ch S p))))))
 ;; after the closer of the sequence whose first item may start at p, -1 when unclosed
-(defn- lx-sk-seq [S :string p :i64] :i64
+(defn- lx-sk-seq [S :string p :i64 want :i64] :i64
   (let [q (lx-sk-ws S p)]
     (cond (>= q (string-length S)) -1
-          (lx-closer? (lx-ch S q)) (+ q 1)
-          :else (let [r (lx-sk-form S q)] (if (< r 0) -1 (lx-sk-seq S r))))))
+          (= (lx-ch S q) want) (+ q 1)
+          (lx-closer? (lx-ch S q)) -1
+          :else (let [r (lx-sk-form S q)] (if (< r 0) -1 (lx-sk-seq S r want))))))
 ;; the form after p (whitespace first), -1 when there is none
 (defn- lx-sk-next [S :string p :i64] :i64
   (let [q (lx-sk-ws S p)]
@@ -376,8 +377,8 @@
   (if (>= (+ p 1) (string-length S))
     -1
     (let [d (lx-ch S (+ p 1))]
-      (cond (= d 40) (lx-sk-seq S (+ p 2))
-            (= d 123) (lx-sk-seq S (+ p 2))
+      (cond (= d 40) (lx-sk-seq S (+ p 2) 41)
+            (= d 123) (lx-sk-seq S (+ p 2) 125)
             (= d 34) (lx-sk-str S (+ p 2))
             (= d 63) (lx-sk-form S (if (and (< (+ p 2) (string-length S)) (= (lx-ch S (+ p 2)) 64)) (+ p 3) (+ p 2)))
             (= d 95) (lx-sk-next S (+ p 2))
@@ -387,7 +388,9 @@
 ;; after the form that starts at p (p is not whitespace), -1 when malformed or unclosed
 (defn- lx-sk-form [S :string p :i64] :i64
   (let [c (lx-ch S p)]
-    (cond (or (= c 40) (= c 91) (= c 123)) (lx-sk-seq S (+ p 1))
+    (cond (= c 40) (lx-sk-seq S (+ p 1) 41)
+          (= c 91) (lx-sk-seq S (+ p 1) 93)
+          (= c 123) (lx-sk-seq S (+ p 1) 125)
           (lx-closer? c) -1
           (= c 34) (lx-sk-str S (+ p 1))
           (= c 92) (if (>= (+ p 1) (string-length S)) -1 (lx-sk-atom S (+ p 1 (lx-cpw (lx-ch S (+ p 1))))))
@@ -417,7 +420,7 @@
                                       :else (lx-rc-sel S fe found))))))))
 ;; the conditional at i (w = 3 or 4): lex the selected arm (a splice: its items), then go on after the conditional
 (defn- lx-rc [M :vector-i64 S :string i :i64 end :i64 w :i64] :vector-i64
-  (let [whole (lx-sk-seq S (+ i w))
+  (let [whole (lx-sk-seq S (+ i w) 41)
         sel (lx-rc-sel S (+ i w) -1)
         se (if (< sel 0) -1 (lx-sk-form S sel))
         sc (if (< sel 0) 0 (lx-ch S sel))]
