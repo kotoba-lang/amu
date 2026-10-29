@@ -4901,3 +4901,53 @@ counted-day slot (its own freeze), and a cross-day tail-movement
 row (not queued). Evidence:
 docs/evidence/gpu/anv-b3w7routepreflight-20261029/ (record.txt +
 the s94 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 95: the W6 run-window
+## driver pre-build)
+The W6 measurement row's RUN-PATH IMPLEMENTATION preparation half
+(the s69/s90 pre-build precedent applied to the s80 protocol
+section-2 RUN path; NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO host writes, NO day-slot consumption, NO ledger
+line). The measurement half itself REMAINS day-slot-gated (first
+session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T12:1xZ-12:4xZ, ~11.5h before the slot opens) -- STARTED,
+NOT FINISHED. run-window-prego.py (pure stdlib, NO RNG, no clock;
+submits nothing to any GPU): --plan emits the frozen 78-run order
+(c2 r1-3, k=1..12 hi block k then tw block k, c8 r1-3) with per-run
+artifact names and the invocation ./anv-bb-<arm> <manifest>; --rebuild
+constructs run-window.txt's 78 per-run lines + the frozen 3-line
+trailer from run logs + the LIVE-FIELDS capture (rc and host-date are
+live-only, quoted as input at compat time, named not hidden; every
+other field re-derived from committed bytes). FAIL-CLOSED: single-
+quote tail, non-uniform trailer, missing/extra runs are hard errors.
+VERIFIED (real tool output): --compat over the three committed 78-run
+run-window transcripts (s36/s51/W5 -- s38/s39 committed none): plan
+order == committed order 78/78 all three; rebuilt bytes BYTE-EQUAL
+78/78 at s36 and 81/81 (table+trailer) at s51 and W5 -- TOTAL 243
+rows 0 mismatched, twice byte-identical; --self-test TOTAL 18/0
+twice byte-identical (MOCK fixtures, never measurements). NAMED, NOT
+HIDDEN: s36's transcript predates the s57 route freeze (session-prose
+trailer); the trailer comparison covers the s57-route windows s51/W5
+only. ADOPTION: the frozen route names no driver filename -- the W6
+session adopts this file as its run-window driver and owns its record;
+the execution path (ssh, live capture, staging, GO) stays session-
+owned as at s51/s73. Standing gates == the s88 pins: classify 2649/0
+(17,925 bytes); scoped GPU gate GREEN 123/12162/0/0 twice (919
+bytes); FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green full
+suite claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh'
+-> 0; settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO ledger
+line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES; the
+ADR-0358 row states are unchanged; NO vendor optimization exists for
+Intel. Carry-forward to session 96: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's analysis
+half, T20's analysis half and W7's measurement half --, then the T18
+analysis half (s92 pre-build + s84 freeze), the T20 analysis half
+(s93 pre-build + s88 freeze), the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6runprego-20261029/ (run-window-prego.py +
+runwindow-prego-selftest.txt/.err + compat-prego-validation.txt/.err +
+runwindow-prego-plan.txt/.err + record.txt + the s95 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
