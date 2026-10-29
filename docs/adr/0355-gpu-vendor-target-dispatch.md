@@ -5301,3 +5301,36 @@ docs/evidence/gpu/anv-b3w6freshcensusprego-20261029/
 (fresh-census-prego.py + selftest/rehearsal/negative run captures
 + record.txt + the s101 gate captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 102 (JUN-59): the W6 ADOPTION-MANIFEST PRE-BUILD
+-- the adoption surface (eight prose contracts, two supersession
+chains) bound to exact committed bytes: adoption-manifest.txt (7
+tool slots + 4 frozen s91 custody rows, digests from committed
+bytes; the cell-line chain 873025d6... re-derived by the named
+construction, reproduced exactly) + adoption-check-prego.py
+(fail-closed --check; pure stdlib).  Verified: --self-test 42/0
+twice byte-identical (MOCK fixtures only); --check over the real
+tree VERDICT CONSISTENT (matched 25, mismatched 0) twice
+byte-identical -- the s100-named line-95 relation holds
+mechanically; MOCK negative rc 1 twice byte-identical (row 3 named)
+-> INCONSISTENT.  Three first-execution defects fixed and named
+(format-arg arity; two fixture refits).  Standing gates == the s88
+pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt == HEAD.
+The bar: preparation session -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel.  Named limits: provenance is
+presence-checked (no positional binding); the manifest guards
+adoption mistakes, not repository compromise.  Carry-forward to
+session 103: the W6 measurement half (the s80 freeze; the first
+measurement session at/after 2026-10-30T00:00:00Z adopts the seven
+tools manifest-checked) -- the gate for T18's analysis half (s92 +
+s84), T20's analysis half (s93 + s88) and W7's measurement half
+(s85) --; then any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6adoptionprego-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
