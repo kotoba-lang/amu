@@ -4191,3 +4191,46 @@ W6 measurement half (the first session at/after
 freeze) and the named rank-pair vocabulary (unfrozen design
 work). Evidence:
 docs/evidence/gpu/anv-b3w6daybar-20261030/freeze-record-s80.txt.
+
+## Dated note (2026-10-29, JUN-59 session 81: the doubling-ladder named rank-pair vocabulary)
+
+The s80 carry-forward item (c) taken to its DESIGN half: the NEW
+named rank-pair vocabulary / selection rule -- the only route back
+for the rank-pair program retired at s62/s63 (vocabulary.txt of
+docs/evidence/gpu/anv-b3dladder-20261029/, written once at freeze
+stamp 2026-10-29T04:58:52Z, before any statistic of its pairs
+exists). THE DOUBLING LADDER (DL): DL4 (x_(34), x_(42)) k=4 span
+8, DL8 (x_(30), x_(46)) k=8 span 16, DL16 (x_(22), x_(54)) k=16
+span 32, DL32 (x_(6), x_(70)) k=32 span 64 -- k = half-distance
+from the pooled-75 deviation-center rank x_(38); the frozen rule
+is data-independent: k runs over the powers of two <= 37 that no
+committed record has named ({1,2} named at s58-s61 -> free
+{4,8,16,32}); each k sits strictly between consecutive named k
+(spacing repair 3<4<5, 5<8<10, 10<16<19, 29<32<33). Future rows
+name pairs ONLY from this vocabulary, each in its own protocol
+freeze before any statistic (estimators/nulls/thresholds stay
+per-row); no silent extension. NAMED, NOT HIDDEN: every DL pair is
+self-mirror (tail-side asymmetry is out of scope -- the s61/s62/
+s63 mirror-pair asymmetry needs a separate future vocabulary);
+DL4 (span 8) sits in the pre-registered narrow-span noise band, so
+a (b) at DL4 is uninformative; the freshness claim is exactly a
+grep -F over docs/evidence/gpu (0 hits outside the new directory);
+the alternative free-k and asymmetric-vocabulary designs were
+CONSIDERED AND REJECTED with reasons in the freeze. The slice
+computes NO statistic (the DL levels are UNMEASURED), runs NO
+hardware, writes NO ledger line (settle-bar-ledger.txt == HEAD);
+the bar stays PENDING 2/4. Standing gates (real runs):
+classify --self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pins; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO
+.cljk namespace) with the 879-byte .err == pin -- no green full
+suite claimed; settle-bar self-test 38/0 == pin and ledger eval
+twice == pin -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'`
+-> 0. Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 82: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z), the fourth day slot (its
+own future freeze), any DL rank-pair row (its own pre-
+registration), and the tail-side vocabulary (named limitation).
+Evidence: docs/evidence/gpu/anv-b3dladder-20261029/
+(freeze-record-s81.txt).
