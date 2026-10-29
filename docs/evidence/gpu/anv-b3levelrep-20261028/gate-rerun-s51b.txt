@@ -1,0 +1,78 @@
+session 51 (TWO-TICK LAND, landing tick 2026-10-28) -- the three
+gate families were re-run FRESH from the worktree root at the
+landing tick (the session-48/49 landing pattern); tick 1's
+captures (scratch/gate-s51-*.txt, the census's pinned inputs) were
+left untouched and the landing re-runs were captured to
+scratch/gate-s51b-*.txt; every fresh capture was compared
+byte-for-byte against its pinned artifact in this directory via
+cmp. Scratch captures and the scratch runner live in the worktree
+scratch/ dir, never committed.
+
+1. command: python3 scripts/gpu_regime_classify.py --self-test
+   (stdout -> scratch/gate-s51b-classify.txt)
+   exit: 0
+   last line: TOTAL: 2649 assertions passed, 0 failed
+   cmp scratch/gate-s51b-classify.txt classify-selftest.txt ->
+   identical (CLASSIFY-BYTE-IDENTICAL)
+
+2. command: kbb --backend sci --classpath "src:test:$(kbb
+   -Spath -M:test)" scratch/scoped-gpu-gate.cljk
+   (the scratch runner is the eight GPU-owned test namespaces of
+   run-tests.cljk, same engine and classpath; stdout captured to
+   scratch/gate-s51b-run1.txt and scratch/gate-s51b-run2.txt)
+   run 1 exit: 0
+   run 2 exit: 0
+   output (both):
+     Ran 123 tests containing 12162 assertions.
+     0 failures, 0 errors.
+   runner .err captures: 0 bytes both runs
+   cmp scratch/gate-s51b-run1.txt gate-run1.txt -> identical
+   cmp scratch/gate-s51b-run2.txt gate-run2.txt -> identical
+   cmp scratch/gate-s51b-run1.txt scratch/gate-s51b-run2.txt ->
+   identical (GATE-BYTE-IDENTICAL x2)
+   note: the "kbb: 2 dep(s) are not :local/root ..." line belongs
+   to the $(kbb -Spath -M:test) classpath sub-invocation and is
+   not part of the capture (established capture convention).
+
+3. command: kbb --backend sci --classpath "src:test:$(kbb
+   -Spath -M:test)" run-tests.cljk
+   (stdout -> scratch/gate-s51b-full.txt, stderr ->
+   scratch/gate-s51b-full.err)
+   exit: 1 (RED AT BASE, outside this diff)
+   stdout: 0 bytes
+   stderr:
+     ----- Error --------------------------------------
+     Message:  Could not find namespace: kotoba.form
+     ...
+     Error: Could not find namespace: kotoba.form
+         at file:///Users/junkawasaki/github/kotoba-lang/org-babashka-nbb/lib/nbb_main.js:13:216
+
+     Node.js v26.0.0
+   cmp scratch/gate-s51b-full.err gate-full-run-tests.txt ->
+   identical (FULL-ERR-BYTE-IDENTICAL)
+   named: kotoba.form is RED AT BASE (ADR-0362, outside this
+   diff -- this slice touches NO .cljk namespace); NO green full
+   suite is claimed.
+
+4. bar evaluator (frozen settle-bar-eval.py, re-run at the
+   landing tick): --self-test TOTAL 38 assertions passed, 0
+   failed; ledger evaluation twice byte-identical AND
+   byte-identical to tick 1's scratch/bar-eval-run1.txt;
+   VERDICT: PENDING 1/4 (s31 counted; the s51 ledger line is a
+   same-day duplicate -> descriptive, NO day-slot consumption).
+
+5. derivation census (scratch/census-s51-gen.py, the independent
+   second parser) re-run TWICE at the landing tick: both runs
+   "TOTAL: 205 rows, 0 mismatched" and both runs byte-identical
+   to the committed derivation-census-s51.txt (cmp; the tick-1
+   copy kept in scratch/census-s51-tick1-backup.txt).
+
+6. find docs/evidence/gpu -name '*.sh' -> 0 (recorded in the
+   commit message).
+
+SUMMARY: all three gate families reproduce byte-identically
+against their pinned artifacts on fresh runs at the landing tick;
+the scoped GPU gate is GREEN (123 tests / 12,162 assertions / 0
+failures / 0 errors, twice) and the full run-tests.cljk remains
+RED AT BASE kotoba.form, named, not hidden; the bar verdict is
+PENDING 1/4; the derivation census reproduces byte-identically.
