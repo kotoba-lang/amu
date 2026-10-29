@@ -1,0 +1,162 @@
+JUN-59 -- session 55 protocol: THE INNER-vs-OUTER COMPRESSION-
+PROFILE READ (the formal juxtaposition of the two named quantile-
+pair level axes -- session 54's first-named candidate row: over
+the SAME four windows s36/s38/s39/s51 of the named-cell robust-
+scale level campaign, ANALYSIS only -- is the named cell's
+quantile-pair spread compression OUTER-WEIGHTED, i.e. does the
+outer-pair level drop MORE than the inner-pair level from the s36
+pre-shift window to each post-shift window?). Frozen BEFORE any
+statistic of this probe was computed (freeze stamp
+2026-10-28T15:08:37Z, this tick; no build or run needed -- the
+inputs are prior sessions' committed run logs). This file is
+written once and never rewritten.
+
+0. ROW QUESTION (ONE row): SESSION 54'S FIRST-NAMED CANDIDATE ROW
+   "the INNER-vs-OUTER COMPRESSION-PROFILE read over the same
+   windows (the formal juxtaposition of the two named quantile-
+   pair level axes -- analysis; no hardware; available on any
+   tick)" -- taken on the PROFILE AXIS: the within-block outer-
+   pair level minus the inner-pair level of the NAMED cell.
+
+   NAMED CELL (frozen): the tw arm's (max,128,S=default) ok cell
+   (unchanged from sessions 47-54). NAMED AXES (frozen, prior
+   publications): the OUTER-QUANTILE-PAIR spread D_out =
+   x_(67) - x_(9) of the block's pooled 75 (the s54-frozen ranks,
+   strictly outside the s47-frozen IQR hinges x_(19), x_(57)) and
+   the INNER-QUANTILE-PAIR spread D_in = x_(48) - x_(28) (the
+   s53-frozen ranks, strictly inside the hinges). NAMED
+   CONTRASTS (frozen): (s36,s38), (s36,s39), (s36,s51). NAMED
+   DIRECTION (frozen): P > 0 (the compression is OUTER-WEIGHTED
+   -- the outer level drops more than the inner level). NAMED,
+   NOT HIDDEN: the direction and the juxtaposition were chosen
+   AFTER s53's inner-pair (b) and s54's outer-pair (a) letters on
+   these windows were published (the three observed point
+   estimates 2*P_obs = 2*C_out - 2*C_in are already known to be
+   positive -- QUOTE-ONLY priors); this probe does NOT test a new
+   prediction, it quantifies whether the outer-vs-inner gap
+   exceeds the resampling noise of the frozen null; the probe is
+   a SEPARATE named family and retro-corrects nothing.
+
+1. THE CONSTRUCTION (frozen): block = 3 consecutive runs of one
+   arm within one window (the s35/s36-frozen block unit, 12
+   blocks per (window, arm)); per-block D_out = x_(67) - x_(9)
+   and D_in = x_(48) - x_(28) of the block's 75 gpu_ticks samples
+   of the NAMED cell (both exact INTEGERs, from the SAME pooled
+   75). Per-window per-axis level 2*L = 6th + 7th order
+   statistics of the 12 block D values (INTEGER half-tick
+   units). THE PRIMARY STATISTIC (frozen): the difference-in-
+   differences 2*P_obs = 2*C_out - 2*C_in where 2*C_out =
+   2*Lout_s36 - 2*Lout_w and 2*C_in = 2*Lin_s36 - 2*Lin_w
+   (signed; exact INTEGER; the pre-registered direction is
+   P_obs > 0).
+
+2. THE NULL (frozen): RUN-EXCHANGEABILITY BETWEEN THE TWO NAMED
+   WINDOWS' TW RUNS -- the 72 tw runs (36 of s36 + 36 of w) are
+   exchangeable; under the null ALL within-run, fresh-process
+   run-to-run AND window-to-window variation is sampling noise at
+   the fresh-process granularity. Resampling (frozen): per trial,
+   shuffle the 72 run ids (one random.Random(2026102805),
+   consumed in the frozen probe order of section 3 -- (s36,s38)
+   first, (s36,s39) second, (s36,s51) third), split into two
+   groups of 36 in draw order (pseudo-windows A then B), each
+   into 12 blocks of 3 in draw order; compute each pseudo-block's
+   D_out AND D_in on the SAME pooled 75 (the two axes are
+   evaluated jointly on the same shuffles so their correlation is
+   respected); 2*L* per pseudo-window and axis = 6th + 7th order
+   statistics of the 12 block D values; 2*P* = (2*Lout*_A -
+   2*Lout*_B) - (2*Lin*_A - 2*Lin*_B); p = (1 + count(P* >=
+   P_obs)) / (1 + 20,000), ONE-SIDED in the pre-registered
+   direction. TRIALS = 20,000 (NOT the s35-frozen 100,000 --
+   cost, same named deviation as sessions 40-54; p resolution
+   1/20,001 ~= 5e-5).
+
+   EXACTNESS (frozen): D_out, D_in are exact INTEGERs; 2*L, 2*C
+   and 2*P are exact INTEGER half-tick units; every P* >= P_obs
+   comparison is exact integer arithmetic; publications report L,
+   C and P in ticks with .0/.5 (fmt_ht). IMPLEMENTATION PATHS
+   (frozen): analysis-s55.py uses numpy 2.5.4 (int64 np.sort over
+   the pooled 75: D_out = sorted[..., 66] - sorted[..., 8]; D_in
+   = sorted[..., 47] - sorted[..., 27]; np.sort for the 6th+7th
+   sums); the resampling is computed in vectorized TRIAL BATCHES
+   (batch size a memory detail, NOT part of the frozen contract);
+   every P* >= P_obs comparison is exact INTEGER arithmetic.
+
+3. LETTERS (frozen): per-contrast letter: (a) PROFILE-OUTER-
+   WEIGHTED-DIFFERENT iff p <= 0.05 (in the pre-registered
+   direction -- such a p implies P_obs > 0); (b) NOT-DIFFERENT
+   otherwise (sub-cases named: P_obs = 0 EXACTLY-ZERO; P_obs < 0
+   OPPOSITE-DIRECTION; else NONZERO-NOT-SIGNIFICANT). Joint T5
+   (the row answer) = the pre-registered INTERSECTION-UNION rule:
+   (a) COMPRESSION-PROFILE-OUTER-WEIGHTED-CONSISTENT iff ALL
+   THREE contrast letters are (a); otherwise (b) NOT-PROFILE-
+   OUTER-WEIGHTED-CONSISTENT (named sub-cases: which pair(s)
+   failed and why); (c) NOT EVALUABLE on any integrity violation
+   (section 4). NO multiplicity correction is applied or needed
+   (IUT); the pairwise tests share the s36 window and are
+   dependent -- the IUT does not care.
+
+4. INVALIDATION (frozen; the session-51/52/53/54 section-4
+   criteria re-used): any violation -- per window: VERIFY mismatch
+   total != 0, sample/verify count mismatch, knob-field mismatch,
+   S=8 fail-closed violation, cross-run cell-map mismatch; or any
+   failure of the three prior windows' block-min vectors to
+   reproduce the publication-s39.txt section-3 vectors EXACTLY;
+   or any failure of the three prior windows' anchor rows to
+   reproduce the publication-s36/38/39 quote-only anchor priors
+   EXACTLY; or any failure of the s51 window's block-min vectors
+   and anchor row to reproduce publication-s51.txt section 3/3b
+   EXACTLY; or C1 branch (b) at ANY of the four windows (c2 must
+   read FLOOR, c8 (sum,128,S=16) pooled median within +/-5% of
+   the committed 32,915) => joint letter (c).
+
+5. NAMED, NOT HIDDEN (frozen): this probe examines a SEVENTH axis
+   on the SAME window data (after the s48 MAD / s47 IQR scale
+   axes, the s49/s50/s51 descriptive families, s52's deviation-
+   center axis, s53's inner-quantile-pair axis and s54's outer-
+   quantile-pair axis), and it is the FIRST probe whose axis is
+   COMPOSED of two already-published axes; the juxtaposition,
+   direction and contrast set were chosen AFTER the scale,
+   center, inner-pair and outer-pair results on these windows
+   were known; the probe is a SEPARATE named family and does NOT
+   retro-correct any earlier uncorrected family; (a) names NO
+   mechanism (thermal/scheduling/memory/driver state all
+   UNMEASURED) and NOT whether any movement is physical or
+   estimator structure -- (a) is CONSISTENT WITH a compression
+   concentrated toward the tails/whole-body span (outer-
+   weighted); (b) is CONSISTENT WITH a spread compression that
+   does NOT measurably prefer the outer pair over the inner pair
+   at this noise floor; EITHER WAY threshold-artifact-vs-
+   representation and physical-vs-estimator-structure STAY
+   UNRESOLVED; the four windows span ~8.5 hours in ONE UTC day on
+   ONE host (LOW POWER; s36-specific or later-window-specific
+   state can produce any letter); anything off the ANV host is
+   UNMEASURED; the bar gets NO new ledger line and consumes NO
+   day slot (no runs this session; the 2026-10-28 slot is s31's;
+   next executable slot 2026-10-29).
+
+6. ROUTE (frozen): analysis-s55.py parses ONLY the committed run
+   logs of the four fixed evidence directories and writes
+   publication-s55.txt in its own directory; deterministic
+   (running it twice yields byte-identical output).
+   derivation-census-s55.py is an INDEPENDENT second parser
+   (split-based parsing without regex and without the re module;
+   pure-Python sorted() order statistics instead of numpy -- one
+   shared sort per pooled 75 yields both D_out = sorted(pooled75)
+   [66] - sorted(pooled75)[8] and D_in = sorted(pooled75)[47] -
+   sorted(pooled75)[27]; an independent shuffle loop re-
+   implementing the frozen RNG call order) that re-derives every
+   published integer, count and p value of publication-s55.txt
+   and checks the gate pins, bar pins and ledger state; run
+   twice, byte-identical. Gates (real runs this tick):
+   gpu_regime_classify.py --self-test; the scoped GPU gate (the
+   eight GPU-owned test namespaces of run-tests.cljk via a
+   scratch runner created/run/deleted at landing, never
+   committed) recorded run 1 AND run 2; the FULL run-tests.cljk
+   run LIVE (honest exit; kotoba.form is RED AT BASE under
+   ADR-0362 if unchanged); the settle-bar evaluator --self-test
+   and the ledger eval twice byte-identical; find docs/evidence/gpu
+   -name '*.sh' -> 0.
+
+7. RULE 4 (frozen): NOTHING MOVES. accelerator-targets defaults
+   remain provisional (:measured? false); no vendor optimization
+   exists for Intel; no workgroup default is replaced.

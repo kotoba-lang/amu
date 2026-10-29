@@ -1,0 +1,154 @@
+JUN-59 -- session 57 record (ONE-TICK LAND, DESIGN slice):
+THE FIFTH-WINDOW CROSS-UTC-DAY ROBUST-SCALE LEVEL REPLICATION
+PRE-REGISTRATION FREEZE (the queue's FIRST named candidate row
+taken to its pre-registration half; the MEASUREMENT half is
+day-slot-gated -- STARTED, NOT FINISHED). DESIGN slice -- NO new
+hardware, NO new runs, NO builds, NO statistics: this tick froze
+the row's protocol BEFORE any fifth-window run exists and wrote
+gates. 2026-10-28 (UTC). Chain branch
+bot/amu-gpu-chain-20261028-3 (chain PR #1643, the ONE open chain
+PR; commit + push only). (This file is freeze-record-s57.txt
+because the W5 measurement session owns record.txt in this same
+directory -- named in protocol.txt section 0 to avoid a second
+writer colliding on record.txt.)
+
+1. ROW QUESTION (ONE row): session 56's queue FIRST row -- "a
+   FIFTH-window replication on another UTC day (needs NEW
+   hardware; the bar's next day slot 2026-10-29 is then reachable;
+   it can carry both quantile-pair level axes AND the second-pair
+   profile axis at once)". The row is taken to its DESIGN half
+   this tick: the pre-registration (protocol.txt, freeze stamp
+   2026-10-28T16:15:35Z) is complete and frozen; the MEASUREMENT
+   half CANNOT run at this tick and is NOT run: W5 is DEFINED as
+   the window measured at or after 2026-10-29T00:00:00Z (the bar's
+   2026-10-29 UTC day slot), this tick runs at 2026-10-28T16:15Z
+   UTC -- 7h45m before that slot opens. NAMED, NOT SKIPPED
+   SILENTLY: running a window on 2026-10-28 would (a) put W5 back
+   in the ONE UTC day that every prior letter already shares and
+   (b) burn it as a same-day-descriptive bar line that consumes no
+   slot -- both defeat the row. STARTED, NOT FINISHED: the row
+   moves to the first measurement tick in/after the 2026-10-29
+   UTC slot.
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3w5xdayrep-20261029/ -- protocol.txt
+       (the frozen pre-registration: cell/window-pair/direction/
+       construction/null/resampling/letters/invalidation/D-family/
+       bar/route, written once, never rewritten), this
+       freeze-record-s57.txt, and the gate captures (below). NO
+       run logs (no hardware this tick), NO .sh files, NO
+       statistics of any kind -- the freeze guards letter-shopping
+       precisely because NO W5 quantity exists yet.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNCHANGED (NO
+       reading -> NO line -> NO day-slot consumption; byte-identical
+       to HEAD -- the ledger eval below parses the unchanged file).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. THE FREEZE (what the W5 measurement session is bound to;
+   protocol.txt is the contract):
+   (a) THE ROW ANSWER T7: the pre-registered directional contrast
+       2*C_obs = 2*L_s36 - 2*L_W5 > 0 of the tw arm's
+       (max,128,S=default) cell on BOTH frozen level axes (the
+       s48 exact-median MAD e_(38) and the s47 exclusive-hinge IQR
+       x_(57)-x_(19); block = 3 consecutive runs, 12 blocks, the
+       pooled 75; 2*L = 6th+7th order statistics of the 12 block
+       D values), vs a two-window run-repartition null over the 72
+       tw runs of s36 and W5 (20,000 trials, ONE
+       random.Random(20261029) in the frozen probe order MAD then
+       IQR); per-axis letters (a) REPLICATED-CONTINUED /
+       (b) NOT-REPLICATED / (c) NOT EVALUABLE; joint T7 =
+       INTERSECTION-UNION (both axes (a) = (a)
+       CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES). NO multiplicity
+       correction (IUT).
+   (b) THE NOVELTY (named): every letter of sessions 40-56 was
+       computed on windows ALL run in the ONE UTC day 2026-10-28
+       on ONE host; W5 is the campaign's FIRST window on another
+       UTC day, so T7 is the FIRST test of whether the s36-to-
+       post-shift movement survives the UTC-day boundary. (a)
+       retires "one-UTC-day state alone" from the s51-style
+       caveats; a DIRECTION-REVERSED (b) is reported as the
+       strongest single-window evidence AGAINST continuation.
+       STILL LOW POWER (n=2 windows, 12 blocks, ONE host; a single
+       (a) can reflect s36-specific or W5-specific state); (a)
+       names NO mechanism and NOT physical-vs-estimator-structure;
+       threshold-artifact-vs-representation STAYS UNRESOLVED.
+   (c) The W5 data additionally CARRIES (frozen as section 7 of
+       protocol.txt, each queue row keeps its OWN pre-registration
+       when taken): the quantile-pair level axes at W5; the
+       second-pair profile axis at W5; the s38 hi (sum,256,S=32)
+       wander replication on W5's hi runs (queue row 2); any
+       further named profile pair (queue row 3).
+
+4. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) gpu_regime_classify.py --self-test: TOTAL 2649 assertions
+       passed, 0 failed (classify-selftest.txt, BYTE-IDENTICAL to
+       the s56 pin -- cmp exit 0).
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- Ran 123 tests
+       containing 12162 assertions, 0 failures, 0 errors; both
+       captures BYTE-IDENTICAL to each other AND to the s56 pin
+       (cmp exit 0 x3); .err captures 0 bytes.
+   (c) FULL run-tests.cljk LIVE: exit 1, RED AT BASE kotoba.form
+       ("Could not find namespace: kotoba.form", ADR-0362, outside
+       this diff -- this diff touches NO .cljk namespace; stdout
+       0 bytes and stderr 879 bytes, both BYTE-IDENTICAL to the
+       s56 pins) -- NO green full suite claimed.
+   (d) settle-bar evaluator: --self-test TOTAL 38 assertions
+       passed, 0 failed (fixture pin); ledger eval twice
+       BYTE-IDENTICAL (fresh invocations, cmp exit 0) ->
+       VERDICT PENDING 1/4 unchanged (the 2026-10-28 slot is
+       s31's; next executable day slot 2026-10-29).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0.
+   (f) No derivation census this tick (named reason: there are NO
+       published statistics to re-derive -- a freeze-only tick
+       computes nothing; the W5 session's publication gets its
+       independent second parser as usual).
+
+5. UNMEASURED (named): the W5 window itself (the row's
+   measurement half -- day-slot-gated to 2026-10-29 UTC, opened
+   00:00:00Z); what moves the per-cell robust-scale level (no
+   mechanism named by any letter); whether any movement is
+   physical or estimator structure; whether four counted days
+   settle the bar (PENDING 1/4); the s31/s34/s36 excursion causes;
+   threshold-artifact-vs-representation; anything off the ANV
+   host. NAMED CANDIDATE ROWS for later sessions (unchanged
+   order): (first, now STARTED) the fifth-window measurement+T7
+   read at the 2026-10-29 UTC slot (NEW hardware); then the s38 hi
+   (sum,256,S=32) wander replication (NEW hardware -- W5's hi
+   runs); then any further named profile pair (other outer/inner
+   rank pairs stay named candidate rows); the quantile-pair level
+   and second-pair profile axes at W5 ride along as analysis rows.
+
+6. THE TICK'S FINDING IN ONE LINE: the fifth-window cross-UTC-day
+   replication is now PRE-REGISTERED (protocol.txt frozen at
+   2026-10-28T16:15:35Z, before any fifth-window run exists --
+   T7 = the IUT over the two frozen level axes of the s36-vs-W5
+   directional contrast, the campaign's first cross-UTC-day test),
+   and its measurement is honestly reported STARTED, NOT FINISHED:
+   the row needs NEW hardware in the 2026-10-29 UTC day slot,
+   which opens 7h45m after this tick; the bar gets no ledger line
+   and no day slot (PENDING 1/4, next slot 2026-10-29); nothing in
+   Rule 4 moves.
+
+7. GATES (real runs this tick): see section 4 -- classify self-test
+   2649/0 (byte-identical to the s56 pin); scoped GPU gate GREEN
+   123/12162/0/0 twice (byte-identical to the s56 pin and each
+   other); FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+   (ADR-0362, outside this diff -- touches NO .cljk namespace),
+   captures byte-identical to the s56 pins -- NO green full suite
+   claimed; settle-bar evaluator 38/0 + ledger eval twice
+   byte-identical -> VERDICT PENDING 1/4 unchanged;
+   find docs/evidence/gpu -name '*.sh' -> 0.
+
+8. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel; no workgroup default is
+   replaced.
+
+9. CHAIN: lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028-3 (chain PR #1643), commit + push
+   only; no new PR, no rebase, no force-push. BLOCKER-FIRST:
+   kotoba-lang/amu open PRs with a hermes/ head re-checked
+   immediately before this push.

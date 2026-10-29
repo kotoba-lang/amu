@@ -1,0 +1,228 @@
+JUN-59 session 51 derivation census (derivation-census-s51.txt)
+Independent second parser per protocol.txt section 0's frozen
+implementation paths: split-based parsing WITHOUT regex (no `re`
+import); observed block estimators via pure-Python sorted() order
+statistics over the explicitly pooled 75 (MAD: median sorted()[37],
+deviations in plain Python, MAD = sorted()[37] of the deviations;
+IQR: sorted()[56] - sorted()[18]) cross-checked in-loop against the
+np.partition kth paths; the resampling's estimators via the
+np.partition kth paths, NOT a sort; the 12-value level medians via
+sorted() explicit order statistics (observed) / np.partition
+kth=(5,6) (resampling); the two-window primary repartition and the
+four-window D3 repartition resampling and the RNG call order
+re-implemented (one random.Random(20261028) consumed in the frozen
+probe order primary MAD / primary IQR / D3 MAD-hi / D3 MAD-tw / D3
+IQR-hi / D3 IQR-tw, per trial one rng.shuffle of a fresh list).
+Publication sections 1/2/3/3b/4/5/6-D1/6-D2/6-D3/7 content
+re-derived -- every letter, resample count and p value must
+reproduce EXACTLY. Gate pins, bar pins and the ledger content
+checked. Deterministic: this generator run twice yields a
+byte-identical census file.
+
+row 1: in-loop sorted()-vs-np.partition block-D cross-check (win, arm, block, cell) pairs: want 1728 got 1728 -> ok
+row 2: in-loop cross-check pair count (4 windows x 2 arms x 12 blocks x 18 cells): want 1728 got 1728 -> ok
+row 3: sec1 s36 runs parsed: want 78 got 78 -> ok
+row 4: sec1 s36 VERIFY mismatch total: want 0 got 0 -> ok
+row 5: sec1 s36 counts ok: want True got True -> ok
+row 6: sec1 s36 knobs ok: want True got True -> ok
+row 7: sec1 s36 S=8 fail-closed: want True got True -> ok
+row 8: sec1 s36 cell map ok: want True got True -> ok
+row 9: sec1 s38 runs parsed: want 78 got 78 -> ok
+row 10: sec1 s38 VERIFY mismatch total: want 0 got 0 -> ok
+row 11: sec1 s38 counts ok: want True got True -> ok
+row 12: sec1 s38 knobs ok: want True got True -> ok
+row 13: sec1 s38 S=8 fail-closed: want True got True -> ok
+row 14: sec1 s38 cell map ok: want True got True -> ok
+row 15: sec1 s39 runs parsed: want 78 got 78 -> ok
+row 16: sec1 s39 VERIFY mismatch total: want 0 got 0 -> ok
+row 17: sec1 s39 counts ok: want True got True -> ok
+row 18: sec1 s39 knobs ok: want True got True -> ok
+row 19: sec1 s39 S=8 fail-closed: want True got True -> ok
+row 20: sec1 s39 cell map ok: want True got True -> ok
+row 21: sec1 s51 runs parsed: want 78 got 78 -> ok
+row 22: sec1 s51 VERIFY mismatch total: want 0 got 0 -> ok
+row 23: sec1 s51 counts ok: want True got True -> ok
+row 24: sec1 s51 knobs ok: want True got True -> ok
+row 25: sec1 s51 S=8 fail-closed: want True got True -> ok
+row 26: sec1 s51 cell map ok: want True got True -> ok
+row 27: sec2 c2 class: want 'FLOOR' got 'FLOOR' -> ok
+row 28: sec2 c8 pooled median (s51): want 32890 got 32890 -> ok
+row 29: sec2 c8 committed reference: want 32915 got 32915 -> ok
+row 30: sec2 c8 delta pct (2dp): want '0.08%' got '0.08%' -> ok
+row 31: sec2 C1 branch: want '(a)' got '(a)' -> ok
+row 32: sec3 s36 X (hi) block-min vector: want [991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982] got [991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982] -> ok
+row 33: sec3 s36 Y (tw) block-min vector: want [988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981] got [988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981] -> ok
+row 34: sec3 s36 reproduction EXACT: want True got True -> ok
+row 35: sec3 s38 X (hi) block-min vector: want [992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997] got [992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997] -> ok
+row 36: sec3 s38 Y (tw) block-min vector: want [988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992] got [988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992] -> ok
+row 37: sec3 s38 reproduction EXACT: want True got True -> ok
+row 38: sec3 s39 X (hi) block-min vector: want [986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981] got [986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981] -> ok
+row 39: sec3 s39 Y (tw) block-min vector: want [988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986] got [988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986] -> ok
+row 40: sec3 s39 reproduction EXACT: want True got True -> ok
+row 41: sec3 s51 X (hi) block-min vector: want [988, 986, 1000, 986, 989, 983, 995, 983, 994, 991, 984, 985] got [988, 986, 1000, 986, 989, 983, 995, 983, 994, 991, 984, 985] -> ok
+row 42: sec3 s51 Y (tw) block-min vector: want [980, 975, 991, 979, 986, 986, 992, 991, 988, 993, 995, 996] got [980, 975, 991, 979, 986, 986, 992, 991, 988, 993, 995, 996] -> ok
+row 43: sec3 all three prior windows reproduce EXACTLY: want True got True -> ok
+row 44: sec3b s36 anchor median: want 1142 got 1142 -> ok
+row 45: sec3b s36 anchor min..max: want [991, 1438] got [991, 1438] -> ok
+row 46: sec3b s36 reproduction EXACT: want True got True -> ok
+row 47: sec3b s38 anchor median: want 1132 got 1132 -> ok
+row 48: sec3b s38 anchor min..max: want [992, 1443] got [992, 1443] -> ok
+row 49: sec3b s38 reproduction EXACT: want True got True -> ok
+row 50: sec3b s39 anchor median: want 1146 got 1146 -> ok
+row 51: sec3b s39 anchor min..max: want [986, 1432] got [986, 1432] -> ok
+row 52: sec3b s39 reproduction EXACT: want True got True -> ok
+row 53: sec3b s51 anchor median (NEW): want 1137 got 1137 -> ok
+row 54: sec3b s51 anchor min..max (NEW): want [988, 1430] got [988, 1430] -> ok
+row 55: sec3b s51 anchor class (NEW): want 'INTERMEDIATE/MIXED' got 'INTERMEDIATE/MIXED' -> ok
+row 56: sec3b all three prior windows reproduce EXACTLY: want True got True -> ok
+row 57: sec4 primary MAD 2*L window 0 sorted()-vs-part: want 143 got 143 -> ok
+row 58: sec4 primary MAD 2*L window 1 sorted()-vs-part: want 118 got 118 -> ok
+row 59: sec4 primary IQR 2*L window 0 sorted()-vs-part: want 303 got 303 -> ok
+row 60: sec4 primary IQR 2*L window 1 sorted()-vs-part: want 240 got 240 -> ok
+row 61: sec4 MAD 2*L_s36: want 143 got 143 -> ok
+row 62: sec4 MAD 2*L_s51: want 118 got 118 -> ok
+row 63: sec4 MAD C_obs fmt: want '12.5' got '12.5' -> ok
+row 64: sec4 MAD resample count: want 99 got 99 -> ok
+row 65: sec4 MAD count denominator: want 20001 got 20001 -> ok
+row 66: sec4 MAD p fmt: want '0.005000' got '0.005000' -> ok
+row 67: sec4 MAD axis letter: want '(a) REPLICATED-CONTINUED' got '(a) REPLICATED-CONTINUED' -> ok
+row 68: sec4 IQR 2*L_s36: want 303 got 303 -> ok
+row 69: sec4 IQR 2*L_s51: want 240 got 240 -> ok
+row 70: sec4 IQR C_obs fmt: want '31.5' got '31.5' -> ok
+row 71: sec4 IQR resample count: want 9 got 9 -> ok
+row 72: sec4 IQR count denominator: want 20001 got 20001 -> ok
+row 73: sec4 IQR p fmt: want '0.000500' got '0.000500' -> ok
+row 74: sec4 IQR axis letter: want '(a) REPLICATED-CONTINUED' got '(a) REPLICATED-CONTINUED' -> ok
+row 75: D3 MAD-hi M_obs fmt: want '13.0' got '13.0' -> ok
+row 76: D3 MAD-hi max cell(s): want '(min,256,S=16)' got '(min,256,S=16)' -> ok
+row 77: D3 MAD-hi resample count: want 2844 got 2844 -> ok
+row 78: D3 MAD-hi count denominator: want 20001 got 20001 -> ok
+row 79: D3 MAD-hi p fmt: want '0.142243' got '0.142243' -> ok
+row 80: D3 MAD-tw M_obs fmt: want '16.0' got '16.0' -> ok
+row 81: D3 MAD-tw max cell(s): want '(max,128,S=default)' got '(max,128,S=default)' -> ok
+row 82: D3 MAD-tw resample count: want 367 got 367 -> ok
+row 83: D3 MAD-tw count denominator: want 20001 got 20001 -> ok
+row 84: D3 MAD-tw p fmt: want '0.018399' got '0.018399' -> ok
+row 85: D3 IQR-hi M_obs fmt: want '35.5' got '35.5' -> ok
+row 86: D3 IQR-hi max cell(s): want '(min,256,S=16)' got '(min,256,S=16)' -> ok
+row 87: D3 IQR-hi resample count: want 3657 got 3657 -> ok
+row 88: D3 IQR-hi count denominator: want 20001 got 20001 -> ok
+row 89: D3 IQR-hi p fmt: want '0.182891' got '0.182891' -> ok
+row 90: D3 IQR-tw M_obs fmt: want '34.0' got '34.0' -> ok
+row 91: D3 IQR-tw max cell(s): want '(max,128,S=default)' got '(max,128,S=default)' -> ok
+row 92: D3 IQR-tw resample count: want 12283 got 12283 -> ok
+row 93: D3 IQR-tw count denominator: want 20001 got 20001 -> ok
+row 94: D3 IQR-tw p fmt: want '0.614169' got '0.614169' -> ok
+row 95: D1 MAD 2*L four-window vector: want '143/111/113/118' got '143/111/113/118' -> ok
+row 96: D1 MAD prior reproduction EXACT: want True got True -> ok
+row 97: D1 MAD L_51 inside s38/s39 pair interval: want False got False -> ok
+row 98: D1 IQR 2*L four-window vector: want '303/241/235/240' got '303/241/235/240' -> ok
+row 99: D1 IQR prior reproduction EXACT: want True got True -> ok
+row 100: D1 IQR L_51 inside s38/s39 pair interval: want True got True -> ok
+row 101: D2 (sum,128,S=16) MAD 2*L s36/s51: want '59/58' got '59/58' -> ok
+row 102: D2 (sum,128,S=16) MAD C fmt: want '0.5' got '0.5' -> ok
+row 103: D2 (sum,128,S=16) IQR 2*L s36/s51: want '151/130' got '151/130' -> ok
+row 104: D2 (sum,128,S=16) IQR C fmt: want '10.5' got '10.5' -> ok
+row 105: D2 (sum,128,S=32) MAD 2*L s36/s51: want '121/114' got '121/114' -> ok
+row 106: D2 (sum,128,S=32) MAD C fmt: want '3.5' got '3.5' -> ok
+row 107: D2 (sum,128,S=32) IQR 2*L s36/s51: want '264/253' got '264/253' -> ok
+row 108: D2 (sum,128,S=32) IQR C fmt: want '5.5' got '5.5' -> ok
+row 109: D2 (sum,128,S=default) MAD 2*L s36/s51: want '113/117' got '113/117' -> ok
+row 110: D2 (sum,128,S=default) MAD C fmt: want '-2.0' got '-2.0' -> ok
+row 111: D2 (sum,128,S=default) IQR 2*L s36/s51: want '235/240' got '235/240' -> ok
+row 112: D2 (sum,128,S=default) IQR C fmt: want '-2.5' got '-2.5' -> ok
+row 113: D2 (max,128,S=16) MAD 2*L s36/s51: want '55/60' got '55/60' -> ok
+row 114: D2 (max,128,S=16) MAD C fmt: want '-2.5' got '-2.5' -> ok
+row 115: D2 (max,128,S=16) IQR 2*L s36/s51: want '146/147' got '146/147' -> ok
+row 116: D2 (max,128,S=16) IQR C fmt: want '-0.5' got '-0.5' -> ok
+row 117: D2 (max,128,S=32) MAD 2*L s36/s51: want '110/121' got '110/121' -> ok
+row 118: D2 (max,128,S=32) MAD C fmt: want '-5.5' got '-5.5' -> ok
+row 119: D2 (max,128,S=32) IQR 2*L s36/s51: want '232/255' got '232/255' -> ok
+row 120: D2 (max,128,S=32) IQR C fmt: want '-11.5' got '-11.5' -> ok
+row 121: D2 (max,128,S=default) MAD 2*L s36/s51: want '143/118' got '143/118' -> ok
+row 122: D2 (max,128,S=default) MAD C fmt: want '12.5' got '12.5' -> ok
+row 123: D2 (max,128,S=default) IQR 2*L s36/s51: want '303/240' got '303/240' -> ok
+row 124: D2 (max,128,S=default) IQR C fmt: want '31.5' got '31.5' -> ok
+row 125: D2 (min,128,S=16) MAD 2*L s36/s51: want '60/60' got '60/60' -> ok
+row 126: D2 (min,128,S=16) MAD C fmt: want '0.0' got '0.0' -> ok
+row 127: D2 (min,128,S=16) IQR 2*L s36/s51: want '145/158' got '145/158' -> ok
+row 128: D2 (min,128,S=16) IQR C fmt: want '-6.5' got '-6.5' -> ok
+row 129: D2 (min,128,S=32) MAD 2*L s36/s51: want '124/120' got '124/120' -> ok
+row 130: D2 (min,128,S=32) MAD C fmt: want '2.0' got '2.0' -> ok
+row 131: D2 (min,128,S=32) IQR 2*L s36/s51: want '272/259' got '272/259' -> ok
+row 132: D2 (min,128,S=32) IQR C fmt: want '6.5' got '6.5' -> ok
+row 133: D2 (min,128,S=default) MAD 2*L s36/s51: want '113/123' got '113/123' -> ok
+row 134: D2 (min,128,S=default) MAD C fmt: want '-5.0' got '-5.0' -> ok
+row 135: D2 (min,128,S=default) IQR 2*L s36/s51: want '248/248' got '248/248' -> ok
+row 136: D2 (min,128,S=default) IQR C fmt: want '0.0' got '0.0' -> ok
+row 137: D2 (sum,256,S=16) MAD 2*L s36/s51: want '74/74' got '74/74' -> ok
+row 138: D2 (sum,256,S=16) MAD C fmt: want '0.0' got '0.0' -> ok
+row 139: D2 (sum,256,S=16) IQR 2*L s36/s51: want '304/308' got '304/308' -> ok
+row 140: D2 (sum,256,S=16) IQR C fmt: want '-2.0' got '-2.0' -> ok
+row 141: D2 (sum,256,S=32) MAD 2*L s36/s51: want '135/128' got '135/128' -> ok
+row 142: D2 (sum,256,S=32) MAD C fmt: want '3.5' got '3.5' -> ok
+row 143: D2 (sum,256,S=32) IQR 2*L s36/s51: want '276/264' got '276/264' -> ok
+row 144: D2 (sum,256,S=32) IQR C fmt: want '6.0' got '6.0' -> ok
+row 145: D2 (sum,256,S=default) MAD 2*L s36/s51: want '124/130' got '124/130' -> ok
+row 146: D2 (sum,256,S=default) MAD C fmt: want '-3.0' got '-3.0' -> ok
+row 147: D2 (sum,256,S=default) IQR 2*L s36/s51: want '257/261' got '257/261' -> ok
+row 148: D2 (sum,256,S=default) IQR C fmt: want '-2.0' got '-2.0' -> ok
+row 149: D2 (max,256,S=16) MAD 2*L s36/s51: want '70/65' got '70/65' -> ok
+row 150: D2 (max,256,S=16) MAD C fmt: want '2.5' got '2.5' -> ok
+row 151: D2 (max,256,S=16) IQR 2*L s36/s51: want '307/261' got '307/261' -> ok
+row 152: D2 (max,256,S=16) IQR C fmt: want '23.0' got '23.0' -> ok
+row 153: D2 (max,256,S=32) MAD 2*L s36/s51: want '130/128' got '130/128' -> ok
+row 154: D2 (max,256,S=32) MAD C fmt: want '1.0' got '1.0' -> ok
+row 155: D2 (max,256,S=32) IQR 2*L s36/s51: want '265/264' got '265/264' -> ok
+row 156: D2 (max,256,S=32) IQR C fmt: want '0.5' got '0.5' -> ok
+row 157: D2 (max,256,S=default) MAD 2*L s36/s51: want '121/133' got '121/133' -> ok
+row 158: D2 (max,256,S=default) MAD C fmt: want '-6.0' got '-6.0' -> ok
+row 159: D2 (max,256,S=default) IQR 2*L s36/s51: want '263/267' got '263/267' -> ok
+row 160: D2 (max,256,S=default) IQR C fmt: want '-2.0' got '-2.0' -> ok
+row 161: D2 (min,256,S=16) MAD 2*L s36/s51: want '73/70' got '73/70' -> ok
+row 162: D2 (min,256,S=16) MAD C fmt: want '1.5' got '1.5' -> ok
+row 163: D2 (min,256,S=16) IQR 2*L s36/s51: want '263/297' got '263/297' -> ok
+row 164: D2 (min,256,S=16) IQR C fmt: want '-17.0' got '-17.0' -> ok
+row 165: D2 (min,256,S=32) MAD 2*L s36/s51: want '133/138' got '133/138' -> ok
+row 166: D2 (min,256,S=32) MAD C fmt: want '-2.5' got '-2.5' -> ok
+row 167: D2 (min,256,S=32) IQR 2*L s36/s51: want '274/282' got '274/282' -> ok
+row 168: D2 (min,256,S=32) IQR C fmt: want '-4.0' got '-4.0' -> ok
+row 169: D2 (min,256,S=default) MAD 2*L s36/s51: want '140/132' got '140/132' -> ok
+row 170: D2 (min,256,S=default) MAD C fmt: want '4.0' got '4.0' -> ok
+row 171: D2 (min,256,S=default) IQR 2*L s36/s51: want '298/277' got '298/277' -> ok
+row 172: D2 (min,256,S=default) IQR C fmt: want '10.5' got '10.5' -> ok
+row 173: sec4 joint T1 line: want '   T1 = (a) REPLICATED-ON-BOTH-LEVEL-AXES' got '   T1 = (a) REPLICATED-ON-BOTH-LEVEL-AXES' -> ok
+row 174: sec7 joint T1 line: want '   T1 = (a) REPLICATED-ON-BOTH-LEVEL-AXES' got '   T1 = (a) REPLICATED-ON-BOTH-LEVEL-AXES' -> ok
+row 175: sec7 MAD C_obs fmt: want '12.5' got '12.5' -> ok
+row 176: sec7 MAD 2*L arrow pair: want '143/118' got '143/118' -> ok
+row 177: sec7 MAD count: want '99/20001' got '99/20001' -> ok
+row 178: sec7 MAD p fmt: want '0.005000' got '0.005000' -> ok
+row 179: sec7 MAD letter: want '(a) REPLICATED-CONTINUED' got '(a) REPLICATED-CONTINUED' -> ok
+row 180: sec7 IQR C_obs fmt: want '31.5' got '31.5' -> ok
+row 181: sec7 IQR 2*L arrow pair: want '303/240' got '303/240' -> ok
+row 182: sec7 IQR count: want '9/20001' got '9/20001' -> ok
+row 183: sec7 IQR p fmt: want '0.000500' got '0.000500' -> ok
+row 184: sec7 IQR letter: want '(a) REPLICATED-CONTINUED' got '(a) REPLICATED-CONTINUED' -> ok
+row 185: sec7 vec reproduction: want True got True -> ok
+row 186: sec7 anchor reproduction: want True got True -> ok
+row 187: sec7 s51 C1 branch: want '(a)' got '(a)' -> ok
+row 188: gate pin classify capture == pin: want True got True -> ok
+row 189: gate pin classify TOTAL line: want 'TOTAL: 2649 assertions passed, 0 failed' got 'TOTAL: 2649 assertions passed, 0 failed' -> ok
+row 190: gate pin scoped run1 capture == pin: want True got True -> ok
+row 191: gate pin scoped run2 capture == pin: want True got True -> ok
+row 192: gate pin scoped run1 == run2: want True got True -> ok
+row 193: gate pin scoped summary tests: want 'Ran 123 tests containing 12162 assertions.' got 'Ran 123 tests containing 12162 assertions.' -> ok
+row 194: gate pin scoped summary failures: want '0 failures, 0 errors.' got '0 failures, 0 errors.' -> ok
+row 195: gate pin scoped run1 .err bytes: want 0 got 0 -> ok
+row 196: gate pin scoped run2 .err bytes: want 0 got 0 -> ok
+row 197: gate pin full-suite stderr == pin: want True got True -> ok
+row 198: gate full-suite red-at-base kotoba.form named: want True got True -> ok
+row 199: bar eval run1 == run2 byte-identical: want True got True -> ok
+row 200: bar eval self-test pin 38/0: want True got True -> ok
+row 201: bar eval verdict: want 'VERDICT: PENDING 1/4' got 'VERDICT: PENDING 1/4' -> ok
+row 202: bar s51 ledger row classified descriptive: want True got True -> ok
+row 203: bar s51 counted rows for day 2026-10-28 == s31 only: want ['s31'] got ['s31'] -> ok
+row 204: ledger entry lines (s31..s51, one appended this tick): want ['day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985 flag=none', 'day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982 flag=none', 'day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987 flag=none', 'day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993 flag=none', 'day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991 flag=none', 'day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992 flag=none', 'day=2026-10-28 session=s39 class=INTERMEDIATE/MIXED median=1146 min=986 flag=none', 'day=2026-10-28 session=s51 class=INTERMEDIATE/MIXED median=1137 min=988 flag=none'] got ['day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985 flag=none', 'day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED median=1128 min=982 flag=none', 'day=2026-10-28 session=s33 class=INTERMEDIATE/MIXED median=1124 min=987 flag=none', 'day=2026-10-28 session=s34 class=INTERMEDIATE/MIXED median=1145 min=993 flag=none', 'day=2026-10-28 session=s36 class=INTERMEDIATE/MIXED median=1142 min=991 flag=none', 'day=2026-10-28 session=s38 class=INTERMEDIATE/MIXED median=1132 min=992 flag=none', 'day=2026-10-28 session=s39 class=INTERMEDIATE/MIXED median=1146 min=986 flag=none', 'day=2026-10-28 session=s51 class=INTERMEDIATE/MIXED median=1137 min=988 flag=none'] -> ok
+row 205: ledger s51 line agrees with section-3b s51 anchor row: want 'day=2026-10-28 session=s51 class=INTERMEDIATE/MIXED median=1137 min=988 flag=none' got 'day=2026-10-28 session=s51 class=INTERMEDIATE/MIXED median=1137 min=988 flag=none' -> ok
+
+TOTAL: 205 rows, 0 mismatched

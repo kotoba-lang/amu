@@ -12,6 +12,7 @@ on:
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
+      - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-macos-arena-scope-refusal.py'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
@@ -64,6 +65,12 @@ jobs:
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-kernel-v3"
+      - name: Check the boot packager's layout admission rule and its controls
+        run: |
+          python3 scripts/seed/check-aiueos-layout-rule-macos-native.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
+            --output "$RUNNER_TEMP/mac-layout-rule"
       - name: Verify the selected 18-module core adoption on Mac
         run: |
           python3 scripts/seed/check-macos-core-adoption.py \
@@ -86,6 +93,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-exports.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-exports"
+      - name: AIUEOS kernel object route u8 / u16 / u64 window accesses (JUN-556 B)
+        run: |
+          python3 scripts/seed/check-aiueos-object-windows.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-windows"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \

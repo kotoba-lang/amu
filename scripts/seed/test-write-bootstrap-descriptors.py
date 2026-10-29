@@ -16,6 +16,7 @@ native.py, check-macos-cross-linux-candidates.py) and runs, on copies:
 """
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -88,7 +89,10 @@ def main(argv):
             shutil.copy(ROOT / rel, repo / rel)
         product = repo / "native-product.json"
         original = product.read_text()
-        product.write_text(original.replace("b8652a6d9b55", "000000000000", 1))
+        mutated = json.loads(original)
+        digest = mutated["image"]["sha256"]
+        mutated["image"]["sha256"] = ("0" if digest[0] != "0" else "1") + digest[1:]
+        product.write_text(json.dumps(mutated, indent=2, ensure_ascii=False) + "\n")
         r = run(args.mac_build, args.cross_build, repo)
         expect("a wrong descriptor digest is reported", r.returncode == 1 and "DESCRIPTORS_DIFFER" in r.stdout,
                r.stdout + r.stderr)
@@ -108,7 +112,9 @@ def main(argv):
         cross = Path(tmp) / "cross"
         shutil.copytree(args.cross_build, cross)
         receipt = cross / "cross.json"
-        receipt.write_text(receipt.read_text().replace("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "SOMETHING_ELSE"))
+        record = json.loads(receipt.read_text())
+        record["status"] = "SOMETHING_ELSE"
+        receipt.write_text(json.dumps(record, indent=2) + "\n")
         r = run(args.mac_build, cross)
         expect("an unknown cross status is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
 
