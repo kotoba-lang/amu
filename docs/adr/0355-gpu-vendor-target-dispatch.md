@@ -5118,3 +5118,61 @@ docs/evidence/gpu/anv-b3w6custodycheckrego-20261029/ (custody-check-
 prego.py + selftest/compat/check run1/2 captures + check-vs-compat-
 proof.txt + record.txt + the s98 gate captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 99: the W6 adoption-chain
+## reconciliation pre-build)
+The W6 measurement row's CROSS-TOOL RECONCILIATION preparation half
+(the s90/s95/s96/s97/s98 pre-build precedent applied to the surface
+between the adopted tools -- the residual the s98 note named and left
+session-owned: "the W6 session cross-checks this checker's verify-
+mismatch-total row against the ledger emitter's own criterion-(2)
+derivation (two parsers over the same run logs)"; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line; the measurement half REMAINS day-slot-
+gated -- first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T15:4xZ-16:2xZ, ~7.6h before the slot) -- STARTED, NOT
+FINISHED.  reconcile-prego.py runs the five adopted W6 tools (reading,
+census twin, run-window driver, custody checker --check, ledger
+emitter --compat) over the three common committed 78-run windows
+(s36/s51/W5=s73) and cross-checks their overlapping derived
+quantities: reading-vs-ledger median/min/class (the two published
+artifacts' shared fields), reading-vs-census median/min/max (the s90
+independence pair, cross-compared), the s98-named verify-mismatch
+residual at the numeric level, the 78-run census four ways, the
+decide_ledger_inputs flag join end-to-end, the day derivation
+(host-date vs emitted), and the C1 boolean; plus --line
+<publication> <ledger> <tag> for the W6-fresh pair and a fixture
+--self-test.  VERIFIED (real tool output): --compat run twice
+BYTE-IDENTICAL (3,591 bytes) -- STAGE 7/0, CROSS 31 rows 0
+mismatched, VERDICT CONSISTENT (median/min 1142/991, 1137/988,
+1131/998; census == reading at all three windows); --line on the
+committed publication-s73.txt vs the s73 ledger line twice
+byte-identical (469 bytes) CONSISTENT, and a MOCK negative fixture
+(perturbed median) rc 1 MISMATCH detected; --self-test 17/0 twice
+byte-identical (708 bytes).  One engine defect found by first
+execution and named: the row comparator conflated equality with join
+semantics (15 false MISMATCH on consistent data) -- fixed with
+explicit per-row predicates at source before capture.  Standing
+gates == the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins -> VERDICT:
+PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh' -> 0;
+settle-bar-ledger.txt == HEAD.  The bar: preparation session -> NO
+reading -> NO ledger line, NO day-slot consumption.  Rule 4 binds:
+NOTHING MOVES; NO vendor optimization exists for Intel.  ADOPTION:
+the W6 session adopts this file as reconcile-s<NN>.py, re-runs
+--compat/--self-test in its own record and reconciles its fresh
+publication against its ledger line with --line; W7 the same.
+Carry-forward to session 100: the W6 measurement half (the s80
+freeze; the W6 session adopts s90's reading pair, s91's custody
+baseline, s95's run-window driver, s98's checker, s97's emitter and
+this reconciler) -- the gate for T18's analysis half (s92 + s84),
+T20's analysis half (s93 + s88) and W7's measurement half (s85) --,
+then any further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6reconcilerego-20261029/ (reconcile-prego.py
++ compat/selftest/line/negative captures + record.txt + the s99 gate
+captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
