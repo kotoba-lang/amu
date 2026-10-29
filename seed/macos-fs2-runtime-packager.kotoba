@@ -7,9 +7,11 @@
 (def RAW-START 8192)
 (def RUNTIME-START 2048)
 (def SLICE-SETUP-START 1264)
-(def REFUSE-START 1304)
-(def REFUSE-MSG-START 1352)
-(def REFUSE-MSG "seed: arena-scope unsupported (Mac runtime, JUN-546)\n")
+(def SCOPE-START 1768)
+(def SCOPE-LEAVE-START 1848)
+(def REFUSE-START 1312)
+(def REFUSE-MSG-START 1360)
+(def REFUSE-MSG "seed: arena-scope failed (Mac runtime)\n")
 (def POOL-SETUP-START 2048)
 (def CONCAT-START 2184)
 (def POOL-EQUAL-START 2556)
@@ -156,18 +158,45 @@
 ;; The wrapper's setup stub preserves LR, runs the existing pure helper
 ;; installer, then installs the bytes-slice callback in runtime slot 368.
 ;; JUN-546: the generated code calls context ABI slots 224 and 232, the scalar
-;; arena-scope enter and leave routines, which this diagnostic runtime does not
-;; implement. Left at zero they were a call to address 0 (SIGSEGV, exit 139);
-;; both now point at a refusal that writes REFUSE-MSG to stderr and exits 70,
-;; the status the Linux runtimes use for a scope failure.
+;; arena-scope enter and leave routines (docs/native-source-lock-and-scalar-scopes.md).
+;; Slot 224 pushes the runtime's four allocator counters on a bounded LIFO and
+;; slot 232 pops them, mirroring seed/76-x86_64-static-rt.kotoba: depth 256, a
+;; context tag check, and every saved counter validated against the live one
+;; before any restore. Any failure goes to the refusal below, which writes
+;; REFUSE-MSG to stderr and exits 70, the status the Linux runtimes use for a
+;; scope failure. Linux saves pairs, pool, vector handles and vector items; here
+;; those are the pair count behind ctx+0x120, the pool use at ctx+0x198, the
+;; vector handle count at ctx+0x3e88 and the vector item use at ctx+0x3e98. The
+;; LIFO is ctx+0x1000 (depth) and ctx+0x1010 + 32*depth (four words per entry),
+;; DATA space no other routine of this image touches. Leave also zeroes the
+;; vector items it releases, because the Mac item arena is a bump allocator that
+;; assumes everything above its use is zero (the Linux runtime zeroes up to a
+;; high-water mark at allocation instead). The routines clobber only x8-x15.
 (defn- slice-setup-words [] :vector-i64
   [0xa9bf7bfd
    (bl-direct (+ SLICE-SETUP-START 4) PURE-RUNTIME-START)
    (adr8 (+ SLICE-SETUP-START 8) BYTES-SLICE-START)
    0xf900ba68
-   (adr8 (+ SLICE-SETUP-START 16) REFUSE-START)
-   0xf9007268 0xf9007668
+   (adr8 (+ SLICE-SETUP-START 16) SCOPE-START)
+   0xf9007268
+   (adr8 (+ SLICE-SETUP-START 24) SCOPE-LEAVE-START)
+   0xf9007668
    0xa8c17bfd 0xd65f03c0])
+
+;; Enter (20 words) then leave (41 words), assembled once with the system
+;; assembler against a failure target at REFUSE-START; no assembler is in the build.
+;; The conditional branches to the refusal are position bound: SCOPE-START minus
+;; REFUSE-START is 456 bytes, and moving either constant requires re-deriving them.
+(defn- scope-words [] :vector-i64
+  [0xf9400008 0xf1002d1f 0x54fff181 0x9140040f 0xf94001e9 0xf104013f 0x54fff102 0x910041ea
+   0x8b09154a 0xf940900b 0xf940016b 0xf940cc0c 0xf95f440d 0xf95f4c0e 0xa900314b 0xa901394d
+   0x91000529 0xf90001e9 0xd2800000 0xd65f03c0
+   0xf9400008 0xf1002d1f 0x54ffef01 0x9140040f 0xf94001e9 0xb4ffeea9 0xf104013f 0x54ffee68
+   0xd1000529 0x910041ea 0x8b09154a 0xa940314b 0xa941394d 0xf9409008 0xf9400108 0xeb08017f
+   0x54ffed48 0xf940cc08 0xeb08019f 0x54ffece8 0xf95f4408 0xeb0801bf 0x54ffec88 0xf95f4c08
+   0xeb0801df 0x54ffec28 0xf95f480a 0x8b0e0d4a 0xcb0e0108 0xb4000088 0xf800855f 0xd1000508
+   0x17fffffd 0xf9409008 0xf900010b 0xf900cc0c 0xf91f440d 0xf91f4c0e 0xf90001e9 0xd2800000
+   0xd65f03c0])
 
 ;; write(2, REFUSE-MSG, length) then exit(70); the words were derived once with
 ;; the system assembler and checked against it, and no assembler is in the build.
@@ -778,6 +807,7 @@
       (words-at (+ at 1152) (wrapper-suffix raw-bytes mode entry-offset general))
       (words-at (+ at SLICE-SETUP-START) (slice-setup-words))
       (words-at (+ at REFUSE-START) (refuse-words))
+      (words-at (+ at SCOPE-START) (scope-words))
       (text-at (+ at REFUSE-MSG-START) REFUSE-MSG)
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
