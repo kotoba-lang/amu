@@ -14,6 +14,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 FILES = ("scripts/seed/write-bootstrap-descriptors.py",
          "scripts/seed/test-write-bootstrap-descriptors.py",
+         "examples/foundation-starter/candidate.json",
          "seed/bootstrap/aarch64-macos/root.json",
          "seed/bootstrap/aarch64-linux-static-root.json", "native-product.json",
          "seed/bootstrap/aarch64-macos/amu-full-root.macho",

@@ -1,40 +1,38 @@
 # Current Amu selfhost native entry
 
-The complete47 public `bin/amu` is a static Linux x86_64 ELF. Its size,
+The public `bin/amu` is a static Linux x86_64 ELF. Its size,
 SHA256, complete source-unity identity and ARM root are recorded in
 `native-product.json`. `bin/kotoba` and `bin/kotoba-compiler` are relative aliases.
 The separate native ARM root is pinned in
 `seed/bootstrap/aarch64-linux-static-root.json`.
 
-All18 normal adopted core modules and their adoption image are unchanged.
+The complete source manifest has 48 modules, including all18 normal adopted
+core modules. The core adoption image is unchanged.
 The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
 removed to reduce the graph. No new comparative performance score is claimed.
 
 ## Native qualification
 
-`docs/evidence/shared-browser-20261025/` records the transition from the
-qualified complete46 root to complete47. The prior candidate passed actual ARM
-Linux main-tier F1=F2,
-unchanged core G1=G2=G3, packed-core reproduction, Linux closure fixed point,
-24 runtime cases, hardening, capability and named refusal checks. The x86
-image is emitted by this same complete compiler. ARM execution and x86 code
-generation are separate from actual native x86 execution.
+Use the [current source-bound qualification record](qualification/starter-native-20261029.json)
+with `native-product.json`. The record binds native CI receipts and their
+artifact digests to exact source and compiler bytes. It distinguishes
+compiler reproduction, controller execution, workflow completion and
+independent user/host qualification. A new image needs its own record;
+an older successful run does not qualify it.
 
 Acceptance requires terminal exact-head native ARM/x86 CI, complete x86
 F1=F2=F3, native controller/public checks, exact aliases/source locks, actual
 shared-component execution, then merge/main/pin readback. Pending CI does not
-qualify a new public image. The unchanged controller/gate identities are:
-
-* controller `6779ab9eab59247d608e9a636a2baf344a857fbcbd87a8057099bbde0a529a2d`
-* Amu selfhost `20d94072249acb9ab595986c9540cdc88f94bddc5047ba365f8f659ef85caeca`
-* Kotoba native `e015c387cc87b14022781c94474104ffe0ff113a2623ae5882a72ce6c3212b80`
+qualify a new public image. Current controller and role identities are in
+`native-product.json` and `seed/cdci/policy.json`; historical digests are not
+current pins. `sourceRevision` identifies a Git tree whose complete compiler
+sources were reproduced. It does not identify the historical first producer
+or establish independent clean-host qualification.
 
 The controller's two roles and fixed24 corpus remain. Python and GitHub Actions
 stage/hash/transport and observe native processes; they do not substitute for
-the controller or the checked-in Kotoba verdicts. The keyword-table correction separately has
-ARM F1=F2 and unchanged core reproduction; its complete main-tier follow-up and
-actual native x86/component/controller/public CI must pass before merge. Historical hosted/C-loader
+the controller or the checked-in Kotoba verdicts. Historical hosted/C-loader
 receipts retain their original source binding and are not current qualification.
 
 ## Locked typed x86 projects

@@ -232,6 +232,10 @@ See [the five-minute technical walkthrough](DEMO.md). To read the native
 product scope from this same reviewed commit, run
 `git show HEAD:docs/native-public-entry.md` (which may fetch that file).
 
+For an independent trial with an AI agent, use the
+[copyable acquisition, execution, issue and PR reporting guide](AGENT-TRIAL.md).
+It keeps the original snapshot's observations separate from proposed fixes.
+
 Maintainers can pass `--experimental-arm64` to the observer on Linux ARM64 to
 exercise the pinned ARM bootstrap root. This is a diagnostic observation, not
 a supported public compiler profile or third-party qualification. Its receipt

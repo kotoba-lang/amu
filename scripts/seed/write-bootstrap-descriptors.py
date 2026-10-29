@@ -6,9 +6,9 @@ by hand. The writer re-hashes every artifact it reads, checks the receipts
 against each other, and refuses on any mismatch. Python stages bytes and
 compares them; it does not build or run a compiler.
 
-Descriptors it can update (only their derived fields; every other field,
-including status, qualification flags it cannot prove, and narrative text, is
-kept as is):
+Descriptors it can update (derived identities only, with explicit invalidation
+of source bindings and qualification when compiler/source bytes change;
+unrelated fields are preserved):
 
 * seed/bootstrap/aarch64-macos/root.json
     compiler, packager, fullSource, packagerSource, expectedFixedPoint and the
@@ -17,8 +17,11 @@ kept as is):
     image, sourceUnity, producedBy.macFixedPointContainer.
 * native-product.json
     image (the x86_64 full compiler), rootImage, sourceUnity, sourceModuleCount.
-    Not derived here, because the Mac receipts do not prove them: the native x86
-    compilerGenerations, sourceRevision (a git commit), qualification text.
+    Native qualification is never promoted here. Changed compiler/source bytes
+    invalidate prior generations, sourceRevision and native qualification flags.
+* examples/foundation-starter/candidate.json, when present
+    compilerImage and compilerSourceUnity. A changed candidate loses its
+    upstream revision and public-release assertion; old evidence stays historical.
 
 --install (with --write) also copies the verified artifacts to
 the paths the descriptors name: the signed Mac compiler and packager, the
@@ -199,11 +202,33 @@ def updated(old: dict, new: dict, which: str, phase: str = "final"):
         doc["image"].update(new["image"])
         doc["sourceUnity"].update(new["sourceUnity"])
         doc["producedBy"]["macFixedPointContainer"].update(new["macContainer"])
-    else:
+    elif which == "product":
+        changed = (doc["image"] != new["image"] or
+                   doc["sourceUnity"] != new["sourceUnity"])
         doc["image"].update(new["image"])
         doc["rootImage"].update(new["rootImage"])
         doc["sourceUnity"].update(new["sourceUnity"])
         doc["sourceModuleCount"] = new["sourceModuleCount"]
+        if changed:
+            doc["sourceRevision"] = None
+            doc["compilerGenerations"] = []
+            for field in ("nativePinnedCheckAndCompile", "controllerQualified",
+                          "currentCompilerLinkVerified", "broaderPublicCompatibilityQualified"):
+                doc[field] = False
+            doc["qualificationState"] = "Changed compiler/source candidate: source revision binding and current native qualification pending."
+    elif which == "starter":
+        changed = (doc["compilerImage"] != new["image"] or
+                   doc["compilerSourceUnity"] != new["sourceUnity"])
+        doc["compilerImage"] = dict(new["image"])
+        doc["compilerSourceUnity"] = dict(new["sourceUnity"])
+        if changed:
+            doc["upstreamRevision"] = None
+            doc["publicReleaseReady"] = False
+            evidence = doc.get("compilerEvidence")
+            if evidence is not None:
+                evidence["sameCompilerBytesAndSourceUnity"] = False
+                evidence["descriptorQualificationFlagsStillFalse"] = True
+                evidence["scope"] = "Historical compiler; new candidate requires source binding and native qualification"
     return doc
 
 
@@ -240,6 +265,10 @@ def main(argv):
         else:
             need(args.cross_build is not None, "--cross-build is required in the final phase")
             new = derive(args.mac_build, args.cross_build)
+            starter = args.repo / "examples/foundation-starter/candidate.json"
+            if starter.is_file():
+                files["starter"] = starter
+                new["starter"] = new["product"]
     except Refused as refusal:
         print(f"REFUSED: {refusal}", file=sys.stderr)
         return 2

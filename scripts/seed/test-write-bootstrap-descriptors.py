@@ -92,6 +92,10 @@ def main(argv):
         mutated = json.loads(original)
         digest = mutated["image"]["sha256"]
         mutated["image"]["sha256"] = ("0" if digest[0] != "0" else "1") + digest[1:]
+        mutated["compilerGenerations"] = [dict(mutated["image"])] * 3
+        for field in ("nativePinnedCheckAndCompile", "controllerQualified",
+                      "currentCompilerLinkVerified", "broaderPublicCompatibilityQualified"):
+            mutated[field] = True
         product.write_text(json.dumps(mutated, indent=2, ensure_ascii=False) + "\n")
         expect("descriptor negative control actually changes image digest",
                mutated["image"]["sha256"] != digest)
@@ -99,7 +103,17 @@ def main(argv):
         expect("a wrong descriptor digest is reported", r.returncode == 1 and "DESCRIPTORS_DIFFER" in r.stdout,
                r.stdout + r.stderr)
         r = run(args.mac_build, args.cross_build, repo, "--write")
-        expect("--write repairs it", r.returncode == 0 and product.read_text() == original, r.stdout + r.stderr)
+        repaired = json.loads(product.read_text())
+        expected = json.loads(original)
+        expect("--write repairs pins and invalidates prior compiler qualification",
+               r.returncode == 0 and repaired["image"] == expected["image"]
+               and repaired["sourceUnity"] == expected["sourceUnity"]
+               and repaired["sourceRevision"] is None
+               and repaired["compilerGenerations"] == []
+               and all(repaired[k] is False for k in
+                       ("nativePinnedCheckAndCompile", "controllerQualified",
+                        "currentCompilerLinkVerified", "broaderPublicCompatibilityQualified")),
+               r.stdout + r.stderr)
         r = run(args.mac_build, args.cross_build, repo)
         expect("a second check is current", r.returncode == 0 and "DESCRIPTORS_CURRENT" in r.stdout, r.stdout)
 
@@ -133,6 +147,32 @@ def main(argv):
         expect("--install restores a corrupted binary",
                r.returncode == 0 and "installed bin/amu" in r.stdout
                and (repo / "bin/amu").read_bytes() == (ROOT / "bin/amu").read_bytes(), r.stdout + r.stderr)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp)
+        for rel in FILES:
+            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(ROOT / rel, repo / rel)
+        candidate = repo / "examples/foundation-starter/candidate.json"
+        candidate.parent.mkdir(parents=True)
+        expected = json.loads((ROOT / "examples/foundation-starter/candidate.json").read_text())
+        stale = json.loads(json.dumps(expected))
+        stale["compilerImage"]["sha256"] = "0" * 64
+        stale["compilerSourceUnity"]["sha256"] = "0" * 64
+        stale["publicReleaseReady"] = True
+        candidate.write_text(json.dumps(stale, indent=2) + "\n")
+        r = run(args.mac_build, args.cross_build, repo, "--write")
+        repaired = json.loads(candidate.read_text())
+        product = json.loads((repo / "native-product.json").read_text())
+        expect("changed compiler rebinds starter pins without carrying release authority",
+               r.returncode == 0 and repaired["compilerImage"] == product["image"]
+               and repaired["compilerSourceUnity"] == product["sourceUnity"]
+               and repaired["upstreamRevision"] is None
+               and repaired["publicReleaseReady"] is False
+               and repaired["fixtures"] == expected["fixtures"], r.stdout + r.stderr)
+        r = run(args.mac_build, args.cross_build, repo)
+        expect("rebound starter is idempotent", r.returncode == 0 and "DESCRIPTORS_CURRENT" in r.stdout,
+               r.stdout + r.stderr)
 
     print("PASS_BOOTSTRAP_DESCRIPTOR_WRITER" if not failures else f"FAILED {failures}")
     return 0 if not failures else 1
