@@ -47,8 +47,8 @@ def main(output, profile, experimental_arm64=False):
     descriptor_pin = pin(descriptor_path)
     descriptor = json.loads(descriptor_path.read_text())
     require(descriptor["host"] == "x86_64-linux", "unexpected public host")
-    require(descriptor["entry"] == "bin/amu", "unexpected public entry")
-    compiler = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if experimental_arm64 else "bin/amu")
+    require(descriptor["entry"] == "bin/amu-linux-x86_64", "unexpected public entry")
+    compiler = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if experimental_arm64 else "bin/amu-linux-x86_64")
     compiler_pin = pin(compiler)
     arm_descriptor_path = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
     arm_descriptor_pin = pin(arm_descriptor_path) if experimental_arm64 else None

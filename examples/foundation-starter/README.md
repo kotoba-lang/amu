@@ -1,3 +1,7 @@
+> **Apple Silicon Mac:** use [MACOS-ARM64.md](MACOS-ARM64.md).
+> Current `bin/amu` is a native Mac executable. This page acquires an older,
+> immutable Linux-only snapshot; current Linux CI uses `bin/amu-linux-x86_64`.
+
 # Kotoba / Amu first run
 
 Read Kotoba, check and compile it with Amu, change the result, and inspect

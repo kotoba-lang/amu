@@ -25,7 +25,8 @@ unrelated fields are preserved):
 
 --install (with --write) also copies the verified artifacts to
 the paths the descriptors name: the signed Mac compiler and packager, the
-aarch64 root ELF and bin/amu (bin/kotoba and bin/kotoba-compiler are links).
+aarch64 root ELF and bin/amu-linux-x86_64. The Mac bin/amu symlink follows
+the installed Mac root; Linux aliases follow bin/amu-linux-x86_64.
 
 Two phases, because the cross gate and the descriptor-bound Mac gate refuse a
 source the descriptor does not carry yet:
@@ -159,7 +160,7 @@ def derive(mac_dir: Path, cross_dir: Path):
             (mac_dir / "P1-signed.macho", "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
              {"bytes": pk_size, "sha256": pk_digest}),
             (cross_dir / "F-aarch64.elf", "seed/bootstrap/aarch64-linux-static-root.elf", arm),
-            (cross_dir / "F-x86_64.elf", "bin/amu", x86),
+            (cross_dir / "F-x86_64.elf", "bin/amu-linux-x86_64", x86),
         ],
         "root": {
             "compiler": compiler,

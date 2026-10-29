@@ -19,7 +19,7 @@ FILES = ("scripts/seed/write-bootstrap-descriptors.py",
          "seed/bootstrap/aarch64-linux-static-root.json", "native-product.json",
          "seed/bootstrap/aarch64-macos/amu-full-root.macho",
          "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
-         "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu")
+         "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu-linux-x86_64")
 
 
 def main():

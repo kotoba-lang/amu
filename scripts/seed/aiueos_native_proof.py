@@ -31,7 +31,7 @@ def load_native_producers(build=None, complete=None):
         gens = receipt["generations"]
         assert len(gens) == 3 and gens[0] == gens[1] == gens[2]
         producers = [(complete / f"F{i}.elf", {k: gens[i - 1][k] for k in ("bytes", "sha256")}) for i in (2, 3)]
-        baseline = ROOT / "bin/amu"
+        baseline = ROOT / "bin/amu-linux-x86_64"
         expected = json.loads((ROOT / "native-product.json").read_text())["image"]
     else:
         assert platform.machine() in ("aarch64", "arm64"), "actual native Linux ARM64 required"

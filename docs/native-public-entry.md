@@ -1,10 +1,18 @@
-# Current Amu selfhost native entry
+# Current Amu selfhost native entries
 
-The public `bin/amu` is a static Linux x86_64 ELF. Its size,
-SHA256, complete source-unity identity and ARM root are recorded in
-`native-product.json`. `bin/kotoba` and `bin/kotoba-compiler` are relative aliases.
-The separate native ARM root is pinned in
-`seed/bootstrap/aarch64-linux-static-root.json`.
+`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve directly to the
+selfhost-built macOS ARM64 Mach-O in
+`seed/bootstrap/aarch64-macos/amu-full-root.macho`. Its source and image
+pins are in `seed/bootstrap/aarch64-macos/root.json`. There is no launcher
+or platform fallback. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md)
+for explicit FD3 scope, check, compile, native packaging and execution.
+The bounded first run does not qualify the complete Mac runtime or release.
+
+The unchanged static Linux x86_64 ELF is `bin/amu-linux-x86_64`, with
+`bin/kotoba-linux-x86_64` and `bin/kotoba-compiler-linux-x86_64` aliases.
+`native-product.json` remains the Linux descriptor and names those entries;
+its Linux qualification flags do not qualify the Mac entry. The separate
+Linux ARM root is pinned by `seed/bootstrap/aarch64-linux-static-root.json`.
 
 The complete source manifest has 48 modules, including all18 normal adopted
 core modules. The core adoption image is unchanged.

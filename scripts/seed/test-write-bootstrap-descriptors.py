@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "scripts/seed/write-bootstrap-descriptors.py"
 BINARIES = ("seed/bootstrap/aarch64-macos/amu-full-root.macho",
             "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
-            "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu")
+            "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu-linux-x86_64")
 FILES = ("seed/bootstrap/aarch64-macos/root.json",
          "seed/bootstrap/aarch64-linux-static-root.json", "native-product.json")
 
@@ -142,11 +142,11 @@ def main(argv):
         r = run(args.mac_build, args.cross_build, repo, "--write", "--install")
         expect("--install leaves a current repository alone",
                r.returncode == 0 and "installed" not in r.stdout and "DESCRIPTORS_CURRENT" in r.stdout, r.stdout + r.stderr)
-        flip(repo / "bin/amu", 1000)
+        flip(repo / "bin/amu-linux-x86_64", 1000)
         r = run(args.mac_build, args.cross_build, repo, "--write", "--install")
         expect("--install restores a corrupted binary",
-               r.returncode == 0 and "installed bin/amu" in r.stdout
-               and (repo / "bin/amu").read_bytes() == (ROOT / "bin/amu").read_bytes(), r.stdout + r.stderr)
+               r.returncode == 0 and "installed bin/amu-linux-x86_64" in r.stdout
+               and (repo / "bin/amu-linux-x86_64").read_bytes() == (ROOT / "bin/amu-linux-x86_64").read_bytes(), r.stdout + r.stderr)
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)

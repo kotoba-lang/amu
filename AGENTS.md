@@ -37,11 +37,14 @@
 
 ## Q9 compiler routes must use Kotoba / Amu selfhost only
 
-- Q9 callers use the Amu selfhost-built native `bin/amu` (the `bin/kotoba`
-  and `bin/kotoba-compiler` aliases resolve to that same image) for the
-  qualified `check` and explicit-target `compile` lane. The public host is
-  native Linux x86_64; other public hosts remain unqualified. See
-  `native-product.json` and `docs/native-public-entry.md`.
+- Owner decision 2026-10-29 (KOTOBA-170): `bin/amu`, `bin/kotoba` and
+  `bin/kotoba-compiler` resolve to the selfhost-built native macOS ARM64
+  Mach-O pinned by `seed/bootstrap/aarch64-macos/root.json`. Its filesystem
+  scope is an explicitly inherited directory FD3; use basename output/lock
+  names. Complete Mac runtime and independent-user release remain unqualified.
+  Linux x86_64 callers and CDCI use `bin/amu-linux-x86_64` and its two
+  `*-linux-x86_64` aliases, pinned by `native-product.json`. Never select
+  a hosted fallback. See `docs/native-public-entry.md`.
 - The public default remains an engine-neutral Kototama program contract.
   Its native implementation is still missing: omitted compile targets
   refuse `E2`, without an implicit AArch64 or legacy-host substitution.

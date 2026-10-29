@@ -19,6 +19,11 @@ on:
       - 'scripts/seed/write-bootstrap-descriptors.py'
       - 'scripts/seed/test-write-bootstrap-descriptors.py'
       - 'scripts/seed/check-descriptor-writer-ci.py'
+      - 'scripts/seed/check-public-macos-product.py'
+      - 'bin/amu'
+      - 'bin/kotoba'
+      - 'bin/kotoba-compiler'
+      - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
       - 'scripts/seed/native_build_queue.py'
@@ -44,6 +49,10 @@ jobs:
         run: |
           test "$(uname -s)" = Darwin
           test "$(uname -m)" = arm64
+      - name: Execute the public Mac aliases and native 42 to 43 first run
+        run: >-
+          python3 scripts/seed/check-public-macos-product.py
+          --output "$RUNNER_TEMP/public-macos-product"
       - name: Rebuild Amu root and AIUEOS user target
         run: |
           python3 scripts/seed/native_build_queue.py \
@@ -124,6 +133,7 @@ jobs:
           name: mac-aiueos-user-root
           path: |
             ${{ runner.temp }}/mac-root-admission.json
+            ${{ runner.temp }}/public-macos-product/
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json

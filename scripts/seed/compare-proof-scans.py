@@ -28,7 +28,7 @@ def main(output,revision):
  source=output/'core.kotoba';source.write_bytes(b''.join(old(p)+b'\n' for p in corepaths))
  corepin=pin(source);policy=json.loads(old('seed/cdci/policy.json'));assert corepin['sha256']==policy['coreSourceSHA256']
  lock=output/'core.ksl';lock.write_text(f"KSL1\nentry {source}\nfile {corepin['sha256']} {source}\n")
- producer=ROOT/'bin/amu'
+ producer=ROOT/'bin/amu-linux-x86_64'
  report=dict(schema='amu.native-proof-scan-comparison.v1',qualificationReplacement=False,candidateAdopted=False,host=metadata,baselineRevision=revision,producer=pin(producer),input=corepin,lock=pin(lock),sourceBindings={},calls=[],targetSeconds=600,coldCompile=True)
  env=dict(PATH='/nonexistent',KEXE_STACK_BYTES='8388608',KEXE_CAP_RESOURCES_35=str(output))
  def run(name,argv,timeout=7200):
