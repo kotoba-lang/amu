@@ -44,6 +44,35 @@ s-expression bodies using de Bruijn-style `k0..` binders, effect row as keyword 
 native source-derived CID can therefore never equal a frozen-vector CID; the vectors qualify the codec (04) only. Any
 cljk/edn-vs-`.kotoba` comparison must be made between two profile-6 reports, both from the same route.
 
+### Local closures (JUN-588 item B1, owner decision 2026-10-29: native-only form)
+A let-bound or value-held `(fn [x ..] body)` is accepted by the bridge (05-checked-source) and sealed by 05-checked-definition
+as `(fn [kN ..] body)`: the head is the symbol `fn`, parameters are renamed by the same never-resetting left-to-right
+counter as `let` binders (before the body), the scope is restored afterwards. A captured outer local is the OUTER binder's
+`k` name (a binder reference, not a source name); a top-level definition referenced in the body is a direct dependency by
+CID. Renaming the lambda parameter, the let name or the definition does not move the CID; changing the body, or which
+binder is captured, does. No core module (20/21/30) and not 05-source-loops changed (the loop/closure guard lives in the bridge): the frontend already checked closures.
+
+This is **a candidate native-only identity, NOT compatible with the reference, and no parity is claimed** (not with the
+reference route, not with the 2026-09-08 CIDs, not for JUN-587 corpus pairs). Measured 2026-10-29 on the JVM reference
+(local measurement only; kotoba-sema a3303527, osaho e20c9aff): the reference LAMBDA-LIFTS a closure
+(`run = (let [g (pair 1 0)] (__kotoba_invoke$arity1 g n))` plus `__kotoba_lambda_1_arity1` and a module-wide dispatcher) and the
+module lambda counter leaks into the CID: the identical `run` source gets a different CID when another closure precedes it
+in the module. It is stable under renaming and `(app (lam ..) n)` equals the `let`/`fn` spelling there. The native CID is
+position-independent and differs from the reference's. The reference alpha-normalizer (osaho
+`kotoba.kir.alpha-normalization`, amu `definition_identity.cljk`) has no `fn` binder either (five binders: params, `let`,
+`result-match-of`, `variant-match`, `option-match`). Which closure identity is right (lambda-lifted reference vs a
+position-independent form) is an owner decision that must precede any closure parity claim. Natively `app`/`lam`/`ref` are
+still refused (item A1), so that pair cannot be compared. Data: JUN-588 comments; measurement files
+`jun588-b1-reference-measurement*` in the shared session notes.
+
+Observation (pinned in the gate, not an equivalence claim): `(let [g (fn [x] (+ x 1))] (g n))` and the hand-inlined
+`(+ n 1)` get DIFFERENT CIDs natively (`bafyreighx...` vs `bafyreids3...`); a closure keeps its own identity.
+
+Still refused fail-closed (exit 66, empty stdout, named `DSB:*`): a closure inside a `loop` body, `loop`/`recur` inside a
+closure, a closure in operator position `((fn ..) a)`, closures through interfaces (`:fn` parameter/result types), any
+closure parameter whose checked type is not `:i64` (the source syntax has no annotation; only hinted callbacks have
+others), nesting deeper than 7 closures. Mutants (closure head spelling, unbound parameter) are detected by the gate.
+
 ## 2. Manifest decision (ADR 0370)
 `seed/compiler-core.json` (18 modules) and `MANIFEST`/`FULL-MANIFEST` are **unchanged**. A successor core needs
 self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded in. Instead:
@@ -58,9 +87,9 @@ self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded 
 - aarch64-linux, **native** in podman (`python:3.12-slim`, arm64 host), compiler
   `seed/bootstrap/aarch64-linux-static-root.elf`:
   `python3 -I scripts/seed/check-definition-cids-native.py --compiler ... --output ...` -> `PASS_NATIVE_DEFINITION_CIDS`
-  (36 native calls). Controls: CIDs for const/leaf/caller/dependency-edit/self/cycle2/cycle8 equal the independent
+  (69 native calls). Controls: CIDs for const/leaf/caller/dependency-edit/self/cycle2/cycle8 equal the independent
   oracle image; rename and reordering preserve CIDs; dependency edit changes caller CID; unbound name and unbalanced
-  source exit 66 with empty stdout; `--groups` keeps CIDs and adds group/member columns; declaration order is preserved; usage errors exit 2; an encoder mutant is refused by its own validator; `check` still works through the
+  source exit 66 with empty stdout; `--groups` keeps CIDs and adds group/member columns; declaration order is preserved; usage errors exit 2; an encoder mutant is refused by its own validator; closure controls (hand-authored oracle payloads for closure/capture/dependency/nested/two-capture, rename invariance, body and captured-binder sensitivity, five closure refusals, two closure mutants); `check` still works through the
   new entry.
 - macOS arm64 Mach-O root (`amu-full-root.macho`, run on this Mac with FD 3 as the file root): the candidate
   **compiles, packages and signs**, `check` works, but `definition-cids` stops with the packager's deliberate
