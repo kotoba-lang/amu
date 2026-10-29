@@ -140,11 +140,12 @@ locally with two test-only patches (`seccomp(2)` accepted without installing a
 filter, `openat2(2)` passed through); this is measurement tooling outside the
 build closure and does not qualify anything.
 
-* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`7f7ba81c…`, 8,618,496
+* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`92b3078e…`, 8,647,168
   bytes; round 1 `f8332459…`, 8,593,920; base 9,458,176); aarch64 packed root
-  F1 = F2 (`59556e92…`, 3,568,128 bytes; round 1 `172f588b…`, base 3,625,472)
-  with container `0d610f94…`, derived under qemu from a round 2 candidate
-  root (itself derived from the round 1 root) after main's #1666 was merged;
+  F1 = F2 (`2238db15…`, 3,580,416 bytes; round 1 `172f588b…`, base 3,625,472)
+  with container `20fb958c…`, derived under qemu from a round 2 candidate
+  root (itself derived from the round 1 root) after main's #1666, #1559 and
+  #1672 were merged;
   the x86_64 compiler that root emits is byte-identical to `bin/amu`, and so
   are its x86 images of the 24 pinned cases.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local

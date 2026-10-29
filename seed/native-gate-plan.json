@@ -85,6 +85,10 @@
           "--output",
           "@TEMP@/flock-vector-arm64"
         ]
+      },
+      {
+        "name": "kototama-cache-abi",
+        "argv": ["bash", "-c", "python3 scripts/seed/check-kototama-cache-abi.py --compiler \"$RUNNER_TEMP/boot/F1.elf\" --source-sha256 \"$(python3 -c 'import json; print(json.load(open(\"seed/bootstrap/aarch64-linux-static-root.json\"))[\"sourceUnity\"][\"sha256\"])')\" --output \"$RUNNER_TEMP/kototama-cache-abi-arm64\""]
       }
     ],
     "x86": [
@@ -263,6 +267,14 @@
           "--output",
           "@TEMP@/flock-vector-x86"
         ]
+      },
+      {
+        "name": "kototama-cache-abi",
+        "argv": ["bash", "-c", "python3 scripts/seed/check-kototama-cache-abi.py --compiler \"$RUNNER_TEMP/complete/F2.elf\" --source-sha256 \"$(python3 -c 'import json; print(json.load(open(\"seed/bootstrap/aarch64-linux-static-root.json\"))[\"sourceUnity\"][\"sha256\"])')\" --output \"$RUNNER_TEMP/kototama-cache-abi-x86_64\""]
+      },
+      {
+        "name": "kototama-cache-host",
+        "argv": ["bash", "-c", "python3 scripts/seed/check-kototama-cache-host.py --compiler \"$RUNNER_TEMP/complete/F2.elf\" --source-sha256 \"$(python3 -c 'import json; print(json.load(open(\"seed/bootstrap/aarch64-linux-static-root.json\"))[\"sourceUnity\"][\"sha256\"])')\" --deadline-control --output \"$RUNNER_TEMP/kototama-cache-host-x86_64\""]
       }
     ],
     "derive-arm64": [
