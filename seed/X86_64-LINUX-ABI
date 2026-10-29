@@ -73,6 +73,18 @@ AArch64 plain route (seed/80) does the same with x7 = context and udf #0.
 Results, fuel, the seventeen arena counters and refusals are unchanged; only
 the helper calls (and their stack frames) are gone.
 
+Inline pair and string access (2026-10-29). pair-first (64) and pair-second
+(72, also string-length and string-byte-length) are emitted the same way from
+the v11 words 288 (&pair-used) and 296 (pairs: first, second): the handle check
+(h - 1) <u used, then the word. string-code-point-at (144) follows the R4 rule
+(seed/HEADS; 41-a64gen gn-rt-cpa, seed/SIR :a64 :r4): when the pair is valid,
+its offset is code-relative (>= 0), its length >= 0, i <u length and offset +
+length <= code_length (word 392), the byte at code_base (word 384) + offset + i
+is returned in line if it is below 0x80; every other case calls the helper,
+which checks, validates and refuses as before. A code-relative string is valid
+UTF-8 by construction, so only the helper's validated mark is skipped, which
+nothing observes. The AArch64 plain route (seed/80) does the same.
+
 Register cache (2026-10-28). Absolute M[190..191], free below this route's
 cells, hold the runtime profile's rax cache (x9 on seed/80): M[190] = the rbp
 (frame) displacement whose word the register holds, M[191] = CODE-N right

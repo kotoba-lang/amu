@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Inline vector access in the plain emitters (seed/70-71 x86_64, seed/80 aarch64).
+"""Inline vector, pair and string access in the plain emitters (seed/70-71 x86_64, seed/80 aarch64).
 
 The runtime-profile emitters no longer call the vector-at (176),
-vector-assoc! (208) and count (168) helpers, and store a fresh VEC/VECP
-vector's items directly (seed/X86_64-LINUX-ABI, "Inline vector access"). The
-contract is that nothing observable changes: result, fuel, trap kind and all
-seventeen arena counters stay those of the helper calls.
+vector-assoc! (208), count (168), pair-first (64) and pair-second /
+string-length (72) helpers, store a fresh VEC/VECP vector's items directly,
+and read a code-relative string's ASCII byte for string-code-point-at (144) in
+line under the R4 rule (seed/X86_64-LINUX-ABI, "Inline vector access" and
+"Inline pair and string access"). The contract is that nothing observable
+changes: result, fuel, trap kind and all seventeen arena counters stay those
+of the helper calls.
 
 seed/inline-vector-cases.json holds a corpus of in-range, boundary and trap
 programs (negative, one-past-the-end and extreme indices, assoc! out of range,
 count, vector literals and pooled literals, persistent assoc, conj, drop
-views, arena-scope rollback, fuel exhaustion inside a vector loop) with the
-observations of the helper-call compiler (bin/amu
+views, arena-scope rollback, fuel exhaustion inside a vector or string loop;
+string literals, multi-byte UTF-8 lead and continuation bytes, pool strings,
+substring views, string ops after an in-line read, pair handles 0, past the
+end and negative) with the observations of the helper-call compiler (bin/amu
 aa021865659c6d889f1fa633167f80bd2e842c79a41275ff03f3389a0b11c1d2), per target
 and per fuel budget. This check compiles every case with --compiler as a
 static image for --target, runs it, and requires the exact exit status,

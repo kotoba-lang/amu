@@ -278,10 +278,15 @@ seed/X86_64-LINUX-ABI. Keep the helpers' check order and refusal (ud2 /
 udf #0), never cache a descriptor across operations, and keep every item
 write inside a described view (the zero-highwater rule above). M[190..191]
 is the rax/x9 cache: any emitted byte and any LABEL clear it, and only the
-runtime profile uses it, so profiles 0 and 2 keep their bytes. A change to
-these paths must keep scripts/seed/check-inline-vectors.py (exact helper-call
-observations) passing on both ISAs. Evidence:
-docs/evidence/plain-emitter-inline-20261028.
+runtime profile uses it, so profiles 0 and 2 keep their bytes. pair-first,
+pair-second/string-length (words 288/296) are inlined the same way, and
+string-code-point-at reads a code-relative ASCII byte in line under the R4
+rule (as 41-a64gen gn-rt-cpa), calling the helper for every other case. The
+runtime's string helpers (seed/76 = seed/77 text: kxrt-pair, kxrt-span,
+kxrt-code-point-at) read their globals through one G; keep their checks and
+order. A change to these paths must keep scripts/seed/check-inline-vectors.py
+(exact helper-call observations, vector, pair and string cases) passing on
+both ISAs. Evidence: docs/evidence/plain-emitter-inline-20261028.
 
 ## Closed native benchmark measurement host candidate (KOTOBA-145)
 
