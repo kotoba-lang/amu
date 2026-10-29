@@ -121,7 +121,12 @@ Both rounds:
   image that still compiles `seed/MANIFEST` to `0efb5556…`. With it the
   producer has room for 992 more dummy functions on the x86 target (at least
   160 on both targets; the first limit is then E101 region 6, not SIR), against
-  151 on main before this change.
+  151 on main before this change. Main landed the same capacity change on its
+  own as #1670 (JUN-556). After that merge, this change no longer differs from
+  main in `seed/MEMORY-MAP`, `seed/gen-static-ns.kotoba`,
+  `seed/00-ns-static.kotoba` or `scripts/seed/selfhost-bootstrap.py`. The
+  generator reproduces `seed/00-ns-static.kotoba` byte for byte from main's
+  row order.
 * **Check**: `scripts/seed/check-inline-vectors.py` with
   `seed/inline-vector-cases.json` (39 programs x 2 fuel budgets x 2 targets:
   19 vector programs from round 1, 16 string and 4 pair programs from round 2;
