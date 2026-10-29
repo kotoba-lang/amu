@@ -116,3 +116,63 @@ separate acceptance gates; see `evidence/aiueos-aot-adoption-20261024/`.
 Earlier adoption receipts predate the current call-site/base-length policy
 and retain their historical source binding. The current image route calls
 the same canonical memory checker as the object route.
+
+## Declared extern functions (JUN-556 D1, ADR 0380)
+
+A private function named `extern-<symbol>` in a source for the object route
+declares a function of another object. Each call of it is emitted as the
+arguments in rdi, rsi, rdx, rcx, r8, `call rel32` (displacement 0), and
+`mov r9,[rbp-8]` (a callee may destroy the context register the fuel charge
+reads), with an `R_X86_64_PLT32` addend -4 relocation against an undefined
+GLOBAL NOTYPE symbol `<symbol>` that comes after the exports in `.symtab`
+(`sh_info` still names the first global). At most 16 externs and five parameters
+each; more is refused (E7102). A source with no declaration compiles to the same
+bytes as before. The Mac gate `scripts/seed/check-aiueos-object-externs.py`
+reads the object back with an independent ELF parser and checks the symbols,
+the three relocations of a two-extern source and the bytes after every call.
+
+Not shown: no x86 machine has run an object that calls through this sequence,
+the callee is the linker's business and is unverified by this route, and
+`verify-kotoba-kernel-object.py` in the kotoba repository still refuses
+undefined symbols, so no extern-declaring object can enter the image until that
+verifier and its ledger follow. An extern's arguments are not checked as
+memory windows (pointer arguments are the open E7106 design in ADR 0380).
+
+## Data cells (JUN-556 D3, ADR 0380)
+
+Private functions `cell-load-<k> []` and `cell-store-<k> [v]` (k below 64, canonical decimal, placeholder body
+`0`) name an 8-byte cell at `.data` offset `80 + 8k`, after the private context. A load compiles to
+`mov rax,[rip+disp]` and a store to `mov [rip+disp],rax`; each access has an `R_X86_64_PC32` relocation against the
+context symbol with addend `80 + 8k - 4` and a zero displacement. `.data` is `80 + 8 * (highest named cell + 1)`
+bytes of zeros; sections and symbols are unchanged, and a source without a cell compiles to the bytes it always
+did. A malformed name, a wrong parameter count, a body other than `0`, or a cell on the image route is refused
+(E7102). `scripts/seed/check-aiueos-object-cells.py` reads the object back with an independent ELF parser.
+
+Not shown: no x86 machine ran these accesses, and `verify-kotoba-kernel-object.py` in the kotoba repository does not
+accept cell relocations or a `.data` larger than the 80-byte context yet, so an object with cells cannot enter the image
+until it does.
+
+## Fixed-address MMIO accesses (JUN-556 D4, ADR 0380)
+
+Private functions `mmio-load32-<addr> []` and `mmio-store32-<addr> [v]` (placeholder body `0`) address one of five
+local-APIC registers: `addr` is eight lowercase hex digits and must be `fee00020`, `fee000f0`, `fee00320`,
+`fee00380` or `fee003e0`. A load is `movabs rax,addr; mov eax,[rax]` and a store `movabs rcx,addr; mov [rcx],eax`;
+the address is an immediate, so the object gets no relocation, symbol or data. Any other address, a malformed one,
+a wrong parameter count, a body other than `0`, or use on the image route is refused (E7102).
+`scripts/seed/check-aiueos-object-mmio.py` reads the object back and checks the exact byte sequences.
+
+Not shown: no x86 machine ran these accesses; the list is the five registers `kernel/apic.c` touches and grows only
+by an edit here; the ioapic registers, ports and privileged instructions (`cpuid`, `mov cr4`, `xgetbv`) are not
+covered yet.
+
+## Exported data cells (JUN-556 D3b, ADR 0380)
+
+A private `cell-name-<k>-<symbol> []` (placeholder body `0`, at most sixteen) gives cell `k` (the cell `cell-load-<k>` and
+`cell-store-<k>` address, `.data` offset `80 + 8k`) a GLOBAL OBJECT symbol `<symbol>` of size 8 defined in `.data`, so another
+object links to it by name (`kernel/entry.S` reads `aiueos_apic_timer_ticks` and `aiueos_apic_mmio_base` this way).
+The symbols follow the exports and the externs in `.symtab`; the context stays the only LOCAL symbol and `sh_info` still names
+the first global. A malformed or out-of-range declaration, a symbol equal to an export, an extern or another data symbol,
+and use on the image route are refused (E7102). `scripts/seed/check-aiueos-object-globals.py` reads the object back.
+
+Not shown: nothing linked or ran these symbols; `verify-kotoba-kernel-object.py` in the kotoba repository does not accept
+defined data symbols yet.

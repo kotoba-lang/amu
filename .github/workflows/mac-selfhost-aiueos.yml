@@ -12,10 +12,31 @@ on:
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
+      - 'scripts/seed/check-aiueos-object-externs.py'
+      - 'scripts/seed/check-aiueos-object-cells.py'
+      - 'scripts/seed/check-aiueos-object-mmio.py'
+      - 'scripts/seed/check-aiueos-object-globals.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
-      - 'scripts/seed/check-macos-arena-scope-refusal.py'
+      - 'scripts/seed/check-macos-arena-scope.py'
+      - 'scripts/seed/check-definition-cid-native.py'
+      - 'scripts/seed/check-definition-cids-native.py'
+      - 'scripts/seed/macos_native_image.py'
+      - 'scripts/seed/check-macos-fs35.py'
+      - 'seed/DEFINITION-CIDS-MANIFEST'
+      - 'seed/tests/definition-cid-vectors.json'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
       - 'scripts/seed/check-macos-cross-linux-native.py'
+      - 'scripts/seed/write-bootstrap-descriptors.py'
+      - 'scripts/seed/test-write-bootstrap-descriptors.py'
+      - 'scripts/seed/check-descriptor-writer-ci.py'
+      - 'scripts/seed/check-public-macos-product.py'
+      - 'scripts/seed/build-macos-cli.py'
+      - 'scripts/seed/check-macos-cli-product.py'
+      - 'scripts/seed/check-macos-cli-host-native.py'
+      - 'bin/amu'
+      - 'bin/kotoba'
+      - 'bin/kotoba-compiler'
+      - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
       - 'scripts/seed/native_build_queue.py'
@@ -41,6 +62,14 @@ jobs:
         run: |
           test "$(uname -s)" = Darwin
           test "$(uname -m)" = arm64
+      - name: Check native CLI host grants, descriptor closure and deadlines
+        run: >-
+          python3 scripts/seed/check-macos-cli-host-native.py
+          --output "$RUNNER_TEMP/mac-cli-host"
+      - name: Rebuild the public Mac CLI and execute ordinary check compile run
+        run: >-
+          python3 scripts/seed/check-public-macos-product.py
+          --output "$RUNNER_TEMP/public-macos-product"
       - name: Rebuild Amu root and AIUEOS user target
         run: |
           python3 scripts/seed/native_build_queue.py \
@@ -89,10 +118,10 @@ jobs:
             python3 scripts/seed/check-macos-exec-smoke-native.py \
               --mac-build "$RUNNER_TEMP/mac-root" \
               --output "$RUNNER_TEMP/mac-smoke"
-      - name: Mac runtime refuses arena-scope with exit 70 (JUN-546)
+      - name: Mac runtime implements arena-scope (JUN-546)
         run: |
-          python3 scripts/seed/check-macos-arena-scope-refusal.py \
-            --output "$RUNNER_TEMP/mac-scope-refusal"
+          python3 scripts/seed/check-macos-arena-scope.py \
+            --output "$RUNNER_TEMP/mac-scope"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
@@ -103,11 +132,50 @@ jobs:
           python3 scripts/seed/check-aiueos-object-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows"
+      - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
+        run: |
+          python3 scripts/seed/check-aiueos-object-externs.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-externs"
+      - name: AIUEOS kernel object route has 8-byte data cells (JUN-556 D3)
+        run: |
+          python3 scripts/seed/check-aiueos-object-cells.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-cells"
+      - name: AIUEOS kernel object route has fixed-address MMIO accesses (JUN-556 D4)
+        run: |
+          python3 scripts/seed/check-aiueos-object-mmio.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-mmio"
+      - name: AIUEOS kernel object route exports data cells as GLOBAL symbols (JUN-556 D3b)
+        run: |
+          python3 scripts/seed/check-aiueos-object-globals.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-globals"
+      - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
+        run: |
+          python3 -I scripts/seed/check-macos-fs35.py \
+            --output "$RUNNER_TEMP/mac-fs35"
+      - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
+        run: |
+          python3 -I scripts/seed/check-definition-cid-native.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-definition-cid"
+      - name: Native definition-cids on the Mac fixed point (JUN-586)
+        run: |
+          python3 -I scripts/seed/check-definition-cids-native.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-definition-cids"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-cross"
+      - name: Descriptor writer controls on disposable receipt-derived fixture
+        run: |
+          python3 scripts/seed/check-descriptor-writer-ci.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --cross-build "$RUNNER_TEMP/mac-cross"
       - name: Summarize native crash if the root gate failed
         if: failure()
         run: |
@@ -121,10 +189,22 @@ jobs:
           name: mac-aiueos-user-root
           path: |
             ${{ runner.temp }}/mac-root-admission.json
+            ${{ runner.temp }}/public-macos-product/
+            ${{ runner.temp }}/mac-cli-host/
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json
+          if-no-files-found: warn
+      - name: Upload Mac definition-cids receipts (JUN-586)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-definition-cids
+          path: |
+            ${{ runner.temp }}/mac-definition-cid/observations.json
+            ${{ runner.temp }}/mac-definition-cids/observations.json
+            ${{ runner.temp }}/mac-fs35/observations.json
           if-no-files-found: warn
       - name: Upload user-v3 Mac receipt
         if: always()

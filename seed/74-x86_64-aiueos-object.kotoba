@@ -63,6 +63,37 @@
 ;; them compiles to the bytes it always had.
 (def XK-WIDTH-FIRST 6)
 (def XU-LOCAL-CALL-FLAG 211)
+;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
+;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
+;; "call rel32" with an R_X86_64_PLT32 relocation against the undefined GLOBAL symbol <symbol>. A call
+;; site is an ordinary function fixup (kind 1) whose target carries the extern mark; the displacement
+;; xg-fix wrote is zeroed again before the object is written, the linker's relocation fills it.
+;; JUN-556 D3: private cell-load-<k> [] and cell-store-<k> [v] (k < 64) are 8-byte cells in .data after the
+;; 80-byte context, at 80 + 8k. The mark carries the cell: 100 + k for a load, 200 + k for a store. An access
+;; is mov rax,[rip+disp] / mov [rip+disp],rax with an R_X86_64_PC32 relocation against the context symbol,
+;; addend 80 + 8k - 4; the site is a function fixup of the marked stub, zeroed like an extern call.
+(def XK-EXTERN 100)
+(def XK-CELL-LOAD 20000)
+(def XK-CELL-STORE 40000)
+(def FF-CELL-LOAD-MARK 100)
+(def FF-CELL-STORE-MARK 200)
+(def XO-MAX-CELLS 64)
+;; JUN-556 D4: private mmio-load32-<addr> [] and mmio-store32-<addr> [v], addr being eight lowercase hex digits
+;; of one of five local-APIC registers (the closed list in xo-mmio-address). A load is movabs rax,addr;
+;; mov eax,[rax]; a store movabs rcx,addr; mov [rcx],eax. The address is an immediate, so there is no
+;; relocation and no data. The mark is 300 + index for a load and 400 + index for a store.
+(def XK-MMIO-LOAD 60000)
+(def XK-MMIO-STORE 80000)
+(def FF-MMIO-LOAD-MARK 300)
+(def FF-MMIO-STORE-MARK 400)
+(def XO-MMIO-N 5)
+;; JUN-556 D3b: a private cell-name-<k>-<symbol> [] gives cell k (the same 8-byte cell cell-load-<k> and
+;; cell-store-<k> address) a GLOBAL OBJECT symbol <symbol>, size 8, in .data at 80 + 8k, so other objects
+;; (entry.S, C) link to it by name. The mark is 500 + k. At most 16 symbols.
+(def FF-CELL-NAME-MARK 500)
+(def XO-MAX-DSYMS 16)
+(def FF-EXTERN-MARK 9)
+(def XO-MAX-EXTERNS 16)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
           4 "kernel-out-u8" 5 "kernel-out-u32"
@@ -92,8 +123,20 @@
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k -1)))
-(defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+    (cond (and (= (vector-at M 197) 0) (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)) (+ XK-EXTERN f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-LOAD-MARK XO-MMIO-N))) (+ XK-MMIO-LOAD f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-STORE-MARK XO-MMIO-N))) (+ XK-MMIO-STORE f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (+ XK-CELL-STORE f)
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
+          :else -1)))
+(defn- xk-extern-call [M :vector-i64 f :i64 t :i64] :vector-i64
+  ;; arguments as for a local call (rdi rsi rdx rcx r8), call rel32 with a function fixup that the
+  ;; object writer turns into a PLT32 relocation, then the context register back from [rbp-8]
+  ;; (a callee may destroy r9; the fuel charge reads it), then the result as any call result.
+  (-> M (xg-call-args t 0 (xg-f M f FF-NPARAMS)) (xg-rel 0xe8 1 1 f)
+      (xg-bytes 0xf84d8b4c 4) (xg-save t)))
+(defn- xk-intrinsic-window [M :vector-i64 k :i64 t :i64] :vector-i64
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
     ;; cmp rax,rcx; jae; lea rsi,[rax+4]; cmp rsi,rcx; ja; mov eax,[rdx+rax]; jmp +2; ud2
@@ -173,6 +216,22 @@
           (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
     (xg-err M 7101 OP-CALL)))
+(defn- xo-mmio-address [i :i64] :i64
+  (case i 0 0xfee00020 1 0xfee000f0 2 0xfee00320 3 0xfee00380 4 0xfee003e0 0))
+(defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (cond (>= k XK-MMIO-STORE)
+          (-> M (xg-load t 0x858b48) (xg-bytes 0xb948 2)
+              (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-STORE) FF-EXPORT) FF-MMIO-STORE-MARK)) 8)
+              (xg-bytes 0x0189 2) (xg-save t))
+        (>= k XK-MMIO-LOAD)
+          (-> M (xg-bytes 0xb848 2)
+              (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-LOAD) FF-EXPORT) FF-MMIO-LOAD-MARK)) 8)
+              (xg-bytes 0x008b 2) (xg-save t))
+        (>= k XK-CELL-STORE)
+          (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
+        (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
+        (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        :else (xk-intrinsic-window M k t)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
 (defn- xk-scan-count [M :vector-i64 S :string count :i64 local-call :bool] :vector-i64
@@ -418,12 +477,12 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (>= (xk-intr M a) XK-WIDTH-FIRST))
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-EXTERN)))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
-              (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0)))
+              (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
 
@@ -455,6 +514,180 @@
             :else (xo-check-fns-n M S (inc f) multi)))))
 
 (defn- xo-check-fns [M :vector-i64 S :string f :i64] :vector-i64 (xo-check-fns-n M S f false))
+
+;; JUN-556 D1: extern declarations. Marking, collection and the relocations they produce.
+(defn- xo-ext-name? [S :string a :i64 b :i64] :bool
+  (and (> (- b a) 7) (string=? (string-substring S a (+ a 7)) "extern-")))
+;; the symbol after the prefix: [a-z_][a-z0-9_]* (a closed set the verifier can rely on)
+(defn- xo-ident-ok? [S :string i :i64 b :i64 first :bool] :bool
+  (or (>= i b)
+      (and (>= (string-index-of "0123456789abcdefghijklmnopqrstuvwxyz_" (string-substring S i (inc i))) (if first 10 0))
+           (xo-ident-ok? S (inc i) b false))))
+;; a declaration's body is the placeholder 0: only function, end, label, fuel, return (bits of 786950:
+;; ops 1, 2, 9, 18, 19) and a zero constant
+(defn- xo-body-zero? [M :vector-i64 i :i64 end :i64] :bool
+  (or (>= i end)
+      (let [op (xg-si M i IF-OP)]
+        (and (or (= (bit-and (u64-shift-right 786950 op) 1) 1) (and (= op OP-CONST) (= (xg-si M i IF-B) 0)))
+             (xo-body-zero? M (inc i) end)))))
+(defn- xo-extern-body-ok? [M :vector-i64 f :i64] :bool
+  (xo-body-zero? M (xg-f M f FF-SIR)
+                 (if (< (inc f) (vector-at M MM-FN-N)) (xg-f M (inc f) FF-SIR) (vector-at M MM-SIR-N))))
+(defn- xo-digits-ok? [S :string i :i64 b :i64] :bool
+  (or (>= i b)
+      (and (>= (string-index-of "0123456789" (string-substring S i (inc i))) 0) (xo-digits-ok? S (inc i) b))))
+;; the cell number in cell-load-<k> / cell-store-<k>: canonical decimal below XO-MAX-CELLS, else -1
+(defn- xo-cell-number [S :string i :i64 b :i64] :i64
+  (if (and (< i b) (<= (- b i) 2) (xo-digits-ok? S i b))
+    (let [k (mem-parse-dec S i b)]
+      (if (and (>= k 0) (< k XO-MAX-CELLS) (string=? (string-substring S i b) (mem-u2dec k))) k -1))
+    -1))
+(defn- xo-cell-mark [M :vector-i64 S :string f :i64 a :i64 b :i64] :i64
+  (cond (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-load-") (= (xg-f M f FF-NPARAMS) 0))
+          (let [k (xo-cell-number S (+ a 10) b)] (if (< k 0) -1 (+ FF-CELL-LOAD-MARK k)))
+        (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-") (= (xg-f M f FF-NPARAMS) 1))
+          (let [k (xo-cell-number S (+ a 11) b)] (if (< k 0) -1 (+ FF-CELL-STORE-MARK k)))
+        :else -1))
+(defn- xo-mmio-index [S :string i :i64 b :i64] :i64
+  (if (not= (- b i) 8) -1
+    (let [s (string-substring S i b)]
+      (cond (string=? s "fee00020") 0 (string=? s "fee000f0") 1 (string=? s "fee00320") 2
+            (string=? s "fee00380") 3 (string=? s "fee003e0") 4 :else -1))))
+(defn- xo-mmio-mark [M :vector-i64 S :string f :i64 a :i64 b :i64] :i64
+  (cond (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-") (= (xg-f M f FF-NPARAMS) 0))
+          (let [k (xo-mmio-index S (+ a 12) b)] (if (< k 0) -1 (+ FF-MMIO-LOAD-MARK k)))
+        (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-") (= (xg-f M f FF-NPARAMS) 1))
+          (let [k (xo-mmio-index S (+ a 13) b)] (if (< k 0) -1 (+ FF-MMIO-STORE-MARK k)))
+        :else -1))
+(defn- xo-dname-dash [S :string a :i64 b :i64] :i64
+  (string-index-of (string-substring S (+ a 10) b) "-"))
+(defn- xo-dname-mark [S :string a :i64 b :i64] :i64
+  (let [d (xo-dname-dash S a b)
+        k (if (or (= d 1) (= d 2)) (xo-cell-number S (+ a 10) (+ a 10 d)) -1)]
+    (if (and (>= k 0) (xo-ident-ok? S (+ a 11 d) b true)) (+ FF-CELL-NAME-MARK k) -1)))
+(defn- xo-cell-name? [S :string a :i64 b :i64] :bool
+  (or (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-name-"))
+      (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-load-"))
+      (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-"))
+      (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-"))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))))
+(defn- xo-mark-externs [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
+    (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+          a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))
+          plain (and (= (xg-f M f FF-KIND) FK-PRIV) (= (xg-f M f FF-EXPORT) 0))]
+      (cond (and plain (xo-ext-name? S a b))
+              ;; a malformed declaration is refused, never silently taken for an ordinary function
+              (if (and (xo-ident-ok? S (+ a 7) b true) (xo-extern-body-ok? M f))
+                (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) FF-EXTERN-MARK) S (inc f))
+                (xg-err M 7102 f))
+            (and plain (xo-cell-name? S a b))
+              (let [m (let [c (xo-cell-mark M S f a b)]
+                        (cond (>= c 0) c
+                              (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-name-") (= (xg-f M f FF-NPARAMS) 0)) (xo-dname-mark S a b)
+                              :else (xo-mmio-mark M S f a b)))]
+                (if (and (>= m 0) (xo-extern-body-ok? M f))
+                  (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) m) S (inc f))
+                  (xg-err M 7102 f)))
+            :else (xo-mark-externs M S (inc f))))))
+;; the image and user routes cannot link an undefined symbol: a declaration there is refused
+(defn- xo-refuse-externs [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
+    (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+          a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+      (if (or (xo-ext-name? S a b) (xo-cell-name? S a b))
+        (xg-err M 7102 f)
+        (xo-refuse-externs M S (inc f))))))
+(defn- xo-clash? [S :string NS :vector-i64 cnt :i64 NX :vector-i64 i :i64 j :i64 nx :i64] :bool
+  (cond (> i nx) false
+        (> j cnt) (xo-clash? S NS cnt NX (inc i) 1 nx)
+        (string=? (string-substring S (vector-at NX (- (* 2 i) 1)) (vector-at NX (* 2 i)))
+                  (string-substring S (vector-at NS (- (* 2 j) 1)) (vector-at NS (* 2 j)))) true
+        :else (xo-clash? S NS cnt NX i (inc j) nx)))
+(defn- xo-xcollect [M :vector-i64 f :i64 X :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) X
+    (if (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)
+      (let [n (inc (vector-at X 0))]
+        (xo-xcollect M (inc f) (if (> n XO-MAX-EXTERNS) (vector-assoc! X 0 n)
+                                 (vector-assoc! (vector-assoc! X 0 n) n f))))
+      (xo-xcollect M (inc f) X))))
+;; NX[2i-1], NX[2i]: the symbol's span in the source, after the "extern-" prefix
+(defn- xo-xspans [M :vector-i64 X :vector-i64 i :i64 NX :vector-i64] :vector-i64
+  (if (> i (vector-at X 0)) NX
+    (let [sb (+ MM-SYM-BASE (* (xg-f M (vector-at X i) FF-SYM) MM-SYM-W))]
+      (xo-xspans M X (inc i)
+                 (vector-assoc! (vector-assoc! NX (- (* 2 i) 1) (+ (vector-at M (+ sb SF-START)) 7))
+                                (* 2 i) (vector-at M (+ sb SF-END)))))))
+(defn- xo-xrank [X :vector-i64 f :i64 j :i64] :i64
+  (if (> j (vector-at X 0)) 0 (if (= (vector-at X j) f) j (xo-xrank X f (inc j)))))
+(defn- xo-ext-site? [M :vector-i64 i :i64] :bool
+  (let [b (+ MM-FIX-BASE (* i MM-FIX-W))]
+    (and (= (vector-at M (+ b 1)) 1) (>= (xg-f M (vector-at M (+ b 2)) FF-EXPORT) FF-EXTERN-MARK))))
+(defn- xo-sites [M :vector-i64 i :i64 acc :i64] :i64
+  (if (>= i (vector-at M MM-FIX-N)) acc (xo-sites M (inc i) (if (xo-ext-site? M i) (inc acc) acc))))
+(defn- xo-zero-sites [M :vector-i64 i :i64] :vector-i64
+  (if (>= i (vector-at M MM-FIX-N)) M
+    (xo-zero-sites (if (xo-ext-site? M i) (xg-patch M (vector-at M (+ MM-FIX-BASE (* i MM-FIX-W))) 0 4) M) (inc i))))
+(defn- xo-max [a :i64 b :i64] :i64 (if (> a b) a b))
+(defn- xo-cell-addend [m :i64] :i64
+  (- (+ 80 (* 8 (if (>= m FF-CELL-STORE-MARK) (- m FF-CELL-STORE-MARK) (- m FF-CELL-LOAD-MARK)))) 4))
+(defn- xo-xrelas [M :vector-i64 cnt :i64 X :vector-i64 i :i64] :vector-i64
+  (if (>= i (vector-at M MM-FIX-N)) M
+    (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) m (xg-f M (vector-at M (+ b 2)) FF-EXPORT)]
+      (xo-xrelas
+        (cond (not (xo-ext-site? M i)) M
+              (= m FF-EXTERN-MARK)
+                (-> M (xg-out (vector-at M b) 8)
+                    (xg-out (+ (* (+ cnt 1 (xo-xrank X (vector-at M (+ b 2)) 1)) 4294967296) 4) 8)
+                    (xg-out -4 8))
+              :else (-> M (xg-out (vector-at M b) 8) (xg-out 4294967298 8) (xg-out (xo-cell-addend m) 8)))
+        cnt X (inc i)))))
+;; the data section holds the context and 8 bytes for every cell up to the highest one a stub names
+(defn- xo-ncells [M :vector-i64 f :i64 acc :i64] :i64
+  (if (>= f (vector-at M MM-FN-N)) acc
+    (let [m (xg-f M f FF-EXPORT)]
+      (xo-ncells M (inc f)
+                 (cond (and (>= m FF-CELL-LOAD-MARK) (< m (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-LOAD-MARK)))
+                       (and (>= m FF-CELL-STORE-MARK) (< m (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-STORE-MARK)))
+                       (and (>= m FF-CELL-NAME-MARK) (< m (+ FF-CELL-NAME-MARK XO-MAX-CELLS))) (xo-max acc (inc (- m FF-CELL-NAME-MARK)))
+                       :else acc)))))
+(defn- xo-zero-words [M :vector-i64 n :i64] :vector-i64
+  (if (<= n 0) M (xo-zero-words (xg-out M 0 8) (dec n))))
+(defn- xo-dcollect [M :vector-i64 f :i64 D :vector-i64] :vector-i64
+  (if (>= f (vector-at M MM-FN-N)) D
+    (let [m (xg-f M f FF-EXPORT)]
+      (if (and (>= m FF-CELL-NAME-MARK) (< m (+ FF-CELL-NAME-MARK XO-MAX-CELLS)))
+        (let [n (inc (vector-at D 0))]
+          (xo-dcollect M (inc f) (if (> n XO-MAX-DSYMS) (vector-assoc! D 0 n)
+                                   (vector-assoc! (vector-assoc! D 0 n) n f))))
+        (xo-dcollect M (inc f) D)))))
+;; DX[2i-1], DX[2i]: the symbol span of data symbol i (after cell-name-<k>-)
+(defn- xo-dspans [M :vector-i64 S :string D :vector-i64 i :i64 DX :vector-i64] :vector-i64
+  (if (> i (vector-at D 0)) DX
+    (let [f (vector-at D i) sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
+          a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
+      (xo-dspans M S D (inc i)
+                 (vector-assoc! (vector-assoc! DX (- (* 2 i) 1) (+ a 11 (xo-dname-dash S a b))) (* 2 i) b)))))
+(defn- xo-dsyms [M :vector-i64 D :vector-i64 DX :vector-i64 i :i64 nd :i64 off :i64] :vector-i64
+  (if (> i nd) M
+    (xo-dsyms (xo-sym M off 0x11 2 (+ 80 (* 8 (- (xg-f M (vector-at D i) FF-EXPORT) FF-CELL-NAME-MARK))) 8)
+              D DX (inc i) nd (+ off (- (vector-at DX (* 2 i)) (vector-at DX (- (* 2 i) 1))) 1))))
+(defn- xo-dnames [M :vector-i64 S :string DX :vector-i64 i :i64 nd :i64] :vector-i64
+  (if (> i nd) M
+    (xo-dnames (-> M (out-put-span S (vector-at DX (- (* 2 i) 1)) (vector-at DX (* 2 i))) (xg-out 0 1)) S DX (inc i) nd)))
+(defn- xo-dself-clash? [S :string DX :vector-i64 i :i64 j :i64 nd :i64] :bool
+  (cond (> i nd) false
+        (> j nd) (xo-dself-clash? S DX (inc i) (+ i 2) nd)
+        (string=? (string-substring S (vector-at DX (- (* 2 i) 1)) (vector-at DX (* 2 i)))
+                  (string-substring S (vector-at DX (- (* 2 j) 1)) (vector-at DX (* 2 j)))) true
+        :else (xo-dself-clash? S DX i (inc j) nd)))
+(defn- xo-xsyms [M :vector-i64 NX :vector-i64 i :i64 nx :i64 off :i64] :vector-i64
+  (if (> i nx) M
+    (xo-xsyms (xo-sym M off 0x10 0 0 0) NX (inc i) nx
+              (+ off (- (vector-at NX (* 2 i)) (vector-at NX (- (* 2 i) 1))) 1))))
+(defn- xo-xnames [M :vector-i64 S :string NX :vector-i64 i :i64 nx :i64] :vector-i64
+  (if (> i nx) M
+    (xo-xnames (-> M (out-put-span S (vector-at NX (- (* 2 i) 1)) (vector-at NX (* 2 i))) (xg-out 0 1)) S NX (inc i) nx)))
 
 ;; ELF64 ET_REL emission. Layout: header, seven section headers, .text,
 ;; .data (the private 80-byte context), .rela.text (one entry), .symtab
@@ -500,12 +733,13 @@
 
 ;; cnt exports: cnt shims of shim bytes each, cnt relocations, cnt public symbols.
 ;; With one export the bytes are the ones this function always wrote.
-(defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 shim :i64 fuel :i64] :vector-i64
+(defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 X :vector-i64 NX :vector-i64 D :vector-i64 DX :vector-i64 shim :i64 fuel :i64] :vector-i64
   (let [tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
-        rela-size (* 24 cnt) sym-size (* 24 (+ cnt 2))
-        rela-off (+ data-off 80) sym-off (+ rela-off rela-size) str-off (+ sym-off sym-size)
-        names (xo-names-len NS 1 cnt 0)
-        str-len (+ names 9) shstr-off (+ str-off str-len)]
+        nx (vector-at X 0) nd (vector-at D 0) sites (xo-sites M 1 0) ncells (xo-ncells M 1 0) dsize (+ 80 (* 8 ncells))
+        rela-size (* 24 (+ cnt sites)) sym-size (* 24 (+ cnt 2 nx nd))
+        rela-off (+ data-off dsize) sym-off (+ rela-off rela-size) str-off (+ sym-off sym-size)
+        names (xo-names-len NS 1 cnt 0) xnames (xo-names-len NX 1 nx 0) dnames (xo-names-len DX 1 nd 0)
+        str-len (+ names 9 xnames dnames) shstr-off (+ str-off str-len)]
     (-> M (mem-set MM-OUT-N 1)
         (xg-out 0x00010102464c457f 8) (xg-out 0 8)
         (xg-out 1 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0 8) (xg-out 0 8) (xg-out 64 8)
@@ -513,7 +747,7 @@
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
-        (xo-shdr 7 1 3 0 data-off 80 0 0 8 0)
+        (xo-shdr 7 1 3 0 data-off dsize 0 0 8 0)
         (xo-shdr 13 4 0x40 0 rela-off rela-size 4 1 8 24)
         (xo-shdr 24 2 0 0 sym-off sym-size 5 2 8 24)
         (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
@@ -521,17 +755,19 @@
         (xg-out-code 1)
         (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
-        (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0 8) (xg-out 0 8) (xo-zero-words ncells)
         ;; Every shim has the same length, so shim i starts at i * shim and its
         ;; context LEA displacement is at +3. The context symbol (index 1) is
         ;; LOCAL (P1 review): two objects linked into one kernel must not collide
         ;; on a global `context`, so locals come first (null, context, exports)
         ;; and sh_info names the first global.
         (xo-relas 0 cnt shim)
+        (xo-xrelas cnt X 1)
         (xo-sym 0 0 0 0 0)
         (xo-sym (+ names 1) 0x01 2 0 80)
         (xo-fsyms NS 1 cnt shim 1)
-        (xg-out 0 1) (xo-fnames S NS 1 cnt) (xg-out 0x747865746e6f63 8)
+        (xo-xsyms NX 1 nx (+ names 9)) (xo-dsyms D DX 1 nd (+ names 9 xnames))
+        (xg-out 0 1) (xo-fnames S NS 1 cnt) (xg-out 0x747865746e6f63 8) (xo-xnames S NX 1 nx) (xo-dnames S DX 1 nd)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
         (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)
         (xg-out 0x0062 2))))
@@ -549,16 +785,26 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xo-mark-externs S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
           :else (let [E (xo-collect admitted 1 (vector-alloc (+ XO-MAX-EXPORTS 2))) cnt (vector-at E 0)]
                   (if (> cnt XO-MAX-EXPORTS) (xg-err admitted 7102 (xg-get admitted 1))
                     (let [NS (xo-spans admitted E 1 (vector-alloc (+ (* 2 XO-MAX-EXPORTS) 2)))
-                          generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
-                                        (xg-index-labels 1) (xo-shims E 1 fuel) (xg-code 1))]
-                      (xo-elf (xg-fix generated 1) S NS cnt (xo-shim-len fuel) fuel)))))))
+                          X (xo-xcollect admitted 1 (vector-alloc (+ XO-MAX-EXTERNS 2)))]
+                      (if (> (vector-at X 0) XO-MAX-EXTERNS) (xg-err admitted 7102 (xg-get admitted 1))
+                        (let [NX (xo-xspans admitted X 1 (vector-alloc (+ (* 2 XO-MAX-EXTERNS) 2)))
+                              generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                                            (xg-index-labels 1) (xo-shims E 1 fuel) (xg-code 1))]
+                          (if (xo-clash? S NS cnt NX 1 1 (vector-at X 0)) (xg-err admitted 7102 (xg-get admitted 1))
+                            (let [D (xo-dcollect admitted 1 (vector-alloc (+ XO-MAX-DSYMS 2))) nd (vector-at D 0)]
+                              (if (> nd XO-MAX-DSYMS) (xg-err admitted 7102 (xg-get admitted 1))
+                                (let [DX (xo-dspans admitted S D 1 (vector-alloc (+ (* 2 XO-MAX-DSYMS) 2)))]
+                                  (if (or (xo-clash? S NS cnt DX 1 1 nd) (xo-clash? S NX (vector-at X 0) DX 1 1 nd)
+                                          (xo-dself-clash? S DX 1 2 nd))
+                                    (xg-err admitted 7102 (xg-get admitted 1))
+                                    (xo-elf (xo-zero-sites (xg-fix generated 1) 1) S NS cnt X NX D DX (xo-shim-len fuel) fuel))))))))))))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
   (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
@@ -634,7 +880,7 @@
         (xo-shdr 13 3 0 0 names 23 0 0 1 0))))
 (defn- xi-build [M :vector-i64 S :string fuel :i64] :vector-i64
   (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
-                    (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+                    (xo-check-fns S 1) (xo-refuse-externs S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
         entry (xg-get admitted 1)]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0)) (xg-err admitted 7102 entry)
@@ -776,7 +1022,7 @@
   (let [base (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 256) (xg-set 4 0)
                  (mem-set XU-LOCAL-CALL-FLAG (if v3 1 0)))
         checked (if v2 (xo-check-fns base S 1) (xg-check-fns base S 1))
-        a (xg-check-sir checked 1)
+        a (xg-check-sir (xo-refuse-externs checked S 1) 1)
         b (if v2 (xk-check (xk-scan-count a S (if v3 2 1) v3) 1) a)]
     (cond (not= (vector-at b MM-ERR) 0) b
           (= (xg-get b 1) 0) (xg-err b 7102 0)

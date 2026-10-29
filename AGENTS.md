@@ -7,8 +7,15 @@
   features, new targets and benchmark publication. Details:
   `docs/selfhost-priority.md` (owner decision 2026-10-22).
 - Remove CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js and
-  C compiler/loader/runtime dependencies from that closure. CLJK is not a
-  retained final syntax-sugar surface. C-loader pinning is not acceptance.
+  C compiler/loader/runtime dependencies from that implementation closure.
+  C-loader pinning is not acceptance.
+- CLJK and EDN remain accepted as permanent INPUT reader sugar (owner
+  decision 2026-10-29, JUN-579; supersedes the 2026-10-22 "CLJK is not
+  retained" wording). The reader is implemented in Kotoba, and each sugar
+  spelling must desugar to the same canonical Kotoba form and mint the same
+  Definition CID as pure `.kotoba`
+  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). CLJC/CLJS/CLJ still
+  retire.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
@@ -37,17 +44,22 @@
 
 ## Q9 compiler routes must use Kotoba / Amu selfhost only
 
-- Q9 callers use the Amu selfhost-built native `bin/amu` (the `bin/kotoba`
-  and `bin/kotoba-compiler` aliases resolve to that same image) for the
-  qualified `check` and explicit-target `compile` lane. The public host is
-  native Linux x86_64; other public hosts remain unqualified. See
-  `native-product.json` and `docs/native-public-entry.md`.
-- The public default remains an engine-neutral Kototama program contract.
-  Its native implementation is still missing: omitted compile targets
-  refuse `E2`, without an implicit AArch64 or legacy-host substitution.
-  Use explicit `--target`; the retired Node launcher's `AMU_TARGET` routing
-  is not current native behavior. Browser / Worker / WASI targets need
-  their own native qualification before callers can depend on them.
+- Owner decision 2026-10-29 (KOTOBA-171, superseding the KOTOBA-170
+  public FD3 requirement): `bin/amu`, `bin/kotoba` and `bin/kotoba-compiler`
+  resolve to the Amu-built native Mac ARM64 host CLI in
+  `seed/bootstrap/aarch64-macos/cli.json`. Ordinary check/compile/run require
+  no manual FD3, target, lock, packaging or signing. This bounded host CLI
+  explicitly chooses `aarch64-macos` and retains the adopted frontend/checker
+  and pinned full compiler. Generated guests never receive host filesystem
+  or process grants. Full Mac runtime and independent-user release remain
+  unqualified. See `docs/native-public-entry.md`.
+- The low-level compiler pinned by `seed/bootstrap/aarch64-macos/root.json`
+  retains its explicit directory FD3 and basename output/lock interface.
+  Its engine-neutral omitted target still refuses `E2`; the Mac host default
+  is not a new language default. Browser/Worker/WASI support still requires
+  its own qualification. Unsupported public flags must refuse, never discard
+  source paths or locks. Linux x86 callers/CDCI retain
+  `bin/amu-linux-x86_64` and the two Linux aliases in `native-product.json`.
 - The build and execution closure must not invoke NBB, KBB, Node, Java,
   Clojure/JVM, GraalVM, a C compiler or C loader, including through wrappers,
   `resolveWithJvm`, compatibility adapters or packaging helpers.
@@ -100,6 +112,24 @@ actual guest receipts; full scheduling and shared Browser remain separate.
   installation inputs, current Q9 instructions or acceptance blockers.
   Preserve their corpus while porting genuinely missing public behavior.
 
+
+## Local reference oracle (owner decision 2026-10-29, JUN-579 / JUN-588)
+
+The legacy cljk / JVM / nbb reference route (kotoba-sema, osaho, the nbb
+`definition-cids`, `.cljk` test suites) may be run on a developer machine as a
+one-off **measurement oracle**, to obtain reference values (KIR, Definition
+CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
+`.kotoba` equivalence.
+
+- Record the exact command, tool versions, inputs and outputs as data
+  (evidence, with the date); keep downloads minimal and say what was fetched.
+- It never appears in CI, a gate script, a workflow, a build, packaging or a
+  runtime path, and is never a fallback or a required comparison route. The
+  CDCI ban on JVM/nbb is unchanged; a native result must not silently fall
+  back to it.
+- A reference value is evidence of the reference's behavior. It is not proof
+  that a native implementation is correct, and a mismatch is reported, not
+  forced to agree.
 
 ## Shared agent rule
 
@@ -251,6 +281,10 @@ write-aware invalidation, including direct memory-vector writes, and a
 fresh native differential/refusal/resource oracle.
 
 ## Native incremental identity foundation (JUN-332 / JUN-358)
+
+The native `definition-cids <file.kotoba>` candidate (seed/DEFINITION-CIDS-MANIFEST, entry
+`seed/99-definition-cids-entry.kotoba`, gate `scripts/seed/check-definition-cids-native.py`) is documented in
+`docs/definition-cids-native.md`; it grows no adopted manifest.
 
 `seed/04-definition-cid.kotoba` is a bounded payload-v2 codec candidate,
 qualified separately on native ARM/x86 against the pinned canonical bytes

@@ -13,7 +13,7 @@ def main(out,seconds,revision=None,from_sir=0,ccf_only=False):
  assert platform.system()=="Linux" and platform.machine() in ("x86_64","aarch64")
  out.mkdir(parents=True,exist_ok=False)
  target="x86_64-linux" if platform.machine()=="x86_64" else "aarch64-linux"
- producer=ROOT/"bin/amu" if platform.machine()=="x86_64" else ROOT/"seed/bootstrap/aarch64-linux-static-root.elf"
+ producer=ROOT/"bin/amu-linux-x86_64" if platform.machine()=="x86_64" else ROOT/"seed/bootstrap/aarch64-linux-static-root.elf"
  expected_machine=62 if platform.machine()=="x86_64" else 183
  assert struct.unpack_from("<H",Path("/proc/self/exe").read_bytes(),18)[0]==expected_machine
  assert struct.unpack_from("<H",producer.read_bytes(),18)[0]==expected_machine

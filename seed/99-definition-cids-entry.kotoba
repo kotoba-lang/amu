@@ -1,0 +1,16 @@
+;; seed/99-definition-cids-entry.kotoba -- candidate entry for seed/DEFINITION-CIDS-MANIFEST (JUN-583/JUN-584).
+;; `definition-cids <file.kotoba> [--groups]` is the ADR 0300 report: one `name<TAB>CID` line per top-level
+;; definition in declaration order, then `SCANNED<TAB>n/n`. `--groups` appends `<TAB>group-CID-or-dash<TAB>index`
+;; (SCC member index, -1 outside a recursive group). Identity comes from the checked-source bridge
+;; (05-checked-source -> 06 producer, payload-v2, profile 6 / desugar 2, resource profile 0).
+;; No admission runs and nothing is granted: a CID is identity, never authority.
+;; Exit 0 = report; 66 = no identity could be computed (the producer refuses the whole module, stdout is empty and
+;; stderr carries the DSB:* diagnostic); 2 = usage. Every other command is the unchanged core driver.
+;; Not part of MANIFEST/FULL-MANIFEST: the adopted 18-module core (seed/compiler-core.json) is not grown.
+(defn- dci-run [format :i64] :i64
+  (if (= (dsb-source-format (io-fs2-text 65 (io-arg 1) "") false 0 format) 0) 0 66))
+(defn- seed-main [] :i64
+  (cond (not (and (>= (io-argc) 1) (string=? (io-arg 0) "definition-cids"))) (drv-main)
+        (= (io-argc) 2) (dci-run 1)
+        (and (= (io-argc) 3) (string=? (io-arg 2) "--groups")) (dci-run 2)
+        :else 2))

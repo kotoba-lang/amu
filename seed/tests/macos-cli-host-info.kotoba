@@ -1,0 +1,5 @@
+(ns seed.macos-cli-host-info (:export [main]))
+(defn main [] :i64
+  (let [r (hc-call 0 [])]
+    (if (not (hc-ok? r)) (+ 100 (hc-errno r))
+      (let [w (hc-out (string-concat (hc-info-exe r) "\n"))] 0))))

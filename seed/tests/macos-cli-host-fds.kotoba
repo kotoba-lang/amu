@@ -1,0 +1,4 @@
+(ns seed.macos-cli-host-fds (:export [main]))
+(defn main [] :i64
+  (let [a (hc-call 10 [3 0]) b (hc-call 10 [91 0])]
+    (if (or (hc-ok? a) (hc-ok? b)) 1 (hc-out "PASS_NATIVE_CHILD_FDS_CLOSED\n"))))

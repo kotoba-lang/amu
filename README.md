@@ -1,12 +1,13 @@
 # Amu
 
 Amu checks canonical Kotoba and compiles it through the adopted compiler
-lineage. The public `bin/amu` is an Amu-built, self-rebuilt native Linux
-x86_64 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same image.
-It has no ELF interpreter or dynamic runtime dependency.
+lineage. `bin/amu` is an Amu-built, self-rebuilt native **macOS ARM64**
+executable. `bin/kotoba` and `bin/kotoba-compiler` name that same Mach-O.
+It has no dylib dependency. The unchanged native Linux x86_64 executable
+is available explicitly as `bin/amu-linux-x86_64`.
 
 The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
-in a full35 compiler with native Linux emitters, browser Wasm, bounded
+in a 49-module compiler with native Linux emitters, browser Wasm, bounded
 Kototama i64 AOT/receipts/cache, native CDCI/FS2 and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
@@ -22,36 +23,42 @@ and empty authority. See [its ABI and native qualification](docs/kototama-i64-re
 
 ## Native compiler use
 
-Run the public executable on native Linux x86_64. No Node/NBB/KBB, JVM,
-Clojure, Java, GraalVM, C compiler or C loader is used by this entry.
-Other public host platforms remain unqualified.
-
-For a file `hello.kotoba`:
-
-```clojure
-(ns hello (:export [main]))
-(defn main [] :i64 42)
-```
+On an Apple Silicon Mac, use the native CLI directly:
 
 ```sh
-KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" ./bin/amu check hello.kotoba
-KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" ./bin/amu compile hello.kotoba --target x86_64-linux --output hello.elf --format static
-chmod 700 hello.elf
-KEXE_ALLOW=- KEXE_FUEL=1000000 KEXE_STRUCTURED_REPORT=1 ./hello.elf
+printf '(ns hello (:export [main]))\n(defn main [] :i64 42)\n' > hello.kotoba
+bin/amu check hello.kotoba
+bin/amu compile hello.kotoba
+bin/amu run hello.kotoba
+bin/amu run ./hello
 ```
 
-Use explicit targets. The engine-neutral default remains a language
-contract; this native entry currently refuses an omitted compile target
-with `E2`. `aarch64-macos` names the adopted AArch64 payload/container
-route, not a standalone macOS application. Native Linux image emission
-uses `aarch64-linux` or `x86_64-linux` explicitly.
+`check` prints `ok`. `compile` creates the signed native executable `hello`;
+use `-o PATH` or `--output PATH` to choose a new output. Both `run` commands
+print `42` and exit zero. Change the source to `43` and run it again.
+No FD3, target, source lock, extraction, packaging or signing command is
+needed. Existing output files are preserved. Unicode and space-containing
+paths work. See the [Mac ARM64 first run](examples/foundation-starter/MACOS-ARM64.md).
 
-Project inputs retain every declared `--source-path` and an exact KSL1
-`--source-lock`. `--source-lock-sha256` additionally binds the lock bytes.
-There is no `--unpinned` escape or legacy source-extension fallback.
-Unsupported verbs, flags and targets refuse with named diagnostics.
-Package/module-CID integration, worker/test/inspect workflows and other
-unimplemented public compatibility surfaces remain tracked work.
+This public Mac host chooses its native target and accepts a single canonical
+Kotoba source (up to 1 MiB), with one exported `main [] :i64` for compile/run.
+Native programs include their source. `run PROGRAM` recompiles that source,
+checks the complete generated image and runs the regenerated private image.
+Guest filesystem/process capabilities are denied; `run` closes inherited
+descriptors >=3 and limits child execution to5 seconds. Arguments follow `--`. Full Mac runtime and independent-user release
+qualification remain separate.
+
+The full bootstrap compiler remains available at
+`seed/bootstrap/aarch64-macos/amu-full-root.macho` for explicit-target,
+FD3-scoped development commands and exact KSL1 project locks. Its omitted
+target still refuses `E2`; the public Mac host default does not change that
+engine-neutral compiler contract. Unsupported public flags refuse instead
+of silently dropping source paths or locks.
+
+Linux users use `bin/amu-linux-x86_64` and the
+[pinned Linux starter](examples/foundation-starter/README.md), whose immutable
+snapshot retains its original Linux entry. No Node/NBB/KBB, JVM, C compiler,
+Linux VM or emulator is used by the Mac CLI.
 
 See [native product and controller scope](docs/native-public-entry.md),
 [the product identity](native-product.json), and

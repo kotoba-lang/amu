@@ -1,0 +1,6 @@
+(ns seed.macos-cli-host-denied (:export [main]))
+(defn main [] :i64
+  (let [root (hc-arg 0) child (hc-arg 1)
+        r (hc-spawn 0 root (string-concat root "/must-not-exist") child 1 (hc-field "child"))]
+    (if (and (not (hc-ok? r)) (= (hc-errno r) 13))
+      (hc-out "PASS_NATIVE_PROCESS_GRANT_DENIED\n") 1)))

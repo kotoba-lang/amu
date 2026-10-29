@@ -1,0 +1,7 @@
+(ns seed.macos-cli-host-spawn (:export [main]))
+(defn main [] :i64
+  (let [root (hc-arg 0) child (hc-arg 1)
+        r (hc-spawn 0 root (string-concat root "/child.stdout") child 1 (hc-field "child"))]
+    (cond (not (hc-ok? r)) (+ 100 (hc-errno r))
+          (not= (vector-at r 1) 0) (vector-at r 1)
+          :else (hc-out "PASS_NATIVE_HOST_SPAWN\n"))))
