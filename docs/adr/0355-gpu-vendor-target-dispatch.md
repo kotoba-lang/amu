@@ -3959,3 +3959,30 @@ Rule 4 binds: nothing moves; accelerator-targets defaults stay
 :measured? false. Chain PR #1643 was merged 23:21:57Z; this tick
 starts `bot/amu-gpu-chain-20261028-4` with one fresh PR. Evidence:
 `docs/evidence/gpu/anv-b3w5pregocensus-20261028/record-s72-carryforward.txt`.
+
+## Dated note (2026-10-29, JUN-59 session 75: the s73 carry-forward remainder)
+
+analysis-s73.py run 2 (foreground, numpy 2.5.4 interpreter --
+the s74 background run's interpreter lacked numpy, named there)
+completed rc=0 in 4m07s and is BYTE-IDENTICAL to run 1
+(publication-s73.txt sha256 221d5591... == scratch/pub-s73-run1-
+pin.txt, cmp exit 0): the w5-mode "run twice, diff exit 0"
+determinism claim is VERIFIED and the W5 (s73) T7 values -- (a)
+CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES (MAD 143 -> 98, p 0.000050;
+IQR 303 -> 223, p 0.000200) -- stand as two byte-identical runs of
+the validated generator. Standing gates: FULL run-tests.cljk exit
+1, RED AT BASE kotoba.form (ADR-0362, outside this diff) -- no
+green full suite claimed; settle-bar self-test 38/0 and pre-line
+ledger eval x2 byte-identical to the s72 pins; `find ... '*.sh'`
+-> 0. THE BAR: one ledger line appended after the gates verified
+(day=2026-10-29 session=s73 class=INTERMEDIATE/MIXED median=1131
+min=998 flag=none -- the frozen L12 hi block-A candidate; C1 (a),
+VERIFY mismatch 0, GO stamp 00:34:10Z before builds/runs); the
+frozen evaluator (run twice, byte-identical) reports s73 COUNTED
+(day 2026-10-29's first qualifying reading) and VERDICT: PENDING
+2/4. Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 76: the five-window derivation census
+(second-parser cross-check) and the three frozen analysis halves
+(T14/T15/T16). Evidence:
+`docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s75.txt`.
