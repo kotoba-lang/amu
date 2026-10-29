@@ -4096,3 +4096,58 @@ Rule 4 binds: nothing moves; accelerator-targets defaults stay
 Carry-forward to session 79: the T16 second-pair profile axis
 analysis half. Evidence:
 docs/evidence/gpu/anv-b3w5qpairevel-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 79: the T16 second-pair profile axis analysis half)
+
+The s66-frozen T16 row (the second-pair profile axis -- the s56
+halving-rule pairs OUTER2 (5,71) / INNER2 (33,43) -- at W5) taken
+to its ANALYSIS half over the 390 committed run logs (the W5 tw
+arm's 36 runs + the four prior windows' integrity machinery; NO
+hardware runs, NO builds, NO GO stamp, NO day-slot consumption,
+NO settle-bar-ledger line). T16 = (b)
+NOT-SECONDPAIR-PROFILE-W5-OUTER-WEIGHTED-CONSISTENT
+[OPPOSITE-DIRECTION]: the named cell (max,128,S=default) tw arm,
+s36 vs W5 -- OUTER2 (5,71) 2*L 713 -> 715 (2*C_out2 -2 -- the
+outer2 level slightly WIDER at W5); INNER2 (33,43) 2*L 63 -> 54
+(2*C_in2 9 -- the inner2 level narrows); the primary
+difference-in-differences 2*P2_obs = -11 (P2_obs = -5.5), count
+11,211/20,001, p = 0.560572 one-sided in the pre-registered
+direction P2_obs > 0 -- REVERSED. The (b) [OPPOSITE-DIRECTION]
+is CONSISTENT WITH the s56-era power loss at this pair set AND
+EQUALLY CONSISTENT WITH genuine non-replication of the
+outer-weighted profile at the second pair set; the T6 (b) prior
+stands unrepaired; both named levels MOVED (composition
+structure named), mechanism UNMEASURED. D1 descriptive (NO
+letter): the five-window second-pair level vectors reproduce the
+quote-only s56 D1 four-window priors EXACTLY (OUTER2
+713/606/659/612/715; INNER2 63/54/62/56/54); W5 sits
+OUTSIDE-ABOVE the post-shift band on OUTER2 (715 vs 606..612)
+and INSIDE it on INNER2 (54 vs 54..56). A (b) is NOT evidence of
+no per-cell structure; threshold-artifact-vs-representation and
+physical-vs-estimator-structure STAY UNRESOLVED. DOUBLE-RUNS:
+analysis-s79.py run twice byte-identical (publication-s79.txt
+10,166 bytes, sha256 4f140b19...) and derivation-census-s79.py
+-- the independent second parser (split-based parsing, no regex;
+observed block spreads pure-Python sorted() cross-checked vs
+np.partition kth paths; resampling np.partition, NOT np.sort;
+RNG re-implemented with both axes on the same shuffles) -- run
+twice byte-identical with "TOTAL: 47 rows, 0 mismatched | B: 0 |
+C: 0" (sha256 f564d6dd...), every published integer/count/p/
+letter cross-checked including the RNG rows; section B 2,160
+block-D cross-checks 0 mismatched. Standing gates: classify
+--self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pins; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff) with the 879-byte
+.err == pin -- no green full suite claimed; settle-bar self-test
+38/0 == pin and ledger eval twice == pin -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. THE BAR: NO hardware runs ->
+NO ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+With this row the s57 W5 carry-forward queue is COMPLETE;
+carry-forward to session 80: the bar needs two more counted day
+slots (NEW pre-registered hardware measurements on future UTC
+days -- future design+measurement work) and any further named
+profile pair needs a NEW named rank-pair vocabulary (future
+design work). Evidence:
+docs/evidence/gpu/anv-b3w5pair2profile-20261029/record.txt.
