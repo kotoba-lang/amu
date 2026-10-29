@@ -65,6 +65,13 @@ class AuditTests(unittest.TestCase):
         self.assertFalse(result["comparedDeclaredSourceRevision"])
         self.assertNotEqual(result["expectedUnity"], result["actualUnity"])
 
+    def test_replacement_refs_do_not_change_audited_commit_bytes(self):
+        original = self.git("rev-parse", self.source + ":seed/00-test.kotoba")
+        replacement = self.git("rev-parse", self.changed + ":seed/00-test.kotoba")
+        self.git("replace", original, replacement)
+        self.assertEqual(self.git("show", self.source + ":seed/00-test.kotoba"), "second")
+        self.assertEqual(audit.audit(self.good, None)["status"], "MATCH")
+
     def test_mutable_or_missing_revision_refused(self):
         with self.assertRaises(ValueError):
             audit.audit("HEAD", None)
@@ -79,6 +86,25 @@ class AuditTests(unittest.TestCase):
             audit.ROOT = clone
             with self.assertRaises(subprocess.CalledProcessError):
                 audit.audit(self.changed, None)
+
+    def test_partial_clone_missing_blob_is_refused_without_lazy_fetch(self):
+        self.git("config", "uploadpack.allowFilter", "true")
+        with tempfile.TemporaryDirectory(prefix="amu-source-audit-partial-") as parent:
+            clone = Path(parent) / "checkout"
+            subprocess.run(["git", "clone", "--quiet", "--filter=blob:none",
+                            "--no-checkout", self.root.as_uri(), str(clone)],
+                           check=True, capture_output=True)
+            before = subprocess.run(["git", "--no-lazy-fetch", "-C", str(clone),
+                                     "cat-file", "-e", self.good + ":native-product.json"],
+                                    capture_output=True)
+            self.assertNotEqual(before.returncode, 0, "fixture must omit the descriptor blob")
+            audit.ROOT = clone
+            with self.assertRaises(subprocess.CalledProcessError):
+                audit.audit(self.good, None)
+            after = subprocess.run(["git", "--no-lazy-fetch", "-C", str(clone),
+                                    "cat-file", "-e", self.good + ":native-product.json"],
+                                   capture_output=True)
+            self.assertNotEqual(after.returncode, 0, "audit must not fetch the missing blob")
 
     def test_duplicate_or_unsafe_manifest_refused(self):
         for text in ("seed/00-test.kotoba\nseed/00-test.kotoba\n", "seed/../secret.kotoba\n"):

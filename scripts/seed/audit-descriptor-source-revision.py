@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Compare descriptor source unity with bytes at a specified Git commit.
 
-This audits tree content only. A match does not establish how a compiler image
-was built, qualification, or release readiness; it never changes descriptors.
+This audits locally available tree content only. Missing objects are refused;
+Git must support --no-lazy-fetch. Replacement refs are not used. A match does
+not establish compiler build provenance, qualification, or release readiness.
 """
 import argparse
 import hashlib
@@ -17,7 +18,7 @@ PATH = re.compile(r"seed/[A-Za-z0-9_.-]+\.kotoba\Z")
 
 
 def git(*args):
-    return subprocess.run(["git", "-C", str(ROOT), *args], check=True,
+    return subprocess.run(["git", "--no-lazy-fetch", "--no-replace-objects", "-C", str(ROOT), *args], check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout
 
 
