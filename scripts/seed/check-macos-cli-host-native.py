@@ -10,6 +10,7 @@ import json
 import os
 import platform
 import re
+import resource
 import shutil
 import signal
 import subprocess
@@ -46,10 +47,10 @@ def main(out):
 
     packager = build(["seed/macos-fs2-runtime-packager.kotoba"], "packager", bootstrap, "fs2-cli-stdio-general")
     images = {case: build([f"seed/tests/macos-cli-host-{case}.kotoba", "seed/macos-cli-api.kotoba"], case, packager, "amu-cli-host")
-              for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop")}
+              for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop", "write-failure")}
     calls = []
 
-    def run(case, *args, expected=None, inherited=False, alarm=False, exit_code=0, diagnostic=None):
+    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None):
         # Intentionally no inherited directory FD, external environment or PATH.
         def inherited_setup():
             if inherited:
@@ -58,11 +59,14 @@ def main(out):
             if alarm:
                 signal.signal(signal.SIGALRM, signal.SIG_IGN)
                 signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+            if file_limit is not None:
+                signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+                resource.setrlimit(resource.RLIMIT_FSIZE, (file_limit, file_limit))
 
         r = subprocess.run([str(images[case]), *map(str, args)], cwd=out,
                            env={"PATH": "/nonexistent", "LANG": "C"},
                            capture_output=True, timeout=20, close_fds=not inherited,
-                           preexec_fn=inherited_setup if inherited or alarm else None)
+                           preexec_fn=inherited_setup if inherited or alarm or file_limit is not None else None)
         name = f"{len(calls):02d}-{case}"
         (out / (name + ".stdout")).write_bytes(r.stdout)
         (out / (name + ".stderr")).write_bytes(r.stderr)
@@ -101,6 +105,26 @@ def main(out):
     assert regular.read_bytes() == b"private"
     assert not (out / "native paths 日本語").exists()
     original = (ROOT / "seed/macos-fs2-runtime-packager.kotoba").read_text()
+    partial = out / "partial-write-must-not-remain"
+    run("write-failure", partial, "write", file_limit=4, expected=b"PASS_NATIVE_WRITE_FAILURE_CLEANUP\n")
+    assert not partial.exists()
+    chmod = "(mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 45)"
+    assert original.count(chmod) == 1
+    (out / "failed-fchmod.kotoba").write_text(original.replace(chmod,
+        "(mh-imm 1 384) (mh-i 0x92800000) (mh-sys 124) (mh-b 0x54000002 45)"))
+    failed = build([str(out / "failed-fchmod.kotoba")], "failed-fchmod-packager", bootstrap, "fs2-cli-stdio-general")
+    images["failed-fchmod"] = build(["seed/tests/macos-cli-host-write-failure.kotoba", "seed/macos-cli-api.kotoba"], "failed-fchmod", failed, "amu-cli-host")
+    run("failed-fchmod", out / "failed-fchmod-must-not-remain", "fchmod", expected=b"PASS_NATIVE_WRITE_FAILURE_CLEANUP\n")
+    assert not (out / "failed-fchmod-must-not-remain").exists()
+    cleanup = "(mh-label 47) (mh-ldr 0 23 272) (mh-sys 10)"
+    assert original.count(cleanup) == 1
+    (out / "removed-write-cleanup.kotoba").write_text(original.replace(cleanup,
+        "(mh-label 47) (mh-ldr 0 23 272) (mh-i 0xd503201f)"))
+    removed = build([str(out / "removed-write-cleanup.kotoba")], "removed-write-cleanup-packager", bootstrap, "fs2-cli-stdio-general")
+    images["removed-write-cleanup"] = build(["seed/tests/macos-cli-host-write-failure.kotoba", "seed/macos-cli-api.kotoba"], "removed-write-cleanup", removed, "amu-cli-host")
+    run("removed-write-cleanup", partial, "write", file_limit=4, exit_code=3)
+    assert partial.read_bytes() == bytes([0, 255, 128, 42])
+    partial.unlink()
     no_grant = original.replace("0xf9400a68 0xd2a00209", "0xf9400a68 0xd2800009")
     assert no_grant != original
     (out / "no-grant.kotoba").write_text(no_grant)
@@ -135,7 +159,7 @@ def main(out):
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
                   calls=calls, manualFD3=False, linuxProcess=False, hostedFallback=False,
-                  builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close"],
+                  builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], len(calls), "native observations")

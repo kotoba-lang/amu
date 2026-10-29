@@ -1191,16 +1191,24 @@
     (mh-mov 0 24) (mh-sys 6) (mh-add 25 26 1) (mh-b 0x14000000 95)
     ;; WRITE (exclusive): path/NUL then exact binary tail.
     (mh-label 40) (mh-b 0x94000000 20)
+    (mh-str 26 23 272)
     (mh-mov 0 26) (mh-imm 1 16780037) (mh-imm 2 384) (mh-sys 5)
     (mh-b 0x54000002 92) (mh-mov 24 0)
-    (mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 93)
+    (mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 45)
     (mh-ar 26 21 20 0) (mh-imm 25 0) (mh-label 41)
     (mh-cmp 27 26) (mh-b 0x54000002 42)
     (mh-mov 0 24) (mh-mov 1 27) (mh-i 0xcb1b0342)
-    (mh-sys 4) (mh-b 0x54000002 43) (mh-b (bit-or 0xb4000000 0) 94)
+    (mh-sys 4) (mh-b 0x54000002 43) (mh-b (bit-or 0xb4000000 0) 44)
     (mh-ar 27 27 0 0) (mh-b 0x14000000 41)
-    (mh-label 43) (mh-cmpi 0 4) (mh-b 0x54000000 41) (mh-b 0x14000000 93)
-    (mh-label 42) (mh-mov 0 24) (mh-sys 6) (mh-imm 25 1) (mh-b 0x14000000 95)
+    (mh-label 43) (mh-cmpi 0 4) (mh-b 0x54000000 41) (mh-b 0x14000000 45)
+    (mh-label 42) (mh-mov 0 24) (mh-sys 6) (mh-b 0x54000002 46)
+    (mh-imm 25 1) (mh-b 0x14000000 95)
+    ;; Only a successful O_EXCL open owns the path. Preserve errno across
+    ;; close/unlink, including short/zero writes and close failures.
+    (mh-label 44) (mh-imm 0 5)
+    (mh-label 45) (mh-str 0 23 256) (mh-mov 0 24) (mh-sys 6) (mh-b 0x14000000 47)
+    (mh-label 46) (mh-str 0 23 256)
+    (mh-label 47) (mh-ldr 0 23 272) (mh-sys 10) (mh-ldr 0 23 256) (mh-b 0x14000000 92)
     ;; mkdir(0700), unlink, rmdir, chmod(0700), rename, stat via open/fstat.
     (mh-label 50) (mh-b 0x94000000 20) (mh-ar 8 21 20 0) (mh-cmp 27 8) (mh-b 0x54000001 90) (mh-mov 0 26) (mh-imm 1 448)
     (mh-sys 136) (mh-b 0x54000002 92)
