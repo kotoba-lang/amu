@@ -14,9 +14,13 @@ import json
 import os
 import platform
 import subprocess
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+_spec = importlib.util.spec_from_file_location("macos_native_image", ROOT / "scripts/seed/macos_native_image.py")
+macos = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(macos)
 MANIFEST = ROOT / "seed/DEFINITION-CIDS-MANIFEST"
 ORACLE = ["seed/00-ns-static.kotoba", "seed/01-mem.kotoba", "seed/02-io.kotoba",
           "seed/03-source-sha256.kotoba", "seed/04-definition-cid.kotoba",
@@ -38,9 +42,13 @@ def cycle(n):
 
 
 def main(compiler, out):
-    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
-    target = "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux"
-    out.mkdir(parents=True, exist_ok=False)
+    darwin = macos.available()
+    assert darwin or (platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64"))
+    target = ("aarch64-macos" if darwin else
+              "aarch64-linux" if platform.machine() == "aarch64" else "x86_64-linux")
+    out.mkdir(parents=True, exist_ok=False, mode=0o700)
+    # JUN-586: on Apple Silicon the Mac root compiles and the Mac packager wraps each image.
+    packager = macos.root_images()[1] if darwin else None
     paths = [p for p in MANIFEST.read_text().splitlines() if p and not p.startswith("#")]
     assert paths[-1] == "seed/99-definition-cids-entry.kotoba"
     assert not set(paths) & {"seed/99-entry.kotoba"}
@@ -50,13 +58,17 @@ def main(compiler, out):
                   host=[platform.system(), platform.machine()], compiler=pin(compiler), target=target,
                   modules={p: pin(ROOT / p) for p in paths}, calls=[],
                   scope="pure checked-source bridge, payload-v2 profile6/desugar2, SCC<=8; no admission",
-                  macosQualified=False, x86CliAlreadyHasCommand="unknown", productionCompilerClosureChanged=False)
+                  macosQualified=darwin, x86CliAlreadyHasCommand="unknown", productionCompilerClosureChanged=False)
 
     def save():
         (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
 
     def run(name, argv, code=0):
-        p = subprocess.run(list(map(str, argv)), cwd=out, env=env, capture_output=True, timeout=900)
+        if darwin:
+            # FD 3 is the file root; the Mac runtime takes basenames only (KOTOBA-169).
+            p = macos.run(argv[0], out, [a.name if isinstance(a, Path) else a for a in argv[1:]])
+        else:
+            p = subprocess.run(list(map(str, argv)), cwd=out, env=env, capture_output=True, timeout=900)
         report["calls"].append(dict(name=name, exit=p.returncode, stdoutSHA256=hashlib.sha256(p.stdout).hexdigest(),
                                     stderrSHA256=hashlib.sha256(p.stderr).hexdigest()))
         save()
@@ -67,6 +79,11 @@ def main(compiler, out):
     def build(name, text):
         src = out / (name + ".kotoba")
         src.write_text(text)
+        if darwin:
+            image, unsigned = macos.build(compiler, packager, out, src.name, name)
+            report.setdefault("unsignedImages", {})[name] = pin(unsigned)
+            save()
+            return image
         image = out / (name + ".elf")
         run("build-" + name, [compiler, "compile", src, "--target", target, "--output", image, "--format", "static"])
         image.chmod(0o755)
