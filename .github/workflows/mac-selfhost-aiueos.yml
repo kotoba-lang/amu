@@ -13,6 +13,7 @@ on:
       - 'scripts/seed/check-macos-exec-smoke*.py'
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-externs.py'
+      - 'scripts/seed/check-aiueos-object-records.py'
       - 'scripts/seed/check-aiueos-object-cells.py'
       - 'scripts/seed/check-aiueos-object-mmio.py'
       - 'scripts/seed/check-aiueos-object-globals.py'
@@ -156,6 +157,11 @@ jobs:
           python3 -I scripts/seed/check-definition-cids-native.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-definition-cids"
+      - name: AIUEOS kernel object route reads and writes fixed-size records (JUN-556 D5)
+        run: |
+          python3 scripts/seed/check-aiueos-object-records.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-records"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \

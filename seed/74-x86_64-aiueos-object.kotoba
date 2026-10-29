@@ -93,6 +93,16 @@
 (def FF-CELL-NAME-MARK 500)
 (def XO-MAX-DSYMS 16)
 (def FF-EXTERN-MARK 9)
+;; JUN-556 D5 (ADR 0381): private record-load-<w>-<off>-<N> [b] and record-store-<w>-<off>-<N> [b v], w one of u8 u16 u32 u64,
+;; off and N canonical decimals, N a multiple of 4 in 8..256, off a multiple of the width, off + width <= N. They read or
+;; write the caller-owned N-byte record that the exported function's parameter b points at, at the literal offset off:
+;; mov rdx,[b]; (mov rax,[v];) test rdx,rdx; jz ud2; access [rdx+off]; jmp +2; ud2. There is no relocation, symbol or data.
+;; The base must be an unassigned parameter of an exported function, every record access to one parameter names the same
+;; N, and that parameter is not also a window base (xk-record-ok?). The mark is 1000 + ((dir * 4 + width index) * 256 + off)
+;; * 64 + (N / 4 - 2), dir 0 load 1 store, width index 0..3 for 1, 2, 4, 8 bytes.
+(def XK-RECORD 100000)
+(def FF-REC-MARK 1000)
+(def XO-REC-SPAN 131072)
 (def XO-MAX-EXTERNS 16)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
@@ -128,6 +138,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-STORE-MARK XO-MMIO-N))) (+ XK-MMIO-STORE f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (+ XK-CELL-STORE f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
           (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
           :else -1)))
 (defn- xk-extern-call [M :vector-i64 f :i64 t :i64] :vector-i64
@@ -218,8 +229,34 @@
     (xg-err M 7101 OP-CALL)))
 (defn- xo-mmio-address [i :i64] :i64
   (case i 0 0xfee00020 1 0xfee000f0 2 0xfee00320 3 0xfee00380 4 0xfee003e0 0))
+;; D5 record access. m = the mark minus FF-REC-MARK; low 6 bits N/4-2, then 8 bits of offset, then dir * 4 + width index.
+(defn- xk-record-width [wi :i64] :i64 (case wi 0 1 1 2 2 4 8))
+(defn- xk-record-access [M :vector-i64 dir :i64 wi :i64 off :i64] :vector-i64
+  ;; mov r/m with the [rdx+disp32] form (modrm 0x82); the bytes of each opcode, then the 32-bit offset
+  (if (= dir 0)
+    (case wi 0 (-> M (xg-bytes 0x82b60f 3) (xg-bytes off 4))
+              1 (-> M (xg-bytes 0x82b70f 3) (xg-bytes off 4))
+              2 (-> M (xg-bytes 0x828b 2) (xg-bytes off 4))
+                (-> M (xg-bytes 0x828b48 3) (xg-bytes off 4)))
+    (case wi 0 (-> M (xg-bytes 0x8288 2) (xg-bytes off 4))
+              1 (-> M (xg-bytes 0x828966 3) (xg-bytes off 4))
+              2 (-> M (xg-bytes 0x8289 2) (xg-bytes off 4))
+                (-> M (xg-bytes 0x828948 3) (xg-bytes off 4)))))
+(defn- xk-record-value [M :vector-i64 dir :i64 t :i64] :vector-i64
+  (if (= dir 1) (xg-load M (+ t 1) 0x858b48) M))
+(defn- xk-record-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (let [m (- (xg-f M (- k XK-RECORD) FF-EXPORT) FF-REC-MARK)
+        q (u64-shift-right m 6) off (bit-and q 255) dw (u64-shift-right q 8)
+        dir (u64-shift-right dw 2) wi (bit-and dw 3)
+        len (if (or (and (= dir 0) (= wi 2)) (and (= dir 1) (or (= wi 0) (= wi 2)))) 6 7)]
+    ;; jz skips the access and the two-byte jmp to land on the ud2
+    (-> M (xg-load t 0x958b48) (xk-record-value dir t)
+          (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes (+ len 2) 4)
+          (xk-record-access dir wi off)
+          (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (>= k XK-MMIO-STORE)
+  (cond (>= k XK-RECORD) (xk-record-intrinsic M k t)
+        (>= k XK-MMIO-STORE)
           (-> M (xg-load t 0x858b48) (xg-bytes 0xb948 2)
               (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-STORE) FF-EXPORT) FF-MMIO-STORE-MARK)) 8)
               (xg-bytes 0x0189 2) (xg-save t))
@@ -474,6 +511,27 @@
                       (if (and (>= p 0) (not= l0 0) (xk-same-extent? M j l0 p) (not= n 0)) n -1))
                     (km-owned-region M a j b))
                 :else -1))))))
+;; D5: a record access names a base that is an unassigned parameter of an EXPORTED function, every access to that parameter
+;; names the same N, and the parameter is not also the base of a window access.
+(defn- xk-record-n [M :vector-i64 callee :i64] :i64
+  (* 4 (+ 2 (bit-and (- (xg-f M callee FF-EXPORT) FF-REC-MARK) 63))))
+(defn- xk-window-k? [k :i64] :bool
+  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-EXTERN)))))
+(defn- xk-record-conflict? [M :vector-i64 i :i64 st :i64 src :i64 n :i64] :bool
+  (loop [c 1]
+    (if (>= c (vector-at M MM-SIR-N)) false
+      (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xk-fn-start M c) st))
+        (let [k2 (xk-intr M (xg-si M c IF-A))]
+          (if (and (or (>= k2 XK-RECORD) (xk-window-k? k2)) (= (xk-src M c (xg-si M c IF-B) 0) src)
+                   (or (xk-window-k? k2) (not= (xk-record-n M (xg-si M c IF-A)) n)))
+            true (recur (inc c))))
+        (recur (inc c))))))
+(defn- xk-record-ok? [M :vector-i64 i :i64] :bool
+  (let [st (xk-fn-start M i) f (xg-si M st IF-A)
+        src (xk-src M i (xg-si M i IF-B) 0)]
+    (and (= (xg-f M f FF-EXPORT) 1)
+         (> src 8589934592) (<= src (+ 8589934592 (xg-f M f FF-NPARAMS)))
+         (not (xk-record-conflict? M i st src (xk-record-n M (xg-si M i IF-A)))))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
@@ -482,6 +540,7 @@
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
+              (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
         (xk-check M (inc i))))))
@@ -559,6 +618,32 @@
         (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-") (= (xg-f M f FF-NPARAMS) 1))
           (let [k (xo-mmio-index S (+ a 13) b)] (if (< k 0) -1 (+ FF-MMIO-STORE-MARK k)))
         :else -1))
+;; JUN-556 D5 names: record-load-<w>-<off>-<N> [b] / record-store-<w>-<off>-<N> [b v]
+(defn- xo-small-number [S :string i :i64 b :i64] :i64
+  (if (and (< i b) (<= (- b i) 3) (xo-digits-ok? S i b))
+    (let [k (mem-parse-dec S i b)] (if (and (>= k 0) (string=? (string-substring S i b) (mem-u2dec k))) k -1))
+    -1))
+(defn- xo-rec-width [s :string] :i64
+  (cond (string=? s "u8") 0 (string=? s "u16") 1 (string=? s "u32") 2 (string=? s "u64") 3 :else -1))
+(defn- xo-record-mark-rest [dir :i64 rest :string] :i64
+  (let [d1 (string-index-of rest "-")]
+    (if (< d1 1) -1
+      (let [wi (xo-rec-width (string-substring rest 0 d1))
+            tail (string-substring rest (inc d1) (string-length rest))
+            d2 (string-index-of tail "-")]
+        (if (or (< wi 0) (< d2 1)) -1
+          (let [off (xo-small-number tail 0 d2)
+                n (xo-small-number tail (inc d2) (string-length tail))
+                w (case wi 0 1 1 2 2 4 8)]
+            (if (and (>= off 0) (>= n 8) (<= n 256) (= (bit-and n 3) 0) (= (bit-and off (dec w)) 0) (<= (+ off w) n))
+              (+ FF-REC-MARK (* (+ (* (+ (* dir 4) wi) 256) off) 64) (- (quot n 4) 2))
+              -1)))))))
+(defn- xo-record-mark [M :vector-i64 S :string f :i64 a :i64 b :i64] :i64
+  (cond (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "record-load-") (= (xg-f M f FF-NPARAMS) 1))
+          (xo-record-mark-rest 0 (string-substring S (+ a 12) b))
+        (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "record-store-") (= (xg-f M f FF-NPARAMS) 2))
+          (xo-record-mark-rest 1 (string-substring S (+ a 13) b))
+        :else -1))
 (defn- xo-dname-dash [S :string a :i64 b :i64] :i64
   (string-index-of (string-substring S (+ a 10) b) "-"))
 (defn- xo-dname-mark [S :string a :i64 b :i64] :i64
@@ -570,7 +655,9 @@
       (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-load-"))
       (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-"))
       (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-"))
-      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))
+      (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "record-load-"))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "record-store-"))))
 (defn- xo-mark-externs [M :vector-i64 S :string f :i64] :vector-i64
   (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
     (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
@@ -585,7 +672,7 @@
               (let [m (let [c (xo-cell-mark M S f a b)]
                         (cond (>= c 0) c
                               (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-name-") (= (xg-f M f FF-NPARAMS) 0)) (xo-dname-mark S a b)
-                              :else (xo-mmio-mark M S f a b)))]
+                              :else (let [mm (xo-mmio-mark M S f a b)] (if (>= mm 0) mm (xo-record-mark M S f a b)))))]
                 (if (and (>= m 0) (xo-extern-body-ok? M f))
                   (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) m) S (inc f))
                   (xg-err M 7102 f)))
