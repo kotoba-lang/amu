@@ -101,6 +101,11 @@ jobs:
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-layout-rule"
+      - name: Check the SHA-256 crypto-hardware option (on by default, --no-crypto-hw scalar)
+        run: |
+          python3 scripts/seed/check-crypto-hw-option-macos-native.py \
+            --mac-build "$RUNNER_TEMP/mac-root" \
+            --output "$RUNNER_TEMP/mac-crypto-hw"
       - name: Verify the selected 18-module core adoption on Mac
         run: |
           python3 scripts/seed/check-macos-core-adoption.py \
