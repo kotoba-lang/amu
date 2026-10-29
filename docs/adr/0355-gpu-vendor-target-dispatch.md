@@ -4842,3 +4842,62 @@ tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3t20prego-20261029/ (record.txt +
 analysis-t20-prego.py + compat-prego-validation.txt +
 t20prego-selftest.txt/.err + the s93 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 94: the W7 route/custody
+## pre-flight)
+The W7 measurement row's ROUTE preparation half (the per-window
+precedent: s67 -> W5, s91 -> W6, this tick -> W7; NO runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line). The measurement half itself REMAINS
+day-slot-gated behind W6's ledger line (STARTED, NOT FINISHED):
+W7's run day is UNKNOWN at this tick (W7 = the first measurement
+session at/after 00:00:00Z of the first UTC day strictly after
+W6's ledger-line day; W6's line does not exist -- the W6 slot
+opens 2026-10-30T00:00:00Z and this tick runs ~12.0h before it).
+LOCAL CUSTODY INPUTS re-verified this tick against the s51/s57-
+frozen digests (tool: shasum -a 256): instrument source
+a5e539f0ad1c5d73..., expected-corpus.sha256 eefba52e7be052d6...,
+manifest cases-s51-a.txt c568e32ef0363165..., the 24-cell-line
+digest 873025d650afae23... (reproduces the chain prefix; diff vs
+cases-s36-a.txt cell lines EMPTY), corpus 16/16 LOCAL (8 OK in
+anv-subgroupsize-81632-20261027/shaders + 8 OK in
+anv-subgroupsize-batch64-20261027/shaders). HOST ROUTE PROBE
+(read-only ssh, verbatim in the record; NO GPU submission, NO
+vulkaninfo): 2026-10-29T12:02:58Z / aiueos-6600hs / murakumo-ci
+nix-users render kvm / NO-WORKDIR / /usr/bin/gcc / by-path card0
+renderD128, ssh_rc=0 -- route reachable, host clock sane, the s27
+render-group fix holds, gcc present (no compile before GO), dri
+nodes present; the W7 workdir (~/anv-b3w7daybar-<ACTUAL-RUN-DAY,
+default 20261031>) is NOT YET STAGED (probed by glob because the
+day component is unknown before W6's line day) -- staging is the
+W7 session's own pre-GO custody step (s51/s73 precedent). NAMED
+LIMITS: no host-side 3/3 or corpus 16/16 (local halves only), no
+GO stamp, no build-census, no run-window, no publication, NO
+STATISTICS OF ANY KIND; the s85 contingencies bind unchanged
+(W6 slips -> W7's day follows W6's actual line day; W6 FLAGGED ->
+W7 delivers the bar's THIRD counted reading and the remaining slot
+is NEW pre-registered work; W6's line ABSENT -> s85 STANDS DOWN
+and this pre-flight stands inert with it). Reading machinery stays
+s90's pre-build; the W7 adoption edit is named (reading-prego.py's
+single window constant W6_DIR, line 65). VERIFIED (real tool
+output, byte-compared to the s88 committed pins): classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk exit
+1 RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0; settle-bar-ledger.txt ==
+HEAD. The bar: NO reading -> NO ledger line, NO day-slot
+consumption. Rule 4 binds: NOTHING MOVES; the ADR-0358 row
+states are unchanged; NO vendor optimization exists for Intel.
+Carry-forward to session 95: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (the s92 pre-build + the s84 freeze
+bind), the T20 analysis half (the s93 pre-build + the s88 freeze
+bind), the W7 measurement half (behind W6's ledger line; its
+route/custody preparation half is this pre-flight), any further
+counted-day slot (its own freeze), and a cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w7routepreflight-20261029/ (record.txt +
+the s94 gate captures).
