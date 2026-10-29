@@ -4785,3 +4785,60 @@ row (not queued). Evidence:
 docs/evidence/gpu/anv-b3t18prego-20261029/ (record.txt +
 analysis-t18-prego.py + compat-prego-validation.txt +
 t18prego-selftest.txt/.err + the s92 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 93: the T20 analysis
+## pre-build)
+The T20 row's ANALYSIS machinery preparation half (the s69/s90/s92
+pre-build precedent applied to the s88-frozen analysis path;
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line). The analysis
+half itself REMAINS day-slot-gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T11:2xZ-11:4xZ, ~12.4h before the slot opens) --
+STARTED, NOT FINISHED. analysis-t20-prego.py implements the
+complete frozen T20 row -- the construction (named cell
+(max,128,S=default), tw arm, 12 blocks of 3, per-block pooled-75
+EXACT-INTEGER HL_k/HR_k at the closed s86 vocabulary), the frozen
+null (WITHIN-BLOCK SIDE-EXCHANGEABILITY: all 2^12 = 4,096
+whole-block side-swap assignments enumerated EXACTLY, one shared
+mask across the four families, NO RNG, p = count(C* >= C_obs) /
+4,096 one-sided, identity included), the letters and the IUT joint
+(k=4/8 excluded per the s86 section-4(c) caveat), the invalidation
+machinery (incl. the s86 decomposition identity) and the D-family
+(D3 band under the s83/s89 corrected [MIN,MAX] convention). Full
+mode is unreachable under the pre-build name; the T20 session
+adopts it as analysis-s<NN>.py. VERIFIED (real tool output):
+--self-test 184/0 run-twice byte-identical (fixture suite; hand-
+computable exact cases at the full 4,096 assignments -- the
+identical-block fixture count 1,586 = sum_{m=0..5} C(12,m) -- plus
+an independent pure-Python twin cross-checked in-loop; MOCK numbers
+are fixtures, never measurements); --compat 52 rows / 0 mismatched
+run-twice byte-identical -- the s88 section-6 parser validity pins
+recomputed over the five committed windows (390 logs) and
+two-way-checked against committed publication bytes (want PARSED,
+never transcribed), INCLUDING the eight TS five-window vectors and
+W5 block value vectors EXACT against publication-s87.txt and the
+decomposition identity's 240 prior checks "EXACT everywhere".
+NAMED, NOT HIDDEN: the exact-enumeration null has NO published
+reproduction target (T19 is descriptive-only) -- no p is computed
+on any real window in this pre-build. NO T20 quantity exists or is
+computed. Standing gates == the s88 pins: classify 2649/0 (17,925
+bytes); scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes);
+FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green full
+suite claimed; settle-bar self-test 38/0 + ledger eval twice ==
+pins -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0;
+settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO ledger
+line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES; the
+ADR-0358 row states are unchanged; NO vendor optimization exists
+for Intel. Carry-forward to session 94: the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (the s92 pre-build + the s84 freeze
+bind), the T20 analysis half (this pre-build + the s88 freeze
+bind), the W7 measurement half (behind W6's ledger line), any
+further counted-day slot (its own freeze), and a cross-day
+tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3t20prego-20261029/ (record.txt +
+analysis-t20-prego.py + compat-prego-validation.txt +
+t20prego-selftest.txt/.err + the s93 gate captures).
