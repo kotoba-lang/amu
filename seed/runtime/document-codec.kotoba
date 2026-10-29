@@ -1,0 +1,152 @@
+;; Runtime source fragment embedded in 21-check, not a seed unity module.
+;; The wire contract is osaho document-canonical-bytes, not DAG-CBOR.
+;; State is local to a single read: [byte-cursor, nodes, aggregate-text-bytes].
+;; This candidate is not executed or qualified; SHA-256 is a separate fragment.
+
+(defn- __kr_drcharge [state :vector-i64 slot :i64 amount :i64 limit :i64] :i64
+  (let [next (+ (vector-at state slot) amount)]
+    (if (or (< amount 0) (> next limit))
+      (__kr_dtrap)
+      (let [written (vector-assoc! state slot next)] next))))
+
+(defn- __kr_drtake [text :string state :vector-i64] :i64
+  (let [cursor (vector-at state 0)]
+    (if (>= cursor (string-byte-length text))
+      (__kr_dtrap)
+      (let [point (string-code-point-at text cursor)
+            written (vector-assoc! state 0 (+ cursor 1))]
+        point))))
+
+(defn- __kr_drdecimal [text :string state :vector-i64 separator :i64] :i64
+  (let [first (__kr_drtake text state)
+        negative (= first 45)
+        signed (or negative (= first 43))]
+    (loop [point (if signed (__kr_drtake text state) first) value 0 digits 0]
+      (if (= point separator)
+        (cond (= digits 0) (__kr_dtrap)
+              negative value
+              (= value -9223372036854775808) (__kr_dtrap)
+              :else (- 0 value))
+        (if (or (< point 48) (> point 57)
+                (< value -922337203685477580)
+                (and (= value -922337203685477580) (> point 56)))
+          (__kr_dtrap)
+          (recur (__kr_drtake text state)
+                 (- (* value 10) (- point 48)) (+ digits 1)))))))
+
+(defn- __kr_drtext [text :string state :vector-i64] :string
+  (let [length (__kr_drdecimal text state 58)
+        start (vector-at state 0)]
+    (if (or (< length 0) (> length 65536)
+            (> length (- (string-byte-length text) start)))
+      (__kr_dtraps)
+      (let [payload (string-substring text start (+ start length))
+            charged (__kr_drcharge state 2 length 65536)
+            written (vector-assoc! state 0 (+ start length))]
+        payload))))
+
+(defn- __kr_drkeyword [text :string state :vector-i64] :string
+  (let [keyword (__kr_drtext text state)
+        length (string-byte-length keyword)]
+    (if (and (> length 0) (<= length 512)
+             (= (string-code-point-at keyword 0) 58)
+             (__kr_dsymsok keyword 1))
+      keyword
+      (__kr_dtraps))))
+
+(defn- __kr_drsequence [text :string state :vector-i64 depth :i64 tag :i64] :string
+  (let [count (__kr_drdecimal text state 58)
+        empty (cond (= tag 118) "[]" (= tag 108) "()" :else "#{}")]
+    (if (or (< count 0) (> count 32))
+      (__kr_dtraps)
+      (loop [index 0 output empty previous ""]
+        (if (>= index count) output
+          (let [value (__kr_drwalk text state (+ depth 1) false)
+                canonical (if (= tag 101) (__kr_dcanon value) "")]
+            (if (and (= tag 101) (> index 0)
+                     (>= (string-compare previous canonical) 0))
+              (__kr_dtraps)
+              (recur (+ index 1) (__kr_dvadd output value) canonical))))))))
+
+(defn- __kr_drmap [text :string state :vector-i64 depth :i64] :string
+  (let [count (__kr_drdecimal text state 58)]
+    (if (or (< count 0) (> count 32))
+      (__kr_dtraps)
+      (loop [index 0 output "{}" previous ""]
+        (if (>= index count) output
+          (let [marker (__kr_drtake text state)
+                key (cond (= marker 75) (__kr_drkeyword text state)
+                          (= marker 68) (__kr_drwalk text state (+ depth 1) true)
+                          :else (__kr_dtraps))
+                value (__kr_drwalk text state (+ depth 1) false)]
+            (if (and (> index 0)
+                     (>= (__kr_dkeycmp previous key 0 (string-byte-length key)) 0))
+              (__kr_dtraps)
+              (recur (+ index 1)
+                     (__kr_dvadd output (string-concat key (string-concat " " value)))
+                     key))))))))
+
+(defn- __kr_drwalk [text :string state :vector-i64 depth :i64 map-key :bool] :string
+  (let [tag (__kr_drtake text state)
+        keyword-key (and map-key (= tag 107))]
+    (if (and (not keyword-key) (> depth 8))
+      (__kr_dtraps)
+      (let [charged (if keyword-key 0 (__kr_drcharge state 1 1 4096))]
+        (cond
+          (= tag 110) "nil"
+          (= tag 98) (let [value (__kr_drtake text state)]
+                       (cond (= value 116) "true" (= value 102) "false"
+                             :else (__kr_dtraps)))
+          (= tag 105) (string-from-i64 (__kr_drdecimal text state 59))
+          (= tag 102) (__kr_df64text (__kr_drdecimal text state 59))
+          (= tag 115) (__kr_desc (__kr_drtext text state))
+          (= tag 107) (__kr_drkeyword text state)
+          (= tag 121) (let [value (__kr_drtext text state)]
+                       (if (> (string-byte-length value) 512) (__kr_dtraps)
+                         (__kr_dsym value)))
+          (or (= tag 118) (= tag 108) (= tag 101))
+          (__kr_drsequence text state depth tag)
+          (= tag 109) (__kr_drmap text state depth)
+          :else (__kr_dtraps))))))
+
+(defn- __kr_drdecode [text :string] :string
+  (let [state (vector-alloc 3)
+        document (__kr_drwalk text state 0 false)]
+    (if (= (vector-at state 0) (string-byte-length text))
+      document
+      (__kr_dtraps))))
+
+(defn- __kr_drhexval [point :i64] :i64
+  (cond (and (>= point 48) (<= point 57)) (- point 48)
+        (and (>= point 97) (<= point 102)) (- point 87)
+        :else (__kr_dtrap)))
+
+(defn- __kr_drhex [hex :string] :string
+  (let [length (string-byte-length hex)]
+    (if (or (> length 1048576) (not (= (bit-and length 1) 0)))
+      (__kr_dtraps)
+      (let [decoded (loop [cursor 0 bytes (vector-alloc 0)]
+                      (if (>= cursor length) bytes
+                        (let [high (__kr_drhexval (string-code-point-at hex cursor))
+                              low (__kr_drhexval (string-code-point-at hex (+ cursor 1)))]
+                          (recur (+ cursor 2) (vector-conj bytes (+ (* high 16) low))))))]
+        (string-from-utf8 (bytes-from-vector-i64 decoded))))))
+
+(defn- __kr_dprint [document :string] :string
+  (let [canonical (__kr_dcanon document)
+        validated (__kr_drdecode canonical)
+        bytes (string-to-utf8 canonical)
+        count (bytes-count bytes)]
+    (if (> count 32768) (__kr_dtraps)
+      (loop [index 0 output ""]
+        (if (>= index count) output
+          (let [value (bytes-at bytes index)]
+            (recur (+ index 1)
+                   (string-concat output
+                     (string-concat (__kr_dhexd (quot value 16))
+                                    (__kr_dhexd (bit-and value 15)))))))))))
+
+(defn- document-print [document :document] :string
+  (__kr_dprint (__r6-ds document)))
+(defn- document-read [hex :string] :document
+  (__r6-dd (__kr_drdecode (__kr_drhex hex))))

@@ -158,7 +158,7 @@ def main(out, tier, reuse=None, store=None):
     # 2. F's Linux targets
     built = dict(
         aarch64Runner=compile_(F, runner, out / "R-aarch64.elf", "aarch64-linux", "runner", "R-aarch64", scope),
-        x86_64Compiler=compile_(F, source, out / "S-x86_64.elf", "x86_64-linux", "static", "S-x86_64", scope),
+        x86_64Compiler=compile_(F, source, out / "S-x86_64.elf", "x86_64-linux", "static", "S-x86_64", senv),
         x86_64Runner=compile_(F, runner, out / "R-x86_64.elf", "x86_64-linux", "kx64-runner", "R-x86_64", scope))
 
     # 3. F's core route, the packed refusal and a named diagnostic
@@ -235,12 +235,17 @@ def main(out, tier, reuse=None, store=None):
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
         compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", scope)
     float_refusals = []
+    # Decimal literals now lower directly to binary64 bits. For these two
+    # cases the first rejected Wasm operation is respectively F64->F32 or
+    # F64 division, rather than the historical integer->F64 conversion.
+    wasm_float_details = {"float-f32-conv": 34, "float-f64-unordered": 19}
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
         src.write_text(case["source"])
         r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
                     scope, success=False)
-        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+        detail = wasm_float_details.get(case["name"], case["refusalDetail"])
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {detail}".encode() in r.stderr \
             and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
         float_refusals.append(case["name"])
     wasm_modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
@@ -322,8 +327,8 @@ def main(out, tier, reuse=None, store=None):
         assert pin(out / "P.bin")["sha256"] == adoption["nativeImageSHA256"], "packed compiler output mismatch"
         assert pin(out / "P.kseed") == adopted_gens[-1]["container"], "packed compiler container mismatch"
         packed = dict(image=pin(P), container=pin(out / "P.kseed"), native=pin(out / "P.bin"))
-        s1 = compile_(F, source, out / "S.elf", "aarch64-linux", "static", "S", scope)
-        s2 = compile_(out / "S.elf", source, out / "S2.elf", "aarch64-linux", "static", "S2", scope)
+        s1 = compile_(F, source, out / "S.elf", "aarch64-linux", "static", "S", senv)
+        s2 = compile_(out / "S.elf", source, out / "S2.elf", "aarch64-linux", "static", "S2", senv)
         assert s1 == s2, "Linux selfhost closure fixed point mismatch"
         closure = dict(S=s1)
 

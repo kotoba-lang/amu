@@ -1,6 +1,6 @@
 ;; Native seed extension: bounded scalar SIR -> x86-64 Linux ELF64.
-;; Assemble after 90-drv, replacing 99-entry. The adopted 16-module closure,
-;; bootstrap and launcher are unchanged. No host compiler translates Kotoba.
+;; Assemble after 90-drv, replacing 99-entry. Candidate source only; adopted
+;; bootstrap/artifact pins do not qualify this changed compiler closure.
 ;; CODE packs eight bytes per word; CODE-N still counts bytes plus one.
 ;; Absolute M[192..196] are reserved by X86_64-LINUX-ABI for this route,
 ;; after lowering: current function, main, fuel, data offset, profile. NOT STAT.
@@ -52,8 +52,30 @@
   (if (= i n) M
     (xg-call-args (if (< i 5) (xg-load M (+ t i) (xg-arg-op i true))
       (-> M (xg-load (+ t i) 0x858b48) (xg-bytes 0x24848948 4) (xg-bytes (* 8 (- i 5)) 4))) t (inc i) n)))
+(defn- xg-fl-bin? [op :i64] :bool
+  (or (and (>= op BOP-F64-ADD) (<= op BOP-F64-MAX))
+      (and (>= op BOP-F32-ADD) (<= op BOP-F32-MAX))))
+(defn- xg-fl-cmp? [op :i64] :bool
+  (or (and (>= op CC-F64-EQ) (<= op CC-F64-UN))
+      (and (>= op CC-F32-EQ) (<= op CC-F32-UN))))
+(defn- xg-fl-un? [op :i64] :bool
+  (or (and (>= op UOP-F64-NEG) (<= op UOP-F64-SQRT))
+      (and (>= op UOP-F32-NEG) (<= op UOP-F32-SQRT))
+      (and (>= op UOP-F64-TO-I64) (<= op UOP-F32-TO-I64))))
+(defn- xg-fl-sir? [op :i64 sub :i64] :bool
+  (or (and (= op OP-BIN) (xg-fl-bin? sub))
+      (and (= op OP-CMP) (xg-fl-cmp? sub))
+      (and (= op OP-UN) (xg-fl-un? sub))))
+(defn- xg-fl-frame? [M :vector-i64 f :i64] :bool
+  (loop [i (xg-f M f FF-SIR)]
+    (cond (or (<= i 0) (>= i (vector-at M MM-SIR-N))) false
+          (= (xg-si M i IF-OP) OP-END) false
+          (xg-fl-sir? (xg-si M i IF-OP) (xg-si M i IF-A)) true
+          :else (recur (inc i)))))
 (defn- xg-frame [M :vector-i64 f :i64] :i64
-  (bit-and (+ 15 (if (not= (xg-get M 4) 0) 112 0) (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
+  (bit-and (+ 15 (if (and (not= (xg-get M 4) 0) (not= (xg-get M 4) 3)) 112 0)
+              (if (xg-fl-frame? M f) 16 0)
+              (* 8 (+ 1 (xg-f M f FF-NSLOTS) (xg-f M f FF-DEPTH)))) -16))
 (defn- xg-fn [M :vector-i64 f :i64 n :i64] :vector-i64
   (let [at (vector-at M MM-CODE-N) frame (xg-frame M f)]
     (-> M (xg-set 0 f) (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-CODE) at)
@@ -75,15 +97,136 @@
     9 (xg-bytes M 0xe8d348 3) 10 (xg-bytes M 0xf8d348 3)
     (xg-err M 7101 op)))
 (defn- xg-bin [M :vector-i64 op :i64 t :i64] :vector-i64
-  (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bin-op op) (xg-save t)))
+  (if (xg-fl-bin? op) (xg-fl-bin M op t)
+    (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bin-op op) (xg-save t))))
 (defn- xg-cc [cc :i64] :i64 (case cc 1 0x94 2 0x9c 3 0x9f 4 0x9e 5 0x9d 0))
 (defn- xg-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
-  (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
+  (if (xg-fl-cmp? cc) (xg-fl-cmp M cc t)
+    (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
       (xg-bytes 0xc83948 3) (xg-byte 0x0f) (xg-byte (xg-cc cc)) (xg-byte 0xc0)
-      (xg-bytes 0xc0b60f 3) (xg-save t)))
+      (xg-bytes 0xc0b60f 3) (xg-save t))))
 (defn- xg-un [M :vector-i64 op :i64 t :i64] :vector-i64
-  (-> M (xg-load t 0x858b48)
-      (xg-bytes (if (= op UOP-NOT) 0x01f08348 0xd0f748) (if (= op UOP-NOT) 4 3)) (xg-save t)))
+  (if (xg-fl-un? op) (xg-fl-un M op t)
+    (-> M (xg-load t 0x858b48)
+      (xg-bytes (if (= op UOP-NOT) 0x01f08348 0xd0f748) (if (= op UOP-NOT) 4 3)) (xg-save t))))
+
+;; SSE2 operations use scratch xmm0/xmm1 and GPR bit carriers, never an
+;; external floating ABI or runtime helper. Every operation saves/restores
+;; MXCSR: nearest-even, all exceptions masked, no DAZ/FTZ or contraction.
+;; The extra 16-byte frame reservation is included in the existing 4096 bound.
+(defn- xg-fl-begin [M :vector-i64] :vector-i64
+  (-> M (xg-bytes 0x241cae0f 4)
+      (xg-bytes 0x042444c7 4) (xg-bytes 0x1f80 4)
+      (xg-bytes 0x042454ae0f 5)))
+(defn- xg-fl-end [M :vector-i64] :vector-i64 (xg-bytes M 0x2414ae0f 4))
+(defn- xg-fl-to [M :vector-i64 wide :bool second :bool] :vector-i64
+  (-> M (xg-byte 0x66) (cond-> wide (xg-byte 0x48))
+      (xg-bytes 0x6e0f 2) (xg-byte (if second 0xc9 0xc0))))
+(defn- xg-fl-from [M :vector-i64 wide :bool] :vector-i64
+  (-> M (xg-byte 0x66) (cond-> wide (xg-byte 0x48))
+      (xg-bytes 0xc07e0f 3) (cond-> (not wide) (xg-bytes 0xc06348 3))))
+(defn- xg-fl-ucomi [M :vector-i64 wide :bool modrm :i64] :vector-i64
+  (-> M (cond-> wide (xg-byte 0x66)) (xg-bytes 0x2e0f 2) (xg-byte modrm)))
+(defn- xg-fl-fix [M :vector-i64 at :i64 target :i64] :vector-i64
+  (let [delta (- target (+ at 4))]
+    (cond (not= (vector-at M MM-ERR) 0) M
+          (or (< at 0) (> (+ at 4) (xg-pos M)) (< target 0) (> target (xg-pos M))
+              (< delta -2147483648) (> delta 2147483647)) (xg-err M 7103 at)
+          :else (xg-patch M at delta 4))))
+
+;; MINSD/MINSS alone choose the second operand on zero or NaN. Ordered
+;; unequal values use CMOV; equal values use OR for min / AND for max so
+;; -0 < +0 in either operand order. An unordered result propagates a quiet
+;; NaN from an input; the language promises no extra payload-selection rule.
+(defn- xg-fl-minmax [M :vector-i64 wide :bool maximum :bool] :vector-i64
+  (let [m1 (xg-fl-ucomi M wide 0xc1)
+        nan-at (+ (xg-pos m1) 2)
+        m2 (-> m1 (xg-bytes 0x8a0f 2) (xg-bytes 0 4))
+        equal-at (+ (xg-pos m2) 2)
+        m3 (-> m2 (xg-bytes 0x840f 2) (xg-bytes 0 4)
+               (xg-bytes (if maximum 0xc1420f48 0xc1470f48) 4))
+        done1 (+ (xg-pos m3) 1)
+        m4 (-> m3 (xg-byte 0xe9) (xg-bytes 0 4))
+        equal-pos (xg-pos m4)
+        m5 (xg-bytes m4 (if maximum 0xc82148 0xc80948) 3)
+        done2 (+ (xg-pos m5) 1)
+        m6 (-> m5 (xg-byte 0xe9) (xg-bytes 0 4))
+        nan-pos (xg-pos m6)
+        m7 (xg-fl-ucomi m6 wide 0xc0)
+        quiet-at (+ (xg-pos m7) 2)
+        m8 (-> m7 (xg-bytes 0x8a0f 2) (xg-bytes 0 4) (xg-bytes 0xc88948 3))
+        quiet-pos (xg-pos m8)
+        m9 (-> m8 (xg-bytes 0xba48 2) (xg-bytes (if wide 0x8000000000000 0x400000) 8)
+               (xg-bytes 0xd00948 3))
+        end (xg-pos m9)]
+    (-> m9 (xg-fl-fix nan-at nan-pos) (xg-fl-fix equal-at equal-pos)
+        (xg-fl-fix done1 end) (xg-fl-fix done2 end) (xg-fl-fix quiet-at quiet-pos)
+        (cond-> (not wide) (xg-bytes 0xc06348 3)))))
+(defn- xg-fl-bin [M :vector-i64 op :i64 t :i64] :vector-i64
+  (let [wide (< op BOP-F32-ADD) code (bit-and op 7)
+        m1 (-> M (xg-fl-begin) (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
+               (xg-fl-to wide false) (xg-fl-to wide true))
+        m2 (if (>= code 4) (xg-fl-minmax m1 wide (= code 5))
+             (-> m1 (xg-byte (if wide 0xf2 0xf3)) (xg-byte 0x0f)
+                 (xg-byte (case code 0 0x58 1 0x5c 2 0x59 3 0x5e 0))
+                 (xg-byte 0xc1) (xg-fl-from wide)))]
+    (-> m2 (xg-fl-end) (xg-save t))))
+(defn- xg-fl-cmp [M :vector-i64 op :i64 t :i64] :vector-i64
+  (let [wide (< op CC-F32-EQ) code (bit-and op 7)]
+    (-> M (xg-fl-begin) (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
+        (xg-fl-to wide false) (xg-fl-to wide true) (xg-fl-ucomi wide 0xc1)
+        (xg-byte 0x0f) (xg-byte (case code 0 0x94 1 0x92 2 0x96 3 0x97 4 0x93 5 0x9a 0))
+        (xg-byte 0xc0)
+        (cond-> (<= code 2) (xg-bytes 0xc19b0f 3) (<= code 2) (xg-bytes 0xc820 2))
+        (xg-bytes 0xc0b60f 3) (xg-fl-end) (xg-save t))))
+
+;; CVTT*2SI returns MIN on every invalid conversion. Guard NaN and the
+;; positive overflow boundary; negative invalid values already yield the
+;; required saturating MIN. This preserves NaN->0 and both infinities.
+(defn- xg-fl-truncate [M :vector-i64 wide :bool] :vector-i64
+  (let [m1 (xg-fl-ucomi M wide 0xc0)
+        nan-at (+ (xg-pos m1) 2)
+        m2 (-> m1 (xg-bytes 0x8a0f 2) (xg-bytes 0 4) (xg-bytes 0xb948 2)
+               (xg-bytes (if wide 0x43e0000000000000 0x5f000000) 8)
+               (xg-fl-to wide true) (xg-fl-ucomi wide 0xc1))
+        positive-at (+ (xg-pos m2) 2)
+        m3 (-> m2 (xg-bytes 0x830f 2) (xg-bytes 0 4)
+               (xg-byte (if wide 0xf2 0xf3)) (xg-bytes 0xc02c0f48 4))
+        done1 (+ (xg-pos m3) 1)
+        m4 (-> m3 (xg-byte 0xe9) (xg-bytes 0 4))
+        nan-pos (xg-pos m4)
+        m5 (xg-bytes m4 0xc031 2)
+        done2 (+ (xg-pos m5) 1)
+        m6 (-> m5 (xg-byte 0xe9) (xg-bytes 0 4))
+        positive-pos (xg-pos m6)
+        m7 (-> m6 (xg-bytes 0xb848 2) (xg-bytes 0x7fffffffffffffff 8))
+        end (xg-pos m7)]
+    (-> m7 (xg-fl-fix nan-at nan-pos) (xg-fl-fix positive-at positive-pos)
+        (xg-fl-fix done1 end) (xg-fl-fix done2 end))))
+(defn- xg-fl-un [M :vector-i64 op :i64 t :i64] :vector-i64
+  (let [wide (or (<= op UOP-F64-SQRT) (= op UOP-F64-TO-I64) (= op UOP-F64-TO-F32))
+        m1 (-> M (xg-fl-begin) (xg-load t 0x858b48))
+        m2 (cond
+             (or (= op UOP-F64-NEG) (= op UOP-F32-NEG))
+             (-> m1 (xg-bytes 0xb948 2) (xg-bytes (if wide -9223372036854775808 0x80000000) 8)
+                 (xg-bytes 0xc83148 3) (cond-> (not wide) (xg-bytes 0xc06348 3)))
+             (or (= op UOP-F64-ABS) (= op UOP-F32-ABS))
+             (-> m1 (xg-bytes 0xb948 2) (xg-bytes (if wide 0x7fffffffffffffff 0x7fffffff) 8)
+                 (xg-bytes 0xc82148 3))
+             (or (= op UOP-F64-SQRT) (= op UOP-F32-SQRT))
+             (-> m1 (xg-fl-to wide false) (xg-byte (if wide 0xf2 0xf3))
+                 (xg-bytes 0xc0510f 3) (xg-fl-from wide))
+             (or (= op UOP-F64-TO-I64) (= op UOP-F32-TO-I64))
+             (-> m1 (xg-fl-to wide false) (xg-fl-truncate wide))
+             (or (= op UOP-I64-TO-F64) (= op UOP-I64-TO-F32))
+             (-> m1 (xg-byte (if (= op UOP-I64-TO-F64) 0xf2 0xf3))
+                 (xg-bytes 0xc02a0f48 4) (xg-fl-from (= op UOP-I64-TO-F64)))
+             (= op UOP-F64-TO-F32)
+             (-> m1 (xg-fl-to true false) (xg-bytes 0xc05a0ff2 4) (xg-fl-from false))
+             (= op UOP-F32-TO-F64)
+             (-> m1 (xg-fl-to false false) (xg-bytes 0xc05a0ff3 4) (xg-fl-from true))
+             :else (xg-err m1 7101 op))]
+    (-> m2 (xg-fl-end) (xg-save t))))
 (defn- xg-label [M :vector-i64 label :i64] :vector-i64
   (let [old (vector-at M (+ MM-LABEL-BASE label))]
     (if (not= (bit-and old 4294967295) 0) (xg-err M 7103 label)
@@ -142,11 +285,15 @@
       (xg-err M 7101 op))))
 
 ;; Admission inspects all SIR, including unreachable/unused functions.
-;; Handles, capabilities, floats, indirect/state calls and >5 arguments refuse.
+;; Scalar ELF permits internal raw-bit f64/f32, but no handles/capabilities.
+;; Diagnostic candidate: profile 1 (runtime guest) and profile 3 (scalar ELF)
+;; admit internal float carriers; profiles 0 and 2 still refuse them.
 (defn- xg-scalar [t :i64] :bool (or (= t TY-I64) (= t TY-BOOL)))
 (defn- xg-type [M :vector-i64 t :i64] :bool
-  (if (= (xg-get M 4) 1)
-    (and (> t 0) (not= t TY-F64) (not= t TY-F32)) (xg-scalar t)))
+  (case (xg-get M 4)
+    3 (or (xg-scalar t) (= t TY-F64) (= t TY-F32))
+    1 (> t 0)
+    (xg-scalar t)))
 (defn- xg-types [M :vector-i64 f :i64 i :i64 n :i64] :bool
   (if (= i n) true (and (xg-type M (ck-pt M f i)) (xg-types M f (inc i) n))))
 (defn- xg-refuse-fn [M :vector-i64 S :string f :i64 a :i64 b :i64] :vector-i64
@@ -181,10 +328,11 @@
           allowed (if (= (xg-get M 4) 1) (and (>= op OP-FN) (<= op OP-COUNT))
                     (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))]
       (cond (not allowed) (xg-err M 7101 op)
-            (and (= op OP-BIN) (or (< a 1) (> a 10))) (xg-err M 7101 a)
-            (and (= op OP-CMP) (or (< a 1) (> a 5))) (xg-err M 7101 a)
-            (and (= op OP-UN) (not (or (= a UOP-NOT) (= a UOP-BITNOT)))) (xg-err M 7101 a)
-            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (= (xg-get M 4) 0) 5 16))
+            (and (not= (xg-get M 4) 3) (not= (xg-get M 4) 1) (xg-fl-sir? op a)) (xg-err M 7101 a)
+            (and (= op OP-BIN) (not (or (and (>= a 1) (<= a 10)) (xg-fl-bin? a)))) (xg-err M 7101 a)
+            (and (= op OP-CMP) (not (or (and (>= a 1) (<= a 5)) (xg-fl-cmp? a)))) (xg-err M 7101 a)
+            (and (= op OP-UN) (not (or (= a UOP-NOT) (= a UOP-BITNOT) (xg-fl-un? a)))) (xg-err M 7101 a)
+            (and (= op OP-CALL) (or (<= a 0) (>= a (vector-at M MM-FN-N)) (< c 0) (> c (if (or (= (xg-get M 4) 0) (= (xg-get M 4) 3)) 5 16))
                  (not= c (xg-f M a FF-NPARAMS)) (<= (xg-f M a FF-SIR) 0))) (xg-err M 7101 op)
             :else (xg-check-sir M (inc i))))))
 (defn- xg-code [M :vector-i64 i :i64] :vector-i64
@@ -245,7 +393,7 @@
   (-> M (mem-set MM-OUT-N 1) (xg-elf-header) (xg-elf-rx) (xg-elf-rw) (xg-elf-stack)
       (xg-pad 4096) (xg-out-code 1) (xg-pad (xg-get M 3)) (xg-out 0 8) (xg-out (xg-get M 2) 8)))
 (defn- xg-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xg-check-fns S 1) (xg-check-sir 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 3) (xg-check-fns S 1) (xg-check-sir 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
