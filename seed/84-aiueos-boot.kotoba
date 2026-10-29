@@ -22,9 +22,10 @@
 (defn- eb-admit? [V :vector-i64] :bool
   (let [n (vector-count V) ph (eb-le V 32 8) entry (eb-le V 24 8)
         rw (eb-le V (+ ph 80) 8)]
-    (and (>= n 176) (<= n (cond (= rw 0x400000) 7340032
-                                  (= rw 0x300000) 6291456
-                                  :else 4194304))
+    ;; ADR-0276 Part A: the image is admitted by rule. RW sits on the ladder of rungs, the file is at most the RW offset plus 4 MiB,
+    ;; both segments lie in the budget [0x100000, 0x1000000) by address, and they do not overlap by address or by file offset.
+    (and (>= n 176) (<= n (if (= rw 0x200000) 4194304 (+ (- rw 0x100000) 4194304)))
+         (or (= rw 0x200000) (= rw 0x300000) (= rw 0x400000) (= rw 0x800000))
          (= (eb-le V 0 8) 0x00010102464c457f)
          (= (eb-le V 8 8) 0) (= (eb-le V 16 2) 2) (= (eb-le V 18 2) 62)
          (= (eb-le V 20 4) 1) (= (eb-le V 48 4) 0)
@@ -34,6 +35,8 @@
          (let [rx (eb-le V (+ ph 24) 8) rxn (eb-le V (+ ph 40) 8)
                rw (eb-le V (+ ph 80) 8) rwn (eb-le V (+ ph 96) 8)]
            (and (>= entry rx) (< entry (+ rx rxn))
+                (>= rx 0x100000) (<= (+ rw rwn) 0x1000000)
+                (<= (+ (eb-le V (+ ph 8) 8) (eb-le V (+ ph 32) 8)) (eb-le V (+ ph 64) 8))
                 (or (<= (+ rx rxn) rw) (<= (+ rw rwn) rx)))))))
 
 ;; Backend state 0..8: entry, RX file/address/size, RW file/address/size,
@@ -170,7 +173,6 @@
 (defn- eb-dual-layout? [K :vector-i64 slot-version :i64] :bool
   (let [ph (eb-le K 32 8)
         boundary (case slot-version 4 3145728 3 2097152 1048576)
-        text-cap (if (= slot-version 2) 1048576 2097152)
         rw-file (eb-le K (+ ph 64) 8)
         rx-size (eb-le K (+ ph 32) 8)
         handler (eb-le K (+ rw-file UV-HANDLER) 8)]
@@ -178,7 +180,7 @@
          (= (eb-le K 24 8) 0x101000)
          (= (eb-le K (+ ph 8) 8) 4096)
          (= (eb-le K (+ ph 24) 8) 0x101000)
-         (<= rx-size (- text-cap 4096))
+         (<= rx-size (- boundary 4096))
          (= (eb-le K (+ ph 64) 8) boundary)
          (= (eb-le K (+ ph 80) 8) (+ 0x100000 boundary))
          (= (eb-le K (+ ph 96) 8) WG-RW-MEMSZ)
