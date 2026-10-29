@@ -16,7 +16,8 @@ count, vector literals and pooled literals, persistent assoc, conj, drop
 views, arena-scope rollback, fuel exhaustion inside a vector or string loop;
 string literals, multi-byte UTF-8 lead and continuation bytes, pool strings,
 substring views, string ops after an in-line read, pair handles 0, past the
-end and negative) with the observations of the helper-call compiler (bin/amu
+end and negative) with the observations of the helper-call compiler (the
+x86_64 static compiler, then bin/amu,
 aa021865659c6d889f1fa633167f80bd2e842c79a41275ff03f3389a0b11c1d2), per target
 and per fuel budget. This check compiles every case with --compiler as a
 static image for --target, runs it, and requires the exact exit status,
@@ -25,7 +26,7 @@ stdout and stderr.
 Python only stages bytes and runs processes; the compiler and the images are
 Kotoba. Run on Linux with a kernel of the target ISA, e.g.
   python3 scripts/seed/check-inline-vectors.py --compiler OUT/F1.elf --output OUT/inline-vectors
-  python3 scripts/seed/check-inline-vectors.py --compiler bin/amu --target x86_64-linux --output OUT/inline-vectors-x86
+  python3 scripts/seed/check-inline-vectors.py --compiler bin/amu-linux-x86_64 --target x86_64-linux --output OUT/inline-vectors-x86
 """
 import argparse
 import hashlib

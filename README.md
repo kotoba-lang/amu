@@ -1,12 +1,13 @@
 # Amu
 
 Amu checks canonical Kotoba and compiles it through the adopted compiler
-lineage. The public `bin/amu` is an Amu-built, self-rebuilt native Linux
-x86_64 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same image.
-It has no ELF interpreter or dynamic runtime dependency.
+lineage. `bin/amu` is an Amu-built, self-rebuilt native **macOS ARM64**
+executable. `bin/kotoba` and `bin/kotoba-compiler` name that same Mach-O.
+It has no dylib dependency. The unchanged native Linux x86_64 executable
+is available explicitly as `bin/amu-linux-x86_64`.
 
 The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
-in a full35 compiler with native Linux emitters, browser Wasm, bounded
+in a 49-module compiler with native Linux emitters, browser Wasm, bounded
 Kototama i64 AOT/receipts/cache, native CDCI/FS2 and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
@@ -22,23 +23,28 @@ and empty authority. See [its ABI and native qualification](docs/kototama-i64-re
 
 ## Native compiler use
 
-Run the public executable on native Linux x86_64. No Node/NBB/KBB, JVM,
-Clojure, Java, GraalVM, C compiler or C loader is used by this entry.
-Other public host platforms remain unqualified.
+On an Apple Silicon Mac, follow the [Mac ARM64 first run](examples/foundation-starter/MACOS-ARM64.md).
+It invokes `bin/amu` directly with an explicit filesystem scope, checks a
+source, compiles and packages a native Mach-O, then executes 42 and 43.
+No Node/NBB/KBB, JVM, C compiler, Linux VM or emulator is used.
 
-For a file `hello.kotoba`:
-
-```clojure
-(ns hello (:export [main]))
-(defn main [] :i64 42)
-```
+From this checkout, a minimal check is:
 
 ```sh
-KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" ./bin/amu check hello.kotoba
-KEXE_ALLOW=35,37,38,39 KEXE_CAP_RESOURCES_35="$PWD" ./bin/amu compile hello.kotoba --target x86_64-linux --output hello.elf --format static
-chmod 700 hello.elf
-KEXE_ALLOW=- KEXE_FUEL=1000000 KEXE_STRUCTURED_REPORT=1 ./hello.elf
+AMU="$PWD/bin/amu"
+printf '(ns hello (:export [main]))\n(defn main [] :i64 42)\n' > hello.kotoba
+"$AMU" check hello.kotoba 3< .
+"$AMU" compile hello.kotoba --target aarch64-macos --output hello.kseed 3< .
 ```
+
+FD3 grants only the selected directory. Use basename output and lock names;
+see the guide for the current slash-path limitation and native packaging.
+A `.kseed` is a compiler container and must be packaged before macOS can run it.
+
+Linux users use `bin/amu-linux-x86_64` and the
+[pinned Linux starter](examples/foundation-starter/README.md), whose immutable
+snapshot retains its original Linux entry. Host and release qualification
+are stated separately in each guide.
 
 Use explicit targets. The engine-neutral default remains a language
 contract; this native entry currently refuses an omitted compile target

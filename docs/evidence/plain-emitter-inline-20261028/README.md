@@ -32,7 +32,7 @@ hand-scheduled. The two *plain* stack-machine emitters did not:
   next instruction.
 
 These emitters matter more than their size suggests. The x86_64 one compiles
-the public product `bin/amu` itself, the CDCI roles (the adopted core as an
+the public x86_64 product (`bin/amu`, now `bin/amu-linux-x86_64`) itself, the CDCI roles (the adopted core as an
 x86 static image is the `amu-selfhost` gate) and every x86 guest, including
 the Embench ports on the x86 route. The aarch64 one compiles the runtime that
 every C-free aarch64-linux image runs on, the selfhost Embench route included: on
@@ -140,13 +140,13 @@ locally with two test-only patches (`seccomp(2)` accepted without installing a
 filter, `openat2(2)` passed through); this is measurement tooling outside the
 build closure and does not qualify anything.
 
-* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`92b3078e…`, 8,647,168
+* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu-linux-x86_64` (`92b3078e…`, 8,647,168
   bytes; round 1 `f8332459…`, 8,593,920; base 9,458,176); aarch64 packed root
   F1 = F2 (`2238db15…`, 3,580,416 bytes; round 1 `172f588b…`, base 3,625,472)
   with container `20fb958c…`, derived under qemu from a round 2 candidate
   root (itself derived from the round 1 root) after main's #1666, #1559 and
   #1672 were merged;
-  the x86_64 compiler that root emits is byte-identical to `bin/amu`, and so
+  the x86_64 compiler that root emits is byte-identical to `bin/amu-linux-x86_64`, and so
   are its x86 images of the 24 pinned cases.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
@@ -160,8 +160,8 @@ build closure and does not qualify anything.
   runtime-profile mutation gates, whose source anchors name the flat
   allocator text).
 * All 24 pinned runtime cases (`seed/static-cases.json`) pass as static images
-  on both targets, with `bin/amu` and with the new aarch64 root.
-* `check-inline-vectors.py`: PASS on both targets (156 runs), with `bin/amu`
+  on both targets, with the x86_64 static compiler and with the new aarch64 root.
+* `check-inline-vectors.py`: PASS on both targets (156 runs), with the x86_64 static compiler
   and with the new aarch64 root.
 * The 19 Embench-derived ports (`bench/embench/reproduce-20261015/ports`,
   `bench-verify` through the native runner): result 1 with **identical total
@@ -209,13 +209,17 @@ Compiler work on x86_64 (wall clock, same host):
 
 | work | base | round 1 | round 2 |
 | --- | --- | --- | --- |
-| `bin/amu` compiles `seed/FULL-MANIFEST` to x86_64 static (self-compile) | 37.9 s, 36.6 s | 11.8 s, 11.9 s (11.6 s, 11.7 s on the round 2 source) | 8.6 s, 8.5 s |
+| the x86_64 static compiler compiles `seed/FULL-MANIFEST` to x86_64 static (self-compile) | 37.9 s, 36.6 s | 11.8 s, 11.9 s (11.6 s, 11.7 s on the round 2 source) | 8.6 s, 8.5 s |
 | the `amu-selfhost` CDCI gate compiles `seed/MANIFEST` (same container `0efb5556…`) | 429.0 s | 65.8 s, 63.5 s | 60.1 s |
 | compile the 19 Embench ports (x86_64, sum) | 10.2 s | 2.4 s | 2.0 s |
 
 The `amu-selfhost` gate is the adopted core compiled by this emitter; CI
 recorded 1,036.4 s for the same step on the base image
 (`docs/evidence/x86_64-core-static-20261023`).
+
+Since KOTOBA-170 (#1669) `bin/amu` is the macOS ARM64 entry and the x86_64 static
+compiler is `bin/amu-linux-x86_64`; "bin/amu" in `measurements.json` names the
+x86_64 static compiler of its time.
 
 ## Not claimed
 
