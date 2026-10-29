@@ -4047,3 +4047,52 @@ stay :measured? false; NO vendor optimization exists for Intel.
 Carry-forward to session 78: the T15 quantile-pair level axes
 and T16 second-pair profile axis analysis halves. Evidence:
 docs/evidence/gpu/anv-b3w5hiwander-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 78: the T15 quantile-pair level axes analysis half)
+
+The s65-frozen T15 row (the s53/s54 named quantile-pair level
+axes at W5) taken to its ANALYSIS half over the 390 committed
+run logs (the W5 tw arm's 36 runs + the four prior windows'
+integrity machinery; NO hardware runs, NO builds, NO GO stamp,
+NO day-slot consumption, NO settle-bar-ledger line). T15 =
+(b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES: the named cell
+(max,128,S=default) tw arm, s36 vs W5 -- INNER (28,48) 2*L
+118 -> 100 (2*C_obs 18, direction-consistent -- NARROWER at
+W5), count 1477/20,001, p = 0.073896 one-sided ->
+DIRECTION-CONSISTENT-NOT-SIGNIFICANT; OUTER (9,67) 2*L 496 ->
+502 (2*C_obs -6), count 11,558/20,001, p = 0.577921 ->
+DIRECTION-REVERSED (the outer-pair level is WIDER at W5 than
+at s36 -- the s54 T4 (a) post-shift outer-level drop does NOT
+hold at W5). Both axes read (b) under the pre-registered IUT
+joint rule. D1 descriptive (NO letter): the five-window level
+vectors reproduce the quote-only s53/s54 four-window priors
+EXACTLY (INNER 118/102/128/113/100; OUTER
+496/429/437/446/502); W5 sits OUTSIDE-BELOW the post-shift band
+on the inner pair (2*L_W5 100 vs 102..113) and OUTSIDE-ABOVE
+it on the outer pair (502 vs 429..437) -- opposite sides of
+the band, named not hidden, mechanism UNMEASURED. A (b) is NOT
+evidence of no per-cell structure; threshold-artifact-vs-
+representation and physical-vs-estimator-structure STAY
+UNRESOLVED. DOUBLE-RUNS: analysis-s78.py run twice byte-
+identical (publication-s78.txt 13,471 bytes, sha256
+501b9d0a...) and derivation-census-s78.py -- the independent
+second parser (split-based parsing, no regex; observed block
+spreads pure-Python sorted() cross-checked vs np.partition kth
+paths; resampling np.partition, NOT np.sort; RNG re-implemented
+in the frozen probe order) -- run twice byte-identical with
+"TOTAL: 79 rows, 0 mismatched | B: 0 | C: 0" (sha256
+a6985446...), every published integer/count/p/letter cross-
+checked including the RNG rows; section B 2,160 block-D
+cross-checks 0 mismatched. Standing gates: classify --self-test
+2649/0 == pin; scoped GPU gate GREEN 123/12162/0/0 twice ==
+pins; FULL run-tests.cljk exit 1, RED AT BASE kotoba.form
+(ADR-0362, outside this diff) with the 879-byte .err == pin --
+no green full suite claimed; settle-bar self-test 38/0 == pin
+and ledger eval twice == pin -> VERDICT: PENDING 2/4 unchanged;
+`find ... '*.sh'` -> 0. THE BAR: NO hardware runs -> NO ledger
+line, NO day-slot consumption (settle-bar-ledger.txt == HEAD).
+Rule 4 binds: nothing moves; accelerator-targets defaults stay
+:measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 79: the T16 second-pair profile axis
+analysis half. Evidence:
+docs/evidence/gpu/anv-b3w5qpairevel-20261029/record.txt.
