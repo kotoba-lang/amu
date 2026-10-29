@@ -16,6 +16,7 @@ native.py, check-macos-cross-linux-candidates.py) and runs, on copies:
 """
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -88,7 +89,12 @@ def main(argv):
             shutil.copy(ROOT / rel, repo / rel)
         product = repo / "native-product.json"
         original = product.read_text()
-        product.write_text(original.replace("b8652a6d9b55", "000000000000", 1))
+        mutated = json.loads(original)
+        digest = mutated["image"]["sha256"]
+        mutated["image"]["sha256"] = ("0" if digest[0] != "0" else "1") + digest[1:]
+        product.write_text(json.dumps(mutated, indent=2, ensure_ascii=False) + "\n")
+        expect("descriptor negative control actually changes image digest",
+               mutated["image"]["sha256"] != digest)
         r = run(args.mac_build, args.cross_build, repo)
         expect("a wrong descriptor digest is reported", r.returncode == 1 and "DESCRIPTORS_DIFFER" in r.stdout,
                r.stdout + r.stderr)
