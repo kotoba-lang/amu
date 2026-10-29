@@ -4729,3 +4729,59 @@ ledger line), any further counted-day slot (its own freeze), and a
 cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3w6routepreflight-20261029/ (record.txt +
 the s91 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 92: the T18 analysis
+## pre-build)
+The T18 row's ANALYSIS machinery preparation half (the s69/s90
+pre-build precedent applied to the s84-frozen analysis path;
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line). The analysis
+half itself REMAINS day-slot-gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T10:4xZ-11:0xZ, ~12.9h before the slot opens) --
+STARTED, NOT FINISHED. analysis-t18-prego.py implements the
+complete frozen T18 row -- the construction (named cell
+(max,128,S=default), tw arm, 12 blocks of 3, per-block pooled-75
+EXACT-INTEGER D at the closed DL vocabulary), the frozen null
+(the s78 two-window run-exchangeability machinery verbatim, ONE
+random.Random(2026102918), 20,000 trials per probe, probe order
+DL4/DL8/DL16/DL32), the letters and the IUT joint (DL4 excluded
+per the s81 section-4(c) caveat), the invalidation machinery and
+the D-family (D3 band under the s83/s89 corrected [MIN,MAX]
+convention). Full mode is unreachable under the pre-build name;
+the T18 session adopts it as analysis-s<NN>.py. PROVENANCE
+(named): the file arrived as this bot's own interrupted-run
+scaffold (mtime 2026-10-29T10:40Z) and was reviewed line by line
+and repaired this tick -- four real defects found by running it
+(pair-table construction crash; missing s73 block-min constants +
+wrong anchor-loop width; two wrong self-test fixtures), all named
+in record.txt section 2. VERIFIED (real tool output): --self-test
+99/0 run-twice byte-identical (fixture suite; MOCK numbers are
+fixtures, never measurements); --compat 37 rows / 0 mismatched
+run-twice byte-identical -- the s84 section-6 parser validity
+pins recomputed over the five committed windows (390 logs) and
+two-way-checked against committed publication bytes (want
+PARSED, never transcribed), INCLUDING the s78 NULL REPRODUCTION:
+the same frozen engine reproduces publication-s78.txt's PUBLISHED
+T15 counts/p EXACTLY (INNER count 1477 p 0.073896; OUTER 11558 p
+0.577921). NO T18 quantity exists or is computed. Standing gates
+== the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0; settle-bar-ledger.txt ==
+HEAD. The bar: NO reading -> NO ledger line, NO day-slot
+consumption. Rule 4 binds: NOTHING MOVES; the ADR-0358 row
+states are unchanged; NO vendor optimization exists for Intel.
+Carry-forward to session 93: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (this pre-build + the s84 freeze
+bind), T20's analysis half (the s88 freeze binds), the W7
+measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and a cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3t18prego-20261029/ (record.txt +
+analysis-t18-prego.py + compat-prego-validation.txt +
+t18prego-selftest.txt/.err + the s92 gate captures).
