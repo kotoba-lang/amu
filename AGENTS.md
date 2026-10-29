@@ -262,6 +262,10 @@ fresh native differential/refusal/resource oracle.
 
 ## Native incremental identity foundation (JUN-332 / JUN-358)
 
+The native `definition-cids <file.kotoba>` candidate (seed/DEFINITION-CIDS-MANIFEST, entry
+`seed/99-definition-cids-entry.kotoba`, gate `scripts/seed/check-definition-cids-native.py`) is documented in
+`docs/definition-cids-native.md`; it grows no adopted manifest.
+
 `seed/04-definition-cid.kotoba` is a bounded payload-v2 codec candidate,
 qualified separately on native ARM/x86 against the pinned canonical bytes
 and CIDs. It is not in the adopted FULL-MANIFEST. A supplied canonical payload
