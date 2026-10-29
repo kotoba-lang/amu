@@ -73,6 +73,11 @@ def main():
     (out / "run.stderr").write_bytes(run.stderr)
     if run.returncode or b":status :ok :result 0 " not in run.stdout:
         raise RuntimeError(f"gate refused: exit={run.returncode}; inspect saved logs")
+    # The Kotoba gate checks both refusals and absence of output. Child stderr
+    # is inherited by the gate; verify that both diagnostics name the target.
+    if (run.stderr.count(f"--target {a.target}".encode()) != 2
+            or b"--target aarch64-macos" in run.stderr):
+        raise RuntimeError("refusal usage does not name the requested target")
     if (root / "bad.elf").exists() or not (root / "good.elf").is_file():
         raise RuntimeError("unexpected gate artifacts")
     # A structured host exit of zero must not hide a nonzero Kotoba result.
@@ -192,7 +197,8 @@ def main():
               "compiler_sha256": digest(compiler), "gate_sha256": digest(gate),
               "gate_source_sha256": gate_source_hash, "fixture_sha256": fixture_hash,
               "lock_sha256": lock_hash, "wrong_digest_result": 17,
-              "changed_source_result": 11, "swap_stress": race_rows,
+              "changed_source_result": 11, "target_usage_refusals_checked": 2,
+              "swap_stress": race_rows,
               "source_swap_reference_sha256": expected_elf,
               "concurrent_swap_qualified": False,
               "public_release_qualified": False}

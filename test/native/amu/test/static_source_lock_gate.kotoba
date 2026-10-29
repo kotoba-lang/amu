@@ -83,4 +83,10 @@
            (let [guest (typed-cap-call :process/spawn :string :string good)]
             (if (not (string=? guest "42\nKOTOBA_GATE_42\n")) 16
              (let [b (typed-cap-call :process/spawn :string :string (request c d t "0000000000000000000000000000000000000000000000000000000000000000" bad))]
-              (if (or (not (= (string-index-of b "1\n") 0)) (exists? bad)) 12 0)))))))))))))
+              (if (or (not (= (string-index-of b "1\n") 0)) (exists? bad)) 12
+               (let [duplicate (add (add (request c d t digest bad) "--source-lock") (string-concat d "/good.ksl"))
+                     result (typed-cap-call :process/spawn :string :string duplicate)]
+                (if (or (not (= (string-index-of result "2\n") 0)) (exists? bad)) 18
+                 (let [conflict (add (add (request c d t digest bad) "--source-path") d)
+                       result2 (typed-cap-call :process/spawn :string :string conflict)]
+                  (if (or (not (= (string-index-of result2 "2\n") 0)) (exists? bad)) 19 0)))))))))))))))))

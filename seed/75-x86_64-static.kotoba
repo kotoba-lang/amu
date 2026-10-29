@@ -224,7 +224,7 @@
         locked (= (drv-pj-has 1 (io-argc) "--source-lock") 1)
         profile (if locked (xs-locked-profile 8 0) (xs-runtime-profile 8))]
     (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
-            (drv-fail0 E-USAGE)
+            (drv-target-usage)
           (and locked (or (not= mode 0) (= (drv-pj-has 1 (io-argc) "--source-path") 1)
                           (not= (drv-pj-has 1 (io-argc) "--source-lock-sha256") 1)))
             (drv-fail0 E-PROJ-UNPINNED)

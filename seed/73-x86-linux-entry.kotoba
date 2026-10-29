@@ -9,6 +9,7 @@
 (defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
 (defn- drv-fail0 [e :i64] :i64
   (let [z (io-err (string-concat "seed-x86_64-linux: E" (string-concat (mem-u2dec e) "\n")))] 1))
+(defn- drv-target-usage [] :i64 (drv-fail0 E-USAGE))
 (defn- drv-fail [M :vector-i64 path :string] :i64
   (let [z (io-err (string-concat "seed-x86_64-linux: " (string-concat path
             (string-concat " at " (string-concat (mem-u2dec (vector-at M MM-ERR-POS))
