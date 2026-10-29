@@ -19,10 +19,18 @@ def main():
     assert len(paths) == product["sourceModuleCount"]
     unity = b"".join((ROOT / path).read_bytes() + b"\n" for path in paths)
     assert identity(unity) == product["sourceUnity"] == root["sourceUnity"]
-    assert identity((ROOT / "bin/amu").read_bytes()) == product["image"]
+    assert identity((ROOT / "bin/amu-linux-x86_64").read_bytes()) == product["image"]
     for alias in product["aliases"]:
-        assert (ROOT / alias).resolve() == (ROOT / "bin/amu").resolve()
+        assert (ROOT / alias).resolve() == (ROOT / "bin/amu-linux-x86_64").resolve()
     assert identity((ROOT / "seed/bootstrap/aarch64-linux-static-root.elf").read_bytes()) == root["image"] == product["rootImage"]
+    mac = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
+    assert mac["fullSource"] == product["sourceUnity"]
+    mac_image = ROOT / mac["compiler"]["path"]
+    assert identity(mac_image.read_bytes()) == {k: mac["compiler"][k] for k in ("bytes", "sha256")}
+    assert mac_image.read_bytes()[:8] == bytes.fromhex("cffaedfe0c000001")
+    for name in ("amu", "kotoba", "kotoba-compiler"):
+        alias = ROOT / "bin" / name
+        assert alias.is_symlink() and alias.resolve(strict=True) == mac_image.resolve(strict=True)
     spec = importlib.util.spec_from_file_location("native_cdci_check", ROOT / "scripts/seed/check-native-cdci.py")
     checker = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(checker)

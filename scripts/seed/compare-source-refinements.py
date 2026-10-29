@@ -40,7 +40,7 @@ def main(out, workload_file=None):
     host = platform.machine()
     machine = 183 if host == "aarch64" else 62
     assert struct.unpack_from("<H", Path("/proc/self/exe").read_bytes(), 18)[0] == machine
-    producer = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if host == "aarch64" else "bin/amu")
+    producer = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if host == "aarch64" else "bin/amu-linux-x86_64")
     assert struct.unpack_from("<H", producer.read_bytes(), 18)[0] == machine
     out.mkdir(parents=True, exist_ok=False)
     if workload_file:

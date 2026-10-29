@@ -96,7 +96,7 @@ def main(out, closure, workload, detail, seconds, workload_file=None):
     assert platform.system() == "Linux" and platform.machine() in ("aarch64", "x86_64")
     machine = 183 if platform.machine() == "aarch64" else 62
     assert struct.unpack_from("<H", Path("/proc/self/exe").read_bytes(), 18)[0] == machine
-    producer = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if machine == 183 else "bin/amu")
+    producer = ROOT / ("seed/bootstrap/aarch64-linux-static-root.elf" if machine == 183 else "bin/amu-linux-x86_64")
     assert struct.unpack_from("<H", producer.read_bytes(), 18)[0] == machine
     assert closure == "full" or workload == "core", "x86 workload requires the full compiler"
     out.mkdir(parents=True, exist_ok=False)
