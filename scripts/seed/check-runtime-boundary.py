@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """JUN-325: guests cannot call or acquire static runtime functions.
+JUN-336: the runtime cannot call a guest definition that shadows an R1 head.
 
 Only native Amu compilers compile sources; Python stages bytes, launches
 processes and compares receipts. Never execute a previously admitted exploit.
@@ -41,6 +42,15 @@ PROBES = {
     "nested-call": "(let [f (fn [x] (kxrt-exit x))] (invoke f 42))",
     "allow-mask": '(let [c (kxrt-ctx) a (kxrt-store64 (+ c 16) -1)] (string-length (typed-cap-call :hash/sha256 :string :string "x")))',
 }
+# JUN-336: a guest definition may shadow an R1 head (20-names), but the
+# appended runtime must not call it. A head the runtime uses is refused
+# (E7101, no image); one it does not use stays an ordinary shadow.
+SHADOWS = {
+    "shadow-inc": "(defn inc [x :i64] :i64 (+ x 1))\n(defn main [] :i64 (inc 41))\n",
+    "shadow-dec": "(defn dec [x :i64] :i64 (- x 1))\n(defn main [] :i64 (dec 43))\n",
+    "shadow-not-eq": "(defn not= [a :i64 b :i64] :bool (if (= a b) false true))\n(defn main [] :i64 (if (not= 1 2) 42 0))\n",
+}
+SHADOW_UNUSED = "(ns g (:export [main]))\n(defn assoc [x :i64] :i64 (+ x 1))\n(defn main [] :i64 (assoc 41))\n"
 FORMATS = [("aarch64-linux", "static"), ("aarch64-linux", "runner"), ("aarch64-linux", "launcher"),
            ("x86_64-linux", "static"), ("x86_64-linux", "kx64-runner"), ("x86_64-linux", "launcher")]
 PLAIN = '(ns plain (:export [main]))\n(defn- add [x :i64] :i64 (+ x 1))\n(defn main [] :i64 (let [f (fn-ref add) k 1 g (fn [x] (+ x k))] (+ (invoke f 20) (invoke g 20))))\n'
@@ -102,6 +112,12 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
             diagnostic = b"E2102" if name == "bare-alias" else b"E7101"
             assert r.returncode != 0 and diagnostic in r.stderr and not dst.exists(), calls[-1]
             refused.append(dict(name=name, target=target, format=fmt, diagnostic=diagnostic.decode()))
+        for name, body in SHADOWS.items():
+            r, dst = compile_("new", name, "(ns g (:export [main]))\n" + body, target, fmt)
+            assert r.returncode != 0 and b"E7101" in r.stderr and not dst.exists(), calls[-1]
+            refused.append(dict(name=name, target=target, format=fmt, diagnostic="E7101"))
+        r, dst = compile_("new", "shadow-unused", SHADOW_UNUSED, target, fmt)
+        assert r.returncode == 0 and not r.stderr and dst.exists(), calls[-1]
         r, dst = compile_("new", "plain", PLAIN, target, fmt)
         assert r.returncode == 0 and not r.stderr and dst.exists(), calls[-1]
         same = None
@@ -123,6 +139,11 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
             else:
                 assert admitted or (r.returncode != 0 and b"E7101" in r.stderr and not dst.exists()), calls[-1]
             previous.append(dict(compiler="previous", name=name, admitted=admitted, executed=False))
+        # Negative control: a root before JUN-336 admits the shadow (recorded, never executed).
+        r, dst = compile_("previous", "shadow-inc", "(ns g (:export [main]))\n" + SHADOWS["shadow-inc"], "aarch64-linux", "static")
+        admitted = r.returncode == 0 and dst.exists()
+        assert admitted or (r.returncode != 0 and b"E7101" in r.stderr and not dst.exists()), calls[-1]
+        previous.append(dict(compiler="previous", name="shadow-inc", admitted=admitted, executed=False))
     if definition_only_root:
         r, dst = compile_("definition-only", "fn-ref-invoke", guest(PROBES["fn-ref-invoke"]), "aarch64-linux", "static")
         assert r.returncode == 0 and dst.exists(), calls[-1]
