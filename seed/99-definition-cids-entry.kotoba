@@ -1,0 +1,10 @@
+;; seed/99-definition-cids-entry.kotoba -- candidate entry for seed/DEFINITION-CIDS-MANIFEST (JUN-583/JUN-584).
+;; `definition-cids <file.kotoba>` prints one `name CID group index` row per top-level definition from the
+;; checked-source bridge (05-checked-source -> 06 identity/SCC producer, payload-v2, resource profile 0).
+;; It runs no admission and grants nothing: a CID is identity, never authority (ADR 0300). Failure is stderr
+;; DSB:* and exit 1. Every other command is the unchanged core driver, so this entry is a superset of 99-entry.
+;; Not part of MANIFEST/FULL-MANIFEST: the adopted 18-module core (seed/compiler-core.json) is not grown.
+(defn- seed-main [] :i64
+  (if (and (= (io-argc) 2) (string=? (io-arg 0) "definition-cids"))
+    (dsb-source (io-fs2-text 65 (io-arg 1) "") false)
+    (drv-main)))
