@@ -4640,3 +4640,44 @@ cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3tailprofile-20261029/
 (derivation-census-s87.py/.txt, record-s89.txt, the s89 gate
 captures).
+
+## Dated note (2026-10-29, JUN-59 session 90: the W6 reading
+## pre-build)
+
+The s89 carry-forward item (a) (the W6 measurement half, the s80
+freeze) taken to its IMPLEMENTATION preparation half (the s69
+pre-build precedent): reading-prego.py + derivation-census-prego.py,
+the s80 protocol section-6 bar-reading path (hi block A anchor
+reading -- (sum,128,S=16) pooled median, 18-cell min..max, bar class
+vs the frozen refs 1,129/1,132/1,131 -- plus the section-3 integrity
+rows), pre-built BEFORE any W6 quantity exists (the W6 run logs do
+not exist; the measurement half stays day-slot-gated, first session
+at/after 2026-10-30T00:00:00Z). The W6 session adopts the pair as
+reading-s<NN>.py / derivation-census-s<NN>.py. VALIDATED at the five
+committed windows against publication-s73.txt: 14/14 two-way rows
+EXACT under BOTH parsers independently (the generator: regex +
+stdlib statistics.median; the census twin: NO re module,
+split()/find-split parsing, numpy np.partition kth estimators
+cross-checked in-loop against sorted() explicit order statistics --
+124 dual computations, 0 mismatched); both run twice byte-identical
+(2,930 bytes sha256 8509d52a...00e9; 3,246 bytes sha256
+395f4dda...ff51). NO W6 quantity computed; the W6-dependent parts
+stay UNVALIDATED until the W6 logs exist. Standing gates (real runs
+== the s88 pins): classify 2649/0 (17,925 bytes == pin); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes == pins); FULL run-tests
+.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed; settle-
+bar self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0. The bar: NO reading -> NO
+ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: NOTHING MOVES; the ADR-0358 row states are
+unchanged; NO vendor optimization exists for Intel. Carry-forward
+to session 91: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half, T20's
+analysis half and W7's measurement half --, then the T18 analysis
+half, T20's analysis half, the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6prego-20261029/ (reading-prego.py +
+compat-prego-validation.txt, derivation-census-prego.py +
+derivation-census-prego.txt, record.txt, the s90 gate captures).
