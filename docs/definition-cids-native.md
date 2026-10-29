@@ -1,6 +1,6 @@
 # Native `definition-cids` (JUN-582 / JUN-583 / JUN-584)
 
-Status 2026-10-29: **candidate**, qualified on aarch64-linux only. Not in `MANIFEST`, `FULL-MANIFEST` or
+Status 2026-10-29: **candidate**, qualified on aarch64-linux, x86_64-linux (CI) and aarch64-macos (JUN-586, §3). Not in `MANIFEST`, `FULL-MANIFEST` or
 `seed/compiler-core.json`.
 
 Goal (JUN-579): cljk/edn reader sugar must mint the same Definition CID as pure `.kotoba`. Checking that natively
@@ -80,8 +80,8 @@ self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded 
 - `seed/DEFINITION-CIDS-MANIFEST` = `CORE-STATIC-MANIFEST` minus `99-entry` + 04, 05-definition-graph,
   05-checked-definition, 06, 05-checked-source, 05-source-loops + `99-definition-cids-entry`.
 - `99-definition-cids-entry` dispatches `definition-cids <file>` and otherwise calls the unchanged `drv-main`.
-- Promotion to FULL-MANIFEST is blocked until: Mac `arena-scope` support (JUN-546), a self-rebuild fixed point of
-  the grown closure, and the output-format decision above.
+- Promotion to FULL-MANIFEST is blocked until: a self-rebuild fixed point of the grown closure, and the output-format
+  decision above. (Mac `arena-scope`, JUN-546, landed in #1675; the candidate now runs on the Mac, §3.)
 
 ## 3. Evidence (what was actually run)
 - aarch64-linux, **native** in podman (`python:3.12-slim`, arm64 host), compiler
@@ -91,9 +91,21 @@ self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded 
   oracle image; rename and reordering preserve CIDs; dependency edit changes caller CID; unbound name and unbalanced
   source exit 66 with empty stdout; `--groups` keeps CIDs and adds group/member columns; declaration order is preserved; usage errors exit 2; an encoder mutant is refused by its own validator; closure controls (hand-authored oracle payloads for closure/capture/dependency/nested/two-capture, rename invariance, body and captured-binder sensitivity, five closure refusals, two closure mutants); `check` still works through the
   new entry.
-- macOS arm64 Mach-O root (`amu-full-root.macho`, run on this Mac with FD 3 as the file root): the candidate
-  **compiles, packages and signs**, `check` works, but `definition-cids` stops with the packager's deliberate
-  `seed: arena-scope unsupported (Mac runtime, JUN-546)` (exit 70). 05/06 use `arena-scope`. Fails closed.
+- macOS arm64 (JUN-586, 2026-10-29, Apple M1 Max, main 6b99bf63, Mac root `amu-full-root.macho` db4bec67,
+  `diagnostic-candidate`): both gates take a Darwin branch (`scripts/seed/macos_native_image.py`): the Mac root compiles
+  to `aarch64-macos`, `extract-native` takes `main`, the Mac packager wraps it in `fs2-cli-stdio-general`, a copy is
+  ad-hoc signed; FD 3 is the file root and file arguments are basenames (KOTOBA-169). On the Mac, main's result is the
+  exit code (Linux prints `:result N` under `KEXE_STRUCTURED_REPORT`), so the codec gate compares exit codes there.
+  - `check-definition-cid-native.py` -> `PASS_NATIVE_DEFINITION_CID_CODEC` (10 frozen vectors decoded and constructed,
+    26 refusal controls, boundary/encoder self-checks, 7 mutants detected; 55 calls).
+  - `check-definition-cids-native.py` -> `PASS_NATIVE_DEFINITION_CIDS` (the same 64 calls as on Linux).
+  - F1 = F2: the Mac gate rebuilt the full compiler from the same source (F1 = F2 container `48c1d8f3…`; F2 is the
+    checked-in root's bytes). Images built by F2 are byte-identical to those built by the root (5 unsigned images),
+    and all observations are identical (64 + 55 calls).
+  - Three hosts: for the same 6b99bf63 modules, all 60 non-build calls (exit code and stdout SHA-256, i.e. every
+    printed CID) equal the Linux CI artifacts of run 40856855461 on aarch64 and x86_64. This is the gate's own corpus,
+    not the JUN-579 surface corpus (JUN-587).
+  - CI: both gates run in `mac-selfhost-aiueos.yml` (`mac-root`, macos-15) against the job's F2 compiler.
 - x86_64: not run locally (no x86 host). CI job `native-definition-cids` (ubuntu-latest, `bin/amu-linux-x86_64`) passed
   for the PR #1673 version of this gate (legacy row format); the ADR 0300 format change is verified on x86 only by its own CI run.
 - Whether the existing x86 `bin/amu-linux-x86_64` has `definition-cids`: it contains the string `extract-native` but no
@@ -101,7 +113,7 @@ self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded 
   string evidence: it does not. Could not execute it to confirm.
 
 ## 4. Remaining (JUN-583/584/585/586)
-- Mac: JUN-546 `arena-scope` in the Mac runtime packager (blocks JUN-586).
+- Mac: done for this gate (JUN-586); the Mac root stays `diagnostic-candidate`, not a release qualification.
 - aarch64-linux in the shipped root: the candidate image builds with the root, but the production closure is unchanged.
 - per-definition refusal markers (nbb parity); surface-equivalence corpus
   (`lang/surface-equivalence-corpus.edn` is not present in the local kotoba-lang checkout) and the parity gate (JUN-587).
