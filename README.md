@@ -23,41 +23,42 @@ and empty authority. See [its ABI and native qualification](docs/kototama-i64-re
 
 ## Native compiler use
 
-On an Apple Silicon Mac, follow the [Mac ARM64 first run](examples/foundation-starter/MACOS-ARM64.md).
-It invokes `bin/amu` directly with an explicit filesystem scope, checks a
-source, compiles and packages a native Mach-O, then executes 42 and 43.
-No Node/NBB/KBB, JVM, C compiler, Linux VM or emulator is used.
-
-From this checkout, a minimal check is:
+On an Apple Silicon Mac, use the native CLI directly:
 
 ```sh
-AMU="$PWD/bin/amu"
 printf '(ns hello (:export [main]))\n(defn main [] :i64 42)\n' > hello.kotoba
-"$AMU" check hello.kotoba 3< .
-"$AMU" compile hello.kotoba --target aarch64-macos --output hello.kseed 3< .
+bin/amu check hello.kotoba
+bin/amu compile hello.kotoba
+bin/amu run hello.kotoba
+bin/amu run ./hello
 ```
 
-FD3 grants only the selected directory. Use basename output and lock names;
-see the guide for the current slash-path limitation and native packaging.
-A `.kseed` is a compiler container and must be packaged before macOS can run it.
+`check` prints `ok`. `compile` creates the signed native executable `hello`;
+use `-o PATH` or `--output PATH` to choose a new output. Both `run` commands
+print `42` and exit zero. Change the source to `43` and run it again.
+No FD3, target, source lock, extraction, packaging or signing command is
+needed. Existing output files are preserved. Unicode and space-containing
+paths work. See the [Mac ARM64 first run](examples/foundation-starter/MACOS-ARM64.md).
+
+This public Mac host chooses its native target and accepts a single canonical
+Kotoba source (up to 1 MiB), with one exported `main [] :i64` for compile/run.
+Native programs include their source. `run PROGRAM` recompiles that source,
+checks the complete generated image and runs the regenerated private image.
+Guest filesystem/process capabilities are denied; execution is limited to
+5 seconds. Arguments follow `--`. Full Mac runtime and independent-user release
+qualification remain separate.
+
+The full bootstrap compiler remains available at
+`seed/bootstrap/aarch64-macos/amu-full-root.macho` for explicit-target,
+FD3-scoped development commands and exact KSL1 project locks. Its omitted
+target still refuses `E2`; the public Mac host default does not change that
+engine-neutral compiler contract. Unsupported public flags refuse instead
+of silently dropping source paths or locks.
 
 Linux users use `bin/amu-linux-x86_64` and the
 [pinned Linux starter](examples/foundation-starter/README.md), whose immutable
-snapshot retains its original Linux entry. Host and release qualification
-are stated separately in each guide.
-
-Use explicit targets. The engine-neutral default remains a language
-contract; this native entry currently refuses an omitted compile target
-with `E2`. `aarch64-macos` names the adopted AArch64 payload/container
-route, not a standalone macOS application. Native Linux image emission
-uses `aarch64-linux` or `x86_64-linux` explicitly.
-
-Project inputs retain every declared `--source-path` and an exact KSL1
-`--source-lock`. `--source-lock-sha256` additionally binds the lock bytes.
-There is no `--unpinned` escape or legacy source-extension fallback.
-Unsupported verbs, flags and targets refuse with named diagnostics.
-Package/module-CID integration, worker/test/inspect workflows and other
-unimplemented public compatibility surfaces remain tracked work.
+snapshot retains its original Linux entry. No Node/NBB/KBB, JVM, C compiler,
+Linux VM or emulator is used by the Mac CLI.
 
 See [native product and controller scope](docs/native-public-entry.md),
 [the product identity](native-product.json), and

@@ -132,11 +132,12 @@
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
+   (if (string=? mode "amu-program") 0xd2c01c08
+     (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
        (if (string=? mode "cli") 0xd2c00808
-         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008))))) 0xf9000a68
+         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008)))))) 0xf9000a68
    (adr8 1184 RAW-START) 0xf900c268
    (bit-or 0xd2800008 (i64-shift-left (bit-and raw-bytes 65535) 5))
    (bit-or 0xf2a00008 (i64-shift-left (u64-shift-right raw-bytes 16) 5))
@@ -147,7 +148,8 @@
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
-   (if cli-image 0xd2800030 0xf100a81f)
+   (if (string=? mode "amu-program") (b-direct 1212 (mh-extra-start raw-bytes))
+     (if cli-image 0xd2800030 0xf100a81f))
    (if cli-image 0xf2a40010 (b-ne 48 56))
    ;; Earlier string fixtures require a pair; vector fixtures instead prove
    ;; that at least one checked vector handle was minted.
@@ -733,7 +735,7 @@
       (bit-or (i64-shift-left (bit-and pages 3) 29)
               (i64-shift-left (quot pages 4) 5)))))
 
-(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool] :vector-i64
+(defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool source :vector-i64] :vector-i64
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
@@ -743,8 +745,8 @@
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
       ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) 9)
-      (u32-at (+ at 20) 472) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (string=? mode "amu-program") 10 9))
+      (u32-at (+ at 20) (if (string=? mode "amu-program") 512 472)) (u32-at (+ at 24) 2097157)
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -829,7 +831,15 @@
           (words-at (+ at extra) (mh-startup-words extra))
           (words-at (+ at extra 64)
             (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
-      result)))
+      (if (string=? mode "amu-program")
+        (let [start (+ extra 512)]
+          (-> result
+              (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
+              (text-at (+ at 512) "AMU-SOURCE-V1")
+              (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
+              (words-at (+ at extra) (mh-result-words extra))
+              (generated-at (+ at start) source)))
+        result))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
   (if (and (= (vector-count reply) (+ total-bytes 5))
@@ -846,7 +856,7 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host"))
+        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -867,10 +877,22 @@
         entry-offset (if general selected-entry
                        (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
                          MAC-PACKAGER-ENTRY-OFFSET 0))
-        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192 0))
+        source (if (string=? mode "amu-program")
+          (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes
+            (string-concat fs2-prefix (string-concat "A" (string-concat
+              (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
+          [0 70 83 50 0])
+        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
+          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5)) 0)))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
+            (and (string=? mode "amu-cli-host")
+              (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
+                (or (= words 0) (> (+ 64 (* words 4)) 8192))))
+            (and (string=? mode "amu-program")
+              (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
+                (or (= words 0) (> (* words 4) 512))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -889,6 +911,10 @@
                  (not= raw-bytes 172)))
             (> (+ offset total-bytes) MAX-FS2-VALUE)
             (> (+ total-bytes 5) MAX-FS2-VALUE)
+            (and (string=? mode "amu-program")
+              (or (< (vector-count source) 6) (> (vector-count source) 1048581)
+                  (not= (vector-at source 0) 0) (not= (vector-at source 1) 70)
+                  (not= (vector-at source 2) 83) (not= (vector-at source 3) 50) (not= (vector-at source 4) 0)))
             (> fs2-end text-bytes)
             (not (= (vector-at raw 0) 0)) (not (= (vector-at raw 1) 70))
             (not (= (vector-at raw 2) 83)) (not (= (vector-at raw 3) 50))
@@ -899,7 +925,7 @@
                    (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
                    (text-at 6 path)
                    (byte-at (+ 6 length) 0)
-                   (body-at offset raw text-bytes mode entry-offset general))
+                   (body-at offset raw text-bytes mode entry-offset general source))
             response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
         (if (acknowledged-image? v1 offset (vector-i64-from-bytes response) total-bytes) 0 3)))))
 
@@ -910,14 +936,17 @@
   (vector-assoc! (vector-alloc 4096) 2 base))
 (defn- mh-i [s :vector-i64 word :i64] :vector-i64
   (let [n (vector-at s 0)]
-    (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1)))))
+    (if (>= n 2816) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
 (defn- mh-label [s :vector-i64 label :i64] :vector-i64
-  (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0))))
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
 (defn- mh-b [s :vector-i64 opcode :i64 label :i64] :vector-i64
   (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
-    (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) opcode)
-          (vector-assoc! (+ at 2) label) (vector-assoc! 1 (+ f 1))
-          (mh-i opcode))))
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) opcode)
+            (vector-assoc! (+ at 2) label) (vector-assoc! 1 (+ f 1))
+            (mh-i opcode)))))
 (defn- mh-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
   (let [low (-> s
       (mh-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
@@ -974,10 +1003,13 @@
           (recur (+ i 4) (mh-i out word)))))))
 (defn- mh-finish [s :vector-i64] :vector-i64
   (let [words (vector-at s 0)
+        valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3)))) ) 0) false (recur (+ i 1))))))
         base (loop [i 0 out (vector-alloc words)]
                (if (= i words) out
                  (recur (+ i 1) (vector-assoc! out i (vector-at s (+ 256 i))))))]
-    (loop [i 0 out base]
+    (if (not valid) [] (loop [i 0 out base]
       (if (= i (vector-at s 1)) out
         (let [at (+ 3072 (* i 3)) pc (vector-at s at)
               op (vector-at s (+ at 1))
@@ -985,14 +1017,14 @@
               mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
               bits (bit-and delta mask)
               word (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))]
-          (recur (+ i 1) (vector-assoc! out pc word)))))))
+          (recur (+ i 1) (vector-assoc! out pc word))))))))
 
 (defn- mh-startup-words [start :i64] :vector-i64
   [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
    0xf9400a68 0xd2a00209 0xaa090108 0xf9000a68 0xa8c17bfd 0xd65f03c0])
 
 ;; AMUH1: NUL AMUH 1 op, then bounded UTF-8/NUL fields or binary tail.
-;; Reply: status byte (0 success), payload; errors are [1, Darwin errno].
+;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
 ;; wire35 owns file/host-info operations, wire20 owns only child execution.
 ;; Scratch is private to this host image at ctx+16384, outside the old ABI.
 (defn- mh-service-words [base :i64 fallback :i64] :vector-i64
@@ -1302,3 +1334,23 @@
     (mh-label 114) (mh-text "amu: EHOST child setup/exec failed\n")
     (mh-label 115) (mh-text "amu: EHOST invalid host ABI or exhausted buffer\n"))]
     (mh-finish s)))
+
+;; Public programs print the complete signed i64 main result and exit zero.
+;; No file/process grant is added. Unsigned division also handles INT64_MIN.
+(defn- mh-result-words [base :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-sub 31 31 64) (mh-mov 20 0) (mh-cmpi 0 0) (mh-b 0x5400000a 1)
+    (mh-i 0xcb0003e0) (mh-label 1)
+    (mh-add 1 31 63) (mh-imm 8 10) (mh-sb 8 1 0) (mh-imm 3 10)
+    (mh-label 2) (mh-i 0x9ac30804) (mh-i 0x9b038085)
+    (mh-add 5 5 48) (mh-sub 1 1 1) (mh-sb 5 1 0)
+    (mh-mov 0 4) (mh-b (bit-or 0xb5000000 0) 2)
+    (mh-cmpi 20 0) (mh-b 0x5400000a 3)
+    (mh-sub 1 1 1) (mh-imm 8 45) (mh-sb 8 1 0)
+    (mh-label 3) (mh-add 2 31 64) (mh-i 0xcb010042)
+    (mh-label 4) (mh-imm 0 1) (mh-sys 4) (mh-b 0x54000002 5)
+    (mh-b (bit-or 0xb4000000 0) 6) (mh-ar 1 1 0 0)
+    (mh-i 0xcb000042) (mh-b (bit-or 0xb5000000 2) 4)
+    (mh-imm 0 0) (mh-sys 1) (mh-i 0xd4200000)
+    (mh-label 5) (mh-cmpi 0 4) (mh-b 0x54000000 4)
+    (mh-label 6) (mh-imm 0 74) (mh-sys 1) (mh-i 0xd4200000))))

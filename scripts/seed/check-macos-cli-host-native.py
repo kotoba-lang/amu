@@ -49,7 +49,7 @@ def main(out):
               for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop")}
     calls = []
 
-    def run(case, *args, expected=None, inherited=False, alarm=False):
+    def run(case, *args, expected=None, inherited=False, alarm=False, exit_code=0, diagnostic=None):
         # Intentionally no inherited directory FD, external environment or PATH.
         def inherited_setup():
             if inherited:
@@ -66,7 +66,11 @@ def main(out):
         name = f"{len(calls):02d}-{case}"
         (out / (name + ".stdout")).write_bytes(r.stdout)
         (out / (name + ".stderr")).write_bytes(r.stderr)
-        assert r.returncode == 0 and not r.stderr, (name, r.returncode, r.stdout, r.stderr)
+        assert r.returncode == exit_code, (name, r.returncode, r.stdout, r.stderr)
+        if diagnostic is None:
+            assert not r.stderr, (name, r.stderr)
+        else:
+            assert diagnostic in r.stderr, (name, r.stderr)
         if expected is not None:
             assert r.stdout == expected
         calls.append(dict(name=name, exit=r.returncode, stdout=mac.pin(out / (name + ".stdout"))))
@@ -96,10 +100,42 @@ def main(out):
         run("refusals", path)
     assert regular.read_bytes() == b"private"
     assert not (out / "native paths 日本語").exists()
+    original = (ROOT / "seed/macos-fs2-runtime-packager.kotoba").read_text()
+    no_grant = original.replace("0xf9400a68 0xd2a00209", "0xf9400a68 0xd2800009")
+    assert no_grant != original
+    (out / "no-grant.kotoba").write_text(no_grant)
+    no_grant_packager = build([str(out / "no-grant.kotoba")], "no-grant-packager", bootstrap, "fs2-cli-stdio-general")
+    images["denied"] = build(["seed/tests/macos-cli-host-denied.kotoba", "seed/macos-cli-api.kotoba"], "denied", no_grant_packager, "amu-cli-host")
+    run("denied", out, images["info"], expected=b"PASS_NATIVE_PROCESS_GRANT_DENIED\n")
+    assert not (out / "must-not-exist").exists()
+    guard = "(mh-b (bit-or 0xb4000000 8) 91)"
+    assert no_grant.count(guard) == 1
+    (out / "removed-guard.kotoba").write_text(no_grant.replace(guard, "(mh-i 0xd503201f)"))
+    removed = build([str(out / "removed-guard.kotoba")], "removed-guard-packager", bootstrap, "fs2-cli-stdio-general")
+    images["removed-guard"] = build(["seed/tests/macos-cli-host-denied.kotoba", "seed/macos-cli-api.kotoba"], "removed-guard", removed, "amu-cli-host")
+    run("removed-guard", out, images["info"], exit_code=1)
+    assert (out / "must-not-exist").read_bytes() == (str(images["info"]) + "\n").encode()
+    close = "(mh-mov 0 8) (mh-sys 6)"
+    assert original.count(close) == 1
+    (out / "removed-fd-close.kotoba").write_text(original.replace(close, "(mh-i 0xd503201f)"))
+    removed = build([str(out / "removed-fd-close.kotoba")], "removed-fd-close-packager", bootstrap, "fs2-cli-stdio-general")
+    images["removed-fd-close"] = build(["seed/tests/macos-cli-host-spawn.kotoba", "seed/macos-cli-api.kotoba"], "removed-fd-close", removed, "amu-cli-host")
+    (out / "child.stdout").unlink()
+    secret = os.open(regular, os.O_RDONLY)
+    try:
+        os.set_inheritable(secret, True)
+        run("removed-fd-close", out, images["fds"], exit_code=1, inherited=True)
+    finally:
+        os.close(secret)
+    assert (out / "child.stdout").read_bytes() == b""
+    (out / "bad-abi.kotoba").write_text('(ns bad (:export [main]))\n(defn main [] :i64 (let [s (typed-cap-call :fs/app-data :string :string "anything")] 0))\n')
+    images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
+    run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
                   calls=calls, manualFD3=False, linuxProcess=False, hostedFallback=False,
+                  builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], len(calls), "native observations")

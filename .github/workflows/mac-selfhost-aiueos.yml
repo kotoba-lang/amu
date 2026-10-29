@@ -20,6 +20,9 @@ on:
       - 'scripts/seed/test-write-bootstrap-descriptors.py'
       - 'scripts/seed/check-descriptor-writer-ci.py'
       - 'scripts/seed/check-public-macos-product.py'
+      - 'scripts/seed/build-macos-cli.py'
+      - 'scripts/seed/check-macos-cli-product.py'
+      - 'scripts/seed/check-macos-cli-host-native.py'
       - 'bin/amu'
       - 'bin/kotoba'
       - 'bin/kotoba-compiler'
@@ -49,7 +52,11 @@ jobs:
         run: |
           test "$(uname -s)" = Darwin
           test "$(uname -m)" = arm64
-      - name: Execute the public Mac aliases and native 42 to 43 first run
+      - name: Check native CLI host grants, descriptor closure and deadlines
+        run: >-
+          python3 scripts/seed/check-macos-cli-host-native.py
+          --output "$RUNNER_TEMP/mac-cli-host"
+      - name: Rebuild the public Mac CLI and execute ordinary check compile run
         run: >-
           python3 scripts/seed/check-public-macos-product.py
           --output "$RUNNER_TEMP/public-macos-product"
@@ -134,6 +141,7 @@ jobs:
           path: |
             ${{ runner.temp }}/mac-root-admission.json
             ${{ runner.temp }}/public-macos-product/
+            ${{ runner.temp }}/mac-cli-host/
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
