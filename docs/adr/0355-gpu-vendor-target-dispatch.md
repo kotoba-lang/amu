@@ -4283,3 +4283,43 @@ census (each its own pre-registration), and the tail-side
 vocabulary (named limitation). Evidence:
 docs/evidence/gpu/anv-b3dlprofile-20261029/
 (freeze-record-s82.txt).
+
+## Dated note (2026-10-29, JUN-59 session 83: the T17 derivation census)
+
+The s82 carry-forward item "this publication's derivation census
+(independent second parser)" taken as a verification slice; NO
+hardware runs, NO compiles, NO GO stamp, NO ledger line.
+derivation-census-s82.py re-derives every published value of
+publication-s82.txt from the 390 committed run logs on a
+genuinely different path (split-based parsing, no regex; pure-
+Python sorted() estimators cross-checked in-loop against
+np.partition kth paths; NO RNG) and matches the committed bytes
+on EVERY row -- 49/49 two-way rows, 0 mismatched; section B
+6,480 pair-spread + 2,255 pooled-median + 30 2*L dual-
+computation cross-checks, 0 mismatched; section C hygiene 0
+mismatched. DOUBLE-RUN BYTE-IDENTICAL (14,721 bytes, sha256
+7ecc3ef4..., cmp exit 0). ONE FINDING NAMED, NOT HIDDEN: the
+published section-5 band lines print sorted[0]..sorted[1] (min..
+MEDIAN) of the three {s38,s39,s51} 2*L values under the label
+"closed interval spanned by {s38,s39,s51}" -- the printed
+interval tops are understated (DL4 38..47 vs min..max 38..48;
+DL8 79..84 vs 79..99; DL16 187..188 vs 187..201; DL32 537..564
+vs 537..572); ALL FOUR BAND VERDICTS are UNCHANGED under
+min..max (INSIDE/INSIDE/OUTSIDE-BELOW/OUTSIDE-ABOVE), so the
+narrow-vs-wide descriptive picture does not move; a future
+inferential DL row's freeze must name its convention explicitly.
+Standing gates (real runs == the s82 pins): classify 2649/0;
+scoped GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 84: the
+W6 measurement half (first session at/after
+2026-10-30T00:00:00Z), the fourth day slot (its own future
+freeze), an inferential DL row (its own pre-registration), and
+the tail-side vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3dlprofile-20261029/ (record-s83.txt).
