@@ -18,6 +18,7 @@ on:
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
       - 'scripts/seed/macos_native_image.py'
+      - 'scripts/seed/check-macos-fs35.py'
       - 'seed/DEFINITION-CIDS-MANIFEST'
       - 'seed/tests/definition-cid-vectors.json'
       - 'scripts/seed/check-macos-cross-linux-candidates.py'
@@ -128,6 +129,10 @@ jobs:
           python3 scripts/seed/check-aiueos-object-externs.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-externs"
+      - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
+        run: |
+          python3 -I scripts/seed/check-macos-fs35.py \
+            --output "$RUNNER_TEMP/mac-fs35"
       - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
         run: |
           python3 -I scripts/seed/check-definition-cid-native.py \
@@ -176,6 +181,7 @@ jobs:
           path: |
             ${{ runner.temp }}/mac-definition-cid/observations.json
             ${{ runner.temp }}/mac-definition-cids/observations.json
+            ${{ runner.temp }}/mac-fs35/observations.json
           if-no-files-found: warn
       - name: Upload user-v3 Mac receipt
         if: always()
