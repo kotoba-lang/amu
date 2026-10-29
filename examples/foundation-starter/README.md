@@ -32,7 +32,7 @@ and record the results rather than trying a different compiler.
 The Amu repository is available under the [Apache License 2.0](../../LICENSE).
 This is an engineering-preview procedure, not a release download. On a native
 Linux x86_64 machine with Git and Python 3, review the
-[pinned starter revision](https://github.com/kotoba-lang/amu/tree/8725381353ac343f80e21418a568071927035cc1).
+[pinned starter revision](https://github.com/kotoba-lang/amu/tree/ce794dd1c3bee116135d4811d9b82c9af9e693d6).
 In a dedicated shell, run these commands in a new directory of your choice.
 `set -e` stops that shell if acquisition or any check fails:
 
@@ -40,7 +40,7 @@ In a dedicated shell, run these commands in a new directory of your choice.
 set -e
 git clone --filter=blob:none --depth 1 --no-checkout https://github.com/kotoba-lang/amu.git amu-starter
 cd amu-starter
-REVIEWED_REVISION=8725381353ac343f80e21418a568071927035cc1
+REVIEWED_REVISION=ce794dd1c3bee116135d4811d9b82c9af9e693d6
 git fetch --filter=blob:none --depth 1 origin "$REVIEWED_REVISION"
 test "$(git rev-parse FETCH_HEAD)" = "$REVIEWED_REVISION"
 git sparse-checkout set --cone bin seed scripts examples

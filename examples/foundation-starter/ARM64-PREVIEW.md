@@ -10,13 +10,13 @@ On Linux ARM64, check the kernel and architecture with `uname -s` and
 `uname -m`; expect `Linux` and `aarch64`. Git and Python 3 are required for
 acquisition and observation. These checks alone do not establish host or
 release qualification. In a dedicated shell, obtain the exact 40-character
-commit in this [pinned snapshot](https://github.com/kotoba-lang/amu/tree/8725381353ac343f80e21418a568071927035cc1):
+commit in this [pinned snapshot](https://github.com/kotoba-lang/amu/tree/ce794dd1c3bee116135d4811d9b82c9af9e693d6):
 
 ```sh
 set -e
 git clone --filter=blob:none --depth 1 --no-checkout https://github.com/kotoba-lang/amu.git amu-arm-starter
 cd amu-arm-starter
-REVIEWED_REVISION=8725381353ac343f80e21418a568071927035cc1
+REVIEWED_REVISION=ce794dd1c3bee116135d4811d9b82c9af9e693d6
 git fetch --filter=blob:none --depth 1 origin "$REVIEWED_REVISION"
 test "$(git rev-parse FETCH_HEAD)" = "$REVIEWED_REVISION"
 git sparse-checkout set --cone bin seed scripts examples

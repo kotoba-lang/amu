@@ -3,6 +3,9 @@ name: Source revision audit controls
 on:
   pull_request:
     paths:
+      - 'native-product.json'
+      - 'seed/FULL-MANIFEST'
+      - 'seed/*.kotoba'
       - 'scripts/seed/audit-descriptor-source-revision.py'
       - 'scripts/seed/test-audit-descriptor-source-revision.py'
       - '.github/workflows/source-revision-audit.yml'
@@ -16,5 +19,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - name: Verify audit against isolated Git histories
         run: python3 scripts/seed/test-audit-descriptor-source-revision.py
+      - name: Verify the actual declared source revision
+        run: >-
+          python3 scripts/seed/audit-descriptor-source-revision.py
+          --descriptor-revision "$(git rev-parse HEAD)"
