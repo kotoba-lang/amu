@@ -4586,3 +4586,57 @@ line), any further counted-day slot (its own freeze), and a
 cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3w6tailrep-20261030/ (protocol.txt,
 freeze-record-s88.txt, the s88 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 89: the T19
+## derivation census)
+
+The publication-s87.txt section-5 queued item ("the 12 W5 block
+values (for a future census)") taken as a verification slice --
+the s82->s83 census precedent, applied to the T19 vectors the
+frozen T18/T20 rows quote at W6. NO hardware runs, NO builds,
+NO compiles, NO GO stamp, NO ledger line, NO day-slot
+consumption. derivation-census-s87.py (the INDEPENDENT second
+parser: no re module; estimators on the numpy np.partition kth
+paths -- analysis-s87.py is pure stdlib sorted()-based -- cross-
+checked in-loop against pure-Python sorted(); NO RNG, no clock)
+re-derives every published computed value from the 390 committed
+run logs and matches the committed bytes on EVERY row: 92/92
+two-way rows, 0 mismatched; run twice byte-identical (29,790
+bytes, sha256 ebf261dd...1463c both). Section B: 1,080 pair-
+spread + 2,255 pooled-median + 90 2*L cross-check comparisons
+and 240 decomposition block checks, 0 mismatched everywhere.
+THE ONE SUBSTANTIVE FINDING, NAMED NOT HIDDEN: the publication's
+band lines print sorted[0]..sorted[1] (min..median) of
+{s38,s39,s51} and judge W5 vs sorted[1] while protocol.txt
+section 5 AND the printed label freeze [MIN,MAX] -- all 8
+interval tops understated; under the frozen convention 2 of 8
+verdicts CHANGE (TS-R4 OUTSIDE-ABOVE -> INSIDE in 16..22; TS-R8
+OUTSIDE-ABOVE -> INSIDE in 32..49), BOTH in the
+UNINFORMATIVE-BY-S86-CAVEAT k=4/8 families; the four
+informative-family verdicts (TS-L16/TS-R16/TS-L32/TS-R32) are
+INVARIANT (0 changed). IMPACT ON FROZEN ROWS: NONE -- T20's
+direction rests only on the five-window 2*L vectors (verified
+EXACT) and T18's freeze already names [MIN,MAX]; the band
+subsection is descriptive, quoted by NO frozen row.
+publication-s87.txt stands as published bytes; record-s89.txt
+is its correction record; any future band placement uses
+[MIN,MAX] and names it. Standing gates (real runs == the s88
+pins): classify 2649/0 (17,925 bytes == pin); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes == pins); FULL run-tests
+.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside this
+diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization
+exists for Intel. Carry-forward to session 90: the W6
+measurement half (first session at/after 2026-10-30T00:00:00Z)
+-- the gate for T18's analysis half, T20's analysis half and
+W7's measurement half --, then the T18 analysis half, T20's
+analysis half, the W7 measurement half (behind W6's ledger
+line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3tailprofile-20261029/
+(derivation-census-s87.py/.txt, record-s89.txt, the s89 gate
+captures).
