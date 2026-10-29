@@ -79,10 +79,10 @@ locally with two test-only patches (`seccomp(2)` accepted without installing a
 filter, `openat2(2)` passed through); this is measurement tooling outside the
 build closure and does not qualify anything.
 
-* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`67612009…`, 8,593,920
-  bytes, was 9,458,176); aarch64 packed root F1 = F2 (`5bc428f0…`, 3,568,128
-  bytes, was 3,625,472) with container `64562138…`, derived under qemu from the
-  previous root through an interim candidate; the x86_64 compiler that root
+* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`f8332459…`, 8,593,920
+  bytes, was 9,458,176); aarch64 packed root F1 = F2 (`172f588b…`, 3,568,128
+  bytes, was 3,625,472) with container `22ca8a7a…`, derived under qemu from a
+  candidate root of this change (itself derived from the previous root); the x86_64 compiler that root
   emits is byte-identical to `bin/amu`.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`

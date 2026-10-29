@@ -1,0 +1,103 @@
+JUN-59 session 69 W5 ANALYSIS PRE-BUILD (the W5 measurement row's
+IMPLEMENTATION preparation half -- NO runs, NO compiles, NO GO stamp,
+NO host writes, NO day-slot consumption, NO ledger line). Row: the
+s57-frozen W5 carry-forward's queue row 1 (the fifth-window measurement
++ T7 read), taken to a PREPARATION slice the queue left open: the
+five-window analysis machinery of the W5 session's analysis-s<NN>.py,
+built and validated BEFORE any W5 run exists. The measurement half
+REMAINS day-slot-gated (STARTED, NOT FINISHED): W5 is DEFINED as the
+window whose 78 fresh processes run in the first measurement session
+that starts at or after 2026-10-29T00:00:00Z; this tick runs
+2026-10-28T21:5xZ, ~2h before that slot opens (NAMED, not skipped
+silently).
+
+1. WHAT WAS BUILT (implementation, this tick):
+   docs/evidence/gpu/anv-b3w5prego-20261028/analysis-prego.py -- the
+   s57-frozen protocol's analysis path (protocol.txt sections 0/2/3/4)
+   as ONE generic script over 4 or 5 windows: the exact-median MAD and
+   exclusive-hinge IQR block estimators (int64, exact INTEGER), the
+   6th+7th order-statistic levels (INTEGER half-tick), the two-window
+   primary directional contrast (T7 shape), the {4,5}-window cross-
+   window max-T repartition probes (D3 shape), the section-3 integrity
+   machinery (VERIFY mismatch/counts/knobs/S=8 fail-closed/cell map),
+   C1, block-min vectors, anchor rows, D1/D2/D4, and the frozen RNG
+   contract (ONE random.Random per session; one rng.shuffle of a fresh
+   list per trial; frozen probe order primary MAD / primary IQR /
+   D MAD-hi / D MAD-tw / D IQR-hi / D IQR-tw; 20,000 trials per probe;
+   numpy 2.5.4 -- the interpreter here IS python3 3.12.8 + numpy 2.5.4,
+   the frozen implementation path). Modes: --compat-s51 (four prior
+   windows, seed 20261028, validation report) and w5 mode (five
+   windows, seed 20261029, writes publication-s<NN>.txt; the frozen
+   filename analysis-s<NN>.py is enforced -- the session number is
+   read from the filename, and running w5 mode under the pre-build
+   name refuses to generate).
+   STATE (honest): this is an IMPLEMENTATION pre-build. The W5
+   session (the first measurement session starting at or after
+   2026-10-29T00:00:00Z) owns the W5 directory and every run/analysis
+   artifact; it adopts this file as analysis-s<NN>.py and owns its
+   record.txt. NO W5 quantity exists or is computed here.
+
+2. VERIFIED THIS TICK (real tool output):
+   The s51-compat run (python3 analysis-prego.py --compat-s51, real
+   run 2m45s, exit 0) reproduces the committed publication-s51.txt
+   values EXACTLY -- compat-s51-validation.txt: TOTAL 44 rows, 0
+   failed. The want values are PARSED from publication-s51.txt, not
+   transcribed. Reproduced exactly, named: T1 MAD (2*L 143->118,
+   C_obs 12.5, count 99/20001, p 0.005000) and T1 IQR (303->240,
+   31.5, count 9, p 0.000500) and the joint letter (a); D3 MAD-hi
+   (M_obs 13.0, (min,256,S=16), count 2844, p 0.142243), D3 MAD-tw
+   (16.0, (max,128,S=default), count 367, p 0.018399), D3 IQR-hi
+   (35.5, count 3657, p 0.182891), D3 IQR-tw (34.0, count 12283,
+   p 0.614169) -- i.e. the ENTIRE published RNG stream (all six
+   probe count/p pairs) plus D1 vectors, the full D2 18-cell table,
+   C1 (c2 FLOOR, c8 32890), the block-min vectors and the anchor
+   rows. This validates the resampling and estimator code paths
+   end-to-end against published frozen numbers.
+
+3. NAMED, NOT HIDDEN -- NOT DONE this tick (runtime budget; carry-
+   forward, the next tick must run these before any push-equivalent
+   claim, the s67-deferred-gate pattern):
+   (a) the determinism DOUBLE-RUN of the generator (twice, diff) was
+       NOT completed -- the report's determinism line names this
+       record; until the double-run lands, byte-identity is UNVERIFIED;
+   (b) the standing gates were NOT run this tick: gpu_regime_classify.py
+       --self-test, the scoped GPU gate twice, FULL run-tests.cljk,
+       the settle-bar evaluator --self-test + ledger eval twice,
+       find docs/evidence/gpu -name '*.sh'. The bar's state is
+       UNVERIFIED this tick; the last verified reading (s68) was the
+       frozen evaluator 38/0 + ledger eval twice byte-identical ->
+       VERDICT PENDING 1/4.
+   (c) the W5-dependent parts of the pre-build are UNVALIDATED (no W5
+       logs exist): T7 at the (s36, W5) pair, five-window D3, D1/D2/D4
+       at W5, and the w5-mode publication text; the derivation-census
+       second-parser twin is NOT built (a later pre-slot tick or the
+       W5 session's own work).
+
+4. BAR / SLOT: nothing this tick could produce a bar-qualifying
+   reading (no instrument runs; the 2026-10-28 slot is s31's and the
+   W5 window cannot open before 2026-10-29T00:00:00Z) -- NO ledger
+   line and NO day slot either way.
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false for :arm/:unknown; the
+   measured rows keep ADR-0358's flags); NO vendor optimization
+   exists for Intel. No derivation census (a pre-build validates
+   against published values; the probe statistics it reproduces are
+   already-published s51 content -- NO new statistic of any W5 probe
+   is computed -- NAMED, not omitted).
+
+6. QUEUE (unchanged): next executable row is queue row 1's MEASUREMENT
+   half -- the W5 session in the first measurement session at or after
+   2026-10-29T00:00:00Z (78 fresh processes, frozen run order, custody
+   GO stamp before builds and runs -- INCLUDING the still-unstaged host
+   workdir ~/anv-b3w5xdayrep-20261029 as that session's own pre-GO
+   custody step (s67 record section 2)) -- then its T7 read, then the
+   three frozen analysis halves (s64 T14 hi-wander, s65 T15 quantile-
+   pair level axes, s66 T16 second-pair profile axis). Deferred gates
+   (3b) run at the next tick.
+
+Evidence: docs/evidence/gpu/anv-b3w5prego-20261028/ (analysis-prego.py,
+compat-s51-validation.txt, this record) + the ADR-0355 dated note.
+Chain: lands on the ONE open chain branch bot/amu-gpu-chain-20261028-3
+(chain PR #1643, commit + push only). (JUN-55, JUN-59; Linear tracking
+JUN-499)

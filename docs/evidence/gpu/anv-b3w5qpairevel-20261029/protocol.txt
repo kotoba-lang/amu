@@ -1,0 +1,309 @@
+JUN-59 -- session 65 protocol (PRE-REGISTRATION FREEZE ONLY):
+THE QUANTILE-PAIR LEVEL AXES (the s53/s54 named pairs) AT THE
+W5 WINDOW (a s57-frozen W5 carry-forward analysis row -- at the
+NEW fifth window W5, the campaign's first window on a UTC day
+other than 2026-10-28, does the tw arm's (max,128,S=default)
+cell's INNER-QUANTILE-PAIR (28,48) and OUTER-QUANTILE-PAIR
+(9,67) spread LEVELS continue the s36-to-post-shift movement on
+the two OTHER named quantile-pair level axes?). DESIGN slice
+this tick: the pre-registration of the row; the ANALYSIS half is
+day-slot-gated (needs W5's tw runs) and runs in the first
+session that has the committed W5 logs (STARTED, NOT FINISHED --
+named, not skipped silently). Frozen BEFORE any fifth-window
+run exists and before ANY statistic of this probe was computed
+(freeze stamp 2026-10-28T20:10:55Z, this tick; the W5 run logs
+do not exist yet -- no committed file contains any W5
+quantity). This file is written once and never rewritten. The
+session that runs this row's ANALYSIS half writes its own
+record.txt in this directory (this tick's record is
+freeze-record-s65.txt; named in advance to avoid a second
+writer colliding on record.txt).
+
+0. ROW QUESTION (ONE row): the anv-b3w5xdayrep-20261029/
+   protocol.txt section-7 carry-forward analysis row "the
+   quantile-pair level axes (the s53/s54 named pairs) at W5"
+   (the FIRST of the two remaining W5 analysis rows in the s64
+   record section-5 queue order), taken on TWO NAMED observable
+   axes: the named cell's INNER- and OUTER-QUANTILE-PAIR spread
+   LEVEL at the two named windows s36 and W5 against the
+   two-window run-repartition null.
+
+   NAMED AXES (frozen; the s53/s54 constructions UNCHANGED):
+     INNER: D = x_(48) - x_(28) of the block's pooled 75
+       gpu_ticks samples (the s53-named inner-quantile-pair
+       spread, ranks 28/48, symmetric about the deviation-center
+       rank x_(38), strictly INSIDE the s47-frozen IQR hinges
+       x_(19)/x_(57); an exact INTEGER);
+     OUTER: D = x_(67) - x_(9) of the block's pooled 75 samples
+       (the s54-named outer-quantile-pair spread, ranks 9/67,
+       symmetric about x_(38), strictly OUTSIDE the IQR hinges
+       -- x_(9) < x_(19) < x_(57) < x_(67); an exact INTEGER).
+   NAMED CELL (frozen): the tw arm's (max,128,S=default) ok cell
+   (the max-op, wg=128, forced=default pipeline-ok cell; the
+   same named cell as sessions 47-57).
+   NAMED WINDOW PAIR (frozen): s36 (the pre-shift window of the
+   s49 discovery; run window 2026-10-28T02:40:49Z) vs W5 (W5 is
+   DEFINED as in the anv-b3w5xdayrep-20261029/protocol.txt
+   section 0, UNCHANGED: the window whose 78 fresh processes run
+   in the first measurement session that starts at or after
+   2026-10-29T00:00:00Z; its window tag is that session's tag,
+   written s<NN> in publications where <NN> is the running
+   session's number; if the runs slip past 2026-10-29 the
+   definition still binds and the ledger line takes the ACTUAL
+   run day).
+   NAMED DIRECTION (frozen, from published content BEFORE any W5
+   run exists): the pre-registered direction is C_obs > 0 on
+   BOTH axes (the quantile-pair spread level is NARROWER at W5
+   than at s36 -- continuation of the s36-to-post-shift movement
+   across the UTC-day boundary). The direction is fixed by the
+   published frozen-scale letters and the published outer-pair
+   drops (QUOTE-ONLY priors, section 1: MAD-level L 71.5 -> 55.5
+   -> 56.5 -> 59.0, IQR-level L 151.5 -> 120.5 -> 117.5 ->
+   120.0 at s36/s38/s39/s51; s51's T1 (a) REPLICATED-ON-BOTH-
+   LEVEL-AXES; s54's T4 (a) OUTER-SPREAD-LEVEL-SHIFTED-
+   CONSISTENT with the outer-pair level dropping at every
+   post-shift window) -- NOT by any W5 statistic and NOT by any
+   quantile-pair level at W5 (none exists at freeze time).
+
+   THE CONSTRUCTION (frozen; the s53/s54 constructions and the
+   session-51 level construction UNCHANGED): block = 3
+   consecutive runs of the tw arm within one window (the
+   s35/s36-frozen block unit; 12 blocks per (window, arm));
+   per-block D of the NAMED cell over the block's pooled 75
+   gpu_ticks samples (25 samples per run x 3 runs), one D per
+   axis as section 0 (both exact INTEGER). Per-axis window level
+   L_w = median of the 12 block D values of window w (a
+   half-tick rational: 2*L = 6th + 7th order statistics of the
+   12 block D values, an INTEGER). THE PRIMARY PER-AXIS
+   STATISTIC (frozen): the directional contrast 2*C_obs =
+   2*L_s36 - 2*L_W5 (half-tick integer; the pre-registered
+   direction is C_obs > 0).
+
+   THE NULL (per axis, frozen): RUN-EXCHANGEABILITY BETWEEN THE
+   TWO NAMED WINDOWS' TW RUNS (the anv-b3w5xdayrep-20261029
+   section-0 two-window null, UNCHANGED): the 72 tw runs (36 of
+   s36 + 36 of W5) are exchangeable; under the null ALL
+   within-run, fresh-process run-to-run AND window-to-window
+   variation is sampling noise at the fresh-process granularity.
+   Resampling (frozen): per trial, shuffle the 72 run ids (ONE
+   random.Random(2026102815), the ONLY RNG in this probe; one
+   rng.shuffle per trial IS frozen), split into two groups of 36
+   in draw order (pseudo-windows A then B), each into 12 blocks
+   of 3 in draw order; compute each pseudo-block's D for the
+   named cell on the probe's axis; 2*L* per pseudo-window = 6th
+   + 7th order statistics of the 12 block D values; 2*C* =
+   2*L*_A - 2*L*_B; p = (1 + count(C* >= C_obs)) / (1 +
+   20,000), ONE-SIDED in the pre-registered direction. TRIALS =
+   20,000 per probe (NOT the s35-frozen 100,000 -- cost, same
+   named deviation as sessions 40-64; p resolution 1/20,001 ~=
+   5e-5).
+
+   EXACTNESS (frozen): D is an exact INTEGER; 2*L and 2*C are
+   exact INTEGER half-tick units; every C* >= C_obs comparison
+   is exact integer arithmetic; publications report L and C in
+   ticks with .0/.5 (fmt_ht). IMPLEMENTATION PATHS (frozen):
+   analysis-s<NN>.py (the analysis session's script; <NN> = the
+   running session's number) uses numpy 2.5.4 (int64 np.sort
+   over the pooled 75: inner D = sorted[..., 47] - sorted
+   [..., 27]; outer D = sorted[..., 66] - sorted[..., 8];
+   np.sort for the 6th+7th sums); the resampling is computed in
+   vectorized TRIAL BATCHES (batch size is a memory detail and
+   NOT part of the frozen contract; the RNG call order -- one
+   rng.shuffle per trial -- IS frozen); derivation-census-
+   s<NN>.txt is an independent second parser (split-based
+   parsing without regex; the observed block estimators via
+   pure-Python sorted() order statistics over the explicitly
+   pooled 75 -- inner sorted(pooled75)[47] - sorted
+   (pooled75)[27], outer sorted(pooled75)[66] - sorted
+   (pooled75)[8] -- cross-checked in-loop against the
+   np.partition kth paths; the resampling's estimators via the
+   np.partition kth paths, NOT a sort; the 12-value level
+   medians via sorted() explicit order statistics (observed) /
+   np.partition kth=(5,6) (resampling); the two-window
+   repartition resampling and the RNG call order
+   re-implemented); both report identical values; deterministic
+   -- running each script twice yields byte-identical output.
+
+   T15 LETTERS (pre-registered NOW, before any W5 run exists and
+   before any statistic of this probe was computed):
+     per axis (inner / outer):
+       (a) LEVEL-REPLICATED-CONTINUED: C_obs > 0 AND p <= 0.05
+           -- the pre-registered direction holds and is
+           distinguishable from run-exchangeable sampling noise
+           at this window pair on this axis;
+       (b) NOT-REPLICATED otherwise (sub-cases named in the
+           publication: DIRECTION-REVERSED if C_obs <= 0;
+           DIRECTION-CONSISTENT-NOT-SIGNIFICANT if C_obs > 0
+           and p > 0.05);
+       (c) NOT EVALUABLE on any invalidation of section 3.
+     joint T15 (the row answer): (a) QUANTILE-PAIR-CROSS-DAY-
+       REPLICATED-ON-BOTH-AXES = BOTH axes read (a) [the
+       pre-registered INTERSECTION-UNION rule: the joint null is
+       the UNION of the two axis nulls; requiring both axes to
+       reject at 0.05 controls the joint type-I error at 0.05 --
+       NO multiplicity correction is applied or needed for this
+       IUT]; (b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES otherwise
+       (named which axis(s) read (b) and each sub-case); (c) NOT
+       EVALUABLE on section 3 invalidation.
+
+   NAMED, NOT HIDDEN (frozen): the multiplicity claim is NARROW
+   and named precisely: ONE named cell, ONE named window pair,
+   ONE named direction, TWO named axes under a pre-registered
+   IUT joint rule, tested on NEW data (the W5 runs do not exist
+   at freeze time) -- NO within-family multiplicity of its own;
+   the axes/cell/direction choice was made from PUBLISHED
+   s53/s54 and frozen-scale content alone, the earlier
+   exploration families STAY uncorrected, and this row does NOT
+   retro-correct them. THE AXIS-ASYMMETRY NAMED, NOT HIDDEN:
+   the two axes' published four-window priors DIFFER in kind
+   (QUOTE-ONLY, section 1) -- the OUTER level dropped at every
+   post-shift window (496/429/437/446, s54 T4 (a)) while the
+   INNER level SCATTERED (118/102/128/113, s53 T3 (b), one
+   contrast opposite-direction), so the joint (a) is DEMANDING
+   on the inner axis; a joint (b) driven by the inner axis is
+   CONSISTENT WITH the s53-era scatter of the narrow inner pair
+   near its noise floor AND EQUALLY CONSISTENT WITH genuine
+   non-replication at the inner pair -- the per-axis letters are
+   named, so the OUTER axis's W5 letter is visible under any
+   joint letter. (a) would NOT name a mechanism
+   (thermal/scheduling/memory/driver state all UNMEASURED) and
+   NOT say whether any level movement is physical or estimator
+   structure. THE NOVELTY OF THIS ROW (named): the campaign's
+   first pre-registered read of the s53/s54 named quantile-pair
+   level axes at a window on another UTC day -- the W5
+   quantile-pair levels were never published or computed
+   anywhere (a FRESH pre-registered prediction, frozen before
+   any W5 quantity exists). STILL LOW POWER: n=2 windows, 12
+   blocks each; the s36-vs-W5 contrast is a two-window design
+   and a single (a) can also reflect any s36-specific or
+   W5-specific state; ONE host; only the named cell's
+   within-block quantile-pair spread level on the two named
+   axes is tested (MAD/IQR levels, other quantile pairs, other
+   deviation centers, location levels, and scales inside the
+   25-sample/3-run units are invisible); 20,000 trials per
+   probe; L2 observational ONLY; NO causal mechanism; direction
+   UNMEASURED; threshold-artifact-vs-representation STAYS
+   UNRESOLVED under any letter.
+
+1. INPUTS (frozen): the NEW W5 run logs of
+   docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (78 runs: c2 3 +
+   hi 36 + tw 36 + c8 3; ONLY the 36 tw logs enter the
+   statistic) plus the 312 committed run logs of the four fixed
+   prior evidence directories -- anv-b3commonmode-20261028 (the
+   s36 window), anv-b3joint3-20261028 (s38), anv-b3joint4-20261028
+   (s39), anv-b3levelrep-20261028 (s51) -- 390 logs total (the
+   four prior windows enter only the section-3 integrity
+   machinery). Every s36/s38/s39/s51 input quantity was MEASURED
+   on aiueos-6600hs Intel BMG G31 ANV in sessions 36/38/39/51;
+   the W5 quantities are MEASURED on the same host in the W5
+   measurement session. QUOTE-ONLY PRIOR EXPOSURE (named; the
+   freeze guards letter-shopping, not prior exposure): (i) the
+   published s53 D1 inner-quantile-pair levels of the named cell
+   at s36/s38/s39/s51 (2*L 118/102/128/113; L 59.0/51.0/64.0/
+   56.5) and s53's T3 (b) NOT-SHIFTED-CONSISTENT (p
+   0.097145/0.806610/0.357532); (ii) the published s54 D1
+   outer-quantile-pair levels at s36/s38/s39/s51 (2*L
+   496/429/437/446; L 248.0/214.5/218.5/223.0) and s54's T4 (a)
+   OUTER-SPREAD-LEVEL-SHIFTED-CONSISTENT (p 0.005450/0.013099/
+   0.030948); (iii) everything the
+   anv-b3w5xdayrep-20261029/protocol.txt section 1 quotes
+   (quote-only). NO committed file contains ANY W5 quantity; the
+   axes, cell, window pair and direction were frozen from
+   (i)/(ii)/(iii) alone.
+
+2. THE RESAMPLING (frozen): ONE random.Random(2026102815) (the
+   session-65 freeze seed, continuing the s54-s64 20261028NN
+   sequence; DISTINCT from the s57 T7 probes' random.Random
+   (20261029) and the s64 T14 probe's random.Random(2026102814)
+   so no two rows' streams couple); consumed in the frozen
+   probe order: (1) the INNER (28,48) axis contrast (s36 vs W5),
+   (2) the OUTER (9,67) axis contrast (s36 vs W5). Per probe
+   20,000 trials; per trial ONE rng.shuffle of a fresh
+   list(range(72)) -- the ONLY RNG calls in the probe; p as
+   section 0; integer exactness as section 0.
+
+3. INVALIDATION / EVALUABILITY (the
+   anv-b3w5xdayrep-20261029/protocol.txt section-3 five-window
+   machinery, UNCHANGED, restated): per-window integrity over
+   the committed logs -- VERIFY mismatch total 0; 450 SAMPLE +
+   24 VERIFY per run; every SAMPLE's knob fields == its arm
+   table (c2 2/1/1, hi 3/1024/4033, tw 3/2048/8066, c8 8/1/1);
+   S=8 fail-closed cells (6 per run) pipeline FAIL + void 1;
+   cell map identical across all 390 logs; the eight block-min
+   vectors of the four PRIOR windows reproduce the
+   publication-s51.txt section 3 published vectors EXACTLY
+   (8/8); C1 re-derived at the W5 window: c2 FLOOR (all 18
+   pooled medians <= 100), c8 (sum,128,S=16) pooled median
+   within +/-5% of the committed 32,915; the anchor
+   reproduction rows: hi block A's (sum,128,S=16) pooled median
+   and 18-cell min..max reproduce the quote-only/published
+   anchor priors EXACTLY at the four PRIOR windows (s36 1,142 /
+   991..1,438; s38 1,132 / 992..1,443; s39 1,146 / 986..1,432;
+   s51 1,137 / 988..1,430). Any violation => letter (c). (The
+   W5 window's own anchor row is the
+   anv-b3w5xdayrep-20261029 row's D4 -- NEW measurement, never
+   compared to a prior EXACTLY; this row computes no anchor.)
+
+4. SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none
+   of it is the row question; NO letter under this freeze):
+   (D1) the NAMED cell's five-window quantile-pair level vectors
+        on BOTH axes (L at s36/s38/s39/s51/W5; the 12 block D
+        values at W5 printed for the census) and the W5-vs-
+        post-shift-band consistency (L_W5 vs the closed interval
+        spanned by {L_s38, L_s39, L_s51}) per axis --
+        descriptive only;
+   (D2) the 18-cell scoreboard at W5 on both quantile-pair axes
+        (L_W5 per ok cell) and the full W5-vs-s36 per-cell
+        contrast table (all 18 cells x 2 axes: L_s36, L_W5, C)
+        -- UNCORRECTED for multiplicity (36 descriptive
+        contrasts), descriptive only.
+
+5. THE BAR (frozen): NO hardware runs at the ANALYSIS session
+   (the analysis parses COMMITTED logs) -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD at the analysis
+   tick). The W5 runs' own bar line belongs to the
+   anv-b3w5xdayrep-20261029 row (its protocol section 5 -- hi
+   block A of the W5 window, the frozen L12 single candidate,
+   day = the W5 run's UTC day); this row NEVER writes a ledger
+   line. The frozen evaluator
+   (anv-b3settlebar-20261027/settle-bar-eval.py) is the only
+   source of the bar letter (B2): --self-test fixture pin 38/0,
+   ledger eval twice byte-identical. NEVER hand-write a verdict.
+
+6. ROUTE (frozen; the session-53/54 analysis routes UNCHANGED
+   except the inputs, workdir and script names): the session
+   taking this row's ANALYSIS half runs at the chain worktree;
+   analysis-s<NN>.py (<NN> = the running session's number; numpy
+   2.5.4 -- int64 np.sort over the pooled 75; the resampling in
+   vectorized TRIAL BATCHES with the frozen RNG call order)
+   parses the 390 committed run logs (section 1) and writes
+   publication-s<NN>.txt in THIS directory (run twice, diff
+   exit 0); derivation-census-s<NN>.txt is the independent
+   second parser (section 0's implementation paths) run twice
+   byte-identical; gates: gpu_regime_classify.py --self-test,
+   the scoped GPU gate twice (scratch runner scoped-gpu-gate.cljk,
+   created, run, deleted, never committed), FULL run-tests.cljk
+   run live, the settle-bar evaluator --self-test and the ledger
+   eval twice byte-identical; find docs/evidence/gpu -name '*.sh'
+   -> 0 (no POSIX shell execution files, ever). ZERO derivation
+   edits; ZERO new knob pairs (the session-9 D2 pre-GO compile
+   smoke does not apply); the instrument and corpus are the
+   committed bytes of sessions 28-39 (byte-copy checked in the
+   W5 tick's host-verify).
+
+7. RULE 4 (frozen): NOTHING MOVES. accelerator-targets defaults
+   remain provisional (:measured? false); no vendor optimization
+   exists for Intel; no workgroup default is replaced. WHAT
+   REMAINS (named, queued for later sessions, each with its OWN
+   pre-registration when taken -- none of it is frozen here):
+   the fifth-window measurement + T7 read (queue row 1 --
+   STARTED; the 2026-10-29 UTC slot); the s38 hi (sum,256,S=32)
+   wander replication ANALYSIS half (STARTED at the s64 freeze;
+   needs W5's hi runs); this row's ANALYSIS half (STARTED at
+   this freeze; needs W5's tw runs); the second-pair profile
+   axis at W5 (the s56 halving-rule pairs; its own freeze; need
+   W5 data); any further named profile pair -- which requires a
+   NEW named rank-pair vocabulary or selection rule (the
+   s63-retired program's only route back; none exists yet --
+   naming one is future design work).

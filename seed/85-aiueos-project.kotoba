@@ -90,7 +90,7 @@
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
         M4 (if (pj-ok M3) (nm-run M3 S) M3)
-        stubs (if (pj-ok M4) (pj-ls L pj-k-stub0 (- (vector-at M4 MM-FN-N) (pj-l L pj-k-nstub) XK-WINDOW-N KM-INTR-N)) L)
+        stubs (if (pj-ok M4) (pj-ls L pj-k-stub0 (- (vector-at M4 MM-FN-N) (pj-l L pj-k-nstub) XK-WINDOW-N (km-count))) L)
         M5 (if (pj-ok M4) (ck-run-h M4 S H) M4)]
     (cond (and (pj-ok M5) (ck-hint-again? H M5)) (kp-module-h M5 L P G m H)
           (not (pj-ok M5)) (let [w2 (pj-err-back M5 L m (string-length S1))] P)

@@ -1,0 +1,75 @@
+(ns gpu-kernels-q8 (:export [kir2-kdot-q8-repack]))
+
+;; kdot over a Q8_0 tensor repacked at load time (ADR 0379 evidence,
+;; docs/evidence/spirv-to-wgsl-20261028): the f16 scales in their own f32
+;; array and the int8 quants as 16-byte aligned uvec4s, 32 B a block, so no
+;; load straddles a word and x is read as vec4. One workgroup per row, each
+;; thread strides over the row's blocks, then the workgroup sums its partials.
+;; Bindings: 0 Meta {rows cols : u32} (ro), 1 Q (uvec4, ro), 2 X (vec4, ro),
+;; 3 O (f32), 4 SC (f32 scales, ro). cols is a multiple of 32. Dispatch
+;; (rows, 1, 1); LocalSize wg, one of 32, 64, 128, 256 (another gives an
+;; empty module). Appended after gpu_kernels_v2.kotoba in a unit: it uses that
+;; file's loop helpers.
+
+;; k2-tree from an arbitrary first step: for (st = start; st > 0; st >>= 1)
+(defn- kq-tree [B :vector-i64 red :i64 t :i64 st-var :i64 start :i64] :i64
+  (let [tu (kb-tu32 B) tf (kb-tf32 B)
+        a (kb-store B st-var (kb-u32 B start))
+        l (kb-loop B)
+        w (kb-while B (kb-ugt B (kb-load B tu st-var) (kb-u32 B 0)))
+        st (kb-load B tu st-var)
+        g (kb-if B (kb-ult B t st))
+        x (kb-load B tf (kb-shared-at B red tf t))
+        y (kb-load B tf (kb-shared-at B red tf (kb-iadd B t st)))
+        s (kb-store B (kb-shared-at B red tf t) (kb-fadd B x y))
+        e (kb-end-if B)
+        b (kb-barrier B)
+        c (kb-continue B)
+        n (kb-store B st-var (kb-shr B (kb-load B tu st-var) (kb-u32 B 1)))]
+    (kb-end-loop B)))
+
+;; x[xb + j], a vec4
+(defn- kq-x [B :vector-i64 X :i64 tfv :i64 xb :i64 j :i64] :i64
+  (kb-load B tfv (kb-at B X tfv (kb-iadd B xb (kb-u32 B j)))))
+
+;; the signed byte at bit offset off of a u32, as an f32
+(defn- kq-byte [B :vector-i64 v :i64 off :i64] :i64
+  (kb-s2f B (kb-tf32 B) (kb-sbfe B (kb-bitcast B (kb-ti32 B) v) (kb-u32 B off) (kb-u32 B 8))))
+
+;; dot(float4(four signed bytes of v), xv)
+(defn- kq-dq [B :vector-i64 v :i64 xv :i64] :i64
+  (kb-fdot B (kb-construct4 B (kb-tvec B (kb-tf32 B) 4) (kq-byte B v 0) (kq-byte B v 8) (kq-byte B v 16) (kq-byte B v 24)) xv))
+
+(defn kir2-kdot-q8-repack [wg :i64] :vector-i64
+  (if (not (or (or (= wg 32) (= wg 64)) (or (= wg 128) (= wg 256)))) (spv-new 0)
+    (let [B (kb-new) f (kb-main B) tu (kb-tu32 B) tf (kb-tf32 B)
+          tuv (kb-tvec B tu 4) tfv (kb-tvec B tf 4)
+          P (kb-meta B 0 2 0) Q (kb-buffer B 1 tuv 16 true) X (kb-buffer B 2 tfv 16 true)
+          O (kb-buffer B 3 tf 4 false) SC (kb-buffer B 4 tf 4 true)
+          part (kb-shared B tf wg)
+          vb (kb-var B tu) vst (kb-var B tu) vacc (kb-var B tf)
+          u0 (kb-u32 B 0) u1 (kb-u32 B 1) u2 (kb-u32 B 2) u5 (kb-u32 B 5) u8 (kb-u32 B 8) uwg (kb-u32 B wg)
+          f0 (kb-f32 B 0)
+          row (kb-builtin-at B 26 0) t (kb-builtin-at B 27 0)
+          g (k2-return-if B (kb-uge B row (kb-meta-at B P tu 0)))
+          nb (kb-shr B (kb-meta-at B P tu 1) u5)
+          a0 (kb-store B vacc f0)
+          b (k2-for B vb t nb)
+          gb (kb-iadd B (kb-imul B row nb) b)
+          i0 (kb-imul B gb u2)
+          qa (kb-load B tuv (kb-at B Q tuv i0))
+          qb (kb-load B tuv (kb-at B Q tuv (kb-iadd B i0 u1)))
+          xb (kb-imul B b u8)
+          s0 (kb-fadd B (kb-fadd B (kq-dq B (kb-extract B tu qa 0) (kq-x B X tfv xb 0)) (kq-dq B (kb-extract B tu qa 1) (kq-x B X tfv xb 1)))
+                        (kb-fadd B (kq-dq B (kb-extract B tu qa 2) (kq-x B X tfv xb 2)) (kq-dq B (kb-extract B tu qa 3) (kq-x B X tfv xb 3))))
+          s1 (kb-fadd B (kb-fadd B (kq-dq B (kb-extract B tu qb 0) (kq-x B X tfv xb 4)) (kq-dq B (kb-extract B tu qb 1) (kq-x B X tfv xb 5)))
+                        (kb-fadd B (kq-dq B (kb-extract B tu qb 2) (kq-x B X tfv xb 6)) (kq-dq B (kb-extract B tu qb 3) (kq-x B X tfv xb 7))))
+          a1 (k2-acc B vacc (kb-fmul B (kb-load B tf (kb-at B SC tf gb)) (kb-fadd B s0 s1)))
+          e1 (k2-end-for B vb uwg)
+          s2 (kb-store B (kb-shared-at B part tf t) (kb-load B tf vacc))
+          b0 (kb-barrier B)
+          tr (kq-tree B part t vst (quot wg 2))
+          h (kb-if B (kb-ieq B t u0))
+          w (kb-store B (kb-at B O tf row) (kb-load B tf (kb-shared-at B part tf u0)))
+          z (kb-end-if B)]
+      (kb-module B wg 1 1))))
