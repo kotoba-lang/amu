@@ -122,9 +122,9 @@
 ;; mode 3 only, seed/78 (xp-check-api) admits direct calls of the kxrt-p-
 ;; platform API by name; function values of it stay refused.
 ;; A runtime function may call only runtime functions. Names resolve in one
-;; table, so a guest definition of an R1 head the runtime uses (inc, dec, not=,
-;; when, ..; 20-names lets a definition shadow it) would otherwise become the
-;; runtime's callee (JUN-336). The runtime reaches main only through kxrt-call-main.
+;; table, so a guest definition of an R1 head the runtime uses (inc, dec, not=;
+;; 20-names lets a definition shadow it) would otherwise become the runtime's
+;; callee (JUN-336). The runtime reaches main only through kxrt-call-main.
 (defn- xs-scalar-op? [op :i64] :bool
   (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))
 (defn- xs-check [M :vector-i64 i :i64 f :i64] :vector-i64

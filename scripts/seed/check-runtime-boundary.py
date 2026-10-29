@@ -140,10 +140,10 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
                 assert admitted or (r.returncode != 0 and b"E7101" in r.stderr and not dst.exists()), calls[-1]
             previous.append(dict(compiler="previous", name=name, admitted=admitted, executed=False))
         # Negative control: a root before JUN-336 admits the shadow (recorded, never executed).
+        # Pass a pre-JUN-336 root as --previous-root; a later one refuses and fails here.
         r, dst = compile_("previous", "shadow-inc", "(ns g (:export [main]))\n" + SHADOWS["shadow-inc"], "aarch64-linux", "static")
-        admitted = r.returncode == 0 and dst.exists()
-        assert admitted or (r.returncode != 0 and b"E7101" in r.stderr and not dst.exists()), calls[-1]
-        previous.append(dict(compiler="previous", name="shadow-inc", admitted=admitted, executed=False))
+        assert r.returncode == 0 and dst.exists(), calls[-1]
+        previous.append(dict(compiler="previous", name="shadow-inc", admitted=True, executed=False))
     if definition_only_root:
         r, dst = compile_("definition-only", "fn-ref-invoke", guest(PROBES["fn-ref-invoke"]), "aarch64-linux", "static")
         assert r.returncode == 0 and dst.exists(), calls[-1]
