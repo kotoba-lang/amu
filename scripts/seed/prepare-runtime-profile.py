@@ -27,7 +27,7 @@ def main(out):
              if p and not p.startswith("#")]
     source = out / "full.kotoba"
     source.write_bytes(b"".join((ROOT / p).read_bytes() + b"\n" for p in paths))
-    producer = ROOT / "bin/amu"
+    producer = ROOT / "bin/amu-linux-x86_64"
     report = dict(schema="amu.native-runtime-profile-candidate.v1", status="running",
                   producer=pin(producer), sourceUnity=pin(source),
                   sources={p: pin(ROOT / p) for p in paths}, calls=[], generations=[],
