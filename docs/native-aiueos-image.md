@@ -151,3 +151,16 @@ did. A malformed name, a wrong parameter count, a body other than `0`, or a cell
 Not shown: no x86 machine ran these accesses, and `verify-kotoba-kernel-object.py` in the kotoba repository does not
 accept cell relocations or a `.data` larger than the 80-byte context yet, so an object with cells cannot enter the image
 until it does.
+
+## Fixed-address MMIO accesses (JUN-556 D4, ADR 0380)
+
+Private functions `mmio-load32-<addr> []` and `mmio-store32-<addr> [v]` (placeholder body `0`) address one of five
+local-APIC registers: `addr` is eight lowercase hex digits and must be `fee00020`, `fee000f0`, `fee00320`,
+`fee00380` or `fee003e0`. A load is `movabs rax,addr; mov eax,[rax]` and a store `movabs rcx,addr; mov [rcx],eax`;
+the address is an immediate, so the object gets no relocation, symbol or data. Any other address, a malformed one,
+a wrong parameter count, a body other than `0`, or use on the image route is refused (E7102).
+`scripts/seed/check-aiueos-object-mmio.py` reads the object back and checks the exact byte sequences.
+
+Not shown: no x86 machine ran these accesses; the list is the five registers `kernel/apic.c` touches and grows only
+by an edit here; the ioapic registers, ports and privileged instructions (`cpuid`, `mov cr4`, `xgetbv`) are not
+covered yet.

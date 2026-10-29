@@ -78,6 +78,15 @@
 (def FF-CELL-LOAD-MARK 100)
 (def FF-CELL-STORE-MARK 200)
 (def XO-MAX-CELLS 64)
+;; JUN-556 D4: private mmio-load32-<addr> [] and mmio-store32-<addr> [v], addr being eight lowercase hex digits
+;; of one of five local-APIC registers (the closed list in xo-mmio-address). A load is movabs rax,addr;
+;; mov eax,[rax]; a store movabs rcx,addr; mov [rcx],eax. The address is an immediate, so there is no
+;; relocation and no data. The mark is 300 + index for a load and 400 + index for a store.
+(def XK-MMIO-LOAD 60000)
+(def XK-MMIO-STORE 80000)
+(def FF-MMIO-LOAD-MARK 300)
+(def FF-MMIO-STORE-MARK 400)
+(def XO-MMIO-N 5)
 (def FF-EXTERN-MARK 9)
 (def XO-MAX-EXTERNS 16)
 (defn- xk-intr-name [k :i64] :string
@@ -110,6 +119,8 @@
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
     (cond (and (= (vector-at M 197) 0) (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)) (+ XK-EXTERN f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-LOAD-MARK XO-MMIO-N))) (+ XK-MMIO-LOAD f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-STORE-MARK XO-MMIO-N))) (+ XK-MMIO-STORE f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (+ XK-CELL-STORE f)
           (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
@@ -200,8 +211,18 @@
           (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
     (xg-err M 7101 OP-CALL)))
+(defn- xo-mmio-address [i :i64] :i64
+  (case i 0 0xfee00020 1 0xfee000f0 2 0xfee00320 3 0xfee00380 4 0xfee003e0 0))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (>= k XK-CELL-STORE)
+  (cond (>= k XK-MMIO-STORE)
+          (-> M (xg-load t 0x858b48) (xg-bytes 0xb948 2)
+              (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-STORE) FF-EXPORT) FF-MMIO-STORE-MARK)) 8)
+              (xg-bytes 0x0189 2) (xg-save t))
+        (>= k XK-MMIO-LOAD)
+          (-> M (xg-bytes 0xb848 2)
+              (xg-bytes (xo-mmio-address (- (xg-f M (- k XK-MMIO-LOAD) FF-EXPORT) FF-MMIO-LOAD-MARK)) 8)
+              (xg-bytes 0x008b 2) (xg-save t))
+        (>= k XK-CELL-STORE)
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
@@ -522,9 +543,22 @@
         (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-") (= (xg-f M f FF-NPARAMS) 1))
           (let [k (xo-cell-number S (+ a 11) b)] (if (< k 0) -1 (+ FF-CELL-STORE-MARK k)))
         :else -1))
+(defn- xo-mmio-index [S :string i :i64 b :i64] :i64
+  (if (not= (- b i) 8) -1
+    (let [s (string-substring S i b)]
+      (cond (string=? s "fee00020") 0 (string=? s "fee000f0") 1 (string=? s "fee00320") 2
+            (string=? s "fee00380") 3 (string=? s "fee003e0") 4 :else -1))))
+(defn- xo-mmio-mark [M :vector-i64 S :string f :i64 a :i64 b :i64] :i64
+  (cond (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-") (= (xg-f M f FF-NPARAMS) 0))
+          (let [k (xo-mmio-index S (+ a 12) b)] (if (< k 0) -1 (+ FF-MMIO-LOAD-MARK k)))
+        (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-") (= (xg-f M f FF-NPARAMS) 1))
+          (let [k (xo-mmio-index S (+ a 13) b)] (if (< k 0) -1 (+ FF-MMIO-STORE-MARK k)))
+        :else -1))
 (defn- xo-cell-name? [S :string a :i64 b :i64] :bool
   (or (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-load-"))
-      (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-"))))
+      (and (> (- b a) 11) (string=? (string-substring S a (+ a 11)) "cell-store-"))
+      (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-"))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))))
 (defn- xo-mark-externs [M :vector-i64 S :string f :i64] :vector-i64
   (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
     (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
@@ -536,7 +570,7 @@
                 (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) FF-EXTERN-MARK) S (inc f))
                 (xg-err M 7102 f))
             (and plain (xo-cell-name? S a b))
-              (let [m (xo-cell-mark M S f a b)]
+              (let [m (let [c (xo-cell-mark M S f a b)] (if (>= c 0) c (xo-mmio-mark M S f a b)))]
                 (if (and (>= m 0) (xo-extern-body-ok? M f))
                   (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) m) S (inc f))
                   (xg-err M 7102 f)))
