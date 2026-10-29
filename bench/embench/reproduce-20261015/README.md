@@ -107,6 +107,13 @@ In addition, **nettle-sha256 uses the ARMv8 SHA-256 crypto instructions**. The p
 **next official round will use a same-algorithm-only build, with the scalar sha256 path**, and will run through the same
 scripts (section 7). This package keeps reproducing the published m93 round exactly as measured.
 
+**SHA-256 conditions (owner decision, 2026-10-29).** A comparison with C runs under C-equivalent conditions: the scalar
+sha256 path. An ordinary compile uses the ARMv8 SHA-256 instructions. `compile ... --no-crypto-hw` selects the scalar
+path; a new round that compares with C must pass it and record it. The option is in the compiler source
+(`seed/41-a64gen.kotoba`, `kb-sha-hw`); the m93 and M104 compilers in this package do not have it (m93 has the hardware
+paths on, M104 has them compiled out), so this package's harness is unchanged. Evidence:
+`docs/evidence/crypto-hw-option-20261029/README.md`.
+
 The tables also cover later development snapshots (m97 to m101), so they list substitution kernels that are not in m93:
 picojpeg's end-of-block bitmask, sglib `qk`, `ls` and `tb`, xgboost `xs`, and slre's set entries were added after m93 or
 never merged. Each statement about m93 above was checked against `seed/41-a64gen.kotoba` at `be7f0ce3`.

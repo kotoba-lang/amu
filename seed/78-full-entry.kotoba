@@ -50,6 +50,7 @@
 (defn- full-word-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
     (or (string=? flag "--unpinned")
+        (and (string=? command "compile") (string=? flag "--no-crypto-hw"))
         (and (or (string=? command "compile") (string=? command "compile-kir")) (string=? flag "--emit-module"))
         (and (string=? command "compile") module (string=? flag "--entry"))
         (and (string=? command "compile-kir") (not module) (string=? flag "--metered")))))

@@ -9926,7 +9926,7 @@
        ;; Exclude its whole backing: terminal finish may read beyond schedule.
        G (vector-alloc 6) ranges (-> m3 (sphase-away 3 true G 0)
                          (sphase-away 4 false G 3))
-       fast (sphase2-ok? M p n) hw (and fast kb-sha-hw (sphase-hw? M p))
+       fast (sphase2-ok? M p n) hw (and fast (kb-sha-hw) (sphase-hw? M p))
        m4 (cond-> (gn-ld ranges 5 11) fast (sphase2-init p ri) hw (sphase-hw-state true)) chunk (vector-at m4 MM-CODE-N)
        ;; fast: 0 <= i < n here, so n - i >= 4 iff i <= n - 4 (signed)
        m5 (if fast (gn-emit m4 (enc-cmp-i ri (- n 4)))
@@ -9952,10 +9952,15 @@
        end (vector-at m13 MM-CODE-N)]
   (-> m13 (sphase-away-patch G 0 original-at) (gn-dot-patch no32 end (enc-cond-ne))
       (gn-dot-patch tail tail-at (if fast (enc-cond-gt) (enc-cond-lo))) (gn-dot-patch done done-at (enc-cond-eq)))))
-;; kb-sha-hw: the SHA-256 crypto-instruction paths (sha256h / h2 rounds, sha256su0 / su1 schedule). Off for the
-;; same-algorithm round (the crypto decision is open); the scalar rounds (sphase2-body) and the carried-pair schedule
-;; (srx-carry-body) run instead. true turns them back on.
-(def kb-sha-hw false)
+;; kb-sha-hw: the SHA-256 crypto-instruction paths (sha256h / h2 rounds, sha256su0 / su1 schedule). On for an
+;; ordinary compile (owner decision 2026-10-29: real compiles use the hardware). A benchmark that compares with
+;; C, which does not use the instructions, passes `compile ... --no-crypto-hw`: the scalar rounds (sphase2-body) and
+;; the carried-pair schedule (srx-carry-body) run instead. The flag is accepted only by `compile` (78-full-entry).
+(defn- kb-sha-hw [] :bool
+  (loop [index 1]
+    (cond (>= index (io-argc)) true
+          (string=? (io-arg index) "--no-crypto-hw") false
+          :else (recur (+ index 1)))))
 ;; ror on the low 32 bits (extr w)
 (defn- srx-ror32 [d :i64 n :i64 s :i64] :i64 (+ (enc-rrr 0x13800000 d n n) (* (bit-and s 31) 1024)))
 ;; one scalar round of the four-round chunk (see sphase2-ok? below): Sigma1 / Sigma0 as three ror32 each, ch, maj from
@@ -10271,7 +10276,7 @@
 ;; the masked sums), stored zero-extended at &v[base + i]; else the scalar pairs below.
 (defn- srx-hw-ok? [M :vector-i64 p :i64] :bool
  (let [base (gn-sir M (+ p 21) IF-B)]
-  (and kb-sha-hw (= (gn-sir M (+ p 23) IF-B) 2) (= (gn-sir M (+ p 31) IF-B) 7) (= (gn-sir M (+ p 39) IF-B) 15)
+  (and (kb-sha-hw) (= (gn-sir M (+ p 23) IF-B) 2) (= (gn-sir M (+ p 31) IF-B) 7) (= (gn-sir M (+ p 39) IF-B) 15)
        (= (gn-sir M (+ p 47) IF-B) 16) (>= base 16) (<= base 500)
        (= (srx-sigma M (gn-sir M (+ p 27) IF-A)) 42193) (= (srx-sigma M (gn-sir M (+ p 43) IF-A)) 13447))))
 (defn- srx-hw [M :vector-i64 p :i64] :vector-i64
