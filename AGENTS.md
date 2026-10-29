@@ -7,8 +7,15 @@
   features, new targets and benchmark publication. Details:
   `docs/selfhost-priority.md` (owner decision 2026-10-22).
 - Remove CLJK/CLJC/CLJS, NBB, KBB, Clojure, Java/JVM, GraalVM, Node.js and
-  C compiler/loader/runtime dependencies from that closure. CLJK is not a
-  retained final syntax-sugar surface. C-loader pinning is not acceptance.
+  C compiler/loader/runtime dependencies from that implementation closure.
+  C-loader pinning is not acceptance.
+- CLJK and EDN remain accepted as permanent INPUT reader sugar (owner
+  decision 2026-10-29, JUN-579; supersedes the 2026-10-22 "CLJK is not
+  retained" wording). The reader is implemented in Kotoba, and each sugar
+  spelling must desugar to the same canonical Kotoba form and mint the same
+  Definition CID as pure `.kotoba`
+  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). CLJC/CLJS/CLJ still
+  retire.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
