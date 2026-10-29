@@ -41,5 +41,9 @@ version (and expected cost)?
 - Allowed: compile-time repacking of a function's own constant tables (C depthconv dk); all arithmetic still runs.
 - Allowed: coalescing identical reads with no intervening write (slre trg/ac/sls) -- standard load CSE; fuel still
   charged per source call.
-- SHA-256 crypto instructions (B round 1 hardware path): OFF for the same-algorithm official round (conservative;
-  C -O2 does not use them; the user's crypto decision is still open). The scalar sha256 kernel is used.
+- SHA-256 crypto instructions (B round 1 hardware path). Owner decision, 2026-10-29: a benchmark that compares with C
+  runs under C-equivalent conditions, so it uses the scalar sha256 kernel (C -O2 does not use the instructions); an
+  ordinary compile uses the instructions. The compile option is `compile ... --no-crypto-hw` (seed/41-a64gen.kotoba,
+  `kb-sha-hw`; accepted by the full entry's `compile` only). Every benchmark round that compares with C must pass it
+  and record it. The M104 round predates the option: its compiler had the paths compiled out, which is the same scalar
+  build.

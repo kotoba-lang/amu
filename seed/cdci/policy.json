@@ -1,11 +1,11 @@
 {
   "schema": "amu.native-cdci.policy.v1",
-  "coreSourceSHA256": "a27634518117679f11a9800df2c03ef1566c7e71b25d239db33783b31a811db7",
-  "coreContainerSHA256": "0efb5556475bbf389e56d9f4e15a62df2fdbfa29bdd7f4de55aa242cfdea7780",
-  "amuSelfhostGateSHA256": "c98dfbeb27b67d21732d2d6ebbc08fb0fe6ca5eb7c986c55f32f5f828e1e5e85",
+  "coreSourceSHA256": "5b12da97fc707c0b6a950442f1f153b89c712bddb739eae00546970e8da5e374",
+  "coreContainerSHA256": "74de9bf38c9ae227b9eb1f9eb9cbb10207deead83e8dbb9107a086c5dd547aca",
+  "amuSelfhostGateSHA256": "9d49b12255a69976da343cf0aa548ba313c75b6b05bfb2b076eba8089be65831",
   "kotobaNativeGateSHA256": "06ddfe8839fe2416ff030db40d9d6fba66dc32ea6ada2469ae2dc3880d28037a",
   "kotobaGateSourceSHA256": "5d0da98ed085a0db75f7076e4f6ef79eee77cc0f5210515a85d9a92faf15f024",
   "caseCount": 24,
   "nativeExecutionQualified": false,
-  "note": "2026-10-29: the plain x86 emitter inlines vector, pair and string-length access, reads code-relative ASCII bytes for string-code-point-at in line (R4) and caches rax, and the runtime's allocator and string helper paths are flat (seed/70, seed/71, seed/76), so every x86 static image changed. The kotoba-native gate's 192 case-image hash words were updated (source, result, exit and fuel words unchanged), the amu-selfhost and kotoba-native role images were re-emitted, and the controller carries their new pins. The static profile's SIR capacity grew (seed/MEMORY-MAP), so the amu-selfhost image (built from seed/CORE-STATIC-MANIFEST) changed again; it still compiles seed/MANIFEST to the pinned container. Core source and container are unchanged. The new images need fresh native native24/refusal18/parent-death qualification (selfhost-native CI) before this flag returns to true."
+  "note": "2026-10-29: core source/container pins follow main's SHA-256 crypto-hardware option (JUN-578, #1671). The plain x86 emitter inlines vector, pair and string-length access, reads code-relative ASCII bytes for string-code-point-at in line (R4) and caches rax, and the runtime's allocator and string helper paths are flat (seed/70, seed/71, seed/76), so every x86 static image changed. The kotoba-native gate's 192 case-image hash words were updated (source, result, exit and fuel words unchanged), and both gate images were re-emitted. The amu-selfhost gate (seed/CORE-STATIC-MANIFEST, static SIR capacity) still rebuilds seed/MANIFEST to coreContainerSHA256. The controller carries the new pins. The new images need fresh native native24/refusal18/parent-death qualification (selfhost-native CI) before this flag returns to true."
 }

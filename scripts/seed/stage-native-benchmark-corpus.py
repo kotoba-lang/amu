@@ -78,9 +78,11 @@ for spec in workloads:
     row = dict(workload=name, originalSource=identity, registered=spec, calls=[],
                exports=[], status="compiling", sourceUnchanged=True)
     report["workloads"].append(row)
+    # C-equivalent build (JUN-578 owner decision): the registered images use the
+    # scalar SHA-256 path, so the benchmark corpus is compiled with --no-crypto-hw.
     status, stdout, stderr = run(row, directory, "compile", [compiler, "compile", src,
         "--target", "aarch64-macos", "--output", image, "--source-lock", lock,
-        "--source-lock-sha256", C.pin(lock)["sha256"]])
+        "--source-lock-sha256", C.pin(lock)["sha256"], "--no-crypto-hw"])
     if status or stderr or not image.is_file():
         row["status"] = "refused-native-library-compile"
         persist()
