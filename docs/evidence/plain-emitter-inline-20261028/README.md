@@ -211,6 +211,21 @@ build closure and does not qualify anything.
     sources, identical to main's compiler.
   * `check-complete-x86`, the full `check-native-cdci` and
     `check-public-native-product` pass again.
+* Re-derived again after main's #1697 (JUN-595), a core change in
+  `seed/41-a64gen`. Its core pins are `1a80ca12…` / `7ec9181f…`.
+  * x86_64: F1 = F2 = F3 = `74cd256f…` (8,708,608 bytes).
+  * aarch64 root: F1 = F2 = `6722a5bc…` (3,604,992 bytes), container
+    `8c46912d…`, derived under qemu from the `9914c0ea…` root. The x86_64
+    compiler it emits is byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `cf3cd7d5…`, and
+      it rebuilds `seed/MANIFEST` to main's `7ec9181f…`.
+    * The kotoba-native gate is unchanged.
+    * The controller image is `99d41c35…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`.
+  * The local `check-complete-x86`, the full `check-native-cdci` and
+    `check-public-native-product` pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
