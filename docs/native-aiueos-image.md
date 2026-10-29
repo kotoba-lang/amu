@@ -164,3 +164,15 @@ a wrong parameter count, a body other than `0`, or use on the image route is ref
 Not shown: no x86 machine ran these accesses; the list is the five registers `kernel/apic.c` touches and grows only
 by an edit here; the ioapic registers, ports and privileged instructions (`cpuid`, `mov cr4`, `xgetbv`) are not
 covered yet.
+
+## Exported data cells (JUN-556 D3b, ADR 0380)
+
+A private `cell-name-<k>-<symbol> []` (placeholder body `0`, at most sixteen) gives cell `k` (the cell `cell-load-<k>` and
+`cell-store-<k>` address, `.data` offset `80 + 8k`) a GLOBAL OBJECT symbol `<symbol>` of size 8 defined in `.data`, so another
+object links to it by name (`kernel/entry.S` reads `aiueos_apic_timer_ticks` and `aiueos_apic_mmio_base` this way).
+The symbols follow the exports and the externs in `.symtab`; the context stays the only LOCAL symbol and `sh_info` still names
+the first global. A malformed or out-of-range declaration, a symbol equal to an export, an extern or another data symbol,
+and use on the image route are refused (E7102). `scripts/seed/check-aiueos-object-globals.py` reads the object back.
+
+Not shown: nothing linked or ran these symbols; `verify-kotoba-kernel-object.py` in the kotoba repository does not accept
+defined data symbols yet.
