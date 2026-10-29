@@ -157,9 +157,9 @@ def main(out, tier, reuse=None, store=None):
 
     # 2. F's Linux targets
     built = dict(
-        aarch64Runner=compile_(F, runner, out / "R-aarch64.elf", "aarch64-linux", "runner", "R-aarch64", scope),
-        x86_64Compiler=compile_(F, source, out / "S-x86_64.elf", "x86_64-linux", "static", "S-x86_64", scope),
-        x86_64Runner=compile_(F, runner, out / "R-x86_64.elf", "x86_64-linux", "kx64-runner", "R-x86_64", scope))
+        aarch64Runner=compile_(F, runner, out / "R-aarch64.elf", "aarch64-linux", "runner", "R-aarch64", senv),
+        x86_64Compiler=compile_(F, source, out / "S-x86_64.elf", "x86_64-linux", "static", "S-x86_64", senv),
+        x86_64Runner=compile_(F, runner, out / "R-x86_64.elf", "x86_64-linux", "kx64-runner", "R-x86_64", senv))
 
     # 3. F's core route, the packed refusal and a named diagnostic
     compile_(F, adopted_src, out / "G1.kseed", "aarch64-macos", None, "G1-compile")
@@ -190,7 +190,7 @@ def main(out, tier, reuse=None, store=None):
     for case in json.loads((ROOT / CASES).read_text())["cases"]:
         src = out / f"case-{case['name']}.kotoba"
         src.write_text(case["source"])
-        compile_(F, src, out / f"case-{case['name']}.elf", "aarch64-linux", "static", f"case-{case['name']}-compile", scope)
+        compile_(F, src, out / f"case-{case['name']}.elf", "aarch64-linux", "static", f"case-{case['name']}-compile", senv)
         r = run.run(f"case-{case['name']}", [out / f"case-{case['name']}.elf"],
                     dict(KEXE_STRUCTURED_REPORT="1", KEXE_FUEL="1000000", KEXE_ALLOW="-"), success=False)
         fuel = re.search(rb":remaining ([0-9]+)", r.stdout)
@@ -223,7 +223,7 @@ def main(out, tier, reuse=None, store=None):
     wasm_dir.mkdir()
     for case in json.loads((ROOT / CASES).read_text())["cases"]:
         compile_(F, out / f"case-{case['name']}.kotoba", wasm_dir / f"case-{case['name']}.wasm", "wasm32-browser", None,
-                 f"case-{case['name']}-wasm32", scope)
+                 f"case-{case['name']}-wasm32", senv)
     wasm_probes = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
                    "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
                    # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
@@ -233,7 +233,7 @@ def main(out, tier, reuse=None, store=None):
     for name, body in wasm_probes.items():
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
-        compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", scope)
+        compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", senv)
     float_refusals = []
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
@@ -261,7 +261,7 @@ def main(out, tier, reuse=None, store=None):
     for name, body in probes.items():
         src = out / f"probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
-        compile_(F, src, out / f"probe-{name}.elf", "aarch64-linux", "static", f"probe-{name}-compile", scope)
+        compile_(F, src, out / f"probe-{name}.elf", "aarch64-linux", "static", f"probe-{name}-compile", senv)
 
     def observe(name, image, env):
         r = run.run("probe-" + name, [out / f"probe-{image}.elf"], dict(KEXE_STRUCTURED_REPORT="1", **env), success=False)
@@ -322,8 +322,8 @@ def main(out, tier, reuse=None, store=None):
         assert pin(out / "P.bin")["sha256"] == adoption["nativeImageSHA256"], "packed compiler output mismatch"
         assert pin(out / "P.kseed") == adopted_gens[-1]["container"], "packed compiler container mismatch"
         packed = dict(image=pin(P), container=pin(out / "P.kseed"), native=pin(out / "P.bin"))
-        s1 = compile_(F, source, out / "S.elf", "aarch64-linux", "static", "S", scope)
-        s2 = compile_(out / "S.elf", source, out / "S2.elf", "aarch64-linux", "static", "S2", scope)
+        s1 = compile_(F, source, out / "S.elf", "aarch64-linux", "static", "S", senv)
+        s2 = compile_(out / "S.elf", source, out / "S2.elf", "aarch64-linux", "static", "S2", senv)
         assert s1 == s2, "Linux selfhost closure fixed point mismatch"
         closure = dict(S=s1)
 
