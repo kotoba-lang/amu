@@ -176,6 +176,28 @@ build closure and does not qualify anything.
     refusals).
   * `check-runtime-boundary` passes, including JUN-336's shadow refusals, so the
     flat runtime helpers call only runtime functions.
+* Re-derived again after main's #1671 and #1693.
+  * #1671 (JUN-578): the adopted core's SHA-256 crypto-hardware option. It
+    changes `seed/41-a64gen`, the core source/container pins (`5b12da97…` /
+    `74de9bf3…`) and the controller's core words.
+  * #1693: `seed/74` cell addresses.
+  * x86_64: F1 = F2 = F3 = `c2635f7b…` (8,704,512 bytes).
+  * aarch64 root: F1 = F2 = `ba40652f…` (3,604,992 bytes), container
+    `37441725…`, derived under qemu from the `de33395b…` root. The x86_64
+    compiler it emits is byte-identical to the native fixed point.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged
+      `seed/CORE-STATIC-MANIFEST` is `9d49b122…`, and it rebuilds
+      `seed/MANIFEST` to main's `74de9bf3…`.
+    * The kotoba-native gate (`06ddfe88…`) is unchanged.
+    * The controller (`da225b80…`) carries the new pins.
+    * A local `check-native-cdci` full run passes (24 cases, 18 refusals,
+      parent-death cleanup), as do `check-complete-x86` and
+      `check-public-native-product`.
+  * The 19 x86_64 kx64 payloads are unchanged. 18 of the 19 aarch64
+    containers are unchanged. `nettle-sha256` now uses the SHA-256 crypto
+    instructions by default; with `--no-crypto-hw` (the C-equivalent benchmark
+    setting) its container is byte-identical to the measured one.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
