@@ -113,12 +113,9 @@ def main(output, profile, experimental_arm64=False):
         call(name + "-check", [compiler, "check", source, *locked], 0, compile_env)
         image = output / (name + ".elf")
         source_pin = pin(source)
-        # The public static route has fixed argument order. Adding source-lock
-        # flags selects xpj-command, whose format is kx64-v1, not static ELF.
-        # Observe that unsupported combination explicitly below; do not claim
-        # the byte staging here is an atomic compiler-enforced source lock.
+        # Compile the same single source under the pinned KSL1 lock.
         call(name + "-compile", [compiler, "compile", source, "--target", target,
-                               "--output", image, "--format", "static"], 0, compile_env)
+                               "--output", image, "--format", "static", *locked], 0, compile_env)
         require(pin(source) == source_pin, f"{name}: staged source changed during compile")
         image.chmod(0o700)
         generated[name] = {"source": pin(source), "lock": pin(lock), "image": pin(image)}
@@ -156,12 +153,21 @@ def main(output, profile, experimental_arm64=False):
     call("lock-digest-denied", [compiler, "check", source, "--source-lock", lock,
                                "--source-lock-sha256", "0" * 64], 1, compile_env,
          stderr_has=(b"E6015",))
-    locked_output = output / "locked-static-refused.elf"
-    call("locked-static-denied", [compiler, "compile", source, "--target", target,
-                                 "--output", locked_output, "--format", "static",
-                                 "--source-lock", lock, "--source-lock-sha256", pin(lock)["sha256"]],
-         2, compile_env, stderr_has=(b"E1",))
-    require(not locked_output.exists(), "unsupported locked static compile left an artifact")
+    bad_lock_output = output / "wrong-lock-static-refused.elf"
+    call("locked-static-wrong-digest", [compiler, "compile", source, "--target", target,
+         "--output", bad_lock_output, "--format", "static", "--source-lock", lock,
+         "--source-lock-sha256", "0" * 64], 1, compile_env, stderr_has=(b"E6015",))
+    require(not bad_lock_output.exists(), "wrong lock digest left an artifact")
+    original = source.read_bytes()
+    try:
+        source.write_bytes(original + b"\n")
+        changed_output = output / "changed-source-refused.elf"
+        call("locked-static-changed-source", [compiler, "compile", source, "--target", target,
+             "--output", changed_output, "--format", "static", "--source-lock", lock,
+             "--source-lock-sha256", pin(lock)["sha256"]], 1, compile_env, stderr_has=(b"E6015",))
+        require(not changed_output.exists(), "changed locked source left an artifact")
+    finally:
+        source.write_bytes(original)
     refused_output = output / "default-target-refused.elf"
     call("default-target-denied", [compiler, "compile", source, "--output", refused_output],
          1, compile_env, stderr_has=(b"E2",))
@@ -198,8 +204,8 @@ def main(output, profile, experimental_arm64=False):
         "observer": pin(Path(__file__)),
         "guestPATH": "/nonexistent", "legacyRuntimeFallback": False,
         "compilerEnforcedSourceLockAtCheck": True,
-        "compilerEnforcedSourceLockAtStaticELFCompile": False,
-        "unsupportedLockedStaticCombinationRefused": True,
+        "compilerEnforcedSourceLockAtStaticELFCompile": True,
+        "wrongLockAndChangedSourceStaticCompileRefused": True,
         "scope": ("Experimental ARM root fixture smoke only; not a public ARM CLI. "
                   if experimental_arm64 else "Public CLI fixture smoke only; ") +
                  "Not self-rebuild/controller qualification,"

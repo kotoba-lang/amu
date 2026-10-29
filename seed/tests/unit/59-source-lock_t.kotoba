@@ -67,5 +67,18 @@
         (ksl-valid? (string-concat "KSL2\nentry /scope/保管/block\nmodule 例.入口 /scope/保管/block\n"
                                   (t-file (t-abc) "/scope/保管/other"))) 61
         :else 0)))
+(defn- t-single-source [] :i64
+ (let [path "/scope/main.kotoba"
+       lock (string-concat "KSL1\nentry /scope/main.kotoba\n" (t-file (t-abc) path))
+       rooted (string-concat "KSL1\nentry /scope/main.kotoba\nroot /scope\n" (t-file (t-abc) path))
+       extra (string-concat lock (t-file (t-abc) "/scope/other.kotoba"))]
+  (cond (not (ksl-single-source? lock path "abc")) 71
+        (ksl-single-source? lock path "abd") 72
+        (ksl-single-source? lock "/scope/other.kotoba" "abc") 73
+        (ksl-single-source? rooted path "abc") 74
+        (ksl-single-source? extra path "abc") 75
+        (ksl-single-source? "" path "abc") 76
+        :else 0)))
 (defn- seed-main [] :i64
- (let [v1 (t-v1) v2 (t-v2)] (cond (not= v1 0) v1 (not= v2 0) v2 :else (t-utf8))))
+ (let [v1 (t-v1) v2 (t-v2) utf (t-utf8)]
+   (cond (not= v1 0) v1 (not= v2 0) v2 (not= utf 0) utf :else (t-single-source))))

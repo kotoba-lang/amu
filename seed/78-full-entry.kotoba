@@ -33,7 +33,9 @@
                        (= (full-target? "x86_64-aiueos-kernel-v3") 1)
                        (= (full-target? "x86_64-linux") 1))
                    (or (string=? flag "--source-path") (string=? flag "--source-lock")
-                       (string=? flag "--source-lock-sha256"))))
+                       (string=? flag "--source-lock-sha256")))
+              (and (= (full-target? "aarch64-linux") 1)
+                   (or (string=? flag "--source-lock") (string=? flag "--source-lock-sha256"))))
           (or (string=? command "compile") (string=? command "check"))
           (or (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256")
               (string=? flag "--policy")
@@ -94,8 +96,16 @@
 (defn- full-c-linked? [] :bool
   (let [index (drv-pj-flag 1 (io-argc) "--format")]
     (and (>= index 0) (string=? (io-arg index) "platform-linked"))))
+;; Linux emitters must not suggest the unrelated macOS compiler route.
+(defn- drv-target-usage [] :i64
+  (cond (= (full-target? "x86_64-linux") 1)
+          (let [w (io-err "seed: E1 usage: seed compile <file> --target x86_64-linux --output <new-file> --format <format> [options]\n")] 1)
+        (= (full-target? "aarch64-linux") 1)
+          (let [w (io-err "seed: E1 usage: seed compile <file> --target aarch64-linux --output <new-file> --format <format> [options]\n")] 1)
+        :else (drv-fail0 E-USAGE)))
+(defn- full-usage [] :i64 (let [w (drv-target-usage)] 2))
 ;; malformed x86_64-linux arguments (70's xg-main) are a usage error, as in 73
-(defn- xg-default [] :i64 (drv-fail0 E-USAGE))
+(defn- xg-default [] :i64 (drv-target-usage))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
         (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)
@@ -103,9 +113,9 @@
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
-        (not (full-argv-ok? 1)) (drv-usage)
+        (not (full-argv-ok? 1)) (full-usage)
         (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
-        (not (full-source-ok?)) (drv-usage)
+        (not (full-source-ok?)) (full-usage)
         ;; The engine-neutral default is not implemented in this native
         ;; closure. Refuse it rather than substituting an AArch64 target.
         (and (string=? (io-arg 0) "compile") (= (drv-pj-has 1 (io-argc) "--target") 0)) (drv-fail0 E-TARGET)
@@ -130,5 +140,7 @@
         (= (full-target? "wasm32-browser") 1) (xw-command)
         (= (full-target? "x86_64-linux") 1)
           (if (or (= (drv-pj-has 1 (io-argc) "--source-path") 1)
-                  (= (drv-pj-has 1 (io-argc) "--source-lock") 1)) (xpj-command) (xg-main))
+                  (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1)
+                       (not (and (>= (io-argc) 8) (string=? (io-arg 6) "--format")
+                                 (string=? (io-arg 7) "static"))))) (xpj-command) (xg-main))
         :else (drv-main)))

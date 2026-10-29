@@ -1,0 +1,92 @@
+(ns gate.source-lock (:export [main]))
+
+(defn arg [i :string] :string (typed-cap-call :cli/args :string :string i))
+(defn exists? [p :string] :bool
+  (let [head (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0 68]))
+        zero (string-from-utf8 (bytes-from-vector-i64 [0]))
+        r (typed-cap-call :fs/app-data :string :string (string-concat head (string-concat p zero)))]
+    (and (> (string-length r) 5) (= (string-code-point-at r 5) 49))))
+(defn chmod-executable? [p :string] :bool
+  (let [head (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0 72]))
+        zero (string-from-utf8 (bytes-from-vector-i64 [0]))
+        r (typed-cap-call :fs/app-data :string :string (string-concat head (string-concat p (string-concat zero "700"))))]
+    (and (> (string-length r) 5) (= (string-code-point-at r 5) 49))))
+;; Check only the ELF identification and target machine, not executable
+;; semantics or a complete artifact digest. The range read is bounded to 20
+;; bytes. A concurrent truncation after metadata can still trap and fail closed.
+(defn at-least-twenty? [p :string] :bool
+  (let [head (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0 70]))
+        zero (string-from-utf8 (bytes-from-vector-i64 [0]))
+        r (typed-cap-call :fs/app-data :string :string (string-concat head (string-concat p zero)))]
+    (if (or (< (string-length r) 9) (not (string=? (string-substring r 0 5)
+                                     (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0]))))) false
+      (let [data (string-substring r 5 (string-length r)) first (string-index-of data " ")]
+        (if (< first 1) false
+          (let [rest (string-substring data (+ first 1) (string-length data)) end (string-index-of rest " ")]
+            (if (or (< end 1) (> end 20)) false
+              (let [size (string-substring rest 0 end)]
+                (and (loop [i 0] (if (= i end) true
+                       (let [c (string-code-point-at size i)]
+                         (and (>= c 48) (<= c 57) (recur (+ i 1))))))
+                     (or (> end 2) (and (= end 2) (>= (string-compare size "20") 0))))))))))))
+(defn elf-header? [p :string target :string] :bool
+  (if (not (at-least-twenty? p)) false
+  (let [head (string-from-utf8 (bytes-from-vector-i64 [0 70 83 50 0 69]))
+        zero (string-from-utf8 (bytes-from-vector-i64 [0]))
+        req (string-concat head (string-concat p (string-concat zero "0:20")))
+        v (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes req))]
+    (and (= (vector-count v) 25)
+         (= (vector-at v 0) 0) (= (vector-at v 1) 70) (= (vector-at v 2) 83)
+         (= (vector-at v 3) 50) (= (vector-at v 4) 0)
+         (= (vector-at v 5) 127) (= (vector-at v 6) 69) (= (vector-at v 7) 76) (= (vector-at v 8) 70)
+         (= (vector-at v 9) 2) (= (vector-at v 10) 1)
+         (= (vector-at v 23) (if (string=? target "aarch64-linux") 183 62)) (= (vector-at v 24) 0)))))
+(defn add [s :string a :string] :string (string-concat s (string-concat "ARG_SEP" a)))
+(defn request [c :string d :string t :string digest :string output :string] :string
+  (let [a0 (add c "compile") a1 (add a0 (string-concat d "/good.kotoba"))
+        a2 (add (add a1 "--target") t) a3 (add (add a2 "--output") output)
+        a4 (add (add a3 "--format") "static")
+        a5 (add (add a4 "--source-lock") (string-concat d "/good.ksl"))]
+    (add (add a5 "--source-lock-sha256") digest)))
+;; Bind the supplied digest to one exact fixture and its absolute entry path.
+;; The candidate compiler must then enforce that lock when it reads source.
+(defn fixture-lock-digest [d :string] :string
+  (let [p (string-concat d "/good.kotoba")
+        source "(ns sample (:export [main]))\n(defn main [] :i64 (if (= (+ 40 2) 42) (let [w (typed-cap-call :io/write :string :string \"KOTOBA_GATE_42\\n\")] 42) 0))\n"
+        source-hash (typed-cap-call :hash/sha256 :string :string source)
+        lock (string-concat "KSL1\nentry " (string-concat p (string-concat "\nfile " (string-concat source-hash (string-concat " " (string-concat p "\n"))))))]
+    (typed-cap-call :hash/sha256 :string :string lock)))
+;; Scratch fixtures must be pre-staged under a private directory. The caller
+;; pins the compiler and explicitly grants spawn for compiler and good.elf,
+;; plus filesystem, SHA-256 and output capabilities. The known fixture must print
+;; KOTOBA_GATE_42; child KEXE_STRUCTURED_REPORT must not mask compiler exit.
+;; Nonzero :result is a failure even if the ELF host exit status is zero.
+(defn safe-part? [s :string] :bool (and (> (string-length s) 0) (< (string-index-of s "ARG_SEP") 0)))
+(defn absolute? [s :string] :bool (and (safe-part? s) (= (string-code-point-at s 0) 47)))
+(defn digest? [s :string] :bool
+  (and (= (string-length s) 64)
+       (loop [i 0] (if (= i 64) true
+        (let [c (string-code-point-at s i)]
+         (and (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102))) (recur (+ i 1))))))))
+(defn main [] :i64
+  (let [c (arg "0") d (arg "1") t (arg "2") digest (arg "3")
+        good (string-concat d "/good.elf") bad (string-concat d "/bad.elf")]
+    (if (or (not (string=? (arg "") "4")) (not (absolute? c)) (not (absolute? d))
+            (not (or (string=? t "aarch64-linux") (string=? t "x86_64-linux")))
+            (not (digest? digest))) 13
+    (if (not (string=? digest (fixture-lock-digest d))) 17
+    (if (or (exists? good) (exists? bad)) 10
+      (let [a (typed-cap-call :process/spawn :string :string (request c d t digest good))]
+        (if (or (not (= (string-index-of a "0\n") 0)) (not (exists? good))) 11
+         (if (not (elf-header? good t)) 14
+          (if (not (chmod-executable? good)) 15
+           (let [guest (typed-cap-call :process/spawn :string :string good)]
+            (if (not (string=? guest "42\nKOTOBA_GATE_42\n")) 16
+             (let [b (typed-cap-call :process/spawn :string :string (request c d t "0000000000000000000000000000000000000000000000000000000000000000" bad))]
+              (if (or (not (= (string-index-of b "1\n") 0)) (exists? bad)) 12
+               (let [duplicate (add (add (request c d t digest bad) "--source-lock") (string-concat d "/good.ksl"))
+                     result (typed-cap-call :process/spawn :string :string duplicate)]
+                (if (or (not (= (string-index-of result "2\n") 0)) (exists? bad)) 18
+                 (let [conflict (add (add (request c d t digest bad) "--source-path") d)
+                       result2 (typed-cap-call :process/spawn :string :string conflict)]
+                  (if (or (not (= (string-index-of result2 "2\n") 0)) (exists? bad)) 19 0)))))))))))))))))

@@ -35,6 +35,8 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "test/native/amu/test/static_source_lock_gate.kotoba"
+      - "test/native/amu/test/fixtures/static_source_lock_good.kotoba"
       - "bench/embench/proof-v1/**"
       - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
@@ -54,6 +56,8 @@ on:
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
+      - "test/native/amu/test/static_source_lock_gate.kotoba"
+      - "test/native/amu/test/fixtures/static_source_lock_good.kotoba"
       - "bench/embench/proof-v1/**"
       - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
@@ -252,6 +256,16 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Single-source static lock and refusal (arm64, native)
+        run: |
+          pin=$(python3 -c 'import json; print(json.load(open("seed/bootstrap/aarch64-linux-static-root.json"))["image"]["sha256"])')
+          python3 scripts/seed/check-static-source-lock-gate.py --repo "$PWD" --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --compiler-sha256 "$pin" --target aarch64-linux --output "$RUNNER_TEMP/static-lock-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: static-lock-arm-evidence
+          path: ${{ runner.temp }}/static-lock-arm
+          if-no-files-found: warn
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
@@ -404,6 +418,16 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
         run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
+      - name: Single-source static lock and refusal (x86_64, native)
+        run: |
+          pin=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
+          python3 scripts/seed/check-static-source-lock-gate.py --repo "$PWD" --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$pin" --target x86_64-linux --output "$RUNNER_TEMP/static-lock-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: static-lock-x86-evidence
+          path: ${{ runner.temp }}/static-lock-x86
+          if-no-files-found: warn
       - name: Native x86_64 qualification (no loader, no emulation)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}

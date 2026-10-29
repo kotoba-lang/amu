@@ -128,7 +128,10 @@ def main(argv):
         cross = Path(tmp) / "cross"
         shutil.copytree(args.cross_build, cross)
         receipt = cross / "cross.json"
-        receipt.write_text(receipt.read_text().replace("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "SOMETHING_ELSE"))
+        data = json.loads(receipt.read_text())
+        assert data["status"] in ("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED")
+        data["status"] = "SOMETHING_ELSE"
+        receipt.write_text(json.dumps(data, indent=2) + "\n")
         r = run(args.mac_build, cross)
         expect("an unknown cross status is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
 

@@ -135,7 +135,7 @@
     (cond (or (< (drv-pj-lock-arg 1 count -1) 0) (= (drv-pj-has 1 count "--unpinned") 1))
               (drv-fail0 E-PROJ-UNPINNED)
           (or (not (xpj-options? 4)) (< format-index 0)
-              (not (string=? (io-arg format-index) "kx64-v1")) (= (string-length output) 0)) (drv-usage)
+              (not (string=? (io-arg format-index) "kx64-v1")) (= (string-length output) 0)) (full-usage)
           (= (io-exists output) 1) (drv-fail0 E-WRITE)
           :else
           (let [M (mem-new) L (pj-new-l)
