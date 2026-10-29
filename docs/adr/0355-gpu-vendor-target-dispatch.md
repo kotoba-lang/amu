@@ -5176,3 +5176,68 @@ docs/evidence/gpu/anv-b3w6reconcilerego-20261029/ (reconcile-prego.py
 + compat/selftest/line/negative captures + record.txt + the s99 gate
 captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 100: the W6 reading-block
+## reconciliation pre-build)
+The W6 measurement row's READING-SHAPE preparation half (the s90
+reading w6-block extension closing the reconciliation surface s99's
+--line exposed; NO hardware runs, NO builds, NO compiles, NO GO
+stamp, NO host writes, NO day-slot consumption, NO ledger line; the
+measurement half REMAINS day-slot-gated -- first session at/after
+2026-10-30T00:00:00Z; this tick runs 2026-10-29T17:46Z-18:0xZ,
+~6.2h before the slot) -- STARTED, NOT FINISHED (the fresh-window
+census-check duty stays queued).  Provenance named not hidden (the
+s92 precedent): the slice was drafted by an interrupted tick of
+this same job (reading-s1000.py + rehearsal captures + the final
+reading-s1001.py edit, never run to completion, never committed)
+and completed by this continuation tick.  FINDING (verified by
+real tool output): the s90 w6 block printed its five section-4
+prior rows WITH class tokens, and reconcile-prego.py --line's
+parse_pub_tuples treats every class-bearing "median N min..max
+N..N" row as a bar tuple -- a fully consistent pair parsed 6
+tuples / 5 distinct -> pub-rows-agree=False -> FALSE INCONSISTENT
+at the W6 session's own reconciliation gate (demonstrated on the
+W5-stand-in rehearsal pair, rehearsal-line-unfixed captures, twice
+byte-identical).  The fix (reading-s1001.py / reading-
+prego-fixed.py, the s98 provenance pattern; the s90 original
+committed UNCHANGED): (a) prior rows in the frozen
+publication-s73 section-3b row shape, want values PARSED from the
+committed publication-s73.txt bytes, NO class token on a prior
+row; (b) a section-6 D4-shape bar row equal to section 3's fresh
+row by construction; (c) the ok-map label names its 0-based index
+base; (d) the verifier-twin note corrected -- derivation-census-
+prego.py is --compat-only, the fresh-window "every published
+integer cross-checked" duty is a NAMED gap (queued).  VERIFIED:
+reading-prego-fixed.py --compat twice byte-identical AND
+byte-identical to the s90 pin (2,930 bytes) -- the edits touch w6
+mode only; the fixed w6 rehearsal (W5 stand-in; every number a
+FIXTURE, never a measurement) twice byte-identical (4,009 bytes),
+five prior rows all reproduction EXACT: True; reconcile-prego
+--line on the fixed pair twice byte-identical (469 bytes)
+CONSISTENT (rows parsed 2, agree True, median/min/class MATCH) and
+byte-identical to the s99 committed-pair capture -- the defect is
+closed at the rehearsal level.  Standing gates == the s88 pins:
+classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt ==
+HEAD.  The bar: preparation session -> NO reading -> NO ledger
+line, NO day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO
+vendor optimization exists for Intel.  ADOPTION: the W6 session
+adopts reading-prego-fixed.py as reading-s<NN>.py (superseding the
+s90 copy; provenance named) with the s90 census twin, s91's
+custody baseline, s95's run-window driver, s98's checker, s97's
+emitter and s99's reconciler; W7 the same (the s94 W7_DIR
+repoint).  Carry-forward to session 101: the W6 measurement half
+(the s80 freeze) -- the gate for T18's analysis half (s92 + s84),
+T20's analysis half (s93 + s88) and W7's measurement half (s85)
+--; if a tick runs before the slot opens, the queued fresh-window
+census-check pre-build is the honest preparation row; then any
+further counted-day slot (its own freeze) and a cross-day tail-
+movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6censuscheckrego-20261029/ (reading-
+s1000.py + reading-s1001.py + reading-prego-fixed.py + the
+rehearsal run captures + record.txt + the s100 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
