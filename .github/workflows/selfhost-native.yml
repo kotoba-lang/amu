@@ -231,6 +231,8 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Inline vector access, exact helper-call observations (arm64, native)
+        run: python3 scripts/seed/check-inline-vectors.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/inline-vectors"
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
@@ -441,6 +443,8 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Inline vector access, exact helper-call observations (x86_64, native)
+        run: python3 scripts/seed/check-inline-vectors.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/inline-vectors"
       - name: Independent x86 gates (bounded native build queue)
         run: |
           python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"

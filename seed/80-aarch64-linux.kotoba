@@ -23,8 +23,24 @@
   (xa-w M (bit-or 0xF94003E0 (bit-or (i64-shift-left (quot (+ (xa-frame M) off) 8) 10) r))))
 (defn- xa-str [M :vector-i64 r :i64 off :i64] :vector-i64
   (xa-w M (bit-or 0xF90003E0 (bit-or (i64-shift-left (quot (+ (xa-frame M) off) 8) 10) r))))
-(defn- xa-lt [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-ldr M r (xg-temp M t)))
-(defn- xa-st [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-str M r (xg-temp M t)))
+;; The runtime profile's x9 cache: the x86 route's rax cache (M[190..191],
+;; seed/70 xg-held?) for x9. A load of the frame word x9 holds, straight after
+;; the store or load that made it so, reuses x9 (none, or mov xr,x9).
+(defn- xa-ldc [M :vector-i64 r :i64 off :i64] :vector-i64
+  (let [hit (xg-held? M off) live (xg-held? M (vector-at M 190))]
+    (cond (= r 9) (if hit M (cond-> (xa-ldr M 9 off) (= (xg-get M 4) 1) (xg-hold off)))
+          hit (xg-hold (xa-w M (bit-or 0xAA0903E0 r)) off)
+          live (xg-hold (xa-ldr M r off) (vector-at M 190))
+          :else (xa-ldr M r off))))
+(defn- xa-stc [M :vector-i64 r :i64 off :i64] :vector-i64
+  (cond-> (xa-str M r off) (and (= r 9) (= (xg-get M 4) 1)) (xg-hold off)))
+(defn- xa-lt [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-ldc M r (xg-temp M t)))
+(defn- xa-st [M :vector-i64 r :i64 t :i64] :vector-i64 (xa-stc M r (xg-temp M t)))
+;; x9 = temp t, x10 = temp t+1, x10 first when x9 already holds t+1
+(defn- xa-pair [M :vector-i64 t :i64] :vector-i64
+  (if (xg-held? M (xg-temp M (inc t)))
+    (-> M (xa-lt 10 (inc t)) (xa-lt 9 t))
+    (-> M (xa-lt 9 t) (xa-lt 10 (inc t)))))
 (defn- xa-ctx [M :vector-i64 r :i64] :vector-i64 (xa-ldr M r -8))
 (defn- xa-x7 [M :vector-i64] :vector-i64 (xa-ctx M 7))
 ;; Xd := v (movz + three movk; always four words)
@@ -33,6 +49,13 @@
       (xa-w (bit-or 0xF2A00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 16) 65535) 5) d)))
       (xa-w (bit-or 0xF2C00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 32) 65535) 5) d)))
       (xa-w (bit-or 0xF2E00000 (bit-or (i64-shift-left (bit-and (u64-shift-right v 48) 65535) 5) d)))))
+;; Xd := v in the runtime profile: one movz (0..65535) or movn (-65536..-1) when
+;; it fits, otherwise xa-mov64. Never for a fixup, which patches four words.
+(defn- xa-imm [M :vector-i64 d :i64 v :i64] :vector-i64
+  (cond (not= (xg-get M 4) 1) (xa-mov64 M d v)
+        (= (u64-shift-right v 16) 0) (xa-w M (bit-or 0xD2800000 (bit-or (i64-shift-left v 5) d)))
+        (= (u64-shift-right (bit-not v) 16) 0) (xa-w M (bit-or 0x92800000 (bit-or (i64-shift-left (bit-not v) 5) d)))
+        :else (xa-mov64 M d v)))
 ;; Xd := absolute address, patched by fixup kind (14 FN, 16 data, 17 literal)
 (defn- xa-abs [M :vector-i64 d :i64 kind :i64 target :i64] :vector-i64
   (xa-mov64 (xa-fixrec M kind target) d 0))
@@ -69,7 +92,7 @@
 ;; cset x9, cc: csinc x9, xzr, xzr, invert(cc)
 (defn- xa-cond [cc :i64] :i64 (case cc 1 0 2 11 3 12 4 13 5 10 0))
 (defn- xa-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
-  (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xEB0A013F)
+  (-> M (xa-pair t) (xa-w 0xEB0A013F)
       (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t)))
 (defn- xa-un [M :vector-i64 op :i64 t :i64] :vector-i64
   (-> M (xa-lt 9 t) (xa-w (if (= op UOP-NOT) 0xD2400129 0xAA2903E9)) (xa-st 9 t)))
@@ -88,29 +111,59 @@
   (-> M (xa-ctx 0) (xa-w (bit-or 0xF9400010 (i64-shift-left (quot slot 8) 10))) (xa-w 0xD63F0200) (xa-x7)))
 (defn- xa-rt-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
   (if (= i n) M (xa-rt-args (xa-lt M (inc i) (+ t i)) t (inc i) n)))
+;; Inline vector reads and writes, as seed/71 (xr-desc): the helpers' checks in
+;; their order and their own refusal (udf #0), with x7 = the context (v11 words
+;; 312 = &vector-used, 320 = descriptors, 328 = items).
+;; x9 = handle -> x16 = &descriptor: ldr x16,[x7,#312] ; ldr x16,[x16] ;
+;; sub x9,x9,#1 ; cmp x9,x16 ; b.lo +2 ; udf ; ldr x16,[x7,#320] ; add x16,x16,x9,lsl #4
+(defn- xa-desc [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xF9409CF0) (xa-w 0xF9400210) (xa-w 0xD1000529) (xa-w 0xEB10013F)
+      (xa-w 0x54000043) (xa-w 0x00000000) (xa-w 0xF940A0F0) (xa-w 0x8B091210)))
+;; x10 = index temp t+1 after i <u length: ldp x17,x16,[x16] ; cmp x10,x16 ; b.lo +2 ;
+;; udf ; add x17,x17,x10 ; ldr x16,[x7,#328] -- the item is [x16, x17, lsl #3]
+(defn- xa-item [M :vector-i64 t :i64] :vector-i64
+  (-> M (xa-w 0xA9404211) (xa-lt 10 (inc t)) (xa-w 0xEB10015F) (xa-w 0x54000043) (xa-w 0x00000000)
+      (xa-w 0x8B0A0231) (xa-w 0xF940A4F0)))
 (defn- xa-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
-  (-> M (xa-rt-args t 0 n) (xa-slot slot) (xa-st 0 t)))
+  (cond
+    ;; (vector-at v i): ldr x9,[x16,x17,lsl #3]
+    (and (= slot RT-VECTOR-AT) (= n 2))
+      (-> M (xa-lt 9 t) (xa-desc) (xa-item t) (xa-w 0xF8717A09) (xa-st 9 t))
+    ;; (vector-assoc! v i x): str x9,[x16,x17,lsl #3]; the result is v, already in temp t
+    (and (= slot RT-VECTOR-ASSOC-IN-PLACE) (= n 3))
+      (-> M (xa-lt 9 t) (xa-desc) (xa-item t) (xa-lt 9 (+ t 2)) (xa-w 0xF8317A09))
+    ;; (count v): ldr x9,[x16,#8]
+    (and (= slot RT-VECTOR-COUNT) (= n 1))
+      (-> M (xa-lt 9 t) (xa-desc) (xa-w 0xF9400609) (xa-st 9 t))
+    :else (-> M (xa-rt-args t 0 n) (xa-slot slot) (xa-st 0 t))))
 (defn- xa-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
-  (-> M (xa-lt 4 t) (xa-mov64 1 wire) (xa-mov64 2 kind) (xa-mov64 3 kind)
+  (-> M (xa-lt 4 t) (xa-imm 1 wire) (xa-imm 2 kind) (xa-imm 3 kind)
       (xa-slot RT-TYPED-CAP-CALL) (xa-st 0 t)))
 (defn- xa-str-lit [M :vector-i64 t :i64 lit :i64] :vector-i64
   (-> M (xa-fixrec 15 lit) (xa-mov64 1 0)
-      (xa-mov64 2 (vector-at M (+ MM-LIT-BASE (* lit MM-LIT-W) LF-LEN)))
+      (xa-imm 2 (vector-at M (+ MM-LIT-BASE (* lit MM-LIT-W) LF-LEN)))
       (xa-slot RT-PAIR-NEW) (xa-st 0 t)))
-;; vectors: vector_alloc(n) into the scratch word, then assoc_in_place per item
+;; vectors: vector_alloc(n) into the scratch word, then the items straight into
+;; the fresh vector (its handle x0 is valid by construction): x16 = &items[offset]
+;; by sub x16,x0,#1 ; ldr x17,[x7,#320] ; add x16,x17,x16,lsl #4 ; ldr x16,[x16] ;
+;; ldr x17,[x7,#328] ; add x16,x17,x16,lsl #3; a literal's words from x17 = its pool entry
 (defn- xa-scratch [M :vector-i64] :i64 (xr-scratch M))
+(defn- xa-vec-base [M :vector-i64 lit :i64] :vector-i64
+  (-> M (xa-w 0xD1000410) (xa-w 0xF940A0F1) (xa-w 0x8B101230) (xa-w 0xF9400210)
+      (xa-w 0xF940A4F1) (xa-w 0x8B100E30) (cond-> (not= lit 0) (xa-abs 17 17 lit))))
+;; ldr x9,[temp t+k] (or ldr x9,[x17,#8k]) ; str x9,[x16,#8k]
 (defn- xa-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
   (if (= k n) M
     (xa-vec-items
-      (-> (if (= lit 0) (xa-lt M 3 (+ t k))
-            (-> M (xa-abs 16 17 lit) (xa-w (bit-or 0xF9400203 (i64-shift-left k 10)))))
-          (xa-ldr 1 (xa-scratch M)) (xa-mov64 2 k) (xa-slot RT-VECTOR-ASSOC-IN-PLACE)) t (inc k) n lit)))
+      (-> (if (= lit 0) (xa-lt M 9 (+ t k)) (xa-w M (bit-or 0xF9400229 (i64-shift-left k 10))))
+          (xa-w (bit-or 0xF9000209 (i64-shift-left k 10)))) t (inc k) n lit)))
 (defn- xa-vec [M :vector-i64 t :i64 n :i64 lit :i64] :vector-i64
-  (-> M (xa-mov64 1 n) (xa-slot RT-VECTOR-ALLOC) (xa-str 0 (xa-scratch M))
-      (xa-vec-items t 0 n lit) (xa-ldr 9 (xa-scratch M)) (xa-st 9 t)))
+  (-> M (xa-imm 1 n) (xa-slot RT-VECTOR-ALLOC) (xa-str 0 (xa-scratch M))
+      (cond-> (> n 0) (-> (xa-vec-base lit) (xa-vec-items t 0 n lit)))
+      (xa-ldr 9 (xa-scratch M)) (xa-st 9 t)))
 (defn- xa-tab [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
   ;; unsigned bounds check, then ldr x9, [x16, x9, lsl #3]
-  (-> M (xa-lt 9 t) (xa-mov64 10 n) (xa-w 0xEB0A013F) (xa-w 0x54000043) (xa-w 0xD4200000)
+  (-> M (xa-lt 9 t) (xa-imm 10 n) (xa-w 0xEB0A013F) (xa-w 0x54000043) (xa-w 0xD4200000)
       (xa-abs 16 17 lit) (xa-w 0xF8697A09) (xa-st 9 t)))
 (defn- xa-calli [M :vector-i64 i :i64 t :i64 c :i64] :vector-i64
   (let [v (-> M (xa-args t 0 c) (xa-lt 16 (+ t c)) (xa-x7))]
@@ -144,10 +197,10 @@
   (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
     (case op
       1 (xa-fn M a b) 2 M
-      3 (-> M (xa-mov64 9 b) (xa-st 9 a))
-      4 (-> M (xa-ldr 9 (xg-local b)) (xa-st 9 a))
-      5 (-> M (xa-lt 9 b) (xa-str 9 (xg-local a)))
-      6 (-> M (xa-lt 9 b) (xa-lt 10 (inc b)) (xa-bin-op a) (xa-st 9 b))
+      3 (-> M (xa-imm 9 b) (xa-st 9 a))
+      4 (-> M (xa-ldc 9 (xg-local b)) (xa-st 9 a))
+      5 (-> M (xa-lt 9 b) (xa-stc 9 (xg-local a)))
+      6 (-> M (xa-pair b) (xa-bin-op a) (xa-st 9 b))
       7 (xa-cmp M a b) 8 (xa-un M a b)
       9 (xg-label M a)
       10 (-> M (xa-fixrec 12 a) (xa-w 0x14000000))

@@ -60,6 +60,28 @@ before every guest call. Pointers/handle validation and allocation budgets
 are the existing trusted loader ABI v11's responsibility. No C source
 translates Kotoba or emits guest machine instructions.
 
+Inline vector access (2026-10-28). The runtime profile does not call the
+vector-at (176), vector-assoc! (208) or count (168) helpers: it emits their
+checks in their order and their own refusal, from the v11 context words 312
+(&vector-used), 320 (descriptors: offset, length) and 328 (items), which every
+static runtime start fills once and never moves. The handle h is valid when
+(h - 1) <u used and the index i when i <u length; a failure is ud2 (SIGILL), as
+the helpers' kxrt-fail. A fresh VEC/VECP vector (vector_alloc's handle, valid
+by construction) receives its items by direct stores inside its own
+descriptor's view, so the vector zero highwater invariant is kept. The
+AArch64 plain route (seed/80) does the same with x7 = context and udf #0.
+Results, fuel, the seventeen arena counters and refusals are unchanged; only
+the helper calls (and their stack frames) are gone.
+
+Register cache (2026-10-28). Absolute M[190..191], free below this route's
+cells, hold the runtime profile's rax cache (x9 on seed/80): M[190] = the rbp
+(frame) displacement whose word the register holds, M[191] = CODE-N right
+after the store or load that made it so. Every emitted byte (xg-byte) and every
+LABEL clear M[191], so the cache only describes the fall-through point straight
+after that instruction; a load of that word there is omitted (rax) or becomes
+a register move (another register). Profiles other than 1 never use it, and
+their bytes are unchanged.
+
 The ELF profile still rejects handles/runtime operations. The runtime profile
 uses an explicitly tagged container, never the architecture-ambiguous KSEED1:
   KX64V1 x86_64-linux sysv-ctx-v11 <payload-length> 0\n\n<payload>
