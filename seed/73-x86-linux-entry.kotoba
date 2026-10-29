@@ -1,5 +1,11 @@
 ;; Source-only Linux selfhost closure. Explicit x86 target and format required.
 ;; The project/KIR/AArch64 drivers are absent, never silently substituted.
+;; This narrow bootstrap closure does not include the source-lock parser or
+;; project driver. Recognize a lock request and refuse it; the full compiler
+;; provides the actual KSL validation and never uses these definitions.
+(defn- drv-pj-has [i :i64 n :i64 s :string] :i64
+  (cond (>= i n) 0 (string=? (io-arg i) s) 1 :else (drv-pj-has (+ i 1) n s)))
+(defn- drv-single-lock? [source :string path :string] :bool false)
 (defn- drv-read [path :string] :string (typed-cap-call :fs/app-data :string :string path))
 (defn- drv-fail0 [e :i64] :i64
   (let [z (io-err (string-concat "seed-x86_64-linux: E" (string-concat (mem-u2dec e) "\n")))] 1))
