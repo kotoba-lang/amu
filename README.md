@@ -6,7 +6,7 @@ x86_64 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same image.
 It has no ELF interpreter or dynamic runtime dependency.
 
 The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
-in a full34 compiler with native Linux emitters, browser Wasm, bounded
+in a 48-module compiler with native Linux emitters, browser Wasm, bounded
 Kototama i64 AOT/receipts, native CDCI/FS2 and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
@@ -21,6 +21,11 @@ returns typed failure/spent/remaining receipts with the same closed language
 and empty authority. See [its ABI and native qualification](docs/kototama-i64-receipt.md).
 
 ## Native compiler use
+
+Start with the [Kotoba / Amu first-run guide](examples/foundation-starter/README.md)
+for acquisition and digest checks, a small source change, and explicit fuel
+and capability refusals. Its release and host qualification are stated in
+the guide; a successful smoke run does not qualify additional platforms.
 
 Run the public executable on native Linux x86_64. No Node/NBB/KBB, JVM,
 Clojure, Java, GraalVM, C compiler or C loader is used by this entry.
