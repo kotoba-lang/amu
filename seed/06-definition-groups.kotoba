@@ -313,28 +313,38 @@
             effects (if (= (vector-at components 0) 0) (dcp-effects M S components doc) components)]
         effects))))
 (defn- dcs-plan [M :vector-i64 S :string doc :i64] :vector-i64 (dcs-plan-resource M S doc 0))
-(defn- dcs-produce-resource [M :vector-i64 S :string doc :i64 resource :i64] :i64
+;; Row format: 0 = legacy `DCP1 6 2` header + `name cid group index` rows (the qualified test gates);
+;; 1 = ADR 0300 `name<TAB>cid` rows + `SCANNED<TAB>n/n`; 2 = format 1 plus `<TAB>group<TAB>index`.
+;; Any unresolved definition refuses the whole module before output, so SCANNED is always n/n here.
+(defn- dcs-produce-format [M :vector-i64 S :string doc :i64 resource :i64 format :i64] :i64
   (let [A (dcs-plan-resource M S doc resource) count (vector-at A 3)
         R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]
         (cond (not= (vector-at A 0) 0) (vector-at A 0)
           (loop [f 0] (if (= f count) false (or (= (dcp-f A f 2) 0) (recur (inc f))))) 3
           :else
-          (let [header (io-out "DCP1 6 2\n")]
+          (let [header (if (= format 0) (io-out "DCP1 6 2\n") 0)]
             (loop [f 0]
-              (if (= f count) 0
+              (if (= f count) (if (= format 0) 0
+                                (let [tail (io-out (string-concat "SCANNED\t"
+                                             (string-concat (mem-u2dec count) (string-concat "/" (string-concat (mem-u2dec count) "\n")))))] 0))
                 (let [cid (typed-list-nth [:list :string] R (dec (dcp-f A f 2)))
                       group (if (> (dcp-f A f 12) 0)
                               (typed-list-nth [:list :string] R (dec (dcp-f A f 12))) "-")
-                      name-part (string-concat (dcp-text M S (dcp-f A f 1)) " ")
-                      cid-part (string-concat cid " ") group-part (string-concat group " ")
-                      index-part (string-concat (mem-u2dec (if (> (dcp-f A f 12) 0) (dcp-f A f 13) -1)) "\n")
-                      write (io-out (string-concat name-part
-                        (string-concat cid-part (string-concat group-part index-part))))]
+                      sep (if (= format 0) " " "\t")
+                      name-part (string-concat (dcp-text M S (dcp-f A f 1)) sep)
+                      index (mem-u2dec (if (> (dcp-f A f 12) 0) (dcp-f A f 13) -1))
+                      row (if (= format 1) (string-concat name-part (string-concat cid "\n"))
+                            (string-concat name-part (string-concat cid (string-concat sep
+                              (string-concat group (string-concat sep (string-concat index "\n")))))))
+                      write (io-out row)]
                   (recur (inc f)))))))))
+(defn- dcs-produce-resource [M :vector-i64 S :string doc :i64 resource :i64] :i64
+  (dcs-produce-format M S doc resource 0))
 (defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64 (dcs-produce-resource M S doc 0))
-(defn- dcs-run-resource [S :string resource :i64] :i64
+(defn- dcs-run-format [S :string resource :i64 format :i64] :i64
   (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S)
         root (vector-at M MM-ROOT)]
     (if (or (not= (vector-at M MM-ERR) 0) (not= (kr-count M root) 1)) 1
-      (dcs-produce-resource M S (kr-first M root) resource))))
+      (dcs-produce-format M S (kr-first M root) resource format))))
+(defn- dcs-run-resource [S :string resource :i64] :i64 (dcs-run-format S resource 0))
 (defn- dcs-run [S :string] :i64 (dcs-run-resource S 0))

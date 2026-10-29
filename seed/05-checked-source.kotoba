@@ -251,7 +251,7 @@
       (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
         (string-concat (dsb-effect-text (vector-at M MM-CAPS)) (string-concat " :functions ["
           (string-concat values (string-concat helpers "]}\n"))))))))
-(defn- dsb-source-resource [source :string emit-kir :bool resource :i64] :i64
+(defn- dsb-source-format [source :string emit-kir :bool resource :i64 format :i64] :i64
   (let [S (string-concat source (ck-r6b-lib source)) front (dsb-front-h S (ck-hint-new))
         M (if (= (vector-at front MM-ERR) 0) (dsb-effects front) front)
         C (dsl-new-resource M resource)]
@@ -270,6 +270,8 @@
                       (string-concat ":" (string-concat (mem-u2dec (vector-at C 1)) "\n")))))] 1)
               (if emit-kir
                 (if (dcs-native-checked? K) (let [out (io-out K)] 0) (let [out (io-err "DSB:KIR\n")] 1))
-                (let [status (dcs-run-resource K resource)]
+                (let [status (dcs-run-format K resource format)]
                   (if (= status 0) 0 (let [out (io-err (string-concat "DSB:IDENTITY:" (string-concat (mem-u2dec status) "\n")))] 1)))))))))
+(defn- dsb-source-resource [source :string emit-kir :bool resource :i64] :i64
+  (dsb-source-format source emit-kir resource 0))
 (defn- dsb-source [source :string emit-kir :bool] :i64 (dsb-source-resource source emit-kir 0))
