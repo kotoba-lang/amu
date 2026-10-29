@@ -121,12 +121,17 @@
 ;; as a function value (fn-ref, a bare function value, invoke or apply). In
 ;; mode 3 only, seed/78 (xp-check-api) admits direct calls of the kxrt-p-
 ;; platform API by name; function values of it stay refused.
+;; A runtime function may call only runtime functions. Names resolve in one
+;; table, so a guest definition of an R1 head the runtime uses (inc, dec, not=;
+;; 20-names lets a definition shadow it) would otherwise become the runtime's
+;; callee (JUN-336). The runtime reaches main only through kxrt-call-main.
 (defn- xs-scalar-op? [op :i64] :bool
   (or (and (>= op OP-FN) (<= op OP-CALL)) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)))
 (defn- xs-check [M :vector-i64 i :i64 f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f) rt (xs-rt? M g)]
       (cond (and rt (not (xs-scalar-op? op))) (xg-err M 7101 op)
+            (and rt (= op OP-CALL) (not (xs-rt? M a))) (xg-err M 7101 op)
             (and (not rt)
                  (or (and (= op OP-CALL) (xs-rt? M a) (not (xs-plat? M)))
                      (and (= op OP-FADDR) (xs-rt? M (xg-si M i IF-B))))) (xg-err M 7101 op)
