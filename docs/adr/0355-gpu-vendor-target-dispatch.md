@@ -4523,3 +4523,66 @@ route; its own pre-registration). Evidence:
 docs/evidence/gpu/anv-b3tailprofile-20261029/ (protocol.txt,
 analysis-s87.py, publication-s87.txt, freeze-record-s87.txt,
 the s87 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 88: the inferential
+## tail-side row's pre-registration -- T20)
+
+The s87 carry-forward's item 6(e) -- "a FUTURE inferential
+tail-side row (the s86 vocabulary + T19's vectors are the
+route; its own pre-registration)" -- taken to its DESIGN half
+(the s84/s85/s86 pattern: freeze before any target-window
+quantity exists). NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO ledger line, NO statistic of any run log; the
+row's ANALYSIS half is gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T08:1xZ, ~15.7h before the slot opens) -- STARTED,
+NOT FINISHED. protocol.txt (freeze stamp 2026-10-29T08:16:54Z;
+pre-freeze freshness greps 08:16:12Z-08:16:22Z: 0 hits on all
+eight row-name tokens; "2^12"/"4,096" hits unrelated, bare
+"T20" hits UTC-hour timestamps -- named not hidden) freezes
+T20 = the tail-side half-pair asymmetry replication at W6: does
+the LEFT-greater-RIGHT asymmetry the T19 quote-only
+five-window vectors show at all five windows at the two
+INFORMATIVE families (k=16: 118/103/115/103/90 vs
+94/82/100/85/77; k=32: 418/342/397/362/439 vs
+213/186/183/204/214) replicate at the fresh window? Per family
+C_obs = 2*L({HL_k}) - 2*L({HR_k}) (the T19 estimator held
+fixed) at the named cell (max,128,S=default), tw arm, 12
+blocks of 3. NULL: WITHIN-BLOCK SIDE-EXCHANGEABILITY (the s86
+mirror closure r <-> 76-r swaps HL_k/HR_k per block); EXACT
+randomization over all 2^12 = 4,096 whole-block side-swap
+assignments, p = count(C* >= C_obs)/4,096 one-sided, NO RNG
+(the T15/T18 seeded Monte Carlo convention considered and
+rejected -- 2^12 is exactly enumerable). Letters per family (a)
+ASYMMETRY-LEFT-GREATER-REPLICATED (C_obs > 0 AND p <= 0.05) /
+(b) NOT-REPLICATED / (c) NOT EVALUABLE; JOINT T20 = IUT over
+k=16/k=32 (k=4/8 excluded by the s86 section-4(c) caveat,
+tagged UNINFORMATIVE-BY-S86-CAVEAT, never in the joint).
+NAMED, NOT HIDDEN: direction fixed by T19's committed vectors
+alone (quote-only priors, the s53/s54/s82 pattern -- no
+double-dipping: the test data is W6 alone and does not exist at
+freeze); which tail MOVES across days is NOT claimed (a
+cross-day tail-movement row is its own future pre-registration,
+not queued); still low power (n=12 blocks, one window, one
+host, one cell); a (b) is not evidence of tail symmetry;
+mechanism UNMEASURED. STATE: ACCEPTED DESIGN ONLY (protocol.txt
++ freeze-record-s88.txt + this note); every T20 quantity is
+UNMEASURED. Standing gates (real runs == the s87 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization
+exists for Intel. Carry-forward to session 89: the W6
+measurement half (first session at/after 2026-10-30T00:00:00Z)
+-- the gate for T18's analysis half, T20's analysis half and
+W7's measurement half --, then the T18 analysis half, T20's
+analysis half, the W7 measurement half (behind W6's ledger
+line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6tailrep-20261030/ (protocol.txt,
+freeze-record-s88.txt, the s88 gate captures).
