@@ -5064,3 +5064,57 @@ docs/evidence/gpu/anv-b3w6ledgerrego-20261029/ (ledger-prego.py +
 selftest/compat run1/2 .txt/.err + record.txt + the s97 gate
 captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 98: the W6 pre-GO custody
+## fresh-entry pre-build)
+The W6 measurement row's CUSTODY-CHECK IMPLEMENTATION preparation half
+(the s69/s90/s95/s96/s97 pre-build precedent applied to the surface
+the adoption contracts assumed but no code path served; NO hardware
+runs, NO builds, NO GO stamp, NO host writes, NO day-slot consumption,
+NO ledger line; the measurement half REMAINS day-slot-gated -- first
+session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T15:1xZ-15:5xZ, ~8.4h before the slot) -- STARTED, NOT
+FINISHED.  custody-check-prego.py (the s96 checker + this session's
+extension; the s96 original committed unchanged) adds the fresh-window
+entry --check <dir> <tag> <manifest> (the s96 main() served only
+--self-test and the hardwired three-window --compat) and
+decide_ledger_inputs -- the pin/go explicit inputs of
+ledger-s<NN>.py --emit, derived from the checker's own rows alone,
+ROW-BASED (a verify-mismatch flag never masks a bad pin row).
+REFUSED-RECORD-INCONSISTENT -> both halves UNDECIDED, fail-closed: the
+ledger emitter refuses and NO line derives from the record -- a NAMED
+tightening of the s96 prose ("can only lead to a FLAGGED ledger line"):
+the frozen FLAGGED list is exhaustive-four, the ledger grammar admits
+no fifth token, and a false-token FLAGGED line would misattribute inside
+the bar's own data; a refused record that also fired C1 loses its c1-b
+line (named conservative loss; the mapping cannot see C1).  VERIFIED
+(real tool output): --check over the three committed 78-run windows
+exits 0 (flag none, pin=ok go=ok) at all three, twice byte-identical,
+its 27 rows BYTE-EQUAL to the --compat blocks at each window and flags
+EQUAL (check-vs-compat-proof.txt, twice byte-identical); --self-test
+TOTAL 68/0 twice byte-identical (4,528 bytes; the s96 42-line prefix
+BYTE-EQUAL to the s96 capture) incl. every mapping case and the
+UNDECIDED-iff-REFUSED equivalence; --compat twice byte-identical AND
+byte-identical to the s96 pin (7,716 bytes).  Standing gates == the
+s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test 38/0 +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt == HEAD.
+The bar: preparation session -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel.  ADOPTION (amended): the W6 session
+adopts this copy as custody-s<NN>.py and feeds --check's ledger-pin/
+ledger-go to ledger-s<NN>.py --emit verbatim (UNDECIDED -> no line);
+W7 the same.  Carry-forward to session 99: the W6 measurement half
+(the s80 freeze; the W6 session adopts s90's reading pair, s91's
+custody baseline, s95's run-window driver, this checker and s97's
+emitter) -- the gate for T18's analysis half (s92 + s84), T20's
+analysis half (s93 + s88) and W7's measurement half (s85) --, then any
+further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6custodycheckrego-20261029/ (custody-check-
+prego.py + selftest/compat/check run1/2 captures + check-vs-compat-
+proof.txt + record.txt + the s98 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

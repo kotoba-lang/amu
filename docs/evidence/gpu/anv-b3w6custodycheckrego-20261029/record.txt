@@ -1,0 +1,155 @@
+JUN-59 session 98 W6 PRE-GO CUSTODY FRESH-ENTRY PRE-BUILD (the W6
+measurement row's CUSTODY-CHECK IMPLEMENTATION preparation half -- the
+s69/s90/s95/s96/s97 pre-build precedent applied to the one surface the
+adoption contracts assumed but no code path served; NO hardware runs,
+NO builds, NO compiles, NO GO stamp, NO host writes, NO network
+connections, NO day-slot consumption, NO ledger line).  Row: the s97
+carry-forward's item (a) (the W6 measurement half), taken to its last
+un-machinery'd preparation surface -- the s96 adoption contract says
+the W6 session "runs the checker over its own fresh host-verify/
+build-census/run-window records BEFORE the ledger line", but
+custody-prego.py's main() served ONLY --self-test and the hardwired
+three-window --compat (no fresh-window entry anywhere), and the
+custody->ledger pin/go wiring the s97 adoption contract left to the
+session ("wires the custody checker's flag decision (criteria 3/4)
+into the line") existed in no file.  The measurement half REMAINS
+day-slot-gated (STARTED, NOT FINISHED): W6 runs in the first
+measurement session starting at or after 2026-10-30T00:00:00Z; this
+tick runs 2026-10-29T15:1xZ-15:5xZ, ~8.4h before the slot opens.
+
+1. FINDING (verified by real tool output): custody-check-prego.py (the
+   s96 checker + this session's extension; pure stdlib, NO RNG, no
+   clock; record TEXT in, text out; submits NOTHING to any GPU; the
+   s96 original is committed UNCHANGED at anv-b3w6custodyrego-
+   20261029/custody-prego.py) adds:
+   (a) --check <dirname> <tag> <manifest-name> -- the fresh-window
+       PRE-GO entry: one window's records loaded exactly as --compat
+       does (named artifact fallback included), the same 27
+       want/got/verdict rows + FLAG decision, plus the LEDGER DECISION;
+       exit 0 iff flag "none" (1 = flag non-none; 2 = record
+       uncheckable).  The session tag is an explicit argument -- this
+       mode is NOT filename-gated (writes nothing, computes no
+       statistic).
+   (b) the LEDGER DECISION -- decide_ledger_inputs(rows), the pin/go
+       explicit inputs of ledger-s<NN>.py --emit, derived from this
+       checker's own row stream alone.  ROW-BASED, never the masked
+       first-fired flag: ledger-pin "flagged" iff a criterion-(3) row
+       (pin-c2/hi/tw/c8) mismatches; ledger-go "flagged" iff the
+       criterion-(4) rows fire (go-stamp absent / go-not-after-builds
+       gt); REFUSED-RECORD-INCONSISTENT (another row failed while
+       (2)/(3)/(4) clean) -> BOTH halves UNDECIDED (fail-closed: the
+       ledger emitter's REFUSED-INPUT-UNDECIDED applies, NO ledger
+       line derives from the record).  NAMED DESIGN DECISION: the s96
+       prose "can only lead to a FLAGGED ledger line" is TIGHTENED to
+       "NO line at all" for refused records -- the frozen bar text's
+       FLAGGED list is EXHAUSTIVE (settle-bar.txt section 2, exactly
+       criteria (1)-(4)) and the ledger grammar (s97 FLAG_VOCAB)
+       admits no fifth token; a FLAGGED line under a false token
+       (pin-missing while the pins matched) would misattribute the
+       disqualification inside the bar's own data; no line consumes no
+       day slot and cannot corrupt the bar; the refusal + failing rows
+       stay visible in the --check capture and the session record.
+       NAMED, NOT HIDDEN: a refused record whose run logs ALSO fire
+       C1 (criterion 1) would produce no c1-b line under this mapping
+       (conservative visibility loss; the mapping cannot see C1 -- the
+       s96 scope cut -- and refuses rather than guess); when (2)/(3)/
+       (4) fire AND another row fails, the mapping stays ROW-FAITHFUL
+       (the ledger line's flag is FLAGGED with a true token by the
+       frozen precedence) and the W6 session cross-checks this
+       checker's verify-mismatch-total row against the ledger
+       emitter's own criterion-(2) derivation (session-owned named
+       residual -- two parsers over the same run logs).
+
+2. VALIDATION (real tool output): --check over the THREE committed
+   78-run windows (s36 anv-b3commonmode-20261028 / s51
+   anv-b3levelrep-20261028 / W5 anv-b3w5xdayrep-20261029) exits 0 at
+   all three (flag none), ledger-pin=ok ledger-go=ok at all three; run
+   twice BYTE-IDENTICAL per window (cmp exit 0, stderr 0 bytes all
+   six); the mechanical proof (check-vs-compat-proof.txt, run twice
+   BYTE-IDENTICAL) shows each --check's 27 check= rows BYTE-EQUAL to
+   its --compat block and its flag EQUAL to the --compat flags token
+   at all three windows (27/27 x3) -- the fresh entry reproduces the
+   validated path exactly.  --self-test TOTAL 68 assertions passed 0
+   failed (the s96 suite's 42 + 26 mapping assertions: every criterion
+   alone, the masked verify+pin case reporting pin=flagged under a
+   verify-mismatch flag, all three REFUSED shapes (run-count 77,
+   census 3/4, wrong hi knobs) UNDECIDED/UNDECIDED, mixed fired+broken
+   row-faithful, UNDECIDED iff flag == REFUSED-RECORD-INCONSISTENT at
+   every battery row, refusal note naming the failing rows), run twice
+   BYTE-IDENTICAL (4,528 bytes, cmp exit 0, stderr 0 bytes); the first
+   42 assertion lines are BYTE-EQUAL to the s96 capture's 42 lines
+   (prefix preserved, proved in check-vs-compat-proof.txt).  --compat
+   of the extended file run twice BYTE-IDENTICAL and BYTE-IDENTICAL to
+   the s96 committed pin (7,716 bytes, cmp exit 0 x3) -- the superset
+   reproduces the s96 bytes exactly.  One fixture defect found by
+   first execution and named: the "3 builds" mapping fixture expected
+   REFUSED but n_builds=3 also drops the c8 digest line so criterion
+   (3) actually fires (flag build-pin-not-byte-identical) -- fixture
+   corrected at source before capture, and a true REFUSED fixture
+   (wrong hi knobs, pins clean) added.
+
+3. GATES (the standing gate set, real runs this tick, byte-compared to
+   the s88 committed pins in docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed 0 failed; capture == pin (17,925 bytes);
+       .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+       created, run, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin ==
+       the s88 run-2 pin (919 bytes, cmp exit 0 x4); .err 0 bytes.
+   (c) FULL run-tests.cljk RUN LIVE (worktree root): exit 1, RED AT
+       BASE kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO .cljk
+       namespace).  .err == the s88 pin (879 bytes); stdout 0 bytes ==
+       the pin.  NO green full suite is claimed.
+   (d) settle-bar evaluator (frozen): --self-test exit 0, TOTAL 38
+       assertions passed 0 failed, capture == pin (3,590 bytes);
+       ledger eval twice, exit 0, run 1 == run 2 == the s88 pin (823
+       bytes) -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29 session=s73).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files.
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff empty).
+
+4. THE BAR: preparation session -> NO hardware runs -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption.  The bar stays
+   PENDING 2/4.  Nothing this UTC day can advance the bar (2026-10-29
+   is CONSUMED by s73 -- settle-bar.txt section 2).
+
+5. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z); every W6 live
+   field; every T18/T20/W7 quantity (all gate behind W6's ledger
+   line).  RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them; NO vendor
+   optimization exists for Intel (or for any vendor); this machinery
+   is record-checking and decision text, not a device measurement.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (chain PR #1665 is the one
+   open chain PR).
+
+7. ADOPTION CONTRACT (amended): the W6 session adopts THIS file as its
+   custody checker (custody-s<NN>.py; superseding the s96 copy for
+   adoption -- provenance named above), re-runs --compat in its own
+   record, and runs --check over its own fresh host-verify/build-
+   census/run-window records BEFORE the ledger line; the --check
+   ledger-pin/ledger-go outputs are the --pin/--go inputs of
+   ledger-s<NN>.py --emit verbatim (UNDECIDED means the session must
+   NOT write a ledger line).  The execution path (ssh, staging, GO,
+   record prose) stays session-owned exactly as at s51/s73; the W7
+   session does the same.
+
+8. CARRY-FORWARD to session 99: the W6 measurement half (the s80
+   freeze; the W6 session adopts s90's reading pair, s91's custody
+   baseline, s95's run-window driver, THIS checker and s97's ledger
+   emitter) -- the gate for the T18 analysis half (s92 + s84), the T20
+   analysis half (s93 + s88) and the W7 measurement half (s85; behind
+   W6's ledger line) --, then any further counted-day slot (its own
+   freeze) and a cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6custodycheckrego-20261029/
+(custody-check-prego.py + selftest/compat run1/2 .txt/.err +
+check-{s36,s51,s73}-run1/2.txt/.err + check-vs-compat-proof.txt +
+record.txt + the s98 gate captures) + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)
