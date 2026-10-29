@@ -1,0 +1,29 @@
+(ns seed.macos-cli-host-files (:export [main]))
+
+(defn- hf-path [root :string name :string] :string (string-concat root (string-concat "/" name)))
+(defn main [] :i64
+  (let [root (hc-arg 0) path (hf-path root "data.bin") other (hf-path root "renamed.bin")
+        m (hc-path-call 3 root)]
+    (if (not (hc-ok? m)) (+ 10 (hc-errno m))
+      (let [w (hc-write path [0 255 128 42 10])
+            duplicate (hc-write path [99])
+            r (hc-read path)
+            st (hc-path-call 8 path)
+            mode (hc-path-call 6 path)
+            rename (hc-call 7 (hc-bytes (string-concat (hc-field path) (hc-field other))))
+            after (hc-read other)
+            u (hc-path-call 4 other) missing (hc-read other)
+            d (hc-path-call 5 root)]
+        (cond (not (hc-ok? w)) 1
+              (or (hc-ok? duplicate) (not= (hc-errno duplicate) 17)) 2
+              (or (not= (vector-count r) 6) (not= (vector-at r 1) 0)
+                  (not= (vector-at r 2) 255) (not= (vector-at r 3) 128)
+                  (not= (vector-at r 4) 42) (not= (vector-at r 5) 10)) 3
+              (or (not (hc-ok? st)) (not= (vector-at st 16) 5)) 4
+              (not (hc-ok? mode)) 5
+              (not (hc-ok? rename)) 6
+              (or (not (hc-ok? after)) (not= (vector-at after 2) 255)) 7
+              (not (hc-ok? u)) 8
+              (or (hc-ok? missing) (not= (hc-errno missing) 2)) 9
+              (not (hc-ok? d)) 10
+              :else (hc-out "PASS_NATIVE_HOST_FILES\n"))))))
