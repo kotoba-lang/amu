@@ -123,12 +123,13 @@ locally with two test-only patches (`seccomp(2)` accepted without installing a
 filter, `openat2(2)` passed through); this is measurement tooling outside the
 build closure and does not qualify anything.
 
-* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`3e347e1d…`, 8,622,592
+* Fixed points: x86_64 F1 = F2 = F3 = `bin/amu` (`7f11dd28…`, 8,622,592
   bytes; round 1 `f8332459…`, 8,593,920; base 9,458,176); aarch64 packed root
-  F2 = F3 (`69edfd98…`, 3,572,224 bytes; round 1 `172f588b…`, base 3,625,472)
-  with container `a4fdfb05…`, derived under qemu from the round 1 root; the
-  x86_64 compiler that root emits is byte-identical to `bin/amu`, and so are
-  its x86 images of the 24 pinned cases.
+  F1 = F2 (`bdf47cfd…`, 3,572,224 bytes; round 1 `172f588b…`, base 3,625,472)
+  with container `c577a483…`, derived under qemu from a round 2 candidate
+  root (itself derived from the round 1 root) after main's #1666 was merged;
+  the x86_64 compiler that root emits is byte-identical to `bin/amu`, and so
+  are its x86 images of the 24 pinned cases.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
