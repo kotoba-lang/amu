@@ -1,6 +1,8 @@
 ;; Bounded experimental KIR object build. The compiler-image context is supplied
 ;; by the test observer; it is not yet bound to a production native controller.
 ;; This entry is outside FULL-MANIFEST and does not change the adopted compiler.
+(defn- drv-target-usage [] :i64 (drv-fail0 E-USAGE))
+(defn- full-usage [] :i64 (let [w (drv-target-usage)] 2))
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
 (defn- dcb-test-entry [resource :i64 arguments :i64] :i64
   (let [mode (io-arg 0) fuel (xg-budget (io-arg 5))]
