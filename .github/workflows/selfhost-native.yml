@@ -34,6 +34,7 @@ on:
       - "seed/**"
       - "scripts/seed/**"
       - "bench/embench/proof-v1/**"
+      - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -50,6 +51,7 @@ on:
       - "seed/**"
       - "scripts/seed/**"
       - "bench/embench/proof-v1/**"
+      - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -70,6 +72,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Foundation starter functional smoke (not compiler qualification)
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: foundation-starter-functional-smoke
+          path: ${{ runner.temp }}/foundation-starter
+          if-no-files-found: warn
       - name: Observer and admission negative controls
         run: |
           python3 scripts/seed/test_native_iteration.py -v
@@ -158,6 +168,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Experimental ARM64 starter observation (not public qualification)
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" --host-profile github-ubuntu-arm64-diagnostic
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: foundation-starter-arm64-diagnostic
+          path: ${{ runner.temp }}/foundation-starter-arm
+          if-no-files-found: error
       - name: Loaderless bootstrap from the pinned root (arm64, native)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
