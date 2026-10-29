@@ -10,22 +10,22 @@ On Linux ARM64, check the kernel and architecture with `uname -s` and
 `uname -m`; expect `Linux` and `aarch64`. Git and Python 3 are required for
 acquisition and observation. These checks alone do not establish host or
 release qualification. In a dedicated shell, obtain the exact 40-character
-commit reviewed on the [draft PR](https://github.com/kotoba-lang/amu/pull/1640):
+commit in this [pinned snapshot](https://github.com/kotoba-lang/amu/tree/8725381353ac343f80e21418a568071927035cc1):
 
 ```sh
 set -e
 git clone --filter=blob:none --depth 1 --no-checkout https://github.com/kotoba-lang/amu.git amu-arm-starter
 cd amu-arm-starter
-git fetch --filter=blob:none --depth 1 origin pull/1640/head
-REVIEWED_REVISION=replace-with-reviewed-40-character-commit
+REVIEWED_REVISION=8725381353ac343f80e21418a568071927035cc1
+git fetch --filter=blob:none --depth 1 origin "$REVIEWED_REVISION"
 test "$(git rev-parse FETCH_HEAD)" = "$REVIEWED_REVISION"
 git sparse-checkout set --cone bin seed scripts examples
 git checkout --detach "$REVIEWED_REVISION"
 test "$(git rev-parse HEAD)" = "$REVIEWED_REVISION"
 ```
 
-If the moving PR head differs from the reviewed revision, stop and review the
-new head. The [main starter guide](README.md) describes the x86 entry; its
+If the fetched object differs from this revision, stop. The
+[main starter guide](README.md) describes the x86 entry; its
 compiler image is not the ARM compiler.
 
 From that checkout, in a dedicated shell with `set -e`, verify the diagnostic
@@ -42,7 +42,7 @@ d = json.loads(Path('seed/bootstrap/aarch64-linux-static-root.json').read_text()
 b = p.read_bytes()
 digest = hashlib.sha256(b).hexdigest()
 if (len(b) != 3625472 or
-    digest != 'fddaa4db2ed56a61bf2629a052816f7ea1e41287d62d2679006065f8ae272b3a' or
+    digest != '9053ed1f8056635bc3ea08768dbb106deee02cbeb48a0d626fdbff80ca798493' or
     d['image'] != {'bytes': len(b), 'sha256': digest}):
     raise SystemExit('ARM compiler or descriptor digest mismatch')
 print('ARM compiler bytes verified')

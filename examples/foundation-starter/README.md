@@ -6,19 +6,11 @@ payment or Itonami application is required. Acquiring the candidate and
 any omitted files requires network access; the example guests themselves
 run without network authority.
 
-**Starter engineering preview, not a public trial release.** The compiler
-descriptor still records empty native generations and false qualification
-flags. [Main CI run 40759416436](https://github.com/kotoba-lang/amu/actions/runs/40759416436)
-passed for the older upstream revision `3e7780f7c346a7fba8dbb3e29d787ae02b264acf`, with a different compiler;
-qualification of this starter revision remains open. At the older
-PR revision `e967ae44c1117a4a19b6a82579f0b826db7603b1`, with a different compiler, the
-[Linux native workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510291)
-and [Mac and Linux cross workflow](https://github.com/kotoba-lang/amu/actions/runs/40753510318)
-completed successfully. These results apply to that revision; check the PR
-for the current revision and its checks. They are bounded engineering
-observations, not a change to the descriptor's qualification flags. Current-image
-qualification and descriptor flags need upstream reconciliation. A second
-host profile, release review and independent user evidence remain open.
+**Starter engineering preview.** This guide uses the native compiler and
+48-module source tree pinned in `candidate.json`. Its compiler qualification
+is recorded separately in `native-product.json`; independent user and host
+qualification remains open. Use the fixed revision below, rather than a
+different installation command or a moving PR head.
 
 Public compiler host: **native Linux x86_64**. macOS, Windows, Linux ARM64,
 WSL, containers and emulation are not qualified by this starter. Do not run
@@ -39,18 +31,17 @@ and record the results rather than trying a different compiler.
 
 The Amu repository is available under the [Apache License 2.0](../../LICENSE).
 This is an engineering-preview procedure, not a release download. On a native
-Linux x86_64 machine with Git and Python 3, first identify the full 40-character
-commit you have reviewed on [the starter draft PR](https://github.com/kotoba-lang/amu/pull/1640).
-Put that exact commit in `REVIEWED_REVISION` below; do not substitute a moving
-branch name. In a dedicated shell, run these commands in a new directory of
-your choice. `set -e` stops that shell if acquisition or any check fails:
+Linux x86_64 machine with Git and Python 3, review the
+[pinned starter revision](https://github.com/kotoba-lang/amu/tree/8725381353ac343f80e21418a568071927035cc1).
+In a dedicated shell, run these commands in a new directory of your choice.
+`set -e` stops that shell if acquisition or any check fails:
 
 ```sh
 set -e
 git clone --filter=blob:none --depth 1 --no-checkout https://github.com/kotoba-lang/amu.git amu-starter
 cd amu-starter
-git fetch --filter=blob:none --depth 1 origin pull/1640/head
-REVIEWED_REVISION=replace-with-reviewed-40-character-commit
+REVIEWED_REVISION=8725381353ac343f80e21418a568071927035cc1
+git fetch --filter=blob:none --depth 1 origin "$REVIEWED_REVISION"
 test "$(git rev-parse FETCH_HEAD)" = "$REVIEWED_REVISION"
 git sparse-checkout set --cone bin seed scripts examples
 git checkout --detach "$REVIEWED_REVISION"
@@ -71,8 +62,7 @@ for name, spec in files.items():
 PY
 ```
 
-The fetched PR head must still match the commit you reviewed. If it changed,
-stop and review the new head before trying again. The pin manifest is part
+The fetched object must match the fixed commit. The pin manifest is part
 of the reviewed commit; matching it checks the local bytes, not the
 trustworthiness of an unreviewed commit. Stop on a mismatch.
 The observation packet below also checks compiler source unity. Partial clone
@@ -124,11 +114,11 @@ Expected terminal status is `PASS_STARTER_FUNCTIONAL_SMOKE`.
 The manifest retains the reviewed upstream revision, the descriptor's
 reported source revision, image and observer hashes, host profile, actual
 native results and the descriptor's qualification state. The descriptor's
-reported source revision is historical metadata. Reconstructing its 48 source
-modules yields SHA-256 `18e98b761f744f27d567a9cd0a50a6fcd9e27a27ca800d9653d17f5701f0dabf`,
-which differs from the pinned source unity `09a659ca...`. Reconstructing the
-modules at the candidate's upstream revision yields the pinned unity; this
-match alone does not establish the binary's source-to-image provenance.
+reported source revision in the pinned snapshot is historical metadata.
+The candidate's upstream revision reconstructs to the pinned source unity;
+this match alone does not establish the binary's build provenance. Later
+qualification metadata applies only if its image and source pins match this
+snapshot; it must not silently select different executable bytes.
 It records **zero external users**; an author-run smoke is not a user cohort.
 
 ## Run and change a small program yourself
