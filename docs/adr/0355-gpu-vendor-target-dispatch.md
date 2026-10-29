@@ -4681,3 +4681,51 @@ cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3w6prego-20261029/ (reading-prego.py +
 compat-prego-validation.txt, derivation-census-prego.py +
 derivation-census-prego.txt, record.txt, the s90 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 91: the W6 route/custody
+## pre-flight)
+
+The s90 carry-forward item (a) (the W6 measurement half, the s80
+freeze) taken to its ROUTE/CUSTODY PRE-FLIGHT half (the s67
+precedent -- the W5 row's preparation half was exactly this
+pre-flight): the W6 route's local custody inputs re-verified
+against the s51 host-verify digests BEFORE the slot opens (this
+tick runs 2026-10-29T10:0xZ, ~13.8h before the first session
+at/after 2026-10-30T00:00:00Z; the measurement half stays
+day-slot-gated -- STARTED, NOT FINISHED). LOCAL CUSTODY INPUTS
+(shasum -a 256 over the committed bytes): instrument source
+gpu-subgroup-reduce-anv-ndiv.c a5e539f0ad1c5d73... MATCH (==
+s51 host-verify local=/host=); expected-corpus.sha256
+eefba52e7be052d6... MATCH; manifest cases-s51-a.txt
+c568e32ef0363165... MATCH; the 24 non-comment cell lines digest
+873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+reproduces the chain's 873025d650afae23... prefix EXACTLY and the
+cell lines are byte-equal to cases-s36-a.txt's (the fresh-header
+manifest rule the W6 session must reproduce); corpus 16/16 local
+verify (8 OK + 8 OK across the two corpus dirs). HOST ROUTE PROBE
+(read-only ssh, NO GPU submission): route reachable
+(murakumo-ci-6600hs -> aiueos-6600hs, user murakumo-ci), host
+clock sane, render group holds, gcc present, /dev/dri/card0 +
+renderD128 present; the W6 workdir ~/anv-b3w6daybar-20261030 is
+NOT YET STAGED (NO-WORKDIR, named not hidden -- staging is the W6
+session's own pre-GO custody step). NAMED LIMITS: no host-side 3/3
+comparison, no corpus sha256sum -c host-side, no GO stamp, no
+builds, no runs, no statistics of any kind (a pre-flight computes
+no statistics). Standing gates (real runs == the s88 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk exit
+1 RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. The bar: NO reading -> NO ledger
+line, NO day-slot consumption (settle-bar-ledger.txt == HEAD).
+Rule 4 binds: NOTHING MOVES; the ADR-0358 row states are
+unchanged; NO vendor optimization exists for Intel. Carry-forward
+to session 92: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half, T20's
+analysis half and W7's measurement half --, then the T18 analysis
+half, T20's analysis half, the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6routepreflight-20261029/ (record.txt +
+the s91 gate captures).
