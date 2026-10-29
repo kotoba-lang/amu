@@ -4151,3 +4151,43 @@ days -- future design+measurement work) and any further named
 profile pair needs a NEW named rank-pair vocabulary (future
 design work). Evidence:
 docs/evidence/gpu/anv-b3w5pair2profile-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 80: the W6 counted-day measurement pre-registration)
+
+The s79 carry-forward item (a) taken to its DESIGN half: the
+pre-registration freeze of the hardware measurement the anchor-
+class settling bar's THIRD counted day slot needs (protocol.txt
+of docs/evidence/gpu/anv-b3w6daybar-20261030/, freeze stamp
+2026-10-29T04:23:51Z, before any W6 quantity exists). W6 = the
+window whose 78 fresh processes run in the first measurement
+session that starts at or after 2026-10-30T00:00:00Z on the ANV
+host; ONE ledger line -- hi block A of W6 (the frozen L12 single
+bar candidate) at the settle-bar section-2 reading (class at the
+frozen section-4 threshold, (sum,128,S=16) pooled median, 18-cell
+pooled-median min), COUNTED iff the first qualifying reading of
+its UTC day, FLAGGED construction (C1 (b) / VERIFY / pin / GO)
+named and consuming no slot; the s57 section-6 route UNCHANGED
+(custody host-verify 3/3 + corpus 16/16 before the GO stamp; the
+four s51-frozen build pins 4/4 BYTE-IDENTICAL; the 78 runs in the
+frozen run order). 2026-10-29's slot is consumed (s73), so the
+slice runs NO hardware (NO reading, NO ledger line, NO day-slot
+consumption; the bar stays PENDING 2/4). NAMED, NOT HIDDEN: no
+analysis row rides this freeze (the W5 queue is COMPLETE; any
+further named profile pair needs the NEW named rank-pair
+vocabulary, which does not exist); the alternative minimal 9-run
+bar-only session was CONSIDERED AND REJECTED with reasons in the
+freeze; the FOURTH day slot is NOT frozen here (no silent
+extension). Standing gates (real runs): classify --self-test
+2649/0 == pin; scoped GPU gate GREEN 123/12162/0/0 twice == pins;
+FULL run-tests.cljk exit 1, RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) with the 879-byte
+.err == pin -- no green full suite claimed; settle-bar self-test
+38/0 == pin and ledger eval twice == pin -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 81: the
+W6 measurement half (the first session at/after
+2026-10-30T00:00:00Z), then the fourth day slot (its own future
+freeze) and the named rank-pair vocabulary (unfrozen design
+work). Evidence:
+docs/evidence/gpu/anv-b3w6daybar-20261030/freeze-record-s80.txt.
