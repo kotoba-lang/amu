@@ -150,12 +150,28 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
           (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
           :else -1)))
+;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
+;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
+;; pushed (the last first) below the frame, so they cannot alias a temporary slot; an odd count is padded by
+;; `sub rsp,8` to keep the 16-byte alignment, and `add rsp,imm8` removes them after the context restore.
+(def XO-EXT-MAX-ARGS 8)
+(defn- xk-extern-push [M :vector-i64 t :i64 i :i64] :vector-i64
+  (if (< i 6) M
+    (xk-extern-push (-> M (xg-bytes 0xb5ff 2) (xg-bytes (xg-temp M (+ t i)) 4)) t (dec i))))
+(defn- xk-extern-regs [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
+  (cond (= i n) M
+        (< i 5) (xk-extern-regs (xg-load M (+ t i) (xg-arg-op i true)) t (inc i) n)
+        :else (xk-extern-regs (xg-load M (+ t i) 0x8d8b4c) t (inc i) n)))
 (defn- xk-extern-call [M :vector-i64 f :i64 t :i64] :vector-i64
-  ;; arguments as for a local call (rdi rsi rdx rcx r8), call rel32 with a function fixup that the
-  ;; object writer turns into a PLT32 relocation, then the context register back from [rbp-8]
-  ;; (a callee may destroy r9; the fuel charge reads it), then the result as any call result.
-  (-> M (xg-call-args t 0 (xg-f M f FF-NPARAMS)) (xg-rel 0xe8 1 1 f)
-      (xg-bytes 0xf84d8b4c 4) (xg-save t)))
+  ;; call rel32 with a function fixup that the object writer turns into a PLT32 relocation, then the
+  ;; context register back from [rbp-8] (a callee may destroy r9; the fuel charge reads it), then the
+  ;; result as any call result.
+  (let [n (xg-f M f FF-NPARAMS) m (if (> n 6) (- n 6) 0) pad (bit-and m 1)]
+    (-> M (cond-> (= pad 1) (xg-bytes 0x08ec8348 4)) (xk-extern-push t (dec n))
+        (xk-extern-regs t 0 (if (< n 6) n 6)) (xg-rel 0xe8 1 1 f)
+        (xg-bytes 0xf84d8b4c 4)
+        (cond-> (> m 0) (-> (xg-bytes 0xc48348 3) (xg-bytes (* 8 (+ m pad)) 1)))
+        (xg-save t))))
 (defn- xk-intrinsic-window [M :vector-i64 k :i64 t :i64] :vector-i64
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
@@ -564,7 +580,7 @@
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
       (cond (= kind FK-DEF) (xo-check-fns-n M S (inc f) multi)
             (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
-                (< n 0) (> n (if (= (xg-get M 4) 2) 16 5)) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (xo-ext-name? S a b) XO-EXT-MAX-ARGS 5))) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (= (xg-get M 4) 2)

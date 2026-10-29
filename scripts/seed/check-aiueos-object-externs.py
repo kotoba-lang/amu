@@ -15,7 +15,9 @@ it emits nothing):
 * a source with no extern declaration compiles as before (its digest is the
   one-export gate's pinned one, checked there);
 * seventeen declarations: refused (E7102), nothing written;
-* an extern that takes six parameters: refused, nothing written;
+* an extern may take up to eight parameters in System V order (JUN-556 E, ADR 0383): the sixth
+  in r9, the seventh and eighth pushed (an odd count padded by `sub rsp,8`) and removed by
+  `add rsp,imm8` after the context restore; a nine-parameter extern is refused, nothing written;
 * a declaration whose body is not the placeholder 0, whose symbol is not [a-z_][a-z0-9_]*,
   or that is named like an export: refused, nothing written (review of amu#1662);
 * the same declaration on the image route (--artifact image): refused, no image.
@@ -42,9 +44,16 @@ SOURCE = ("(ns ext (:export [f]))\n"
 TOO_MANY = ("(ns many (:export [f]))\n"
             + "".join(f"(defn- extern-e{i} [a :i64] :i64 0)\n" for i in range(17))
             + "(defn f [x :i64] :i64 (extern-e0 x))\n")
-SIX_PARAMS = ("(ns six (:export [f]))\n"
-              "(defn- extern-six [a :i64 b :i64 c :i64 d :i64 e :i64 g :i64] :i64 0)\n"
-              "(defn f [x :i64] :i64 (extern-six x x x x x x))\n")
+NINE_PARAMS = ("(ns nine (:export [f]))\n"
+               "(defn- extern-nine [a :i64 b :i64 c :i64 d :i64 e :i64 g :i64 h :i64 i :i64 j :i64] :i64 0)\n"
+               "(defn f [x :i64] :i64 (extern-nine x x x x x x x x x))\n")
+
+
+def wide_source(n):
+    params = " ".join(f"p{i} :i64" for i in range(n))
+    args = " ".join(["x"] + [str(i) for i in range(2, n + 1)])
+    return (f"(ns w{n} (:export [f]))\n(defn- extern-wide{n} [{params}] :i64 0)\n"
+            f"(defn f [x :i64] :i64 (extern-wide{n} {args}))\n")
 
 
 BODY_NOT_ZERO = ("(ns b (:export [f]))\n(defn- extern-sink [x :i64] :i64 (+ x 99))\n"
@@ -91,6 +100,39 @@ def check_externs(obj):
             raise ValueError(f"call at {offset - 1} is not followed by mov r9,[rbp-8]: {text[offset + 4:offset + 8].hex()}")
 
 
+def check_wide(obj, n):
+    """The call of a declared n-parameter extern (n = 6, 7, 8) is System V shaped."""
+    text, relas = obj["text"], obj["relas"]
+    sites = [r for r in relas if r[1] & 0xFFFFFFFF == 4]
+    if len(sites) != 1:
+        raise ValueError(f"wide{n}: {len(sites)} call relocations")
+    off = sites[0][0]
+    if text[off - 1] != 0xE8 or text[off:off + 4] != b"\0\0\0\0" or text[off + 4:off + 8] != CALL_TAIL:
+        raise ValueError(f"wide{n}: call tail is {text[off + 4:off + 8].hex()}")
+    if text[off - 8:off - 5] != bytes.fromhex("4c8b8d"):
+        raise ValueError(f"wide{n}: the sixth argument is not loaded into r9 before the call")
+    stack = n - 6
+    after = text[off + 8:off + 12]
+    if stack == 0:
+        if after[:3] == bytes.fromhex("4883c4") or b"\xff\xb5" in text[off - 1 - 6 * 7 - 6:off - 1 - 6 * 7]:
+            raise ValueError("wide6: unexpected stack adjustment")
+        return
+    pad = stack & 1
+    if after != bytes.fromhex("4883c4") + bytes([8 * (stack + pad)]):
+        raise ValueError(f"wide{n}: stack cleanup is {after.hex()}")
+    pushes = b"\xff\xb5" 
+    # six register loads (7 bytes each) precede the call opcode; the pushes precede those
+    start = off - 1 - 6 * 7
+    expect = (bytes.fromhex("4883ec08") if pad else b"")
+    block = text[start - 6 * stack - len(expect):start]
+    if len(block) != 6 * stack + len(expect) or block[:len(expect)] != expect:
+        raise ValueError(f"wide{n}: alignment pad missing or wrong")
+    for k in range(stack):
+        chunk = block[len(expect) + 6 * k:len(expect) + 6 * k + 6]
+        if chunk[:2] != pushes:
+            raise ValueError(f"wide{n}: push {k} is {chunk.hex()}")
+
+
 def main(compiler, output):
     exports = load("check-aiueos-object-exports")
     gate = exports.gate_module()
@@ -102,7 +144,12 @@ def main(compiler, output):
     check_externs(exports.read_elf(path))
     report["externs"] = {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size}
 
-    for name, source in (("many", TOO_MANY), ("six", SIX_PARAMS), ("body-not-zero", BODY_NOT_ZERO),
+    for n in (6, 7, 8):
+        _, wpath = exports.compile_object(gate, compiler, output, f"wide{n}", wide_source(n))
+        check_wide(exports.read_elf(wpath), n)
+        report[f"wide{n}"] = hashlib.sha256(wpath.read_bytes()).hexdigest()
+
+    for name, source in (("many", TOO_MANY), ("nine", NINE_PARAMS), ("body-not-zero", BODY_NOT_ZERO),
                          ("body-const", BODY_CONST), ("bad-name", BAD_NAME), ("export-clash", CLASH)):
         result, bad = exports.compile_object(gate, compiler, output, name, source, expected=1)
         if bad.exists():
