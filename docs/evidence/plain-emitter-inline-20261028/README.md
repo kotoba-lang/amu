@@ -198,6 +198,19 @@ build closure and does not qualify anything.
     containers are unchanged. `nettle-sha256` now uses the SHA-256 crypto
     instructions by default; with `--no-crypto-hw` (the C-equivalent benchmark
     setting) its container is byte-identical to the measured one.
+* Re-derived again after main's #1695 (JUN-556 E, extern calls with up to
+  eight arguments). It changed `seed/74` and lifted the profile-0 call-arity
+  limit in `seed/70` from 5 to 8. This change's runtime-profile paths leave
+  profile 0 unchanged.
+  * x86_64: F1 = F2 = F3 = `e3e019fe…` (8,708,608 bytes).
+  * aarch64 root: F1 = F2 = `9914c0ea…` (3,604,992 bytes), container
+    `65b31b85…`, derived under qemu from the `ba40652f…` root. The x86_64
+    compiler it emits is byte-identical.
+  * Unchanged: the CDCI role images; the 19 x86_64 payloads; the 19 aarch64
+    containers built with `--no-crypto-hw`; and all 60 kernel-object gate
+    sources, identical to main's compiler.
+  * `check-complete-x86`, the full `check-native-cdci` and
+    `check-public-native-product` pass again.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
