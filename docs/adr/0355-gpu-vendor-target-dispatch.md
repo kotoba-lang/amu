@@ -5241,3 +5241,63 @@ docs/evidence/gpu/anv-b3w6censuscheckrego-20261029/ (reading-
 s1000.py + reading-s1001.py + reading-prego-fixed.py + the
 rehearsal run captures + record.txt + the s100 gate captures).
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 101: the W6 fresh-window
+## census-check pre-build)
+The W6 measurement row's FRESH-RECORD-CHECK preparation half (the
+s100 named gap "the fresh-window 'every published integer
+cross-checked' duty is QUEUED" now closed; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line; the measurement half REMAINS
+day-slot-gated -- first session at/after 2026-10-30T00:00:00Z;
+this tick runs 2026-10-29T19:16Z-19:4xZ, ~4.5h before it) --
+STARTED, NOT FINISHED.  Provenance named not hidden (the s92/s100
+precedent): fresh-census-prego.py was DRAFTED by an interrupted
+tick of this same job (created 19:13Z, never run to completion,
+never committed) and COMPLETED by this continuation tick.
+FINDING (verified by real tool output): the duty exists as
+machinery -- fresh-census-prego.py --w6 re-derives EVERY published
+integer of the publication body from the six windows' run logs
+plus named committed want sources (parsed from committed bytes,
+never transcribed) in two-way claim rows and enforces digit-SPAN
+COVERAGE (every body digit run inside a claim or a NAMED
+structural span), fail-closed; NO re module (split()/find
+parsing), numpy estimators cross-checked in-loop against
+pure-Python order statistics, NO RNG, no clock.  Thirteen defects
+found by first execution (the draft had never run -- an
+unreachable note-line branch, seven unregistered/over-wide
+coverage spans, a delta extraction from the wrong "(", the
+distinct-count/day parse, the "(NEW)" prior tag, unregistered
+sec1 spans, the report written to argv[3] instead of argv[4],
+two miscounted fixtures), all fixed at source and named in the
+record.  VERIFIED: --self-test 51/0 twice byte-identical (7,400
+bytes); --w6 rehearsal (W5 stand-in + the committed s100 rehearsal
+publication; every number a FIXTURE, never a measurement) twice
+byte-identical (9,240 bytes): 66 claim rows 0 mismatched, 125
+body digit runs 0 UNCLAIMED, 530 dual computations 0 mismatched,
+VERDICT CONSISTENT; a MOCK negative (median 1131 -> 1132 in a
+scratch copy) rc 1 twice byte-identical, caught at the claim row
+(sec3 median 1132 vs 1131) -> INCONSISTENT.  Standing gates == the
+s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt ==
+HEAD.  The bar: preparation session -> NO reading -> NO ledger
+line, NO day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO
+vendor optimization exists for Intel.  ADOPTION: the W6 session
+adopts this file as fresh-census-s<NN>.py alongside
+reading-prego-fixed.py (as reading-s<NN>.py), the s90 census twin,
+s91's custody baseline, s95's run-window driver, s98's checker,
+s97's emitter and s99's reconciler; VERDICT INCONSISTENT => no
+ledger line derives from the reading; W7 the same.  Carry-forward
+to session 102: the W6 measurement half (the s80 freeze) -- the
+gate for T18's analysis half (s92 + s84), T20's analysis half (s93
++ s88) and W7's measurement half (s85) --; then any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6freshcensusprego-20261029/
+(fresh-census-prego.py + selftest/rehearsal/negative run captures
++ record.txt + the s101 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
