@@ -3986,3 +3986,23 @@ Carry-forward to session 76: the five-window derivation census
 (second-parser cross-check) and the three frozen analysis halves
 (T14/T15/T16). Evidence:
 `docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s75.txt`.
+
+## Dated note (2026-10-29, JUN-59 session 76: the five-window derivation census)
+
+derivation-census-s73.py -- the independent second parser for
+publication-s73.txt (s73 carry-forward 3(b), protocol section 0
+implementation paths: split-based parsing; observed estimators
+pure-Python sorted() cross-checked in-loop vs np.partition kth;
+resampling estimators np.partition kth paths, NOT a sort; RNG call
+order re-implemented) -- ran twice byte-identical (cmp exit 0,
+sha256 9ee77c15...) with "TOTAL: 57 rows, 0 mismatched" both runs:
+every published integer, count, p and letter of the W5 (s73) T7
+cross-checks, INCLUDING the resampling counts/p (MAD count 0
+p 0.000050; IQR count 3 p 0.000200) and the four five-window D3
+probes. The s73 T7 values -- (a) CROSS-DAY-REPLICATED-ON-BOTH-
+LEVEL-AXES -- are now two byte-identical runs of the validated
+generator PLUS an independent-parser cross-check. Standing gates
+NOT re-run this tick (named; no .cljk namespace touched). Rule 4
+binds: nothing moves; accelerator-targets defaults stay
+:measured? false. Evidence:
+docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s76.txt.
