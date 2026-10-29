@@ -27,15 +27,18 @@ on:
   push:
     branches: [main]
     paths:
-      - "bin/amu"
+      - "bin/amu-linux-x86_64"
       - "bin/kotoba"
       - "bin/kotoba-compiler"
+      - "bin/kotoba-linux-x86_64"
+      - "bin/kotoba-compiler-linux-x86_64"
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
       - "test/native/amu/test/static_source_lock_gate.kotoba"
       - "test/native/amu/test/fixtures/static_source_lock_good.kotoba"
       - "bench/embench/proof-v1/**"
+      - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -45,15 +48,18 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "bin/amu"
+      - "bin/amu-linux-x86_64"
       - "bin/kotoba"
       - "bin/kotoba-compiler"
+      - "bin/kotoba-linux-x86_64"
+      - "bin/kotoba-compiler-linux-x86_64"
       - "native-product.json"
       - "seed/**"
       - "scripts/seed/**"
       - "test/native/amu/test/static_source_lock_gate.kotoba"
       - "test/native/amu/test/fixtures/static_source_lock_good.kotoba"
       - "bench/embench/proof-v1/**"
+      - "examples/foundation-starter/**"
       - "tools/gpu_*.kotoba"
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
@@ -74,6 +80,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Foundation starter functional smoke (not compiler qualification)
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: foundation-starter-functional-smoke
+          path: ${{ runner.temp }}/foundation-starter
+          if-no-files-found: warn
       - name: Observer and admission negative controls
         run: |
           python3 scripts/seed/test_native_iteration.py -v
@@ -162,6 +176,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Experimental ARM64 starter observation (not public qualification)
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" --host-profile github-ubuntu-arm64-diagnostic
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: foundation-starter-arm64-diagnostic
+          path: ${{ runner.temp }}/foundation-starter-arm
+          if-no-files-found: error
       - name: Loaderless bootstrap from the pinned root (arm64, native)
         env:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
@@ -396,11 +417,11 @@ jobs:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
       - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Single-source static lock and refusal (x86_64, native)
         run: |
           pin=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
-          python3 scripts/seed/check-static-source-lock-gate.py --repo "$PWD" --compiler "$PWD/bin/amu" --compiler-sha256 "$pin" --target x86_64-linux --output "$RUNNER_TEMP/static-lock-x86"
+          python3 scripts/seed/check-static-source-lock-gate.py --repo "$PWD" --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$pin" --target x86_64-linux --output "$RUNNER_TEMP/static-lock-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -687,13 +708,13 @@ jobs:
               for path, digest in owner['files'].items():
                   assert hashlib.sha256((root / path).read_bytes()).hexdigest() == digest, (name, path)
           arm = os.environ['TARGET'] == 'arm64'
-          image = Path('seed/bootstrap/aarch64-linux-static-root.elf' if arm else 'bin/amu')
+          image = Path('seed/bootstrap/aarch64-linux-static-root.elf' if arm else 'bin/amu-linux-x86_64')
           meta = json.loads(Path('seed/bootstrap/aarch64-linux-static-root.json' if arm else 'native-product.json').read_text())
           assert hashlib.sha256(image.read_bytes()).hexdigest() == meta['image']['sha256']
           PY
       - name: Locked typed x86 project and refusal controls
         if: matrix.target == 'x86_64'
-        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu" --output "$RUNNER_TEMP/x86-project"
+        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/x86-project"
       - name: Execute actual shared modules (ARM)
         if: matrix.target == 'arm64'
         run: |
@@ -701,7 +722,7 @@ jobs:
       - name: Execute actual shared modules (x86)
         if: matrix.target == 'x86_64'
         run: |
-          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu-linux-x86_64" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

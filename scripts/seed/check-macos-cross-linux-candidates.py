@@ -30,7 +30,7 @@ RUNNER = ROOT / "seed/x86_64-kx64-runner.kotoba"
 PRODUCT = ROOT / "native-product.json"
 ARM_ROOT = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
 ARM_IMAGE = ROOT / "seed/bootstrap/aarch64-linux-static-root.elf"
-X86_IMAGE = ROOT / "bin/amu"
+X86_IMAGE = ROOT / "bin/amu-linux-x86_64"
 
 
 def module():
