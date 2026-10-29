@@ -4471,3 +4471,55 @@ Evidence: docs/evidence/gpu/anv-b3tailvocab-20261029/
 (vocabulary.txt, tailpair-vocab-s86.py/.txt,
 tailvocab-s86-selftest.txt/.err, freeze-record-s86.txt, the
 s86 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 87: the tail-side
+## half-pair descriptive reference row)
+
+The s86 tail-side vocabulary's FIRST STATISTIC (T19) taken to
+its DESCRIPTIVE half over the 390 committed run logs of the
+five fixed windows; NO hardware runs, NO builds, NO compiles,
+NO GO stamp, NO ledger line, NO letter, NO null, NO direction.
+protocol.txt (freeze stamp 2026-10-29T07:40:02Z, file finalized
+07:40:27Z; pre-freeze freshness greps
+2026-10-29T07:38:25Z-07:38:39Z: 0 hits on every row-name token;
+bare "T19"'s 64 hits are all UTC-hour timestamps -- named not
+hidden) freezes the row; analysis-s87.py (pure stdlib, no RNG)
+run twice byte-identical (publication-s87.txt 13,188 bytes,
+sha256 ebe4daa7... both, cmp exit 0). The five-window 2*L
+vectors (s36/s38/s39/s51/s73) at the tw arm's named cell
+(max,128,S=default): TS-L4 23/30/21/24/20; TS-R4
+19/16/22/18/19; TS-L8 50/51/52/47/42; TS-R8 48/32/49/38/41;
+TS-L16 118/103/115/103/90; TS-R16 94/82/100/85/77; TS-L32
+418/342/397/362/439; TS-R32 213/186/183/204/214. The s86
+decomposition identity HL_k+HR_k = D_k verified EXACT at all
+240 block checks. DESCRIPTIVE PICTURE, NAMED NOT HIDDEN, NO
+LETTER: at the two INFORMATIVE families (k=4/8 tagged
+UNINFORMATIVE-BY-S86-CAVEAT) the LEFT half-spread level
+exceeds the RIGHT at all five windows (k=16 R-L level
+difference -24/-21/-15/-18/-13; k=32 -205/-156/-214/-158/
+-225) -- the direction of the s61/s62/s63 quote-only
+motivation is visible in these descriptive vectors; NOT a
+test, mechanism UNMEASURED, no tail is claimed to move. The
+2*L levels do NOT add (published section 5b names it). Parser
+validity pins EXACT 6/6 (publication-s78 INNER/OUTER +
+publication-s82 DL vectors). Standing gates (real runs == the
+s86 pins): classify 2649/0 (17,925 bytes == pin); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes == pins); FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green
+full suite claimed; settle-bar self-test 38/0 + ledger eval
+twice == pins -> VERDICT: PENDING 2/4 unchanged; `find ...
+'*.sh'` -> 0. The bar: NO reading -> NO ledger line, NO
+day-slot consumption (settle-bar-ledger.txt == HEAD). Rule 4
+binds: NOTHING MOVES; the ADR-0358 row states are unchanged;
+NO vendor optimization exists for Intel. Carry-forward to
+session 88: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half and
+W7's measurement half --, then the T18 analysis half, the W7
+measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and a future inferential
+tail-side row (the s86 vocabulary + T19's vectors are the
+route; its own pre-registration). Evidence:
+docs/evidence/gpu/anv-b3tailprofile-20261029/ (protocol.txt,
+analysis-s87.py, publication-s87.txt, freeze-record-s87.txt,
+the s87 gate captures).
