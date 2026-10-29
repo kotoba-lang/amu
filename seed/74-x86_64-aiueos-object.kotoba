@@ -476,14 +476,48 @@
 ;; JUN-556 D1: extern declarations. Marking, collection and the relocations they produce.
 (defn- xo-ext-name? [S :string a :i64 b :i64] :bool
   (and (> (- b a) 7) (string=? (string-substring S a (+ a 7)) "extern-")))
+;; the symbol after the prefix: [a-z_][a-z0-9_]* (a closed set the verifier can rely on)
+(defn- xo-ident-ok? [S :string i :i64 b :i64 first :bool] :bool
+  (if (>= i b) true
+    (and (>= (string-index-of (if first "abcdefghijklmnopqrstuvwxyz_" "abcdefghijklmnopqrstuvwxyz_0123456789")
+                              (string-substring S i (inc i))) 0)
+         (xo-ident-ok? S (inc i) b false))))
+;; a declaration's body is the placeholder 0: only function, end, label, fuel, return and a zero constant
+(defn- xo-body-zero? [M :vector-i64 i :i64 end :i64] :bool
+  (if (>= i end) true
+    (let [op (xg-si M i IF-OP)]
+      (and (or (= op OP-FN) (= op OP-END) (= op OP-LABEL) (= op OP-FUEL) (= op OP-RET)
+               (and (= op OP-CONST) (= (xg-si M i IF-B) 0)))
+           (xo-body-zero? M (inc i) end)))))
+(defn- xo-extern-body-ok? [M :vector-i64 f :i64] :bool
+  (xo-body-zero? M (xg-f M f FF-SIR)
+                 (if (< (inc f) (vector-at M MM-FN-N)) (xg-f M (inc f) FF-SIR) (vector-at M MM-SIR-N))))
 (defn- xo-mark-externs [M :vector-i64 S :string f :i64] :vector-i64
-  (if (>= f (vector-at M MM-FN-N)) M
+  (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
     (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
           a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
-      (xo-mark-externs
-        (if (and (= (xg-f M f FF-KIND) FK-PRIV) (= (xg-f M f FF-EXPORT) 0) (xo-ext-name? S a b))
-          (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) FF-EXTERN-MARK) M)
-        S (inc f)))))
+      (if (and (= (xg-f M f FF-KIND) FK-PRIV) (= (xg-f M f FF-EXPORT) 0) (xo-ext-name? S a b))
+        ;; a malformed declaration is refused, never silently taken for an ordinary function
+        (if (and (xo-ident-ok? S (+ a 7) b true) (xo-extern-body-ok? M f))
+          (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) FF-EXTERN-MARK) S (inc f))
+          (xg-err M 7102 f))
+        (xo-mark-externs M S (inc f))))))
+;; the image and user routes cannot link an undefined symbol: a declaration there is refused
+(defn- xo-refuse-externs [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
+    (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))]
+      (if (xo-ext-name? S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END)))
+        (xg-err M 7102 f)
+        (xo-refuse-externs M S (inc f))))))
+(defn- xo-clash-one [S :string a :i64 b :i64 NS :vector-i64 j :i64 cnt :i64] :bool
+  (if (> j cnt) false
+    (or (string=? (string-substring S a b)
+                  (string-substring S (vector-at NS (- (* 2 j) 1)) (vector-at NS (* 2 j))))
+        (xo-clash-one S a b NS (inc j) cnt))))
+(defn- xo-clash? [S :string NS :vector-i64 cnt :i64 NX :vector-i64 i :i64 nx :i64] :bool
+  (if (> i nx) false
+    (or (xo-clash-one S (vector-at NX (- (* 2 i) 1)) (vector-at NX (* 2 i)) NS 1 cnt)
+        (xo-clash? S NS cnt NX (inc i) nx))))
 (defn- xo-xcollect [M :vector-i64 f :i64 X :vector-i64] :vector-i64
   (if (>= f (vector-at M MM-FN-N)) X
     (if (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)
@@ -639,7 +673,8 @@
                         (let [NX (xo-xspans admitted X 1 (vector-alloc (+ (* 2 XO-MAX-EXTERNS) 2)))
                               generated (-> admitted (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
                                             (xg-index-labels 1) (xo-shims E 1 fuel) (xg-code 1))]
-                          (xo-elf (xo-fix generated 1) S NS cnt X NX (xo-shim-len fuel) fuel)))))))))
+                          (if (xo-clash? S NS cnt NX 1 (vector-at X 0)) (xg-err admitted 7102 (xg-get admitted 1))
+                            (xo-elf (xo-fix generated 1) S NS cnt X NX (xo-shim-len fuel) fuel))))))))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
   (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
@@ -715,7 +750,7 @@
         (xo-shdr 13 3 0 0 names 23 0 0 1 0))))
 (defn- xi-build [M :vector-i64 S :string fuel :i64] :vector-i64
   (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0)
-                    (xo-check-fns S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
+                    (xo-check-fns S 1) (xo-refuse-externs S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))
         entry (xg-get admitted 1)]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (or (= entry 0) (not= (xg-f admitted entry FF-NPARAMS) 0)) (xg-err admitted 7102 entry)
@@ -857,7 +892,7 @@
   (let [base (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 256) (xg-set 4 0)
                  (mem-set XU-LOCAL-CALL-FLAG (if v3 1 0)))
         checked (if v2 (xo-check-fns base S 1) (xg-check-fns base S 1))
-        a (xg-check-sir checked 1)
+        a (xg-check-sir (xo-refuse-externs checked S 1) 1)
         b (if v2 (xk-check (xk-scan-count a S (if v3 2 1) v3) 1) a)]
     (cond (not= (vector-at b MM-ERR) 0) b
           (= (xg-get b 1) 0) (xg-err b 7102 0)

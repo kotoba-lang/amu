@@ -15,7 +15,10 @@ it emits nothing):
 * a source with no extern declaration compiles as before (its digest is the
   one-export gate's pinned one, checked there);
 * seventeen declarations: refused (E7102), nothing written;
-* an extern that takes six parameters: refused, nothing written.
+* an extern that takes six parameters: refused, nothing written;
+* a declaration whose body is not the placeholder 0, whose symbol is not [a-z_][a-z0-9_]*,
+  or that is named like an export: refused, nothing written (review of amu#1662);
+* the same declaration on the image route (--artifact image): refused, no image.
 
 The byte sequence after each call was assembled independently with clang's integrated
 assembler (ADR 0380); no x86 machine ran it here.
@@ -42,6 +45,18 @@ TOO_MANY = ("(ns many (:export [f]))\n"
 SIX_PARAMS = ("(ns six (:export [f]))\n"
               "(defn- extern-six [a :i64 b :i64 c :i64 d :i64 e :i64 g :i64] :i64 0)\n"
               "(defn f [x :i64] :i64 (extern-six x x x x x x))\n")
+
+
+BODY_NOT_ZERO = ("(ns b (:export [f]))\n(defn- extern-sink [x :i64] :i64 (+ x 99))\n"
+                 "(defn f [x :i64] :i64 (extern-sink x))\n")
+BODY_CONST = ("(ns c (:export [f]))\n(defn- extern-sink [x :i64] :i64 7)\n"
+              "(defn f [x :i64] :i64 (extern-sink x))\n")
+BAD_NAME = ("(ns n (:export [f]))\n(defn- extern-Bad [x :i64] :i64 0)\n"
+            "(defn f [x :i64] :i64 (extern-Bad x))\n")
+CLASH = ("(ns k (:export [sink]))\n(defn- extern-sink [x :i64] :i64 0)\n"
+         "(defn sink [x :i64] :i64 (extern-sink x))\n")
+IMAGE = ("(ns i (:export [main]))\n(defn- extern-sink [] :i64 0)\n"
+         "(defn main [] :i64 (extern-sink))\n")
 
 
 def load(name):
@@ -87,11 +102,19 @@ def main(compiler, output):
     check_externs(exports.read_elf(path))
     report["externs"] = {"sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size}
 
-    for name, source in (("many", TOO_MANY), ("six", SIX_PARAMS)):
+    for name, source in (("many", TOO_MANY), ("six", SIX_PARAMS), ("body-not-zero", BODY_NOT_ZERO),
+                         ("body-const", BODY_CONST), ("bad-name", BAD_NAME), ("export-clash", CLASH)):
         result, bad = exports.compile_object(gate, compiler, output, name, source, expected=1)
         if bad.exists():
             raise ValueError(f"{name}: an object was written")
         report[name] = "refused: " + (result.stdout + result.stderr).decode(errors="replace").strip()[:120]
+
+    (output / "image.kotoba").write_text(IMAGE)
+    result = gate.native_run(compiler, output, "compile", "image.kotoba", "--target", "x86_64-aiueos-kernel-v1",
+                             "--artifact", "image", "--output", "image.elf", "--fuel", "1024", expected=1)
+    if (output / "image.elf").exists() or "E7102" not in (result.stdout + result.stderr).decode(errors="replace"):
+        raise ValueError("an extern declaration on the image route was not refused with E7102")
+    report["image"] = "refused E7102"
 
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("PASS_AIUEOS_OBJECT_EXTERNS " + json.dumps(report, sort_keys=True), flush=True)
