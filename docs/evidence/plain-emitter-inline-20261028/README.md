@@ -162,6 +162,20 @@ build closure and does not qualify anything.
   `92b3078e…`, and the same three CDCI role images, so the measurements below
   stand. Its kernel-object output for #1662's extern cases is byte-identical to
   main's compiler.
+* Re-derived again after main's #1674 through #1691. Those changes touched
+  `seed/74` (data cells, MMIO intrinsics, record windows) and `seed/75` (the
+  static runtime calls only runtime functions, JUN-336).
+  * x86_64: F1 = F2 = F3 = `a0148782…` (8,663,552 → 8,704,512 bytes).
+  * aarch64 root: F1 = F2 = `de33395b…` (3,604,992 bytes), container
+    `f7d32abf…`, derived under qemu from the `867ba03c…` root. The x86_64
+    compiler it emits is byte-identical to the native fixed point.
+  * Unchanged: the 19 x86_64 kx64 payloads, the aarch64 containers and the
+    three CDCI role images.
+  * The kernel-object sources of the cells, globals, MMIO, records, externs and
+    exports gates give results identical to main's compiler (7 objects, 7
+    refusals).
+  * `check-runtime-boundary` passes, including JUN-336's shadow refusals, so the
+    flat runtime helpers call only runtime functions.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
