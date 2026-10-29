@@ -1,0 +1,221 @@
+JUN-59 -- session 31 protocol: THE FIRST BAR-EXECUTING SESSION -- THE
+FIRST CROSS-UTC-DAY READING OF THE (1024,4033) ANCHOR (one 3-run block
+of the (1024,4033) knob pair at n=253,906, B=3 ON UTC DAY 2026-10-28,
+plus the archived controls c2/c8). INSTRUMENT channel. This is the
+first session the FROZEN ANCHOR-CLASS SETTLING BAR (session 30's
+settle-bar.txt, freeze stamp 2026-10-27T23:40:56Z) judges.
+Frozen BEFORE the first run (freeze stamp 2026-10-28T00:04:50Z, this
+tick; the stamp is printed in record.txt's timeline and in the run
+window). This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE observable axis: THE CLASS OF THE (1024,4033)
+   KNOB PAIR at FIXED n=253,906 and FIXED dispatch count B=3, READ ON
+   UTC DAY 2026-10-28 -- the first tick of the first cross-UTC-day
+   reachable on this profile's cron cadence after the settling bar was
+   frozen at 2026-10-27T23:40:56Z "BEFORE ANY CROSS-UTC-DAY READING
+   EXISTS"). Sessions 2-29 all ran on UTC day 2026-10-27; the bar's L4
+   axis (the UTC day) has never been spanned. This session reads the
+   anchor ONCE (one 3-run block, the bar's frozen READING unit) and
+   hands the reading to the frozen evaluator:
+
+     DOES A QUALIFYING READING (C1 (a), VERIFY 0, custody GO,
+     BYTE-IDENTICAL BUILD PIN) EXIST FOR UTC DAY 2026-10-28 AT THE
+     (1024,4033) ANCHOR, AND WHAT CLASS DOES IT READ AT THE FROZEN
+     SECTION-4 THRESHOLD? -- branch (a) qualifying -> the reading is
+     COUNTED 1/4 for the bar (first qualifying reading of its UTC day)
+     and the bar letter (settle-bar-eval.py verdict over the ledger) is
+     this session's outcome; branch (b) FLAGGED (C1 (b), VERIFY
+     mismatch, broken pin, missing/late GO) -> the session is recorded,
+     enters the ledger with its flag token, consumes NO day slot.
+
+   NAMED, NOT HIDDEN: ZERO derivation edits this session. The
+   instrument is session 28's committed NDIV-derived source used
+   BYTE-IDENTICAL (digest a5e539f0... re-verified local-vs-host). The
+   arms are OLD (BATCH, WORK_MUL, NDIV) triples -- ZERO NEW knob pairs
+   (so the session-9 D2 pre-GO smoke does NOT apply; named, not
+   hidden). The arithmetic N_ELEMENTS = (1,000,003*WORK_MUL)/NDIV is
+   the only place either knob enters. The shaders take n from the N
+   uniform, so the shader corpus is used BYTE-IDENTICAL (16-digest
+   corpus). Every run's header and every SAMPLE line print batch=,
+   work_mul= and ndiv= (knob identity).
+
+   LEDGER CONSTRUCTION (a design decision, frozen HERE in advance --
+   the frozen bar text does not date the ledger's first entry and this
+   session must fix that BEFORE appending): the ledger starts with the
+   first BAR-EXECUTING session (this one). Sessions 26-29's readings
+   predate the bar and were not bar-executing sessions (no ledger
+   existed to append to); they are the bar's frozen QUOTE-ONLY
+   reference basis (settle-bar.txt F3/D3 -- D3 speaks of "a FUTURE
+   qualifying reading", and the evaluator's frozen fixtures all begin
+   at s31/2026-10-28), and they are carried as prior content, NOT
+   backfilled as ledger entries. NAMED, NOT HIDDEN: the alternative
+   construction (backfill s26 as day 2026-10-27's slot, giving PENDING
+   2/4 after this session) is textually arguable and is REJECTED here
+   for the reasons above; it is recorded in record.txt so a later
+   session can see the choice. The bar's COST (at least four qualifying
+   UTC days) is unchanged under either construction.
+
+   ARM TABLE (3 rows = 9 fresh processes; this table governs the run
+   count). RUN ORDER (frozen): c2 r1-3 first, then hi r1-3 (THE
+   READING -- one 3-run block, consecutive fresh processes in time
+   order), then c8 r1-3 last -- the archived controls bracket the hi
+   window exactly as in sessions 21-29:
+
+     tag  BATCH  WORK_MUL  NDIV   n        runs  role
+     c2   2      1         1      1000003  3     archived control (bracket head)
+     hi   3      1024      4033   253906   3     THE CROSS-UTC-DAY READING (day 2026-10-28)
+     c8   8      1         1      1000003  3     archived control (bracket tail)
+
+   NAMED LIMITATIONS (frozen in advance):
+   (L1) the nominal work unit is a DEFINITION (n / 1,000,003 per
+        dispatch), not a cost claim. Per-dispatch work at the read
+        grid is 253,906/1,000,003 = 0.2539052 units; total nominal
+        work B*n/1,000,003 is computed programmatically in the
+        publication for all 3 arms.
+   (L2) AT FIXED B, THE PER-DISPATCH GRID n AND THE TOTAL NOMINAL
+        WORK CO-VARY BY CONSTRUCTION; more binding here: n, B, THE
+        KNOB PAIR, THE BINARY (byte-identical pin), THE HOST AND THE
+        INSTRUMENT are FIXED against every prior reading -- the only
+        new variable is the UTC DAY (the bar's L4 axis). The letters
+        below are observational discriminators; none is a causal
+        mechanism and none is claimed as one.
+   (L3) host_ns is a HOST-side proxy of bracketed cost (submit+wait);
+        the GPU-side cost inside a B<=2 bracket is unobservable on this
+        instrument and stays UNMEASURED. No B<=2 arm runs this session.
+   (L4) THIS SESSION IS THE FIRST CROSS-UTC-DAY READING (UTC day
+        2026-10-28 vs sessions 2-29's 2026-10-27) -- one day boundary
+        is spanned ONCE. One reading does not settle the bar (V4
+        PENDING); later same-UTC-day sessions are named descriptive
+        content and do not advance the bar (settle-bar.txt section 2).
+   (L5) this session does NOT narrow the flip bracket (252,604,
+        253,906]; nothing between grid points is interpolated.
+   (L7) cross-session reference values in section 3 are QUOTE-ONLY
+        (recomputed from prior sessions' committed run logs in the
+        derivation census) and never this session's measurements.
+   (L8) the same-ratio twin (2048,8066) is NOT run this session; the
+        pair-representation scoreboard (s24 (b) SPLIT / s25 (a) AGREE /
+        s26 (b) SPLIT / s27 (a) AGREE / s28 (a) AGREE) is carried as
+        prior content and is NOT advanced here.
+   (L9) the reading is ONE 3-run block on ONE day; no other measurement
+        session runs concurrently on the host (named assumption; the
+        host-mtime cross-check below is its evidence).
+   (L10) per-run statistics beyond the frozen 3-run pooled-median
+        criterion are DESCRIPTIVE ONLY (the frozen measurement unit is
+        3 runs pooled over 25 rounds per cell).
+
+1. DERIVATION (chain of custody): ZERO derivation edits this
+   session. The instrument is session 28's committed NDIV-derived
+   source used BYTE-IDENTICAL (digest a5e539f0..., re-verified
+   local-vs-host). Manifest cases-s31-a.txt's 24 cell lines are a
+   BYTE-COPY of session 29's cases-s29-a.txt cell lines (byte-equal
+   to sessions 9-29's a-set -- checked programmatically in the
+   derivation census). expected-corpus.sha256 a byte-copy of session
+   29's.
+
+2. BUILD REPLICATION PINS (declared in advance; prior censuses
+   parsed programmatically -- derivation-census-s31.txt). ALL THREE
+   arms have a prior binary (named as such):
+
+     anv-bb-c2  == sessions 13-29's c2 binary digest (e5ed903e5b9dfd64
+       168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489)
+     anv-bb-c8  == sessions 13-29's c8 binary digest (480925e58d28e7d3
+       18456703c6959548e9b9c33e375c3e0fefe688e844d37807)
+     anv-bb-hi  == session 26's anv-bb-mid == sessions 27-29's anv-bb-hi
+       digest (a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef9
+       40cf63b9c) -- hi IS the (1024,4033) pair (3,1024,4033): this
+       session is the pair's FOURTH cross-session rebuild (fifth build
+       of this pair overall) and the pair's FIRST build on UTC day
+       2026-10-28.
+
+3. FROZEN CROSS-SESSION REFERENCE VALUES (QUOTE-ONLY, L7; also
+   embedded as named constants in analysis-s31.py -- never this
+   session's measurements; recomputed from prior sessions' committed
+   run logs in derivation-census-s31.txt):
+
+   committed controls: c2 31 (floor band 31..32), c8 32,915
+     (session 4 pooled median)
+   session-26 mid ((3,1024,4033)): 1,129 CAPTURED (18-cell min 1,001)
+   session-27 hi ((3,1024,4033)): 1,132 INTERMEDIATE/MIXED (min 976)
+   session-28 hi ((3,1024,4033)): 1,131 INTERMEDIATE/MIXED (min 991)
+   session-29 blocks A-D ((3,1024,4033)): 1,130 / 1,144 / 1,143 /
+     1,151 INTERMEDIATE/MIXED (minima 993 / 979 / 985 / 993)
+   the settling bar's frozen in-band references (settle-bar.txt D3):
+     1,129 / 1,132 / 1,131 -- a reading is IN-BAND iff within +/-5% of
+     EACH; out of band is the bar's V1 CONTRADICTION OUT-OF-BAND.
+   host_ns at (sum,128,S=16), same-knob priors (quote-only): c2
+     680,499 / 672,684 / 678,546 (s26/27/28); hi 309,848 / 310,008 /
+     309,647 (s26 mid / s27 hi / s28 hi); c8 2,380,500 / 2,397,482 /
+     3,053,605
+   b2m-class (B=2 at a small grid): FLOOR (sessions 21-28 quote) --
+     NOT run this session (L3)
+   the B=3 class-vs-per-dispatch-work row (quote-only; this session
+     adds NO new grid point -- it re-reads 253,906): 125,000 -> 599
+     INTERMEDIATE/MIXED (s18); 250,000 -> 1,140 INTERMEDIATE/MIXED
+     (s19); 252,604 -> 1,153 INTERMEDIATE/MIXED (s25); 253,255 ->
+     1,136 INTERMEDIATE/MIXED (s27); 253,906 -> 1,129 CAPTURED*
+     (s26) / 1,132 INTERMEDIATE/MIXED (s27) / 1,131
+     INTERMEDIATE/MIXED (s28) / 1,130-1,151 blocks (s29); 255,208 ->
+     1,166 CAPTURED (s24); 260,417 -> 1,186 CAPTURED (s23); 270,834
+     -> 1,224 CAPTURED (s22); 291,667 -> 1,330 CAPTURED (s21);
+     333,334 -> 1,578 CAPTURED (s17); 500,001 -> 2,739 CAPTURED
+     (s20); 1,000,003 -> 5,520 CAPTURED (s7/16)
+
+4. CLASSIFICATION THRESHOLDS (frozen; identical to sessions 2-29):
+   over the 18 pipeline-ok cells, pooled median gpu_ticks over 3
+   runs x 25 rounds per cell (the READING unit): FLOOR = <= 100
+   ticks at ALL 18 cells; CAPTURED = >= 1000 ticks at ALL 18 cells;
+   anything else INTERMEDIATE/MIXED. INVALIDATION CRITERION (frozen):
+   VERIFY mismatch > 0 in any run makes that run DEFECTIVE and the
+   arm INVALID (no letter is evaluable from that arm).
+
+5. PRE-REGISTERED LETTERS:
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; the bar's
+      qualification depends on it): (a) both c2 (FLOOR, committed
+      floor band 31..32) and c8 ((sum,128,S=16) pooled median over
+      its 3 runs within +/-5% of committed 32,915) satisfy their
+      criteria; (b) otherwise (replication discrepancy).
+
+   B1 THE BAR QUALIFICATION (the row question; C1/VERIFY/pin/GO
+      govern): (a) qualifying -- C1 (a), VERIFY mismatch 0
+      everywhere, all three build pins byte-identical, custody GO
+      before builds and runs -> this session's reading is COUNTED
+      1/4 (the FIRST qualifying reading of UTC day 2026-10-28), is
+      appended to the settle-bar ledger as flag=none, and the
+      frozen evaluator's verdict is the bar letter (B2);
+      (b) FLAGGED -- C1 fired (b), or VERIFY mismatch > 0, or any
+      build pin not byte-identical, or the custody GO missing/after
+      the builds -> the session is appended to the ledger with its
+      flag token, consumes NO day slot (settle-bar.txt section 2),
+      and no class is counted.
+
+   B2 THE BAR LETTER (the frozen evaluator settle-bar-eval.py run
+      over the ledger after this session's append; the evaluator's
+      verdict string is the letter -- never hand-written). Under the
+      frozen section-0 ledger construction the expected shape is
+      V4 PENDING 1/4; the measurement does not pre-judge the class
+      or the verdict beyond the frozen procedure.
+
+   W1 (pre-registered, descriptive) THE CROSS-UTC-DAY READING
+      AGAINST THE FLIP PICTURE: this session's class/median/18-cell
+      min placed against the (1024,4033) pair's same-UTC-day ledger
+      (1,129 CAPTURED* / 1,132 MIXED / 1,131 MIXED / s29 blocks
+      1,130-1,151 MIXED) and the frozen in-band refs. NO bracket
+      narrowing is claimed (L5); the class, not the cut, is read.
+
+   W2 (pre-registered, descriptive) THE B=3 CLASS-VS-PER-DISPATCH-
+      WORK ROW: this session adds NO new grid point -- it re-reads
+      253,906 with ONE cross-UTC-day reading placed at that grid
+      (committed points QUOTE-ONLY (L7); NO interpolation (L5);
+      class granularity only).
+
+   X1 (descriptive, host_ns): named, not hidden; not a C criterion
+      (L3).
+
+6. ANALYSIS ROUTE (frozen): analysis-s31.py parses ONLY the 9
+   committed run logs in its own directory (run-<tag>-r<R>.txt) and
+   writes publication-s31.txt. No other input. Deterministic: the
+   analysis is run twice and the two publications diffed (exit 0
+   required). The run logs are stdout/stderr of fresh host processes
+   (aiueos-6600hs-1), one per run, invoked as ../anv-bb-<tag> from
+   cwd=shaders/ with manifest ../cases-s31-a.txt.

@@ -1,0 +1,72 @@
+== host-verify (JUN-59 GRID x FATNESS interaction, session 10) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== census (parsed programmatically from that committed file, never ==
+== transcribed; the same 16 lines are checked host-side via ==
+== `sha256sum -c expected-corpus.sha256`). No new derivation this ==
+== session -- every input is a byte-reuse of a committed artifact ==
+== (the iter8 sources are session 9's committed derived files; the ==
+== instrument is the archived session-8 snapshot). ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH  cases-s10-a.txt: local=c59b6812db59d2b3dd5a1831ce284a844db66998b8bef523a48e95334eaefa7b host=c59b6812db59d2b3dd5a1831ce284a844db66998b8bef523a48e95334eaefa7b
+MATCH  cases-s10-i8.txt: local=1f80b0762145d95465011fb46320c1f81a52f42a860357b8ff9d57cd2378efa5 host=1f80b0762145d95465011fb46320c1f81a52f42a860357b8ff9d57cd2378efa5
+MATCH  gpu-subgroup-reduce-anv-workmul.c: local=5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3 host=5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3
+MATCH  shaders-derived/subgroup-reduce-w128-max.emitted.iter8.glsl: local=e093f8e55bc778b512337021e5a8d514594e11310115f2a5c26fb565526fb09b host=e093f8e55bc778b512337021e5a8d514594e11310115f2a5c26fb565526fb09b
+MATCH  shaders-derived/subgroup-reduce-w128-min.emitted.iter8.glsl: local=c2838b6130955b8fbcc85b11fa29a65f07dfee215e1cac14603bb27cadc1a08b host=c2838b6130955b8fbcc85b11fa29a65f07dfee215e1cac14603bb27cadc1a08b
+MATCH  shaders-derived/subgroup-reduce-w128-sum.emitted.iter8.glsl: local=bb51f35f334229d1df5480454e5a480bd23bde02ea5bb5d6869a33bb091b66c3 host=bb51f35f334229d1df5480454e5a480bd23bde02ea5bb5d6869a33bb091b66c3
+MATCH  shaders-derived/subgroup-reduce-w256-max.emitted.iter8.glsl: local=4d3c2c556b2f07a08156a18e6fc020cc68bcd92d05f8864a2289ffb6a43f49d5 host=4d3c2c556b2f07a08156a18e6fc020cc68bcd92d05f8864a2289ffb6a43f49d5
+MATCH  shaders-derived/subgroup-reduce-w256-min.emitted.iter8.glsl: local=2a26bf757c06f3df2096e428ef6e0a6d4cc303c614b172e688c20ca3da1f9d6c host=2a26bf757c06f3df2096e428ef6e0a6d4cc303c614b172e688c20ca3da1f9d6c
+MATCH  shaders-derived/subgroup-reduce-w256-sum.emitted.iter8.glsl: local=b0ecc382c11df4ca43f4ca4611c0a71473675431f90241b98b0f13aecc1ecec2 host=b0ecc382c11df4ca43f4ca4611c0a71473675431f90241b98b0f13aecc1ecec2
+== instrument + manifests + 6 iter8 derived sources local-vs-host: 9/9 MATCH ==
+== inverse check (strip the 3-line ITERMUL edit -> base bytes) 6/6 ==
+== EXACT and base census 6/6 MATCH: see shader-reuse-census.txt ==
+== (produced programmatically this tick from the committed files). ==
+== iter8 spv REBUILD reproducibility pin (the session-9-built spv ==
+== digests vs this session's rebuild from the uploaded sources, ==
+== same toolchain/command -- glslangValidator -S comp -V --target-env ==
+== vulkan1.2, glslang 11:15.1.0): ==
+IDENTICAL  session9-built=41b25b27f11cbc02ce4ed213687549a684eb4792cf17c4c6fad60447e34edb34  shaders/subgroup-reduce-w128-max.emitted.iter8.spv  rebuilt=41b25b27f11cbc02ce4ed213687549a684eb4792cf17c4c6fad60447e34edb34  shaders/subgroup-reduce-w128-max.emitted.iter8.spv
+IDENTICAL  session9-built=cd10e1d09015336017ae6dd72e5c54a82721a68f81ee2d5d208e06e10956fcea  shaders/subgroup-reduce-w128-min.emitted.iter8.spv  rebuilt=cd10e1d09015336017ae6dd72e5c54a82721a68f81ee2d5d208e06e10956fcea  shaders/subgroup-reduce-w128-min.emitted.iter8.spv
+IDENTICAL  session9-built=d05d75f03123d06c231d11983a44590d94231ad778c23d7ec4fb621434c91ebc  shaders/subgroup-reduce-w128-sum.emitted.iter8.spv  rebuilt=d05d75f03123d06c231d11983a44590d94231ad778c23d7ec4fb621434c91ebc  shaders/subgroup-reduce-w128-sum.emitted.iter8.spv
+IDENTICAL  session9-built=4b3a3bf66880fa20ba3a1abd4b0b74a3c450b7a820bc7d8cddeeee9cd2559838  shaders/subgroup-reduce-w256-max.emitted.iter8.spv  rebuilt=4b3a3bf66880fa20ba3a1abd4b0b74a3c450b7a820bc7d8cddeeee9cd2559838  shaders/subgroup-reduce-w256-max.emitted.iter8.spv
+IDENTICAL  session9-built=48fbd7235ebff714f513c6e9fc7a0d79ef0332f8bf882b2b2a8e93d392d05f18  shaders/subgroup-reduce-w256-min.emitted.iter8.spv  rebuilt=48fbd7235ebff714f513c6e9fc7a0d79ef0332f8bf882b2b2a8e93d392d05f18  shaders/subgroup-reduce-w256-min.emitted.iter8.spv
+IDENTICAL  session9-built=5732ad9fd173e34c0089aff4f19528a91bb27dedaf5d5018bcccdc5b0786f8b1  shaders/subgroup-reduce-w256-sum.emitted.iter8.spv  rebuilt=5732ad9fd173e34c0089aff4f19528a91bb27dedaf5d5018bcccdc5b0786f8b1  shaders/subgroup-reduce-w256-sum.emitted.iter8.spv
+== iter8 spv rebuild vs session-9 build: 6/6 byte-identical (diff exit 0 on the full listings) ==
+== NAMED, NOT HIDDEN: the pre-rebuild listing was captured BEFORE the ==
+== rebuild (13:24:09Z) and the rebuild listing after it (13:24:43Z); ==
+== both listings are reproduced above from the host files. ==
+TIMELINE (named, not hidden): the chain of custody ran BEFORE any run.
+Host-side steps, all on murakumo-ci-6600hs (aiueos-6600hs-1), workdir
+~/anv-gridfat-20261027:
+  2026-10-27T13:24:09Z  cp -a of session 9's verified corpus copy (shaders/)
+                        + pre-rebuild iter8 spv digest capture
+  2026-10-27T13:24:27Z  upload complete (instrument + 6 iter8 sources +
+                        2 manifests + the parsed census expectation) and
+                        THIS verify: programmatic census-parsed comparison
+                        completes -- GO
+  2026-10-27T13:24:42Z..13:24:43Z  builds: 6 iter8 spv rebuilt (byte-
+                        identical to session 9's, pin above) + 3 gcc
+                        binaries (byte-identical to session 8's same-flag
+                        binaries -- build-census-s10.txt)
+  2026-10-27T13:24:58Z..13:25:15Z  the 15 runs (strictly after this
+                        verify -- run-window.txt)
+host timestamp at this verify: 2026-10-27T13:27:39Z
+SESSION GO/NO-GO: GO (corpus 16/16 + instrument + manifests + iter8
+derived sources all MATCH local-vs-host; inverse check 6/6; iter8 spv
+rebuild byte-identical to session 9's build; manifest cell-line checks
+YES -- shader-reuse-census.txt)

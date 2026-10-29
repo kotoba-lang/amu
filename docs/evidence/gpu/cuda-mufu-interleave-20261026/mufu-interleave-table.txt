@@ -1,0 +1,38 @@
+mufu-interleave / pairlat table -- amu-gpu tick 2026-10-26, xavier sm_72,
+PROBE (not a registered timing session; instruction chains, not kernels).
+All medians of 128 samples, identical across all 3 launches. cyc/iter =
+median/256. Slopes are intercept-free: (T(n16)-T(n8))/8 for pure chains,
+/4 for pair chains.
+
+v2 binary (gpu-mufu-interleave-microbench, sha 86697f03..):
+arm            body VERIFIED            cyc/iter    per-op amortized
+lat_n16_rsq    MUFU.RSQ:16 + oh(4)      240.4766    15.0298
+lat_n8_rsq     MUFU.RSQ:8  + oh(4)      120.5039    15.0630
+lat_n1_rsq     MUFU.RSQ:1  + oh(4)       28.5078    28.5078 (floor-bound)
+lat_n16_mix    MUFU.RSQ:8  + oh(4)      120.5039    (rcp legs folded;
+                                                    distribution IDENTICAL
+                                                    to lat_n8_rsq)
+lat_n16_rcp    loop-free (parity)           2 cyc total (clock pair)
+lat_n16_fadd   FADD.FTZ:16 + oh(4)       71.4922     4.4683
+
+v3 binary (gpu-mufu-rcpfadd-microbench, sha 5233b649..):
+arm            body VERIFIED            cyc/iter    per-op amortized
+lat_n16_rcpfadd MUFU.RCP:8 + FADD.FTZ:8 173.4492    10.8406
+lat_n8_rcpfadd  MUFU.RCP:4 + FADD.FTZ:4  89.4492    11.1812
+lat_n16_fadd    FADD.FTZ:16 + oh(4)      71.4531     4.4658
+lat_n1_rcp      MUFU.RCP:1  + oh(4)      28.4688    28.4688 (floor-bound)
+
+SLOPES (intercept-free, MEASURED):
+L(MUFU.RSQ)                 = (240.4766-120.5039)/8 = 14.9991 cyc
+L(MUFU.RCP)+L(FADD.FTZ)     = (173.4492-89.4492)/4  = 21.0000 cyc  (exact)
+
+DERIVED (marked; assumes serial dependent latencies add across a pair):
+L(MUFU.RCP) = 21.0000 - 4.4658 (same-binary fadd arm) = 16.5342 cyc
+  -- in-binary additivity validation (v4, (rsq,fadd) pair slope through
+     the same subtraction must reproduce 14.9991) DESIGNED, NOT RUN.
+
+Form validation: fadd 4.4683 (v2) / 4.4658 (v3) vs v2-reference 4.4397
+(CONSUMED at its commit) = +0.64% / +0.59%; fadd anchor EXACT
+1.0f + 4096 x 1.0f = 4097.0f (bits 1166018560) 3/3 in both binaries.
+MUFU arms' anchors are no-fold witnesses only (identical across
+launches; approximations not re-derivable off-device).

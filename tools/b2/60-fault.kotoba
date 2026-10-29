@@ -1,0 +1,56 @@
+;; tools/b2/60-fault.kotoba -- a fatal-signal report for the loaded code (ADR 0375, JUN-377). The image installs no
+;; handlers of its own, so a fault in a vendor library would end as a bare signal; the loader installs these
+;; and names the fault: the signal, the faulting address, the instruction pointer as an object and an offset,
+;; and the code addresses found on the stack (candidate return addresses). The process then exits 128 + the signal.
+
+(def SYS-SIGACTION 13)
+(def SYS-SIGALTSTACK 131)
+(def SYS-MINCORE 27)
+(def FAULT-STACK 65536)
+
+;; the loaded object that contains addr, or 0
+(defn- lib-of [addr :i64] :i64
+  (loop [l (st ST-LIBS)]
+    (cond (= l 0) 0
+          (and (>= addr (l64 (+ l ELF-BASE))) (< addr (+ (l64 (+ l ELF-BASE)) (l64 (+ l ELF-SPAN))))) l
+          :else (recur (l64 (+ l ELF-NEXT))))))
+(defn- where-is [addr :i64] :string
+  (let [l (lib-of addr)]
+    (if (= l 0) (string-concat "0x" (hex-str addr))
+      (string-concat (c-str (l64 (+ l ELF-PATH))) (string-concat "+0x" (hex-str (- addr (l64 (+ l ELF-BASE)))))))))
+;; the page of addr is mapped (mincore answers ENOMEM for an unmapped page)
+(defn- mapped? [a :i64] :bool (>= (sys3 SYS-MINCORE (page-down a) 4096 (+ (kxrt-b-state) 24704)) 0))
+;; up to 6 stack words that point into a loaded object, as candidate return addresses; the scan stops at
+;; the end of the mapping, so a fault report cannot fault
+(defn- stack-hits [sp :i64] :i64
+  (loop [i 0 shown 0]
+    (if (or (>= i 512) (>= shown 6) (not (mapped? (+ sp (* 8 i))))) shown
+      (let [w (l64 (+ sp (* 8 i))) hit (not= (lib-of w) 0)
+            z (if hit (warn (string-concat "b2:   stack+" (string-concat (dec-str (* 8 i)) (string-concat " " (where-is w))))) 0)]
+        (recur (inc i) (if hit (inc shown) shown))))))
+;; the frame chain of the image's own (Kotoba) code: return addresses by rbp, up to 16 deep; a frame pointer
+;; that is not above the stack pointer, not 8-aligned or not mapped ends the walk (C code uses rbp freely)
+(defn- frames [rbp :i64 sp :i64] :i64
+  (loop [b rbp i 0]
+    (if (or (>= i 16) (< b sp) (> b (+ sp 1048576)) (not= (bit-and b 7) 0) (not (mapped? b)) (not (mapped? (+ b 8)))
+            (< (l64 (+ b 8)) 4198400))
+      i
+      (let [z (warn (string-concat "b2:   frame 0x" (hex-str (l64 (+ b 8)))))] (recur (l64 b) (inc i))))))
+;; the handler: signal, siginfo, ucontext. ucontext_t: gregs at 40; REG_RSP is 15, REG_RIP 16
+(defn- cx-b2_fault [sig :i64 info :i64 uc :i64] :i64
+  (let [rip (l64 (+ uc 168)) rsp (l64 (+ uc 160)) addr (l64 (+ info 16))
+        w0 (warn (string-concat "b2: fatal signal " (string-concat (dec-str (i32 sig)) (string-concat " at " (where-is rip)))))
+        w1 (warn (string-concat "b2:   fault address 0x" (string-concat (hex-str addr) (string-concat ", rsp 0x" (hex-str rsp)))))
+        w2 (warn (string-concat "b2:   rdi 0x" (string-concat (hex-str (l64 (+ uc 104))) (string-concat " rsi 0x" (string-concat (hex-str (l64 (+ uc 112))) (string-concat " rdx 0x" (hex-str (l64 (+ uc 136)))))))))
+        w3 (frames (l64 (+ uc 120)) rsp)
+        w4 (stack-hits rsp)]
+    (sys1 SYS-EXIT-GROUP (+ 128 (i32 sig)))))
+(defn- fault-install [] :i64
+  (let [handler (exp-named "b2_fault") stack (sys6 SYS-MMAP 0 FAULT-STACK 3 34 -1 0)
+        ss (+ (kxrt-b-state) 24576) act (+ (kxrt-b-state) 24640)
+        a (s64 ss stack) b (s64 (+ ss 8) 0) c (s64 (+ ss 16) FAULT-STACK)
+        d (sys2 SYS-SIGALTSTACK ss 0)
+        e (s64 act handler) f (s64 (+ act 8) 201326596) g (s64 (+ act 16) handler) h (s64 (+ act 24) 0)
+        i (sys4 SYS-SIGACTION 11 act 0 8) j (sys4 SYS-SIGACTION 7 act 0 8)
+        k (sys4 SYS-SIGACTION 4 act 0 8) l (sys4 SYS-SIGACTION 8 act 0 8)]
+    0))

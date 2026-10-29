@@ -113,7 +113,7 @@ def main(compiler, output, target, seccomp_if_available=False):
                   sources={TABLE: pin(ROOT / TABLE), TEST: pin(ROOT / TEST)},
                   casesCounted=counted, runs=[u, k], cCompilerOrLoader=False,
                   notCovered=["refusal 3 (request-too-long): a runtime value cannot exceed one; frames are checked by the runtime and provider (ADR 0371 steps 2 and 6)",
-                              "refusals 19..34 are named and formatted here and decided by the provider (ADR 0371 step 6)"])
+                              "refusals 19..35 are named and formatted here and decided by the provider (ADR 0371 step 6)"])
     (output / "gpu-compute-protocol.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], target, counted, "cases", "control failed 1", flush=True)
 

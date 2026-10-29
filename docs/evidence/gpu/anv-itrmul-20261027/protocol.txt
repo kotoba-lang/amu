@@ -1,0 +1,234 @@
+JUN-59 -- session 9 protocol: PER-WORKGROUP-FATNESS DISCRIMINATOR
+(ITERMUL). INSTRUMENT channel. Frozen BEFORE the first run
+(2026-10-27T12:57:26Z, this tick). This file is written once and never
+rewritten.
+
+0. ROW QUESTION (from session 8's frozen NAMED LIMITATION, narrowed to
+   ONE observable axis): session 8 MEASURED that the capture at B=2 is
+   not reachable by up to 8x per-dispatch work realized as a BIGGER
+   GRID (WORK_MUL scaling n = 1,000,003*M). The protocol froze the
+   limitation that WORK_MUL scales grid size and total work together --
+   the shader bytes were untouched, so PER-WORKGROUP cost could not be
+   scaled separately. This session removes that limitation on ONE axis
+   by touching the shader in one controlled, derived way and asks ONE
+   narrower, observable question:
+
+     AT FIXED DISPATCH COUNT B=2 AND CONSTANT GRID (the archived
+     n = 1,000,003, groups = ceil(n/W) -- WORK_MUL=1 everywhere), IS
+     THE CAPTURE REACHABLE BY FAT PER-WORKGROUP WORK -- or does the
+     capture stay out of reach at B=2 no matter how much work one
+     workgroup carries?
+
+   knob: the new compile-time ITERMUL knob, baked into DERIVED SHADER
+   SOURCES (the instrument is untouched -- see section 1): the reduce
+   body re-runs ITERMUL times per workgroup (each iteration recomputes
+   the same reduction from the same x[]; the parts[] write is inside
+   the loop, idempotent; the final stored value is bit-identical to the
+   archived value at any ITERMUL, re-checked inside every run by the
+   instrument's VERIFY step). The grid is EXACTLY the archived grid at
+   every I (n = 1,000,003, WORK_MUL=1): one unit of work = one dispatch
+   of the archived grid at ITERMUL=1 cost; an arm (B, I) runs B
+   dispatches of the same grid at I-times per-workgroup cost = B*I
+   nominal work units. ITERMUL=1 is the archived nominal behaviour.
+   Whatever the answer, no mechanism is claimed.
+
+   NAMED LIMITATION (frozen in advance; the axis that REMAINS
+   confounded): the ITERMUL loop's actual cost scaling with I is not
+   calibrated in advance (host_ns is reported per arm but no linearity
+   is claimed); and GRID x FATNESS interaction (session 8's M together
+   with this session's I) is NOT tested here and stays UNMEASURED.
+
+1. INSTRUMENT DERIVATION (chain of custody):
+   instrument = the archived session-8 snapshot, BYTE-IDENTICAL, NO C
+   edit this session:
+     docs/evidence/gpu/anv-workmul-20261027/gpu-subgroup-reduce-anv-workmul.c.txt
+     (digest 5c7cf2d50f6e365187a35a772279ca17cead1c223fb687cc39bda454035762f3,
+     re-verified local-vs-host in host-verify-s9.txt).
+   The knob lives in the SHADER derivation instead:
+   base = the 6 committed measured-shader sources of the corpus
+     (anv-subgroupsize-batch64-20261027/shaders/*.emitted.glsl;
+     digests re-verified 6/6 against session 2's compile-toolchain.txt
+     census BEFORE deriving -- shader-derivation-census.txt),
+   derivation = ONE systematic 3-line edit per (shader, I) pair:
+     D1 `#define ITERMUL <I>` after the #version line,
+     D2 the ITERMUL wrapper `for (uint it = 0u; it < (uint)ITERMUL;
+        it++) {` right after `void main() {`,
+     D3 the wrapper close `} /* ITERMUL wrapper end */` before main's
+        closing brace.
+   Inverse check (strip exactly the 3 inserted unique lines -> base
+   bytes) passes 18/18 (shader-derivation-census.txt). The derived
+   sources are archived here as shaders-derived/ (18 files); full diff
+   for one exemplar + the 18 derived digests:
+   shader-derivation.diff.txt. The compiled iter*.spv are produced on
+   the host with the SAME toolchain and command as the corpus
+   (glslangValidator -S comp -V --target-env vulkan1.2, host glslang
+   11:15.1.0 -- build-census-s9.txt records the version and every
+   digest). The corpus (16 digests) is UNTOUCHED on disk and its
+   census is re-verified; the a-set arms run the ARCHIVED measured
+   spv, the f-set arms run the derived iter*.spv. Probe spv are the
+   archived corpus files in every set. Sessions 1/2/4/5/6/7/8
+   instruments and shaders stay byte-stable.
+
+2. ARMS (10 arms; arm = (binary BATCH, manifest shader set);
+   one binary per BATCH value (4 binaries: BATCH in {1,2,3,8},
+   WORK_MUL=1, BARRIER_N=0); one manifest per shader set (4
+   manifests: cases-s9-a/f1/f3/f8.txt); tag = <set>b<B>):
+   a-set (archived measured spv, I=1 semantics):
+   a1b1   B=1  I=1   1 unit   floor control (committed 31 ticks)
+   a2b2   B=2  I=1   2 units  floor control (committed 31 ticks)
+   a3b3   B=3  I=1   3 units  capture control (committed 5,520 ticks,
+                              session 7, at (sum,128,S=16))
+   a8b8   B=8  I=1   8 units  capture control (committed 32,915 ticks,
+                              session 4)
+   f1-set (derived iter1 spv -- DERIVATION CONTROL, same nominal work):
+   f1b2   B=2  I=1   2 units  derivation control at the row's B
+   f1b8   B=8  I=1   8 units  derivation control at captured scale
+   f3-set (derived iter3 spv):
+   f3b1   B=1  I=3   3 units  PROBE (equal nominal work to a3b3,
+                              one dispatch of 3x-fat workgroups)
+   f3b2   B=2  I=3   6 units  PROBE (the row question at 3x fatness)
+   f8-set (derived iter8 spv):
+   f8b1   B=1  I=8   8 units  PROBE (equal nominal work to a8b8,
+                              one dispatch of 8x-fat workgroups)
+   f8b2   B=2  I=8  16 units  PROBE (the row question at 8x fatness --
+                              twice the nominal work of the captured
+                              a8b8 control, same grid)
+   TAGS used in files/analysis: a1, a2, a3, a8, f1b2, f1b8, f3b1,
+   f3b2, f8b1, f8b2.
+   The header prints batch=, barrier_n=, work_mul= and n=; every
+   SAMPLE prints batch= and work_mul=; every CELL line prints its
+   spv= name (which is the shader-set identity: .emitted.spv vs
+   .emitted.iter{1,3,8}.spv). analysis-s9.py checks ALL of these per
+   run. Build command per binary:
+   gcc -O2 -DBATCH=<B> -DWORK_MUL=1 -DBARRIER_N=0 -o anv-itr-b<B>
+       gpu-subgroup-reduce-anv-workmul.c -lvulkan, same host.
+
+3. CELLS / RUN UNIT (unchanged from sessions 1-8):
+   the same 24 cell lines (cases-s9-a.txt cell lines are a BYTE-COPY
+   of cases-s8.txt's cell lines, diff exit 0; each f-set manifest's
+   cell lines are the a-set lines with ONLY the measured spv name
+   changed -- all verified programmatically at derivation time and
+   again in host-verify-s9.txt): op {sum,max,min} x W {128,256} x
+   forced S {8,16,32,default}; S=8 fails-closed (minSubgroupSize=16),
+   18 pipeline-ok cells carry timing samples.
+   One fresh process per run; the instrument's internal protocol
+   (WARMUP 3, ROUNDS 25, seeded LCG-shuffled interleave, SEED
+   20261027) is UNCHANGED (the instrument is byte-identical).
+   Runs: 3 fresh processes per arm = 10 arms x 3 runs = 30 processes.
+   Metric per sample: gpu_ticks = ts2 - ts1 (1 tick = timestampPeriod
+   = 52.083 ns on this device, from the instrument header), host_ns.
+   Every SAMPLE's batch=/work_mul= fields must equal its run's (B, 1),
+   every run's header must show barrier_n=0, n=1,000,003, and every
+   CELL's spv= name must carry its arm's set suffix (checked by
+   analysis-s9.py).
+
+4. CLASSIFICATION THRESHOLDS (unchanged from session 7, frozen there
+   from COMMITTED values only):
+   FLOOR        := pooled median bracket <= 100 ticks at ALL 18 cells
+                   (committed floor band across sessions 1-8: 25..32
+                   ticks; 100 is >3x that ceiling).
+   CAPTURED     := pooled median bracket >= 1000 ticks at ALL 18 cells
+                   (the smallest committed captured value anywhere is
+                   8,968 ticks, so 1000 is <= 1/8 of any captured
+                   value).
+   INTERMEDIATE := anything else (mixed cell classes, or the reference
+                   cell pooled median in (100, 1000)) -- reported
+                   quantified cell-by-cell, never forced into
+                   FLOOR/CAPTURED.
+   Reference cell for headline numbers: idx=1 (op=sum, W=128,
+   forced=16). Pooled median = median over the 25 rounds x 3 runs = 75
+   samples per cell per arm.
+
+5. PRE-REGISTERED LETTERS (both branches named BEFORE the first run;
+   the analysis route is analysis-s9.py over the 30 committed run logs
+   ONLY, run twice byte-identical -- diff exit 0; publication-s9.txt is
+   produced only by that script):
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; numeric agreement
+      with the committed value at each control's OWN B -- the
+      session-7 fix, kept; the a-set arms run the ARCHIVED measured
+      spv bytes, so this also pins the untouched instrument + corpus):
+      a1 and a2 satisfy FLOOR; a3 reference-cell pooled median within
+      +/-5% of 5,520 (session 7); a8 within +/-5% of 32,915
+      (session 4).
+      (a) all four satisfy -> C2 and W1-W4 are evaluated against the
+          row question.
+      (b) any fails -> named replication discrepancy (bearing on the
+          environment, not the derivation -- the a-set uses no derived
+          bytes); W1 interpretation flagged per W1(d); cause
+          UNMEASURED.
+
+   C2 DERIVATION CONTROL (prerequisite for the f-sets; the
+      WORK_MUL=1-analogue of session 8's C1 -- here I=1):
+      f1b2 satisfies FLOOR (like a2); f1b8 reference-cell pooled
+      median within +/-5% of 32,915 (session 4).
+      (a) both satisfy -> the wrapper derivation + iter1 codegen does
+          not move the bracket beyond the frozen bands; f3/f8 are
+          interpreted against it.
+      (b) any fails -> the derivation itself moves the bracket (the
+          iter1 compiled bytes are NOT the archived bytes -- codegen
+          beyond the wrapper is UNMEASURED); f3/f8 interpretation
+          flagged per W1(d); cause UNMEASURED.
+
+   W1 FATNESS AT B=2 (the row question): classify f3b2 and f8b2 per
+      the section-4 thresholds.
+      (a) both FLOOR -> capture at B=2 is NOT reachable by up to 8x
+          per-workgroup work at the constant archived grid (f8b2
+          carries 16 nominal work units inside the bracket -- twice
+          the captured a8b8's 8 -- on a grid identical to a8b8's):
+          combined with session 8's grid axis (also unreachable at
+          B=2), the capture is not a total-work threshold on EITHER
+          separated axis at up to 8x; dispatch count stays
+          implicated. Observable only.
+      (b) f3b2 or f8b2 CAPTURED -> capture CAN be driven by
+          per-workgroup work at fixed B=2 and constant grid; the 2->3
+          onset step is not purely a dispatch-count step. Observable
+          only.
+      (c) otherwise INTERMEDIATE/MIXED -> reported cell-by-cell.
+      (d) C1(b) or C2(b) fires -> W1's interpretation is flagged; the
+          discrepancy's cause stays UNMEASURED.
+
+   W2 EQUAL-NOMINAL-WORK PAIRS (descriptive, no branch): (f3b1 vs
+      a3b3) at 3 units and (f8b1 vs a8b8) at 8 units -- one dispatch
+      of fat workgroups vs B dispatches of thin workgroups, same
+      grid; plus (f1b8 vs a8b8) at 8 units = the derivation delta at
+      equal nominal work. Pooled median bracket, host_ns and class at
+      the reference cell and the 18-cell band. Counts/ratios only.
+
+   W3 SINGLE-DISPATCH FAT DOSE (descriptive, no branch): a1/f3b1/
+      f8b1 pooled medians and host_ns -- is any single-dispatch arm
+      captured? Counts only.
+
+   W4 FATNESS IN HOST TIME (descriptive, no branch): host_ns per
+      nominal work unit (host_ns / (B*I)) and host_ns per dispatch at
+      the reference cell for every arm. Counts only; no linearity
+      claim.
+
+6. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer. accelerator-targets defaults
+   remain provisional design assumptions (:measured? false). This is
+   NOT the basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+
+7. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   (committed pin 2649 assertions / 0 failures); scoped GPU gate (the
+   8 accelerator test namespaces; scratch runner, never committed;
+   expected pin 123 tests / 12162 assertions); FULL run-tests.cljk run
+   live this tick (the suite's base state is red 'Could not find
+   namespace: kotoba.form' at namespace load, ADR-0362, outside every
+   amu-gpu diff -- recorded live, no green full suite claimed);
+   find this evidence dir -name '*.sh' -> 0.
+
+8. UNMEASURED (named in advance): any causal mechanism for the
+   undercount OR the capture OR the onset location; WHY capture turns
+   on where it does; the ITERMUL loop's cost linearity (the nominal
+   B*I unit count is a definition, not a claim); any codegen
+   difference between the iter1 spv and the archived spv beyond the
+   wrapper (aggregate timing effect bounded by C2 only at B=2 floor
+   and B=8 captured); GRID x FATNESS interaction (any M>1 with any
+   I>1); any I outside {1,3,8}; any (B,I) outside the ten arms;
+   B in {4,5,6,7} at any I; any N>0; session 2's run-1 dip cause;
+   cross-day replication; S=8 timing; every W outside {128,256};
+   shape 2; any baseline-vs-variant sign; BT ordering; isolated
+   single-dispatch timing; non-empty barriers; anything off this host.

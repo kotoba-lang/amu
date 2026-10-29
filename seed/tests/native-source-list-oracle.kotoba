@@ -1,0 +1,36 @@
+;; Independent generic04 payload construction. The source bridge and checked
+;; normalizer supply neither these type values nor the expected expressions.
+(defn- dlo-vector [items [:list :string]] :string (dc-collection "vec" items false))
+(defn- dlo-list-type [item :string] :string
+  (dlo-vector (typed-list-new [:list :string] (dc-kw "list") item)))
+(defn- dlo-payload [operation :string element :string] :string
+  (let [item (cond (= element "i64") (dc-kw "i64") (= element "string") (dc-kw "string")
+              (= element "bool") (dc-kw "bool") (= element "list-i64") (dlo-list-type (dc-kw "i64")) :else "")
+        collection (dlo-list-type item)
+        constructor (or (= operation "new") (= operation "empty"))
+        count (cond (= operation "empty") 0 (= operation "new") 1 :else 2)
+        valid (and (not= item "") (or constructor (= operation "nth") (= operation "conj")))
+        params (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (dc-atom "sym" (string-concat "k" (mem-u2dec i)))))))
+        types (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (cond constructor item (= i 0) collection (= operation "nth") (dc-kw "i64") :else item)))))
+        head (string-concat "typed-list-" (if constructor "new" operation))
+        body (dc-collection "list" (loop [i 0 xs (typed-list-new [:list :string] (dc-atom "sym" head) collection)]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (typed-list-nth [:list :string] params i))))) false)
+        kir (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "op" (dc-kw "kotoba.definition/function"))
+          (dc-entry "params" (dlo-vector params)) (dc-entry "body" body)) true)
+        interface (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "arity" (dc-int (mem-u2dec count)))
+          (dc-entry "params" (dlo-vector types))
+          (dc-entry "result" (if (= operation "nth") item collection))) true)]
+    (if valid (dc-payload "6" "2" kir
+      (dc-collection "set" (typed-list-new [:list :string]) true)
+      interface (dlo-vector (typed-list-new [:list :string]))) "")))
+(defn- seed-main [] :i64
+  (if (not= (io-argc) 2) 2
+    (let [cid (dc-definition-cid (dlo-payload (io-arg 0) (io-arg 1)))]
+      (if (= cid "") 1 (let [out (io-out (string-concat cid "\n"))] 0)))))

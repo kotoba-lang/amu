@@ -1,0 +1,79 @@
+JUN-59 timestamp-stage DISCRIMINATOR (session 5) -- COMPLETE (2026-10-27).
+One tick, one measurement slice. All numbers are real tool output.
+
+THE ROW: session 4's named residual -- WHY the small-B bracket undercounts
+(31-tick floor at B<=2 while the same runs' host_ns shows ~352 us of real
+work; capture turns on between B=2 and B=4). NO causal mechanism was
+claimed then and NONE is claimed here. This session measures the one
+narrower observable question the protocol froze BEFORE the first run:
+is the undercount (and the large-B capture) REMOVABLE BY THE PIPELINE-
+STAGE PLACEMENT of the two vkCmdWriteTimestamp bracket endpoints?
+
+1. INSTRUMENT: derived from the archived session-4 snapshot (digest
+   1b287b4d..., re-verified byte-stable) with ONE parameterization edit
+   -- the two hard-coded stage constants become TS1_STAGE / TS2_STAGE
+   macros with defaults exactly equal to the archived values
+   (instrument-derivation.diff.txt). Arms: tb=(TOP,BOTTOM) control,
+   tt=(TOP,TOP), bb=(BOTTOM,BOTTOM) x BATCH {1,2,4,64} = 12 binaries.
+2. CHAIN OF CUSTODY (host-verify-s5.txt): corpus 16/16 digests MATCH
+   session 2's committed compile-toolchain.txt census (parsed
+   programmatically, never transcribed); derived source + manifest digests
+   MATCH local; base snapshot unchanged. GO. Named, not hidden: the
+   programmatic census comparison ran after the runs (the pre-run custody
+   was the cp -a of session 4's verified corpus + a pre-run sha256sum
+   capture + local-vs-host MATCH of source/manifest; the file says so).
+3. HARDWARE RAN (MEASURED): 36 fresh processes (3 arms x 4 B x 3 runs),
+   run window 2026-10-27T10:57:42Z..10:59:05Z, rc=0 36/36, stderr 0
+   bytes 36/36, 450 SAMPLE lines each; headers byte-identical within
+   each B and across arms except batch=<B>; every SAMPLE's batch= field
+   == its run's B; forcing reality 648/648; VERIFY mismatch=0 total;
+   S=8 fail-closed 216/216 cell-runs.
+4. FINDINGS (publication-s5.txt, produced ONLY by analysis-s5.py over
+   the 36 committed logs, run twice byte-identical -- diff exit 0):
+   (a) L1 CONTROL REPLICATION branch (a): arm tb reproduces session 4's
+   shape exactly (B=1 pooled median 31 ticks at all 18 cells; B=64 in
+   the captured band 229,099..277,789 ticks).
+   (b) L2 branch (b): at B=64 the tt arm TRACKS the tb arm (tb/tt ratio
+   1.04..1.07 at 18/18 cells) -- the captured large-B bracket does NOT
+   depend on ts2's stage placement among {TOP,BOTTOM} (observable only).
+   (c) L3 branch (b): the B=1 floor is NOT REMOVABLE by the stage
+   placements tested -- tb 31 ticks, tt 25, bb 25..26, all <= 31 ticks
+   at all 18 cells, all far below the 1000-tick lift threshold. The
+   small-B undercount is invariant to ((TOP,BOTTOM),(TOP,TOP),
+   (BOTTOM,BOTTOM)); the row question is NARROWED, the mechanism stays
+   UNMEASURED.
+   (d) L4 (descriptive): bb/tb = 1.00 at B=64 at all 18 cells -- moving
+   ts1 to BOTTOM_OF_PIPE changes nothing measurable there.
+   (e) NEW OBSERVABLE (not pre-registered as a letter, reported as an
+   observation only): tt is systematically ~5-7% SHORTER than tb at
+   B=64 at every cell; cause UNMEASURED.
+5. NAMED, NOT HIDDEN: analysis-s5.py's first draft had a str/int
+   comparison bug in the forcing-reality and S=8 counters (printed
+   0/648 and 0); it was fixed BEFORE the recorded publication and the
+   recorded run shows 648/648 and 216. The recorded publication is the
+   post-fix output; the pre-fix output exists only in the tick transcript.
+6. RULE 4 -- NOTHING MOVES: no row, no :measured? flag, no selection
+   answer; accelerator-targets defaults stay provisional design
+   assumptions (:measured? false); this is NOT the baseline-vs-variant
+   contract of accelerator-subgroup-reduce.cljk. NO vendor optimization
+   exists for Intel and none is claimed.
+7. UNMEASURED: any causal mechanism for the undercount or the capture;
+   why tt runs ~5-7% shorter at B=64; session 2's run-1 dip cause;
+   cross-day replication; S=8 timing; every W outside {128,256}; shape
+   2; BT ordering; any baseline-vs-variant sign; anything off this host.
+8. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions / 0 failed (pin; classify-selftest.txt);
+   scoped GPU gate GREEN 123 tests / 12162 assertions / 0 failures / 0
+   errors run 1 AND run 2 (scratch runner gpu_scoped_gate.cljk, NOT
+   committed -- it lives outside the repo); FULL run-tests.cljk RUN LIVE
+   THIS TICK: exit 1, RED AT BASE "Could not find namespace: kotoba.form"
+   at namespace load (ADR-0362, outside this diff -- this diff touches
+   NO .cljk namespace) -- NO green full suite claimed
+   (gate-full-run-tests.txt); find this dir -name '*.sh' -> 0.
+Evidence: docs/evidence/gpu/anv-tsstage-20261027/ (protocol.txt,
+cases-s5.txt, gpu-subgroup-reduce-anv-tsstage.c.txt,
+instrument-derivation.diff.txt, host-verify-s5.txt, build-census-s5.txt,
+run-window.txt, run-{tb,tt,bb}-b{1,2,4,64}-r{1,2,3}.txt + .stderr.txt,
+analysis-s5.py, publication-s5.txt, classify-selftest.txt, gate-run1.txt,
+gate-run2.txt, gate-full-run-tests.txt, record.txt) + the ADR-0355 dated
+note.

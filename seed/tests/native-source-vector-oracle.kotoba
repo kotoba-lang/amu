@@ -1,0 +1,32 @@
+;; Hand-assembled payloads using04's generic encoder only. No checked-source
+;; bridge,05/06 normalizer or supplied KIR contributes to these expectations.
+(defn- dvo-vec [xs [:list :string]] :string (dc-collection "vec" xs false))
+(defn- dvo-sym [s :string] :string (dc-atom "sym" s))
+(defn- dvo-payload [name :string] :string
+  (let [alloc (= name "alloc") literal (= name "literal")
+        assoc (or (= name "assoc") (= name "assoc!"))
+        valid (or alloc literal assoc (= name "conj"))
+        count (cond assoc 3 (= name "conj") 2 :else 1)
+        params (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (dvo-sym (string-concat "k" (mem-u2dec i)))))))
+        types (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (dc-kw (if (and (= i 0) (not alloc) (not literal)) "vector-i64" "i64"))))))
+        head (cond alloc "vector-alloc" assoc (string-concat "vector-" name) :else "vector-conj")
+        values (if literal (typed-list-new [:list :string] (dvo-sym "k0") (dc-int "42"))
+          (loop [i 0 xs (typed-list-new [:list :string] (dvo-sym head))]
+            (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs (typed-list-nth [:list :string] params i))))))
+        body (dc-collection (if literal "vec" "list") values false)
+        kir (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "body" body) (dc-entry "params" (dvo-vec params))
+          (dc-entry "op" (dc-kw "kotoba.definition/function"))) true)
+        interface (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "result" (dc-kw "vector-i64")) (dc-entry "arity" (dc-int (mem-u2dec count)))
+          (dc-entry "params" (dvo-vec types))) true)]
+    (if valid (dc-payload "6" "2" kir (dc-collection "set" (typed-list-new [:list :string]) true)
+      interface (dvo-vec (typed-list-new [:list :string]))) "")))
+(defn- seed-main [] :i64
+  (if (not= (io-argc) 1) 2
+    (let [cid (dc-definition-cid (dvo-payload (io-arg 0)))]
+      (if (= cid "") 1 (let [out (io-out (string-concat cid "\n"))] 0)))))

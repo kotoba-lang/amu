@@ -1,0 +1,59 @@
+== JUN-59 session 17 build census (THE CONSTANT-TOTAL-WORK CROSSING) ==
+Build window (host timeline): builds ran after the verify GO
+(2026-10-27T16:58:38Z) and before the first run (run-window.txt:
+16:58:50Z).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-consttotal-20261027, runs
+cwd=shaders/ (manifest passed as ../cases-s17-a.txt; binaries
+../anv-xt-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 16's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-xt-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (9 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0 @2026-10-27T16:58:38Z
+build x2 (BATCH=2 NDIV=2) rc=0 @2026-10-27T16:58:38Z
+build x3 (BATCH=3 NDIV=3) rc=0 @2026-10-27T16:58:38Z
+build x4 (BATCH=4 NDIV=4) rc=0 @2026-10-27T16:58:38Z
+build x5 (BATCH=5 NDIV=5) rc=0 @2026-10-27T16:58:38Z
+build x6 (BATCH=6 NDIV=6) rc=0 @2026-10-27T16:58:38Z
+build x7 (BATCH=7 NDIV=7) rc=0 @2026-10-27T16:58:39Z
+build x8 (BATCH=8 NDIV=8) rc=0 @2026-10-27T16:58:39Z
+build c8 (BATCH=8 NDIV=1) rc=0 @2026-10-27T16:58:39Z
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-xt-c2
+0fe9f4032e0cf15e9ab1ae36e2934305ecf2d6fa77423afb52f4dbbc017430df  anv-xt-x2
+2d5a5121df09d9cddffece2ee3a9db0d00eb039bd8892fb1cd1e7050e7555118  anv-xt-x3
+b62ddb8791523d075a7d775af7f9c20d24a94af6c174c27d5e31574bf0150e6f  anv-xt-x4
+a2b9a7c7c30836f5ae86587dc93af5129032c5e66b841c219ed1fe7b2f0280d4  anv-xt-x5
+e1e95ebcbd90114240ddeaa705c6e5fed4706f0466edbe184366cfa309769c21  anv-xt-x6
+424fee557b4df3f25a5ac06904ee95e56d711a59b05a9c0e7cafb90829707dec  anv-xt-x7
+7cc6ad2643d617f25d6d56734d86418dafff7a258f15834bffc354a983beffb1  anv-xt-x8
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-xt-c8
+== source digest re-check at build time (host): ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+== build stderr: 0 bytes all 9 (build-<tag>.err, host wc -c) ==
+== BUILD REPLICATION PIN (declared in protocol section 2; prior-session ==
+== censuses parsed programmatically from the committed files, never     ==
+== transcribed) ==
+BYTE-IDENTICAL: anv-xt-c2 e5ed903e5b9dfd64... == session-16 anv-fb-c2 e5ed903e5b9dfd64... (== session-13 anv-wt-c2) -> True
+BYTE-IDENTICAL: anv-xt-c8 480925e58d28e7d3... == session-16 anv-fb-c8 480925e58d28e7d3... (== session-13 anv-wt-c8) -> True
+BYTE-IDENTICAL: anv-xt-x8 7cc6ad2643d617f2... == session-13 anv-wt-d8 7cc6ad2643d617f2... (== session-12 anv-cc-d8) -> True
+  (x8 IS d8's knob pair BATCH=8,NDIV=8; the cross-name byte-identity --
+  anv-xt- vs anv-wt- vs anv-cc- -- re-confirms the session-12->13
+  observation that the -o name does not enter the binary bytes.)
+NEW KNOB PAIR: anv-xt-x2 0fe9f403... (NDIV=2 has never been compiled in
+  this series -- NO byte-identity pin applies; named, not hidden)
+NEW KNOB PAIR: anv-xt-x3 2d5a5121... (NDIV=3 -- no prior binary)
+NEW KNOB PAIR: anv-xt-x4 b62ddb87... (NDIV=4 -- no prior binary)
+NEW KNOB PAIR: anv-xt-x5 a2b9a7c7... (NDIV=5 -- no prior binary)
+NEW KNOB PAIR: anv-xt-x6 e1e95ebc... (NDIV=6 -- no prior binary)
+NEW KNOB PAIR: anv-xt-x7 424fee55... (NDIV=7 -- no prior binary)
+== 3/3 pins hold (c2/c8 byte-identical to session 16's same-flag     ==
+== binaries; x8 byte-identical to session 13's committed d8 binary); ==
+== x2..x7 are NEW (BATCH,NDIV) pairs and carry no pin by design      ==
+== (their custody is the byte-identical source + the compile flags + ==
+== C1/C2's numeric replication).                                     ==

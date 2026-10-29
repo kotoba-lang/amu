@@ -1,0 +1,143 @@
+JUN-58 / JUN-55 -- the Metal-native SIMD-group reduce row DESIGNED
+(:simdgroup-reduce), and the parked design questions reconciled
+(2026-10-23)
+
+One design-decision slice: the row ADR-0356's row-prose reconciliation
+and ADR-0360's narrowing amendment both parked as PROPOSED -- "a
+Metal-native simd_sum/simd_max/simd_min simdgroup row (still NOT designed;
+a separate decision)". NO hardware measurement was taken in this slice
+and no number below is a measurement record. The decision is ADR-0373
+(the state of record); this file is the slice record.
+
+WHAT THE DECISION SAYS (the full text is ADR-0373; the load-bearing
+clauses):
+
+- A new variant `:simdgroup-reduce` is DESIGNED: the reduce shape
+  (:sum/:max/:min, W >= 32) on the MSL route ONLY, whose intra-SIMD-group
+  fold is Metal's simd_sum/simd_max/simd_min, followed by the SAME
+  cross-SIMD-group tree over the W/S partials (ADR-0357's P1/P2 bind the
+  tree unchanged). A SEPARATE variant -- the negative pins that keep
+  :subgroup-reduce's fold the shuffle loop stand unchanged.
+- P1 binds by option (b): simd_sum's association order is out of the
+  emitter's hands and is not pinned by the vendor documentation this
+  decision cites (the spec text was NOT re-read this tick -- named, and
+  the P1 scope does not depend on it); the :sum claim is scoped ("low
+  bits only, for inputs without catastrophic cancellation").
+- Selection, two clauses: (1) the measured-cell carve-out -- a device
+  class whose reduce-shape answers are measured or decided keeps them;
+  M1 Max keeps :baseline at every W, and :simdgroup-reduce does not
+  answer there until a measurement of THIS variant flips that cell;
+  (2) the MSL ladder (ADR-0361's CUDA-ladder idiom): outside the
+  carve-out, :simdgroup-reduce is the vendor-native first rung behind the
+  new rule-6 fact `:simd-reduce`, :subgroup-reduce the second rung,
+  :baseline otherwise.
+- Rule 3 gates the implementation (emission + lower admission + tests
+  FIRST, then the selection predicate). Nothing is implemented by this
+  slice.
+
+WHAT MOVED (the diff):
+
+- docs/adr/0373-gpu-metal-native-simdgroup-reduce.md: the ADR (new).
+- docs/adr/0356-gpu-kernel-variant-selection.md: the rows table gains
+  the designed-not-implemented row; two stale clauses marked inline --
+  the "two design questions PROPOSED ... decided nowhere" clause (both
+  now decided: narrowing in ADR-0360's second decision, the simdgroup
+  row in ADR-0373) and the apple row-cell's flip prose ("`:measured?`
+  stays false / the flip is blocked on question (1) / leaves PROPOSED"
+  and "a Metal-native simdgroup row stays NOT designed"), which
+  contradicted the repo (the flip landed the same day -- commit 454d6078
+  and after carry :measured? true and :measured-cell records on the
+  measured M1 Max cells; ADR-0360's own supersession note records
+  question (1)'s decision). Honesty marks only -- no claim of this
+  decision rides on them.
+- docs/adr/0360-gpu-apple-subgroup-reduce.md: the "still NOT designed
+  (a separate decision)" / "keep as designed" clauses marked with this
+  decision's effect (the MSL ladder supersedes "keep as designed" for
+  non-m1-max Apple MSL descriptors ONLY FROM THE MOMENT the row is
+  implemented; until then selection is byte-for-byte unchanged).
+- docs/evidence/gpu/simdgroup-row-design-20261023.txt: this record.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+
+- No code namespace, no test, no emission, no selection row. No
+  `:measured?` flag, no `:measured-cell`, no workgroup row (ADR-0355 /
+  0358), no flip gate, no selection answer moves. `select-variant`
+  answers exactly what it answered before this slice.
+- No committed evidence record is rewritten (the marks above touch ADR
+  prose only).
+- One wording repair inside an honesty mark: the fuzzy edit first wrote
+  "Metal-native simdgroup row" where the historical line 50 of ADR-0360
+  reads "Metal simdgroup row"; the original wording is restored in the
+  same tick, and the historical prose outside the bracketed marks is
+  byte-identical to before the slice.
+
+VERIFIED BY TOOL OUTPUT (this host, real runs):
+
+1. Toolchain probe (compiler verification, NOT a measurement) -- the
+   MSL arm's "compiler-verified, not folklore" idiom: a scratch
+   probe.metal (not in the repo) using simd_sum, simd_max, simd_min and
+   simd_shuffle_down, with simdgroup_index_in_threadgroup /
+   thread_index_in_simdgroup partial compaction (P2's builtins),
+   compiled to AIR with no diagnostics:
+
+     $ xcrun metal -c probe.metal -o probe.air ; echo exit=$?
+     exit=0
+     $ xcrun metal -v
+     Apple metal version 32023.883 (metalfe-32023.883)
+     Target: air64-apple-darwin25.4.0
+
+2. Scoped GPU gate (the 7 GPU-owned test namespaces; scratch runner
+   gpu_scoped_gate.cljk, not in the repo), from the chain worktree root:
+
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+     Ran 88 tests containing 7122 assertions.
+     0 failures, 0 errors.
+
+     scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+   (88/7122, unchanged from the previous tick: this diff adds no test and
+   changes no code namespace -- the gate runs to prove nothing broke.)
+
+3. Full gate (kbb --backend sci --classpath "src:test:$(kbb -Spath
+   -M:test)" run-tests.cljk): RED AT BASE, re-verified this tick,
+   outside this diff -- aborts at NAMESPACE LOAD with
+
+     Error: Could not find namespace: kotoba.form
+
+   (the W3 port path, documented red at base in ADR 0362 and every prior
+   tick record). This diff touches no namespace on that path. No green
+   full suite is claimed.
+
+STATE (the honesty rule's three states):
+
+- ACCEPTED DESIGN ONLY: `:simdgroup-reduce` (ADR-0373). Nothing of the
+  variant is implemented -- no emission, no selection row, no test.
+- IMPLEMENTED: nothing in this slice (docs only).
+- PROPOSED leftovers of this question family: none -- the two design
+  questions ADR-0356's reconciliation parked are both DECIDED (narrowing
+  in ADR-0360's second decision; this row in ADR-0373). Everything
+  PERFORMANCE-side about the new variant remains PROPOSED/UNMEASURED.
+
+UNMEASURED, named: everything about :simdgroup-reduce's performance on
+every device (no hardware has run it); simd_sum's association order as a
+spec-text claim (the spec was NOT re-read this tick); every Apple device
+but this M1 Max for any variant; the M1 Max cells of the new variant; the
+GLSL arm of :subgroup-reduce at W = 512/1024 (unchanged); cross-day
+replication of every measured cell (needs a later-day cron tick -- this
+is the same calendar day as the measurement series).
+
+LEFT (the next rows):
+
+1. Implement the row in rule-3 order: the MSL emission + `lower`
+   admission + tests, then the selection predicate (the ladder, the
+   carve-out, `:simd-reduce` in the gate vocabulary) -- implementation
+   slices, one at a time.
+2. Measure :simdgroup-reduce on M1 Max through the conforming channel
+   (the native-Metal harness runs the emitters' own bytes): a MEASUREMENT
+   row under the claim protocol.
+3. Cross-day replication of the :subgroup-reduce cells (a later-day cron
+   tick).
+4. The GLSL arm stays blocked on ADR 0371's provider route; the
+   :arm (Mali) and :unknown workgroup rows stay provisional (no hardware).

@@ -1,0 +1,82 @@
+;; Standalone entry assembled with the unchanged native SHA-256 and identity
+;; module. Input is canonical normalized payload-v2 hex, never source code.
+;; A CID is content identity only: no code execution or authority is granted.
+(defn- dc-test-map [entries [:list :string]] :string (dc-collection "map" entries true))
+(defn- dc-test-const [value :string] :string
+  (dc-test-map (typed-list-new [:list :string] (dc-entry "value" value) (dc-entry "op" (dc-kw "const")))))
+(defn- dc-test-interface [one :bool] :string
+  (if one
+    (dc-test-map (typed-list-new [:list :string] (dc-entry "result" (dc-kw "i64")) (dc-entry "arity" (dc-int "1"))
+      (dc-entry "params" (dc-collection "vec" (typed-list-new [:list :string] (dc-kw "i64")) false))))
+    (dc-test-map (typed-list-new [:list :string] (dc-entry "result" (dc-kw "i64")) (dc-entry "arity" (dc-int "0"))))))
+(defn- dc-test-nested [] :string
+  (dc-test-map (typed-list-new [:list :string]
+    (dc-entry "op" (dc-kw "do"))
+    (dc-entry "forms" (dc-collection "vec" (typed-list-new [:list :string]
+      (dc-test-const "81636e696c") (dc-test-const "8264626f6f6cf5")
+      (dc-test-const (dc-int "9007199254740993")) (dc-test-const (dc-int "-9007199254740993"))
+      (dc-test-const (dc-str "text")) (dc-test-const (dc-kw "a-keyword")) (dc-test-const (dc-atom "sym" "a-symbol"))
+      (dc-test-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "vec"))
+        (dc-entry "items" (dc-collection "vec" (typed-list-new [:list :string] (dc-int "1") (dc-int "2") (dc-int "3")) false))))
+      (dc-test-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "list"))
+        (dc-entry "items" (dc-collection "list" (typed-list-new [:list :string] (dc-int "1") (dc-int "2") (dc-int "3")) false))))
+      (dc-test-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "set"))
+        (dc-entry "items" (dc-collection "set" (typed-list-new [:list :string] (dc-kw "y") (dc-kw "x")) true))))
+      (dc-test-map (typed-list-new [:list :string] (dc-entry "op" (dc-kw "map"))
+        (dc-entry "entries" (dc-test-map (typed-list-new [:list :string]
+          (dc-pair (dc-kw "k") (dc-str "v")) (dc-pair (dc-int "1") (dc-kw "one")))))))) false)))))
+(defn- dc-test-kir [name :string] :string
+  (cond (= name "kir-nested-collections") (dc-test-nested)
+        (= name "kir-f64") (dc-test-map (typed-list-new [:list :string]
+          (dc-entry "value" (dc-atom "f64" "3ff8000000000000"))
+          (dc-entry "type" (dc-kw "f64")) (dc-entry "op" (dc-kw "const"))))
+        (= name "kir-keyword-vs-string") (dc-test-map (typed-list-new [:list :string]
+          (dc-entry "op" (dc-kw "pair")) (dc-entry "b" (dc-str "name")) (dc-entry "a" (dc-kw "name"))))
+        :else (dc-test-const (dc-int "1"))))
+(defn- dc-test-payload [name :string] :string
+  (let [effects (cond (= name "effect-row-http") (typed-list-new [:list :string] (dc-kw "host/http"))
+                      (= name "effect-row-two") (typed-list-new [:list :string] (dc-kw "host/http") (dc-kw "host/clock-monotonic"))
+                      :else (typed-list-new [:list :string]))
+        deps (if (= name "dependencies-two") (typed-list-new [:list :string]
+                 (dc-str "bafyreihzlbfbvi3w24l3n6ofovirnqvyj74zkwtld6pqaor2qg4zk26wgi")
+                 (dc-str "bafyreib4oafkwcwsvzyxjysuwmsb2zigmiece4pihcwzoekssg4fk34cha"))
+                 (typed-list-new [:list :string]))]
+    (dc-payload (if (= name "profile-5") "5" "4") (if (= name "desugar-contract-2") "2" "1")
+      (dc-test-kir name) (dc-collection "set" effects true) (dc-test-interface (= name "interface-arity-1"))
+      (dc-collection "vec" deps true))))
+(defn- dc-boundary-tests [] :i64
+  (let [limit (loop [i 0 text ""] (if (= i dc-limit) text (recur (+ i 1) (string-concat text "00"))))
+        over (string-concat limit "00") V [96]
+        state (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 1) (vector-assoc! 3 1))
+        at-depth (dc-read state V 64)
+        too-deep (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 1) (vector-assoc! 3 1)) V 65)
+        at-node (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 (- dc-nodes 1)) (vector-assoc! 3 1)) V 0)
+        over-node (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 dc-nodes) (vector-assoc! 3 1)) V 0)]
+    (if (and (= (vector-count (dc-unhex limit)) dc-limit) (= (vector-count (dc-unhex over)) 0)
+             (= (vector-at at-depth 1) 0) (= (vector-at too-deep 1) 1)
+             (= (vector-at at-node 1) 0) (= (vector-at over-node 1) 1)) 0 1)))
+(defn- dc-encoder-refusals [] :i64
+  (let [duplicate-map (dc-test-map (typed-list-new [:list :string]
+                         (dc-entry "same" (dc-int "1")) (dc-entry "same" (dc-int "2"))))
+        duplicate-set (dc-collection "set" (typed-list-new [:list :string] (dc-kw "a") (dc-kw "a")) true)
+        invalid (dc-test-map (typed-list-new [:list :string] (dc-entry "op" "zz")))
+        absent (dc-test-map (typed-list-new [:list :string] (dc-entry "op" "")))
+        negative (dc-payload "0" "1" (dc-test-const (dc-int "1"))
+                   (dc-collection "set" (typed-list-new [:list :string]) true) (dc-test-interface false)
+                   (dc-collection "vec" (typed-list-new [:list :string]) true))]
+    (if (and (= duplicate-map "") (= duplicate-set "") (= invalid "") (= absent "")
+             (= (dc-definition-cid negative) "") (= (dc-int "01") "")
+             (= (dc-int "+1") "") (= (dc-kw "") "") (= (dc-str "") "826373747260")) 0 1)))
+(defn main [] :i64
+  (let [argc (typed-cap-call 38 :string :string "")
+        hex (typed-cap-call 38 :string :string "0")]
+    (cond (not= argc "1") 2
+          (= hex "native-boundary-tests") (dc-boundary-tests)
+          (= hex "native-encoder-refusals") (dc-encoder-refusals)
+          :else
+      (let [construct (and (>= (string-length hex) 10) (= (string-substring hex 0 10) "construct:"))
+            canonical (if construct (dc-test-payload (string-substring hex 10 (string-length hex))) hex)
+            cid (dc-definition-cid canonical)]
+        (if (= (string-length cid) 0) 1
+          (let [encoded (if construct (typed-cap-call 37 :string :string (string-concat canonical "\n")) "")
+                written (typed-cap-call 37 :string :string (string-concat cid "\n"))] 0))))))

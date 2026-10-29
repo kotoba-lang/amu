@@ -8,10 +8,33 @@
 
   The workgroup size is the PROVISIONAL dispatch default (ADR-0355,
   `:measured? false`) unless the SPEC names one. Neither answer is
-  optimization evidence until a measured row replaces the provisional one."
+  optimization evidence until a measured row replaces the provisional one.
+
+  KERNEL VARIANT SELECTION (JUN-56's dispatch seam, this slice): the same
+  device descriptor now also decides the kernel variant through
+  kotoba.compiler.accelerator-variants' `select-variant` (ADR-0356's rows).
+  Before this seam the rows were library-only too: `select-variant` answered
+  :subgroup-reduce / :warp-shuffle-reduce for capable descriptors, but every
+  caller of this pipeline compiled :baseline regardless. Now the selected
+  variant rides into `compile-kernel`, the sealed artifact carries it in its
+  own :variant field, and the dispatch report names it. Selection is
+  fail-closed like the rows themselves: a descriptor that
+  reports no rule-6 subgroup facts gets :baseline (the facts' producer -- the
+  ADR 0371 GPU provider's SUBGROUP reply -- does not exist yet, so no live
+  device descriptor carries them today), and `:variant-measured?` is false
+  except the measured cells ADR-0360 question (1)'s 2026-10-23 decision
+  unlocks (the narrowed :baseline answers of the measured device, Apple M1
+  Max at subgroup size 32, on the MSL route at W = 64/128/256/512/1024 --
+  the SHUFFLE fold's cells; its W = 32 cell is the low band's decided
+  cell and keeps the lock) and the :simdgroup-reduce row's own flip cells
+  (W = 32/64/128/256/512/1024 on the same class, its whole W band,
+  apple-simdgroup-flip-note) --
+  outside those cells it is NOT optimization evidence, and neither the
+  variant nor its basis may be reported as one."
   {:kotoba/export [compile-spec]}
   (:require [kotoba.compiler.accelerator :as accelerator]
             [kotoba.compiler.accelerator-targets :as accelerator-targets]
+            [kotoba.compiler.accelerator-variants :as accelerator-variants]
             #?(:cljs [kotoba.kir.cljs-i64 :as i64])))
 
 (defn- host-int
@@ -29,10 +52,18 @@
   "SPEC is a kernel description map: :kernel/name, :kernel/op, :kernel/operator
   and an optional :kernel/workgroup-size. DEVICE is an
   accelerator-targets device descriptor ({:vendor-id <int>} or {:vendor <name>},
-  optional :api). Answers {:artifact <sealed GPU artifact>
-  :dispatch {:vendor :target :workgroup-size :workgroup-source :measured?}}.
-  Same SPEC and DEVICE in, byte-identical artifact out -- the emitters and the
-  dispatch table are both deterministic."
+  optional :api, and -- when a producer exists for them -- the rule-6 subgroup
+  facts :subgroup-size/:subgroup-ops and :compute-capability).
+  Answers {:artifact <sealed GPU artifact>
+  :dispatch {:vendor :target :workgroup-size :workgroup-source :measured?
+             :variant :variant-measured?}}.
+  Same SPEC and DEVICE in, byte-identical artifact out -- the emitters, the
+  dispatch table and the variant rows are all deterministic. The variant is
+  the one `accelerator-variants/select-variant` answers for the classified
+  vendor, the dispatched target and the same DEVICE (fail-closed :baseline
+  off the rows); `:variant-measured?` is that answer's honesty lock -- false
+  except the measured cells of the Apple row's narrowing on the MSL route
+  (ADR-0360 question (1)'s 2026-10-23 decision)."
   [spec device]
   (let [dispatch (accelerator-targets/recommend device)
         declared (:kernel/workgroup-size spec)
@@ -52,11 +83,26 @@
         errors (accelerator/validation-errors kir)]
     (when (seq errors)
       (throw (ex-info "invalid kernel spec" {:phase :usage :errors errors})))
-    (let [artifact (accelerator/verify-artifact!
-                     (accelerator/compile-kernel kir (:target dispatch)))]
+    (let [;; JUN-56's dispatch seam: the vendor rows decide the kernel
+          ;; variant from the same DEVICE the workgroup row saw. The vendor
+          ;; is the dispatch table's own classification (recommend answers
+          ;; it), the target its own route -- one dispatch, two answers.
+          selection (accelerator-variants/select-variant
+                      (:vendor dispatch) kir (:target dispatch) device)
+          variant (:variant selection)
+          artifact (accelerator/verify-artifact!
+                     (accelerator/compile-kernel kir (:target dispatch) variant))]
       {:artifact artifact
        :dispatch {:vendor (:vendor dispatch)
                   :target (:target dispatch)
                   :workgroup-size size
                   :workgroup-source source
-                  :measured? (and (:measured? dispatch) (= source :dispatch))}})))
+                  :measured? (and (:measured? dispatch) (= source :dispatch))
+                  :variant variant
+                  ;; The variant rows' honesty lock (ADR-0356): false
+                  ;; until a hardware measurement replaces the row's basis
+                  ;; -- today only the measured cells of the Apple row's
+                  ;; narrowing on the MSL route (ADR-0360 question (1)'s
+                  ;; decision). Never merge this with the workgroup row's
+                  ;; :measured? -- they are evidence about different things.
+                  :variant-measured? (boolean (:measured? selection))}})))

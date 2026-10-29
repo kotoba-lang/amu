@@ -1,0 +1,105 @@
+JUN-59/JUN-60 -- fix-question evidence: W3C WGSL spec quotes (normative)
+=======================================================================
+
+Source: https://www.w3.org/TR/WGSL/
+Title: WebGPU Shading Language, W3C Candidate Recommendation Draft,
+       21 October 2026
+Retrieved: 2026-10-25 (JST) via `curl -sL https://www.w3.org/TR/WGSL/`
+Retrieved artifact: 3,105,595 bytes HTML
+SHA-256 of the retrieved artifact:
+852fd8e4899c2258f092386fabfd1804ae6d959bb0579970e9cfe78326e7a8cd
+
+All quotes below are VERBATIM from that artifact (tag-stripped; only
+whitespace collapsed). They are the ground the fix-question decision
+(docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/README.md) stands
+on. A spec quote is vendor documentation, not a measurement: UNMEASURED is
+unchanged everywhere.
+
+1. What a const-expression is (section 8.1.1 const Expressions)
+---------------------------------------------------------------
+"Expressions that can be evaluated at shader-creation time are called
+const-expressions. An expression is a const-expression if all its
+identifiers resolve to: const-declarations, or const-functions, or type
+aliases, or structure names."
+
+2. When a const-expression is evaluated (section 8.1.1)
+-------------------------------------------------------
+"A const-expression E will be evaluated if and only if:
+  - E is top-level expression,
+  - E is a subexpression of an expression OuterE, and OuterE will be
+    evaluated, and evaluation of OuterE requires E to be evaluated,
+  - E is a subexpression of an expression OuterE such that evaluation of
+    E is required to determine the static type of OuterE, or
+  - E is a subexpression of an expression OuterE such that OuterE requires
+    E to be evaluated to produce a shader-creation error (e.g. integer
+    division)."
+
+3. What a top-level expression is (section 6.1 Type Checking)
+------------------------------------------------------------
+"A top-level expression is an expression that is not itself a
+subexpression."
+
+4. The Finite Math Assumption (section 15.7.3 Floating Point Rounding
+   and Overflow, within section 15.7 Floating Point Evaluation)
+-------------------------------------------------------------------
+"Finite Math Assumption: Overflow, infinities, and NaNs generated before
+shader execution will generate errors. Const-expressions and
+override-expressions over finite values will generate overflow,
+infinities, and NaNs as intermediate result values, following IEEE-754
+rules. ... A shader-creation error results if any const-expression of
+floating-point type overflows or evaluates to NaN or infinity. A
+pipeline-creation error results if any override-expression of
+floating-point type overflows or evaluates to NaN or infinity.
+Implementations may assume that overflow, infinities, and NaNs are not
+present during shader execution. In such an implementation, if the
+intermediate result of evaluating a runtime expression overflows, or
+yields an infinity or a NaN, the final result will be an indeterminate
+value of the target type. Note: This means some functions (e.g. min and
+max) may not return the expected result due to optimizations about the
+presence of NaNs and infinities."
+
+5. Rounding to infinity and the error split (section 15.7.3, the
+   X' / X'' procedure)
+---------------------------------------------------------------
+"If X' is an infinity or NaN, then by the Finite Math Assumption:
+   - If the expression is a const-expression, generate a shader-creation
+     error.
+   - If the expression is a override-expression, generate a
+     pipeline-creation error.
+   - Otherwise the expression is a runtime expression and X'' is an
+     indeterminate value."
+
+6. bitcast is a const-function (section 17.2.1 bitcast)
+-------------------------------------------------------
+"@const @must_use fn bitcast<T>(e: S) -> T   Parameterization: S is i32,
+u32, or f32; T is not S and is i32, u32, or f32   Description:
+Reinterpretation of bits as T. The result is the reintepretation of bits
+in e as a T value."
+
+7. const-declaration initializers (section 7.2.1 const Declarations)
+--------------------------------------------------------------------
+"A const-declaration specifies a name for a data value that is fixed at
+shader-creation time. Each const-declaration requires an initializer. ...
+The initializer expression must be a const-expression."
+
+8. The literal route is closed too (section 3.5.x Literals, error list,
+   and the spec's own example in section 8.x)
+-------------------------------- --------------------------------------
+"...overflows or cannot be exactly represented by the target type. A
+decimal floating point literal with a f or h suffix overflows the target
+type."
+Spec example text, verbatim: "let f32_out_of_range1 = 0x1p500; //
+invalid, out of range"
+
+Consequences for the arm's neutral spelling, read against the above
+-----------------------------------------------------------------
+`bitcast<f32>(0xFF800000u)` has only type/function identifiers (quote 1)
+and bitcast is @const (quote 6), so it is a const-expression; in
+position (const/let/var initializer, or any non-nested expression) it is
+a top-level expression (quote 3) and therefore WILL be evaluated (quote
+2); it evaluates to -infinity, so quote 4 REQUIRES a shader-creation
+error. The runtime-escape spelling (a runtime operand inside the
+bitcast) leaves the const-expression class, but quote 4's runtime clause
+and its min/max note make any runtime infinity an indeterminate-value
+risk -- precisely in the combine operators this arm uses. Quote 8 closes
+the literal route as well.

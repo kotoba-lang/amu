@@ -1,0 +1,49 @@
+== JUN-59 session 19 derivation census (THE NDIV=4 DISPATCH LADDER) ==
+== computed programmatically (this file is the OUTPUT of the scratch ==
+== generator; every value below is computed, none transcribed) ==
+
+-- byte-copy custody (ZERO derivation edits this session) --
+instrument session-18 committed: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+instrument session-19 copy:      a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+BYTE-COPY MATCH: True
+expected-corpus.sha256 s18 committed: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+expected-corpus.sha256 s19 copy:      eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+BYTE-COPY MATCH: True
+manifest cell lines: 24; byte-equal to s18's cell lines: True
+cases-s19-a.txt digest: b3cb62268341c43b382e3b28a9469336b4b2c0bbb7e477af5bc59f27553eff67
+cases-s18-a.txt digest (committed): ca6893efaa7351d10e1cd0f53ad7791a260e2cc072a666668b714ea6fa1cd64e
+
+-- knob arithmetic (arm table, protocol.txt section 2) --
+tag  BATCH  NDIV   n=1,000,003//NDIV   total-nominal (B*n/1,000,003)
+c2   2      1        1000003   2.0000000
+z2   2      4         250000   0.4999985
+z3   3      4         250000   0.7499978
+z4   4      4         250000   0.9999970
+z5   5      4         250000   1.2499963
+z6   6      4         250000   1.4999955
+z7   7      4         250000   1.7499948
+z8   8      4         250000   1.9999940
+c8   8      1        1000003   8.0000000
+per-dispatch nominal work in every z arm: 250000/1000003 = 0.2499993
+9 arms x 3 runs = 27 fresh processes (the arm table governs; count it: 9 rows)
+
+-- build replication pins (prior censuses parsed programmatically) --
+session-17 committed anv-xt-x4 digest: b62ddb8791523d075a7d775af7f9c20d24a94af6c174c27d5e31574bf0150e6f  -> z4 (BATCH=4,NDIV=4) rebuild pin
+session-17 committed anv-xt-c2 digest: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  -> c2 rebuild pin
+session-17 committed anv-xt-c8 digest: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  -> c8 rebuild pin
+session-18 committed anv-n8-c2 digest: e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 == s17 c2 pin: True
+session-18 committed anv-n8-c8 digest: 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 == s17 c8 pin: True
+z2,z3,z5,z6,z7,z8 = NEW (BATCH,NDIV=4) pairs -- NDIV=4 has previously been
+compiled only at BATCH=4 (session 17 anv-xt-x4); no prior binary exists for
+them in the series, so no byte-identity pin applies (named, not hidden).
+
+-- frozen cross-session reference values (QUOTE-ONLY, protocol L7; also
+-- embedded as named constants in analysis-s19.py) --
+committed controls: c2 31 (floor band 31..32), c8 32915 (session 4)
+session-17 same-knob: c2 32, c8 32868; host_ns 679458 / 2395127
+session-18 same-knob: c2 32, c8 32830; host_ns 680159 / 2385078
+committed x4 (BATCH=4,NDIV=4): 3108 (session 17 pooled median; run band 3082..3124); host_ns 391600
+committed NDIV=1 B-ladder: b3 5520 / b4 11680 / b5 17386 / b6 22730 / b7 28037
+committed NDIV=B crossing (s17): x2 32 / x3 1578 / x4 3108 / x5 4012 / x6 4738 / x7 5191 / x8 5458
+committed NDIV=8 ladder (s18): y2 31 / y3 599 / y4 1497 / y5 2496 / y6 3476 / y7 4463 / y8 5419
+committed B=8 work-down ladder: d32 1050 / d64 403 / d128 167 / d256 34 (session 13)

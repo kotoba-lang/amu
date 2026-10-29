@@ -7,7 +7,11 @@
 ;; (xs-rt-start) for --format static and runner, or xs-rt-launch for
 ;; --format launcher. static and runner images are the same bytes as before
 ;; the split.
-(defn- xs-rt-core [] :string
+(defn- xs-rt-core [] :string (xs-rt-core-profile 0))
+(defn- xs-rt-core-profile [profile :i64] :string
+  ;; Runtime admission requires its intrinsic stubs first, in ABI order.
+  (string-concat (xs-rt-body) (xs-profile-prelude profile)))
+(defn- xs-rt-body [] :string
 (string-concat "
 ;; x86_64-linux-static runtime. Scalar Kotoba plus the kxrt- intrinsics only:
 ;; no strings, vectors or closures (those would call back into this runtime).
@@ -34,7 +38,10 @@
 ;; 400.. root lengths (16) 528.. root fds (16) 656 root count 664 matched root fd
 ;; 672 scope marks 680 depth 688 region-map 696 rows 704 region-used
 ;; 712 conj-region 720 reserved-words 728 scope-releases 736 graph 744 graph-used
-;; 752 last monotonic nanoseconds (clock/now), 768 private FS2 journal pointer
+;; 752 last monotonic nanoseconds (clock/now), 760 absolute vector item highwater,
+;; 768 private FS2 journal pointer (seed/72-linux-fs2.kotoba), 776 file-lock path length,
+;; 784 file-lock canonical-path buffer pointer, 792 file-lock fd+1
+;; 8192..12287 reserved canonical lock path (inside the fixed 64KiB RW map)
 ;; 16384..16679 --format launcher only (the launcher text, ADR 0371 step 4): keep clear
 ;; 16704 --format platform-linked only (the platform scratch page): keep clear
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
@@ -42,7 +49,7 @@
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
 (def KXRT-PAIRS 16777216)
 (def KXRT-POOL 268435456)
-(def KXRT-VECTORS 4194304)
+(def KXRT-REGIONS 4194304)
 (def KXRT-ITEMS 268435456)
 (def KXRT-VECTOR-MAX 33554432)
 (def KXRT-VALUE-MAX 8388608)
@@ -348,14 +355,17 @@
 (defn- kxrt-vnew [off :i64 n :i64] :i64
   (let [u (kxrt-gl 48)]
     (if (>= u KXRT-VECTORS) (kxrt-arena 2)
-      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) w (kxrt-gs 48 (inc u))]
+      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
 (defn- kxrt-vector-alloc [n :i64] :i64
   (let [u (kxrt-gl 64)]
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
-      (let [z (loop [i 0] (if (= i n) 0 (let [w (kxrt-store64 (kxrt-item u i) 0)] (recur (inc i)))))
+      (let [high (kxrt-gl 760) stop (if (< high (+ u n)) high (+ u n))
+            count (if (> stop u) (- stop u) 0)
+            base (kxrt-item u 0) byte-end (+ base (* 8 count))
+            z (loop [cursor base] (if (= cursor byte-end) 0 (let [w (kxrt-store64 cursor 0)] (recur (+ cursor 8)))))
             w (kxrt-gs 64 (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
@@ -385,7 +395,7 @@
           :else
             (let [t (kxrt-count 272 1) t2 (kxrt-count 280 n)
                   capacity (if (< (* 2 need) 4) 4 (* 2 need))
-                  reserve (and (<= capacity (- KXRT-ITEMS u)) (< (kxrt-gl 704) KXRT-VECTORS))
+                  reserve (and (<= capacity (- KXRT-ITEMS u)) (< (kxrt-gl 704) KXRT-REGIONS))
                   z (kxrt-icopy u off n) y (kxrt-store64 (kxrt-item u n) x)]
               (if reserve
                 (let [id (inc (kxrt-gl 704)) p (kxrt-region id)
@@ -399,7 +409,7 @@
   (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64) c (kxrt-count 256 1)
         id (kxrt-load64 (kxrt-rmap h)) used (kxrt-gl 704)]
     (cond (>= n KXRT-VECTOR-MAX) (kxrt-fail)
-          (or (< used 0) (> used KXRT-VECTORS) (< id 0) (> id used)) (kxrt-fail)
+          (or (< used 0) (> used KXRT-REGIONS) (< id 0) (> id used)) (kxrt-fail)
           (= id 0) (kxrt-conj-regular off n x)
           :else (let [p (kxrt-region id) fill (kxrt-load64 p) end (kxrt-load64 (+ p 8))]
                   (cond (or (< fill 0) (> fill end) (> end u)) (kxrt-fail)
@@ -601,6 +611,77 @@
             z (kxrt-close fd)]
         (kxrt-lock-answer u size (and regular (= k size) (= tail 0) (= z 0)))))))
 
+;; KPV1 private-store frame: NUL KPV1 NUL, op R/C/A, path, NUL,
+;; create bytes OR expected bytes, NUL, append bytes. No token scanning.
+;; R has no final separator. Responses: status byte 1 plus read bytes;
+;; byte 0 on refusal. C is exclusive create; A compares under flock before
+;; appending and fsyncing. Interrupted appends remain fail-closed journal
+;; damage for the caller to detect, never a successful signature release.
+(defn- kxrt-private-end [a :i64 n :i64 start :i64] :i64
+  (loop [i start] (cond (>= i n) n (= (kxrt-load8 (+ a i)) 0) i :else (recur (inc i)))))
+(defn- kxrt-private-open [root :i64 path :i64 flags :i64 mode :i64] :i64
+  (let [how (+ (kxrt-gl 200) 4096)
+        x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode)
+        z (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 root path how 24 0 0)))
+(defn- kxrt-private-stat? [fd :i64 directory :bool] :bool
+  (let [s (+ (kxrt-gl 200) 8192) r (kxrt-syscall 5 fd s 0 0 0 0)
+        mode (bit-and (kxrt-load64 (+ s 24)) 4294967295)
+        uid (bit-and (kxrt-load64 (+ s 28)) 4294967295)
+        links (kxrt-load64 (+ s 16))
+        mine (kxrt-syscall 107 0 0 0 0 0 0)]
+    (and (= r 0) (= uid mine)
+         (= (bit-and mode 65535) (if directory 16832 33152))
+         (or directory (= links 1)))))
+;; Opens the no-symlink parent beneath the granted root, retaining its fd.
+;; Its owner must be euid and its exact permission bits 0700.
+(defn- kxrt-private-parent [a :i64 n :i64 leaf :i64] :i64
+  (let [m (kxrt-path a n) d (kxrt-gl 208)
+        j (loop [j (dec m)] (cond (< j 0) -1 (= (kxrt-load8 (+ d j)) 47) j :else (recur (dec j))))
+        bn (- m (inc j))]
+    (if (or (< m 0) (< j 0) (< bn 1) (> bn 255)) -1
+      (let [c (kxrt-copy leaf (+ d j 1) bn) z (kxrt-store8 (+ leaf bn) 0)
+            pm (if (= j 0) 1 j) y (kxrt-store8 (+ d pm) 0)
+            k (kxrt-admit pm)
+            rest (if (>= k pm) (let [u (kxrt-store8 (+ d pm 1) 46) v (kxrt-store8 (+ d pm 2) 0)] (+ d pm 1)) (+ d k))
+            fd (if (< k 0) -1 (kxrt-private-open (kxrt-gl 664) rest 720896 0))]
+        (if (and (>= fd 0) (kxrt-private-stat? fd true)) fd
+          (let [q (if (>= fd 0) (kxrt-close fd) 0)] -1))))))
+(defn- kxrt-fs-private [a :i64 n :i64] :i64
+  (let [op (if (> n 1) (kxrt-load8 a) 0) pi (kxrt-private-end a n 1)
+        vi (if (< pi n) (kxrt-private-end a n (inc pi)) n)
+        shape (and (> pi 1) (< (- pi 1) 4096)
+                   (or (and (= op 82) (= pi n))
+                       (and (= op 67) (< pi n) (= vi n))
+                       (and (= op 65) (< pi vi) (< vi n) (> n (inc vi))
+                            (= (kxrt-private-end a n (inc vi)) n))))
+        leaf (+ (kxrt-gl 200) 9216)
+        parent (if shape (kxrt-private-parent (+ a 1) (- pi 1) leaf) -1)
+        fd (if (< parent 0) -1 (kxrt-private-open parent leaf (if (= op 67) 657601 (if (= op 65) 657410 657408)) (if (= op 67) 384 0)))
+        lock (if (and (>= fd 0) (kxrt-private-stat? fd false))
+               (kxrt-syscall 73 fd (if (= op 82) 5 6) 0 0 0 0) -1)
+        checked (and (= lock 0) (kxrt-private-stat? fd false))
+        size (if checked (kxrt-load64 (+ (kxrt-gl 200) 8240)) -1)
+        u (kxrt-gl 32) p (+ (kxrt-gl 24) u 1)
+        room (if (> 1048577 (- KXRT-POOL u)) (kxrt-budget 4) 0)
+        read (if (and checked (>= size 0) (<= size 1048576) (not= op 67)) (kxrt-lock-read fd p size) -1)
+        ok (cond
+             (not checked) false
+             (= op 82) (= read size)
+             (= op 67) (and (<= (- n (inc pi)) 1048576)
+                           (= (kxrt-write-all fd (+ a pi 1) (- n (inc pi))) 1)
+                           (= (kxrt-syscall 74 fd 0 0 0 0 0) 0)
+                           (= (kxrt-syscall 74 parent 0 0 0 0 0) 0))
+             :else (and (= read size) (= size (- vi (inc pi)))
+                        (kxrt-same p (+ a pi 1) size)
+                        (<= (+ size (- n (inc vi))) 1048576)
+                        (= (kxrt-syscall 8 fd 0 2 0 0 0) size)
+                        (= (kxrt-write-all fd (+ a vi 1) (- n (inc vi))) 1)
+                        (= (kxrt-syscall 74 fd 0 0 0 0 0) 0)))
+        closed (if (>= fd 0) (kxrt-close fd) 0)
+        closed-parent (if (>= parent 0) (kxrt-close parent) 0)]
+    (kxrt-lock-answer u (if (= op 82) size 0) (and ok (= closed 0) (= closed-parent 0)))))
+
 (defn- kxrt-fs-write [a :i64 n :i64 i :i64 tl :i64 append :bool] :i64
   (let [m (kxrt-path a i) c (+ a i tl) cn (- n (+ i tl)) d (kxrt-gl 208)
         same (and append (>= (kxrt-gl 112) 0) (= (kxrt-gl 128) m) (kxrt-same (kxrt-gl 120) d m))
@@ -683,8 +764,11 @@
   (let [a (kxrt-saddr h) n (kxrt-ps h)
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
         ri (kxrt-find a n 0x45535f45474e4152 0x50 9) rni (kxrt-find a n 0x535f454d414e4552 0x5045 10) fi (kxrt-find a n 0x45535f434e595346 0x50 9)
+        li (kxrt-find a n 4995441188540468294 80 9) ui (kxrt-find a n 6007603180400823893 20549 10)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
-    (cond (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
+    (cond (and (>= n 6) (kxrt-tok-at a 0x3156504b00 0 6))
+          (let [z (kxrt-sink-close)] (kxrt-fs-private (+ a 6) (- n 6)))
+          (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-source-lock (+ a 6) (- n 6)))
           append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
           (>= wi 0) (let [z (kxrt-sink-close)]
@@ -698,6 +782,8 @@
           (>= rni 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
           (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
+          (>= li 0) (let [z (kxrt-sink-close)] (if (= (+ li 9) n) (kxrt-fs-lock a li false) (kxrt-fail)))
+          (>= ui 0) (let [z (kxrt-sink-close)] (if (= (+ ui 10) n) (kxrt-fs-lock a ui true) (kxrt-fail)))
           ;; STAT, MTIME, ... are not provided by this runtime: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
@@ -732,6 +818,25 @@
         r (if (< f2 0) -1 (kxrt-syscall 264 f1 b1 f2 b2 0 0))
         z1 (if (>= f1 0) (kxrt-close f1) 0) z2 (if (>= f2 0) (kxrt-close f2) 0)]
     (kxrt-intern-dec (if (= r 0) 1 0))))
+;; Scope-bound single-writer fencing. One cooperative lock per process;
+;; a nonblocking kernel flock persists across arena resets and is released
+;; by process death. Lock files must never be renamed by the store protocol.
+(defn- kxrt-fs-lock [a :i64 n :i64 unlock :bool] :i64
+  (let [m (kxrt-path a n) held (kxrt-gl 792) saved (kxrt-gl 784)]
+    (if (< (kxrt-admit m) 0) (kxrt-intern-dec 0)
+      (if unlock
+        (if (or (= held 0) (not (= m (kxrt-gl 776))) (not (kxrt-same (kxrt-gl 208) saved m))) (kxrt-intern-dec 0)
+          (let [r (kxrt-syscall 73 (dec held) 8 0 0 0 0) c (kxrt-close (dec held)) z (kxrt-gs 792 0)]
+            (kxrt-intern-dec (if (and (= r 0) (= c 0)) 1 0))))
+        (if (> held 0) (kxrt-intern-dec 0)
+          (let [fd (kxrt-open m 655426 384)]
+            (if (< fd 0) (kxrt-intern-dec 0)
+              (let [r (kxrt-syscall 73 fd 6 0 0 0 0)]
+                (if (not (= r 0)) (let [z (kxrt-close fd)] (kxrt-intern-dec 0))
+                  (let [allocated (if (= saved 0) (kxrt-gs 784 (+ (kxrt-g) 8192)) 0)
+                        copied (kxrt-copy (kxrt-gl 784) (kxrt-gl 208) m)
+                        length (kxrt-gs 776 m) stored (kxrt-gs 792 (inc fd))]
+                    (kxrt-intern-dec 1)))))))))))
 ;; ---- wire 42 :gpu/compute: a transport to the GPU provider (ADR 0371) ----
 ;; The provider is another process. The launcher passes two inherited fds,
 ;; KEXE_CAP_RESOURCES_42=REQUEST,ANSWER (checked at start, kxrt-gpu-fds). A
@@ -1428,6 +1533,14 @@
                 checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
                 closed (kxrt-sink-close) r (kxrt-fs-source-lock (+ p 6) (- n 6))]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
+        ;; KPV1 is also an exact byte frame; route it before FS2 can reject
+        ;; raw bytes. Other byte requests still require the FS2 contract.
+        (and (= id 35) (= rk 8) (= sk 8) (>= (kxrt-vlen req) 6)
+             (kxrt-tok-at (kxrt-vbytes req) 0x3156504b00 0 6))
+          (let [n (kxrt-vlen req) p (kxrt-vbytes req)
+                checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
+                closed (kxrt-sink-close) r (kxrt-fs-private (+ p 6) (- n 6))]
+            (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         (and (= id 35) (or (not= rk 1) (not= sk 1)
           (and (>= (kxrt-ps req) 5) (kxrt-tok-at (kxrt-saddr req) 0x32534600 0 5))))
           (kxrt-f2-dispatch (if (or (= rk 9) (= rk 10)) 1 rk)
@@ -1559,9 +1672,9 @@
   (-> i (kxrt-allow-nr-at p 1) (kxrt-allow-nr-at p 60) (kxrt-allow-nr-at p 231) (kxrt-allow-nr-at p 15) (kxrt-allow-nr-at p 14) (kxrt-allow-nr-at p 39) (kxrt-allow-nr-at p 186) (kxrt-allow-nr-at p 234) (kxrt-allow-nr-at p 11) (kxrt-allow-nr-at p 12) (kxrt-allow-nr-at p 228)))
 (defn- kxrt-allow-nr-at [i :i64 p :i64 nr :i64] :i64 (kxrt-allow-nr p i nr))
 (defn- kxrt-allow-fs [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5) (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
+  (-> i (kxrt-allow-nr-at p 107) (kxrt-allow-nr-at p 73) (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5) (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
 (defn- kxrt-allow-scope [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 316) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318) (kxrt-allow-nr-at p 107)))
+  (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 316) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318) (kxrt-allow-nr-at p 107) (kxrt-allow-nr-at p 73)))
 ;; read (0) only when args[0] (low word at offset 16) is fd; then the
 ;; syscall number is loaded back for the rules after it
 (defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64
@@ -1593,7 +1706,7 @@
         i5 (if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)
         i6 (if (kxrt-admitted? 23) (kxrt-allow-nr p i5 318) i5)
         i7 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i6 0) i6)
-        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 230) i7)
+        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 230) 219) i7)
         n (kxrt-bpf p i8 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
@@ -1769,7 +1882,7 @@
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
-        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
@@ -2293,7 +2406,7 @@
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
-        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         v (kxrt-store64 ctx 11)
         d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
@@ -2449,7 +2562,7 @@
         m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
-        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         m16 (kxrt-gs 16704 (kxrt-map 16384))
         cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
@@ -2470,4 +2583,70 @@
         e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))
         e3 (kxrt-arena-use)]
     (if (= (kxrt-gl 160) 1) (let [z (kxrt-report r)] 0) (bit-and r 255))))
+")
+;; --format b2 (seed/98): xs-rt-core, then this text.
+(defn- xs-rt-b2 [] :string
+"
+;; ---- route B2: --format b2, context word 408 = 5 (ADR 0375, seed/98) ----
+;; Appended after the runtime core in place of the standard start. The static entry stub calls
+;; kxrt-start(sp). No signal handlers, limits or seccomp here, as in the platform-linked image: the
+;; program loads a vendor library and what that code does is what the process does; the GPU provider
+;; confines itself after device creation (ADR 0371 Decision 5). A runtime refusal traps (SIGILL).
+;; Environment: KEXE_ALLOW (default 35,37,38,39) and KEXE_FUEL, as in a static image.
+;; The extended intrinsics (E2) are consecutive and in this order; seed/98 replaces their calls with
+;; inline code.
+(defn- kxrt-load16 [a :i64] :i64 0)
+(defn- kxrt-load32 [a :i64] :i64 0)
+(defn- kxrt-store16 [a :i64 v :i64] :i64 0)
+(defn- kxrt-store32 [a :i64 v :i64] :i64 0)
+(defn- kxrt-ccall [fp :i64 argv :i64] :i64 0)
+;; The platform API: the program may call these kxrt-b- functions and no other runtime function (seed/98
+;; checks its calls by name). Addresses are i64 and nothing is checked, as in C. 16- and 32-bit loads
+;; zero-extend. kxrt-b-ccall takes the 14 words of kxrt-ccall (seed/75): rdi rsi rdx rcx r8 r9, then
+;; 8 stack words; the C function runs on the image stack. kxrt-b-syscall is the raw system call
+;; (-errno on failure). kxrt-b-argc and kxrt-b-argv exclude the program name; kxrt-b-envp is the
+;; environment vector. kxrt-b-exports is the export table of seed/98 (0 when there is none).
+;; kxrt-b-state is the program's own 32 KiB, zero at start (context + 32768, inside the RW segment).
+(defn- kxrt-b-ccall [fp :i64 argv :i64] :i64 (kxrt-ccall fp argv))
+(defn- kxrt-b-load8 [a :i64] :i64 (kxrt-load8 a))
+(defn- kxrt-b-load16 [a :i64] :i64 (kxrt-load16 a))
+(defn- kxrt-b-load32 [a :i64] :i64 (kxrt-load32 a))
+(defn- kxrt-b-load64 [a :i64] :i64 (kxrt-load64 a))
+(defn- kxrt-b-store8 [a :i64 v :i64] :i64 (kxrt-store8 a v))
+(defn- kxrt-b-store16 [a :i64 v :i64] :i64 (kxrt-store16 a v))
+(defn- kxrt-b-store32 [a :i64 v :i64] :i64 (kxrt-store32 a v))
+(defn- kxrt-b-store64 [a :i64 v :i64] :i64 (kxrt-store64 a v))
+(defn- kxrt-b-syscall [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (kxrt-syscall n a b c d e f))
+(defn- kxrt-b-argc [] :i64 (kxrt-gl 72))
+(defn- kxrt-b-argv [] :i64 (kxrt-gl 80))
+(defn- kxrt-b-envp [] :i64 (kxrt-gl 88))
+(defn- kxrt-b-exports [] :i64 (kxrt-load64 (+ (kxrt-ctx) 416)))
+(defn- kxrt-b-state [] :i64 (+ (kxrt-ctx) 32768))
+(defn- kxrt-b-alloc [n :i64] :i64 (kxrt-syscall 9 0 n 3 34 -1 0))
+(defn- kxrt-b-exit [code :i64] :i64 (kxrt-exit code))
+(defn- kxrt-start [sp :i64] :i64
+  (let [ctx (kxrt-ctx) argc (kxrt-load64 sp)
+        a (kxrt-gs 72 (if (> argc 0) (dec argc) 0)) b (kxrt-gs 80 (+ sp 16)) c (kxrt-gs 88 (+ sp (* 8 (+ argc 2))))
+        m0 (kxrt-gs 0 (kxrt-map (* KXRT-PAIRS 16))) m1 (kxrt-gs 16 (kxrt-map KXRT-PAIRS))
+        m2 (kxrt-gs 24 (kxrt-map KXRT-POOL)) m3 (kxrt-gs 40 (kxrt-map (* KXRT-VECTORS 16)))
+        m4 (kxrt-gs 56 (kxrt-map (* KXRT-ITEMS 8))) m5 (kxrt-gs 96 (kxrt-map 65536))
+        m6 (kxrt-gs 200 (kxrt-map 16384)) m7 (kxrt-gs 208 (kxrt-map 8192))
+        m8 (kxrt-gs 120 (kxrt-map 4096)) m9 (kxrt-gs 136 (kxrt-map 65536)) m10 (kxrt-gs 184 (kxrt-map 4096))
+        m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
+        m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
+        m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-VECTORS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
+        cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
+        v (kxrt-store64 ctx 11)
+        d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
+        d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
+        d4 (kxrt-store64 (+ ctx 320) (kxrt-gl 40)) d5 (kxrt-store64 (+ ctx 328) (kxrt-gl 56))
+        al (kxrt-allow (kxrt-env 0x4c4c415f4558454b 0x3d574f 0 11))
+        cm (kxrt-gs 240 1)
+        f0 (kxrt-gs 168 (kxrt-fuel (kxrt-env 0x4555465f4558454b 0x3d4c 0 10)))
+        f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
+        r (kxrt-call-main ctx)
+        e1 (if (= (kxrt-sink-close) 1) 0 (kxrt-fail))
+        e2 (if (= (kxrt-flush) 1) 0 (kxrt-fail))]
+    (kxrt-exit (bit-and r 255))))
 ")

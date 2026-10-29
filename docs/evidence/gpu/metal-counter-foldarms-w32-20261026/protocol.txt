@@ -1,0 +1,110 @@
+JUN-58 / JUN-55 -- the fold-arms counters W-GRID row (the first cell
+off the anchor): RUN PROTOCOL + PREDICTION DECLARATION (written BEFORE
+the first hardware run of this row; the runs fill run-1.txt ..
+run-6.txt beside this file)
+
+ROW: the anchor record's own named UNMEASURED item, verbatim --
+"every other W (32/64/128/512/1024) and shape 2 (n = 2^20) on this
+channel (R at those grids is unmeasured too)"
+(docs/evidence/gpu/metal-counter-foldarms-20261025/record.txt; carried
+unchanged through the cross-day row's record
+docs/evidence/gpu/metal-counter-foldarms-crossday-20261026/record.txt).
+This row takes the list ONE CELL AT A TIME at the route's own unit and
+takes the list's FIRST width: W = 32, at the anchor's shape.
+
+Cell (ONE cell = one counters session, the route's own unit):
+  n = 1000003, workgroup = 32 -- the anchor cell's shape (n = 1000003)
+  at the list's first unmeasured width. The launch shape is the
+  instrument's own at that (n, W) -- a DIFFERENT shape from the
+  anchor's 3907 x 256, so the anchor's measured residual R numbers do
+  not transfer to this grid (the anchor's list says so; this row
+  inherits that at its letter).
+
+DAY FACTS: this row's runs execute 2026-10-26 UTC (the run window's UTC
+stamps ride in run-window.txt, captured verbatim around the runs) --
+the SAME UTC day as the anchor row's cross-day replication (day 2). No
+cross-day claim of any kind is made or possible from this row; this is
+a W-cell row, not a day row.
+
+Runs: 6 fresh processes (run-1.txt .. run-6.txt), one ADR-0358 run
+each -- the anchor row's declared process count and protocol unchanged
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run, 2
+warmup submits per arm discarded, verified untimed read-back).
+
+Instrument: scripts/gpu-subgroup-reduce-metal-counters.m compiled fresh
+this row (unchanged in the tree since the anchor row -- last commit
+touching it is the harness row b3717baf3, before the anchor cf631722d;
+named so the comparison is instrument-constant).
+
+Arms: the fold arms baseline-<op>.metallib vs subgroup-<op>.metallib at
+W=32, built THIS row from the COMMITTED emitters via
+scripts/gpu-subgroup-reduce-metal-measure.cljk --width 32 into a FRESH
+build directory (no earlier build directory of this channel is reused;
+no prior W=32 build of this channel exists at all -- named).
+
+REALIZATION CONTROL (checked at build time, recorded in build-shas.txt):
+the W-INDEPENDENT artifacts -- probe.metallib and the counters binary
+-- are sha256-compared against the anchor row's 2026-10-25 build
+(counter-foldarms-build-20261025): identical shas prove the instrument
+is constant across the two cells. The six metallibs are EXPECTED to
+differ from the anchor's (the width is this row's axis) and their shas
+are recorded verbatim so a later cross-day replication of THIS cell can
+hold its realization fixed the same way the anchor's cross-day row did
+(the same P0a/P0b branch applies there). If probe.metallib or the
+counters binary DIFFERS from the anchor's, the instrument MOVED and
+this row is named instrument-confounded (branch registered as P0c).
+
+op-order: the instrument default sum,max,min, FIXED (the anchor row's
+decision, unchanged; op-order dependence stays UNMEASURED on this
+channel).
+
+Analysis: ONLY the committed route, scripts/gpu_regime_classify.py
+--counters-log run-1.txt ... run-6.txt (pre-committed in the
+counters-route row, before any of this data exists), run twice with the
+two outputs diffed for byte identity; publication saved verbatim as
+publication.txt. NO analysis code is written this row.
+
+R HANDLING (inherited at its letter): raw bracket deltas published by
+the route; a residual R is NEVER subtracted and never assumed -- the
+anchor's ~7.8-8.0us warm / ~20.6-20.8us cold figures belong to the
+3907 x 256 launch shape and are NOT quoted as this grid's R. Whatever
+bracket band the route publishes at this grid is reported as the raw
+band, named, not decomposed ("R at those grids is unmeasured" stays
+true after this row: the raw band is not an R decomposition).
+
+PREDICTIONS (registered before the first run; both branches of the
+named question registered):
+
+P0 (validity): all 6 processes exit 0 with stderr 0 bytes, 120/120
+   sample lines resolved each (counter_ns=ERR count 0 across all 720
+   samples), 6/6 verify lines ok=1 per run (36 total, 0 ok=0), and the
+   committed route parses the session with ZERO named exclusions (every
+   (run, operator) block usable at its letter). Any failure: the
+   affected data enters nothing and the row is named invalid.
+
+P1 (THE NAMED QUESTION -- the device-level sign at (n=1000003, W=32),
+   rule 2 at its letter over this cell's own session, both branches
+   registered):
+   P1a (W-INVARIANT SIGN): all 18 per-run paired-median ratios
+       (variant_ns/baseline_ns, NEVER re-oriented) are above 1.0 at
+       every operator and the cell -- the anchor's "REGIME-INVARIANT,
+       SLOWER" sign extends to W=32; the channel's cell table grows by
+       one measured cell and the sign's W-scope is {32, 256}.
+   P1b (W-DEPENDENT SIGN): any per-run paired-median ratio at or below
+       1.0, or a sign that is not one-sided across the runs -- the sign
+       is W-DEPENDENT on this channel; the W-shape of the sign OPENS
+       (named, not explained) and no W-invariant reading survives.
+
+P2 (rule-1 regime structure at this cell): the level clustering of the
+   baseline per-run medians is published either way and NAMED whatever
+   it is. NO shape is predicted: the anchor showed ONE/TWO levels and
+   the cross-day row showed the class is DAY-VARIABLE (4/4/1 vs
+   2/2/1), so this row registers no structural prediction.
+
+P3 (falsifier stance / consequence): NOTHING MOVES (rule 4) -- no
+   :measured? flag, no :shapes value, no selection answer, no workgroup
+   row (this channel can never move one), no WGSL cell flip, no MSL
+   command-buffer cell flip; the named item moves in RECORD STATE only
+   ("every other W ... on this channel" UNMEASURED -> W=32 measured at
+   this protocol's letter; W=64/128/512/1024, shape 2 (n = 2^20) and R
+   at every grid stay UNMEASURED).

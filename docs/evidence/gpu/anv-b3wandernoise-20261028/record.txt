@@ -1,0 +1,192 @@
+JUN-59 -- session 40 record: THE WANDER-NOISE REPARTITION PROBE
+(is the within-window block-min wander CONSISTENT WITH
+RUN-EXCHANGEABLE SAMPLING NOISE, or does it exceed what
+re-partitioning the same window's runs produces?).
+ANALYSIS slice -- NO new hardware this tick (every input quantity
+was MEASURED in sessions 36/38/39; this session re-derives
+statistics from their COMMITTED run logs).
+2026-10-28 (UTC). Chain PR #1638 (bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): SESSION 39'S FIRST-NAMED UNMEASURED ITEM
+   "WHY the min statistic wanders (estimator noise vs physical drift
+   vs both)" -- taken on ONE observable axis: at the session-39
+   window, does the observed spread T (range of the 12 block-unit
+   min statistics, one arm) EXCEED the spread that run-repartition
+   resampling of the SAME window's committed runs produces? The unit
+   and statistic are the s35/s36-frozen constructions UNCHANGED
+   (block = 3 consecutive runs; block value = pooled median
+   gpu_ticks of the block's 75 samples per ok cell; block-min = min
+   over the 18 ok cells; T = max - min over the 12 block-mins). The
+   null is RUN-EXCHANGEABLE SAMPLING NOISE (the 36 runs of one arm
+   within one window are exchangeable across blocks; the null
+   includes ALL within-run and run-to-run fresh-process noise).
+   Resampling: 20,000 trials, random.Random(20261028) consumed in
+   the frozen probe order (s39 hi, s39 tw, s36 hi, s36 tw, s38 hi,
+   s38 tw), p = (1 + count(T* >= T_obs)) / (1 + 20,000), one-sided.
+   The T1/replication letters were pre-registered in protocol.txt
+   sections 0-3 (freeze stamp 2026-10-28T04:40:07Z, BEFORE any
+   statistic of this probe was computed): (a) NOISE-CONSISTENT /
+   (b) EXCEEDS NULL (named which arm) / (c) NOT EVALUABLE.
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3wandernoise-20261028/ -- protocol.txt
+       (frozen before any statistic, freeze stamp
+       2026-10-28T04:40:07Z), analysis-s40.py + publication-s40.txt
+       (run twice, diff exit 0), derivation-census-s40.txt
+       (independent second parser, 90 rows / 0 mismatched, run
+       twice byte-identical), bar-eval-s40.txt, classify-selftest.
+       txt, gate-run1.txt, gate-run2.txt, gate-full-run-tests.txt,
+       this record. NO run logs (no hardware), NO .sh files.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNCHANGED (NO
+       reading -> NO line -> NO day-slot consumption; byte-identical
+       to HEAD, verified in the census).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) DERIVED FROM MEASURED DATA (the 234 committed run logs of
+       the three windows -- 78 each: c2 3 + hi 36 + tw 36 + c8 3;
+       every input quantity was MEASURED on aiueos-6600hs Intel BMG
+       G31 ANV in sessions 36/38/39): integrity re-derived per
+       window (VERIFY mismatch 0, SAMPLE 450 / VERIFY 24 per run,
+       knobs == arm table, S=8 fail-closed, cell map identical --
+       3/3 windows clean); C1 at the s39 window (a): c2 FLOOR, c8
+       pooled median 32,829 vs committed 32,915 (0.26%); the
+       block-min vectors of all three windows reproduce the
+       published/quote-only vectors of publication-s39.txt section 3
+       EXACTLY (6/6 vectors).
+   (b) T1 THE ROW QUESTION (DERIVED): T1 = (a) NOISE-CONSISTENT --
+       at the s39 window neither arm's wander exceeds the
+       run-repartition null: hi T_obs = 14 (block-mins 981..995),
+       count 16,547 / 20,001, p = 0.827359; tw T_obs = 8
+       (983..991), count 19,729, p = 0.986451. THE FINDING: the
+       within-window block-min wander at this window is within what
+       run-repartition of the same window's runs produces -- no
+       block-timescale (~3-run / few-second) structure beyond
+       run-exchangeable sampling noise is detected at this window.
+       NAMED, NOT HIDDEN: (a) does NOT prove "estimator noise is
+       the mechanism" -- the null is run-exchangeability at the
+       fresh-process granularity and a physical driver acting
+       uniformly within the window would ALSO read (a); (b) would
+       have implicated block-timescale structure but NOT named it;
+       exchangeability of runs is itself an assumption; L2
+       observational ONLY, NO causal mechanism, direction UNMEASURED.
+   (c) REPLICATION LETTERS (DERIVED, pre-registered same rule):
+       s36 window (a) NOISE-CONSISTENT (hi T_obs 18, p 0.649868; tw
+       T_obs 14, p 0.739563); s38 window (a) NOISE-CONSISTENT (hi
+       T_obs 25, count 1,184, p 0.059247; tw T_obs 21, p 0.328534).
+       All three probed windows read (a) on both arms. NAMED, NOT
+       HIDDEN: the s38 hi arm's p = 0.059247 sits CLOSE ABOVE the
+       frozen 0.05 threshold at the largest T_obs of the six probes
+       (25) -- the letter is (a) at the frozen threshold and NO
+       trend, strength or near-miss claim is made; the three-window
+       comparison is descriptive only (three windows are not a
+       rate; ONE day, ONE host).
+   (d) B1/B2 THE BAR: NO reading this tick -> NO ledger line, NO
+       day-slot consumption (settle-bar-ledger.txt byte-identical to
+       HEAD, verified in the census); frozen evaluator --self-test
+       38 fixture checks ok (pin), ledger eval twice byte-identical
+       -> VERDICT UNCHANGED PENDING 1/4 with s31 counted; next
+       executable day slot 2026-10-29.
+   (e) Gates (real runs this tick): gpu_regime_classify.py
+       --self-test TOTAL 2649/0 (pin); scoped GPU gate GREEN 123
+       tests / 12,162 assertions / 0 failures / 0 errors recorded
+       run 1 AND run 2 (scratch runner scoped-gpu-gate.cljk,
+       created, run, deleted -- never committed); FULL run-tests.cljk
+       RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not find
+       namespace: kotoba.form' at namespace load (ADR-0362, outside
+       this diff -- this diff touches NO .cljk namespace) -- NO
+       green full suite claimed; find docs/evidence/gpu -name '*.sh'
+       -> 0.
+   (f) derivation-census-s40.txt: an independent second parser
+       (split-based parsing without regex, a 3-way-merge median
+       without sorted(), the run-repartition resampling and the RNG
+       call order re-implemented) re-derives every cited number from
+       the 234 committed logs -- 90 rows, 0 mismatched -- and
+       verifies the ledger is byte-identical to HEAD, the gate
+       artifacts and the no-.sh policy; run twice byte-identical.
+
+4. NAMED, NOT HIDDEN (this tick): (i) NAMED DEFECTS in the scratch
+   generator/first drafts (none reached a quoted value): (d1) the
+   committed analysis's ROOT constant was resolved one directory
+   level short (FileNotFoundError on 'docs/docs/...' at the FIRST
+   file open, before any statistic was computed); (d2) the
+   resampling's run table was keyed 1-based while the frozen probe
+   draws 0-based indices (KeyError: 0 while building the observed
+   blocks of the FIRST probe, before any T_obs or count existed);
+   both corrected before any run completed; (d3) the census first
+   draft's "bar ledger eval twice byte-identical" row compared the
+   two sections INCLUDING the harness's own separator blank line
+   (its own want row read match=False BEFORE the census was quoted
+   anywhere); corrected to compare the evaluator outputs with
+   surrounding blank lines stripped -- the evaluator outputs
+   themselves are byte-identical (a section diff showed only the
+   harness blank line); the committed census records the corrected
+   runs only; (ii) the (a) letters are LOW-POWER facts at n=12
+   blocks / 36 runs in ONE window each and are NOT evidence that the
+   wander IS estimator noise -- see (b); (iii) 20,000 trials (not
+   the s35-frozen 100,000): pure-Python cost, named in the freeze;
+   p resolution 1/20,001 ~= 5e-5; (iv) the per-run-unit ranges
+   (D1) are a NAMED DIFFERENT UNIT (L10) and carry no letter.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31), the X1R letter
+   thresholds (s32), the T1 letter thresholds (s33-s36), the joint
+   letter thresholds (s37) and the repartition-null letters of THIS
+   session (protocol.txt section 3). Not implemented in the
+   compiler; not themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/
+   evaluator remain evidence-scoped tooling; the ledger is an
+   evidence file; nothing is wired into any namespace.
+   MEASURED (this tick): nothing new -- NO hardware ran; the
+   numbers are DERIVED from the sessions 36/38/39 measured logs.
+   Provisional workgroup defaults in kotoba.compiler.accelerator-
+   targets remain provisional (:measured? false) -- not
+   optimization evidence. RULE 4 unchanged: NOTHING MOVES -- no
+   workgroup row, no :measured? flag, no selection answer; NO
+   vendor optimization exists for Intel and none is claimed.
+
+6. UNMEASURED (named): what, if anything, the wander IS physically
+   (this probe only shows no structure BEYOND run-repartition noise
+   at the ~3-run block timescale; estimator noise vs an unmeasured
+   physical variable acting uniformly within a window STAYS
+   UNRESOLVED -- such a driver is invisible to this design by
+   construction); whether window-to-window variation of T itself
+   (8..25 across the six probes; s38 hi the largest at p 0.059247)
+   exceeds noise (cross-window comparison here is descriptive only
+   -- a named candidate row for a later session); any common-mode
+   driver faster than the ~1s block-pair spacing (L14); the s31,
+   s34-window and s36 tw block-E host-side excursions' causes; the
+   threshold-artifact-vs-representation question itself; the flip
+   location inside (252,604, 253,906]; any causal mechanism;
+   anything off the ANV host. The bar needs at least THREE more
+   qualifying UTC days (V4 PENDING 1/4); whether FOUR qualifying
+   days is ENOUGH (the bar can return UNSETTLED).
+
+7. THE TICK'S FINDING IN ONE LINE: THE WITHIN-WINDOW BLOCK-MIN
+   WANDER READS (a) NOISE-CONSISTENT AT ALL THREE PROBED WINDOWS ON
+   BOTH ARMS -- at the s39 window neither arm's T exceeds the
+   run-repartition null (hi T_obs 14, p 0.827359; tw T_obs 8, p
+   0.986451) and the pre-registered replications agree (s36 hi p
+   0.649868 / tw p 0.739563; s38 hi p 0.059247 / tw p 0.328534), so
+   at the probed windows/powers no block-timescale structure beyond
+   run-exchangeable sampling noise is detected and session 35's
+   question "estimator noise vs physical drift vs both" narrows to:
+   whatever moves the wander is not distinguishable from
+   fresh-process run-repartition noise at the block timescale -- the
+   MECHANISM stays UNRESOLVED ((a) is not proof of estimator noise;
+   a within-window-uniform driver is invisible), the s38 hi
+   near-threshold p (0.059247 at T_obs 25) is named not hidden, and
+   threshold-artifact-vs-representation stays UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical; no
+   ledger line this tick), and nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3wandernoise-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt (unchanged) + the
+   ADR-0355 dated note. (JUN-55, JUN-59)

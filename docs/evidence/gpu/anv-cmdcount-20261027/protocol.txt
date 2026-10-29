@@ -1,0 +1,137 @@
+JUN-59 -- session 6 protocol: COMMAND-COUNT DISCRIMINATOR (CMD-COUNT).
+INSTRUMENT channel. Frozen BEFORE the first run (2026-10-27T11:24Z, this
+tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (from session 5's named residual, verbatim scope):
+   "WHY the small-B bracket undercounts" -- sessions 4-5 MEASURED that
+   the batch instrument's GPU bracket (ts1..ts2 around B dispatches) is
+   31 ticks (FLOOR) at B<=2 at all 18 pipeline-ok cells while the SAME
+   runs' host_ns shows 351,956 ns of real work at B=1; capture turns
+   on between B=2 and B=4; and the floor is invariant to the pipeline
+   stages of both bracket endpoints (session 5). NO causal mechanism
+   has been claimed or measured. This session does NOT test a causal
+   mechanism. It measures ONE narrower, observable question:
+
+     IS THE SMALL-B UNDERCOUNT (AND THE LARGE-B CAPTURE) A FUNCTION OF
+     THE COUNT OF COMMANDS INSIDE THE BRACKET, OR OF THE DISPATCH
+     COMMANDS (REAL WORK) INSIDE IT?
+
+   knob: BARRIER_N = the number of EMPTY global execution barriers
+   (vkCmdPipelineBarrier with src=TOP_OF_PIPE, dst=BOTTOM_OF_PIPE and
+   zero memory/buffer/image dependencies) inserted between ts1 and the
+   BATCH dispatches. Empty barriers add bracketed COMMAND COUNT with
+   essentially no GPU work. Whatever the answer, no mechanism is
+   claimed: a composition that changes the bracket is an OBSERVABLE
+   DEPENDENCE, not an explanation.
+
+1. INSTRUMENT DERIVATION (chain of custody):
+   base = the archived session-5 derived source
+     docs/evidence/gpu/anv-tsstage-20261027/gpu-subgroup-reduce-anv-tsstage.c.txt
+     (digest d376e431..., re-verified in host-verify)
+   derivation = ONE parameterization edit, the BARRIER_N knob:
+     (a) a #ifndef BARRIER_N / #define BARRIER_N 0 macro next to the
+         existing BATCH macro (default 0 = the archived behaviour),
+     (b) a for loop of BARRIER_N vkCmdPipelineBarrier calls inserted
+         between the ts1 vkCmdWriteTimestamp and the BATCH dispatch
+         loop (submit_timed),
+     (c) the knob's own print: the header "# n=..." line gains
+         " barrier_n=%d" so every run log records which knob it ran.
+   Nothing else changes. The exact diff is
+   instrument-derivation.diff.txt. Sessions 1/2/4/5 instruments stay
+   byte-stable.
+
+2. ARMS (one binary per (arm, B) pair; tag = b<B>n<N>):
+   b1n0  B=1  N=0   floor control (the archived behaviour, defaults only)
+   b1n1  B=1  N=1
+   b1n2  B=1  N=2
+   b1n3  B=1  N=3   | equal total bracketed command count 6
+   b2n2  B=2  N=2   | (2 binds + B dispatches + N barriers) --
+   b4n0  B=4  N=0   | capture control, different composition
+   b1n7  B=1  N=7   dose point
+   BATCH and BARRIER_N are compile-time; the header prints batch= and
+   barrier_n=. One binary per arm = 7 binaries, gcc -O2 -D... -lvulkan,
+   same host.
+
+3. CELLS / RUN UNIT (unchanged from sessions 1-5):
+   the same 24 cell lines (byte-copy, cases-s6.txt): op {sum,max,min}
+   x W {128,256} x forced S {8,16,32,default}; S=8 fails-closed
+   (minSubgroupSize=16), 18 pipeline-ok cells carry timing samples.
+   One fresh process per run; the instrument's internal protocol
+   (WARMUP 3, ROUNDS 25, seeded LCG-shuffled interleave, SEED 20261027,
+   N_ELEMENTS 1000003) is UNCHANGED. Runs: 3 fresh processes per arm
+   = 7 arms x 3 runs = 21 processes.
+   Metric per sample: gpu_ticks = ts2 - ts1 (1 tick = timestampPeriod
+   = 52.083 ns on this device, from the instrument header), host_ns.
+   Every SAMPLE's batch= field must equal its run's B and every run's
+   header barrier_n= field must equal its run's N (checked by
+   analysis-s6.py).
+
+4. PRE-REGISTERED LETTERS (both branches named BEFORE the first run;
+   the analysis route is analysis-s6.py over the 21 committed run logs
+   ONLY, run twice byte-identical -- diff exit 0; publication-s6.txt is
+   produced only by that script):
+
+   C1 CONTROL REPLICATION (prerequisite for C2-C4): b1n0 reproduces
+      the floor (pooled median bracket <= 100 ticks at all 18 cells)
+      AND b4n0 reproduces the capture (pooled median >= 100,000 ticks
+      at all 18 cells).
+      (a) reproduced -> C2-C4 are evaluated against the row question.
+      (b) not reproduced -> C2-C4 are still reported but marked NOT
+          EVALUABLE against the sessions-4-5 row; the divergence is
+          named and its cause stays UNMEASURED.
+
+   C2 BARRIER REMOVABILITY AT B=1 (the row question): for each arm
+      b1nN, N in {1,2,3,7}: does the arm lift the floor?
+      (a) an arm lifts: pooled median > 1000 ticks at ALL 18 cells ->
+          the small-B undercount IS removable by bracketed empty-barrier
+          command count (name the arm; observable dependence only; no
+          mechanism claimed).
+      (b) no arm lifts: every arm's pooled medians <= 100 ticks at all
+          18 cells -> the undercount is NOT removable by up to 7 empty
+          global barriers between ts1 and the dispatches; whatever
+          removes it is not empty bracketed commands; the row question
+          is narrowed, mechanism stays UNMEASURED.
+      otherwise -> INCONCLUSIVE, quantified cell-by-cell.
+
+   C3 EQUAL-COUNT COMPOSITION (the three arms whose bracket holds the
+      same total command count 6: b1n3 = 1 dispatch + 3 barriers,
+      b2n2 = 2 dispatches + 2 barriers, b4n0 = 4 dispatches + 0
+      barriers):
+      (a) composition-irrelevant: each of b1n3, b2n2 tracks b4n0
+          (ratio of pooled medians within [0.5, 2.0]) at >= 15 of 18
+          cells -> the captured bracket is reproduced at equal
+          bracketed command count regardless of dispatch composition
+          (observable only; no mechanism claimed).
+      (b) dispatch-count gates: b1n3 AND b2n2 both floor (<= 100 ticks
+          at all 18 cells) while b4n0 captures -> empty bracketed
+          commands do NOT substitute for dispatch commands; the
+          capture needs real work commands (observable only).
+      otherwise -> INCONCLUSIVE, quantified cell-by-cell.
+
+   C4 DOSE (descriptive only, no branch): b1n0..b1n7 pooled median
+      brackets and host_ns per cell -- the empty-barrier dose curve at
+      B=1. Counts/ratios only.
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no
+   :size/:shapes, no selection answer. accelerator-targets defaults
+   remain provisional design assumptions (:measured? false). This is
+   NOT the basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for
+   Intel and none is claimed.
+
+6. GATES (real runs this tick): gpu_regime_classify.py --self-test
+   (committed pin 2649 assertions / 0 failures); scoped GPU gate (the
+   8 accelerator test namespaces; scratch runner, never committed;
+   expected pin 123 tests / 12162 assertions); FULL run-tests.cljk run
+   live this tick (the suite's base state is red 'Could not find
+   namespace: kotoba.form' at namespace load, ADR-0362, outside every
+   amu-gpu diff -- recorded live, no green full suite claimed);
+   find this evidence dir -name '*.sh' -> 0.
+
+7. UNMEASURED (named in advance): any causal mechanism for the
+   undercount OR the capture; session 2's run-1 dip cause; cross-day
+   replication; S=8 timing; every W outside {128,256}; shape 2; any
+   baseline-vs-variant sign; BT ordering; isolated single-dispatch
+   timing; any B outside {1,2,4} except the b4n0 control's own scope;
+   any N outside {0,1,2,3,7}; anything about non-empty barriers;
+   anything off this host.

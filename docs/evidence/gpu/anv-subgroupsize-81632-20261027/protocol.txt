@@ -1,0 +1,92 @@
+PROTOCOL -- JUN-59 subgroup 8/16/32 measurement, FIRST session
+(written BEFORE the first run; nothing here is rewritten after the runs;
+the run transcript is run-1.txt / run-2.txt / run-3.txt and the analysis
+is publication.txt, produced only by analysis.py over those logs)
+
+WHAT THIS SESSION IS. The JUN-59 issue body's named question ("subgroup
+幅 (8/16/32) を考慮した workgroup 調整") and the 2026-10-19 record's named
+next step ("subgroup 8/16/32 の本格計測は次の step") at their letter: the
+FIRST hardware measurement of the :subgroup-reduce GLSL arm's sensitivity
+to the SUBGROUP SIZE on the fleet's Intel device (BMG G31 / ANV on
+aiueos-6600hs-1), through FORCED subgroup sizes 8/16/32
+(VK_EXT_subgroup_size_control) plus the device default.
+
+WHAT RUNS. The COMMITTED emitter's bytes: scripts/emit-gpu-subgroup-
+reduce-glsl.cljk lowers (:glsl-v1, :subgroup-reduce) through the public
+route for W in {128, 256} x operator in {sum, max, min} (6 files, the
+shaders/ corpus, re-emitted twice byte-identically locally before this
+protocol was written); the instrument host's own glslangValidator compiles
+them to SPIR-V (tool identity recorded verbatim in compile-toolchain.txt);
+scripts/gpu-subgroup-reduce-anv-subgroupsize.c (measurement instrument,
+NOT product code, NOT the wire-42 loader path) dispatches them on the ANV
+device. n = 1000003 (shape 1; shape 2 UNMEASURED). Cells: 3 ops x 2 W x
+4 S-forcing = 24 (cases.txt). Data: integer-valued floats 0..1023 from
+LCG seed 20261027 -- every per-workgroup fold is then EXACT in f32 at any
+order (per-workgroup sums <= 256*1023 < 2^24), so correctness verifies
+BIT-EXACT, no tolerance.
+
+RUN UNIT. THREE fresh processes (run-1/2/3.txt), one session's grid each.
+Per process: WARMUP=3 untimed submits per cell, then ROUNDS=25 rounds; one
+timed dispatch per cell per round, cells visited in a seeded
+Fisher-Yates order (seed 20261027 + round; IDENTICAL visit order in every
+process -- the run unit varies only in process state, never in visit
+order). Timed dispatch bracket = vkCmdWriteTimestamp TOP_OF_PIPE ->
+dispatch -> BOTTOM_OF_PIPE (metric gpu_ns via timestampPeriod), host_ns =
+CLOCK_MONOTONIC submit->completion beside it. The two metrics are never
+mixed. Correctness is re-verified INSIDE every run (parts[] read back per
+cell, compared bit-exact to the CPU reference).
+
+PRE-REGISTERED PREDICTIONS (fixed here, before any run):
+
+P1 (stage/barrier count, ADR-0356's design reasoning at its letter): at
+   fixed (op, W) the gpu_ns median is NON-INCREASING in forced S -- the
+   cross-subgroup tree carries log2(W/S) write-barrier stages (W=128:
+   S=8 -> 4, S=16 -> 3, S=32 -> 2; W=256: 5/4/3) while the intra-subgroup
+   log2(S) shuffle rounds are barrier-free. P1 HOLDS at the measured
+   cells iff S=32's gpu_ns median is strictly below BOTH S=8's and S=16's
+   at every (op, W). Any (op, W) where S=32 is not the fastest NAMED
+   refutes P1 at that cell. This is a design-reasoning check, NOT an
+   optimization claim: nothing here may move a selection answer.
+
+P2 (forcing reality): the probe shader (instrument-local, hand-written,
+   the verification channel) reports gl_SubgroupSize EXACTLY equal to the
+   forced size at every forced cell and equal to the device-reported
+   subgroupSize at every default cell; probe gl_NumSubgroups equals
+   W / probe_size. Any deviation VOIDS that cell's timing (the timing is
+   published with the void named, never dropped silently).
+
+P3 (correctness): every cell's parts[] match the CPU integer-exact
+   reference -- mismatch = 0 at every cell of every run. A mismatch names
+   the cell and voids its timing.
+
+P4 (cross-run order): the per-cell gpu_ns medians' ORDER by S at fixed
+   (op, W) is IDENTICAL across the three fresh processes at every
+   (op, W). The counters-channel precedent (session-variability on M1
+   Max) makes a P4 failure LIKELY at some cell -- a failure is recorded
+   as channel session-variability at its letter and is NOT hidden.
+
+FAIL-CLOSED BRANCHES (named in CELL lines, never silent): pipeline
+creation with requiredSubgroupSize fails -> CELL pipeline=FAIL, no
+samples; probe mismatch -> CELL void=1 with void_reason; timestamp query
+failure -> gpu_ticks=0 in that SAMPLE (the sample carries no gpu_ns
+reading and is named absent in analysis); a host without
+VK_EXT_subgroup_size_control would name every forced cell pipeline=FAIL
+and still run the default cells.
+
+CHANNEL NAMED (the 2026-10-25 ADR-0355 channel rule, at its letter): this
+session is an INSTRUMENT channel -- a standalone measurement instrument
+on raw ANV, neither the removed wire-42 loader path nor its ADR-0371
+provider successor (which does not answer INFO yet). A raw instrument run
+is a channel of its own, so RULE 4 BINDS IN FULL: no workgroup row moves
+(no :measured? flag, no :size, no :shapes, no selection answer -- the
+:intel row 128 / :measured? true / key "g31" keeps its ADR-0358
+provenance), and this session is NOT the basis-replacing
+baseline-vs-variant contract named in accelerator-subgroup-reduce.cljk
+(that contract is its own future row and its own channel question).
+:arm/:unknown stay provisional :measured? false.
+
+STATES AT REGISTRATION: IMPLEMENTED (the emitter arm, code + tests);
+PROPOSED before this session, MEASURED after it only for what the logs
+say -- nothing else. UNMEASURED named in advance: every W outside
+{128,256}, shape 2, every op-order/data-dependence question, any
+baseline-vs-variant sign, cross-day replication, anything off this host.

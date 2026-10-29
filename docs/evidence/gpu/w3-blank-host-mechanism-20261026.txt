@@ -1,0 +1,176 @@
+W3 HOST BLANK MECHANISM -- read, and the blank row's class corrected
+(JUN-56 follow-up, JUN-55)
+date: 2026-10-26 (JST)
+row: ONE source-read slice + ONE confirmation probe. NO hardware ran,
+no GPU, no timing -- every number below is a kotoba-language-runtime
+or engine behavior probe. NO product behavior change (the src diff is
+comment prose; the test diff moves pins between two named classes,
++1 pin).
+
+closes (by source read + measurement): the named UNMEASURED residual
+of the blank / non-ASCII whitespace row -- "the engine's str/blank?
+implementation source was not read" -- and CORRECTS that row's
+mechanism attribution and class membership (three prose sites:
+accelerator_targets.cljk blank-str? comment, the test's residual prose
+and blank block comment; the old row's evidence file carries a
+correction banner pointing here).
+
+QUESTION: the blank row attributed the host arm's blank rule to
+"this engine's str/blank? is the every-char /\s/ RULE", measured
+against a /\s/ column. But the host arm's require is
+[kotoba.lang.text :as str] -- its `str/blank?` is
+kotoba.lang.text/blank?, NOT clojure.string/blank?. What is the arm's
+REAL callee's rule, and what is the true divergence class against the
+W3 arm's byte-level C-isspace blank-str??
+
+THE MECHANISM (READ, verified tool output):
+  the arm's callee: kotoba.lang.text/blank?
+    src/kotoba/compiler/accelerator_targets.cljk ns form line 26:
+    (:require [kotoba.lang.text :as str] ...)
+    call site: (not (str/blank? device)) in device-from-info.
+  kotoba.lang.text (the classpath this gate resolves,
+    ~/.gitlibs/libs/io.github.kotoba-lang/text/3dcb2ab0.../src/
+    kotoba/lang/text.cljk):
+      (defn blank? [s] (or (nil? s) (= "" (trim s))))
+      (defn trim [s] ...) -- strips `java-whitespace?` chars at both
+      ends; (defn- java-whitespace? ...) is the named closed set
+      "exactly what java.lang.Character/isWhitespace accepts, written
+      out": C0 U+0009..U+000D, the four separators U+001C..U+001F,
+      SPACE, U+1680, U+2000..U+2006, U+2008..U+200A, U+2028, U+2029,
+      U+205F, U+3000 -- DELIBERATELY EXCLUDING the non-breaking
+      spaces U+00A0/U+2007/U+202F (the ns docstring names the JVM/JS
+      disagreement and says the namespace adopts the JVM answer).
+  So the host blank rule is EVERY-CHAR java-whitespace? (= "" (trim s)
+  iff every char is in the set) -- the JVM Character/isWhitespace
+  class, which the frame-budget row's original parenthetical named and
+  the blank row then "corrected" into the wrong attribution.
+  The blank row's unit column measured clojure.string/blank? -- the
+  PROBE's own [clojure.string :as str] alias (w3_blank_nonascii.cljk
+  ns form) -- a different function (clojure.string/blank? ->
+  goog.string.isEmptyOrWhitespace(makeSafe s) -> /^[\\s\\xa0]*$/ per
+  the nbb bundle's own sourcemap sourcesContent; engine-owned, named
+  only). The two answer DIFFERENTLY on 10 of the 44 domain cells.
+
+INSTRUMENT (scratch probe never staged; kbb --backend sci
+classpath "src:test:$(kbb -Spath -M:test)" at the worktree root):
+  w3_blank_mechanism.cljk -- run 1 and run 2, BYTE-IDENTICAL
+    sha256 c331b523ae44694af29cdd52fc03cb950f7486eb292f89d8427ee8b49cdb5e96
+    275 lines COMPLETE. The same 44-cell whitespace domain as the
+    blank row, on: (A) the unit -- W3 blank-str? (KIR) vs the arm's
+    REAL callee kotoba.lang.text/blank? vs engine clojure.string/
+    blank? vs every-char java-whitespace? (the READ source rule,
+    attribution column); (B) the mechanism cells -- kotoba.lang.text/
+    trim on class-boundary texts, blank? on nil/numbers (cells the
+    blank row never ran); (C) the route -- both arms' device-from-info
+    on "<dev>|1.2.3|4|1"; (D) the dispatch consequence -- both arms'
+    recommend on the TRUE divergence cells; (E) an in-run determinism
+    re-read.
+
+WHAT WAS MEASURED (tool output, the probe above):
+
+(1) THE READ RULE PREDICTS THE ARM ON ALL 44 CELLS (arm-rule-match
+true 44/44). kotoba.lang.text/blank? == every-char java-whitespace? on
+the whole domain. The engine-vs-arm column is "DIFFERENT" on exactly
+10 cells: {U+001C, U+001D, U+001E, U+001F, fs-fs} (engine non-blank,
+arm blank) and {NBSP, U+2007, U+202F, U+FEFF, nbsp-nbsp} (engine
+blank, arm non-blank). The blank row's table characterized the engine
+column, not the arm.
+
+(2) THE UNIT/ROUTE CLASSES, corrected (the arm-callee vs W3):
+  PARITY-BLANK (8): "", " ", \t, \n, \v, \f, \r, "  " -- the C
+    isspace set (all of it is in java-whitespace? too).
+  DIVERGE (23): every text whose chars are ALL java-whitespace? but
+    which holds a non-C-isspace byte -- U+001C..U+001F singletons or
+    runs (fs, gs, rs, us, fs-fs: 5), {U+1680, U+2000..U+2006,
+    U+2008..U+200A, U+2028, U+2029, U+205F, U+3000} (15 singletons),
+    and the mixes/repeats lsep x3, " " + U+3000, U+3000 + " " (3).
+    The W3 arm answers the six-fact map (permissive at the FACT); the
+    host arm answers nil.
+  PARITY-NONBLANK (13): \u0001, NEL 0085, NBSP 00A0, U+2007, U+202F,
+    ZWSP, BOM FEFF, MVS 180E, nbsp-nbsp, "lsep + a", "a + lsep",
+    "a", "ab" -- both arms parse.
+  MEMBERSHIP SWAP against the blank row's table at exactly 10 cells:
+  {U+001C..U+001F, fs-fs} were called PARITY there and are DIVERGENCE
+  here; {NBSP, U+2007, U+202F, U+FEFF, nbsp-nbsp} were called
+  DIVERGENCE there and are PARITY here. Class sizes stay 8/23/13.
+  THE BLANK ROW'S OWN RECORDED RUN REFUTES ITS PROSE at those cells
+  (w3_blank_run1.txt route lines: fs 001c HOST => nil / NBSP HOST =>
+  the fact / figsp HOST => the fact / bom HOST => the fact / ogham
+  HOST => nil / idsp HOST => nil) -- the run data was right, the
+  prose read the wrong column.
+
+(3) MECHANISM CELLS (fresh): kotoba.lang.text/trim answers "" for
+U+001C / U+2028 / U+3000 and keeps NBSP / U+2007 / U+202F / U+FEFF
+byte-identical (hex cells in the run) -- the class boundary IS the
+source set. blank? nil -> true (the (or (nil? s) ...) arm); blank? 42
+-> false, blank? true -> false (trim stringifies first). The engine's
+clojure.string/blank? answers true on nil and false on 42 as well
+(engine-owned, named only).
+
+(4) THE ROUTE MAPS THE UNIT 1:1 on all 44 cells (both arms'
+device-from-info; the divergence cells answer the six-fact map on the
+W3 arm, nil on the host arm; the parity cells agree).
+
+(5) THE DISPATCH DECISION IS IDENTICAL EITHER WAY on all 23 TRUE
+divergence cells: both arms' recommend answer :unknown / wgsl-v1 /
+256 / :measured? false (an all-whitespace name matches no key
+fragment) -- the blank row's consequence claim survives the
+correction.
+
+DECIDED (prose only): the byte-level C isspace rule STAYS (same
+grounds as before: the class is unreachable from the wire as attested
+-- all 266 recorded INFO receipt occurrences are ONE ASCII answer --
+and the decision is identical either way; a Unicode-aware blank is
+PROPOSED only). The contract prose "a blank device field rejects (the
+host str/blank? reading)" now cites the read rule.
+
+WHAT LANDED (tests + prose): accelerator_targets.cljk blank-str?
+comment brought to the READ state with the corrected class; the
+test's residual prose and blank block comment corrected; the blank
+block's pin membership swapped to the corrected classes (the parity
+doseq now pins NEL/ZWSP/MVS/NBSP/BOM -- +1 pin; the divergence and
+consequence doseqs now pin FS/lsep/idsp/OGHAM/sp+idsp) -- all pins
+are W3 contract-arm pins, host cells named and never pinned
+(parse-long precedent). Gate test COUNT +0 / +1 assertion.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false; the SUBGROUP producer (ADR-0371) still
+does not exist, no live wire feeds this; this row corrects a
+mechanism attribution and a class membership and adds no hardware
+measurement claim.
+
+STATES: READ (kotoba.lang.text blank?/trim/java-whitespace? source,
+cited file/pin above; the ns require and call site; the nbb bundle
+sourcemap sourcesContent for the clojure.string chain -- named, not
+pinned), MEASURED (the two byte-identical probe runs),
+IMPLEMENTED (tests + prose, scoped GPU gate GREEN twice),
+DECIDED (unchanged contracts), PROPOSED (Unicode-aware blank),
+UNMEASURED named (anything off this host; why the blank row's prose
+read the wrong column -- process, not mechanism; trap spellings
+beyond these runs; every workgroup-row question).
+
+Gates (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> run 1 GREEN and run 2 GREEN, identical:
+     Ran 123 tests containing 12154 assertions. 0 failures, 0 errors.
+     scoped: 123 tests, 12154 passed, 0 failed, 0 errors
+     (the previous row's gate: 123 tests / 12153 assertions;
+     delta = +0 tests / +1 assertion -- exactly the moved pin block;
+     glslang 16.6.0 real-spawn ran in run 1).
+- find docs -name '*.sh' -> 0 (evidence is .txt).
+NAMED NOT HIDDEN (not re-run this tick, no classify code touched):
+gpu_regime_classify.py --self-test (standing pin 2649/0) and the FULL
+run-tests.cljk re-verify (RED AT BASE 'Could not find namespace:
+kotoba.form', ADR-0362, outside this diff -- verified live in the
+earlier 2026-10-26 ticks; NO green full suite claimed).
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and re-checked before the push; chain PR #1455
+OPEN, the ONE chain PR).
+NAMED NOT HIDDEN: kbb's "2 dep(s) are not :local/root ..." warning on
+every run (identical everywhere); the untracked deps.edn in this
+worktree (present at tick start, not created or touched by this row,
+not committed).

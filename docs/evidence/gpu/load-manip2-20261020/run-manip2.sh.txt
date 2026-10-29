@@ -1,0 +1,126 @@
+#!/bin/sh
+# LOAD-MANIPULATION EXPERIMENT ROUND 2, REGISTRATION 2 dispatch (JUN-58,
+# tick 20261020-16xx, parent JUN-55). Implements the PRE-REGISTERED design
+# in analyze-manip2.py (rules fixed before the first dispatched run of
+# this registration; that file's sha256 is recorded in the README).
+#
+# DISCLOSURE: registration 1's dispatch (run-manip2-reg1.sh.txt) was VOIDED
+# before any measurement because it omitted the fixture staging step
+# below; the pinned probe refused all 16 attempts at its fixture pin
+# check. Staging is the chain's standing rule (see
+# scripts/gpu-sign-chain-stage-fixtures.sh.txt). The arm-L manipulation is
+# 24 CPU burners (2 per core; registration 1 had 12) with burn-in
+# extended until load1 >= 30 (max 300 s) -- feasibility grounds only, no
+# outcome data existed (see the analyzer's disclosure).
+#
+# Arms: I = natural host load (pairs 1-2), quiet-window gated; L = induced
+# CPU load (pairs 3-4). Blocked order I then L (fixed order confounds dose
+# with time drift -- recorded as a confound). Cells w64t31 (anchor) /
+# w64t32 (flip cell) at lanes 2,095,104; cell order rotated t31,t32 /
+# t32,t31 / t31,t32 / t32,t31. Every run log carries load1 at run START
+# and run END.
+#
+# Idempotent: a slot whose log exists is skipped. A failed/unverified
+# attempt is preserved as attempt<N>-<slot>.log and retried once; a slot
+# failing both attempts stays missing (the analyzer reports it -- never
+# silently dropped).
+set -e
+cd "$(dirname "$0")/../../../.."
+EV=docs/evidence/gpu/load-manip2-20261020
+PROBE=scripts/gpu-subgroup-reduce-chunksweep-pinned-3696ca0d.cljk
+mkdir -p "$EV"
+
+# the probe bytes are the chain's or nothing: refuse to run anything else
+echo "3696ca0db0e28c5b41fa5c8551df2ae1302deb190e91722408117a06077ef652  $PROBE" | shasum -a 256 -c - >/dev/null
+
+# stage the chain's pre-fix pinned fixtures (fail-closed; WITHOUT THIS the
+# probe refuses to run -- that is exactly how registration 1 was voided)
+sh scripts/gpu-sign-chain-stage-fixtures.sh.txt
+
+TAB=$(printf '\t')
+VERIFIED="RESULT${TAB}verified=true"
+
+l1() { uptime | awk -F'load averages?: ' '{print $2}' | awk '{print $1}'; }
+
+wait_quiet() { # gate: wait for load1 <= 22.0, max 600 s
+  t0=$(date +%s)
+  deadline=$((t0 + 600))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    cur=$(l1)
+    if [ "$(echo "$cur" | awk '{print ($1 <= 22.0) ? 1 : 0}')" = "1" ]; then
+      echo "GATE-OK $1 load1=$cur waited=$(( $(date +%s) - t0 ))s $(date)" >> "$EV/gate-log.txt"
+      return 0
+    fi
+    sleep 5
+  done
+  echo "GATE-TIMEOUT $1 load1=$(l1) waited=600s $(date)" >> "$EV/gate-log.txt"
+  return 1
+}
+
+run() { # pair cell W chunks gate(yes|no)
+  log="$EV/run-$1-$2.log"
+  if [ -f "$log" ]; then echo "skip $log"; return 0; fi
+  att=1
+  while [ "$att" -le 2 ]; do
+    if [ "$5" = "yes" ]; then
+      if ! wait_quiet "run-$1-$2 attempt$att"; then
+        echo "GATE-TIMEOUT run-$1-$2 attempt$att -- slot left missing"
+        return 0
+      fi
+    fi
+    alog="$EV/attempt${att}-run-$1-$2.log"
+    echo "run attempt$att -> $log"
+    (date; uptime; time kbb --backend sci "$PROBE" "$3" 2095104 "$4"; date; uptime) > "$alog" 2>&1 || true
+    if grep -q "$VERIFIED" "$alog"; then
+      mv "$alog" "$log"
+      return 0
+    fi
+    echo "UNVERIFIED attempt$att run-$1-$2 (preserved as $alog)"
+    att=$((att + 1))
+  done
+  echo "MISSING run-$1-$2 after 2 attempts"
+  return 0
+}
+
+# ---- ARM I: natural host load (pairs 1-2), quiet-window gated ----
+echo "ARM-I start $(date)"
+date; uptime
+run 1 w64t31 64 31 yes
+run 1 w64t32 64 32 yes
+run 2 w64t32 64 32 yes
+run 2 w64t31 64 31 yes
+
+# ---- ARM L: 24 CPU burners (2 per core), burn-in until load1 >= 30 ----
+: > "$EV/burner-pids.txt"
+i=1
+while [ "$i" -le 24 ]; do
+  nohup sh -c 'while :; do :; done' >/dev/null 2>&1 &
+  echo $! >> "$EV/burner-pids.txt"
+  i=$((i + 1))
+done
+echo "burners started $(date): $(tr '\n' ' ' < "$EV/burner-pids.txt")"
+uptime
+sleep 120
+burn_more=0
+while [ "$burn_more" -lt 6 ]; do
+  cur=$(l1)
+  if [ "$(echo "$cur" | awk '{print ($1 >= 30.0) ? 1 : 0}')" = "1" ]; then
+    break
+  fi
+  echo "burn-in extension: load1=$cur < 30.0, sleeping 30 s ($((burn_more + 1))/6)"
+  sleep 30
+  burn_more=$((burn_more + 1))
+done
+echo "burn-in done $(date)"
+uptime
+
+run 3 w64t31 64 31 no
+run 3 w64t32 64 32 no
+run 4 w64t32 64 32 no
+run 4 w64t31 64 31 no
+
+# ---- teardown: kill the burners after the last L run ----
+kill $(cat "$EV/burner-pids.txt") 2>/dev/null || true
+echo "burners killed $(date)"
+uptime
+echo "MANIP2-SWEEP-COMPLETE"

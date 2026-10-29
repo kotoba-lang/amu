@@ -1,0 +1,90 @@
+;; tools/b2/tests/image_abi_t.kotoba -- the SysV entry thunks and the export table (E1)
+;; Run by scripts/seed/check-b2-image.py with image_helpers.kotoba before it.
+(defn- cx-zero [] :i64 42)
+(defn- cx-add5-TESTV1 [a :i64 b :i64 c :i64 d :i64 e :i64] :i64
+  (+ a (+ (* 2 b) (+ (* 3 c) (+ (* 4 d) (* 5 e))))))
+(defn- cx-six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (+ (cx-add5-TESTV1 a b c d e) (* 6 f)))
+(defn- cx-mix14-GLIBC_2.2.5 [a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64 a13 :i64] :i64
+  (+ a0 (+ (* 2 a1) (+ (* 3 a2) (+ (* 4 a3) (+ (* 5 a4) (+ (* 6 a5) (+ (* 7 a6) (+ (* 8 a7) (+ (* 9 a8) (+ (* 10 a9) (+ (* 11 a10) (+ (* 12 a11) (+ (* 13 a12) (* 14 a13)))))))))))))))
+(defn- cx-sixteen [a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64 a13 :i64 a14 :i64 a15 :i64] :i64
+  (cx-mix14-GLIBC_2.2.5 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13))
+(defn- cx-flag [a :i64] :bool (= a 7))
+(defn- cx-neg [a :i64] :i64 (- 0 a))
+;; calls the C function p (an address in the test's code page) with no arguments, from inside a call from C
+(defn- cx-probe [p :i64] :i64
+  (let [argv (kxrt-b-alloc 4096)] (kxrt-b-ccall p argv)))
+;; spins n times
+(defn- cx-spin [n :i64] :i64 (loop [i 0] (if (>= i n) i (recur (inc i)))))
+
+(defn- cstr-eq [p :i64 s :string] :bool
+  (let [n (string-length s)]
+    (and (= (kxrt-b-load8 (+ p n)) 0)
+         (loop [i 0] (cond (= i n) true (= (kxrt-b-load8 (+ p i)) (string-code-point-at s i)) (recur (inc i)) :else false)))))
+(defn- find-export [name :string ver :string] :i64
+  (let [t (kxrt-b-exports) n (kxrt-b-load64 t)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [r (+ t (+ 8 (* 24 i)))]
+          (if (and (cstr-eq (kxrt-b-load64 (+ r 8)) name) (cstr-eq (kxrt-b-load64 (+ r 16)) ver))
+            (kxrt-b-load64 r) (recur (inc i))))))))
+;; call fp with the words w0..w13 in argv
+(defn- call14 [fp :i64 w0 :i64 w1 :i64 w2 :i64 w3 :i64 w4 :i64 w5 :i64 w6 :i64 w7 :i64 w8 :i64 w9 :i64 w10 :i64 w11 :i64 w12 :i64 w13 :i64] :i64
+  (let [a (kxrt-b-alloc 4096)
+        s0 (kxrt-b-store64 a w0) s1 (kxrt-b-store64 (+ a 8) w1) s2 (kxrt-b-store64 (+ a 16) w2) s3 (kxrt-b-store64 (+ a 24) w3)
+        s4 (kxrt-b-store64 (+ a 32) w4) s5 (kxrt-b-store64 (+ a 40) w5) s6 (kxrt-b-store64 (+ a 48) w6) s7 (kxrt-b-store64 (+ a 56) w7)
+        s8 (kxrt-b-store64 (+ a 64) w8) s9 (kxrt-b-store64 (+ a 72) w9) s10 (kxrt-b-store64 (+ a 80) w10) s11 (kxrt-b-store64 (+ a 88) w11)
+        s12 (kxrt-b-store64 (+ a 96) w12) s13 (kxrt-b-store64 (+ a 104) w13)]
+    (kxrt-b-ccall fp a)))
+(defn- expect [name :string got :i64 want :i64] :i64
+  (if (= got want) (let [w (say (string-concat name " ok"))] 0)
+    (let [w (say (string-concat name " FAIL")) x (say-int got)] 1)))
+(defn- magic [i :i64] :i64 (* i 1229782938247303441))
+(defn- cx-pair [a :i64 b :i64] :i64 (+ (* 100 a) b))
+
+(defn- arg1-is [s :string] :bool
+  (and (> (kxrt-b-argc) 0) (cstr-eq (kxrt-b-load64 (kxrt-b-argv)) s)))
+(defn- install [] :i64
+  (let [code (kxrt-b-syscall 9 0 4096 7 34 -1 0)
+        a (put-hex code "53415441554156415748bb111111111111111149bc222222222222222249bd333333333333333349be444444444444444449bf55555555555555554889f84889f74889d64883ec1048890c24ffd0488b0c244883c4104889194c8961084c8969104c8971184c897920415f415e415d415c5bc3") b (put-hex (+ code 256) "4883ec180f2904244883c418b801000000c3") c (put-hex (+ code 512) "31dbb805000000c3") d (put-hex (+ code 768) "4889f84889f7ffd0c3")]
+    code))
+(defn main [] :i64
+  (let [z (find-export "zero" "") a5 (find-export "add5" "TESTV1") s6 (find-export "six" "")
+        m14 (find-export "mix14" "GLIBC_2.2.5") s16 (find-export "sixteen" "") fl (find-export "flag" "")
+        ng (find-export "neg" "") pr (find-export "probe" "") sp (find-export "spin" "") pa (find-export "pair" "")
+        missing (find-export "add5" "OTHER")
+        code (install) ba code bb (+ code 256) bc (+ code 512) bd (+ code 768)
+        out (kxrt-b-alloc 4096)]
+    (cond
+      ;; the alignment control: D calls the probe's thunk with a misaligned stack, so the probe faults
+      (arg1-is "align-control") (call14 bd pr bb 0 0 0 0 0 0 0 0 0 0 0 0)
+      ;; fuel: a call from C runs on its own budget, and the caller's meter is restored on return
+      (arg1-is "fuel-ok")
+        (let [r (call14 sp 3000000 0 0 0 0 0 0 0 0 0 0 0 0 0) w (say-int r)
+              x (loop [i 0] (if (>= i 100) i (recur (inc i))))] 0)
+      (arg1-is "fuel-trap")
+        (let [r (call14 sp 3000000 0 0 0 0 0 0 0 0 0 0 0 0 0) w (say-int r)
+              x (loop [i 0] (if (>= i 5000000) i (recur (inc i))))] 0)
+      :else
+        (let [r0 (expect "zero" (call14 z 0 0 0 0 0 0 0 0 0 0 0 0 0 0) 42)
+              r1 (expect "add5" (call14 a5 1 2 3 4 5 0 0 0 0 0 0 0 0 0) 55)
+              r2 (expect "six" (call14 s6 1 2 3 4 5 6 0 0 0 0 0 0 0 0) 91)
+              r3 (expect "mix14" (call14 m14 1 2 3 4 5 6 7 8 9 10 11 12 13 14) 1015)
+              r4 (expect "sixteen" (call14 s16 1 2 3 4 5 6 7 8 9 10 11 12 13 14) 1015)
+              r5 (expect "flag" (call14 fl 7 0 0 0 0 0 0 0 0 0 0 0 0 0) 1)
+              r6 (expect "neg" (call14 ng 5 0 0 0 0 0 0 0 0 0 0 0 0 0) -5)
+              r7 (expect "missing-version" missing 0)
+              ra (call14 ba pa 1 2 out 0 0 0 0 0 0 0 0 0 0)
+              r8 (expect "A returns" ra 102)
+              r9 (expect "rbx" (kxrt-b-load64 out) (magic 1))
+              r10 (expect "r12" (kxrt-b-load64 (+ out 8)) (magic 2))
+              r11 (expect "r13" (kxrt-b-load64 (+ out 16)) (magic 3))
+              r12 (expect "r14" (kxrt-b-load64 (+ out 24)) (magic 4))
+              r13 (expect "r15" (kxrt-b-load64 (+ out 32)) (magic 5))
+              rc (call14 ba bc 0 0 out 0 0 0 0 0 0 0 0 0 0)
+              r14 (expect "control returns" rc 5)
+              r15 (expect "control rbx" (kxrt-b-load64 out) 0)
+              rp (call14 ba pr bb 0 out 0 0 0 0 0 0 0 0 0 0)
+              r16 (expect "aligned probe" rp 1)
+              fails (+ r0 (+ r1 (+ r2 (+ r3 (+ r4 (+ r5 (+ r6 (+ r7 (+ r8 (+ r9 (+ r10 (+ r11 (+ r12 (+ r13 (+ r14 (+ r15 r16))))))))))))))))]
+          (if (= fails 0) 0 1)))))

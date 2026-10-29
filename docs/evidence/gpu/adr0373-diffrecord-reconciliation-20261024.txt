@@ -1,0 +1,150 @@
+JUN-58 / JUN-55: the ADR-0373 DIFF-RECORD RECONCILIATION slice -- the
+prose debt every slice record since the shape-1 W = 32 flip slice has
+named, PAID -- 2026-10-24, chain worktree, kbb --backend sci
+
+WHAT THIS RECORD IS: the slice record of the reconciliation the W = 32
+flip slice deferred ("the diff-record sections of the ADR -- 'What
+moved'/'What did NOT move'/State/UNMEASURED/LEFT -- still name five
+cells at this commit; they are the next slice's prose, named not
+hidden", docs/evidence/gpu/simdgroup-reduce-flip-w32-20261024.txt) and
+every slice record since has carried as named prose debt ("That
+reconciliation remains owed as its own slice, as the W = 32 flip
+record named it" -- the shape-2 w128/w256/w512-refused/w64/w32 flip
+records and the measure records). It is NOT a measurement: no hardware
+ran in this slice. Every number cited below is the committed record's,
+unchanged and not re-measured.
+
+WHAT MOVED (the slice's whole scope -- docs/adr/0373-gpu-metal-native-
+simdgroup-reduce.md only; no code namespace, no test, no measurement):
+- State: "only the W = 64, W = 128, W = 256, W = 512 and W = 1024
+  cells have flipped" -> the W = 32, W = 64, W = 128, W = 256, W = 512
+  and W = 1024 cells have flipped (every width the row admits: the
+  ground shape flipped at all six, the second shape at five of them,
+  the W = 512 shape-2 cell measured-but-REFUSED); "off the five
+  measured cells" -> "off the six measured cells".
+- UNMEASURED, named: "the five measured cells (M1 Max, W = 64, ...)"
+  -> "the six measured cells (M1 Max, W = 32, W = 64, ...)"; "every
+  other W of this variant (32)" -> the current unmeasured set, every
+  shape beyond the two measured ones (n = 1000003 and n = 2^20) at
+  every cell and cross-day replication at every cell but the two
+  replicated (the W = 256 anchor and the W = 512 cell, both
+  2026-10-24 -- the W = 32 same-day re-session is NOT a cross-day
+  replication and licenses nothing the cell's own run did not).
+- The shape-2 UPDATE paragraphs' stale "stays UNMEASURED" scope
+  clauses (the W = 256 anchor's "shape 2 at the five widths but
+  W = 256", the W = 1024's "W = 32/64/128", the W = 128's "W = 32/64")
+  are brought to the past-tense per-slice form the W = 64 paragraph
+  already carries ("stayed UNMEASURED at that slice (flipped by ...
+  below)"), naming the slices that flipped them and keeping the
+  W = 512 refusal standing. The same form reaches the flip UPDATE
+  paragraphs' "Every other W of this class (...) keeps the carve-out's
+  :baseline with the lock on" clauses (the W = 256, W = 512, W = 1024,
+  W = 128 and W = 64 slices' scope clauses, every named width since
+  flipped) and the W = 256 slice's "shape 2 stays UNMEASURED" clause,
+  and the Selection section's design-time carve-out clause ("Today ...
+  it keeps :baseline at every W") is reframed as the design slice's
+  state with the flips named as what followed.
+- LEFT rows: item 1's measured-cell and flip-slice enumerations gain
+  the sixth cell (W = 32, 0.657/0.658/0.650); item 2's five-record
+  bracket gains the past-tense correction (the W = 32 flip slice's
+  record and the shape-2 series' second shape; the keys are now
+  apple-simdgroup-measured-workgroups #{32 64 128 256 512 1024} and
+  per-W :shapes).
+- "What did NOT move": the debt marker is closed with a RECONCILED
+  bracket naming this slice and this record. The per-slice diff rows of
+  "What moved in the repository" are history and stay as written --
+  each names its own slice's state at its own commit -- and are NOT
+  rewritten (stated, so nothing is silently upgraded or downgraded).
+- "What moved in the repository": the DIFF-RECORD RECONCILIATION SLICE
+  diff row.
+
+WHAT THIS SLICE DOES NOT LICENSE (named so nothing is silently
+upgraded):
+- no :measured? flag, :shapes value, selection answer or workgroup row
+  (ADR-0355/0358) moved -- the exact :measured-cell record equality
+  tests are byte-for-byte untouched and the scoped gate re-run below
+  shows the tree green unchanged;
+- no measurement: every number is the committed record's (the six
+  ground-shape cells 0.657/0.658/0.650 at W = 32,
+  0.719/0.728/0.729 at W = 64, 0.775/0.789/0.789 at W = 128,
+  0.790/0.800/0.799 at W = 256, 0.815/0.823/0.824 at W = 512,
+  0.840/0.847/0.850 at W = 1024; the shape-2 cells 0.639/0.656/0.659,
+  0.721/0.732/0.729, 0.769/0.780/0.780, 0.794/0.811/0.812,
+  0.836/0.843/0.841; the cross-day rows 0.790/0.800/0.801 (anchor) and
+  0.814/0.824/0.824 (W = 512));
+- the prose debt (c) of the shape-2 W = 32 flip record (the W = 64
+  shape-2 paragraph's once-true "fastest shape-2 cell" sentence) stays
+  standing as that historical slice's own words, exactly as that record
+  scoped it -- NOT part of this reconciliation;
+- the stale path in the W = 128 measure record (the
+  gpu-simdgroup-reduce-m1max-wsweep-low-20261023/w128 citation, prose
+  debt (b)) is a record file, not diff-record prose, and the old
+  record is not rewritten -- still named debt, unpaid here;
+- every workgroup default in kotoba.compiler.accelerator-targets
+  remains :measured? false (provisional); no vendor other than Apple
+  has any measurement.
+
+GATE (real runs, this host, kbb --backend sci, from the chain worktree
+root, 2026-10-24, run for THIS record; this slice changed no code
+namespace -- the doc-only gate form of
+docs/evidence/gpu/same-day-resweep-naming-20261024.txt. The gate form's
+`$(kbb -Spath -M:test)` subshell is broken at this branch's HEAD (the
+origin/main host-manifest retirement / deps.edn retirement, the
+CHANNEL NOTE in
+docs/evidence/gpu/simdgroup-reduce-m1max-shape2-w32-measure-20261024.txt
+names it), so the runs substitute the resolved closure inline -- the
+same route-2 resolution the measure record names):
+
+1. python3 scripts/gpu_regime_classify.py --self-test
+   -> TOTAL: 1562 assertions passed, 0 failed.
+2. python3 scripts/gpu-subgroup-reduce-metal-measure.py --self-test
+   -> driver auto-wiring self-test: 12 assertions passed, 0 failed.
+3. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo):
+     kbb --backend sci --classpath "src:test:<resolved closure>" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+   -> Ran 101 tests containing 9720 assertions.
+      0 failures, 0 errors.
+      scoped: 101 tests, 9720 passed, 0 failed, 0 errors
+4. Full suite (run-tests.cljk), same classpath substitution: RED AT
+   BASE, outside this diff, at namespace load on `kotoba.form`
+   ("Error: Could not find namespace: kotoba.form"; the W3 port path
+   documented red at base in ADR 0362), re-verified live this tick.
+   The run stops at that load; no green full suite is claimed and none
+   is claimed here.
+
+HONESTY STATE: IMPLEMENTED -- nothing (no code, no test; this is prose
+reconciliation of an accepted design record). ACCEPTED DESIGN ONLY --
+the reconciliation's readings of the record (they restate what the
+committed measurements already establish). PROPOSED -- nothing new.
+Every :simdgroup-reduce answer outside the six flip cells stays
+:measured? false, the six flip cells' :measured? true flags are
+untouched and stand on their own records, and the workgroup defaults
+in kotoba.compiler.accelerator-targets remain :measured? false
+(provisional design assumptions, not optimization evidence).
+
+HONEST LEFT (the real remainder after this row):
+- Cross-day replication rows: W = 32/64/128/1024 (shape 1) and every
+  shape-2 cell need a later-day run (2026-10-25+ per the eligibility
+  check in docs/evidence/gpu/same-day-resweep-naming-20261024.txt; the
+  W = 256 anchor and W = 512 rows are MEASURED 2026-10-24).
+- The shape-2 W = 512 REGIME-SCOPED refusal: resolving its scope is a
+  protocol decision, not a re-run -- undecided.
+- Prose debt (b) (the W = 128 measure record's stale wsweep-low path)
+  is still named, unpaid.
+- SOUL.md backlog items 3 and 4 (per-vendor workgroup sweeps replacing
+  the provisional :measured? false rows; JUN-57/59/60 hardware-free
+  slices) remain open.
+
+CORRECTION (2026-10-24, later tick): the blanket workgroup-row claim in
+this record -- every/any row of kotoba.compiler.accelerator-targets
+:measured? false / provisional -- is FALSE as written. ADR-0358
+(2026-10-19, uB5G scoping amendment 2026-10-22) measured four of the six
+rows (:nvidia, :apple, :intel, :amd, each scoped to its one
+:measured-device name fragment); only :arm and :unknown remain
+:measured? false. The claim's oldest standing source was the
+accelerator-targets ns docstring, corrected 2026-10-24. Runtime state
+and the full census of this claim's surface:
+docs/evidence/gpu/workgroup-prose-rootcause-20261024.txt. Everything
+else in this record -- its numbers, its "no row moved" claims -- stands
+unchanged.

@@ -1,0 +1,46 @@
+== JUN-59 session 11 derivation diff (shaders) ==
+== the ONLY derivation edit: the X buffer declaration gains the ==
+== coherent volatile memory qualifiers (1 hunk per file, 6 files). ==
+== Purpose (design claim, tested by letter V1): the ITERMUL loop of ==
+== session 9 re-runs the reduce body I times per workgroup, but ==
+== session 9 measured its cost realization MARGINAL (1.14x..1.57x ==
+== host_ns at nominal 3x/8x) -- consistent with the compiler CSE-ing ==
+== the loop-invariant loads and their dependent chain. volatile ==
+== forces each iteration's load to be a real access; coherent marks ==
+== cross-invocation visibility. Stored values are unchanged (the ==
+== buffer is written by nobody; VERIFY mismatch 0 is re-checked in ==
+== every run and is a frozen INVALIDATION criterion). ==
+== instrument-derivation.diff.txt NAME KEPT from sessions 8-10 for ==
+== the file role (the tick's derivation diff); this session's diff ==
+== is SHADER-side, the C instrument is byte-identical. ==
+
+--- subgroup-reduce-w128-max.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w128-max.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };
+--- subgroup-reduce-w128-min.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w128-min.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };
+--- subgroup-reduce-w128-sum.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w128-sum.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };
+--- subgroup-reduce-w256-max.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w256-max.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };
+--- subgroup-reduce-w256-min.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w256-min.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };
+--- subgroup-reduce-w256-sum.emitted.iter8.glsl (session 9 committed iter8)
++++ subgroup-reduce-w256-sum.emitted.itervc8.glsl (session 11 itervc8)
+@@ the X declaration line (1 hunk, 1 line) @@
+-layout(set = 0, binding = 0, std430) readonly buffer X { float x[]; };
++layout(set = 0, binding = 0, std430) coherent volatile readonly buffer X { float x[]; };

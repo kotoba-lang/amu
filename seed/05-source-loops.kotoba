@@ -1,0 +1,155 @@
+;; Checked-source loops -> canonical recursive helpers. C shares the bridge's
+;; first four words, followed by current helper,count,node count,record base,
+;; and explicitly selected resource profile. Node mapping starts at9.
+;; A node-indexed map and bounded helper records contain checked node IDs only;
+;; no source name lookup decides a local binding. Captures retain the reference
+;; frontend's original-name ordering, then normal alpha normalization applies.
+(def dsl-width 68)
+(defn- dsl-bad [C :vector-i64 n :i64] :i64 (let [bad (dsb-bad C 3 n)] 1))
+(defn- dsl-new-resource [M :vector-i64 resource :i64] :vector-i64
+  (if (not= (vector-at M MM-ERR) 0) (vector-alloc 9)
+    (let [nodes (vector-at M MM-NODE-N)
+          loops (loop [n 1 count 0]
+            (if (= n nodes) count (recur (inc n) (+ count
+              (if (and (= (nm-kind M n) ND-LIST) (= (nm-nf M n NF-RES) HD-LOOP)) 1 0)))))
+          words (+ 9 nodes (* loops dsl-width))]
+      (if (or (not (dip-valid? resource)) (> words 33554432))
+        (-> (vector-alloc 9) (vector-assoc! 0 3) (vector-assoc! 1 words))
+        (-> (vector-alloc words) (vector-assoc! 6 nodes) (vector-assoc! 7 (+ 9 nodes)) (vector-assoc! 8 resource))))))
+(defn- dsl-new [M :vector-i64] :vector-i64 (dsl-new-resource M 0))
+(defn- dsl-record [C :vector-i64 id :i64] :i64 (+ (vector-at C 7) (* (dec id) dsl-width)))
+(defn- dsl-name [id :i64] :string (string-concat "__kotoba_loop_" (mem-u2dec id)))
+(defn- dsl-slot [M :vector-i64 n :i64] :i64
+  (let [r (nm-nf M n NF-RES)] (if (= (quot r RES-SCALE) RES-LOCAL) (rem r RES-SCALE) 0)))
+(defn- dsl-spelling [M :vector-i64 S :string n :i64] :string
+  (let [s (nm-sym-of M n)] (string-substring S (nm-sf M s SF-START) (nm-sf M s SF-END))))
+(defn- dsl-capture [M :vector-i64 S :string C :vector-i64 B :vector-i64 record :i64 n :i64] :i64
+  (let [slot (dsl-slot M n) count (vector-at C (+ record 3))]
+    (cond (or (<= slot 0) (>= slot (vector-count B))) (dsl-bad C n)
+      (or (not= (vector-at B slot) 0)
+          (loop [i 0] (cond (= i count) false
+            (= slot (dsl-slot M (vector-at C (+ record 4 i)))) true :else (recur (inc i))))) 0
+      (>= (+ count (vector-at C (+ record 2))) 64) (dsl-bad C n)
+      :else
+        (let [put (loop [i count]
+              (if (and (> i 0) (> (string-compare
+                    (dsl-spelling M S (vector-at C (+ record 4 (dec i)))) (dsl-spelling M S n)) 0))
+                (let [shift (vector-assoc! C (+ record 4 i) (vector-at C (+ record 4 (dec i))))] (recur (dec i)))
+                (vector-assoc! C (+ record 4 i) n)))
+              save (vector-assoc! C (+ record 3) (inc count))] 0))))
+(defn- dsl-mark [M :vector-i64 C :vector-i64 B :vector-i64 U :vector-i64 binder :i64 index :i64] :i64
+  (let [slot (dsl-slot M binder)]
+    (if (or (<= slot 0) (>= slot (vector-count B))) (dsl-bad C binder)
+      (let [a (vector-assoc! U (* 2 index) slot) b (vector-assoc! U (inc (* 2 index)) (vector-at B slot))
+            c (vector-assoc! B slot 1)] 0))))
+(defn- dsl-free-seq [M :vector-i64 S :string C :vector-i64 B :vector-i64 record :i64 p :i64 depth :i64] :i64
+  (loop [n p]
+    (if (or (= n 0) (not= (vector-at C 0) 0)) 0
+      (let [walk (dsl-free M S C B record n depth)] (recur (nm-next M n))))))
+;; let initializers see earlier bindings; loop initializers see the enclosing
+;; scope. Undo every scope mark, including when a child refuses.
+(defn- dsl-scope [M :vector-i64 S :string C :vector-i64 B :vector-i64 record :i64 n :i64 depth :i64] :i64
+  (let [bindings (nm-first M (nm-nth M n 1)) count (quot (nm-count M (nm-nth M n 1)) 2)
+        simultaneous (= (nm-nf M n NF-RES) HD-LOOP) U (vector-alloc (* 2 count))
+        inits (loop [p bindings i 0]
+          (if (or (= p 0) (not= (vector-at C 0) 0)) 0
+            (let [v (nm-next M p) walk (dsl-free M S C B record v depth)
+                  mark (if simultaneous 0 (dsl-mark M C B U p i))]
+              (recur (nm-next M v) (inc i)))))
+        marks (if simultaneous (loop [p bindings i 0]
+                (if (or (= p 0) (not= (vector-at C 0) 0)) 0
+                  (let [mark (dsl-mark M C B U p i)] (recur (nm-next M (nm-next M p)) (inc i))))) 0)
+        body (if (= (vector-at C 0) 0) (dsl-free M S C B record (nm-nth M n 2) depth) 0)
+        restore (loop [i (dec count)]
+          (if (< i 0) 0
+            (let [slot (vector-at U (* 2 i))
+                  put (if (> slot 0) (vector-assoc! B slot (vector-at U (inc (* 2 i)))) B)] (recur (dec i)))))] 0))
+(defn- dsl-free [M :vector-i64 S :string C :vector-i64 B :vector-i64 record :i64 n :i64 depth :i64] :i64
+  (let [kind (nm-kind M n)]
+    (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8)))) (dsl-bad C n)
+      (not= (vector-at C 0) 0) 1
+      (and (= kind ND-SYM) (> (dsl-slot M n) 0)) (dsl-capture M S C B record n)
+      (and (= kind ND-LIST) (or (= (nm-nf M n NF-RES) HD-LET) (= (nm-nf M n NF-RES) HD-LOOP)))
+        (arena-scope (dsl-scope M S C B record n (inc depth)))
+      (= kind ND-LIST) (dsl-free-seq M S C B record (nm-next M (nm-first M n)) (inc depth))
+      (or (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET)) (dsl-free-seq M S C B record (nm-first M n) (inc depth))
+      :else 0)))
+(defn- dsl-register [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 can-collide :bool] :i64
+  (let [id (inc (vector-at C 5)) record (dsl-record C id) count (quot (nm-count M (nm-nth M n 1)) 2)
+        collision (and can-collide (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false
+                     (and (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+                          (not (ck-r6f-cdef-fn? M f)) (= (dsb-name M S f) (dsl-name id))) true
+                     :else (recur (inc f)))))]
+    (if (or (> (+ record dsl-width) (vector-count C)) (> count 64) collision (not= (vector-at C (+ 9 n)) 0))
+      (dsl-bad C n)
+      (let [a (-> C (vector-assoc! 5 id) (vector-assoc! (+ 9 n) id) (vector-assoc! record n)
+                   (vector-assoc! (+ record 1) owner) (vector-assoc! (+ record 2) count))
+            B (vector-alloc (inc (nm-ff M owner FF-NSLOTS))) U (vector-alloc (* 2 count))
+            marks (loop [p (nm-first M (nm-nth M n 1)) i 0]
+                    (if (= p 0) 0 (let [mark (dsl-mark M C B U p i)] (recur (nm-next M (nm-next M p)) (inc i)))))]
+        (dsl-free M S C B record (nm-nth M n 2) 0)))))
+(defn- dsl-visit [M :vector-i64 S :string C :vector-i64 n :i64 owner :i64 depth :i64 can-collide :bool] :i64
+  (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8)))) (dsl-bad C n)
+    (not= (vector-at C 0) 0) 1
+    :else
+      (let [kind (nm-kind M n)
+            children (if (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
+              (loop [p (nm-first M n)]
+                (if (or (= p 0) (not= (vector-at C 0) 0)) 0
+                  (let [walk (dsl-visit M S C p owner (inc depth) can-collide)] (recur (nm-next M p))))) 0)]
+        (if (and (= (vector-at C 0) 0) (= kind ND-LIST) (= (nm-nf M n NF-RES) HD-LOOP))
+          (arena-scope (dsl-register M S C n owner can-collide)) 0))))
+;; M/S are freshly checked and read-only throughout this plan. Establish
+;; absence once; a matching prefix conservatively retains every original
+;; exact-name collision scan. Nothing is persisted or accepted from C/the
+;; caller, and this is not a proof of mutable CODE/FIX prefixes.
+(defn- dsl-helper-namespace? [M :vector-i64 S :string] :bool
+  (loop [f 1]
+    (cond (= f (vector-at M MM-FN-N)) false
+      (and (or (= (nm-ff M f FF-KIND) FK-DEFN) (= (nm-ff M f FF-KIND) FK-PRIV))
+           (not (ck-r6f-cdef-fn? M f))
+           (dsb-starts? (dsb-name M S f) "__kotoba_loop_")) true
+      :else (recur (inc f)))))
+(defn- dsl-plan [M :vector-i64 S :string C :vector-i64] :i64
+  (let [can-collide (dsl-helper-namespace? M S)]
+  (loop [f 1]
+    (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
+      (let [kind (nm-ff M f FF-KIND)
+            walk (if (or (= kind FK-DEFN) (= kind FK-PRIV))
+                   (dsl-visit M S C (nm-nth M (nm-ff M f FF-NODE) 4) f 0 can-collide) 0)] (recur (inc f)))))))
+(defn- dsl-capture-text [M :vector-i64 C :vector-i64 id :i64 types :bool] :string
+  (let [record (dsl-record C id)]
+    (loop [i 0 out ""]
+      (if (or (= i (vector-at C (+ record 3))) (not= (vector-at C 0) 0)) out
+        (let [node (vector-at C (+ record 4 i)) value (if types
+                     (dsb-type M C (nm-nf M node NF-TYPE) 0) (dsb-local M C node))]
+          (recur (inc i) (string-concat out (string-concat " " value))))))))
+(defn- dsl-call [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
+  (let [id (vector-at C (+ 9 n))]
+    (if (<= id 0) (dsb-bad C 3 n)
+      (let [inits (loop [p (nm-first M (nm-nth M n 1)) out ""]
+                    (if (or (= p 0) (not= (vector-at C 0) 0)) out
+                      (let [v (nm-next M p) text (dsb-expr M S C v depth)]
+                        (recur (nm-next M v) (string-concat out (string-concat " " text))))))]
+        (string-concat "(" (string-concat (dsl-name id)
+          (string-concat inits (string-concat (dsl-capture-text M C id false) ")"))))))))
+(defn- dsl-params [M :vector-i64 C :vector-i64 n :i64 types :bool] :string
+  (loop [p (nm-first M (nm-nth M n 1)) out ""]
+    (if (or (= p 0) (not= (vector-at C 0) 0)) out
+      (let [value (if types (dsb-type M C (nm-nf M p NF-TYPE) 0) (dsb-local M C p))]
+        (recur (nm-next M (nm-next M p)) (string-concat out (string-concat " " value)))))))
+(defn- dsl-helper [M :vector-i64 S :string C :vector-i64 id :i64] :string
+  (let [record (dsl-record C id) node (vector-at C record)
+        owner (vector-assoc! C 3 (vector-at C (+ record 1))) current (vector-assoc! C 4 id)
+        names (string-concat (dsl-params M C node false) (dsl-capture-text M C id false))
+        types (string-concat (dsl-params M C node true) (dsl-capture-text M C id true))
+        result (dsb-type M C (nm-nf M node NF-TYPE) 0) body (dsb-expr M S C (nm-nth M node 2) 0)]
+    (string-concat " {:name " (string-concat (dsl-name id) (string-concat " :params ["
+      (string-concat names (string-concat "] :param-types [" (string-concat types
+        (string-concat "] :result " (string-concat result
+          (string-concat " :effects " (string-concat (dsb-effect-text (dsb-effect-mask M (nm-nth M node 2)))
+            (string-concat " :body " (string-concat body "}"))))))))))))))
+(defn- dsl-helpers [M :vector-i64 S :string C :vector-i64] :string
+  (loop [id 1 out ""]
+    (if (or (> id (vector-at C 5)) (not= (vector-at C 0) 0)) out
+      (recur (inc id) (string-concat out (dsl-helper M S C id))))))

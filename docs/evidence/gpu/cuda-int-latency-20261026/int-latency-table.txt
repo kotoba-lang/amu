@@ -1,0 +1,63 @@
+amu-gpu 2026-10-26 -- INTEGER-LATENCY MICROBENCH, result table
+host: xavier (Jetson AGX Xavier, L4T R35.4.1, aarch64, sm_72), nvcc 11.4
+V11.4.315 / nvdisasm 11.4 V11.4.298, run 2026-10-26T11:30:59Z.
+PROBE, not a registered timing session (no paired samples, no AB/BA);
+inadmissible under the entry criterion BY KIND; enters nothing.
+
+Instrument: 5 latency arms, 16 chain ops per loop iteration (unroll 1),
+REP=256 iterations -> 4096 chain ops per thread, 128 threads, 3 launches,
+clock64() over the loop only. Operands SYMBOLIC (loaded from global
+memory: c=3u, cm=7u -- unknowable to ptxas). arm -> realized opcode
+VERIFIED from nvdisasm (run-log.txt verify blocks + microbench-sass.txt).
+
+VERDICT TABLE (cyc per chain instruction, median of 128 lockstep samples;
+all 3 launches identical medians):
+
+arm            realized chain (per loop iteration)          cyc/instr   verdict
+latpp_fadd     FADD.FTZ:16 (ping-pong, x=y+x / y=x+y)        4.5020    VALID
+latpp_imad     IMAD:16 (ping-pong, x=cm*x+y / y=cm*y+x)      4.4658    VALID
+latsym_imad    IMAD:16 (straight, x=cm*x+c)                  4.4656    VALID
+latpp_iadd3    IADD3:8 + IMAD.IADD:8 (ping-pong, ALTERNATING  5.3767    MIXED
+               SPELLINGS -- see below)
+latsym_iadd3   IADD3:8 (straight, FOLDED 2:1: x=x+c+c via     2.4658*   FOLDED
+               the third operand -- see below)               (*per counted op)
+
+THE TWO VALID IMAD ARMS AGREE: 4.4658 vs 4.4656 cyc/instr, |delta| =
+0.0002 cyc (0.0045%). MEASURED dependent-chain mad.lo.u32 (IMAD) latency
+on sm_72 = 4.4657 cyc/op (both forms; per-form numbers above are the
+measurement, the 4-figure mean is DERIVED).
+
+FORM VALIDATION (the FADD anchor): latpp_fadd 4.5020 cyc/instr vs v2's
+straight-chain FADD.FTZ 4.4397 cyc/instr (same opcode, same toolchain,
+committed at the op-microbench row) = +0.0623 cyc (+1.40%). The ping-pong
+form reproduces the straight-chain latency within 1.40%; 1.40% is the
+named FORM SYSTEMATIC of this row.
+
+iadd3 (NOT SEPARATED, named):
+- latpp_iadd3's chain SURVIVED 16/16 (no fold) but ptxas spelled the two
+  alternating updates DIFFERENTLY: 8 x IADD3 R0,R11,R0,RZ (x = y + x)
+  interleaved with 8 x IMAD.IADD R11,R0,0x1,R11 (y = x*1 + y). The strict
+  alternating chain measures the MEAN of the two spellings' chain
+  latencies: L(IADD3-form) + L(IMAD.IADD-form) = 10.7534 cyc per pair
+  (DERIVED from the measured 5.3767 cyc/instr x 2).
+- latsym_iadd3's chain FOLDED value-preservingly 2:1 EVEN WITH a symbolic
+  operand: 16 x add.u32 x,x,c -> 8 x IADD3 R9, R0, R9, R0 (= x + c + c,
+  the third IADD3 operand slot carries a second c). Its 2.4658 cyc is per
+  COUNTED op = 4.9316 cyc per REALIZED chain instruction (DERIVED, x2) --
+  a dependent chain of 3-input IADD3 double-adds, not single adds.
+- Two equations, three unknowns (L of 2-input IADD3-form, of IMAD.IADD,
+  of the folded 3-input double-add form). The pure 2-input IADD3
+  register-add dependent latency is UNSEPARATED: no arm realized it alone
+  (named UNMEASURED).
+
+Consistency note: latsym_imad and latpp_imad ran 4096 chain ops each and
+timed 18290-18292 vs 18290-18293 cycles total -- the two chain forms are
+the same instruction count and land within 3 cycles over the whole run.
+
+Caveats (named): 128 threads run lockstep (one warp-group draw per
+launch; medians identical across 3 launches); PROBE by kind; same UTC day
+as every earlier probe (NOT cross-day); measures INSTRUCTIONS, not
+kernels; every compile and nvdisasm diag is 0 bytes (run-log.txt);
+loop overhead sits in parallel shadow of the
+chain (counter/ISETP/BRA off the critical path) but is not subtracted --
+no non-eliminated overhead baseline exists (named UNMEASURED).

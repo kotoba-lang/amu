@@ -1,0 +1,112 @@
+JUN-59 subgroup 8/16/32 measurement -- FIRST session, STARTED, NOT
+FINISHED (2026-10-27T08:2xZ; session budget exhausted mid-session). NO
+commit, NO push this tick (the unfinished-slice rule; nothing is claimed
+done). Everything below is real tool output; nothing unmeasured is
+reported as measured.
+
+WHAT THIS ROW IS: the JUN-59 issue body's named question ("subgroup
+幅 (8/16/32) を考慮した workgroup 調整") and the 2026-10-19 record's named
+next step ("subgroup 8/16/32 の本格計測は次の step") -- the FIRST hardware
+measurement attempt of the :subgroup-reduce GLSL arm's sensitivity to
+forced subgroup size on the fleet's Intel device (BMG G31 / ANV,
+aiueos-6600hs-1). The protocol (protocol.txt) was registered BEFORE any
+run and is not rewritten. Channel named there: INSTRUMENT channel (a
+standalone instrument on raw ANV, not the removed wire-42 loader path,
+not the ADR-0371 provider) -- rule 4 binds in full: no workgroup row, no
+:measured? flag, no selection answer moves anywhere in this session.
+
+STATE OF THE SESSION (honest): the instrument, corpus and toolchain are
+in place and the device facts were READ; the timed grid did NOT run (the
+instrument dies at its probe-verification step before any timed
+dispatch). ZERO timing samples exist. EVERY timing question stays
+UNMEASURED.
+
+WHAT IS VERIFIED BY TOOL OUTPUT THIS TICK:
+
+1. CORPUS (the emitter's bytes, never hand-written):
+   scripts/emit-gpu-subgroup-reduce-glsl.cljk (NEW) lowers
+   (:glsl-v1, :subgroup-reduce) through the public route for W in
+   {128,256} x {sum,max,min} -> shaders/*.emitted.glsl (6 files, sizes
+   1206/1236 bytes), emitted TWICE byte-identically locally before the
+   protocol was written (sha256 census in the tick's logs; determinism
+   diff EMPTY). All 8 GLSL files (6 emitted + 2 instrument-local probes)
+   compile to SPIR-V on the instrument host with its OWN
+   glslangValidator 11:15.1.0 -- 8/8 rc=0, sha256 census in
+   compile-toolchain.txt. The instrument compiles with gcc 13.3.0
+   (-O2 -lvulkan, rc=0).
+
+2. DEVICE FACTS READ through the instrument's own Vulkan path
+   (run-1.txt header, verbatim): device_name=Intel(R) Graphics (BMG G31)
+   vendor=8086 device=e223 api=1.4.318; maxComputeWorkGroupSize=
+   1024,1024,1024; subgroupSize=32 subgroupStages=00003fff
+   subgroupOps=000006ff; subgroupSizeControl feature=1
+   computeFullSubgroups=1 min=16 max=32 requiredStages=000000e0
+   (COMPUTE included); timestampPeriod=52.083
+   timestampComputeAndGraphics=1.
+
+3. THE FIRST HARDWARE ANSWER OF THE ROW QUESTION, a device fact, not a
+   timing: THIS DEVICE'S ADMISSIBLE FORCED SUBGROUP SIZES ARE [16, 32]
+   -- minSubgroupSize = 16, so forced S = 8 is NOT REALIZABLE on the
+   BMG G31 / ANV. The pre-registered fail-closed branch fired exactly as
+   written: the S=8 cell's pipeline creation with
+   requiredSubgroupSize=8 FAILED and the CELL line names it
+   (idx=0 ... forced=8 ... pipeline=FAIL void=1 void_reason=
+   pipeline-create-failed) -- the issue's "8/16/32" question NARROWS to
+   16 vs 32 (plus the device default, which the header reports as 32) at
+   this host. The 6 S=8 cells stay in the manifest as named FAIL cells
+   per protocol; they are excluded from any future timing table with
+   this reason.
+
+4. NAMED DEFECTS (all real, all found by tool output, none hidden):
+   a. glslangValidator cannot auto-classify a bare *.glsl input (no
+      stage suffix): the first compile attempt printed the full Usage
+      text, rc=1; fixed by adding -S comp (8/8 rc=0 after).
+   b. The instrument's first compile failed:
+      "gpu-subgroup-reduce-anv-subgroupsize.c:330:36: error:
+      'VkPhysicalDeviceLimits' has no member named 'timestampValidPeriod';
+      did you mean 'timestampPeriod'?" -- timestampValidPeriod is a
+      VkPhysicalDeviceVulkan12Properties member; fixed by reporting
+      limits.timestampComputeAndGraphics instead.
+   c. UNRESOLVED, the defect that stops the session: at the second
+      cell's probe-verification step the instrument dies
+      "FATAL: map o -> VkResult -5" (vkMapMemory on the probe output
+      buffer; -5 = VK_ERROR_OUT_OF_DEVICE_MEMORY). SUSPECTED CAUSE, not
+      yet proven: make_buffer already maps that buffer's memory at
+      startup (the persistent-map path) and the probe step maps the same
+      VkDeviceMemory a second time -- a double-map bug in
+      scripts/gpu-subgroup-reduce-anv-subgroupsize.c, its fix (drop the
+      second map or the startup map) is the next tick's FIRST action. No
+      SAMPLE line was ever printed; no timing data exists from this
+      session (the three run-N.txt files each carry the header + CELL
+   idx=0 + INSTRUMENT-EXIT=1 only).
+
+WHAT IS LEFT (next tick, in order): fix defect (c); re-run the three
+fresh processes; analysis via an analysis.py over the committed logs
+(boundaries fixed in protocol.txt -- P1..P4 and the fail-closed
+branches); publication.txt + the completed record; then the gates
+(scoped GPU gate x2, classify self-test 2649/0 pin, FULL run-tests.cljk
+live with the named red-at-base kotoba.form outside this diff, find
+docs -name '*.sh' -> 0) and the chain commit + push under the
+blocker-first rule.
+
+STATES: IMPLEMENTED (unchanged, code + tests): the GLSL arm's emission,
+dispatch table, selection rows. IN PLACE BUT NOT YET VALIDATED BY A
+COMPLETE RUN (this tick): the measurement instrument
+(scripts/gpu-subgroup-reduce-anv-subgroupsize.c) and the emit script
+(scripts/emit-gpu-subgroup-reduce-glsl.cljk). MEASURED (device facts
+only, section 2-3 above). UNMEASURED named: EVERY timing value -- no
+sample exists; the S=16-vs-32 comparison (the narrowed row question);
+every W outside {128,256}; shape 2; any baseline-vs-variant sign (this
+session is not the basis-replacing contract of
+accelerator-subgroup-reduce.cljk); cross-day replication; anything off
+this host; every workgroup-row question (:intel 128 / :measured? true /
+key "g31" keeps its ADR-0358 provenance -- this session can never move
+it; :arm/:unknown stay provisional :measured? false).
+
+FILES THIS TICK (uncommitted work-in-progress in the worktree, for the
+next tick to finish): scripts/emit-gpu-subgroup-reduce-glsl.cljk,
+scripts/gpu-subgroup-reduce-anv-subgroupsize.c (with defect (c) still
+in its probe path), this directory's protocol.txt, cases.txt,
+shaders/ (8 GLSL), compile-toolchain.txt, run-1.txt (the other run-N
+files are the same one-line stub run). No gate was run this tick --
+nothing is claimed green.

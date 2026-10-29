@@ -1,0 +1,39 @@
+== JUN-59 session 12 build census ==
+Build window (host timeline, host-verify-s12.txt): builds ran after the
+verify GO (2026-10-27T14:29:30Z) and before the first run
+(2026-10-27T14:30:00Z, run-window.txt). Build timestamps
+2026-10-27T14:29:51Z (host date -u, captured in the build transcript).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-workdown-20261027, runs cwd=shaders/
+(manifest passed as ../cases-s12-a.txt; binaries ../anv-cc-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- NO shader derivation; the
+corpus spv are the archived byte-verified artifacts.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DNDIV=<D> -o anv-cc-<tag>
+== gpu-subgroup-reduce-anv-ndiv.c -lvulkan  (5 arms, one binary each) ==
+build c2 (BATCH=2 NDIV=1) rc=0
+build c8 (BATCH=8 NDIV=1) rc=0
+build d8 (BATCH=8 NDIV=8) rc=0
+build d256 (BATCH=8 NDIV=256) rc=0
+build d4096 (BATCH=8 NDIV=4096) rc=0
+== FIRST BUILD of this derivation (the NDIV-derived source has no prior ==
+== build to pin against; these digests are the committed build artifact) ==
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-cc-c2
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-cc-c8
+7cc6ad2643d617f25d6d56734d86418dafff7a258f15834bffc354a983beffb1  anv-cc-d8
+5bab5654084d058dff6271307b8302f085d7700e94616e64348192635cf6a059  anv-cc-d256
+61f2357b9e1c4d5c9e9aca31c9236822609abf79bc5502bfed0b1c2f5862e363  anv-cc-d4096
+== source digest re-check at build time (host): ==
+a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556  gpu-subgroup-reduce-anv-ndiv.c
+== NAMED, NOT HIDDEN: unlike sessions 10/11 (whose binaries were byte-
+== identical to session 8's same-flag builds), the 5 binaries here are
+== NEW builds of the NDIV-EDITED source and are NOT byte-identical to
+== any session-8 binary -- the source carries the knob edit even at
+== NDIV=1. The derivation pin is therefore the inverse check (3 hunks
+== stripped -> session-8 snapshot bytes EXACT, derivation-census.txt)
+== plus the C1 numeric replication at NDIV=1 (the session-7 fix:
+== numeric agreement at the control's OWN settings, c8 -0.75% of
+== committed 32,915 -- publication-s12.txt section 3). ==

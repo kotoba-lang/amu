@@ -1,0 +1,244 @@
+JUN-59/JUN-60 -- baseline :reduce WGSL arm (accelerator.cljk emit-wgsl), real-toolchain validation -- PRE-FIX corpus
+run-at: 2026-10-24T16:38:50.851Z
+host: darwin 25.4.0 arm64
+node: v26.0.0
+corpus: /Users/junkawasaki/github/wt/amu-gpu/chain/docs/evidence/gpu-baseline-reduce-wgsl-20261025/shaders
+files: 18 (sorted)
+toolchain: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36
+adapter-info: {"vendor":"apple","architecture":"metal-3","description":"","device":""}
+adapter-features: bgra8unorm-storage,chromium-experimental-subgroup-matrix,clip-distances,core-features-and-limits,depth-clip-control,depth32float-stencil8,dual-source-blending,float32-blendable,float32-filterable,indirect-first-instance,primitive-index,rg11b10ufloat-renderable,shader-f16,subgroup-size-control,subgroups,texture-component-swizzle,texture-compression-astc,texture-compression-astc-sliced-3d,texture-compression-bc,texture-compression-bc-sliced-3d,texture-compression-etc2,texture-compression-unaligned,texture-formats-tier1,texture-formats-tier2,timestamp-query
+subgroups: device created WITH subgroups
+default-limits: {"maxComputeWorkgroupSizeX":256,"maxComputeInvocationsPerWorkgroup":256,"maxComputeWorkgroupStorageSize":16384}
+raised-limits (requiredLimits, adapter maxima): {"maxComputeWorkgroupSizeX":1024,"maxComputeInvocationsPerWorkgroup":1024,"maxComputeWorkgroupStorageSize":32768}
+--- reduce-w1024-max.emitted.wgsl (754 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w1024-min.emitted.wgsl (754 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w1024-sum.emitted.wgsl (727 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: Entry-point uses workgroup_size(1024, 1, 1) that exceeds the maximum allowed (256, 256, 64). This adapter supports higher maxComputeWorkgroupSizeX of 1024, maxComputeWorkgroupSizeY of 1024, and maxComputeWorkgroupSizeZ of 64, which can be specified in requiredLimits when calling requestDevice(). Limits differ by hardware, so always check the adapter limits prior to requesting a higher limit.
+ - While initializing [ComputePipeline (unlabeled)]
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+--- reduce-w128-max.emitted.wgsl (751 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w128-min.emitted.wgsl (751 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w128-sum.emitted.wgsl (724 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: none
+[DEFAULT limits] VERDICT: VALIDATES CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+--- reduce-w256-max.emitted.wgsl (752 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w256-min.emitted.wgsl (752 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w256-sum.emitted.wgsl (725 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: none
+[DEFAULT limits] VERDICT: VALIDATES CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+--- reduce-w32-max.emitted.wgsl (749 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w32-min.emitted.wgsl (749 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w32-sum.emitted.wgsl (722 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: none
+[DEFAULT limits] VERDICT: VALIDATES CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+--- reduce-w512-max.emitted.wgsl (752 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w512-min.emitted.wgsl (752 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w512-sum.emitted.wgsl (725 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: Entry-point uses workgroup_size(512, 1, 1) that exceeds the maximum allowed (256, 256, 64). This adapter supports higher maxComputeWorkgroupSizeX of 1024, maxComputeWorkgroupSizeY of 1024, and maxComputeWorkgroupSizeZ of 64, which can be specified in requiredLimits when calling requestDevice(). Limits differ by hardware, so always check the adapter limits prior to requesting a higher limit.
+ - While initializing [ComputePipeline (unlabeled)]
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+--- reduce-w64-max.emitted.wgsl (749 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value -inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w64-min.emitted.wgsl (749 bytes)
+[DEFAULT limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[DEFAULT limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[DEFAULT limits] VERDICT: DOES NOT VALIDATE CLEAN
+[RAISED limits] compile-info: error
+  msg error@8:37 value inf cannot be represented as 'f32'
+[RAISED limits] pipeline: created; pipeline-error: GPUValidationError: [Invalid ShaderModule (unlabeled)] is invalid due to a previous error.
+ - While validating compute stage ([Invalid ShaderModule (unlabeled)], entryPoint: "main").
+ - While calling [Device].CreateComputePipeline([ComputePipelineDescriptor]).
+
+[RAISED limits] VERDICT: DOES NOT VALIDATE CLEAN
+--- reduce-w64-sum.emitted.wgsl (722 bytes)
+[DEFAULT limits] compile-info: ok
+[DEFAULT limits] pipeline: created; pipeline-error: none
+[DEFAULT limits] VERDICT: VALIDATES CLEAN
+[RAISED limits] compile-info: ok
+[RAISED limits] pipeline: created; pipeline-error: none
+[RAISED limits] VERDICT: VALIDATES CLEAN
+===
+summary DEFAULT limits: 18 files, 4 validate clean, 14 do not
+summary RAISED limits: 18 files, 6 validate clean, 12 do not
+toolchain-fact only: nothing executed on a GPU, UNMEASURED unchanged.

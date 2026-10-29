@@ -3,6 +3,7 @@
 (ns kotoba.compiler.native-project-files
   {:kotoba/export [resolve-project resolve-locked-project direct-dependency-source-packet]}
   (:require [kotoba.compiler.kotoba-reader :as reader]
+            [kotoba.compiler.decimal-text :as decimal-text]
             [kotoba.compiler.native-project :as native-project]
             [kotoba.form :as form])
   (:capabilities #{:fs/app-data :hash/sha256})
@@ -14,7 +15,7 @@
               [[:root :string] [:modules [:ref :form/r]] [:err :string]]]
              :native.project/source
              [:record :native.project/source
-              [[:namespace :string] [:text :string] [:surface :bool]]]
+              [[:namespace :string] [:text :string]]]
              :native.project/graph
              [:record :native.project/graph
               [[:modules [:list [:ref :native.project/source]]]
@@ -61,6 +62,12 @@
     (and (> (string-length reply) 0)
          (= (string-code-point-at reply 0) 49))))
 
+(defn- directory-exists? [path :string] :bool
+  (let [reply (typed-cap-call :fs/app-data :string :string
+                              (string-concat path (string-concat "STAT" "_SEP")))
+        fields (decimal-text/fields reply)]
+    (and (= (count fields) 4) (= (nth fields 3) 1))))
+
 (defn- decode-roots [text :string] [:ref :native.project.files/roots]
   (if (string=? text "")
     (roots-result (empty-strings) "")
@@ -97,45 +104,21 @@
       (string-substring root 0 (- length 1))
       root)))
 
-(defn- project-extension [index :i64] :string
-  (case index 0 ".kotoba" 1 ".cljk" ".cljc"))
-
 (defn- candidate-in-root [root :string relative :string] :string
-  (let [base (root-base root)]
-    (loop [index 0]
-      (if (> index 2)
-        ""
-        (let [prefix (if (string=? base "/") "" base)
-              path (string-concat prefix
-                                  (string-concat "/"
-                                                 (string-concat relative
-                                                                (project-extension index))))]
-          (if (file-exists? path)
-            path
-            (recur (+ index 1))))))))
-
-(defn- kotoba-file? [path :string] :bool
-  (let [length (string-byte-length path)]
-    (and (>= length 7)
-         (string=? (string-substring path (- length 7) length) ".kotoba"))))
+  (let [base (root-base root)
+        prefix (if (string=? base "/") "" base)
+        path (string-concat prefix (string-concat "/" (string-concat relative ".kotoba")))]
+    (if (file-exists? path) path "")))
 
 (defn- locate-module [roots [:list :string] namespace :string] :string
   (let [relative (namespace-relative-path namespace)]
-    (loop [index 0 found "" found-count 0 kotoba "" kotoba-count 0]
+    (loop [index 0 found "" found-count 0]
       (if (>= index (vector-count roots))
-        (cond
-          (= found-count 0) ""
-          (= found-count 1) found
-          (= kotoba-count 1) kotoba
-          :else "\n")
-        (let [candidate (candidate-in-root
-                         (typed-list-nth [:list :string] roots index) relative)]
+        (cond (= found-count 0) "" (= found-count 1) found :else "\n")
+        (let [candidate (candidate-in-root (typed-list-nth [:list :string] roots index) relative)]
           (if (string=? candidate "")
-            (recur (+ index 1) found found-count kotoba kotoba-count)
-            (if (kotoba-file? candidate)
-              (recur (+ index 1) candidate (+ found-count 1)
-                     candidate (+ kotoba-count 1))
-              (recur (+ index 1) candidate (+ found-count 1) kotoba kotoba-count))))))))
+            (recur (+ index 1) found found-count)
+            (recur (+ index 1) candidate (+ found-count 1))))))))
 
 (defn- read-module-file [path :string] :string
   (typed-cap-call :fs/app-data :string :string path))
@@ -147,26 +130,13 @@
       (recur (string-index-of-from path "/" (+ slash 1)) slash))))
 
 (defn- entry-source-root [path :string namespace :string] :string
-  (let [relative (namespace-relative-path namespace)
-        ext (cond
-              (and (>= (string-byte-length path) 7)
-                   (string=? (string-substring path (- (string-byte-length path) 7)
-                                               (string-byte-length path)) ".kotoba")) ".kotoba"
-              (and (>= (string-byte-length path) 5)
-                   (string=? (string-substring path (- (string-byte-length path) 5)
-                                               (string-byte-length path)) ".cljk")) ".cljk"
-              :else ".cljc")
-        suffix (string-concat relative ext)
+  (let [suffix (string-concat (namespace-relative-path namespace) ".kotoba")
         path-length (string-byte-length path)
         suffix-length (string-byte-length suffix)]
     (if (and (>= path-length suffix-length)
-             (string=? (string-substring path (- path-length suffix-length)
-                                         path-length)
-                       suffix))
+             (string=? (string-substring path (- path-length suffix-length) path-length) suffix))
       (let [prefix (string-substring path 0 (- path-length suffix-length))]
-        (if (string=? prefix "")
-          "/"
-          (root-base prefix)))
+        (if (string=? prefix "") "/" (root-base prefix)))
       (parent-path path))))
 
 (defn- path-suffix? [path :string suffix :string] :bool
@@ -175,9 +145,9 @@
     (and (>= length suffix-length)
          (string=? (string-substring path (- length suffix-length) length) suffix))))
 
-(defn- source-frame [namespace :string source :string surface? :bool] :string
+(defn- source-frame [namespace :string source :string] :string
   (string-concat
-   (if surface? "1\n" "0\n")
+   "0\n"
    (string-concat
     (string-from-i64 (string-byte-length namespace))
     (string-concat "\n"
@@ -385,8 +355,7 @@
                    (string-concat
                     packet
                     (source-frame namespace
-                                  (record-get [:ref :native.project/source] module :text)
-                                  (record-get [:ref :native.project/source] module :surface)))
+                                  (record-get [:ref :native.project/source] module :text)))
                    packet)))))))
 
 (defn- append-names [target [:list :string] additions [:list :string]] [:list :string]
@@ -407,8 +376,8 @@
       (graph-error "block-store path must be absolute and at most 4096 bytes")
       (if (not (file-exists? lock-path))
         (graph-error "module lock file was not found")
-        (if (not (file-exists? blocks-path))
-          (graph-error "block store path was not found")
+        (if (not (directory-exists? blocks-path))
+          (graph-error "block store must be a readable directory")
           (let [lock-text (read-module-file lock-path)
                 lock-bytes (string-byte-length lock-text)
                 parsed (parse-module-lock lock-text)
@@ -457,7 +426,7 @@
                                                     (string-byte-length source))
                                       packet-next (string-concat
                                                    packet
-                                                   (source-frame namespace source false))
+                                                   (source-frame namespace source))
                                       pending-next (append-names pending requires)]
                                   (cond
                                     (> (string-byte-length source) max-project-source-bytes)
@@ -494,7 +463,7 @@
                                            packet-next edges-next bytes-next)))))))))))))))))))
 
 (defn- collect-project
-  [entry-namespace :string entry-source :string entry-surface? :bool roots [:list :string]]
+  [entry-namespace :string entry-source :string roots [:list :string]]
   [:ref :native.project/graph]
   (loop [pending (typed-list-conj [:list :string] (empty-strings) entry-namespace)
          cursor 0 seen (empty-strings) packet "" edges 0 source-bytes 0]
@@ -522,12 +491,8 @@
                         requires (record-get [:ref :native.project/module-info] info :requires)
                         edges-next (+ edges (vector-count requires))
                         bytes-next (+ source-bytes (string-byte-length source))
-                        surface? (if (string=? namespace entry-namespace)
-                                   entry-surface?
-                                   (or (path-suffix? path ".cljk")
-                                       (path-suffix? path ".cljc")))
                         packet-next (string-concat packet
-                                                   (source-frame namespace source surface?))]
+                                                   (source-frame namespace source))]
                     (cond
                       (not (string=? parse-error ""))
                       (graph-error (string-concat
@@ -559,10 +524,8 @@
   dependency order is structural; semantic import linking is not performed."
   (if (not (absolute-path? entry-path))
     (graph-error "entry source must be an absolute path up to 4096 bytes")
-    (if (not (or (path-suffix? entry-path ".kotoba")
-                 (path-suffix? entry-path ".cljk")
-                 (path-suffix? entry-path ".cljc")))
-      (graph-error "entry source must end in .kotoba, .cljk, or .cljc")
+    (if (not (path-suffix? entry-path ".kotoba"))
+      (graph-error "entry source must end in .kotoba")
       (if (not (file-exists? entry-path))
         (graph-error (string-concat "entry source was not found: " entry-path))
         (let [source (read-module-file entry-path)
@@ -584,5 +547,4 @@
                           (typed-list-conj [:list :string] decoded-roots
                                            (entry-source-root entry-path namespace))
                           decoded-roots)]
-              (collect-project namespace source (or (path-suffix? entry-path ".cljk")
-                                                   (path-suffix? entry-path ".cljc")) roots))))))))
+              (collect-project namespace source roots))))))))

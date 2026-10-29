@@ -1,0 +1,86 @@
+# JUN-58 / JUN-55 -- rule 2's WGSL publication (2026-10-25, tick slice)
+
+Row taken: the run-1 record's own named LEFT (a) -- "rule 2's WGSL
+publication (regime-matched sign per level over this run's pair lines --
+only then can the first leg be evaluated".
+
+## What changed (IMPLEMENTED: code + tests)
+
+- scripts/gpu_regime_classify.py: WGSL_PAIR_RE + parse_wgsl_measure_pairs
+  (rule 2's unit on this channel: the block's paired-median
+  subgroup/baseline ratio, the `pair` line; duplicate blocks refuse),
+  render_wgsl_sign_section (REGIME-MATCHED SIGN PER LEVEL over the
+  record's pair lines, per metric -- single/batch32 never mix -- per
+  operator, the MSL channel's sign_classification machine unchanged,
+  plus the per-metric cell roll-up; runs the rule-1 levels cannot place
+  and rule-1 runs with no pair line are named and excluded), and
+  render_wgsl_claim_protocol (rule-1 section, rule-2 status token,
+  rule-2 section or a named absence). --wgsl-log prints the combined
+  publication. Sign claims CHANNEL-SCOPED (never flip an MSL cell,
+  never answer a workgroup row); rule 4 unchanged (no :measured? flag,
+  no workgroup row moves).
+- scripts/measure-gpu-reduce-wgsl.mjs: feeds the classifier its `pair`
+  lines beside the `time` lines and names rule 2's state in the
+  claim-protocol-rule1 status line.
+- Tests: _self_test_wgsl_sign_unit (21 assertions: parse + refusals,
+  exact per-level rows, by-regime / within-regime / no-side / invariant
+  verdicts, per-metric separation, channel scoping, named-and-excluded,
+  combined publication) and _self_test_wgsl_sign_corpus (14 assertions:
+  run-1's 36 pair lines, pinned cell roll-ups, no regime-invariant sign).
+
+## VERIFIED (tool output)
+
+- gpu_regime_classify.py --self-test: TOTAL 2448 assertions passed,
+  0 failed (baseline 2413; +21 unit, +14 corpus).
+- The harness's exact stdin spawn route (--wgsl-log - over the printed
+  time/pair lines): exit 0, rule-1 section + "claim-protocol-rule2:
+  PUBLISHED" + rule-2 section.
+- Wiring run on real hardware (node scripts/measure-gpu-reduce-wgsl.mjs,
+  exit 0, Chrome 155 HeadlessChrome/Dawn/Metal adapter apple/metal-3):
+  the log carries both sections and the status line "claim-protocol-rule1:
+  PUBLISHED (rule 2 sign classification also published below ...)". This
+  run is WIRING VERIFICATION; its numbers do not adjudicate cross-run
+  stability (that needs controlled repeats, its own row) and nothing
+  from it upgrades any state.
+
+## THE RULE-2 VERDICT OVER RUN 1 (derived from the committed log's own
+pair lines -- docs/evidence/gpu/wgsl-claimprotocol-run1-20261025 --
+a parse of a committed record, not a new measurement):
+
+- single: max/min/sum all REGIME-SCOPED (within-regime straddles); cell
+  roll-up REGIME-SCOPED (19 above 1.0, 14 below 1.0, 3 at 1.0).
+- batch32: max/min/sum all REGIME-SCOPED (within-regime straddles); cell
+  roll-up REGIME-SCOPED (20 above 1.0, 15 below 1.0, 1 at 1.0).
+- One-sided LEVELS exist and are published (e.g. single sum level 2
+  1/1 faster; batch32 sum level 1 3/3 slower) but no operator or cell is
+  regime-invariant.
+- Printed-precision note (same class as the named 12-vs-13 gap): the
+  machine classifies the PRINTED pair ratios; 3 single / 1 batch32 pairs
+  print at exactly 1.000 and classify "at 1.0", where the log's own
+  aggregate counts from unrounded medians (15/36 single faster).
+
+## CONSEQUENCE (named, not an ADR edit this slice)
+
+ADR-0360's first-leg fire condition ("the WGSL harness publishes rule-1
+classification and a fresh run carries a regime-invariant sign") is now
+evaluable: rule 1 + rule 2 both publish on this channel, and run 1
+carries NO regime-invariant sign -> the first leg does NOT fire from run
+1; the narrowing's conservative :baseline for the named device stands,
+no :measured-cell record moves. ADR-0360's bracket text (which still
+says rule 2 is UNIMPLEMENTED) needs its docs-only refresh -- the named
+LEFT (b) row, next tick.
+
+## Gates
+
+- scoped GPU gate / full run-tests.cljk: NOT RUN this slice (the diff
+  touches no .cljk namespace; the tick's run budget went to the wiring
+  run). The documented red at base ("Could not find namespace:
+  kotoba.form", ADR-0362) is not re-verified here; no green suite is
+  claimed.
+- No POSIX .sh anywhere in docs/ (evidence rule).
+
+## UNMEASURED (unchanged, named)
+
+Rule 2's sign verdict on any FUTURE run; per-kernel GPU time
+(writeTimestamp refused on this adapter); cross-run regime stability;
+every workgroup-row question. No :measured? flag or workgroup row moved.

@@ -1,0 +1,27 @@
+;; Exercise all four callbacks added to the diagnostic Darwin full ABI.
+(ns seed.macos-pure-runtime-main (:export [main]))
+
+(defn main [] :i64
+  (let [base (vector-assoc! (vector-alloc 2) 0 11)
+        grown (vector-conj base 33)
+        changed (vector-assoc grown 0 44)
+        unicode "Aé🙂z"]
+    (if (and (= (vector-count base) 2)
+             (= (vector-at base 0) 11)
+             (= (vector-at base 1) 0)
+             (= (vector-count grown) 3)
+             (= (vector-at grown 0) 11)
+             (= (vector-at grown 2) 33)
+             (= (vector-count changed) 3)
+             (= (vector-at changed 0) 44)
+             (= (vector-at changed 2) 33)
+             (= (string-index-of unicode "é") 1)
+             (= (string-index-of unicode "🙂") 3)
+             (= (string-index-of unicode "missing") -1)
+             (= (string-compare "abc" "abc") 0)
+             (< (string-compare "abc" "abd") 0)
+             (> (string-compare "abd" "abc") 0)
+             (< (string-compare "ab" "abc") 0)
+             (> (string-compare "é" "e") 0)
+             (< (string-compare "" "a") 0))
+      42 1)))

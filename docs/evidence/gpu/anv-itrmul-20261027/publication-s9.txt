@@ -1,0 +1,162 @@
+JUN-59 session 9 -- PER-WORKGROUP-FATNESS DISCRIMINATOR (ITERMUL), publication
+Produced ONLY by analysis-s9.py over the 30 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = (binary BATCH, shader set): the a-set runs the ARCHIVED
+measured spv (16-digest corpus), the f-sets run the ITERMUL-derived spv
+(iter1/iter3/iter8; the shader derivation is the 3-line edit in
+shader-derivation.diff.txt, incl. the named pre-run wrapper-spelling fix).
+The instrument is the byte-identical session-8 snapshot (no C edit).
+The grid is the archived grid at every arm (n=1,000,003, WORK_MUL=1,
+BARRIER_N=0): 1 nominal work unit = one dispatch of the archived grid at
+ITERMUL=1 cost; a (B,I) arm runs B dispatches of the same grid at I-times
+per-workgroup cost = B*I nominal units.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 30 logs):
+   runs parsed: 30 (10 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch= == run's B, work_mul=1, barrier_n=0, n=1,000,003; every SAMPLE batch=/work_mul= == (B,1): True
+   every CELL spv= name carries its arm's shader-set suffix (a-set: archived .emitted.spv, no .iter): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 30/30 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check, inside every run -- the ITERMUL loop must not change the stored value)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 540/540
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 180 cell-runs (6 per run x 30 runs = 180 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  I  units  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   a1  1  1     1          31           31..31              31..31           356064
+   a2  2  1     2          31           31..32              31..32           679457
+   a3  3  1     3        5531         5523..5557          4264..5547         960241
+   a8  8  1     8       32745        32657..32949        25176..32766       2387022
+   f1b2  2  1     2          32           32..32              31..32           680600
+   f1b8  8  1     8       32993        32933..33251        25366..33063       3249051
+   f3b1  1  3     3          31           31..31              31..31           559503
+   f3b2  2  3     6          32           31..32              31..32           872878
+   f8b1  1  8     8          31           31..31              31..31           404335
+   f8b2  2  8    16          32           31..32              31..32           789934
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 4:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class a1 (B=1, I=1, set=a, 1 nominal units): FLOOR
+   class a2 (B=2, I=1, set=a, 2 nominal units): FLOOR
+   class a3 (B=3, I=1, set=a, 3 nominal units): CAPTURED
+   class a8 (B=8, I=1, set=a, 8 nominal units): CAPTURED
+   class f1b2 (B=2, I=1, set=f1, 2 nominal units): FLOOR
+   class f1b8 (B=8, I=1, set=f1, 8 nominal units): CAPTURED
+   class f3b1 (B=1, I=3, set=f3, 3 nominal units): FLOOR
+   class f3b2 (B=2, I=3, set=f3, 6 nominal units): FLOOR
+   class f8b1 (B=1, I=8, set=f8, 8 nominal units): FLOOR
+   class f8b2 (B=2, I=8, set=f8, 16 nominal units): FLOOR
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at each control's OWN B -- the session-7 fix, kept; the a-set
+   runs the ARCHIVED measured spv bytes, so this also pins the untouched
+   instrument + corpus):
+     a1 and a2 satisfy FLOOR: True
+     a3 (sum,128,16) pooled median 5531 within +/-5% of committed 5520 (session 7 pooled median): True
+     a8 (sum,128,16) pooled median 32745 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) all four controls satisfy their criteria --
+     C2 and W1-W4 are evaluated against the row question.
+
+   C2 DERIVATION CONTROL (the I=1 analogue of session 8's C1: does the
+   wrapper derivation + iter1 codegen move the bracket?):
+     f1b2 satisfies FLOOR (like a2): True
+     f1b8 (sum,128,16) pooled median 32993 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) the derivation is pinned at I=1 inside the
+     frozen bands; f3/f8 are interpreted against it.
+
+   W1 FATNESS AT B=2 (the row question): classes of f3b2 and f8b2 above.
+     VERDICT: branch (a) -- f3b2 and f8b2 are FLOOR while the a8b8
+     control (8 nominal units) is captured: capture at B=2 is NOT
+     reachable by up to 8x per-workgroup work at the constant archived
+     grid (f8b2 carries 16 nominal work units inside the bracket --
+     twice the captured a8b8's 8 -- on a grid identical to a8b8's).
+     Combined with session 8's grid axis (also unreachable at B=2), the
+     capture is not a total-work threshold on EITHER separated axis at
+     up to 8x; dispatch count stays implicated. Observable only; NO
+     causal mechanism claimed or measured.
+
+   W1 REALIZATION BOUND, NAMED, NOT HIDDEN (computed from section 2's
+   host_ns values, no new measurement): the frozen W1 wording '8x
+   per-workgroup work' is NOMINAL (I body executions of the reduce tree)
+   and the frozen protocol named in advance that the cost scaling with I
+   is not calibrated. The measured host_ns shows the realization is
+   MARGINAL AND NON-MONOTONE in I:
+     B=1: f3b1 (I=3) host_ns 559503 / a1 host_ns 356064 = 1.57x for nominal I=3x
+     B=1: f8b1 (I=8) host_ns 404335 / a1 host_ns 356064 = 1.14x for nominal I=8x
+     B=2: f3b2 (I=3) host_ns 872878 / a2 host_ns 679457 = 1.28x for nominal I=3x
+     B=2: f8b2 (I=8) host_ns 789934 / a2 host_ns 679457 = 1.16x for nominal I=8x
+     I=3 costs MORE host time than I=8 at B=1 (f3b1 > f8b1): the knob
+     did NOT realize I-times per-workgroup COST on this instrument
+     (WHY is UNMEASURED -- no mechanism claimed; e.g. codegen, caching
+     or fixed-overhead dominance are NOT tested). Therefore branch (a)
+     above closes the NOMINAL-I axis only: capture at B=2 is not
+     reachable by up to 8 nominal ITERMUL body executions at constant
+     grid; a genuinely cost-8x-heavier workgroup at B=2 stays
+     UNMEASURED. Session 8's grid axis WAS cost-realized (its committed
+     publication: b2m8 host_ns 3,143,995 vs its b2m1 678,375 = 4.63x for
+     nominal 8x), so on
+     the two separated axes the evidence stands as: grid-total-work axis
+     cost-realized and unreachable at B=2 (session 8); per-workgroup-body
+     axis nominal-only and unreachable at B=2 (this session); dispatch
+     count implicated on both.
+
+   W2 EQUAL-NOMINAL-WORK PAIRS (descriptive; same nominal work inside the
+   bracket, different shape):
+     3 units: f3b1 (1 dispatch of I=3-fat workgroups) 31 ticks / FLOOR / host_ns 559503  vs  a3 (3 dispatches, I=1) 5531 ticks / CAPTURED / host_ns 960241  bracket ratio 0.006
+     8 units: f8b1 (1 dispatch of I=8-fat workgroups) 31 ticks / FLOOR / host_ns 404335  vs  a8 (8 dispatches, I=1) 32745 ticks / CAPTURED / host_ns 2387022  bracket ratio 0.001
+     8 units (derivation delta): f1b8 (iter1 spv) 32993 ticks / CAPTURED / host_ns 3249051  vs  a8 (archived spv) 32745 ticks / CAPTURED / host_ns 2387022  bracket ratio 1.008
+
+   W3 SINGLE-DISPATCH FAT DOSE (descriptive; B=1 only):
+     a1 (I=1, set=a): bracket 31 ticks / FLOOR; host_ns 356064
+     f3b1 (I=3, set=f3): bracket 31 ticks / FLOOR; host_ns 559503
+     f8b1 (I=8, set=f8): bracket 31 ticks / FLOOR; host_ns 404335
+
+   W4 FATNESS IN HOST TIME (descriptive, NO linearity claim; host_ns at
+   (sum,128,16)): per nominal work unit (host_ns/(B*I)) and per dispatch:
+     a1: host_ns 356064 / 1 units = 356064 ns/unit; / 1 dispatches = 356064 ns/dispatch
+     a2: host_ns 679457 / 2 units = 339728 ns/unit; / 2 dispatches = 339728 ns/dispatch
+     a3: host_ns 960241 / 3 units = 320080 ns/unit; / 3 dispatches = 320080 ns/dispatch
+     a8: host_ns 2387022 / 8 units = 298378 ns/unit; / 8 dispatches = 298378 ns/dispatch
+     f1b2: host_ns 680600 / 2 units = 340300 ns/unit; / 2 dispatches = 340300 ns/dispatch
+     f1b8: host_ns 3249051 / 8 units = 406131 ns/unit; / 8 dispatches = 406131 ns/dispatch
+     f3b1: host_ns 559503 / 3 units = 186501 ns/unit; / 1 dispatches = 559503 ns/dispatch
+     f3b2: host_ns 872878 / 6 units = 145480 ns/unit; / 2 dispatches = 436439 ns/dispatch
+     f8b1: host_ns 404335 / 8 units = 50542 ns/unit; / 1 dispatches = 404335 ns/dispatch
+     f8b2: host_ns 789934 / 16 units = 49371 ns/unit; / 2 dispatches = 394967 ns/dispatch
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   a1: bracket 31 ticks = 1.61 us; vs committed 31 (sessions 1-8 floor): +0.00%
+   a2: bracket 31 ticks = 1.61 us; vs committed 31 (sessions 1-8 floor): +0.00%
+   a3: bracket 5531 ticks = 288.07 us; vs committed 5520 (session 7 pooled median): +0.20%
+   a8: bracket 32745 ticks = 1705.46 us; vs committed 32915 (session 4 pooled median): -0.52%
+   f1b2: bracket 32 ticks = 1.67 us; (no committed anchor at this (B,I) -- new)
+   f1b8: bracket 32993 ticks = 1718.37 us; (no committed anchor at this (B,I) -- new)
+   f3b1: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,I) -- new)
+   f3b2: bracket 32 ticks = 1.67 us; (no committed anchor at this (B,I) -- new)
+   f8b1: bracket 31 ticks = 1.61 us; (no committed anchor at this (B,I) -- new)
+   f8b2: bracket 32 ticks = 1.67 us; (no committed anchor at this (B,I) -- new)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   or the onset location; WHY capture turns on where it does; the ITERMUL
+   loop's cost realization (MARGINAL AND NON-MONOTONE as measured in
+   host_ns -- the nominal B*I unit count is a definition, not a claim); any
+   genuinely cost-8x-heavier per-workgroup work at B=2 (the frozen W1
+   wording is nominal-I only); any codegen difference between iter1 spv and archived spv beyond
+   the wrapper (bounded by C2 only at B=2 floor and B=8 captured); GRID x
+   FATNESS interaction (any M>1 with any I>1); any I outside {1,3,8}; any
+   (B,I) outside the ten arms; B in {4,5,6,7} at any I; any N>0; session 2's
+   run-1 dip cause; cross-day replication; S=8 timing; every W outside
+   {128,256}; shape 2; any baseline-vs-variant sign; BT ordering; isolated
+   single-dispatch timing; non-empty barriers; anything off this host.

@@ -12,9 +12,12 @@ import platform
 import re
 import shutil
 import signal
+import concurrent.futures
+import threading
 import subprocess
 import time
 from pathlib import Path
+from native_process_profile import observe_controller
 
 ROOT = Path(__file__).resolve().parents[2]
 ENV = {"PATH": "/nonexistent"}
@@ -62,13 +65,14 @@ def controller_pin_metadata(policy):
     return observed
 
 
-def main(complete, out):
+def main(complete, out, stage_name="full"):
     assert platform.system() == "Linux" and platform.machine() == "x86_64"
     proof = json.loads((complete / "complete-x86.json").read_text())
     assert proof["status"] == "PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD"
     out.mkdir(parents=True, exist_ok=False)
     (out / "raw").mkdir()
     calls = []
+    calls_lock = threading.Lock()
     cases = json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]
     policy = json.loads((ROOT / "seed/cdci/policy.json").read_text())
     binding = controller_pin_metadata(policy)
@@ -117,13 +121,18 @@ def main(complete, out):
 
     def run(name, argv, expected=0, timeout=60, diagnostic=None):
         started = time.monotonic()
-        r = subprocess.run(list(map(str, argv)), env=ENV, cwd=out, capture_output=True, timeout=timeout)
+        if name == "controller-positive":
+            r = observe_controller(argv, env=ENV, cwd=out, timeout=timeout,
+                                   output=out / "controller-profile.json")
+        else:
+            r = subprocess.run(list(map(str, argv)), env=ENV, cwd=out, capture_output=True, timeout=timeout)
         (out / "raw" / (name + ".stdout")).write_bytes(r.stdout)
         (out / "raw" / (name + ".stderr")).write_bytes(r.stderr)
         row = dict(name=name, exit=r.returncode, seconds=round(time.monotonic() - started, 3),
                    stdoutSHA256=sha(r.stdout), stderrSHA256=sha(r.stderr))
-        calls.append(row)
-        (out / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
+        with calls_lock:
+            calls.append(row)
+            (out / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
         assert r.returncode == expected, (name, r.returncode, r.stderr[-300:])
         if diagnostic:
             assert diagnostic.encode() in r.stderr, (name, r.stderr)
@@ -150,7 +159,12 @@ def main(complete, out):
               ("fifo-source", None, "CDCI:E1003"),
               ("non-executable-image", None, "CDCI:E2002"),
               ("existing-output", None, "CDCI:E1006")]
-    for name, change, diagnostic in probes:
+    # The refusal probes are independent: each stages its own root under
+    # out/<name> and refuses before any compiler execution. Run them
+    # concurrently so their serial wall time does not scale with the probe
+    # count; every probe keeps its own verdict, log and negative asserts.
+    def one_probe(probe):
+        name, change, diagnostic = probe
         root, manifest, lines = stage(name)
         if change:
             lines[change[0]] = change[1]
@@ -172,6 +186,10 @@ def main(complete, out):
         run(name, [root / "controller.elf", manifest, digest], 2, diagnostic=diagnostic)
         assert not (root / "cdci.receipt").exists()
         assert not (root / "amu.stdout").exists(), (name, "unexpected compiler execution")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        for _ in pool.map(one_probe, probes):
+            pass
     for field, value in ((8, "43"), (9, "1"), (10, "999998")):
         name = "gate-forged-field-" + str(field)
         root, _, _ = stage(name)
@@ -206,6 +224,16 @@ def main(complete, out):
         assert not running, ("compiler child survived controller death", running)
         assert not (root / "cdci.receipt").exists()
 
+    if stage_name == "preflight":
+        report = dict(status="PASS_NATIVE_CDCI_PREFLIGHT_ONLY", caseCount=24,
+                      refusalCount=len(probes) + 3, parentDeathChildCleanup=True,
+                      fullControllerQualified=False, compilerRebuildCompleted=False,
+                      observerSourceSHA256=pin(Path(__file__)),
+                      controller=proof["cdci"]["controller"], policy=policy)
+        (out / "preflight.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(report["status"], flush=True)
+        return
+
     root, manifest, _ = stage("positive")
     run("controller-positive", [root / "controller.elf", manifest, pin(manifest)], timeout=10900)
     assert pin(root / "rebuilt.kseed") == policy["coreContainerSHA256"]
@@ -223,15 +251,26 @@ def main(complete, out):
                   policy=policy, controllerReceipt=controller_receipt, gateReceipt=gate_receipt,
                   gateReceiptPath="positive/kotoba-gate.receipt", standaloneGateReceipt=standalone_gate_receipt,
                   manifestSHA256=pin(manifest), coreOutputSHA256=pin(root / "rebuilt.kseed"),
+                  controllerProfile=receipt_profile(out / "controller-profile.json"),
                   refusalCount=len(probes)+3, caseCount=24, parentDeathChildCleanup=True,
                   nativeVerdictAuthority=True, CLoader=False, NodeNBBJVMFallback=False)
     (out / "native-cdci.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], "24 cases", report["refusalCount"], "refusals; parent-death cleanup", flush=True)
 
 
+def receipt_profile(path):
+    report = json.loads(path.read_text())
+    assert report["status"] == "COMPLETED" and report["exit"] == 0
+    assert report["nativeVerdictAuthority"] is False
+    assert report["completePhaseObservation"], "missing controller child phase observations"
+    return dict(path=path.name, sha256=pin(path), elapsedSeconds=report["elapsedSeconds"])
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--complete", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--stage", choices=("preflight", "full"), default="full",
+                   help="preflight gives early feedback only; full always repeats it before the native rebuild")
     a = p.parse_args()
-    main(a.complete.resolve(), a.output.resolve())
+    main(a.complete.resolve(), a.output.resolve(), a.stage)

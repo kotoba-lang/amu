@@ -1,0 +1,47 @@
+== host-verify (JUN-59 THE WITHIN-SESSION BLOCK-VARIABILITY READ OF THE ==
+== (1024,4033) ANCHOR, session 29) ==
+== expectation source: session 2's committed compile-toolchain.txt sha256 ==
+== (anv-subgroupsize-batch64-20261027/compile-toolchain.txt; census ==
+== consumed via session 28's committed expected-corpus.sha256, itself a ==
+== byte-copy chain back to that census -- byte-copy identity recorded in ==
+== derivation-census-s29.txt). ZERO derivation edits this ==
+== session: the instrument is session 28's committed NDIV-derived source ==
+== used BYTE-IDENTICAL; the arms are (BATCH,WORK_MUL,NDIV) triples of ==
+== the source's existing knobs. ZERO NEW knob pairs -- so the session-9 ==
+== D2 pre-GO compile smoke does NOT apply (its purpose is NEW knob ==
+== pairs; there are none here -- named, not hidden). ==
+== corpus sha256sum -c (cwd = workdir root; the census paths are ==
+== workdir-relative) ==
+shaders/probe-w128.glsl: OK
+shaders/probe-w128.spv: OK
+shaders/probe-w256.glsl: OK
+shaders/probe-w256.spv: OK
+shaders/subgroup-reduce-w128-max.emitted.glsl: OK
+shaders/subgroup-reduce-w128-max.emitted.spv: OK
+shaders/subgroup-reduce-w128-min.emitted.glsl: OK
+shaders/subgroup-reduce-w128-min.emitted.spv: OK
+shaders/subgroup-reduce-w128-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w128-sum.emitted.spv: OK
+shaders/subgroup-reduce-w256-max.emitted.glsl: OK
+shaders/subgroup-reduce-w256-max.emitted.spv: OK
+shaders/subgroup-reduce-w256-min.emitted.glsl: OK
+shaders/subgroup-reduce-w256-min.emitted.spv: OK
+shaders/subgroup-reduce-w256-sum.emitted.glsl: OK
+shaders/subgroup-reduce-w256-sum.emitted.spv: OK
+corpus_rc=0
+== corpus digest check (host-side, 16 files incl. the 8 compiled spv): 16/16 ==
+MATCH/FAIL lines below are computed here from the local digests and the
+host-side sha256sum output:
+MATCH  gpu-subgroup-reduce-anv-ndiv.c: local=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 host=a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+MATCH  cases-s29-a.txt: local=274f97943d89660d5842e685f7ba17446fc6ea7caeb2b997130b8a25712d814c host=274f97943d89660d5842e685f7ba17446fc6ea7caeb2b997130b8a25712d814c
+MATCH  expected-corpus.sha256: local=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 host=eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+== instrument + manifest + census-expectation local-vs-host: 3/3 MATCH ==
+== instrument byte-identity (session-28 committed file re-sha256 local ==
+== == the uploaded host copy == the session-29 committed copy): ==
+== a5e539f0 MATCH (derivation-census-s29.txt records the byte-copy) ==
+== inverse check: NOT APPLICABLE this session -- ZERO derivation edits ==
+== pre-GO smoke: NOT APPLICABLE this session -- ZERO NEW knob pairs ==
+== (the session-9 D2 lesson's smoke step exists for NEW knob pairs; the ==
+== arm table's three triples are ALL old, each with a prior binary pin) ==
+GO stamp (before the builds and ALL 18 runs): 2026-10-27T23:11:43Z
+host: aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci

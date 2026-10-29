@@ -1,0 +1,167 @@
+JUN-59 -- session 32 record: THE WITHIN-DAY RECURRENCE READ OF THE
+SESSION-31 hi ARM HOST_NS EXCURSION (ONE measurement slice: one
+same-UTC-day descriptive 3-run block of (3,1024,4033) at n=253,906,
+B=3 ON UTC DAY 2026-10-28, plus the archived controls c2/c8; the
+bar's day slot is session 31's and this block cannot advance it).
+2026-10-28 (UTC). Chain PR #1636 (bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (ONE row): DOES THE SESSION-31 hi ARM HOST_NS
+   EXCURSION (875,403 = ~2.83x EVERY same-knob prior, X1 of session
+   31, cause UNMEASURED) RECUR ON A SECOND SAME-UTC-DAY 3-RUN BLOCK
+   OF THE (1024,4033) ANCHOR AT A BYTE-IDENTICAL BINARY? One
+   observable axis: the hi arm's host_ns pooled median at
+   (sum,128,S=16) (the L3 host-side proxy). The settling bar's
+   2026-10-28 slot is CONSUMED by session 31 (COUNTED 1/4); under
+   settle-bar.txt section 2 this session is a later same-UTC-day
+   session: NAMED DESCRIPTIVE CONTENT that cannot advance the bar.
+   The frozen X1R letters were pre-registered in protocol.txt section
+   0 (freeze stamp 2026-10-28T00:39:07Z, before any build or run):
+   (a) REVERTED (within +/-5% of EACH same-knob prior
+   309,848/310,008/309,647/308,129), (b) RECURS (within +/-15% of
+   875,403 AND >= 2.5x every prior), (c) NAMED UNRESOLVED otherwise.
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3x1rec-20261028/ -- protocol.txt (frozen
+       before the first run, freeze stamp 2026-10-28T00:39:07Z; the
+       X1R letters and the ledger treatment of a later same-day
+       session are frozen there), the byte-copy artifacts
+       cases-s32-a.txt / expected-corpus.sha256 /
+       gpu-subgroup-reduce-anv-ndiv.c.txt (3/3 digests byte-identical
+       to s31's committed copies), host-verify-s32.txt (corpus 16/16,
+       local-vs-host 3/3 MATCH, GO stamp 2026-10-28T00:40:34Z before
+       builds and ALL runs), build-census-s32.txt (3 compiles, 3/3
+       pins BYTE-IDENTICAL), run-window.txt (9 fresh processes +
+       host-mtime cross-check 9/9), the 9 committed run logs
+       (stdout+stderr), analysis-s32.py + publication-s32.txt (run
+       twice, diff exit 0), derivation-census-s32.txt (43 rows,
+       0 mismatched -- independent second parser), bar-eval-s32.txt
+       (the frozen evaluator's output over the ledger), 
+       classify-selftest.txt, gate-run1/2.txt, gate-full-run-tests.txt,
+       this record.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- ONE line appended
+       (append-only) after a scratch-copy test of the frozen
+       evaluator: day=2026-10-28 session=s32 class=INTERMEDIATE/MIXED
+       median=1128 min=982 flag=none -- the evaluator classifies it
+       DESCRIPTIVE (same-day-duplicate exclusion), the counted reading
+       for the day remains s31 and the verdict is UNCHANGED.
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) HARDWARE RAN (MEASURED): 9 fresh processes (c2 3 + hi 3 + c8 3),
+       run window 2026-10-28T00:40:59Z..00:41:02Z on aiueos-6600hs,
+       rc=0 9/9 printed + 9/9 '# done cells=24', stderr 0 bytes 9/9,
+       450 SAMPLE + 24 VERIFY each; knob fields == arms 9/9 (re-derived
+       independently in the census); forcing 162/162; VERIFY mismatch
+       0 everywhere; S=8 fail-closed 54/54; host-mtime cross-check 9/9
+       consistent (worst 1s).
+   (b) THE X1R LETTER (MEASURED HERE): X1R = hi pooled host_ns median
+       at (sum,128,S=16) over r1-3 = 304,999 -> letter (a) REVERTED
+       (frozen thresholds: within +/-5% of EACH same-knob prior --
+       0.984x 309,848 / 0.984x 310,008 / 0.985x 309,647 / 0.990x
+       308,129; (b) RECURS does not fire -- 0.348x session-31's
+       875,403). THE SESSION-31 EXCURSION DID NOT RECUR 34 minutes
+       later on the same UTC day at the byte-identical binary: the hi
+       arm's host_ns is BACK IN THE PRE-S31 BAND (s26-29 span
+       305,360..310,008; this block 304,999, per-run 304,729..305,961).
+       Cause UNMEASURED; NO causal mechanism is claimed (L2).
+   (c) DESCRIPTIVE CONTENT (MEASURED HERE): the SECOND same-UTC-day
+       anchor reading classifies INTERMEDIATE/MIXED at (sum,128,16)
+       1,128 (18-cell 982..1,421) -- in-band vs the bar's frozen refs
+       1,129/1,132/1,131 (within +/-5% of EACH: True); C1 (a) (c2
+       FLOOR 31; c8 32,805 vs committed 32,915, -0.33%); per-run
+       minima 986/972/989 (the F2 min-statistic wander band 971..1,001
+       carries, extended to a block-unit minimum of 982); the controls'
+       host_ns stay in band (c2 672,374 = 0.988x..1.000x priors; c8
+       2,400,076 = 1.001x s27/s29's) -- the s31 X1 asymmetry (controls
+       in band, hi out) did NOT repeat because hi was in band this
+       block.
+   (d) B1/B2 THE BAR (the frozen evaluator, never hand-written): the
+       ledger carries s31 COUNTED and s32 DESCRIPTIVE; settle-bar-eval.py
+       over the ledger -> "VERDICT: PENDING 1/4" (run twice
+       byte-identical, diff exit 0; fixture self-test pin 38
+       assertions / 0 failed). The bar's UTC-day slot accounting is
+       UNCHANGED: 1/4; the next executable day slot is 2026-10-29.
+   (e) Gates (real runs this tick): gpu_regime_classify.py --self-test
+       TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12,162
+       assertions / 0 failures / 0 errors recorded run 1 AND run 2
+       (scratch runner scoped-gpu-gate.cljk, copied in from the session
+       scratch area, run, deleted -- never committed); FULL
+       run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could
+       not find namespace: kotoba.form' at namespace load (ADR-0362,
+       outside this diff -- this diff touches NO .cljk namespace) --
+       NO green full suite claimed; find docs/evidence/gpu -name '*.sh'
+       -> 0.
+   (f) derivation-census-s32.txt: an independent second parser
+       re-derives every cited number from the committed run logs
+       (43 rows, 0 mismatched), verifies the 3/3 byte-copy identities
+       against s31's committed copies, the 3/3 build pins against s31's
+       committed census, n = (1,000,003*1024)//4033 = 253,906 with
+       gcd(n,1,000,003) = 1, and the ledger line fields.
+
+4. NAMED, NOT HIDDEN (this tick): (i) the X1R letter (a) REVERTED is
+   one 3-run block on one day; whether the s31 excursion's cause is a
+   transient, a host-side scheduling artifact, or day structure is
+   UNMEASURED -- this block only shows it did NOT recur ~34 minutes
+   later (the recurrence RATE over the day is unmeasured; two
+   observations: one excursion in s31, none here); (ii) this session
+   runs in the same UTC day as s31 and adds NO bar progress -- the
+   second same-day reading is exactly the descriptive multiplicity
+   settle-bar.txt section 2 names (same-day multiplicity was shown by
+   sessions 26-29 to flip class and is inside the named noise floor);
+   (iii) the hi arm is session 31's exact binary bytes (3/3 pins
+   byte-identical) but rebuilt on the host (the pair's FIFTH
+   cross-session rebuild) -- byte-identical, named as such. No other
+   defects this tick: the driver's inline counters printed correctly
+   and were independently re-derived from the committed logs.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session 30),
+   its ledger-construction decision (s31 protocol section 0) and this
+   session's X1R letter thresholds (s32 protocol section 0). Not
+   implemented in the compiler; not themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The evaluator remains
+   evidence-scoped tooling; the ledger is an evidence file; nothing is
+   wired into any namespace.
+   MEASURED (this tick): the X1R recurrence read itself -- hi host_ns
+   304,999 = letter (a) REVERTED at the byte-identical anchor binary
+   with C1 (a), VERIFY 0, custody GO and 3/3 build pins -- and the
+   second same-UTC-day descriptive anchor reading (INTERMEDIATE/MIXED
+   1,128, min 982, in band). Provisional workgroup defaults in
+   kotoba.compiler.accelerator-targets remain provisional
+   (:measured? false) -- not optimization evidence. RULE 4 unchanged:
+   NOTHING MOVES -- no workgroup row, no :measured? flag, no selection
+   answer; NO vendor optimization exists for Intel and none is claimed.
+
+6. UNMEASURED (named): WHY the session-31 hi host_ns excursion
+   happened at all (this block shows non-recurrence, not cause); the
+   excursion's recurrence rate over a UTC day (two observations, one
+   excursion); whether the block's INTERMEDIATE/MIXED class (second
+   same-day reading at an in-band median) is day structure or the
+   min-statistic wander; the threshold-artifact-vs-representation
+   question; why the class flips across sessions at byte-identical
+   binaries; the flip location inside (252,604, 253,906]; any causal
+   mechanism; anything off the ANV host. The bar needs at least THREE
+   more qualifying UTC days (V4 PENDING 1/4); whether FOUR qualifying
+   days is ENOUGH (the bar can return UNSETTLED; the representation-
+   side probe -- the (2048,8066) twin -- is the named priority in that
+   case).
+
+7. THE TICK'S FINDING IN ONE LINE: THE SESSION-31 hi ARM HOST_NS
+   EXCURSION DID NOT RECUR -- a second same-UTC-day 3-run block of the
+   (1024,4033) anchor at a byte-identical binary (a6c31b6c, the pair's
+   5th cross-session rebuild) reads hi host_ns 304,999 = 0.984x-0.990x
+   EVERY same-knob prior (frozen X1R letter (a) REVERTED; 0.348x s31's
+   875,403), with C1 (a), VERIFY 0 and custody GO; the block's class
+   (INTERMEDIATE/MIXED 1,128, min 982) is descriptive same-day content
+   and the bar stays PENDING 1/4 with s31 counted (frozen evaluator,
+   run twice byte-identical); nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head checked
+   immediately before this push (the count is recorded in the tick
+   report and the chain commit message). Linear: JUN-59 (the
+   com-junkawasaki issue reused for this track), tick comment recorded
+   there. Evidence: docs/evidence/gpu/anv-b3x1rec-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt + the ADR-0355 dated note.
+   (JUN-55, JUN-59)

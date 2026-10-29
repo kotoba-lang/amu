@@ -1,0 +1,259 @@
+(ns kotoba.compiler.accelerator-spirv-compile-test
+  "ADR-0359 decision 2's host half: the one host-invoking entry point of the
+  sealed SPIR-V build step. Everything above `the-default-runner-spawns-
+  the-real-tool` uses a FAKE runner -- a recorded argv and a file the fake
+  tool writes -- so those tests never shell out; what is under test there is
+  the orchestration the ADR specifies: refuse an unverified source before
+  any process runs, attribute the tool or refuse, seal what the tool
+  actually produced, write the loader cache from the sealed bytes, fail
+  closed on a cache that no longer matches, and answer the dispatch side's
+  wire command only after those checks (pipeline-command).
+  `the-default-runner-spawns-the-real-tool` is the ONE test that spawns
+  real processes: it closes the seam the ns docstring of
+  kotoba.compiler.accelerator-spirv-compile names (\"the only seam no test
+  covers is the default runner's own process spawn, exercised by hand
+  against glslangValidator\"). It runs the real tool where the real tool is
+  spawnable and asserts the named refusal where it is not -- and it PRINTS
+  which branch ran, so a green run on a tool-less host can never be read as
+  a real-tool run. Nothing in this file is a measurement: compiling emitted
+  GLSL with the recorded tool is a toolchain fact, not optimization
+  evidence."
+  (:require [clojure.test :refer [deftest is testing]]
+            [kotoba.io :as kio]
+            [kotoba.artifact.core :as artifact]
+            [kotoba.compiler.accelerator :as accelerator]
+            [kotoba.compiler.accelerator-spirv :as spirv]
+            [kotoba.compiler.accelerator-spirv-compile :as compile]))
+
+(defn- ewise-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "ewise_add_f32" :ewise :add {:workgroup-size 256})
+   :glsl-v1))
+
+(defn- reduce-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+   :glsl-v1))
+
+(def ^:private fake-spv
+  [0x03 0x02 0x23 0x07 0x00 0x00 0x01 0x00 0xde 0xad 0xbe 0xef])
+
+(def ^:private version-text "GlslangValidator version 11.16.0")
+
+(defn- fake-runner
+  "A runner that answers the recorded script and, on the compile invocation,
+  writes fake-spv to kernel.spv in the :cwd it was given -- exactly what the
+  real tool does with its -o argument. Every invocation is recorded in
+  `calls` as [argv opts]."
+  [calls {:keys [version-exit version-out compile-exit compile-err]
+          :or {version-exit 0 version-out version-text compile-exit 0}}]
+  (fn [argv opts]
+    (swap! calls conj [argv opts])
+    (if (= ["--version"] (rest argv))
+      {:status version-exit :out version-out :err ""}
+      (do (when (= 0 compile-exit)
+            (kio/write-bytes (kio/file (:cwd opts) "kernel.spv") fake-spv))
+          {:status compile-exit :out "" :err (or compile-err "")}))))
+
+(deftest compile-seals-the-bytes-tool-identity-and-provenance
+  (let [calls (atom [])
+        {sealed :artifact :keys [bytes tool]}
+        (compile/compile-spirv! (ewise-source) {:run (fake-runner calls {})})]
+    (testing "the sealed artifact verifies as provenance and carries the bytes"
+      (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed)))
+      (is (= fake-spv bytes (:spirv-bytes sealed)))
+      (is (= (spirv/bytes-sha256 fake-spv) (:spirv-sha256 sealed))))
+    (testing "the tool identity is name + --version verbatim + exact argv"
+      (is (= "glslangValidator" (:name tool)))
+      (is (= version-text (:version tool)))
+      (is (= (compile/compile-argv "glslangValidator") (:argv tool)))
+      (is (= tool (:tool sealed))))
+    (testing "the version probe runs first and the argv recorded is exactly
+              what the runner was given"
+      (let [[[probe-argv _] [run-argv run-opts]] @calls]
+        (is (= ["glslangValidator" "--version"] probe-argv))
+        (is (= (compile/compile-argv "glslangValidator") run-argv))
+        (is (string? (str (:cwd run-opts))))))
+    (testing "the scratch directory is cleaned up"
+      (let [[_ [run-argv run-opts]] @calls]
+        (is (false? (kio/directory? (:cwd run-opts))))))))
+
+(deftest an-unverified-source-never-reaches-the-tool
+  (let [calls (atom [])
+        tampered (artifact/seal (assoc (ewise-source) :code "void main(){}"))]
+    (is (thrown-with-msg? Exception #"regeneration mismatch"
+                          (compile/compile-spirv!
+                           tampered {:run (fake-runner calls {})})))
+    (testing "not one process was spawned over refused bytes"
+      (is (empty? @calls)))))
+
+(deftest an-unattributable-tool-is-refused-not-sealed
+  (testing "a --version that does not succeed is a refusal"
+    (let [calls (atom [])]
+      (is (thrown-with-msg? Exception #"--version did not run cleanly"
+                            (compile/compile-spirv!
+                             (ewise-source)
+                             {:run (fake-runner calls {:version-exit 1})})))
+      (is (= 1 (count @calls)))))
+  (testing "a --version that prints nothing leaves the tool unattributable"
+    (let [calls (atom [])]
+      (is (thrown-with-msg? Exception #"refused, not sealed"
+                            (compile/compile-spirv!
+                             (ewise-source)
+                             {:run (fake-runner calls {:version-out ""})})))
+      (is (= 1 (count @calls))))))
+
+(deftest a-failed-compile-is-a-refusal-not-a-seal
+  (let [calls (atom [])]
+    (is (thrown-with-msg? Exception #"SPIR-V compile tool failed"
+                          (compile/compile-spirv!
+                           (ewise-source)
+                           {:run (fake-runner calls {:compile-exit 1
+                                                     :compile-err "ERROR: 0:3: 'foo'"})})))
+    (testing "the probe and the compile both ran; nothing was sealed"
+      (is (= 2 (count @calls))))))
+
+(deftest loader-cache-is-written-from-the-sealed-bytes-and-fails-closed
+  (let [calls (atom [])
+        {sealed :artifact} (compile/compile-spirv!
+                            (ewise-source) {:run (fake-runner calls {})})
+        dir (kio/temp-dir "amu-spirv-cache-")
+        out (kio/file dir "kernel.spv")]
+    (try
+      (testing "the cache round-trips the sealed bytes exactly (0xde and all)"
+        (is (= (str out) (compile/write-loader-cache! sealed out)))
+        (is (= fake-spv (mapv #(bit-and (int %) 0xff) (vec (kio/read-all-bytes out)))))
+        (is (= sealed (compile/verify-loader-cache! sealed out))))
+      (testing "a cache that no longer matches the seal refuses dispatch"
+        (kio/write-bytes out (assoc fake-spv 8 0x00))
+        (is (thrown-with-msg? Exception #"loader cache hash mismatch"
+                              (compile/verify-loader-cache! sealed out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))
+
+(deftest the-recorded-argv-is-the-stable-relative-form
+  (testing "fixed names in a scratch cwd: two runs record identical argv"
+    (let [calls-a (atom []) calls-b (atom [])
+          a (:tool (compile/compile-spirv! (ewise-source)
+                                           {:run (fake-runner calls-a {})}))
+          b (:tool (compile/compile-spirv! (ewise-source)
+                                           {:run (fake-runner calls-b {})}))]
+      (is (= (:argv a) (:argv b)))
+      (is (= ["glslangValidator" "-V" "--target-env" "vulkan1.1" "-S" "comp"
+              "kernel.comp" "-o" "kernel.spv"]
+             (:argv a))))))
+
+(deftest the-pipeline-command-is-gated-by-the-dispatch-side-checks
+  (let [calls (atom [])
+        {sealed :artifact} (compile/compile-spirv!
+                            (ewise-source) {:run (fake-runner calls {})})
+        dir (kio/temp-dir "amu-spirv-dispatch-")
+        out (kio/file dir "kernel.spv")]
+    (try
+      (compile/write-loader-cache! sealed out)
+      (testing "the wire-42 command carries the SEALED bindings count (ewise = 4),
+                not caller text"
+        (is (= (str "PIPELINE " (str out) " 4")
+               (compile/pipeline-command sealed out))))
+      (testing "a cache that no longer matches the seal answers NO command --
+                a refusal, never a dispatch"
+        (kio/write-bytes out (assoc fake-spv 8 0x00))
+        (is (thrown-with-msg? Exception #"loader cache hash mismatch"
+                              (compile/pipeline-command sealed out))))
+      (testing "a payload whose seal no longer covers it is refused before any
+                command exists (the arity cannot drift from the compiled kernel)"
+        (compile/write-loader-cache! sealed out)
+        (is (thrown-with-msg? Exception #"invalid accelerator SPIR-V artifact envelope"
+                              (compile/pipeline-command (assoc sealed :bindings 3) out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))
+
+(deftest the-command-bindings-come-from-the-kir-op-in-the-seal
+  (let [calls (atom [])
+        sealed (:artifact (compile/compile-spirv!
+                           (reduce-source) {:run (fake-runner calls {})}))
+        dir (kio/temp-dir "amu-spirv-dispatch-")
+        out (kio/file dir "reduce.spv")]
+    (try
+      (compile/write-loader-cache! sealed out)
+      (testing "a :reduce kernel binds x, parts, n (3) -- derived at seal time"
+        (is (= 3 (:bindings sealed)))
+        (is (= (str "PIPELINE " (str out) " 3")
+               (compile/pipeline-command sealed out))))
+      (finally
+        (kio/delete-if-exists out)
+        (kio/delete-if-exists dir)))))
+
+;; ---------------------------------------------------------------------------
+;; The real-spawn seam (the ONE block in this file that runs real processes).
+;; ---------------------------------------------------------------------------
+
+(def ^:private absent-tool "amu-no-such-spirv-tool-20261024")
+
+(defn- subgroup-source []
+  (accelerator/compile-kernel
+   (accelerator/kernel "reduce_sum_f32" :reduce :sum {:workgroup-size 128})
+   :glsl-v1 :subgroup-reduce))
+
+(defn- real-tool-probe
+  "The real default runner against the real tool's `--version`: answers the
+  {:status :out :err} map when the tool spawns, nil when it cannot be
+  spawned at all. NEITHER answer is faked -- this is the probe that decides
+  which branch of the real-spawn test runs."
+  []
+  (try (compile/default-runner ["glslangValidator" "--version"] {})
+       (catch :default _ nil)))
+
+(deftest the-default-runner-spawns-the-real-tool
+  (testing "an unspawnable tool is a thrown refusal, never nil-status data
+            carried upward (this branch runs on EVERY host)"
+    (is (thrown? Exception
+                 (compile/default-runner [absent-tool "--version"] {})))
+    (is (thrown? Exception
+                 (compile/compile-spirv! (ewise-source) {:tool absent-tool}))))
+  (let [probe (real-tool-probe)]
+    (if (and probe (= 0 (:status probe)))
+      (do
+        (println (str "real-spawn branch: glslangValidator is spawnable; "
+                      "its --version is attributed verbatim below"))
+        (println (str "real-spawn tool version: "
+                      (pr-str (if-not (empty? (:out probe))
+                                (:out probe) (:err probe)))))
+        (let [{sealed :artifact :keys [bytes tool]}
+              (compile/compile-spirv! (ewise-source) {})]
+          (testing "the real tool produced real SPIR-V bytes"
+            (is (seq bytes))
+            (is (= [0x03 0x02 0x23 0x07] (vec (take 4 bytes)))
+                "the SPIR-V magic 0x07230203, little-endian")
+            (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed))))
+          (testing "the recorded tool identity is the real tool's own
+                    --version, verbatim, over the stable argv"
+            (is (= "glslangValidator" (:name tool)))
+            (is (= (:version tool)
+                   (if-not (empty? (:out probe)) (:out probe) (:err probe))))
+            (is (= (compile/compile-argv "glslangValidator") (:argv tool)))
+            (is (= tool (:tool sealed))))
+          (testing "the cache and the dispatch command ride the sealed bytes"
+            (let [dir (kio/temp-dir "amu-spirv-real-")
+                  out (kio/file dir "kernel.spv")]
+              (try
+                (is (= (str out) (compile/write-loader-cache! sealed out)))
+                (is (= sealed (compile/verify-loader-cache! sealed out)))
+                (is (= (str "PIPELINE " (str out) " 4")
+                       (compile/pipeline-command sealed out)))
+                (finally
+                  (kio/delete-if-exists out)
+                  (kio/delete-if-exists dir))))))
+        (let [{sealed :artifact} (compile/compile-spirv! (subgroup-source) {})]
+          (testing "the :subgroup-reduce GLSL arm compiles under the real
+                    tool through the same sealed build step"
+            (is (= :subgroup-reduce (:variant sealed)))
+            (is (= 3 (:bindings sealed)))
+            (is (seq (:spirv-bytes sealed)))
+            (is (= [0x03 0x02 0x23 0x07] (vec (take 4 (:spirv-bytes sealed)))))
+            (is (= {:claim :provenance} (spirv/verify-spirv-artifact! sealed))))))
+      (println (str "real-spawn branch: glslangValidator is NOT spawnable on "
+                    "this host -- only the refusal branches ran; the "
+                    "real-tool assertions did NOT run")))))

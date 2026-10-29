@@ -3,13 +3,11 @@
 ;; reader/type/expression validators return a bounded scalar summary.
 (ns kotoba.compiler.native-frontend
   (:export [validate-type-source validate-expression-batch
-            validate-cljk-expression-source validate-kotoba-expression-source
-            analyze-cljk-source analyze-kotoba-source analyze-project-source
-            lint-cljk-source lint-kotoba-source])
+            validate-kotoba-expression-source
+            analyze-kotoba-source analyze-project-source lint-kotoba-source])
   (:require [kotoba.form :as form]
             [kotoba.compiler.kotoba-reader :as reader]
             [kotoba.compiler.native-project-linker :as linker]
-            [kotoba.compiler.syntax-sugar :as syntax-sugar]
             [kotoba.compiler.validate-expr :as validate-expr]
             [kotoba.compiler.value-type :as value-type]
             [kotoba.sema :as sema])
@@ -35,16 +33,11 @@
   (record-new [:ref :kotoba.compiler/type-summary]
               ok code message nodes offset))
 
-(defn- analysis-options [surface? :bool admit-linked? :bool] [:ref :form/r]
+(defn- analysis-options [admit-linked? :bool] [:ref :form/r]
   (let [empty (form/form-map (form/no-forms))]
-    (let [with-surface (if surface?
-                         (form/assoc-form empty (form/keyword-form :surface?) (form/bool-form true))
-                         empty)]
-      (if admit-linked?
-        (form/assoc-form with-surface
-                         (form/keyword-form :admit-linked-synthetics?)
-                         (form/bool-form true))
-        with-surface))))
+    (if admit-linked?
+      (form/assoc-form empty (form/keyword-form :admit-linked-synthetics?) (form/bool-form true))
+      empty)))
 
 (defn validate-type-source [source :string] [:ref :kotoba.compiler/type-summary]
   "Read exactly one value-type form, validate it, and return a boundary-safe
@@ -79,7 +72,7 @@
   forbidden heads, declared grammar heads, and prior node counts."
   (validate-expr/run-batch batch))
 
-(defn- validate-expression-source* [source :string lower-surface? :bool]
+(defn- validate-expression-source* [source :string]
   [:ref :kotoba.compiler/type-summary]
   (let [parsed (reader/read-forms-count-bounded source 256 65536 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
@@ -96,16 +89,13 @@
 
       :else
       (let [raw (typed-list-nth [:list [:ref :form/r]] forms 0)
-            expression (if lower-surface?
-                         (syntax-sugar/lower-surface raw)
-                         raw)
             context (validate-expr/check-context
                      (form/form-vec (form/no-forms))
                      (form/form-map (form/no-forms))
                      (form/form-set (form/no-forms))
                      (form/form-set (form/no-forms))
                      (form/vec2 (form/bool-form false) (form/int-form -1)))
-            result (validate-expr/check-form expression context 0)]
+            result (validate-expr/check-form raw context 0)]
         (summary (if (form/bool-value (form/nth-of result 0)) 1 0)
                  (form/string-value (form/nth-of result 1))
                  (form/string-value (form/nth-of result 2))
@@ -114,25 +104,12 @@
 
 (defn validate-kotoba-expression-source [source :string]
   [:ref :kotoba.compiler/type-summary]
-  "Read one canonical `.kotoba` core expression and validate it without
-  surface-syntax lowering."
-  (validate-expression-source* source false))
+  "Read and validate one canonical `.kotoba` core expression."
+  (validate-expression-source* source))
 
 (defn analyze-kotoba-source [source :string] [:ref :ana/ir]
   "Run the full Kotoba semantic analyzer over canonical `.kotoba` source."
   (sema/analyze source (form/form-map (form/no-forms))))
-
-(defn analyze-cljk-source [source :string] [:ref :ana/ir]
-  "Lower the admitted `.cljk` Kotoba surface syntax and run the same semantic
-  analyzer used for canonical `.kotoba` source. The extension does not select
-  Clojure or ClojureScript parsing or execution."
-  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
-        error (record-get [:ref :kotoba.reader/out] parsed :err)
-        forms (record-get [:ref :kotoba.reader/out] parsed :forms)
-        options (analysis-options true false)]
-    (if (= error "")
-      (sema/analyze-forms (form/form-seq forms) options)
-      (sema/analyze source options))))
 
 (defn- native-project-error [message :string] [:ref :ana/ir]
   (let [reserved? (= 0 (string-index-of message "symbol uses the reserved __kotoba_ prefix"))]
@@ -148,41 +125,26 @@
                             (if reserved? "source" "project")
                             (form/nil-form)))))
 
-(defn analyze-project-source [source :string surface? :bool dependency-packet :string]
+(defn analyze-project-source [source :string dependency-packet :string]
   [:ref :ana/ir]
   "Analyze one module in a resolved graph. Alias calls are linked to checked
-  local interface stubs; the current native linker admits single-arity public
-  functions with explicit :i64 parameters and results. Unsupported interfaces
-  fail closed."
+  local analysis interfaces under the linker's complete closed typed profile,
+  including explicit supported typed-map interfaces. Unsupported interfaces
+  fail closed; these interfaces are not executable module links."
   (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
         parse-error (record-get [:ref :kotoba.reader/out] parsed :err)
         forms (record-get [:ref :kotoba.reader/out] parsed :forms)]
     (if (not (string=? parse-error ""))
       (sema/analyze source (form/form-map (form/no-forms)))
-      (let [linked (linker/link-project-forms forms source surface? dependency-packet)
+      (let [linked (linker/link-project-forms forms source dependency-packet)
             link-error (record-get [:ref :native.project.link/result] linked :err)]
         (if (not (string=? link-error ""))
           (native-project-error link-error)
           (sema/analyze-forms
            (record-get [:ref :native.project.link/result] linked :forms)
-           (analysis-options false true)))))))
-
-(defn lint-cljk-source [source :string] [:ref :ana/ir]
-  "Run semantic analysis and lint findings on `.cljk` Kotoba surface source."
-  (let [parsed (reader/read-forms-count-bounded source 512 1048576 10000)
-        error (record-get [:ref :kotoba.reader/out] parsed :err)
-        forms (record-get [:ref :kotoba.reader/out] parsed :forms)
-        options (analysis-options true false)]
-    (if (= error "")
-      (sema/lint-forms (form/form-seq forms) options)
-      (sema/lint source options))))
+           (analysis-options true)))))))
 
 (defn lint-kotoba-source [source :string] [:ref :ana/ir]
   "Run semantic analysis and lint findings on canonical `.kotoba` source."
   (sema/lint source (form/form-map (form/no-forms))))
 
-(defn validate-cljk-expression-source [source :string]
-  [:ref :kotoba.compiler/type-summary]
-  "Read one `.cljk` Kotoba surface expression, lower its admitted syntax
-  sugar into Kotoba core, then validate with an empty module environment."
-  (validate-expression-source* source true))

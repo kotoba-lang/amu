@@ -154,3 +154,362 @@
           path (str "test/fixtures/gpu/subgroup-reduce-w" w "-sum.emitted.glsl")]
       (is (= (sg/emit-glsl kir) (slurp path))
           (str path " is stale -- run scripts/regen-gpu-subgroup-reduce-fixtures.cljk")))))
+
+;; ---------------------------------------------------------------------------
+;; The WGSL arm (emit-wgsl, landed 2026-10-23). The same fold to its letter,
+;; in WGSL spellings. UNCOMPILED on this host (no WGSL compiler or validator
+;; exists here) -- these text contracts are the whole verification, and the
+;; spellings are pinned to the W3C WGSL spec and the merged gpuweb subgroups
+;; proposal (vendor documentation, fetched 2026-10-23), not to a compiler.
+;; [JUDGED 2026-10-25 by a real validator, Google Chrome 155's Dawn/Tint:
+;; the whole emitted row (docs/evidence/gpu-subgroup-reduce-wgsl-20261025/
+;; shaders/) -- 6/18 validate clean (:sum at every W, raised limits), 12/18
+;; are REFUSED on the infinite neutrals (Tint const-folds
+;; bitcast<f32>(0xFF800000u)/0x7F800000u to -inf/inf and answers "value
+;; -inf cannot be represented as 'f32'"), and W >= 512 additionally needs
+;; raised device limits (the default maxComputeWorkgroupSizeX is 256);
+;; transcript docs/evidence/gpu/wgsl-validate-chrome-20261025/
+;; compile-log.txt. The spelling pins below stand BESIDE that judgment and
+;; are unchanged by it: the fix question is DECIDED 2026-10-25 -- NEITHER
+;; a Tint const-eval limit nor spec drift (the WGSL spec's Finite Math
+;; Assumption 15.7.3 requires the refusal; the spelling is the defect),
+;; and the fix rule (no infinite value in the arm) is ACCEPTED DESIGN ONLY,
+;; its implementation a later slice,
+;; docs/evidence/gpu/wgsl-inf-neutral-fixquestion-20261025/. Nothing has
+;; executed this arm:
+;; UNMEASURED unchanged.] [FIX IMPLEMENTED 2026-10-25 (this arm's own
+;; implementation slice, JUN-59/JUN-60): the fix rule's no-infinite-value
+;; emission is now WHAT IS EMITTED -- :sum's finite 0.0 select, :max/:min's
+;; clamped-index fill x[min(i,n.value-1u)] (padded-lane-fill-wgsl; the
+;; n=0 contract, decided there: n >= 1 is a caller precondition) -- and the
+;; whole admitted row re-emitted and re-judged on the same instrument:
+;; 18/18 VALIDATE CLEAN at the raised limits, 12/18 at the default limits
+;; (the 6 are W >= 512 refused only for workgroup_size above the default
+;; maxComputeWorkgroupSizeX of 256; compile-info: ok for all 18 in both
+;; regimes and the "value -inf cannot be represented as 'f32'" class is
+;; GONE, 0 occurrences). Corpus
+;; docs/evidence/gpu-subgroup-reduce-wgsl-fix-20261025/shaders/, transcript
+;; docs/evidence/gpu/wgsl-fix-validate-chrome-20261025/compile-log.txt; the
+;; pre-fix corpus and its judgment stand as untouched records. The
+;; spelling pins below are the fix rule's own. UNMEASURED unchanged --
+;; shader validation is not a measurement.]
+
+(deftest wgsl-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, WGSL arm: the fold step is a function of
+  ;; subgroup_size and no literal width may appear as a fold loop bound.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-wgsl kir)]
+      (is (str/includes? code "enable subgroups;"))
+      (is (str/includes? code "@builtin(subgroup_size)"))
+      (is (str/includes? code (str "let fold=min(sgsize," w "u);")))
+      (is (str/includes? code "for(var d:u32=fold/2u;d>0u;d=d>>1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest wgsl-each-operator-carries-its-combine-and-padded-lane-fill
+  ;; THE 2026-10-25 FIX RULE, IMPLEMENTED: this arm holds NO infinite
+  ;; value in any position (WGSL 15.7.3 makes an infinite const-
+  ;; expression a REQUIRED shader-creation error -- the bitcast spelling
+  ;; the other arms use was REFUSED by Chrome 155's Tint at error@9:33,
+  ;; the 2026-10-25 judgment). :sum keeps its finite 0.0 identity in the
+  ;; select; :max/:min use the CLAMPED-INDEX FILL x[min(i,n.value-1u)] --
+  ;; out-of-range lanes duplicate the in-range element x[n-1] and max/min
+  ;; stay exact (a duplicate never changes an extremum, +-Inf input
+  ;; included). n >= 1 is a caller precondition (n=0 is out of contract).
+  (doseq [[operator combine fill-text]
+          [[:sum "a+b" "var v:f32=select(0.0,x[i],i<n.value);"]
+           [:max "max(a,b)" "var v:f32=x[min(i,n.value-1u)];"]
+           [:min "min(a,b)" "var v:f32=x[min(i,n.value-1u)];"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-wgsl kir)]
+      (is (str/includes? code (str "fn combine(a:f32,b:f32)->f32{return " combine ";}")))
+      (is (str/includes? code fill-text)))))
+
+(deftest wgsl-arm-holds-no-infinite-value-in-any-position
+  ;; The fix rule's own mechanical guard (decision point 3, "no infinite
+  ;; value in the arm at all"): the IEEE-754 infinite bit patterns and
+  ;; their bitcast spelling must appear NOWHERE in the emitted bytes --
+  ;; not in an identity, not in a fill, not in a comment-visible string.
+  ;; This is the tripwire that keeps the refused spelling from returning.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-wgsl kir)]
+      (is (nil? (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))
+          (str "an infinite-value spelling leaked into W=" w " "
+               (name operator) ": " (re-find #"0xFF800000|0x7F800000|bitcast<f32>|inf" code))))))
+
+(deftest wgsl-cites-the-spec-spellings-only
+  ;; Spec pins (W3C WGSL + the merged gpuweb subgroups proposal, fetched
+  ;; 2026-10-23): `subgroups` is an ENABLE extension; `subgroup_id` and
+  ;; `num_subgroups` are a LANGUAGE extension -- automatically available
+  ;; where supported, and NOT enable-able (`enable subgroup_id;` would be a
+  ;; shader-creation error). GLSL/SPIR-V spellings must not leak in.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-wgsl kir)]
+    (is (str/includes? code "enable subgroups;\n"))
+    (is (nil? (re-find #"enable [^\n]*subgroup_id" code))
+        "the subgroup_id LANGUAGE extension was emitted as an enable directive")
+    (is (str/includes? code "@builtin(subgroup_invocation_id)"))
+    (is (str/includes? code "@builtin(subgroup_id)"))
+    (is (str/includes? code "@builtin(num_subgroups)"))
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups" code))
+        "a GLSL builtin spelling leaked into WGSL output")))
+
+(deftest wgsl-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, WGSL arm: the partial index is subgroup_id and the
+  ;; cross-subgroup stage strides subgroup 0's lanes by subgroup_size, so
+  ;; every pair is combined regardless of the (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-wgsl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for(var lid:u32=sgid;lid<e;lid=lid+sgsize)"))
+      (is (str/includes? code "partials[sg]=v;"))
+      (is (nil? (re-find #"lid:u32=0u" code))
+          "the partial index fell back to lid arithmetic"))))
+
+(deftest wgsl-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-wgsl kir)]
+    (is (str/includes? code "@workgroup_size(128)"))
+    (is (str/includes? code "var<workgroup> partials: array<f32, 128>;"))
+    (is (str/includes? code "let i=gid.x;"))
+    (is (str/includes? code "parts[wid.x]=partials[0];"))
+    ;; n rides a uniform at binding 2 -- the WGSL family's own choice (every
+    ;; WGSL emission binds it there); the GLSL arm's storage n is a
+    ;; wire-42 artifact.
+    (is (str/includes? code "@group(0) @binding(2) var<uniform> n: N;"))
+    ;; entry point is main and the kernel's name is deliberately absent.
+    (is (str/includes? code "fn main("))
+    (is (nil? (re-find #"reduce_sum" code)))))
+
+(deftest wgsl-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-wgsl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-wgsl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-wgsl reduce-sum) (sg/emit-wgsl reduce-sum)))))
+
+;; ---------------------------------------------------------------------------
+;; The MSL arm (emit-msl, landed 2026-10-23). The same fold to its letter,
+;; in Metal spellings. The spellings are pinned to the Apple Metal Shading
+;; Language Specification and Apple's "Porting your Metal code to Apple
+;; silicon" (fetched 2026-10-23), and -- unlike the WGSL arm -- this arm
+;; also COMPILES under the Apple Metal compiler on this host (a toolchain
+;; fact recorded in
+;; docs/evidence/gpu-subgroup-reduce-msl-20261023/, not a measurement).
+;; Metal refuses a kernel named `main`, so the entry point is the kernel's
+;; own name (the ADR-0002 MSL family's contract) -- the one deviation from
+;; the variant family's name-free `main` convention, compiler-verified.
+
+(deftest msl-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, MSL arm: the fold step is a function of
+  ;; threads_per_simdgroup (the runtime SIMD-group size; the spec's alias of
+  ;; thread_execution_width) and no literal width may appear as a fold loop
+  ;; bound.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-msl kir)]
+      (is (str/includes? code "#include <metal_stdlib>"))
+      (is (str/includes? code "uint sgsize [[threads_per_simdgroup]]"))
+      (is (str/includes? code "uint fold = min(sgsize, width);"))
+      (is (str/includes? code "for (uint d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator))))))
+
+(deftest msl-each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0f"]
+           ;; The same INFINITE neutrals as every other arm (accelerator-
+           ;; test's every-arm-shares-one-operator-meaning): MSL has no
+           ;; infinity literal, as_type of the IEEE-754 bits is exact.
+           [:max "max(a,b)" "as_type<float>(0xFF800000u)"]
+           [:min "min(a,b)" "as_type<float>(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-msl kir)]
+      (is (str/includes? code (str "float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest msl-cites-the-spec-spellings-only
+  ;; Spec pins (Apple MSL Specification + "Porting your Metal code to Apple
+  ;; silicon", fetched 2026-10-23): the runtime size query is the
+  ;; threads_per_simdgroup attribute; the subgroup geometry is
+  ;; thread_index_in_simdgroup / simdgroup_index_in_threadgroup /
+  ;; simdgroups_per_threadgroup; the fold's shuffle is simd_shuffle_down.
+  ;; GLSL/WGSL spellings must not leak in, and the fold must stay the
+  ;; shuffle loop -- a simd_sum/simd_max/simd_min rewrite would be a
+  ;; different grouping of the same elements and is not this arm.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-msl kir)]
+    (is (str/includes? code "uint sgid [[thread_index_in_simdgroup]]"))
+    (is (str/includes? code "uint sg [[simdgroup_index_in_threadgroup]]"))
+    (is (str/includes? code "uint nsg [[simdgroups_per_threadgroup]]"))
+    (is (str/includes? code "float s = simd_shuffle_down(v, d);"))
+    (is (str/includes? code "threadgroup_barrier(mem_flags::mem_threadgroup);"))
+    (is (nil? (re-find #"simd_sum|simd_max|simd_min" code))
+        "the shuffle-loop fold was rewritten as a one-call simd reduce")
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups|subgroup_size|subgroupShuffleDown" code))
+        "a GLSL or WGSL spelling leaked into MSL output")))
+
+(deftest msl-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, MSL arm: the partial index is the SIMD-group index and
+  ;; the cross-subgroup stage strides subgroup 0's lanes by
+  ;; threads_per_simdgroup, so every pair is combined regardless of the
+  ;; (S, nsub) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-msl (accelerator/kernel "reduce_sum" :reduce :sum
+                                                {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (uint lid = sgid; lid < d; lid += sgsize)"))
+      (is (str/includes? code "partials[sg] = v;"))
+      (is (nil? (re-find #"uint lid = 0u" code))
+          "the partial index fell back to lid arithmetic"))))
+
+(deftest msl-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-msl kir)]
+    (is (str/includes? code "threadgroup float partials[128];"))
+    (is (str/includes? code "uint i [[thread_position_in_grid]]"))
+    (is (str/includes? code "parts[g] = partials[0];"))
+    ;; n rides the MSL family's own constant buffer at binding 2, and the
+    ;; buffer bindings (x 0, parts 1, n 2) are the ADR-0002 MSL family's.
+    (is (str/includes? code "constant uint& n [[buffer(2)]]"))
+    ;; Metal refuses a kernel named main ("kernel function cannot be called
+    ;; 'main'", Apple metal 32023.883) -- the one deviation from the
+    ;; variant family's name-free entry convention, so the kernel's name IS
+    ;; the entry here, exactly as the baseline MSL arm emits it.
+    (is (str/includes? code "kernel void reduce_sum("))
+    (is (nil? (re-find #"kernel void main\(" code))
+        "the wire-42 'main' entry convention leaked into MSL output")))
+
+(deftest msl-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-msl ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-msl (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-msl reduce-sum) (sg/emit-msl reduce-sum)))))
+
+;; ---------------------------------------------------------------------------
+;; The CUDA arm (emit-cuda, landed 2026-10-23). The same fold to its letter,
+;; in CUDA spellings -- the last of the four emitters to carry it (GLSL
+;; 2026-10-22, WGSL and MSL 2026-10-23). UNCOMPILED on this host (no nvcc
+;; exists here, the same regime as the WGSL arm) -- [COMPILED 2026-10-24
+;; elsewhere: the emitter's bytes for this whole admitted row compile clean
+;; with the real nvcc 11.4 (V11.4.315) on the fleet's CUDA host xavier
+;; (-arch=sm_72, 18 .cubin + 18 .ptx),
+;; docs/evidence/gpu/cuda-compile-xavier-20261024/; this host keeps the
+;; regime] -- these text contracts stand beside that compile, and the
+;; spellings are pinned to the NVIDIA CUDA C++ Programming Guide (fetched
+;; 2026-10-23), not to a compiler. Nothing has executed this arm on any
+;; GPU: UNMEASURED unchanged.
+
+(deftest cuda-emission-queries-the-subgroup-size-at-runtime
+  ;; ADR-0356's letter, CUDA arm: the fold step is a function of warpSize
+  ;; (the guide's built-in device variable, a run-time value) and no literal
+  ;; width may appear as a fold loop bound or as the shuffle's width.
+  (doseq [w [32 64 128 256 512 1024] operator [:sum :max :min]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size w})
+          code (sg/emit-cuda kir)]
+      (is (str/includes? code "unsigned int sgsize = warpSize;"))
+      (is (str/includes? code "unsigned int fold = sgsize < blockDim.x ? sgsize : blockDim.x;"))
+      (is (str/includes? code "for (unsigned int d = fold / 2u; d > 0u; d >>= 1u)"))
+      (is (str/includes? code "__shfl_down_sync(mask, v, d, fold)"))
+      (is (nil? (re-find #"\bd\s*=\s*\d+u" code))
+          (str "a baked fold width leaked into W=" w " " (name operator)))
+      ;; the shuffle arm's baked full-warp mask (a 32-lane fact) must not
+      ;; leak into the parametric arm: participation is queried at runtime.
+      (is (nil? (re-find #"0xffffffffu" code))
+          "a baked warp mask leaked into the parametric arm"))))
+
+(deftest cuda-each-operator-carries-its-combine-and-identity
+  (doseq [[operator combine identity-text]
+          [[:sum "a+b" "0.0f"]
+           ;; The same INFINITE neutrals as every other arm (accelerator-
+           ;; test's every-arm-shares-one-operator-meaning): CUDA C has no
+           ;; portable infinity literal here, __uint_as_float of the IEEE-754
+           ;; bits is exact and header-free.
+           [:max "fmaxf(a,b)" "__uint_as_float(0xFF800000u)"]
+           [:min "fminf(a,b)" "__uint_as_float(0x7F800000u)"]]]
+    (let [kir (accelerator/kernel (str "reduce_" (name operator)) :reduce operator
+                                  {:workgroup-size 128})
+          code (sg/emit-cuda kir)]
+      (is (str/includes? code (str "__device__ float combine(float a, float b) { return " combine "; }")))
+      (is (str/includes? code (str "float v = i < n ? x[i] : " identity-text ";"))))))
+
+(deftest cuda-cites-the-guide-spellings-only
+  ;; Guide pins (NVIDIA CUDA C++ Programming Guide, fetched 2026-10-23):
+  ;; warpSize is the built-in runtime warp width; __shfl_down_sync's width
+  ;; parameter partitions the warp into fold-sized subsections and an
+  ;; out-of-range source lane returns the caller's own var (hence the
+  ;; guard); __activemask() is the runtime active-lane mask; __syncthreads
+  ;; is the block barrier. GLSL/WGSL/MSL spellings must not leak in, and
+  ;; the fold must stay the shuffle loop -- a __reduce_*_sync (sm_80+) or
+  ;; cub:: rewrite would be a different mechanism and is not this arm.
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 256})
+        code (sg/emit-cuda kir)]
+    (is (str/includes? code "unsigned int sgid = threadIdx.x % sgsize;"))
+    (is (str/includes? code "unsigned int sg = threadIdx.x / sgsize;"))
+    (is (str/includes? code "unsigned int mask = __activemask();"))
+    (is (str/includes? code "float s = __shfl_down_sync(mask, v, d, fold);"))
+    (is (str/includes? code "    __syncthreads();\n"))
+    (is (nil? (re-find #"__reduce_add_sync|__reduce_max_sync|__reduce_min_sync|cub::" code))
+        "the shuffle-loop fold was rewritten as a one-call reduce")
+    (is (nil? (re-find #"gl_Subgroup|gl_WorkGroup|gl_GlobalInvocation|gl_NumSubgroups|subgroup_size|subgroupShuffleDown|bitcast<|as_type<|simd_|threadgroup" code))
+        "a GLSL, WGSL or MSL spelling leaked into CUDA output")))
+
+(deftest cuda-cross-subgroup-fold-covers-every-partial
+  ;; ADR-0357 P2, CUDA arm: the partial index is the SUBGROUP index
+  ;; (threadIdx.x / warpSize -- CUDA has no subgroup-id builtin) and the
+  ;; cross-subgroup stage strides subgroup 0's lanes by sgsize, so every
+  ;; pair is combined regardless of the (S, nsg) shape.
+  (doseq [w [32 64 128 256 512 1024]]
+    (let [code (sg/emit-cuda (accelerator/kernel "reduce_sum" :reduce :sum
+                                                 {:workgroup-size w}))]
+      (is (str/includes? code
+                         "for (unsigned int lid = sgid; lid < d; lid += sgsize)"))
+      (is (str/includes? code "partials[sg] = v;"))
+      (is (nil? (re-find #"partials\[lid\] = v;" code))
+          "the partial index fell back to lid arithmetic")
+      (is (nil? (re-find #"unsigned int lid = 0" code))
+          "the cross-fold stride fell back to a fixed lane start"))))
+
+(deftest cuda-workgroup-shape-mirrors-the-kir
+  (let [kir (accelerator/kernel "reduce_sum" :reduce :sum {:workgroup-size 128})
+        code (sg/emit-cuda kir)]
+    ;; the partials array is W floats, fixed -- the MSL/WGSL arms'
+    ;; fixed-workgroup-array choice -- not the baseline CUDA reduce's
+    ;; dynamic extern __shared__ float s[].
+    (is (str/includes? code "__shared__ float partials[128];"))
+    (is (nil? (re-find #"extern __shared__" code))
+        "the baseline CUDA reduce's dynamic shared array leaked in")
+    (is (str/includes? code "unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;"))
+    (is (str/includes? code "parts[blockIdx.x] = partials[0];"))
+    ;; n is the third kernel argument -- the CUDA family's own ABI (x,
+    ;; parts, n), the same signature shape the shuffle arm emits.
+    (is (str/includes? code
+                       "extern \"C\" __global__ void reduce_sum(const float* x, float* parts, unsigned int n){"))
+    ;; the entry point is the kernel's :kernel/name under the CUDA family's
+    ;; extern-C kernel linkage -- the variant family's name-free `main`
+    ;; convention is a wire-42/GLSL-WGSL artifact and does not extend here.
+    (is (nil? (re-find #"void main\(" code))
+        "the wire-42 'main' entry convention leaked into CUDA output")))
+
+(deftest cuda-emission-refuses-off-its-row-and-is-deterministic
+  (let [ewise (accelerator/kernel "k" :ewise :add {:workgroup-size 128})
+        reduce-sum (accelerator/kernel "k" :reduce :sum {:workgroup-size 128})]
+    (is (thrown-with-msg? Exception #"kernel variant not applicable"
+                          (sg/emit-cuda ewise)))
+    (is (thrown-with-msg? Exception #"invalid accelerator KIR"
+                          (sg/emit-cuda (assoc reduce-sum :kernel/dtype :f64))))
+    (is (= (sg/emit-cuda reduce-sum) (sg/emit-cuda reduce-sum)))))

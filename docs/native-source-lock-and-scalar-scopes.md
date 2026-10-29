@@ -86,7 +86,7 @@ the body and preserves the i64/bool/f64 result. No source head exposes manual
 enter/leave. Collection/reference results are refused. The corresponding
 scalar runtime routines and private vector growth metadata are implemented in
 both static runtime strings (`seed/76` and `seed/77`), following the separate
-owning-native assembler implementation. Scope depth remains bounded at 256;
+owning-native assembler implementation. The recorded baseline bounds scope depth at 256;
 all five saved counters are checked before any restore. Retained prefixes,
 assoc and views keep persistent semantics. Optional doubled capacity falls
 back to the original exact copy size when space is insufficient. Guest arena
@@ -121,3 +121,7 @@ guest. Public CLI/target/profile/seal, x86_64-linux-static CDCI controller,
 owning main/resolver/CID integration, generic abort/recur cleanup and the full
 historical corpus remain open. The current main reader and runtime are separate
 integration inputs; these historical receipts identify only the tested core.
+
+The AWAI-81 AArch64 follow-on raises that target's bound to 4,096 with an explicit
+negative control; see [native-scalar-depth.md](native-scalar-depth.md). The
+historical receipts above and x86 bound are unchanged.

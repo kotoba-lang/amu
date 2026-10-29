@@ -1,0 +1,42 @@
+== date -u (builds) ==
+Bounded by the host timeline: builds ran after the source upload
+(2026-10-27T11:26:28Z) and before the first run (2026-10-27T11:27:25Z,
+run-window.txt). Not separately measured, so not asserted.
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-cmdcount-20261027, runs cwd=shaders/
+(manifest passed as ../cases-s6.txt).
+== gcc --version (first line) ==
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+== instrument builds (7 binaries; the derived source is ONE parameterization
+== edit of the session-5 archived snapshot -- the BARRIER_N knob; see
+== instrument-derivation.diff.txt; arm = the (BATCH, BARRIER_N) compile-time
+== pair; BARRIER_N=0 default is the archived behaviour) ==
+$ gcc -O2 -DBATCH=<B> -DBARRIER_N=<N> -o anv-cmdc-<tag> gpu-subgroup-reduce-anv-cmdcount.c -lvulkan
+build anv-cmdc-b1n0 -DBATCH=1 -DBARRIER_N=0 rc=0
+build anv-cmdc-b1n1 -DBATCH=1 -DBARRIER_N=1 rc=0
+build anv-cmdc-b1n2 -DBATCH=1 -DBARRIER_N=2 rc=0
+build anv-cmdc-b1n3 -DBATCH=1 -DBARRIER_N=3 rc=0
+build anv-cmdc-b1n7 -DBATCH=1 -DBARRIER_N=7 rc=0
+build anv-cmdc-b4n0 -DBATCH=4 -DBARRIER_N=0 rc=0
+build anv-cmdc-b2n2 -DBATCH=2 -DBARRIER_N=2 rc=0
+== arm decode (the header prints batch= and barrier_n=, so every run log
+== carries its own knob identity; analysis-s6.py checks both fields) ==
+b1n0 = (B=1, N=0) floor control (the archived behaviour, defaults only)
+b1n1 = (B=1, N=1)
+b1n2 = (B=1, N=2)
+b1n3 = (B=1, N=3)   equal total bracketed command count 6 (with b2n2, b4n0)
+b2n2 = (B=2, N=2)   equal total bracketed command count 6
+b4n0 = (B=4, N=0)   equal total bracketed command count 6
+b1n7 = (B=1, N=7)   dose point
+== sha256 of the uploaded instrument + manifest + binaries (captured after
+== the builds, before the runs) ==
+9847b0f1fa139d284d909ddc53e8e25af0b750126f31b8bcae2ed12c16326977  gpu-subgroup-reduce-anv-cmdcount.c
+2c5fcd4a7b7b73e00fae768e300a1a3d691505446dc18410d6477b64f9372495  cases-s6.txt
+0bc9e9fa4bf16de5e18f7a502e8d7c33c48d73aad2b480fa77e18918222a2523  anv-cmdc-b1n0
+0a57ef641a7f0fd51ec1c1224d85859349170587b8c801d73caca68e5813bea1  anv-cmdc-b1n1
+56ea45e928b3785a64019ae78edba2703e7ed2a950c354a631453f15db19511f  anv-cmdc-b1n2
+18a257e05a01c695a5b6760739db37b4368329230428f35327e11f40d4a838d6  anv-cmdc-b1n3
+bdedaa7c5a898e128587044d061125340521839804eab7a19221e103eb561f7c  anv-cmdc-b1n7
+762c4fbecf1d987f144f632bbad3d766fa14bcdffeb00e49f0f2a10d4be50d08  anv-cmdc-b2n2
+9943b4da51b8752b55c0beac88f0c6a10cea3b668c70b321886d1e68b5eae392  anv-cmdc-b4n0

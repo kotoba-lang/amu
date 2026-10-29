@@ -1,0 +1,50 @@
+[
+  {
+    "name": "sealed-pages",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [header (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 header 160 80)\n       changed (kernel-store-u64 header 160 80 0)\n       first (kernel-owned-page 0) last (kernel-owned-page 14)\n       saved (kernel-load-u64-4k first 4096 0)\n       stored (kernel-store-u8-4k first 4096 0 42)\n       readback (kernel-load-u8-4k first 4096 0)\n       restored (kernel-store-u64-4k first 4096 0 saved)\n       metadata (kernel-store-u64 header 160 80 original)]\n  (if (and (> original 0) (= first original) (= (- last first) 57344)\n           (= (bit-and first 4095) 0) (= changed 0) (= stored 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "invalid-slot",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-page 15) 0) 42 0))\n"
+  },
+  {
+    "name": "negative-slot",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-page -1) 0) 42 0))\n"
+  },
+  {
+    "name": "valid-slot",
+    "exit": 0,
+    "stderr": "",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (if (> (kernel-owned-page 0) 0) 42 0))\n"
+  },
+  {
+    "name": "loaded-pointer",
+    "exit": 1,
+    "stderr": "region instruction 41\n  writer 38\n  parameter slot 2\n  region extent source unknown\n  caller main\n    use 41\n    writer 38\n    writer op 4\n    writer operand 2\n    local assignments 1\n  caller main\n    use 14\n    writer 13\n    writer op 13\n    writer operand 0\n  supplied extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-page/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 41\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [header (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 header 160 80)\n       changed (kernel-store-u64 header 160 80 0)\n       first (kernel-owned-page 0) last (kernel-owned-page 14)\n       saved (kernel-load-u64-4k first 4096 0)\n       stored (kernel-store-u8-4k first 4096 0 42)\n       readback (kernel-load-u8-4k original 4096 0)\n       restored (kernel-store-u64-4k first 4096 0 saved)\n       metadata (kernel-store-u64 header 160 80 original)]\n  (if (and (> original 0) (= first original) (= (- last first) 57344)\n           (= (bit-and first 4095) 0) (= changed 0) (= stored 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "computed-pointer",
+    "exit": 1,
+    "stderr": "region instruction 43\n  writer 40\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 43\n    writer 40\n    writer op 6\n    writer operand 0\n  supplied extent source 4294971392\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-page/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 43\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [header (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 header 160 80)\n       changed (kernel-store-u64 header 160 80 0)\n       first (kernel-owned-page 0) last (kernel-owned-page 14)\n       saved (kernel-load-u64-4k first 4096 0)\n       stored (kernel-store-u8-4k first 4096 0 42)\n       readback (kernel-load-u8-4k (+ first 0) 4096 0)\n       restored (kernel-store-u64-4k first 4096 0 saved)\n       metadata (kernel-store-u64 header 160 80 original)]\n  (if (and (> original 0) (= first original) (= (- last first) 57344)\n           (= (bit-and first 4095) 0) (= changed 0) (= stored 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "wrong-length",
+    "exit": 1,
+    "stderr": "region instruction 41\n  writer 38\n  parameter slot 4\n  region extent source 4294971392\n  caller main\n    use 41\n    writer 38\n    writer op 4\n    writer operand 4\n    local assignments 1\n  caller main\n    use 23\n    writer 22\n    writer op 13\n    writer operand 0\n  supplied extent source 4294967360\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-page/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 41\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [header (kernel-subregion (kernel-boot-info) 16544 0 160)\n       original (kernel-load-u64 header 160 80)\n       changed (kernel-store-u64 header 160 80 0)\n       first (kernel-owned-page 0) last (kernel-owned-page 14)\n       saved (kernel-load-u64-4k first 4096 0)\n       stored (kernel-store-u8-4k first 4096 0 42)\n       readback (kernel-load-u8-4k first 64 0)\n       restored (kernel-store-u64-4k first 4096 0 saved)\n       metadata (kernel-store-u64 header 160 80 original)]\n  (if (and (> original 0) (= first original) (= (- last first) 57344)\n           (= (bit-and first 4095) 0) (= changed 0) (= stored 42)\n           (= readback 42) (= restored saved) (= metadata original)) 42 0)))\n"
+  },
+  {
+    "name": "forged-recovery-pages",
+    "exit": 1,
+    "stderr": "region instruction 6\n  writer 4\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 6\n    writer 4\n    writer op 3\n    writer operand 4096\n  supplied extent source 4294975488\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/owned-page/F2/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 6\n",
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (kernel-configure-page-fault-recovery 4096 8192))\n"
+  }
+]

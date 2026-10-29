@@ -1,0 +1,62 @@
+[
+  {
+    "name": "lock",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 953,
+      "sha256": "cd9c228cb10f44db4b017e3d8dfeb4e817c2d1a1ef7c9c4fa03081f87ce8cba8"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [r (kernel-subregion (kernel-boot-info) 16544 152 8)\n       saved (kernel-load-u64 r 8 0)\n       cleared (kernel-store-u32 r 8 0 0)\n       a (kernel-try-lock-u32 r 8 0)\n       held (kernel-load-u32 r 8 0)\n       b (kernel-try-lock-u32 r 8 0)\n       u (kernel-unlock-u32 r 8 0)\n       free (kernel-load-u32 r 8 0)\n       v (kernel-unlock-u32 r 8 0)\n       other (kernel-store-u32 r 8 0 2)\n       denied (kernel-unlock-u32 r 8 0)\n       unchanged (kernel-load-u32 r 8 0)\n       z (kernel-store-u32 r 8 1 0)\n       odd (kernel-try-lock-u32 r 8 1)\n       odd-held (kernel-load-u8 r 8 1)\n       odd-u (kernel-unlock-u32 r 8 1)\n       restored (kernel-store-u64 r 8 0 saved)]\n   (if (and (= cleared 0) (= a 1) (= held 1) (= b 0)\n            (= u 1) (= free 0) (= v 0) (= other 2) (= denied 0)\n            (= unchanged 2) (= z 0) (= odd 1) (= odd-held 1)\n            (= odd-u 1) (= restored saved)) 42 0)))\n"
+  },
+  {
+    "name": "xcr",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 449,
+      "sha256": "0b7eaf4ddf7ed9a91f6f633c1f13a21270c000b5afe9eba86093ced14e093098"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [features (kernel-cpuid-ecx 1 0) old (kernel-read-cr4)\n       enabled (kernel-write-cr4 (bit-or old 262144))\n       xcr (kernel-xgetbv 0) written (kernel-xsetbv 0 xcr)\n       readback (kernel-xgetbv 0) restored (kernel-write-cr4 old)]\n  (if (and (not= (bit-and features 67108864) 0)\n           (= enabled (bit-or old 262144)) (= xcr written)\n           (= readback xcr) (= restored old)) 42 0)))\n"
+  },
+  {
+    "name": "lock-oversized",
+    "exit": 0,
+    "stderr": "",
+    "source": {
+      "bytes": 97,
+      "sha256": "5da5a497200c62d9c94e6908550511653f57f60fbe4f86caa17b84bce013eb9d"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64 (kernel-try-lock-u32 (kernel-boot-info) 16544 0))\n"
+  },
+  {
+    "name": "literal-lock",
+    "exit": 1,
+    "stderr": "region instruction 24\n  writer 21\n  parameter slot 0\n  region extent source unknown\n  caller main\n    use 24\n    writer 21\n    writer op 3\n    writer operand 1089536\n  supplied extent source 4294967304\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/lock/F3/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 24\n",
+    "source": {
+      "bytes": 965,
+      "sha256": "880461cd0c6bb89a18014fddb162ee5b5dfc7fc3b85033f758f9e0b8391ba4ee"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [r (kernel-subregion (kernel-boot-info) 16544 152 8)\n       saved (kernel-load-u64 r 8 0)\n       cleared (kernel-store-u32 r 8 0 0)\n       a (kernel-try-lock-u32 1089536 8 0)\n       held (kernel-load-u32 r 8 0)\n       b (kernel-try-lock-u32 1089536 8 0)\n       u (kernel-unlock-u32 r 8 0)\n       free (kernel-load-u32 r 8 0)\n       v (kernel-unlock-u32 r 8 0)\n       other (kernel-store-u32 r 8 0 2)\n       denied (kernel-unlock-u32 r 8 0)\n       unchanged (kernel-load-u32 r 8 0)\n       z (kernel-store-u32 r 8 1 0)\n       odd (kernel-try-lock-u32 r 8 1)\n       odd-held (kernel-load-u8 r 8 1)\n       odd-u (kernel-unlock-u32 r 8 1)\n       restored (kernel-store-u64 r 8 0 saved)]\n   (if (and (= cleared 0) (= a 1) (= held 1) (= b 0)\n            (= u 1) (= free 0) (= v 0) (= other 2) (= denied 0)\n            (= unchanged 2) (= z 0) (= odd 1) (= odd-held 1)\n            (= odd-u 1) (= restored saved)) 42 0)))\n"
+  },
+  {
+    "name": "wrong-lock-length",
+    "exit": 1,
+    "stderr": "region instruction 24\n  writer 21\n  parameter slot 1\n  region extent source 4294967304\n  caller main\n    use 24\n    writer 21\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller main\n    use 9\n    writer 8\n    writer op 13\n    writer operand 0\n  caller main\n    use 8\n    writer 4\n    writer op 13\n    writer operand 0\n  supplied extent source 4294967360\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/lock/F3/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 24\n",
+    "source": {
+      "bytes": 955,
+      "sha256": "a93b33686a8ec018766142604657f31607f7770776ed88e64c213025a83b9165"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [r (kernel-subregion (kernel-boot-info) 16544 152 8)\n       saved (kernel-load-u64 r 8 0)\n       cleared (kernel-store-u32 r 8 0 0)\n       a (kernel-try-lock-u32 r 64 0)\n       held (kernel-load-u32 r 8 0)\n       b (kernel-try-lock-u32 r 64 0)\n       u (kernel-unlock-u32 r 8 0)\n       free (kernel-load-u32 r 8 0)\n       v (kernel-unlock-u32 r 8 0)\n       other (kernel-store-u32 r 8 0 2)\n       denied (kernel-unlock-u32 r 8 0)\n       unchanged (kernel-load-u32 r 8 0)\n       z (kernel-store-u32 r 8 1 0)\n       odd (kernel-try-lock-u32 r 8 1)\n       odd-held (kernel-load-u8 r 8 1)\n       odd-u (kernel-unlock-u32 r 8 1)\n       restored (kernel-store-u64 r 8 0 saved)]\n   (if (and (= cleared 0) (= a 1) (= held 1) (= b 0)\n            (= u 1) (= free 0) (= v 0) (= other 2) (= denied 0)\n            (= unchanged 2) (= z 0) (= odd 1) (= odd-held 1)\n            (= odd-u 1) (= restored saved)) 42 0)))\n"
+  },
+  {
+    "name": "wrong-unlock-length",
+    "exit": 1,
+    "stderr": "region instruction 39\n  writer 36\n  parameter slot 1\n  region extent source 4294967304\n  caller main\n    use 39\n    writer 36\n    writer op 4\n    writer operand 1\n    local assignments 1\n  caller main\n    use 9\n    writer 8\n    writer op 13\n    writer operand 0\n  caller main\n    use 8\n    writer 4\n    writer op 13\n    writer operand 0\n  supplied extent source 4294967360\nkernel project in /tmp/kotoba144-diagnosis.otrNxd4k/native-x86-r3/aiueos-projects/lock/F3/entry.kotoba:\nkernel function main:\nseed-x86_64-aiueos-object: E7106 unsupported object profile or code limit; detail 39\n",
+    "source": {
+      "bytes": 956,
+      "sha256": "584e921986eb254320c62205afe67983ace66fb50e266b22385a71a62c39aac9"
+    },
+    "sourceText": "(ns entry (:export [main]))\n(defn main [] :i64\n (let [r (kernel-subregion (kernel-boot-info) 16544 152 8)\n       saved (kernel-load-u64 r 8 0)\n       cleared (kernel-store-u32 r 8 0 0)\n       a (kernel-try-lock-u32 r 8 0)\n       held (kernel-load-u32 r 8 0)\n       b (kernel-try-lock-u32 r 8 0)\n       u (kernel-unlock-u32 r 64 0)\n       free (kernel-load-u32 r 8 0)\n       v (kernel-unlock-u32 r 64 0)\n       other (kernel-store-u32 r 8 0 2)\n       denied (kernel-unlock-u32 r 64 0)\n       unchanged (kernel-load-u32 r 8 0)\n       z (kernel-store-u32 r 8 1 0)\n       odd (kernel-try-lock-u32 r 8 1)\n       odd-held (kernel-load-u8 r 8 1)\n       odd-u (kernel-unlock-u32 r 8 1)\n       restored (kernel-store-u64 r 8 0 saved)]\n   (if (and (= cleared 0) (= a 1) (= held 1) (= b 0)\n            (= u 1) (= free 0) (= v 0) (= other 2) (= denied 0)\n            (= unchanged 2) (= z 0) (= odd 1) (= odd-held 1)\n            (= odd-u 1) (= restored saved)) 42 0)))\n"
+  }
+]

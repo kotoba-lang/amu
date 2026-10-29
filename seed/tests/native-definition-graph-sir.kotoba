@@ -1,0 +1,77 @@
+;; Independent SIR import check. The importer walks the global instruction
+;; stream; this oracle walks each checked function's FF-SIR interval backwards
+;; and compares every edge against the owner's reverse adjacency chain.
+(defn- dgsr-function? [M :vector-i64 G :vector-i64 f :i64] :bool
+  (let [id (inc f) start (gn-fnf M id FF-SIR) kind (gn-fnf M id FF-KIND)
+        flags (dgg-f G f 15) limit (vector-at M MM-SIR-N)]
+    (cond (= kind FK-DEF)
+            (and (= start 0) (= (dgg-f G f 0) 2) (= flags 1) (= (dgg-f G f 14) 0))
+          (lw-tmpl? M id)
+            (and (= start 0) (= (dgg-f G f 0) 3) (= flags 2) (= (dgg-f G f 14) 0))
+          :else
+          (and (> start 0) (< start limit) (= (gn-op M start) OP-FN)
+               (= (gn-sir M start IF-A) id) (= (dgg-f G f 0) 1) (= (rem flags 4) 0)
+            (let [end (loop [i (inc start)]
+                        (cond (= i limit) -1 (= (gn-op M i) OP-FN) -1
+                              (= (gn-op M i) OP-END) i :else (recur (inc i))))]
+              (and (> end start)
+                (loop [i (dec end) edge (dgg-f G f 14) indirect 0]
+                  (if (= i start) (and (= edge 0) (= indirect (quot flags 4)))
+                    (let [op (gn-op M i)]
+                      (cond (or (= op OP-CALL) (= op OP-FADDR))
+                              (and (> edge 0)
+                                (= (dgg-edge G edge 0)
+                                   (dec (gn-sir M i (if (= op OP-CALL) IF-A IF-B))))
+                                (= (dgg-edge G edge 2) f)
+                                (recur (dec i) (dgg-edge G edge 1) indirect))
+                            (= op OP-CALLI) (recur (dec i) edge (inc indirect))
+                            :else (recur (dec i) edge indirect)))))))))))
+(defn- dgsr-import? [M :vector-i64 G :vector-i64] :bool
+  (and (= (vector-at M MM-ERR) 0) (dgg-layout? G) (= (vector-at G 0) 0)
+       (= (vector-at G 3) (dec (vector-at M MM-FN-N)))
+       (= (vector-at G 14) 1) (dgg-members-valid? G)
+       (= (loop [i 1 count 0]
+            (if (= i (vector-at M MM-SIR-N)) count
+              (recur (inc i) (+ count (if (or (= (gn-op M i) OP-CALL) (= (gn-op M i) OP-FADDR)) 1 0)))))
+          (vector-at G 10))
+       (loop [f 0]
+         (if (= f (vector-at G 3)) true
+           (and (dgsr-function? M G f) (recur (inc f)))))))
+(defn- dgsr-name [M :vector-i64 S :string f :i64] :string
+  (let [sym (gn-fnf M (inc f) FF-SYM)]
+    (if (or (<= sym 0) (>= sym (vector-at M MM-SYM-N))) "?"
+      (string-substring S (nm-sf M sym SF-START) (nm-sf M sym SF-END)))))
+(defn- dgsr-output [M :vector-i64 S :string G :vector-i64] :i64
+  (let [n (vector-at G 3)
+        head (io-out (string-concat "DGG1 functions=" (string-concat (mem-u2dec n)
+                (string-concat " references=" (string-concat (mem-u2dec (vector-at G 10))
+                (string-concat " indirect=" (string-concat (mem-u2dec (vector-at G 13))
+                (string-concat " declarations=" (string-concat (mem-u2dec (vector-at G 15))
+                (string-concat " components=" (string-concat (mem-u2dec (vector-at G 9))
+                (string-concat " words=" (string-concat (mem-u2dec (vector-count G))
+                (string-concat " directOnly=" (string-concat (if (dgg-direct-only? G) "1" "0") "\n")))))))))))))))]
+    (loop [f 0]
+      (if (= f n) 0
+        (let [v (io-out (string-concat "V " (string-concat (mem-u2dec (inc f))
+                         (string-concat " " (string-concat (mem-u2dec (dgg-f G f 5)) "\n")))))
+              e (loop [edge (dgg-f G f 14)]
+                  (if (= edge 0) 0
+                    (let [w (io-out (string-concat "E " (string-concat (mem-u2dec (inc f))
+                              (string-concat " " (string-concat (mem-u2dec (inc (dgg-edge G edge 0))) "\n")))))]
+                      (recur (dgg-edge G edge 1)))))
+              flags (dgg-f G f 15) declaration (rem flags 4)
+              d (if (> declaration 0)
+                  (io-out (string-concat (if (= declaration 1) "D " "T ")
+                    (string-concat (mem-u2dec (inc f)) (string-concat " " (string-concat (dgsr-name M S f) "\n"))))) 0)
+              i (if (> (quot flags 4) 0)
+                  (io-out (string-concat "I " (string-concat (mem-u2dec (inc f))
+                    (string-concat " " (string-concat (dgsr-name M S f)
+                      (string-concat " " (string-concat (mem-u2dec (quot flags 4)) "\n"))))))) 0)]
+          (recur (inc f)))))))
+(defn- dgsr-run [source :string] :i64
+  (let [S (string-concat source (ck-r6b-lib source)) M (xg-front S)]
+    (if (not= (vector-at M MM-ERR) 0) (let [out (io-err "DGG:FRONTEND\n")] 1)
+      (let [G (dgg-from-sir M)]
+        (cond (not= (vector-at G 0) 0) (let [out (io-err "DGG:GRAPH\n")] 1)
+              (not (dgsr-import? M G)) (let [out (io-err "DGG:SIR-IMPORT\n")] 1)
+              :else (dgsr-output M S G))))))

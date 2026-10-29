@@ -1,0 +1,140 @@
+amu-gpu tick 2026-10-26 (UTC day 2026-10-26, third measurement row of the
+day): JUN-57 -- the ADR-0361 named unmeasured item "per-op integer
+latency (iadd3/imad) on this toolchain (a chain form that survives the
+asm merging is needed)" takes its microbench branch and SPLITS: the IMAD
+half is MEASURED CLEANLY (two independent chain forms agree to 0.005%)
+and the iadd3 half is NOT SEPARATED (no surviving arm realized a pure
+2-input IADD3 chain alone -- named). ONE measurement slice; HARDWARE RAN:
+the integer-latency microbench on xavier sm_72 at 2026-10-26T11:30:59Z.
+NAMED NOT HIDDEN: a PROBE, not a registered timing session (no paired
+samples, no AB/BA), inadmissible under the entry criterion BY KIND;
+SAME-UTC-DAY with every earlier probe -- NOT a cross-day replication,
+extends NO record's :evidence and enters nothing; it measures INSTRUCTION
+costs, not kernels.
+
+WHAT RAN. 5 latency arms x 3 launches x 128 threads, clock64() over the
+loop only, 16 chain ops per iteration (unroll 1) x 256 iterations = 4096
+chain ops per thread. Operands SYMBOLIC (c=3u, cm=7u loaded from global
+memory -- unknowable to ptxas; !=1 so any folded residue is value-
+visible). Two candidate chain forms, the row's named design problem:
+(1) STRAIGHT chain (latsym_*): one dependent accumulator x = f(x, m) --
+the simplest form; (2) PING-PONG chain (latpp_*): two accumulators
+x = f(x, y_new), y = f(y, x_new) -- strictly serial chain across ops and
+iterations, consecutive ops write DIFFERENT destinations so no two
+consecutive ops can be value-preservingly merged into one instruction
+(two destinations required). latpp_fadd is the FORM-VALIDATION arm (the
+same FADD.FTZ v2 measured straight-chain at 4.4397 cyc/instr). Remote
+tree /root/gpu-int-latency-20261026 created fresh, transferred
+COPYFILE_DISABLE=1 (3 files, 0 AppleDouble sidecars; received-file block
+matched local shas 3/3). All produced artifacts sha256-attested in
+run-log.txt (microbench.sass 5b91fbde.., fetched locally the same tick,
+committed verbatim as microbench-sass.txt).
+
+VERIFIED (real runs): OK-build / OK-cubin / OK-sass 278 lines, every diag
+0 bytes, driver exit 0, stderr 0 bytes; SASS verification 5 functions
+with per-function opcode histograms + exact-opcode TARGET counts
+(run-log.txt lines 33-50); 15 RESULT lines (5 arms x 3 launches), ALL
+THREE LAUNCHES IDENTICAL medians (deterministic; named caveat: the 128
+threads run lockstep -- one warp-group draw, not 128 independent
+samples); device name=Xavier clockRate_kHz=1377000 multiProcessorCount=8.
+
+THE FINDING (cyc per chain instruction, median; SASS bodies cited from
+microbench-sass.txt):
+(1) IMAD LATENCY IS MEASURED AND CROSS-FORM CONFIRMED: the ping-pong
+    form realized a pure 16-IMAD chain (IMAD R11,R0,R11,R13 /
+    IMAD R13,R0,R13,R11 per pair) at 4.4658 cyc/instr; the straight form
+    realized a pure 16-IMAD chain (IMAD R8,R5,R8,R0) at 4.4656. The two
+    independent chain forms agree to 0.0002 cyc/instr (0.0045%); total
+    run cycles agree within 3 cycles over 4096 ops. mad.lo.u32 dependent
+    chain latency on sm_72 = 4.4657 cyc/op (the mean is DERIVED; the
+    per-form numbers are the measurement).
+(2) iadd3 IS NOT SEPARATED (named): the ping-pong chain SURVIVED 16/16
+    with no fold, but ptxas spelled the two alternating updates
+    DIFFERENTLY -- 8 x IADD3 (x = y + x) interleaved with 8 x IMAD.IADD
+    (y = x*1 + y). The strict alternating chain measures the MEAN of two
+    spellings: L(IADD3-form) + L(IMAD.IADD-form) = 10.7534 cyc/pair
+    (DERIVED from the measured 5.3767 cyc/instr). The straight form
+    FOLDED value-preservingly 2:1 even with a symbolic operand: 16 x
+    add.u32 x,x,c -> 8 x IADD3 R9,R0,R9,R0 (= x + c + c -- the third
+    IADD3 operand slot carries a second c), measuring 2.4658 cyc per
+    COUNTED op = 4.9316 cyc per REALIZED instruction of the folded
+    double-add form (DERIVED x2). Two equations, three unknowns: the
+    pure 2-input IADD3 register-add latency is UNSEPARATED -- no arm
+    realized it alone.
+(3) THE TOOLCHAIN'S MERGE MECHANISM IS NOW PRECISELY CHARACTERIZED (SASS-
+    level, supersedes the v2 integrity note's shorthand): with CONSTANT
+    operands the 16-op chain collapses to one folded instruction (v2:
+    IADD3 R0,R0,0x10; measured there but invalid as an op cost); with
+    SYMBOLIC operands the same-destination chain does NOT collapse to one
+    but merges PAIRWISE via IADD3's three-operand form (x = x + c + c,
+    2:1, value-preserving); and the two-destination ping-pong form DEFEATS
+    the merge entirely (16/16 chain ops realized) at the price of an
+    alternating opcode spelling. The scratch draft that claimed symbolic
+    operands alone defeat the folding (sha 1b0c9945.., kept in Hermes
+    scratch, never staged, and NOT the file v2 ran) is REFUTED at SASS
+    level by arm (2).
+(4) FORM VALIDATION: latpp_fadd 4.5020 cyc/instr vs v2's straight-chain
+    4.4397 (same opcode/toolchain) = +0.0623 cyc (+1.40%) -- the ping-pong
+    form reproduces the known latency within 1.40%, the named FORM
+    SYSTEMATIC of this row.
+
+CONSEQUENCE: NOTHING MOVES (rule 4) -- no record, no :measured? flag, no
+selection answer, no :shapes value, no workgroup row; the landed entries
+stand byte-for-byte. The named item moves PARTIALLY (imad ANSWERED,
+iadd3 named NOT SEPARATED).
+
+STATES. MEASURED (the integer-latency microbench on xavier -- the only
+measured thing this row): IMAD dependent-chain latency (both forms),
+the mixed iadd3/IMAD.IADD alternating-chain mean, the folded double-add
+IADD3 chain cost, the fadd form-validation pair. DERIVED (marked): the
+4.4657 mean, the pair-sum 10.7534, the x2 per-realized-instruction
+figures. IMPLEMENTED: nothing (evidence + ADR amendment only). DECIDED:
+nothing new. ACCEPTED DESIGN ONLY (unchanged): the operator-aware
+contract + pre-registration, the row (ii) routes, the entry contract +
+wiring, ADR-0358, ADR-0373. UNMEASURED, named: the pure 2-input IADD3
+register-add dependent latency (UNSEPARATED -- needs a toolchain
+realization that isolates the spelling, or a different toolchain); the
+IMAD.IADD spelling's own latency; integer ISSUE-side costs of these
+spellings (throughput arms not run this row); the 21 surplus ops' true
+per-op costs (this row prices IMAD and brackets the IADD3 family --
+does NOT close that item); raw MUFU.RCP cost; a non-eliminated overhead
+baseline; the residual W-shape's dynamic carrier (per-phase
+instrumentation, its own row); noise exceedance of the corrected
+residuals; the sum ratio's TRUE side at W=256; a cross-day run 3+ (still
+2026-10-26 UTC); every per-op verdict on non-xavier hardware; the :sum
+ordering at W=64 on any other device or channel; the landed rows on a
+live CUDA selection path; every workgroup row (:arm/:unknown stay
+provisional :measured? false).
+
+GATES (real runs, this worktree): scoped GPU gate run 1 GREEN 123 tests /
+12162 assertions / 0 failures / 0 errors (glslang 16.6.0 real-spawn);
+run 2 NOT run -- the run-time budget closed after run 1 (named, not
+hidden); gpu_regime_classify.py --self-test NOT re-run this slice (no
+classify code touched -- standing pin 2649/0, NOT re-verified here);
+FULL run-tests.cljk NOT run this slice (no .cljk touched) -- documented
+RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362), outside
+this diff -- NO green full suite claimed; find docs -name '*.sh' NOT
+re-run this slice (this row's evidence is .txt only: record.txt +
+run-log.txt + microbench-sass.txt + int-latency-table.txt).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked at
+tick start AND re-checked immediately before this push); chain PR #1455
+OPEN, the ONE chain PR.
+
+NAMED NOT HIDDEN: the untracked deps.edn in this worktree (present at
+tick start, not created or touched by this row, not committed); the two
+exactly-identical-median launches caveat (lockstep warp-group draw,
+deterministic -- min=p10=median=mean=p90=max in 14/15 cells, latpp_imad
+spans 18290..18293); the v2 fadd reference 4.4397 is consumed at its own
+commit, not re-measured; the run script and all scratch instruments live
+in Hermes scratch (gpu-int-latency-microbench.cu 5b175326..,
+int_latency_verify.py b892e723.., gpu-int-latency-run-20261026.sh
+5e537431..) and were never staged; the full v2 SASS (58ed5e7b..) and the
+run-2 microbench source (ed49179c..) remain on xavier under
+/root/gpu-op-microbench-20261026/; the v2 microbench source scratch copy
+in Hermes scratch (1b0c9945..) is NOT the file v2 ran (the xavier copy
+ed49179c.. is) -- named because (3) cites both.
+
+Evidence: docs/evidence/gpu/cuda-int-latency-20261026/ (record.txt +
+run-log.txt + microbench-sass.txt + int-latency-table.txt) + the
+ADR-0361 twenty-second amendment.

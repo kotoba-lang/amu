@@ -18,6 +18,9 @@
           4 "kxrt-syscall" 5 "kxrt-ctx" 6 "kxrt-call-main" 7 "kxrt-trap"
           8 "kxrt-call-at" ""))
 (defn- xs-on? [M :vector-i64] :bool (> (vector-at M 197) 0))
+;; the formats whose program may call the runtime (the platform-linked image and the CDCI roles, mode 3;
+;; route B2, mode 5): seed/78 and seed/98 check which functions
+(defn- xs-plat? [M :vector-i64] :bool (or (= (xg-get M 2) 3) (= (xg-get M 2) 5)))
 ;; Where f is defined: the first token of its def form. A symbol's SF-START is
 ;; its first appearance anywhere, so a guest that names a runtime function
 ;; would otherwise make it a guest function, and reach the intrinsics.
@@ -104,9 +107,11 @@
           (string=? (string-substring S a b) "kxrt-start")
             (if (= (vector-at M 199) 0) (mem-set M 199 f) (xg-err M 7102 f))
           (string=? (string-substring S a b) "kxrt-ccall")
-            (if (and (= (xg-get M 2) 3) (= (vector-at M 200) 0)) (mem-set M 200 f) (xg-err M 7102 f))
+            (if (and (xs-plat? M) (= (vector-at M 200) 0)) (mem-set M 200 f) (xg-err M 7102 f))
           ;; the platform API (seed/78 checks the program's calls by name)
           (xs-prefix? S a b "kxrt-p-") (if (= (xg-get M 2) 3) M (xg-err M 7102 f))
+          ;; route B2's API (seed/98 checks the program's calls by name)
+          (xs-prefix? S a b "kxrt-b-") (if (= (xg-get M 2) 5) M (xg-err M 7102 f))
           :else (xs-scan-intr M (string-substring S a b) f))))
 (defn- xs-scan [M :vector-i64 S :string f :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
@@ -123,7 +128,7 @@
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f) rt (xs-rt? M g)]
       (cond (and rt (not (xs-scalar-op? op))) (xg-err M 7101 op)
             (and (not rt)
-                 (or (and (= op OP-CALL) (xs-rt? M a) (not= (xg-get M 2) 3))
+                 (or (and (= op OP-CALL) (xs-rt? M a) (not (xs-plat? M)))
                      (and (= op OP-FADDR) (xs-rt? M (xg-si M i IF-B))))) (xg-err M 7101 op)
             :else (xs-check M (inc i) g)))))
 
@@ -163,28 +168,52 @@
 ;; standard start; seed/76); 2 is --format packed (seed/80, aarch64)
 (defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
-              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xb-scan S 1) (xs-check 1 0) (xb-check-api S 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
           :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
-                            (xs-entry) (xg-code 1) (xr-pool 1))
+                            (xs-entry) (xg-code 1) (xb-emit S) (xr-pool 1))
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
-(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 4 ":launcher" ":static"))
-(defn- xs-write [M :vector-i64 out :string] :i64
+(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 4 ":launcher" 5 ":b2" ":static"))
+(defn- xs-write [M :vector-i64 out :string] :i64 (xs-write-profile M out -1))
+(defn- xs-profile-note [profile :i64] :string
+  (if (< profile 0) ""
+    (string-concat ", :runtime-profile "
+      (string-concat (if (= profile 1) ":large-vectors-v1" ":standard-v1")
+        (string-concat ", :vector-descriptors " (mem-u2dec (if (= profile 1) 67108864 4194304)))))))
+(defn- xs-write-record [target :string format :string code :i64 bytes :i64 profile :i64] :string
+  (let [a (string-concat "{:ok true, :target " target)
+        b (string-concat a ", :format ") c (string-concat b format)
+        d (string-concat c ", :code-bytes ") e (string-concat d (mem-u2dec code))
+        f (string-concat e ", :bytes ") g (string-concat f (mem-u2dec bytes))
+        h (string-concat g (xs-profile-note profile))]
+    (string-concat h "}\n")))
+(defn- xs-write-profile [M :vector-i64 out :string profile :i64] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (string-concat "{:ok true, :target :x86_64-linux, :format " (string-concat (xs-format-name (xg-get M 2)) (string-concat ", :code-bytes "
-                   (string-concat (mem-u2dec (xg-pos M)) (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
+        w (io-out (xs-write-record ":x86_64-linux" (xs-format-name (xg-get M 2)) (xg-pos M) n profile))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
+;; Fixed build-time profiles, never selected by a guest or a failed run.
+;; base is the exact end of the existing format/payload command.
+(defn- xs-runtime-profile [base :i64] :i64
+  (cond (= (io-argc) base) 0
+        (and (= (io-argc) (+ base 2)) (string=? (io-arg base) "--runtime-profile"))
+          (cond (string=? (io-arg (inc base)) "standard-v1") 0
+                (string=? (io-arg (inc base)) "large-vectors-v1") 1 :else -1)
+        :else -1))
+(defn- xs-profile-prelude [profile :i64] :string
+  (string-concat "(def KXRT-VECTORS "
+    (string-concat (mem-u2dec (if (= profile 1) 67108864 4194304)) ")\n")))
 (defn- xs-command [mode :i64] :i64
-  (let [src (io-arg 1) out (io-arg 5)]
-    (cond (or (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+  (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8)]
+    (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      rt (if (= mode 4) (string-concat (xs-rt-core) (xs-rt-launch)) (xs-rt-src))
+                      rt (string-concat (xs-rt-core-profile profile)
+                                        (cond (= mode 4) (xs-rt-launch) (= mode 5) (xs-rt-b2) :else (xs-rt-start)))
                       s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) mode)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
-                        :else (xs-write m out))))))
+                        :else (xs-write-profile m out profile))))))

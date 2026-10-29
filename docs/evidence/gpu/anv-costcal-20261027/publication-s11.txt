@@ -1,0 +1,137 @@
+JUN-59 session 11 -- COST-CALIBRATED JOINT DOSE (the vc-fatness knob), publication
+Produced ONLY by analysis-s11.py over the 15 committed run logs in this
+directory (run-<tag>-r<R>.txt); protocol.txt was frozen before the
+first run. Arms = (binary compile-time BATCH x WORK_MUL, shader set):
+the a-set runs the ARCHIVED measured spv (16-digest corpus), the vc-set
+runs the ITERMUL=8 + coherent-volatile derived spv (this session's
+derivation: session 9's committed iter8 sources + ONE memory-qualifier
+edit on the X buffer; two-level inverse check 6/6 -- derivation-census.txt.
+The instrument is the byte-identical session-8 snapshot (no C edit; all
+3 binaries byte-identical to session 8's same-flag binaries).
+1 nominal work unit = one dispatch of the archived grid at ITERMUL=1
+cost; an (M,I) arm at B runs B dispatches of an M-times grid (n =
+1,000,003*M) at I-times per-workgroup cost = B*M*I nominal units.
+1 tick = timestampPeriod = 52.083 ns on this device.
+
+1. INTEGRITY (computed over the 15 logs):
+   runs parsed: 15 (5 arms x 3 runs); cell map identical across runs: True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul= == run's (B,M), barrier_n=0, n=1,000,003*M; every SAMPLE batch=/work_mul= == (B,M): True
+   every CELL spv= name carries its arm's shader-set suffix (a-set: archived .emitted.spv, no .iter; vc-set: .emitted.itervc8.spv): True
+   SAMPLE lines: 450 per run (18 ok cells x 25 rounds) in 15/15 runs: True
+   VERIFY mismatch total over all runs: 0 (bit-exact correctness re-check, inside every run -- frozen INVALIDATION criterion: >0 in any run makes that arm's derivation DEFECTIVE and the arm INVALID)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 270/270
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 90 cell-runs (6 per run x 15 runs = 90 expected)
+
+2. THE MEASURED BRACKETS (pooled median gpu_ticks over 3 runs x 25 rounds per cell):
+   each row: (sum,128,S=16) exact value, per-run median band at that cell,
+   then min..max over the 18 pipeline-ok cells; host_ns at (sum,128,S=16)
+
+   arm    B  M  I  nominal  (sum,128,16)   run-median band    min..max over 18 cells   host_ns
+   c2  2  1  1       2          31           31..32              31..32           678796
+   c8  8  1  1       8       32926        32860..32956        25242..32926       2405356
+   g8  2  8  1      16          31           31..32              31..32          3792933
+   f8vc  2  1  8      16          31           31..32              31..32           791927
+   gfvc  2  8  8     128          32           31..32              31..32          4080951
+
+3. PRE-REGISTERED LETTERS (thresholds frozen in protocol.txt section 3:
+   FLOOR <= 100 ticks at all 18 cells; CAPTURED >= 1000 ticks at all 18;
+   anything else INTERMEDIATE/MIXED):
+
+   class c2 (B=2, M=1, I=1, set=a, 2 nominal units): FLOOR
+   class c8 (B=8, M=1, I=1, set=a, 8 nominal units): CAPTURED
+   class g8 (B=2, M=8, I=1, set=a, 16 nominal units): FLOOR
+   class f8vc (B=2, M=1, I=8, set=vc, 16 nominal units): FLOOR
+   class gfvc (B=2, M=8, I=8, set=vc, 128 nominal units): FLOOR
+
+   C1 ARCHIVED CONTROL REPLICATION (numeric agreement with the committed
+   value at the control's OWN B -- the session-7 fix, kept; the a-set
+   runs the ARCHIVED measured spv bytes, so this also pins the untouched
+   instrument + corpus):
+     c2 satisfies FLOOR: True
+     c8 (sum,128,16) pooled median 32926 within +/-5% of committed 32915 (session 4 pooled median): True
+     VERDICT: branch (a) both controls satisfy their criteria --
+     C2 and V1-K2 are evaluated against the row question.
+
+   C2 GRID KNOB CONTROL REPLICATION (the M knob at its single-knob
+   committed reading, re-run in this session's environment):
+     g8 satisfies FLOOR (sessions 8/10 committed b2m8: FLOOR (31..32 band)): True
+     VERDICT: branch (a) the grid knob is pinned at its committed
+     reading; gfvc is interpreted against it.
+
+   V1 VC-REALIZATION (the derivation's design claim; f8vc host_ns / c2
+   host_ns at (sum,128,S=16); criterion >= 3.0x frozen in advance --
+   session 9's non-vc I=8 realized 1.14x..1.57x and session 10's f8 1.18x,
+   so >= 3.0x separates a genuinely realized iterated-load cost from the
+   CSE'd/marginal band):
+     f8vc/c2 = 791927 / 678796 = 1.17x
+     VERDICT: branch (b) -- the vc derivation FAILED to realize cost
+     (the measured factor is inside/near the CSE'd marginal band); the
+     cost-calibrated joint dose stays UNMEASURED (named), the measured
+     factors are reported, and K2 is read nominally only.
+
+   V2 FATNESS-ONLY CLASS (the class of f8vc -- the qualifier alone at
+   B=2, M=1):
+     VERDICT: branch (a) -- f8vc is FLOOR: the qualifier alone at B=2
+     does not reach the capture; consistent with the dispatch-count
+     reading. Observable only; NO causal mechanism claimed.
+
+   K1 COST CALIBRATION (the joint dose's cost status, pre-registered:
+   gfvc is COST-CALIBRATED iff (i) V1 branch (a) AND (ii) gfvc host_ns
+   >= 2x the c8 control's host_ns in-session):
+     (i) V1 branch (a) fired: False
+     (ii) gfvc host_ns 4080951 >= 2 x c8 host_ns 2 x 2405356 = 4810712: False
+     VERDICT: branch (b) -- the cost-calibrated dose stays UNMEASURED
+     and named; K2 is read nominally only.
+
+   K2 THE ROW QUESTION (the class of gfvc: at fixed B=2, is the capture
+   reachable by the joint grid x fatness dose at COST-CALIBRATED
+   fatness; cost status per K1: NOMINAL-ONLY):
+     VERDICT: branch (a) -- gfvc is FLOOR while the c8 control (8
+     nominal units, 8 dispatches) is CAPTURED: the capture at B=2 is
+     NOT reachable even by the joint dose at cost-calibrated fatness.
+     With sessions 8-10 the capture is not a total-work or total-cost
+     threshold on any knob tested to date; dispatch count stays
+     implicated. Observable only; NO causal mechanism claimed or
+     measured.
+
+   X2 REALIZATION (descriptive, computed from section 2's host_ns values,
+   NO new measurement and NO linearity claim): the NOMINAL unit count is
+   a definition, not a cost claim. Realized host-time factors at
+   (sum,128,S=16), this session's own runs:
+     g8: host_ns 3792933 / c2 host_ns 678796 = 5.59x  [grid knob M=8 (nominal 8x per dispatch)]
+     f8vc: host_ns 791927 / c2 host_ns 678796 = 1.17x  [vc-fatness knob I=8 (nominal 8x per workgroup)]
+     gfvc: host_ns 4080951 / c2 host_ns 678796 = 6.01x  [JOINT M=8 x I=8-vc (nominal 64x per dispatch)]
+     joint-vs-single: gfvc/g8 = 1.08x, gfvc/f8vc = 5.15x
+     (comparison of committed numbers, not a new measurement: session 8
+     measured its M knob at 4.63x host growth for nominal 8x; session 9
+     measured its NON-vc I knob at 1.14x..1.57x for nominal 3x/8x;
+     session 10 measured f8 1.18x, g8 5.55x, gf 5.92x. The named
+     limitation stands: host_ns is a HOST-side proxy; the GPU-side cost
+     inside a B=2 bracket is UNOBSERVABLE on this instrument.)
+
+4. DERIVED (arithmetic over section 2, no new measurement):
+   c2: bracket 31 ticks = 1.61 us; host_ns 678796; 2 nominal units; vs committed 31 (sessions 1-10 floor): +0.00%
+   c8: bracket 32926 ticks = 1714.88 us; host_ns 2405356; 8 nominal units; vs committed 32915 (session 4 pooled median): +0.03%
+   g8: bracket 31 ticks = 1.61 us; host_ns 3792933; 16 nominal units (no committed anchor at this (M,I) -- new)
+   f8vc: bracket 31 ticks = 1.61 us; host_ns 791927; 16 nominal units (no committed anchor at this (M,I) -- new)
+   gfvc: bracket 32 ticks = 1.67 us; host_ns 4080951; 128 nominal units (no committed anchor at this (M,I) -- new)
+
+5. RULE 4 -- NOTHING MOVES: no workgroup row, no :measured? flag, no selection
+   answer; accelerator-targets defaults remain provisional design assumptions
+   (:measured? false). This is NOT the baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk. NO vendor optimization exists for Intel
+   and none is claimed. No causal mechanism is claimed by any letter above.
+
+6. UNMEASURED (named): any causal mechanism for the undercount, the capture,
+   or the onset location; WHY capture turns on where it does; the GPU-side
+   cost inside a B=2 bracket (unobservable on this instrument -- the named
+   limitation); why the vc qualifier realizes whatever V1 measures; any
+   genuinely cost-calibrated dose beyond the measured gfvc/c2 factor; any
+   codegen difference between the iter1/iter8/itervc8 spv and the archived
+   spv beyond the wrapper and qualifier; any (M,I,vc) outside the five
+   arms; M or I in {2..7,9+}; any B outside {2,8}; B in {4,5,6,7} at any
+   (M,I); any N>0; session 2's run-1 dip cause; cross-day replication;
+   S=8 timing; every W outside {128,256}; shape 2; BT ordering; any
+   baseline-vs-variant sign; isolated single-dispatch timing; non-empty
+   barriers; anything off this host.

@@ -1,0 +1,265 @@
+JUN-55 / JUN-58 -- the 2026-10-25 Chrome/Dawn wall-clock read's
+LICENSING SCOPE is DECIDED (it maps onto NO dispatch-table row) and
+the narrowing's REOPEN CONDITION is VISITED (the narrowing STANDS)
+(2026-10-25, chain worktree)
+
+WHAT THIS SLICE IS: one DECISION slice, the design slice the timing
+commit named as its own next row ("mapping this Chrome/Dawn
+wall-clock read onto dispatch-table rows is a separate design slice",
+commit e92fbd029), plus the reopen visit whose trigger that same read
+fired (the Apple WGSL-route decision's part 2 REOPEN CONDITION,
+docs/evidence/gpu/apple-wgsl-route-decision-20261024.txt = ADR-0360's
+2026-10-24 amendment). ONE question in two halves: what the read
+licenses. NO hardware ran in this slice and NO code namespace moves;
+every number below is PARSED from a committed record by a parse-only
+probe (named below) or is verbatim tool output from a real run of it /
+of the gates. Nothing here is optimization evidence.
+
+THE QUESTION (verbatim sources):
+
+- commit e92fbd029 (the read's own commit message): "NO :measured?
+  flag and NO workgroup row of kotoba.compiler.accelerator-targets is
+  touched: mapping this Chrome/Dawn wall-clock read onto
+  dispatch-table rows is a separate design slice, and the arm-vs-arm
+  speed question needs GPU-core times this adapter cannot give."
+- ADR-0355 rule 3 [as amended by ADR-0358] + ADR-0358's protocol:
+  the rows' channel is "six SPIR-V files whose ONLY difference is
+  LocalSize (32/64/128/256/512/1024), one dispatch per size,
+  submit->fence host clock, each size timed twice per run with the
+  first submit discarded as warmup. Paired runs on the measurement
+  hosts named in JUN-85", "the loader's host clock around
+  submit->fence; no in-kernel clock bracket... paired within-run
+  comparison is the statistic used", one workload shape ("2^20
+  threads, f32 ewise FMA, 256 FMAs per thread"), and ADR-0358's own
+  non-claim "Apple ran through MoltenVK, not a native Metal path."
+- ADR-0355's honest state (loader removal 2026-10-22): "NO wire-42
+  measurement is re-takeable on any host... and the per-vendor
+  workgroup sweep (JUN-57..60 rows) cannot run"; the ADR-0358 rows
+  "stand as measurements OF THAT PATH... not re-derivable until a
+  provider answers INFO."
+- ADR-0360 part 2: "REOPEN CONDITION: a WGSL-arm measurement of the
+  narrowed device is new evidence and may revisit the narrowing's
+  route scope." (Its premise sentence in the same part: "The WGSL arm
+  on that device is UNMEASURED; the conservative answer is the
+  measured one.")
+
+THE DATA (all parse-only over committed records or real tool output,
+this tick):
+
+1. The read IS a WGSL-arm measurement of the narrowed device. The
+   narrowing names the "m1 max" fragment; this host, verbatim
+   system_profiler SPHardwareDataType this tick:
+
+     Model Name: MacBook Pro
+     Chip: Apple M1 Max
+     Memory: 32 GB
+     (hostname main-2.local)
+
+   and the read's own header (measure-log.txt): adapter-info
+   {"vendor":"apple","architecture":"metal-3","description":"","device":""}
+   -- the adapter string carries NO device name, so the device
+   identity for the fragment is the host answer above, not the
+   adapter. run_started=2026-10-24T21:55:01.843Z (2026-10-25 JST).
+2. The read's own protocol (same header, verbatim): "protocol:
+   single=3w+11r batch32=2w+7r per arm per cell; arms paired per round
+   with alternating order", and its own scope refusal: "NO :measured?
+   flag or workgroup row is flipped by this log." Its GPU-time attempt
+   line, verbatim: "gpu-timestamp-write: UNAVAILABLE -- writeTimestamp
+   threw: TypeError: ... requires the
+   'chromium-experimental-timestamp-query-inside-passes' feature".
+3. Re-derivation over the committed measure-log (parse-only probe
+   /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/
+   parse-wgsl-wallclock-20261025.py, run this tick; it re-derives
+   numbers from the log's own `time`/`pair`/`check` lines and writes
+   nothing else): 36 pair lines (expect 36), 72/72
+   check lines ok=1; single_paired_ratio min=0.872 max=1.162
+   median=1.000, below 1.000 at printed precision 12/36;
+   batch32_paired_ratio min=0.918 max=1.159 median=1.002, below 1.000
+   17/36. The log's own aggregate (from UNROUNDED medians) says
+   subgroup faster in 13/36 single and 17/36 batch32 -- the 12-vs-13
+   gap is a printed-precision artifact of one pair at ~1.000, not a
+   disagreement. Batch32 argmin W: 32 in 11/12 shape-op-arm rows, the
+   exception n=1000003 op=sum arm=subgroup (W=128); single argmin W
+   scatters 32/64/128/256/1024 across rows; the batch32 median is NOT
+   nondecreasing in W in 7/12 rows. RECONCILIATION, named because it
+   is real: the timing commit's message says "batch32 argmin W=32 in
+   10/12 shape-op-arm rows, W=128 in the n=1000003 sum subgroup row"
+   -- the named exception re-derives, the "10/12" does NOT: the log's
+   own time lines give 11/12. The commit message stands as history;
+   the log's numbers are the ones above.
+4. The row channel, quoted in THE QUESTION above: same-ish datum
+   family (host clock, submit -> completion) but one workload shape,
+   within-run paired size-vs-size comparison, twice per size with a
+   warmup discard, on the wire-42 loader path -- and that path is GONE
+   (ADR-0355's loader-removal bullet).
+
+THE DECISION (three parts, one question: what the read licenses):
+
+Part 1 -- DISPATCH ROWS (kotoba.compiler.accelerator-targets): NO
+  MAPPING. The read does not answer a single workgroup row and no row
+  moves. Four named mismatches against the rows' own channel:
+
+  (a) ROUTE/CHANNEL: the rows are measurements OF the wire-42 loader
+      path (their provenance label; ADR-0355). The read is a third
+      channel even for Apple -- browser WebGPU through Chrome 155
+      Dawn/Metal -- where ADR-0358's own non-claim already says the
+      row's MoltenVK channel "is not a native Metal path".
+  (b) WORKLOAD: the rows' channel fixes ONE workload shape (f32 ewise
+      FMA); the read times reduce kernels (:sum/:max/:min) at two
+      shapes. A row is chosen per the row protocol's workload, and
+      the row's non-claim ("not optimality for every kernel") cuts
+      against importing a different kernel family's numbers, not for
+      it.
+  (c) QUANTITY/PAIRING: the rows compare SIZES AGAINST EACH OTHER
+      within a run (the statistic that survives host noise). The read
+      pairs ARMS at FIXED W (alternating order, 11/7 rounds); its
+      size ordering is derived from separate cells' medians -- one
+      run, no clock/thermal regime control, by its own commit's
+      words. The W sweep that IS in the read (@workgroup_size(W), W =
+      32..1024) is therefore not the row statistic.
+  (d) AVAILABILITY: the row channel itself cannot run today on ANY
+      vendor (loader removed 2026-10-22; the per-vendor workgroup
+      sweep "cannot run" until an ADR-0371 provider answers INFO). A
+      row flip has no takeable channel at all right now -- the read
+      is not merely the wrong channel, there is no right channel
+      alive.
+
+  Positive scope (what the read DOES license, and it is already in
+  its own record): the WGSL route's first hardware timings, exact
+  correctness 72/72, arm-vs-arm PARITY at wall-clock on this device,
+  and the route-level W observation (batch32 argmin W=32 in 11/12
+  rows, tendency not law per (3)). If that W observation were mapped
+  naively onto the :apple row it would contradict the row's kept 256
+  ("32-1024 medians within ~5%, no size won more than 6/16" under the
+  row protocol) -- the fact that it does not GET to contradict is
+  exactly what this channel rule protects.
+
+  WHAT WOULD COUNT for a row: the ADR-0358 protocol on the row's
+  channel (its ADR-0371 provider successor) -- UNMEASURED, blocked on
+  the provider -- or a future decision that amends the row channel to
+  a named new channel with its own within-run paired size protocol.
+  The Chrome/Dawn wall-clock read is not that channel and this
+  decision does not make it one. REOPEN CONDITION for part 1: a
+  provider-channel or decided-new-channel row run (JUN-57..60) is new
+  evidence; nothing else reopens the mapping.
+
+Part 2 -- VARIANT CELLS (kotoba.compiler.accelerator-variants): NO
+  FLIP. The claim-protocol flip needs rule 2 REGIME-INVARIANT FASTER
+  at the paired medians (the cross-day standard the nine 2026-10-25
+  rows reproduce: 18/18 per-run ratios below 1.0). The read is
+  parity -- ratios straddle 1, the fold arm faster in a minority of
+  pairs (13/36 single, 17/36 batch32 by the log's unrounded
+  aggregate) -- so even inside the right channel it would flip
+  nothing; and it is outside it (part 1 (a)), where "an MSL
+  measurement never flips a WGSL cell" cuts symmetrically: a
+  Chrome/Dawn wall-clock read never flips an MSL or GLSL cell. No
+  :measured-cell record, no :shapes value and no selection answer
+  moves.
+
+Part 3 -- THE NARROWING'S REOPEN VISIT (ADR-0360 part 2): TRIGGER
+  MET, and the narrowing STANDS unchanged. The trigger is met by (1)
+  above -- this host IS the M1 Max and the read IS a WGSL-arm
+  measurement of it. The visit's answer:
+
+  (i)  PARITY IS NOT A FOLD WIN. The conservative answer for the
+       named device stays :baseline: nothing in the read shows the
+       fold arm faster on this device on any aggregate (its own
+       verdict: "PARITY, NO SPEED CLAIM EITHER WAY").
+  (ii) NO CELL MOVES (part 2): the narrowing's :measured-cell records
+       stay MSL-scoped and every WGSL answer keeps :measured? false,
+       exactly as the narrowing decided.
+  (iii) The narrowing's PREMISE sentence ("The WGSL arm on that
+       device is UNMEASURED") is now stale in its plain reading and
+       is bracketed in ADR-0360/ADR-0356 by this record's honesty
+       mark: the WGSL arm on the M1 Max is MEASURED-AS-PARITY at
+       wall-clock submit-to-completion (2026-10-25, Chrome 155
+       Dawn/Metal) with 72/72 answers exact; per-kernel GPU time is
+       still UNMEASURED (the writeTimestamp refusal above); "the
+       conservative answer is the measured one" now stands on parity
+       as well as on the two slower arms.
+
+  The REOPEN CONDITION narrows accordingly: only a claim-protocol
+  WGSL measurement or a GPU-core-timestamp measurement of the device
+  may revisit the narrowing (a wall-clock parity read has now had its
+  visit and did not).
+
+WHAT MOVED (this slice's whole diff):
+
+- docs/evidence/gpu/wgsl-wallclock-row-mapping-20261025.txt (this
+  record).
+- docs/adr/0355-gpu-vendor-target-dispatch.md -- the measurement-
+  channel amendment for row flips (part 1's rule, prose only).
+- docs/adr/0360-gpu-apple-subgroup-reduce.md -- part 2's REOPEN
+  CONDITION carries the visit's result and the premise bracket
+  (part 3, prose only).
+- docs/adr/0356-gpu-kernel-variant-selection.md -- the Apple row
+  cell's "the WGSL arm is UNMEASURED on every device" clause gets the
+  same honesty bracket (prose only; the cell's "UNCOMPILED on the
+  WGSL arm" clause was already superseded by the 2026-10-25 Tint
+  judgment bracket in the same file).
+No .cljk, .mjs or harness file moves; no test moves; no :measured?
+flag, :shapes value, selection answer or workgroup row moves.
+
+WHAT THIS DECISION DOES NOT LICENSE (named so nothing is silently
+upgraded):
+
+- No speed claim for either arm (parity at wall-clock only), no
+  kernel-time claim (GPU-core timestamps UNMEASURED: the adapter
+  advertises timestamp-query but writeTimestamp is refused without
+  'chromium-experimental-timestamp-query-inside-passes'), and no
+  workgroup-size claim for ANY row -- measured or provisional.
+- Nothing for the NVIDIA/Intel/ARM/AMD rows or for the provisional
+  :arm/:unknown rows (different devices, and the read is one device).
+- No re-derivation or re-labelling of the ADR-0358 rows; they stand
+  as measurements of the removed loader path with their provenance.
+- The timing commit's "10/12" phrase is not corrected in history
+  (commit messages stand); this record's re-derivation is the citable
+  number.
+
+STATE: ACCEPTED DESIGN ONLY (this record + the ADR amendments, whose
+parent ADRs are accepted design). IMPLEMENTED: nothing new (no code
+moved). MEASURED: nothing new in this slice -- no hardware ran; every
+number is PARSED from the committed 2026-10-25 measure-log or quoted
+from committed ADR text. UNMEASURED: per-kernel GPU time on this
+device/route, the arm-vs-arm speed question, every workgroup-row
+question (their channel is gone), the W observation's regime
+robustness. PROPOSED: nothing new.
+
+HONEST LEFT (the real remainder after this row):
+
+1. The kernel-time question (the arm-vs-arm speed answer) needs a
+   timestamp-capable channel: Chrome/Dawn refuses in-pass timestamps
+   on this adapter and the wire-42 channel is gone. A Vulkan-provider
+   route with timestampValidBits > 0, or a native Metal counter
+   channel, is UNDESIGNED here -- a design row of its own.
+2. The claim-protocol WGSL channel question: whether a WGSL
+   measurement under the claim protocol exists at all (the MSL
+   native-harness idiom for WGSL) is PROPOSED, not designed; the
+   narrowing's narrowed REOPEN CONDITION waits on it.
+3. The per-vendor workgroup sweep (backlog item 3, JUN-57..60 rows)
+   stays BLOCKED on the ADR-0371 provider (ADR-0355's own words).
+4. Prose audit outside this bracket set: whether the Intel/ARM/
+   NVIDIA/AMD row cells' WGSL "UNCOMPILED/UNMEASURED" clauses each
+   need their own honesty bracket (the file-level Tint-judgment
+   amendment exists; per-cell brackets do not). A prose row.
+
+GATE (real runs, this host, for THIS record):
+
+1. Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+   gpu_scoped_gate.cljk, not in the repo, run this tick after the
+   edits): -> Ran 106 tests containing 11046 assertions. 0 failures,
+   0 errors. scoped: 106 tests, 11046 passed, 0 failed, 0 errors
+   (the real-spawn glslang 16.6.0 line present in the output). No
+   .cljk namespace is in this diff -- the gate runs as the standing
+   GPU-owned check, not as a fix verification.
+2. Full suite (run-tests.cljk, same classpath substitution with the
+   restored untracked deps.edn): RED AT BASE at `kotoba.form`
+   ("Error: Could not find namespace: kotoba.form"; the W3 port path,
+   ADR-0362), re-verified live this tick, outside this diff (this
+   diff is docs only). No green full suite is claimed.
+3. The parse probe (scratch/parse-wgsl-wallclock-20261025.py,
+   parse-only, writes only its own scratch output) ran this tick; its
+   output is quoted in THE DATA (3). Its scripts/ copy is NOT
+   committed (scratch tooling; the record is the artifact).
+4. Evidence hygiene: no POSIX .sh anywhere under docs/ (re-checked
+   this tick before commit).

@@ -1,0 +1,170 @@
+JUN-56 / JUN-55 -- the pipe/token-end row: the W3 SUBGROUP arm's two
+per-BYTE scans (sg-pipe over the answer, sg-token-end over a token) move
+to `string-find-byte` (2026-10-26)
+
+WHAT THIS ROW IS: the named follow-up residual of
+w3-sg-size-parse-20261026 ("the subgroup chain's OTHER walks are now
+MEASURED as their own trap class -- sg-pipe per answer byte,
+sg-token-end/sg-ops-walk per token/space byte, sg-member?/sg-keyword per
+element ... their own rows"). One implementation slice on
+kotoba.compiler.accelerator-targets. NO hardware ran, no GPU, no timing
+-- every number below is a kotoba-language-runtime behavior probe (the
+w3 fact class).
+
+INSTRUMENT (all runs this tick, scratch probes never staged): the w3
+extract-balanced idiom -- the arms' OWN text extracted from the
+namespace source, sema/analyze + ir/execute on the kotoba language
+runtime, kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)"
+<scratch probe>. Scratch probe: w3_pipe_before_after.cljk (the unit
+grids + e2e grids + the sg-member? mechanism table, run TWICE,
+byte-identical runs). The BEFORE arm is extracted from a git-show HEAD
+dump of accelerator_targets.cljk (scratch/w3_pipe_before_src.cljk;
+sha256 b945487802f3e9f1a8fd1b70babf9e00a84baca95bb8f1c4496c55c90dfaacbe
+-- which is the previous row's AFTER hash, chain continuity; the working
+tree AFTER arm sha256
+c251a55a26c22ce9373b4edc609bb70e64c2d6f36a46731c081c5caa1f0090d8) --
+never hand-transcribed. Parity references: the host readings of the
+same two contracts (sg-pipe = the str/split #"\|" -1 count shape;
+sg-token-end = str/index-of " ") and the host arm's own
+device-from-subgroup.
+
+WHAT LANDED (code + tests), kotoba arm only (the host arm is the parity
+reference and is untouched):
+  sg-pipe = at most TWO `string-find-byte` calls (the dot1/alt-end
+  precedent): the first '|' from 0, then -- only if a first exists and a
+  byte follows it -- one after it. The replaced per-answer-byte walk is
+  gone from the body (the function name and its contract survive; the
+  walk's 4-argument i/at shape is deleted, the call site passes (s n)).
+  sg-token-end = ONE `string-find-byte s 32 i` (the alt-end shape
+  exactly). The replaced per-token-byte walk is gone from the body.
+  PINNED CONTRACTS, unchanged: sg-pipe answers the index of the single
+  '|', -1 for none, -2 for more (a trailing pipe is a second pipe);
+  sg-token-end answers the first byte-32 at or after i, n when absent.
+  The total shapes are answered ABOVE the primitive (string-find-byte
+  answers -1 when absent and traps on from > n; from = n is never
+  called -- dot1's i >= n guard).
+
+MEASURED (runtime, no hardware; BEFORE = the dumped HEAD arm, AFTER =
+the fixed arm, HOST = the host readings; probe ran TWICE, byte-identical
+runs -- no trap-boundary anomaly this row):
+
+sg-pipe unit grid (the contract):
+  "" -1 | "32" -1 | "abc" -1 | "32|basic" 2 | "8|" 1 | "|x" 0 | "|" 0 |
+  "||" -2 | "32|basic|extra" -2 | "a||b" -2 | "x|y|" -2
+      -- BEFORE == AFTER == HOST on every one (the walk held the
+      contract on short cells).
+  200 a's -1 | 150a+"|"+49b 150 | 100a+"|"+50b+"|" -2 | 1000 a's -1
+      -- BEFORE TRAP host/stack-exhausted (the per-byte walk), AFTER ==
+      the contract == HOST on every one.
+
+sg-token-end unit grid (the contract):
+  "abc"@0 3 | "ab cd"@0 2 | "ab cd"@3 5 | "ab  cd"@0 2 | "ab  cd"@3 3 |
+  "ab  cd"@4 6 | " "@0 0 | ""@0 0
+      -- BEFORE == AFTER == HOST.
+  200 a's@0 200 | (150a+" "+49b)@0 150 | (150a+" "+49b)@151 200 |
+  1000 a's@0 1000
+      -- BEFORE TRAP host/stack-exhausted, AFTER == the contract ==
+      HOST.
+
+device-from-subgroup e2e:
+  standing pins byte-identical BEFORE == AFTER == HOST-shape:
+    "8|" 8 #{} | "16|shuffle" 16 #{shuffle}
+    "no|such answer" "32|Basic" "32|basic\tvote" "-1|basic" "+3|basic"
+    "0|basic" "12.5|basic" " 32|basic" "32x|basic" "x|basic"
+    "32|basic|extra" "32||basic" -> null == HOST nil
+  the walk traps are GONE (BEFORE TRAP -> AFTER == HOST):
+    "99999999999999999999|basic" -> null == HOST nil
+    "9223372036854775808|basic" -> null == HOST nil
+    100-nines|basic (106 bytes) -> null == HOST nil
+    1000-fives|basic (1006) -> null == HOST nil
+    200-nines|basic (206) -> null == HOST nil
+    200-byte no-pipe answer -> null == HOST nil
+    "8|"+190a (192 bytes, one pipe, long unknown token) -> null ==
+        HOST nil
+    200-byte two-pipe answer -> null == HOST nil
+    102-zeros-42|basic (110 bytes) -> 42 #{basic} == HOST (BEFORE
+        TRAP budget/frames)
+    NAMED ASYMMETRY (recurring, interpreter-owned): the two 26-byte
+        overflow-size cells RESOLVED at the sg-size row's e2e depth
+        (its evidence lists them as resolved BEFORE == AFTER == HOST)
+        but TRAPped host/stack-exhausted at this probe's depth on the
+        identical BEFORE text -- trap boundaries are state- and
+        path-dependent, never pinned as behavior.
+
+NEW NAMED FINDING (measured twice, deterministic -- a BUG the walk
+traps had masked, PRE-EXISTING, sg-member? is untouched by this row):
+the dedupe check sg-member? calls document-list-at over the chain's own
+document-VECTOR accumulator (document-vector / document-vector-conj in
+sg-ops-walk) and TRAPs "document-list-required" on ANY 2+-token <ops>
+field. Unit mechanism table (both arms, identical -- the body is shared
+text): empty-vector acc (the single-token path) -> false; vector acc at
+k=1 (the 2nd-token path) -> TRAP document-list-required; the SAME count
+on a LIST acc -> false (the accessor works on lists). Consequence
+measured e2e: the canonical "32|basic shuffle-relative" answer and the
+eight-token answer trap document-list-required on BOTH arms while the
+HOST arm answers the full map -- a wrong-refusal path still in the
+SUBGROUP consumer, its own row.
+
+NAMED, NOT HIDDEN (their own rows): the remaining walks keep their own
+trap -- sg-ops-walk recurses per token AND per space byte (its leading
+skip loop), sg-keyword per vocabulary element, so "32|basic vote2" and
+the spaced "64|  basic   shuffle-relative  " still trap
+host/stack-exhausted on BOTH runs (depth-dependent; the trap SPELLING
+differs by shape -- 25-byte canonical -> document-list-required, 14-byte
+vote2 -> host/stack-exhausted -- trap boundaries and spellings are
+state- and path-dependent, never pinned). The sg-member? accessor bug
+and the remaining walks are named, not hidden; nothing about them is
+fixed in this row.
+
+CONSEQUENCE: NOTHING MOVES -- no :measured? flag value, no :shapes
+value, no workgroup row, no selection answer; :arm/:unknown stay
+provisional :measured? false. The SUBGROUP producer (ADR-0371) still
+does not exist -- no live wire feeds any of this. This row removes the
+two per-byte walks' trap class (a wrong-refusal path: long answers and
+long tokens trapped the parse, no fact) and exposes the sg-member?
+accessor bug above. It adds no measurement claim.
+
+STATES:
+- IMPLEMENTED (code + tests): sg-pipe and sg-token-end on the
+  string-find-byte routes; the walks' per-byte recursion deleted.
+  Tests: w3-subgroup-pipe-and-token-end-find-bytes-not-walks (the
+  15-cell sg-pipe contract grid incl. the three long cells, the 12-cell
+  sg-token-end grid incl. the four long cells, host parity on both
+  grids, the standing e2e pins, the 9 trap-gone long-answer pins both
+  arms, and the source pins: string-find-byte in each body, the find
+  counts (2 / 1), no string-code-point-at in either body, the call
+  site's (s n) shape). The sg-size test's named-residual prose is
+  brought to the new state.
+- DECIDED (unchanged): the exactly-two-fields contract (-1/-2/index);
+  the token-end contract (first byte-32 at or after i, n when absent);
+  byte 32 is the ONLY separator.
+- MEASURED: the probe tables above (runtime behavior, no hardware).
+- ACCEPTED DESIGN ONLY (unchanged): ADR-0355's table rules, ADR-0358's
+  key, ADR-0362's subgroup contract, the claim protocol.
+- UNMEASURED, named: the sg-member? document-list-at/document-vector
+  mismatch's fix (its own row; the mechanism table is measured, the
+  cause text is read, not proven), sg-ops-walk/sg-keyword's per-token /
+  per-space-byte / per-element traps (their own rows), trap spellings
+  beyond these runs, every workgroup-row question (:arm/:unknown stay
+  provisional :measured? false), anything off this host.
+
+GATES (real runs):
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk):
+    kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+      /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+  -> Ran 118 tests containing 11777 assertions. 0 failures, 0 errors.
+     scoped: 118 tests, 11777 passed, 0 failed, 0 errors
+     (committed pin 117 tests / 11681 assertions; delta = this slice's
+     +1 test / +96 assertions). glslang 16.6.0 real-spawn ran.
+     GREEN on run 1 (log: scratch/w3_pipe_gate_run1.log).
+- gpu_regime_classify.py --self-test -> TOTAL: 2649 assertions passed,
+  0 failed (committed pin 2649/0; no classify code touched).
+- Full run-tests.cljk: RED AT BASE, outside this diff -- "Could not find
+  namespace: kotoba.form" (ADR-0362) fails the run before any test
+  executes (re-verified live this tick, log: scratch/
+  w3_pipe_fullsuite.log). The touched namespaces' own tests are the
+  scoped gate above. NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+- BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head (checked
+  at tick start and re-checked before the push; chain PR #1455 OPEN).

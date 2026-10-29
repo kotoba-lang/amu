@@ -1,0 +1,31 @@
+JUN-59 session 11 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+15 fresh processes (5 arms x 3 runs). Per-run transcript (host date -u, rc),
+verbatim from the tick's run command output (seconds granular; the full
+transcript is in the tick record):
+  c2-r1 rc=0 host-date=2026-10-27T14:03:29Z
+  c2-r2 rc=0 host-date=2026-10-27T14:03:29Z
+  c2-r3 rc=0 host-date=2026-10-27T14:03:29Z
+  c8-r1 rc=0 host-date=2026-10-27T14:03:30Z
+  c8-r2 rc=0 host-date=2026-10-27T14:03:32Z
+  c8-r3 rc=0 host-date=2026-10-27T14:03:33Z
+  g8-r1 rc=0 host-date=2026-10-27T14:03:35Z
+  g8-r2 rc=0 host-date=2026-10-27T14:03:37Z
+  g8-r3 rc=0 host-date=2026-10-27T14:03:39Z
+  f8vc-r1 rc=0 host-date=2026-10-27T14:03:39Z
+  f8vc-r2 rc=0 host-date=2026-10-27T14:03:40Z
+  f8vc-r3 rc=0 host-date=2026-10-27T14:03:40Z
+  gfvc-r1 rc=0 host-date=2026-10-27T14:03:42Z
+  gfvc-r2 rc=0 host-date=2026-10-27T14:03:44Z
+  gfvc-r3 rc=0 host-date=2026-10-27T14:03:46Z
+run window: 2026-10-27T14:03:29Z..2026-10-27T14:03:46Z, strictly AFTER the
+host-verify GO (14:02:31Z) and the builds (14:02:45Z).
+stderr: 0 bytes 15/15 (wc -c over the pulled logs: 0 each); 450 SAMPLE lines
+each (grep -c SAMPLE over the pulled logs, 15/15).
+NAMED, NOT HIDDEN: a first batch of 15 run ATTEMPTS at
+2026-10-27T14:03:05Z returned rc=127 (command not found -- the binaries
+were invoked as ./anv-cc-<tag> from cwd=shaders/ but built in the workdir
+parent; stderr: "./anv-cc-b2m1: No such file or directory"). ZERO timing
+samples were produced; the 30 empty files are preserved host-side in
+~/anv-costcal-20261027/pathfail-20261027T140305Z/ (the session-2
+batch64 run-pathfail precedent). The 15 runs above re-take the same arms
+with ../anv-cc-<tag>; nothing else changed between the two batches.

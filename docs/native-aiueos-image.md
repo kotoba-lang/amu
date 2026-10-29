@@ -19,6 +19,36 @@ the existing object command. Arguments have the declared order. Unsupported
 flags, invalid fuel, unknown artifact kinds and existing output files refuse.
 The runtime's file capability must explicitly include the inputs and output.
 
+**Object route, multiple exports (JUN-556).** `--artifact object` (the default)
+now emits up to eight exports in one ELF64 ET_REL object: one shim per export,
+back to back, each loading the same private 80-byte context and replenishing
+its own fuel; one `R_X86_64_PC32` addend -4 relocation per shim at offset 3; one
+public `GLOBAL FUNC` per export after the local `context` symbol. A single
+export is byte-identical to what the route always produced. More than eight
+refuse (`E7102`); the image route below is unchanged and still takes one
+export. `scripts/seed/check-aiueos-object-exports.py` pins the single-export
+digest and reads a two-export object back with an independent parser, and the
+Mac CI job runs it. The aiueos-side verifier takes the export list
+(kotoba-lang/kotoba, `verify-kotoba-kernel-object.py`). The header comment of
+`seed/74-x86_64-aiueos-object.kotoba` still says "exactly one public GLOBAL
+FUNC"; it is a comment, and editing it moves the source pin, so it waits for
+the next change to that file.
+
+**Object route, window accesses at other widths (JUN-556 B).** Besides
+`kernel-load-u32` and friends, a source may use `kernel-load-u8`,
+`kernel-store-u8`, `kernel-load-u16`, `kernel-store-u16`, `kernel-load-u64` and
+`kernel-store-u64`, each at the 512-byte tier with the same rooted-base and
+paired-length rules (E7106 otherwise). They follow kotoba-native's
+`emit-kernel-load-u8`, `emit-kernel-store-u8` and `emit-memwidth-window`: the
+length is at most 512, the base is non-null, the index is below the length,
+and above one byte `length - index >= width` (without wrapping) and the index
+is aligned; every branch lands on a `ud2` before memory is touched. The six
+stubs are appended only to a source that names one of them, so every other
+source compiles to the bytes it always had (the exports gate pins one). Locked
+projects and the image route's source library are not changed. The machine
+code is decoded by `scripts/seed/check-aiueos-object-windows.py` (Mac CI job),
+not executed.
+
 The image emitter currently admits the existing scalar kernel profile with
 one zero-argument export. It retains the complete admitted source and all
 helper functions. Multiple exports (ISR/live ValueRuntime included), the

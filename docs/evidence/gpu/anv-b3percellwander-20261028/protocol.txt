@@ -1,0 +1,222 @@
+JUN-59 -- session 45 protocol: THE PER-CELL WANDER
+REPARTITION PROBE (does ANY ok cell's within-window
+block-level wander -- the range of the cell's own 12 block
+pooled-median gpu_ticks within one window, held cell by cell
+instead of through the block-min tail -- exceed WITHIN-window
+run-exchangeable sampling noise?).
+ANALYSIS slice -- NO new hardware (every input quantity was
+MEASURED in sessions 36/38/39; this session re-derives statistics
+from their COMMITTED run logs). Frozen BEFORE the first statistic
+of this probe was computed (freeze stamp 2026-10-28T07:15:00Z,
+this tick). This file is written once and never rewritten.
+
+0. ROW QUESTION (ONE row): SESSION 44'S FIRST-NAMED CANDIDATE
+   ROW "a PER-CELL WANDER probe (the per-cell analog of session
+   40 -- does any cell's within-window block-level wander exceed
+   WITHIN-window run-repartition noise? the s40 probe walked the
+   block-min wander only)" -- taken on ONE observable axis: per
+   (window, arm), does ANY ok cell's within-window block-level
+   wander exceed the within-window run-repartition null? The
+   per-cell construction is the s35/s36-frozen one with ONLY the
+   cell summary replaced (the s40 wander was the range of the 12
+   BLOCK-MIN values -- the min over 18 cells taken first; this
+   probe holds each cell SEPARATE):
+   block = 3 consecutive runs of one arm within one window (the
+   s35/s36-frozen block unit, 12 blocks per (window, arm));
+   per-cell pooled median of a block = the pooled median
+   gpu_ticks of the block's 75 samples for that ok cell = the
+   exact 38th order statistic (an integer); per-cell within-
+   window wander W_c = max_b V_{b,c} - min_b V_{b,c} over the 12
+   blocks of one (window, arm) for cell c (V = the block's
+   per-cell pooled median; W_c an exact INTEGER -- both endpoints
+   are integers).
+
+   THE PRIMARY PER-PROBE STATISTIC (frozen): the MAX-T over the
+   18 cells, M_obs = max_c W_c -- the max over cells is taken
+   INSIDE each resampling trial too (M* = max_c W*_c), so the
+   reported p is family-wise controlled over the 18 cells within
+   one probe (no multiplicity correction is applied to the max-T
+   itself, and NONE across the six probes or three windows -- the
+   per-cell MARGINAL p values are descriptive only -- section 4).
+
+   THE NULL (frozen): WITHIN-WINDOW RUN-EXCHANGEABILITY -- the 36
+   runs of one arm within one window are exchangeable across
+   blocks (session 40's null, per-cell statistic); under the null
+   ALL within-run and fresh-process run-to-run variation is
+   sampling noise at the fresh-process granularity. Resampling
+   (frozen): per trial, shuffle the 36 run ids (one
+   random.Random(20261028), consumed in the frozen probe order
+   s39 hi / s39 tw / s36 hi / s36 tw / s38 hi / s38 tw -- session
+   40's order UNCHANGED), split into 12 blocks of 3 in draw
+   order; compute each pseudo-block's per-cell pooled medians
+   (all 18 cells, the exact 38th order statistic of the 75);
+   W*_c = max_b V*_{b,c} - min_b V*_{b,c}; M* = max_c W*_c;
+   p = (1 + count(M* >= M_obs)) / (1 + 20,000), one-sided.
+   TRIALS = 20,000 (NOT the s35-frozen 100,000 -- cost,
+   same named deviation as sessions 40/41/42/43/44; p resolution
+   1/20,001 ~= 5e-5).
+
+   EXACTNESS (frozen): the per-cell pooled median of 75 integer
+   samples is the exact 38th order statistic (an integer); W_c,
+   M and every resampled W*_c/M* are INTEGER differences and
+   maxima -- the analysis and the census work in plain INTEGER
+   tick units so every M* >= M_obs and every W*_c >= W_obs_c
+   comparison is exact integer arithmetic (unlike sessions
+   42/43/44 no half-tick rationals arise in this probe).
+   IMPLEMENTATION PATHS (frozen): analysis-s45.py uses numpy
+   2.5.4 (np.median -- exact at the 38th order statistic -- for
+   the pooled 75; integer max/min reductions); the resampling is
+   computed in vectorized TRIAL BATCHES (the RNG call order -- one
+   rng.shuffle per trial, probes in the frozen order -- is
+   unchanged and frozen); derivation-census-s45.txt uses sorted()
+   + explicit order statistics and a 3-way merge selection for
+   the observed pooled 75 (the pooled 75 never sorted as a unit;
+   a different exact path) and the np.sort order-statistic path
+   (the 38th element of the sorted 75), not np.median's, for the
+   resampling's pooled medians; both report identical values;
+   deterministic -- running each script twice yields byte-identical
+   output.
+
+   T1 LETTERS (pre-registered NOW, before any statistic of this
+   probe was computed):
+     per (window, arm) probe: (a) PER-CELL-NOISE-CONSISTENT
+              (p > 0.05) / (b) EXCEEDS NULL (p <= 0.05; named
+              which cell(s) achieve M_obs and which cells' MARGINAL
+              p <= 0.05) / (c) NOT EVALUABLE;
+     per window (the letter unit, session 40's rule): (a)
+              PER-CELL-NOISE-CONSISTENT = both arms read (a); (b)
+              EXCEEDS NULL = at least one arm reads (b) (named
+              which arm(s), which cell(s)); (c) NOT EVALUABLE on
+              any invalidation of protocol section 3;
+     T1 (the row answer) = the s39 WINDOW letter (the primary
+              window, session 40's framing); the s36 and s38
+              windows carry the same-rule REPLICATION letters;
+              NO cross-window joint letter (named: six probe p
+              values and three window letters exist and NONE is
+              corrected across probes or windows).
+
+   NAMED, NOT HIDDEN (frozen): (a) does NOT prove "estimator
+   noise is the mechanism" -- the null is run-exchangeability at
+   the fresh-process granularity WITHIN one window and a physical
+   driver acting UNIFORMLY within the window would ALSO read (a)
+   (such a driver is invisible to this design by construction);
+   AND each per-cell wander is a RANGE (max-min) of 12 block
+   values of pooled medians of 75 samples -- it is a tail-to-tail
+   statistic, NOT a scale estimate; wander of only other
+   distribution quantiles, only the per-cell LEVEL (session 44's
+   probe), or only scales inside the 25-sample/3-run units is
+   invisible to this construction; the max-T at n=12 blocks is
+   LOW POWER (a null is not evidence of no per-cell structure);
+   three windows ~30-60 min apart in ONE day on ONE host is LOW
+   POWER; (b) would implicate block-timescale (~3-run / few-
+   second) PER-CELL wander structure but NOT name it
+   (thermal/scheduling/memory/driver state all UNMEASURED) and
+   would NOT say whether the named cell's wander is physical or
+   estimator structure; the 18 per-cell MARGINAL p values per
+   probe are UNCORRECTED (108 marginal tests across the six
+   probes) and carry NO letter (the frozen row test is the
+   max-T); six probes / three window letters are UNCORRECTED
+   across probes/windows too (the row answer is the s39 window
+   letter alone; the s36/s38 letters are replications, not
+   additional row answers); cells span 986..1,443 ticks in level
+   even within one block -- the frozen 1,000-tick class boundary
+   sits INSIDE the per-cell level range, so the threshold-
+   artifact-vs-representation ambiguity binds per-cell rows
+   directly and STAYS UNRESOLVED; exchangeability of runs is
+   itself an assumption; this letter and sessions 40/41/42/43/
+   44's letters are DIFFERENT statistics over the SAME runs --
+   none confirms nor overturns another, and the probes share the
+   same 234 logs and resampling skeleton (NOT independent
+   evidence); 20,000 trials; L2 observational ONLY; NO causal
+   mechanism; direction UNMEASURED; threshold-artifact-vs-
+   representation STAYS UNRESOLVED under any letter.
+
+1. INPUTS (frozen): the 234 committed run logs of the three fixed
+   evidence directories -- anv-b3commonmode-20261028 (the s36
+   window, run window 2026-10-28T02:40:49Z), anv-b3joint3-20261028
+   (the s38 window, 03:39:14Z), anv-b3joint4-20261028 (the s39
+   window, 04:09:48Z) -- 78 per window (c2 3 + hi 36 + tw 36 + c8
+   3). Only the hi and tw arms enter the probe (36 runs each per
+   window). The s34 window is EXCLUDED (hi-only design; named --
+   the probe needs the same three windows for both arms). Every
+   input quantity was MEASURED on aiueos-6600hs Intel BMG G31 ANV
+   in sessions 36/38/39.
+   QUOTE-ONLY PRIOR EXPOSURE (named; the freeze guards
+   letter-shopping, not prior exposure): (i) the six block-min
+   vectors and their T ranges (s40 T: s39 hi 14 / tw 8, s36 hi
+   18 / tw 14, s38 hi 25 / tw 21) are published content of
+   publication-s39/40.txt; (ii) hi block A's per-cell pooled
+   medians at the three windows were exposed in the anchor
+   readings (the 18-cell min..max ranges) and the D4 anchor-cell
+   scoreboards of publication-s36..s39; (iii) the s44 per-cell
+   window LEVELS L_{w,c} (12-block medians) and per-cell
+   cross-window spreads S_c are published content of
+   publication-s44.txt. NO committed file computed any per-cell
+   WITHIN-window block-level wander W_c over the 12 blocks, any
+   max-T M of the W_c, or any within-window per-cell resampling
+   of these runs before this freeze.
+
+2. THE RESAMPLING (frozen; section 0's construction UNCHANGED):
+   one random.Random(20261028) consumed in the frozen probe order
+   (s39 hi, s39 tw, s36 hi, s36 tw, s38 hi, s38 tw); per probe
+   20,000 trials, each trial one rng.shuffle of a fresh
+   list(range(36)); p as section 0; integer exactness as section 0.
+
+3. INVALIDATION / EVALUABILITY (protocol section 3 of session
+   40/41/42/43/44, UNCHANGED): per-window integrity over the
+   committed logs -- VERIFY mismatch total 0; 450 SAMPLE + 24
+   VERIFY per run; every SAMPLE's knob fields == its arm table
+   (c2 2/1/1, hi 3/1024/4033, tw 3/2048/8066, c8 8/1/1); S=8
+   fail-closed cells (6 per run) pipeline FAIL + void 1; cell map
+   identical across all 234 logs; the six block-min vectors
+   reproduce the publication-s39.txt section 3 published/quote-only
+   vectors EXACTLY (6/6); C1 re-derived at the s39 window: c2 FLOOR
+   (all 18 pooled medians <= 100), c8 (sum,128,S=16) pooled median
+   within +/-5% of the committed 32,915; the reproduction row:
+   hi block A's (sum,128,S=16) pooled median and 18-cell min..max
+   reproduce the quote-only anchor priors EXACTLY at all three
+   windows (s36 1,142 / 991..1,438; s38 1,132 / 992..1,443; s39
+   1,146 / 986..1,432). Any violation => letter (c) for every
+   probe.
+
+4. SECONDARY NAMED DESCRIPTIVE CONTENT (named in advance; none of
+   it is the row question; the per-cell marginal p values are
+   UNCORRECTED for multiplicity and carry no letter):
+   (D1) the per-cell scoreboard, per (window, arm) probe, for each
+        of the 18 ok cells: its identity key (op, wg, S), W_c in
+        ticks, and the cell's MARGINAL resample count and p
+        (count of trials with W*_c >= W_obs_c over the same
+        20,000 trials -- computed in the same frozen resampling
+        loop, descriptive only);
+   (D2) the max-T cell identity per probe (which cell(s) achieve
+        M_obs; ties named) and the top-3 cells by W_c per probe;
+   (D3) the s40 block-min wander T per (window, arm) quoted from
+        publication-s40.txt (quote-only prior; the block-min T is
+        the min-over-cells-first construction this probe replaces
+        -- quoted for orientation only, no recomputation).
+
+5. THE BAR: NO hardware -> NO reading -> NO settle-bar-ledger line,
+   NO day-slot consumption (settle-bar-ledger.txt byte-identical
+   to HEAD); the frozen evaluator (settle-bar-eval.py) is the only
+   source of the bar letter (B2): --self-test fixture pin 38/0 and
+   ledger eval twice byte-identical. Next executable day slot
+   2026-10-29.
+
+6. ROUTE (frozen): analysis-s45.py parses ONLY the committed run
+   logs of the three fixed evidence directories and writes
+   publication-s45.txt in its own directory (run twice, diff exit
+   0); derivation-census-s45.txt is an independent second parser
+   (split-based parsing without regex; the observed per-cell
+   pooled median via 3-way merge selection over the sorted per-run
+   25-lists; the per-cell wander via explicit max/min over the 12
+   block values; the resampling's pooled medians via the np.sort
+   order-statistic path, not np.median's; the within-window
+   repartition resampling and the RNG call order re-implemented)
+   run twice byte-identical; gates: gpu_regime_classify.py
+   --self-test, the scoped GPU gate twice (scratch runner
+   scoped-gpu-gate.cljk, created, run, deleted, never committed),
+   FULL run-tests.cljk run live; find docs/evidence/gpu -name '*.sh'
+   -> 0 (no POSIX shell execution files, ever). ZERO derivation
+   edits; ZERO new knob pairs; the instrument and corpus are the
+   committed bytes of sessions 28-39 (byte-copy checked in the
+   windows' own sessions).

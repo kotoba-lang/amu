@@ -14,7 +14,18 @@
 (def KM-OWNED-PAGE 73)
 (def KM-OWNED-WINDOW 74)
 (def KM-PCI-MMIO 75)
-(def KM-INTR-N 100)
+(def KM-BOOT-PAYLOAD 100)
+(def KM-USER-SLOT 101)
+(def KM-RDRAND 102)
+(def KM-RDSEED 103)
+(def KM-OUT16 104)
+(def KM-IN16 105)
+(def KM-EFFECTS 106)
+(def KM-INTR-N 107)
+;; v1/v2 keep their original intrinsic trailer and exact output bytes.
+;; Effects/port16 belong to the v3 desktop image contract only.
+(defn- km-count [] :i64
+  (if (string=? (io-arg 3) "x86_64-aiueos-kernel-v3") KM-INTR-N 104))
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
 
@@ -55,9 +66,13 @@
       61 "kernel-value-domain-code-page" 62 "kernel-value-domain-stack-page"
       63 "kernel-framebuffer-page" 64 "kernel-framebuffer-width" 65 "kernel-framebuffer-height"
       66 "kernel-framebuffer-stride" 67 "kernel-framebuffer-format"
-      68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font" "")))
+      68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font"
+      71 "kernel-boot-payload" 72 "kernel-user-slot"
+      73 "kernel-rdrand" 74 "kernel-rdseed"
+      75 "kernel-out-u16" 76 "kernel-in-u16" 77 "kernel-desktop-effects" "")))
 (defn- km-arity [k :i64] :i64
-  (cond (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
+  (cond (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0
+        (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
         (< k KM-CPU-FIRST) 1
         (= k KM-BOOT-INFO) 0
@@ -81,7 +96,7 @@
                       :else 0))))
 (defn- km-lib [] :string
   (loop [k 0 text ""]
-    (if (>= k KM-INTR-N) text
+    (if (>= k (km-count)) text
       (let [args (case (km-arity k) 0 "[]" 1 "[a :i64]" 2 "[a :i64 b :i64]"
                       3 "[a :i64 b :i64 c :i64]" 4 "[a :i64 b :i64 c :i64 d :i64]"
                       6 "[a :i64 b :i64 c :i64 d :i64 e :i64 f :i64]" "[a :i64 b :i64 c :i64 d :i64 e :i64]")]
@@ -89,7 +104,7 @@
           (string-concat (km-name k) (string-concat " " (string-concat args " :i64 0)\n"))))))))))
 (defn- km-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 201) k (- f first)]
-    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k KM-INTR-N)) k -1)))
+    (if (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (km-count))) k -1)))
 ;; The image shim stores its loader-provided boot pointer at context+80.
 ;; The paired EFI packager owns a 160-byte v5 prefix plus a 16 KiB map.
 ;; Only this closed project/image profile can derive that ABI region; no
@@ -98,7 +113,8 @@
 (def KM-BOOT-BYTES 16544)
 (defn- km-owned-region [M :vector-i64 f :i64 i :i64 t :i64] :i64
   (if (not= (xg-get M 4) 2) -1
-    (cond (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
+    (cond (= (km-intr M f) KM-EFFECTS) (+ 4294967296 16384)
+          (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
           (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
           (= (km-intr M f) KM-OWNED-WINDOW)
             (let [n (xk-src M i (inc t) 0)] (if (= n 0) -1 n))
@@ -108,19 +124,22 @@
           (= (km-intr M f) (+ LV-FIRST 1)) (+ 4294967296 384)
           (or (= (km-intr M f) (+ LV-FIRST 2))
               (= (km-intr M f) (+ LV-FIRST 6))
-              (= (km-intr M f) (+ LV-FIRST 7))
-              (= (km-intr M f) 87)) (+ 4294967296 4096)
+              (= (km-intr M f) (+ LV-FIRST 7))) (+ 4294967296 4096)
+          (= (km-intr M f) 87)
+            (+ 4294967296 (if (uv-v5?) 262144 4096))
           (= (km-intr M f) 86) (+ 4294967296 96)
           (= (km-intr M f) WG-FIRST) (+ 4294967296 4096)
-          (or (= (km-intr M f) (+ WG-FIRST 5)) (= (km-intr M f) (+ WG-FIRST 6))) (+ 4294967296 8192)
+          (or (= (km-intr M f) (+ WG-FIRST 5)) (= (km-intr M f) (+ WG-FIRST 6))) (+ 4294967296 WG-WINDOW-BYTES)
           (= (km-intr M f) (+ WG-FIRST 7)) (+ 4294967296 WG-FONT-BYTES)
+          (= (km-intr M f) KM-BOOT-PAYLOAD) (+ 4294967296 524288)
+          (= (km-intr M f) KM-USER-SLOT) (+ 4294967296 524288)
           (and (>= (km-intr M f) (+ UV-FIRST 2)) (< (km-intr M f) WG-FIRST)) (+ 4294967296 4096)
           :else -1)))
 (defn- km-scan [M :vector-i64 S :string] :vector-i64
-  (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N KM-INTR-N)]
+  (let [first (- (vector-at M MM-FN-N) XK-WINDOW-N (km-count))]
     (if (<= first 1) (xg-err M 7102 first)
       (loop [k 0]
-        (if (>= k KM-INTR-N) (mem-set M 201 first)
+        (if (>= k (km-count)) (mem-set M 201 first)
           (let [f (+ first k) sym (xg-f M f FF-SYM) sb (+ MM-SYM-BASE (* sym MM-SYM-W))
                 a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
             (if (and (string=? (string-substring S a b) (km-name k))
@@ -213,8 +232,32 @@
         (iv-hex "48c1e00c4801d0") (xg-rel 0x820f 2 2 trap)
         (xg-rel 0xe9 1 2 end) (xg-label trap) (iv-hex "0f0b")
         (xg-label end) (xg-save t))))
+;; RDRAND/RDSEED (JUN-482): mov ecx,10; L: rdrand|rdseed rax; jc done; dec ecx;
+;; jnz L; xor eax,eax; done. The result is the 64-bit value, or 0 when the
+;; source reported failure ten times in a row (CF clear): callers must treat
+;; 0 as "no entropy" and fail closed. Only rax and rcx are used, both scratch
+;; in this runtime like the RDTSC and CPUID intrinsics.
+(defn- km-entropy [M :vector-i64 opcode :i64 t :i64] :vector-i64
+  (-> M (xg-bytes 0xab9 5) (xg-bytes opcode 4) (xg-bytes 0x0672 2)
+        (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t)))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (< k KM-MEM-N) (km-window M k t)
+  (cond (= k KM-OUT16)
+          (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
+              (xg-bytes 0xef66 2) (xg-save t))
+        (= k KM-IN16)
+          (-> M (xg-load t 0x958b48) (xg-bytes 0xc031 2)
+              (xg-bytes 0xed66 2) (xg-save t))
+        (= k KM-EFFECTS)
+          ;; The existing guarded context getter proves the private desktop
+          ;; host. Its adjacent, previously unused final 16KiB is disjoint
+          ;; from Browser/IME, key state, crypto scratch and all user pages.
+          (-> M (wg-intrinsic 6 t) (xg-load t 0x858b48)
+              (iv-hex "480500200000") (xg-save t))
+        (< k KM-MEM-N) (km-window M k t)
+        (= k KM-BOOT-PAYLOAD) (wg-boot-payload M t)
+        (= k KM-USER-SLOT) (wg-user-slot M t)
+        (= k KM-RDRAND) (km-entropy M 0xf0c70f48 t)
+        (= k KM-RDSEED) (km-entropy M 0xf8c70f48 t)
         (>= k WG-FIRST) (wg-intrinsic M (- k WG-FIRST) t)
         (>= k UV-FIRST) (uv-intrinsic M (- k UV-FIRST) t)
         (= k LV-CALL) (lv-call M t)
@@ -231,7 +274,7 @@
         (= k KM-OWNED-PAGE) (km-page M t false)
         (= k KM-OWNED-WINDOW) (km-page M t true)
         (= k KM-PCI-MMIO) (kr-pci-mmio M t)
-        (and (>= k KM-ISR-FIRST) (< k KM-INTR-N)) (iv-intrinsic M (- k KM-ISR-FIRST) t)
+        (and (>= k KM-ISR-FIRST) (< k (km-count))) (iv-intrinsic M (- k KM-ISR-FIRST) t)
         (< k (+ KM-MEM-N 2))
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
               (xg-byte (if (= k KM-MEM-N) 238 239)) (xg-save t))

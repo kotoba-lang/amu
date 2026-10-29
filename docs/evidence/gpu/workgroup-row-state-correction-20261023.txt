@@ -1,0 +1,137 @@
+JUN-58 / JUN-55 -- CORRECTION: the workgroup rows are NOT all unmeasured
+(2026-10-23, later tick)
+
+One correction slice: two records from earlier today, and one commit
+message, state that EVERY workgroup row of
+kotoba.compiler.accelerator-targets carries :measured? false. That claim
+is FALSE and it contradicts ADR-0358, the code, the green gate the same
+records report, and every other 2026-10-23 record. This record corrects
+it, names every place it was written, and states the true split.
+
+THE MISSTATEMENT, named exactly:
+
+1. docs/evidence/gpu/flip-contract-widen-20261023.txt, "LEFT (the next
+   rows)" item: "Per-vendor workgroup sweep (backlog 3): no workgroup row
+   is measured yet -- every row in kotoba.compiler.accelerator-targets
+   still carries :measured? false."
+2. docs/evidence/gpu/argv-gate-class-20261023.txt, the UNMEASURED tail
+   ("...and every workgroup row in kotoba.compiler.accelerator-targets
+   -- all still :measured? false") and the same "LEFT (the next rows)"
+   item.
+3. The commit message of 7b053893 ("...and every workgroup row
+   (:measured? false everywhere in accelerator-targets)"). A commit
+   message cannot be rewritten without force-push, and force-push is
+   forbidden -- the correction lives here and in the two records, which
+   are edited in place with their correction sections (the 7f1c7faf
+   idiom).
+
+THE TRUE STATE (verified by real runs, this host, this tick):
+
+ADR-0358 (accepted and implemented, 2026-10-19, scoping amendment
+2026-10-22) replaced four of ADR-0355's six provisional workgroup rows
+with MEASURED rows. The table in accelerator_targets.cljk and its runtime
+answer, dumped by the scratch runner wg_state_dump.cljk
+(kbb --backend sci, same engine and classpath as the gate):
+
+== workgroup-defaults (runtime table, host reading) ==
+:nvidia size=256 width=32 measured?=true measured-device="xavier"
+:apple size=256 width=32 measured?=true measured-device="m1 max"
+:intel size=128 width=32 measured?=true measured-device="g31"
+:arm size=128 width=16 measured?=false measured-device=nil
+:amd size=1024 width=64 measured?=true measured-device="680m"
+:unknown size=256 width=32 measured?=false measured-device=nil
+
+== recommend answers (measured-device scoping) ==
+vendor-id-only nvidia -> vendor=:nvidia wg=256 measured?=true
+vendor-id-only apple -> vendor=:apple wg=256 measured?=true
+named M1 Max -> vendor=:apple wg=256 measured?=true
+named Xavier -> vendor=:nvidia wg=256 measured?=true
+named G31 -> vendor=:intel wg=128 measured?=true
+named 680M -> vendor=:amd wg=1024 measured?=true
+unnamed amdgpu -> vendor=:amd wg=1024 measured?=true
+unknown -> vendor=:unknown wg=256 measured?=false
+
+== counted state ==
+rows total=6 measured? true=4 measured? false=2
+measured vendors: [:nvidia :apple :intel :amd]
+provisional vendors: [:arm :unknown]
+
+So: FOUR rows are measured (:nvidia, :apple, :intel, :amd -- each scoped
+to its one named device through :measured-device, per the 2026-10-22
+uB5G scoping amendment), and TWO rows stay provisional (:arm -- no Mali
+hardware; :unknown -- the portable fallback). "No workgroup row is
+measured yet" is not the repository's state and was not at any point
+today.
+
+INTERNAL CONTRADICTION in the two records: both report the green scoped
+gate (87-88 tests, 0 failures) whose deftest
+recommend-is-total-deterministic-and-provisional asserts
+(true? (:measured? nvidia)), (true? (:measured? apple)) and whose
+scoping block asserts true for the named M1 Max / Xavier / G31 / 680M
+and false for unmeasured named devices. A tree where "every row carries
+:measured? false" would fail that deftest. The gate was green because the
+rows are measured; the sentence was wrong.
+
+CORROBORATING RECORDS (the correct spelling, all 2026-10-23):
+gpu-subgroup-reduce-cuda-20261023/NOTES.md and
+gpu-subgroup-reduce-msl-20261023/NOTES.md ("the ADR-0358 measured rows
+keep their..."), gpu-amd-vulkan-wgsl-rows-20261023/NOTES.md ("the :amd
+workgroup row (1024, measured, ADR-0358)"),
+w32-decision-cell-20261023.txt ("the provisional :arm/:unknown rows are
+untouched and still :measured? false" -- correctly scoped to the two
+provisional rows), and the ADR-0358 scoping amendment itself.
+
+WHAT MOVED IN THE DIFF (the correction only):
+- docs/evidence/gpu/flip-contract-widen-20261023.txt: the false LEFT
+  item replaced by the true split, with a dated correction note.
+- docs/evidence/gpu/argv-gate-class-20261023.txt: the false UNMEASURED
+  tail and LEFT item replaced the same way.
+- This record.
+
+WHAT DID NOT MOVE (named so nothing is silently upgraded):
+- No measurement, no measurement record, no :measured? flag, no
+  :measured-cell set, no selection answer, no workgroup row, no code
+  and no test. This is a prose correction: the rows keep exactly the
+  state ADR-0358 gave them, and the correction removes a claim, it
+  does not add evidence.
+- The 2026-10-19 fleet measurements behind ADR-0358 are CITED, not
+  re-measured here. Nothing in this tick re-verifies those numbers; the
+  dump above verifies only the TABLE'S STATE (what flags the rows carry),
+  which is what the misstatement was about.
+
+VERIFIED BY TOOL OUTPUT (this host, real runs):
+1. The wg_state_dump.cljk run above (full transcript inline).
+2. Scoped GPU gate (the 7 GPU-owned namespaces, scratch runner
+   gpu_scoped_gate.cljk), run BEFORE this diff's first edit and again
+   AFTER -- identical totals both times (docs-only diff):
+
+     kbb --backend sci --classpath "src:test:$(kbb -Spath -M:test)" \
+       /Users/junkawasaki/.hermes/profiles/amu-gpu/cache/scratch/gpu_scoped_gate.cljk
+
+     Ran 88 tests containing 7122 assertions.
+     0 failures, 0 errors.
+
+     scoped: 88 tests, 7122 passed, 0 failed, 0 errors
+
+3. Full suite (run-tests.cljk): RED AT BASE, re-verified this tick,
+   unchanged -- aborts at namespace load, "Could not find namespace:
+   kotoba.form" (the W3 port path, outside this diff). No green suite is
+   claimed.
+
+STATE HONESTY: this slice is a RECORD CORRECTION (implemented: the three
+record edits above). No design decision, no implementation of product
+code, no measurement. UNMEASURED scope is unchanged from the corrected
+records and is restated there.
+
+HONEST LEFT (the real remainder, replacing the misdirected item):
+- Backlog 3's per-vendor workgroup sweep is DONE for the four vendors
+  with hardware (ADR-0358, 2026-10-19) and has no hardware for the rest:
+  :arm (Mali) stays provisional until Mali hardware exists; :unknown is
+  the portable fallback and is provisional by design. A re-sweep of any
+  measured row (the apple row's noise-floor caveat is recorded in
+  gpu-workgroup-unaliased-shape2-m1max-20261019) is a MEASUREMENT row,
+  one vendor at a time.
+- The GLSL arm stays blocked on a wire-42 execution route (ADR 0371).
+- The variant rows (:subgroup-reduce, NVIDIA/Intel/ARM/AMD) stay
+  UNMEASURED; ADR-0362's rule-6 fact producer has no live wire (slice 2
+  live half, the ADR 0371 provider track).

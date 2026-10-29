@@ -1,0 +1,254 @@
+# JUN-58 / JUN-55 -- the sample-bracket CALIBRATION row: the bracket's
+# delta is NOT the dispatch's pure GPU time -- the additive residual is
+# MEASURED, at the fold arms' own launch shape (2026-10-25, tick slice)
+
+Row taken: the counter-channel letter's own named question -- "whether the
+sample-pair delta equals the dispatch's GPU time or carries sampling/
+barrier overhead" -- as narrowed by the harness row ("the delta's span is
+now precisely [encoder start, encoder end] around a single dispatch, so
+what remains is the encoder-boundary residual") -- plus the named
+UNMEASURED "GPUTimestamp resolution and clock-domain behavior". ONE
+measurement slice: the INSTRUMENT's own calibration on synthetic kernels
+through the counters harness's exact bracket. NO arm is timed, NO reduce
+kernel runs, no arm-vs-arm question is touched, and no number below
+answers any speed question about any variant.
+
+Host: MacBook Pro, Apple M1 Max, macOS 26.4 (SDK MacOSX26.5.sdk). Probes
+ran 2026-10-25T11:56Z (v1), 12:01Z (v2), 12:54Z (v3), 13:01Z (v4) via
+xcrun clang/Metal on this host. The row was started earlier the same UTC
+day in this profile's scratch (v1/v2 run, analysis drafted, v3's source
+drafted); this tick finished it. Probe SOURCES lived in Hermes scratch
+and were never staged (the harness-row precedent); the raw logs are
+committed verbatim under docs/evidence/gpu/metal-counter-bracket-
+calibration-20261025/ and every number below is re-derivable from them
+by the scratch analysis script (also never staged; its output is quoted
+here). Every bracket in every probe is the counters harness's exact
+idiom: AtStageBoundary compute-pass sample-buffer attachment
+startOfEncoderSampleIndex=0 / endOfEncoderSampleIndex=1, EXACTLY ONE
+dispatch per compute encoder, one command buffer per bracket, resolve
+through a following blit encoder's resolveCounters:inRange: (indices
+0..2), read back as two MTLCounterResultTimestamp uint64 values. Every
+sample line carries the raw pair.
+
+Probe contracts (all scratch, xcrun clang -fobjc-arc -framework
+Foundation -framework Metal):
+
+  v1 (calib-v1-spin-series.txt): conditions "empty" (a compute encoder
+  that encodes NO dispatch) and "spin L" (ONE dispatch of a dependent
+  LCG-chain kernel, 1 threadgroup x 1 thread, L in
+  {0,1024,4096,16384,65536,262144,1048576,4194304,16777216} iterations,
+  v = v*1664525+1013904223, the chain cannot be optimized away);
+  WARMUP=2 full rounds over all conditions discarded, ROUNDS=20
+  recorded, round-robin.
+
+  v2 (calib-v2-shapes.txt): shapes "empty" / "zero-groups" (compute
+  encoder, dispatchThreadgroups:0,1,1) / "one-group" (1 group x 1
+  thread, spin 0 iters); 8 rounds round-robin; each line carries an
+  inline stale=<0|1> flag (the resolved pair is byte-identical to the
+  previous bracket's pair).
+
+  v3 (calib-v3-state.txt): one-group and zero-groups x 12 brackets
+  COLD (fresh process), one heavy spin-16777216 (1x1) dispatch, then
+  the same shapes x 12 WARM.
+
+  v4 (calib-v4-arms-grid.txt): the fold arms' launch shape. Shapes:
+  one-group (1x1), zero-groups, arms-grid (3907 x 256 threads, spin 0
+  iters -- the counters harness's own num_groups = (N + WG - 1) / WG =
+  3907 at N=1000003, WG=256), arms-grid-tgm (3907 x 256 + threadgroup
+  memory 1024 bytes = WG*4, the baseline arm's run_bracket shape; the
+  subgroup arm's is 0). 12 round-robin rounds COLD, heavy, 12 WARM.
+
+## FINDING 1 -- the letter's question is ANSWERED (MEASURED): the delta
+## carries a nonzero, launch-bound, state-dependent additive residual R
+
+counter_ns = [encoder start, encoder end] = T_dispatch + R(grid shape,
+state) + epsilon, with |epsilon| bounded by the tick granularity
+(FINDING 4). R is MEASURED at four launch shapes, each cold and warm
+(medians over n=12 brackets; min/max beside; raw pairs in the logs):
+
+  shape            cold median (min..max)      warm median (min..max)
+  one-group        9750.0 / 9792.0 (8958..13416, 39583*)   4208.5 (4083..5542, 32292*)
+  zero-groups      1875.0 / 1833.0 (1791..2834)            979.5 / 1000.0 (875..1083)
+  arms-grid        20604.5 (19750..24167)                  7833.5 (7583..8292, 67833*)
+  arms-grid-tgm    20791.5 (19834..21042, 150167*)         8000.0 (7750..8167)
+
+  (one-group and zero-groups appear in both v3 and v4; both medians are
+  listed where they differ. * = single named outliers, FINDING 6.)
+
+At the fold arms' launch shape (3907 x 256): R ~= 7.83-8.00 us WARM,
+20.6-20.8 us COLD. The residual is NOT a constant and NOT separable
+into sampling vs encoder-boundary vs driver cost through this bracket;
+it decomposes only into measured bounds (warm): an encoded-dispatch
+floor of ~0.98-1.00 us (zero-groups), a per-grid-launch add-on of
+~3.21 us (one-group over zero-groups), and a launch-scale add-on of
+~3.63 us (arms-grid over one-group). v1's spin series (recorded rounds,
+n=20 per level, medians):
+
+  iters=0 4500.0 | 1024 33645.5 | 4096 121333.5 | 16384 472145.5 |
+  65536 1875583.0 | 262144 7505062.5 | 1048576 30016729.5 |
+  4194304 120105708.5 | 16777216 480578708.0
+
+  low-band least squares (iters <= 65536): delta = F + c*iters,
+  F = 4417.7 ns, c = 28.5515 ns/iter; the top levels bend slightly
+  (per-iter cost creeps 28.55 -> 28.64), so no single line fits all
+  nine levels -- the series is linear in WORK plus a floor, not through
+  the origin. The floor F (4417.7 ns at 1x1 warm) matches v3/v4's
+  one-group warm medians (4208.5) -- cross-probe reproducibility.
+
+VERBATIM anchors (raw pairs): v3
+"phase=A iters=0 ts0=361447427544000 ts1=361447427553750 delta=9750"
+(cold one-group), "phase=C iters=0 ts0=361448007739791 ts1=361448007745333
+delta=5542" (warm); v4 "shape=arms-grid state=cold round=0
+ts0=361863213998791 ts1=361863214020416 delta=21625" and "shape=arms-grid
+state=warm round=0 ts0=361863735618416 ts1=361863735626250 delta=7834".
+
+## FINDING 2 -- state dependence (MEASURED): cold is 1.9x-2.6x warm on
+## every shape; the CAUSE is a hypothesis, not a measurement
+
+cold/warm median ratios: one-group 2.32x (v3), zero-groups 1.91x (v3),
+arms-grid 2.63x, arms-grid-tgm 2.60x (v4). v1's discarded warmup round
+-1 shows the same state change from the other side -- the identical
+spin kernel's per-iter cost falls from 94.73-95.75 ns/iter at the low
+levels to 28.60 ns/iter by iters=1048576 (warm steady state 28.5515,
+ratio 3.32x on the slope; the ramp happens INSIDE the first warmup
+round). Interpretation named as HYPOTHESIS ONLY: a GPU power/clock
+ramp (consistent with floor and slope moving together); the cause is
+UNMEASURED -- no probe reads a clock. The WORK THRESHOLD that flips the
+state is UNMEASURED and named for the measurement row's run protocol:
+in v4, 48 zero-work grid launches (including 3907x256 grids) did NOT
+warm the device, while one 490468375 ns (v3) / 494525500 ns (v4) spin
+dispatch did. Whether the fold arms' own dispatches at their workload
+cross that threshold is UNANSWERED here.
+
+## FINDING 3 -- the two arms' launch shapes differ by less than the
+## spread (bounded, NOT zero-claimed)
+
+The baseline arm's run_bracket shape (arms-grid-tgm: threadgroup memory
+WG*4 = 1024 bytes) minus the subgroup arm's (arms-grid: 0) = 187.0 ns
+cold / 166.5 ns warm (medians). Distributions overlap (warm: arms-grid
+7583..8292, tgm 7750..8167). The two arms' additive floors therefore
+agree to within ~0.3 us at this launch shape; this is a BOUND, not a
+claim of equality, and no differential correction is designed here.
+
+## FINDING 4 -- GPUTimestamp quantizes at 125/3 ns (MEASURED)
+
+Over EVERY raw ts value in all four logs -- 776 values spanning cold
+AND warm states -- the maximum deviation from the 125/3 (41.667) ns
+lattice is 0.651 ns, and the deviations take exactly three values
+{0.041, 0.326, 0.651} ns: the truncation signature of a 125/3-ns tick
+printed as integer ns (integer truncation of k*125/3 leaves fractional
+parts {0, 1/3, 2/3}). The 381 fresh deltas (stale/unwritten pairs
+excluded) deviate <= 0.667 ns from the same lattice, 0 above 1.0 ns --
+a FINER tick would scatter deltas across the 125/3 lattice and none
+deviate. The counter's effective resolution is therefore 125/3 ns =
+41.667 ns (24 MHz-class tick), state-independent (the same lattice
+holds cold and warm). The integer gcd over (ts - ts_min) is 1 ns
+(presentation rounding), not the tick.
+
+CLOCK DOMAIN stays UNMEASURED, named with its reason: whether 1 tick
+equals 1/24 MHz of wall-clock ns needs a reference OUTSIDE this
+instrument, and rule 3 bars merging this channel's magnitudes with any
+host wall-clock or the command-buffer GPUStartTime->GPUEndTime bracket
+(the three all say "ns" and are three instruments). The lattice being
+state-stable is a within-channel fact only.
+
+## FINDING 5 -- a bracket with no dispatch is INVALID (route fact,
+## re-confirmed with counts)
+
+Across v1+v2: 30 "empty" brackets (compute encoder, no dispatch
+encoded) -- 2 resolved 0/0 (the sample buffer was never written), 28
+resolved the PREVIOUS bracket's pair byte-identically (stale). The
+bracket REQUIRES a dispatch inside the encoder to write its samples;
+the counters harness's one-dispatch-per-encoder contract already
+guarantees this, and the fact explains the harness's untimed read-back
+dispatches using a plain unsampled encoder.
+
+## FINDING 6 -- spikes and first-bracket effects, NAMED, not hidden
+
+Single-bracket outliers: v4 one-group cold 39583 (round 10), one-group
+warm 32292 (round 0 -- the FIRST bracket after the heavy dispatch),
+arms-grid-tgm cold 150167 (round 7), arms-grid warm 67833 (round 4);
+v1 iters=16384 max 518459 vs median 472145.5; first-bracket elevations
+in every probe (v2's first zero-groups 3125 vs ~1833 steady; v3's phase
+A first 13416; v4's cold round 0 one-group 13458). Medians are robust
+to these; named as supporting evidence for the paired-median statistic
+class (not interpreted further -- no mechanism is measured).
+
+## WHAT THIS ROW ANSWERS / WHAT THE MEASUREMENT ROW INHERITS
+
+The letter's calibration question is RESOLVED on this host: the sample
+pair does NOT time the dispatch alone -- it carries the measured
+residual R(grid shape, state) at the magnitudes above, plus a 41.667 ns
+quantization grain. The measurement row inherits: (a) every arm
+counter_ns = T_dispatch + R, and R at the arms' launch shape is
+~7.8-8.0 us warm / ~20.6-20.8 us cold -- whether a record subtracts a
+measured R, publishes raw deltas, or is framed around it is the
+MEASUREMENT ROW'S DECISION, NOT made here (nothing moves); (b) run-
+protocol warm-state discipline is load-bearing (the harness's WARMUP=2
+discards first SUBMITS; the cold/warm STATE question is separate --
+FINDING 2 -- and the work threshold is unmeasured); (c) the outlier
+class justifies median statistics. The harness row's "sample-bracket
+calibration (the encoder-boundary residual)" UNMEASURED item is
+superseded by this record for THIS host and these four launch shapes.
+
+## STATES (the three states, named)
+
+- MEASURED (this row): R at four launch shapes x cold/warm (medians,
+  min/max here, raw pairs committed); the cold/warm ratios and the v1
+  cold ramp; the spin-series line (F, c) and its top-level bend; the
+  125/3-ns tick lattice over 776 ts values + 381 deltas; the no-dispatch
+  staleness counts (2 unwritten / 28 stale); the spike list. This is
+  instrument-calibration measurement of synthetic kernels -- NO arm, NO
+  reduce kernel, no speed question answered.
+- DECIDED (this row): the letter's question is resolved at its
+  narrowed form -- the delta carries the residual, not pure dispatch
+  time; scope = this host, this bracket idiom, these four launch shapes.
+- IMPLEMENTED: NOTHING in the repo (probe sources scratch-only, never
+  staged; no code moves; no test pin -- nothing committed to pin).
+- ACCEPTED DESIGN ONLY (unchanged): the claim protocol and its units;
+  the ADR-0360 narrowing and reopen condition; the second-leg letter;
+  ADR-0355's channel rule.
+- PROPOSED (unchanged): the Vulkan-provider timestamp route.
+- UNMEASURED, named: the residual's internal decomposition (sampling vs
+  encoder-boundary vs launch/driver); the absolute clock-domain
+  calibration (rule 3 bars the host-clock merge, above); the work
+  threshold that flips the cold/warm state; R at any other grid size,
+  under thermal throttle, or off M1 Max; the fold arms' per-dispatch GPU
+  times and every sign (the measurement row's run protocol); the
+  rules-1+2 publication over this channel's own metric (the classifier's
+  counters route is still UNIMPLEMENTED); whether the second leg fires;
+  every workgroup-row question (:arm/:unknown stay provisional
+  :measured? false -- no :measured? flag, :shapes value, selection
+  answer or workgroup row moves this tick). Rule 4 unchanged.
+
+## What a future measurement licenses / never licenses (unchanged list,
+## with the calibration now in hand)
+
+On landing (the measurement row): evaluation of the second leg against
+its own rules-1+2 record, and the arm-vs-arm GPU-core speed answer for
+the MSL-route fold arms on the narrowed device class (channel- and
+device-scoped). NEVER: any ADR-0355 workgroup row (this channel is
+neither the wire-42 loader path nor its provider successor), any
+WGSL-channel cell flip, any :measured? movement by itself (rule 4), any
+cross-instrument magnitude claim (rule 3 -- every number in this record
+is counters-channel-internal and merges with NEITHER the command-buffer
+bracket's gpu-ns NOR any host wall-clock).
+
+## Gates (real runs, this tick)
+
+- Scoped GPU gate (8 GPU-owned namespaces, scratch runner
+  gpu_scoped_gate.cljk in Hermes scratch, never committed) GREEN: 110
+  tests / 11445 assertions / 0 failures / 0 errors, glslang 16.6.0
+  real-spawn -- the committed pin exactly (this diff is docs-only and
+  touches no .cljk namespace; regression pin).
+- gpu_regime_classify.py --self-test: TOTAL 2572 assertions passed /
+  0 failed (no classify code touched -- regression pin).
+- FULL run-tests.cljk NOT RUN this slice (docs-only diff) -- documented
+  red at base ('Could not find namespace: kotoba.form', ADR-0362),
+  outside this diff; NO green full suite claimed.
+- find docs -name '*.sh' -> 0 files (the no-POSIX-sh evidence rule).
+
+Raw logs: docs/evidence/gpu/metal-counter-bracket-calibration-20261025/
+  calib-v1-spin-series.txt  calib-v2-shapes.txt
+  calib-v3-state.txt        calib-v4-arms-grid.txt
+(JUN-55, JUN-58)

@@ -1,0 +1,43 @@
+;; Independent payload-v2 construction; no checked-source bridge supplies a CID.
+(defn- dgo-vector [xs [:list :string]] :string (dc-collection "vec" xs false))
+(defn- dgo-unary [name :string item :string] :string
+  (dgo-vector (typed-list-new [:list :string] (dc-kw name) item)))
+(defn- dgo-payload [op :string kind :string] :string
+  (let [item (cond (= kind "list-string") (dc-kw "string")
+                  (= kind "list-bool") (dc-kw "bool")
+                  (= kind "list-list-i64") (dgo-unary "list" (dc-kw "i64"))
+                  :else (dc-kw "i64"))
+        collection (cond (= kind "vector-i64") (dc-kw "vector-i64")
+                     (= kind "set-i64") (dgo-unary "set" item)
+                     (= kind "map-i64-string") (dgo-vector
+                       (typed-list-new [:list :string] (dc-kw "map") (dc-kw "i64") (dc-kw "string")))
+                     :else (dgo-unary "list" item))
+        count (cond (= op "count") 1 (= op "nth-default") 3 (= op "conj-two") 3 :else 2)
+        head (cond (= op "nth-default") "nth" (= op "conj-two") "conj" :else op)
+        params (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (dc-atom "sym" (string-concat "k" (mem-u2dec i)))))))
+        types (loop [i 0 xs (typed-list-new [:list :string])]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs
+            (cond (= i 0) collection (and (= head "nth") (= i 1)) (dc-kw "i64") :else item)))))
+        body (dc-collection "list" (loop [i 0 xs (typed-list-new [:list :string] (dc-atom "sym" head))]
+          (if (= i count) xs (recur (inc i) (typed-list-conj [:list :string] xs (typed-list-nth [:list :string] params i))))) false)
+        kir (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "body" body) (dc-entry "params" (dgo-vector params))
+          (dc-entry "op" (dc-kw "kotoba.definition/function"))) true)
+        result (cond (= head "count") (dc-kw "i64") (= head "nth") item :else collection)
+        ordinary (or (= kind "vector-i64") (= kind "list-i64") (= kind "list-string")
+                     (= kind "list-bool") (= kind "list-list-i64"))
+        valid (and (or ordinary (= kind "set-i64") (= kind "map-i64-string"))
+                   (or (= op "count") (and ordinary (or (= op "nth") (= op "nth-default")
+                        (= op "conj") (= op "conj-two")))
+                       (and (= kind "set-i64") (or (= op "nth") (= op "conj") (= op "conj-two")))))
+        interface (dc-collection "map" (typed-list-new [:list :string]
+          (dc-entry "arity" (dc-int (mem-u2dec count)))
+          (dc-entry "params" (dgo-vector types)) (dc-entry "result" result)) true)]
+    (if valid (dc-payload "6" "2" kir (dc-collection "set" (typed-list-new [:list :string]) true)
+      interface (dgo-vector (typed-list-new [:list :string]))) "")))
+(defn- seed-main [] :i64
+  (if (not= (io-argc) 2) 2
+    (let [cid (dc-definition-cid (dgo-payload (io-arg 0) (io-arg 1)))]
+      (if (= cid "") 1 (let [out (io-out (string-concat cid "\n"))] 0)))))

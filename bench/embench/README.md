@@ -4,6 +4,13 @@ For the corrected same-algorithm speed comparison, see the [Embench reproduction
 Its M104 record is an Embench-derived translated-port comparison, not an official score; the earlier M93 figure is retained
 only as historical evidence after the kernel audit.
 
+For the evidence level, claims that may or may not be made, and the
+preregistered protocol required before performance-led outreach, see
+[Kotoba/Amu performance proof v1](proof-v1/README.md).  The proof-v1 gate
+requires repeated paired measurements and external result bundles; it does not
+retroactively promote the one-sample M104 cycles to independent or official
+results.
+
 > **Selfhost status.** The measured artifact below was produced with a
 > GraalVM-built compiler, so under `docs/selfhost-priority.md` it is a
 > *bootstrap-reference* result, not a selfhost result. Selfhost is the top

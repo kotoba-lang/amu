@@ -1,0 +1,221 @@
+(ns kotoba.compiler.accelerator-spirv
+  "ADR-0359 decision 2's PURE HALF: the sealed SPIR-V build-step artifact.
+
+  GLSL/WGSL -> SPIR-V is a build step over a verified source artifact,
+  answering a new artifact format `:kotoba.gpu-spirv-artifact/v1` -- not a
+  KIR syntax and not a fifth emission target. This namespace is the pure
+  half the ADR names: payload construction, sealing, and verification
+  (integrity plus provenance, NOT re-lowering -- SPIR-V does not re-lower to
+  KIR). It never shells out: no `glslangValidator` invocation lives here.
+  The host-invoking entry point (`amu gpu-spirv-compile <artifact.edn>
+  --output <file.spv>`, the sibling of ADR-0357's `amu gpu-compile`) is the
+  NOT-YET-IMPLEMENTED half and records what it ran; until it lands, the
+  measurement harnesses keep their own invocations.
+
+  The payload binds, per the ADR:
+
+  - the source artifact's `:kir-sha256` and `:code-sha256` (the provenance
+    chain back to KIR), plus `:target` and `:variant` (the regeneration key
+    of ADR-0356 rule 5), and the source artifact itself under
+    `:source-artifact` so verification can run the full hostile re-lower of
+    ADR-0002 on exactly what was compiled;
+  - the SPIR-V bytes' SHA-256 over the EXACT compiled bytes
+    (`bytes-sha256`), with the bytes carried inline in deterministic
+    encoding (a vector of integers 0..255 -- plain EDN, identical text on
+    every host, the same encoding the PE32+ packager's `:bytes` uses);
+  - the TOOL IDENTITY that produced them: tool name, its `--version` output
+    verbatim, and the exact argv. A binary with no recorded tool identity is
+    refused, not sealed -- an unattributed blob is not a verified artifact.
+
+  Verification (the ADR's four steps):
+
+  1. the source artifact passes the full hostile re-lower check, unchanged
+     (`accelerator/verify-artifact!`);
+  2. the bytes hash to the sealed `:spirv-sha256`;
+  3. the tool identity is present and well-formed;
+  4. optional claim upgrade: when the caller supplies `:rebuilt-bytes`
+     (the sealed source code recompiled by the recorded tool, on a host that
+     has it at a matching version) byte equality with the sealed bytes
+     upgrades the claim to :verified-by-rebuild; with no rebuilt bytes the
+     claim stays :provenance and is labeled so.
+
+  Byte-identity, scoped honestly: source artifacts remain byte-identical
+  exactly as ADR-0002 defines. SPIR-V artifacts are byte-identical only for
+  the same recorded tool identity -- glslang output is tool-version specific.
+  No cross-tool or cross-version byte identity is claimed, and nothing here
+  is measurement evidence: this is provenance machinery.
+
+  UNIMPLEMENTED, named so no prose upgrades it: the `amu gpu-spirv-compile`
+  entry point (the build step's host half), writing the loader's cache file
+  from the sealed bytes with the pre-dispatch hash check, and the harnesses
+  consuming sealed artifacts. The digest itself is exercised on the kbb/nbb
+  runtime only; the :clj branch mirrors kotoba.artifact.core's and the JVM
+  suite executes nowhere (its runner is the ledger, since 2026-09-11)."
+  {:kotoba/export [bindings-count bytes-sha256 seal-spirv-artifact spirv-artifact-format tool-identity valid-tool-identity? verify-spirv-artifact!]}
+  #?(:clj (:require [kotoba.artifact.core :as artifact]
+                    [kotoba.compiler.accelerator :as accelerator])
+     :cljs (:require [kotoba.artifact.core :as artifact]
+                     [kotoba.compiler.accelerator :as accelerator]
+                     ["node:crypto" :as crypto])))
+
+(def spirv-artifact-format :kotoba.gpu-spirv-artifact/v1)
+
+(defn bytes-sha256
+  "SHA-256 (lowercase hex) over the EXACT bytes -- a vector of integers
+  0..255, one per byte, in order. This is the digest of the compiled binary
+  itself, the value the loader-side cache check compares the written
+  `.spv` file's own SHA-256 against before dispatch. It is deliberately NOT
+  `kotoba.artifact.core/sha256`: that digests canonical EDN text, and a
+  digest of the text of a byte vector is not a digest of the bytes."
+  [bytes]
+  #?(:clj (let [digest (.digest (java.security.MessageDigest/getInstance "SHA-256")
+                                (byte-array (map unchecked-byte bytes)))]
+            (apply str (map #(format "%02x" (bit-and (int %) 0xff)) digest)))
+     :cljs (-> (crypto/createHash "sha256")
+               (.update (js/Buffer.from (clj->js (vec bytes))))
+               (.digest "hex"))))
+
+(defn- byte-vector?
+  "The deterministic inline encoding of the compiled bytes: a sequence of
+  integers 0..255."
+  [bytes]
+  (and (sequential? bytes)
+       (every? #(and (int? %) (<= 0 % 255)) bytes)))
+
+(defn bindings-count
+  "The wire-42 `PIPELINE <spv> <bindings>` count this KIR op dispatches
+  with, derived from the KIR and recorded in the SPIR-V payload so the
+  loader call cannot name a different arity than the kernel was compiled
+  for. :ewise binds x, y, z, n (4); :reduce binds x, parts, n (3) -- the
+  storage-buffer-only ABI both GLSL arms bind
+  (kotoba.compiler.accelerator's emit-glsl-baseline and
+  kotoba.compiler.accelerator-subgroup-reduce's emit-glsl)."
+  [kir]
+  (accelerator/validate! kir)
+  (case (:kernel/op kir)
+    :ewise 4
+    :reduce 3))
+
+(defn valid-tool-identity?
+  "What a recorded tool identity must be to belong in a sealed payload: a
+  name and a `--version` output, both non-empty strings recorded verbatim,
+  and the exact argv -- a vector of strings with at least the program."
+  [tool]
+  (and (map? tool)
+       (string? (:name tool)) (not (empty? (:name tool)))
+       (string? (:version tool)) (not (empty? (:version tool)))
+       (vector? (:argv tool)) (seq (:argv tool))
+       (every? string? (:argv tool))))
+
+(defn tool-identity
+  "Construct the tool identity record. `version` is the tool's `--version`
+  output VERBATIM and `argv` the exact invocation. A binary with no recorded
+  tool identity is refused at the seal below; this constructor refuses the
+  malformed records the same way so an unattributable one cannot be built by
+  accident."
+  [name version argv]
+  (let [tool {:name name :version version :argv (vec argv)}]
+    (when-not (valid-tool-identity? tool)
+      (throw (ex-info "a SPIR-V binary with no recorded tool identity is refused, not sealed"
+                      {:tool tool})))
+    tool))
+
+(defn- normalized-variant
+  "A sealed source artifact that predates variants carries no :variant; that
+  is :baseline by definition -- the same rule
+  kotoba.compiler.accelerator/verify-artifact! applies. The SPIR-V payload
+  records the CONCRETE key either way: it is the regeneration key."
+  [source]
+  (if (contains? source :variant) (:variant source) :baseline))
+
+(defn seal-spirv-artifact
+  "The build step's pure sealing half: over a VERIFIED source artifact
+  (kotoba.compiler.accelerator's artifact format), the exact compiled
+  SPIR-V bytes, and the tool identity that produced them, answer the sealed
+  `:kotoba.gpu-spirv-artifact/v1` artifact.
+
+  The source artifact is hostile-re-lowered here, unchanged -- a build step
+  over an unverified source is refused before any bytes are bound. The
+  payload carries the bytes inline (deterministic encoding), their digest,
+  the four regeneration/provenance fields, the bindings count derived from
+  the KIR op, and the tool identity. No tool identity, no seal."
+  [source-artifact spirv-bytes tool]
+  ;; Step 1's rule applies at construction too: only a source artifact that
+  ;; passes the full hostile re-lower may have bytes sealed over it. Its own
+  ;; error messages propagate unchanged.
+  (accelerator/verify-artifact! source-artifact)
+  (when-not (byte-vector? spirv-bytes)
+    (throw (ex-info "invalid SPIR-V bytes: a vector of integers 0..255"
+                    {:count (when (sequential? spirv-bytes) (count spirv-bytes))})))
+  (when-not (valid-tool-identity? tool)
+    (throw (ex-info "a SPIR-V binary with no recorded tool identity is refused, not sealed"
+                    {:tool tool})))
+  (let [bytes (vec spirv-bytes)
+        variant (normalized-variant source-artifact)]
+    (artifact/seal
+     {:format spirv-artifact-format
+      ;; The provenance chain back to KIR and the regeneration key
+      ;; (ADR-0356 rule 5), bound at the top level AND held to the source
+      ;; artifact's own fields by the verifier -- two copies that must
+      ;; agree, so neither can drift alone.
+      :kir-sha256 (:kir-sha256 source-artifact)
+      :code-sha256 (:code-sha256 source-artifact)
+      :target (:target source-artifact)
+      :variant variant
+      :source-artifact source-artifact
+      :bindings (bindings-count (:kir source-artifact))
+      :spirv-bytes bytes
+      :spirv-sha256 (bytes-sha256 bytes)
+      :tool tool})))
+
+(defn verify-spirv-artifact!
+  "Integrity plus provenance, NOT re-lowering. Answers the claim the
+  verification earned -- {:claim :provenance} or, when `opts` carries
+  :rebuilt-bytes and they are byte-equal to the sealed bytes,
+  {:claim :verified-by-rebuild}. Anything else is refused by name:
+
+  - the envelope (format + seal) must be intact;
+  - the bytes must hash to the sealed :spirv-sha256;
+  - the tool identity must be present and well-formed;
+  - the embedded source artifact must pass the full hostile re-lower check
+    UNCHANGED (kotoba.compiler.accelerator/verify-artifact!'s own refusals
+    propagate), and the payload's four bound fields and :bindings must agree
+    with it;
+  - with :rebuilt-bytes supplied, byte inequality with the sealed bytes is
+    a refusal, never a silent :provenance -- the caller asked for the
+    upgrade and did not get it.
+
+  With the tool absent or a different version on the verifying host the
+  caller simply passes no :rebuilt-bytes: the claim stays :provenance and is
+  labeled so, exactly as the ADR scopes it."
+  ([spv] (verify-spirv-artifact! spv nil))
+  ([spv opts]
+   (when-not (and (= spirv-artifact-format (:format spv))
+                  (artifact/valid-seal? spv))
+     (throw (ex-info "invalid accelerator SPIR-V artifact envelope" {})))
+   (when-not (valid-tool-identity? (:tool spv))
+     (throw (ex-info "accelerator SPIR-V artifact carries no well-formed tool identity"
+                     {:tool (:tool spv)})))
+   (when-not (and (byte-vector? (:spirv-bytes spv))
+                  (= (:spirv-sha256 spv) (bytes-sha256 (:spirv-bytes spv))))
+     (throw (ex-info "accelerator SPIR-V artifact bytes hash mismatch" {})))
+   (let [source (:source-artifact spv)]
+     (accelerator/verify-artifact! source)
+     (when-not (and (= (:kir-sha256 spv) (:kir-sha256 source))
+                    (= (:code-sha256 spv) (:code-sha256 source))
+                    (= (:target spv) (:target source))
+                    (= (:variant spv) (normalized-variant source))
+                    (= (:bindings spv) (bindings-count (:kir source))))
+       (throw (ex-info "accelerator SPIR-V artifact provenance mismatch"
+                       {:bound {:kir-sha256 (:kir-sha256 spv)
+                                :code-sha256 (:code-sha256 spv)
+                                :target (:target spv)
+                                :variant (:variant spv)
+                                :bindings (:bindings spv)}}))))
+   (if-let [rebuilt (get opts :rebuilt-bytes)]
+     (do (when-not (= (seq rebuilt) (seq (:spirv-bytes spv)))
+           (throw (ex-info "accelerator SPIR-V rebuild mismatch: recompiled bytes are not byte-equal to the sealed bytes"
+                           {:rebuilt-count (when (sequential? rebuilt) (count rebuilt))
+                            :sealed-count (count (:spirv-bytes spv))})))
+         {:claim :verified-by-rebuild})
+     {:claim :provenance})))

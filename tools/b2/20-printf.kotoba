@@ -1,0 +1,614 @@
+;; tools/b2/20-printf.kotoba -- the printf and scanf family of route B2's libc subset (ADR 0375, JUN-377).
+;;
+;; Exports (the symbols libvulkan.so.1 imports, with the glibc version each must satisfy):
+;;   snprintf@GLIBC_2.2.5  __snprintf_chk@GLIBC_2.3.4  __vsnprintf_chk@GLIBC_2.3.4  __isoc23_sscanf@GLIBC_2.38
+;; Everything else here is internal (fmt- and scn- prefixes). Locale C, byte oriented, integer and pointer
+;; arguments only. A construct this file does not implement is a named refusal (refuse), never a wrong result.
+;;
+;; The shared state is the program state area bytes 8192..12287 (the 4 KiB this file owns): word 8192 is the
+;; nesting depth, then 15 frames of 256 bytes at 8192 + 256 * (depth + 1). A call takes a frame on entry and
+;; gives it back on exit, so a nested call (a signal handler, say) gets its own frame. No malloc, no leak.
+;; Limits, both deliberate: the frame stack is plain program state, so the code is not thread safe (the B2 image is
+;; single threaded); and sscanf integers that do not fit wrap modulo 2^64 and are then truncated to the stored width
+;; (C leaves that undefined). glibc behaviors reproduced on purpose: %s of NULL prints (null) only when the precision
+;; allows all six bytes, %p of NULL prints (nil), a format that ends inside a conversion returns -1 with the text so
+;; far stored, sscanf returns EOF only while nothing has been assigned, "0x" with no digit after it reads 0.
+;;
+;; ---- frame layout, printf side (byte offsets inside a 256-byte frame) --------------------------------------
+;;   FMT-KIND  0 = the arguments are the words at FMT-WORDS, 1 = the arguments come from the va_list at FMT-PTR
+;;   FMT-IDX   next word to take (kind 0)          FMT-LIM  how many words the entry point passed
+;;   FMT-BUF   output buffer       FMT-CAP  bytes the buffer can hold (n - 1)   FMT-POS  the full length so far
+;;   FMT-P     the format cursor   FMT-FLAGS bits: 1 '-'  2 '+'  4 ' '  8 '#'  16 '0'
+;;   FMT-WIDTH, FMT-PREC (-1 when absent)   FMT-LM 0 none, 1 hh, 2 h, 3 ll z j t q, 4 l   FMT-ERR 1 when the format ended inside a spec
+;; ---- frame layout, scanf side -----------------------------------------------------------------------------
+;;   SCN-IP input cursor  SCN-STR input start  SCN-FP format cursor  SCN-DONE assigned conversions  SCN-ARGI next pointer word
+;;   SCN-RES result  SCN-SUP '*' seen  SCN-W remaining field width (-1 unlimited)  SCN-LM  SCN-CNT digit count  SCN-WORDS 14 pointers
+
+(def FMT-BASE 8192)
+(def FMT-FRAME 256)
+(def FMT-KIND 0)
+(def FMT-PTR 8)
+(def FMT-IDX 16)
+(def FMT-LIM 24)
+(def FMT-BUF 32)
+(def FMT-CAP 40)
+(def FMT-POS 48)
+(def FMT-P 56)
+(def FMT-FLAGS 64)
+(def FMT-WIDTH 72)
+(def FMT-PREC 80)
+(def FMT-LM 88)
+(def FMT-ERR 96)
+(def FMT-WORDS 104)  ;; 13 words, 104..207
+(def FMT-TMP 208)    ;; 40 bytes for "(null)" / "(nil)"
+
+(def SCN-IP 0)
+(def SCN-STR 8)
+(def SCN-FP 16)
+(def SCN-DONE 24)
+(def SCN-ARGI 32)
+(def SCN-RES 40)
+(def SCN-SUP 48)
+(def SCN-W 56)
+(def SCN-LM 64)
+(def SCN-CNT 72)
+(def SCN-WORDS 80)   ;; 14 words, 80..191
+
+(def FMT-MAXCAP 140737488355328) ;; 2^47: no buffer is larger, so a huge size_t is clamped to it
+
+;; ---- frames -----------------------------------------------------------------------------------------------
+(defn- fmt-get [f :i64 k :i64] :i64 (l64 (+ f k)))
+(defn- fmt-set [f :i64 k :i64 v :i64] :i64 (s64 (+ f k) v))
+(defn- fmt-adv [f :i64 k :i64 n :i64] :i64 (s64 (+ f k) (+ (l64 (+ f k)) n)))
+(defn- fmt-enter [] :i64
+  (let [d (st FMT-BASE)]
+    (if (>= d 15)
+      (refuse "printf" "format calls nested too deeply")
+      (let [z (st! FMT-BASE (+ d 1))]
+        (+ (kxrt-b-state) (+ FMT-BASE (* FMT-FRAME (+ d 1))))))))
+(defn- fmt-leave [] :i64 (st! FMT-BASE (- (st FMT-BASE) 1)))
+
+;; ---- output: a bounded buffer that always counts the full length -----------------------------------------------
+;; the number of bytes the buffer can hold for a size_t n (room for the NUL taken off)
+(defn- fmt-cap [n :i64] :i64
+  (cond (= n 0) 0
+        (or (< n 0) (> n FMT-MAXCAP)) FMT-MAXCAP
+        :else (- n 1)))
+;; store c at the virtual output position vpos when the buffer has room for it
+(defn- fmt-put-at [f :i64 vpos :i64 c :i64] :i64
+  (if (< vpos (fmt-get f FMT-CAP)) (s8 (+ (fmt-get f FMT-BUF) vpos) c) 0))
+(defn- fmt-out [f :i64 c :i64] :i64
+  (let [pos (fmt-get f FMT-POS)
+        z (fmt-put-at f pos c)]
+    (fmt-set f FMT-POS (+ pos 1))))
+(defn- fmt-pad [f :i64 c :i64 k :i64] :i64
+  (loop [i 0] (if (>= i k) 0 (let [z (fmt-out f c)] (recur (inc i))))))
+(defn- fmt-bytes [f :i64 src :i64 k :i64] :i64
+  (loop [i 0] (if (>= i k) 0 (let [z (fmt-out f (l8 (+ src i)))] (recur (inc i))))))
+
+;; ---- unsigned 64-bit arithmetic ------------------------------------------------------------------------------
+;; x / base for the unsigned value held in the i64 x; base is 8, 10 or 16. floor(floor(x / 2) / 5) = floor(x / 10).
+(defn- fmt-udiv [x :i64 base :i64] :i64
+  (cond (= base 10) (quot (u64-shift-right x 1) 5)
+        (= base 16) (u64-shift-right x 4)
+        :else (u64-shift-right x 3)))
+;; how many digits the unsigned value v has in base (1 for 0)
+(defn- fmt-ndigits [v :i64 base :i64] :i64
+  (loop [k 1 x (fmt-udiv v base)] (if (= x 0) k (recur (inc k) (fmt-udiv x base)))))
+(defn- fmt-digit [d :i64 upper :i64] :i64
+  (if (< d 10) (+ 48 d) (+ d (if (= upper 1) 55 87))))
+;; the n digits of v, most significant first, written from the least significant one backwards
+(defn- fmt-digits [f :i64 v :i64 base :i64 upper :i64 n :i64] :i64
+  (let [pos (fmt-get f FMT-POS)]
+    (loop [j 0 x v]
+      (if (>= j n)
+        (fmt-set f FMT-POS (+ pos n))
+        (let [q (fmt-udiv x base)
+              d (- x (* q base))
+              z (fmt-put-at f (- (+ pos n) (+ j 1)) (fmt-digit d upper))]
+          (recur (inc j) q))))))
+
+;; ---- arguments -------------------------------------------------------------------------------------------------
+;; the next integer or pointer argument of a SysV x86-64 va_list: {u32 gp_offset, u32 fp_offset, overflow_arg_area, reg_save_area}
+(defn- fmt-va-next [ap :i64] :i64
+  (let [gp (l32 ap)]
+    (if (< gp 48)
+      (let [v (l64 (+ (l64 (+ ap 16)) gp))
+            z (s32 ap (+ gp 8))]
+        v)
+      (let [ov (l64 (+ ap 8))
+            v (l64 ov)
+            z (s64 (+ ap 8) (+ ov 8))]
+        v))))
+(defn- fmt-arg [f :i64] :i64
+  (if (= (fmt-get f FMT-KIND) 0)
+    (let [i (fmt-get f FMT-IDX)]
+      (if (>= i (fmt-get f FMT-LIM))
+        (refuse "printf" "the format consumes more arguments than this entry point takes")
+        (let [z (fmt-set f FMT-IDX (+ i 1))]
+          (fmt-get f (+ FMT-WORDS (* 8 i))))))
+    (fmt-va-next (fmt-get f FMT-PTR))))
+;; the argument a for a d/i (signed) or u/x/X/o conversion with length modifier lm
+(defn- fmt-adjust [a :i64 signed :bool lm :i64] :i64
+  (cond (= lm 0) (if signed (i32 a) (u32 a))
+        (= lm 1) (if signed (i64-shift-right (i64-shift-left a 56) 56) (bit-and a 255))
+        (= lm 2) (if signed (i64-shift-right (i64-shift-left a 48) 48) (bit-and a 65535))
+        :else a))
+
+;; ---- numbers ---------------------------------------------------------------------------------------------------
+;; a field of an integer: padding, then prefix (plen of c0 c1), zeros, the n digits of mag, padding
+(defn- fmt-num [f :i64 mag :i64 base :i64 upper :i64 n :i64 zeros :i64 plen :i64 c0 :i64 c1 :i64] :i64
+  (let [flags (fmt-get f FMT-FLAGS)
+        width (fmt-get f FMT-WIDTH)
+        prec (fmt-get f FMT-PREC)
+        left (not= (bit-and flags 1) 0)
+        zpad (and (not left) (and (not= (bit-and flags 16) 0) (< prec 0)))
+        pad (max2 0 (- width (+ plen (+ zeros n))))
+        a (if (or left zpad) 0 (fmt-pad f 32 pad))
+        b (if (>= plen 1) (fmt-out f c0) 0)
+        c (if (>= plen 2) (fmt-out f c1) 0)
+        d (if zpad (fmt-pad f 48 pad) 0)
+        e (fmt-pad f 48 zeros)
+        g (fmt-digits f mag base upper n)
+        h (if left (fmt-pad f 32 pad) 0)]
+    0))
+;; d i u x X o
+(defn- fmt-int [f :i64 conv :i64] :i64
+  (let [a (fmt-arg f)
+        lm (fmt-get f FMT-LM)
+        prec (fmt-get f FMT-PREC)
+        flags (fmt-get f FMT-FLAGS)
+        signed (or (= conv 100) (= conv 105))
+        v (fmt-adjust a signed lm)
+        neg (and signed (< v 0))
+        mag (if neg (- 0 v) v)
+        base (cond (= conv 111) 8 (or (= conv 120) (= conv 88)) 16 :else 10)
+        upper (if (= conv 88) 1 0)
+        n (if (and (= prec 0) (= mag 0)) 0 (fmt-ndigits mag base))
+        zeros0 (max2 0 (- prec n))
+        hash (not= (bit-and flags 8) 0)
+        ;; '#' with o: the first digit must be 0
+        zeros (if (and hash (and (= base 8) (and (= zeros0 0) (or (not= mag 0) (= n 0))))) 1 zeros0)
+        sgn (cond neg 45 (not= (bit-and flags 2) 0) 43 (not= (bit-and flags 4) 0) 32 :else 0)
+        pfx16 (and hash (and (= base 16) (not= mag 0)))
+        plen (cond signed (if (= sgn 0) 0 1) pfx16 2 :else 0)
+        c0 (if signed sgn 48)
+        c1 (if (= conv 88) 88 120)]
+    (fmt-num f mag base upper n zeros plen c0 c1)))
+
+;; ---- strings and characters ------------------------------------------------------------------------------------
+(defn- fmt-strnlen [p :i64 m :i64] :i64
+  (loop [i 0] (if (or (>= i m) (= (l8 (+ p i)) 0)) i (recur (inc i)))))
+;; a field holding len bytes at src, padded with spaces
+(defn- fmt-strout [f :i64 src :i64 len :i64] :i64
+  (let [left (not= (bit-and (fmt-get f FMT-FLAGS) 1) 0)
+        pad (max2 0 (- (fmt-get f FMT-WIDTH) len))
+        a (if left 0 (fmt-pad f 32 pad))
+        b (fmt-bytes f src len)
+        c (if left (fmt-pad f 32 pad) 0)]
+    0))
+(defn- fmt-str [f :i64] :i64
+  (let [p (fmt-arg f)
+        prec (fmt-get f FMT-PREC)]
+    (if (= p 0)
+      ;; glibc: "(null)" when it fits the precision, else nothing
+      (let [z (put-str (+ f FMT-TMP) "(null)")]
+        (fmt-strout f (+ f FMT-TMP) (if (or (< prec 0) (>= prec 6)) 6 0)))
+      (fmt-strout f p (if (< prec 0) (c-strlen p) (fmt-strnlen p prec))))))
+(defn- fmt-char [f :i64] :i64
+  (let [c (bit-and (fmt-arg f) 255)
+        left (not= (bit-and (fmt-get f FMT-FLAGS) 1) 0)
+        pad (max2 0 (- (fmt-get f FMT-WIDTH) 1))
+        a (if left 0 (fmt-pad f 32 pad))
+        b (fmt-out f c)
+        d (if left (fmt-pad f 32 pad) 0)]
+    0))
+;; %p: 0x and lowercase hex, "(nil)" for a null pointer
+(defn- fmt-ptr [f :i64] :i64
+  (let [a (fmt-arg f)
+        prec (fmt-get f FMT-PREC)]
+    (if (= a 0)
+      (let [z (put-str (+ f FMT-TMP) "(nil)")]
+        (fmt-strout f (+ f FMT-TMP) (if (< prec 0) 5 (min2 prec 5))))
+      (let [n (fmt-ndigits a 16)]
+        (fmt-num f a 16 0 n (max2 0 (- prec n)) 2 48 120)))))
+
+;; ---- the format ------------------------------------------------------------------------------------------------
+(defn- fmt-flags [f :i64] :i64
+  (loop [i 0]
+    (let [c (l8 (fmt-get f FMT-P))
+          b (cond (= c 45) 1 (= c 43) 2 (= c 32) 4 (= c 35) 8 (= c 48) 16 :else 0)]
+      (if (= b 0)
+        0
+        (let [z (fmt-set f FMT-FLAGS (bit-or (fmt-get f FMT-FLAGS) b))
+              y (fmt-adv f FMT-P 1)]
+          (recur (inc i)))))))
+;; decimal digits at the cursor, saturating at 2^31 - 1
+(defn- fmt-number [f :i64] :i64
+  (loop [v 0]
+    (let [c (l8 (fmt-get f FMT-P))]
+      (if (and (>= c 48) (<= c 57))
+        (let [z (fmt-adv f FMT-P 1)]
+          (recur (min2 2147483647 (+ (* v 10) (- c 48)))))
+        v))))
+(defn- fmt-width [f :i64] :i64
+  (if (= (l8 (fmt-get f FMT-P)) 42)
+    (let [z (fmt-adv f FMT-P 1)
+          w (i32 (fmt-arg f))]
+      (if (< w 0)
+        (let [y (fmt-set f FMT-FLAGS (bit-or (fmt-get f FMT-FLAGS) 1))]
+          (fmt-set f FMT-WIDTH (- 0 w)))
+        (fmt-set f FMT-WIDTH w)))
+    (fmt-set f FMT-WIDTH (fmt-number f))))
+(defn- fmt-prec [f :i64] :i64
+  (if (= (l8 (fmt-get f FMT-P)) 46)
+    (let [z (fmt-adv f FMT-P 1)]
+      (if (= (l8 (fmt-get f FMT-P)) 42)
+        (let [y (fmt-adv f FMT-P 1)
+              p (i32 (fmt-arg f))]
+          (fmt-set f FMT-PREC (if (< p 0) -1 p)))
+        (fmt-set f FMT-PREC (fmt-number f))))
+    (fmt-set f FMT-PREC -1)))
+(defn- fmt-length [f :i64] :i64
+  (let [c (l8 (fmt-get f FMT-P))]
+    (cond (= c 104)
+          (let [z (fmt-adv f FMT-P 1)]
+            (if (= (l8 (fmt-get f FMT-P)) 104)
+              (let [y (fmt-adv f FMT-P 1)] (fmt-set f FMT-LM 1))
+              (fmt-set f FMT-LM 2)))
+          (= c 108)
+          (let [z (fmt-adv f FMT-P 1)]
+            (if (= (l8 (fmt-get f FMT-P)) 108)
+              (let [y (fmt-adv f FMT-P 1)] (fmt-set f FMT-LM 3))
+              (fmt-set f FMT-LM 4)))
+          (or (= c 122) (or (= c 106) (or (= c 116) (= c 113))))
+          (let [z (fmt-adv f FMT-P 1)] (fmt-set f FMT-LM 3))
+          :else (fmt-set f FMT-LM 0))))
+;; a conversion this file does not implement: the cursor is just past its character
+(defn- fmt-unsupported [f :i64 c :i64] :i64
+  (let [p (fmt-get f FMT-P)]
+    (cond (= c 36) (refuse "printf" "unsupported conversion: positional arguments (%N$)")
+          (and (= (fmt-get f FMT-LM) 4) (or (= c 99) (= c 115)))
+          (refuse "printf" (string-concat "unsupported conversion %l" (str-at (- p 1) 1)))
+          :else (refuse "printf" (string-concat "unsupported conversion %" (str-at (- p 1) 1))))))
+(defn- fmt-dispatch [f :i64 c :i64] :i64
+  (let [lm (fmt-get f FMT-LM)]
+    (cond (= c 37) (fmt-out f 37)
+          (or (= c 100) (or (= c 105) (or (= c 117) (or (= c 120) (or (= c 88) (= c 111)))))) (fmt-int f c)
+          (and (= c 99) (not= lm 4)) (fmt-char f)
+          (and (= c 115) (not= lm 4)) (fmt-str f)
+          (= c 112) (fmt-ptr f)
+          :else (fmt-unsupported f c))))
+;; the cursor is on a '%'
+(defn- fmt-conv [f :i64] :i64
+  (let [z0 (fmt-adv f FMT-P 1)
+        z1 (fmt-set f FMT-FLAGS 0)
+        z2 (fmt-flags f)
+        z3 (fmt-width f)
+        z4 (fmt-prec f)
+        z5 (fmt-length f)
+        c (l8 (fmt-get f FMT-P))]
+    (if (= c 0)
+      (fmt-set f FMT-ERR 1)
+      (let [z6 (fmt-adv f FMT-P 1)]
+        (fmt-dispatch f c)))))
+(defn- fmt-run [f :i64] :i64
+  (loop [i 0]
+    (let [c (l8 (fmt-get f FMT-P))]
+      (cond (= c 0) 0
+            (= c 37) (let [z (fmt-conv f)] (if (= (fmt-get f FMT-ERR) 0) (recur (inc i)) 0))
+            :else (let [z (fmt-out f c)
+                        y (fmt-adv f FMT-P 1)]
+                    (recur (inc i)))))))
+;; format fmt into s (size n) from the arguments already set up in frame f; the length it would have, or -1
+(defn- fmt-finish [f :i64 s :i64 n :i64 fmt :i64] :i64
+  (let [cap (fmt-cap n)
+        z1 (fmt-set f FMT-BUF s)
+        z2 (fmt-set f FMT-CAP cap)
+        z3 (fmt-set f FMT-POS 0)
+        z4 (fmt-set f FMT-P fmt)
+        z5 (fmt-set f FMT-ERR 0)
+        z6 (fmt-run f)
+        pos (fmt-get f FMT-POS)
+        z7 (if (not= n 0) (s8 (+ s (min2 pos cap)) 0) 0)
+        err (fmt-get f FMT-ERR)
+        z8 (fmt-leave)]
+    (if (not= err 0) -1 pos)))
+(defn- fmt-words [f :i64 a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64] :i64
+  (let [z0 (fmt-set f (+ FMT-WORDS 0) a0)
+        z1 (fmt-set f (+ FMT-WORDS 8) a1)
+        z2 (fmt-set f (+ FMT-WORDS 16) a2)
+        z3 (fmt-set f (+ FMT-WORDS 24) a3)
+        z4 (fmt-set f (+ FMT-WORDS 32) a4)
+        z5 (fmt-set f (+ FMT-WORDS 40) a5)
+        z6 (fmt-set f (+ FMT-WORDS 48) a6)
+        z7 (fmt-set f (+ FMT-WORDS 56) a7)
+        z8 (fmt-set f (+ FMT-WORDS 64) a8)
+        z9 (fmt-set f (+ FMT-WORDS 72) a9)
+        z10 (fmt-set f (+ FMT-WORDS 80) a10)
+        z11 (fmt-set f (+ FMT-WORDS 88) a11)
+        z12 (fmt-set f (+ FMT-WORDS 96) a12)]
+    0))
+;; unsigned a > b
+(defn- fmt-ugt [a :i64 b :i64] :bool
+  (> (bit-xor a (i64-shift-left 1 63)) (bit-xor b (i64-shift-left 1 63))))
+
+;; ---- the exported entry points -------------------------------------------------------------------------------------
+(defn- cx-snprintf-GLIBC_2.2.5 [s :i64 n :i64 fmt :i64 a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64] :i64
+  (let [f (fmt-enter)
+        z0 (fmt-words f a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12)
+        z1 (fmt-set f FMT-KIND 0)
+        z2 (fmt-set f FMT-IDX 0)
+        z3 (fmt-set f FMT-LIM 13)]
+    (fmt-finish f s n fmt)))
+;; i32 result of an int-returning function: the length is below 2^31 for any real buffer
+(defn- cx-__snprintf_chk-GLIBC_2.3.4 [s :i64 maxlen :i64 flag :i64 slen :i64 fmt :i64 a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64] :i64
+  (if (fmt-ugt maxlen slen)
+    (refuse "buffer overflow detected" "__snprintf_chk")
+    (let [f (fmt-enter)
+          z0 (fmt-words f a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 0 0)
+          z1 (fmt-set f FMT-KIND 0)
+          z2 (fmt-set f FMT-IDX 0)
+          z3 (fmt-set f FMT-LIM 11)]
+      (fmt-finish f s maxlen fmt))))
+(defn- cx-__vsnprintf_chk-GLIBC_2.3.4 [s :i64 maxlen :i64 flag :i64 slen :i64 fmt :i64 ap :i64] :i64
+  (if (fmt-ugt maxlen slen)
+    (refuse "buffer overflow detected" "__vsnprintf_chk")
+    (let [f (fmt-enter)
+          z1 (fmt-set f FMT-KIND 1)
+          z2 (fmt-set f FMT-PTR ap)]
+      (fmt-finish f s maxlen fmt))))
+
+;; ======================================================================================================================
+;; sscanf
+;; ======================================================================================================================
+(defn- scn-space? [c :i64] :bool (or (= c 32) (and (>= c 9) (<= c 13))))
+;; the next byte of the current field, 0 at the end of the input or when the field width is used up
+(defn- scn-peek [f :i64] :i64
+  (if (= (fmt-get f SCN-W) 0) 0 (l8 (fmt-get f SCN-IP))))
+;; take one byte of the field
+(defn- scn-adv [f :i64] :i64
+  (let [w (fmt-get f SCN-W)
+        z (if (> w 0) (fmt-set f SCN-W (- w 1)) 0)]
+    (fmt-adv f SCN-IP 1)))
+(defn- scn-skip-ws [f :i64] :i64
+  (loop [i 0]
+    (if (scn-space? (l8 (fmt-get f SCN-IP)))
+      (let [z (fmt-adv f SCN-IP 1)] (recur (inc i)))
+      0)))
+;; an input failure (the input ended): EOF when nothing was assigned yet, else the count
+(defn- scn-in-fail [f :i64] :i64
+  (let [d (fmt-get f SCN-DONE)
+        z (fmt-set f SCN-RES (if (= d 0) -1 d))]
+    1))
+;; a matching failure, or the end of the format: the count
+(defn- scn-m-fail [f :i64] :i64
+  (let [z (fmt-set f SCN-RES (fmt-get f SCN-DONE))]
+    1))
+(defn- scn-arg [f :i64] :i64
+  (let [i (fmt-get f SCN-ARGI)]
+    (if (>= i 14)
+      (refuse "sscanf" "more than 14 pointer arguments")
+      (let [z (fmt-set f SCN-ARGI (+ i 1))]
+        (fmt-get f (+ SCN-WORDS (* 8 i)))))))
+;; store the integer v at p with the width the length modifier gives
+(defn- scn-store [f :i64 p :i64 v :i64] :i64
+  (let [lm (fmt-get f SCN-LM)]
+    (cond (= lm 0) (s32 p v)
+          (= lm 1) (s8 p v)
+          (= lm 2) (s16 p v)
+          :else (s64 p v))))
+(defn- scn-assigned [f :i64] :i64
+  (if (= (fmt-get f SCN-SUP) 0) (fmt-adv f SCN-DONE 1) 0))
+(defn- scn-digit-val [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 122)) (- c 87)
+        (and (>= c 65) (<= c 90)) (- c 55)
+        :else 99))
+;; d i u x X o: an optional sign, a C23 base prefix for i (and x), the digits; wraps modulo 2^64
+(defn- scn-int [f :i64 conv :i64] :i64
+  (let [c0 (scn-peek f)
+        neg (= c0 45)
+        z0 (if (or neg (= c0 43)) (scn-adv f) 0)
+        base0 (cond (or (= conv 120) (= conv 88)) 16 (= conv 111) 8 (= conv 105) 0 :else 10)
+        c1 (scn-peek f)
+        pre (and (or (= base0 0) (= base0 16)) (= c1 48))
+        z1 (if pre (scn-adv f) 0)
+        c2 (if pre (scn-peek f) 0)
+        isx (and pre (or (= c2 120) (= c2 88)))
+        isb (and pre (and (= base0 0) (or (= c2 98) (= c2 66))))
+        z2 (if (or isx isb) (scn-adv f) 0)
+        base (cond isx 16 isb 2 (and pre (= base0 0)) 8 (= base0 0) 10 :else base0)
+        v (loop [acc 0 cnt 0]
+            (let [d (scn-digit-val (scn-peek f))]
+              (if (< d base)
+                (let [z (scn-adv f)] (recur (+ (* acc base) d) (inc cnt)))
+                (let [z (fmt-set f SCN-CNT cnt)] acc))))]
+    (if (or pre (> (fmt-get f SCN-CNT) 0))
+      (let [r (if neg (- 0 v) v)
+            z (if (= (fmt-get f SCN-SUP) 0) (scn-store f (scn-arg f) r) 0)
+            y (scn-assigned f)]
+        0)
+      (scn-m-fail f))))
+;; s: the non-space bytes of the field, then a NUL
+(defn- scn-s [f :i64] :i64
+  (let [p (if (= (fmt-get f SCN-SUP) 0) (scn-arg f) 0)
+        n (loop [n 0]
+            (let [c (scn-peek f)]
+              (if (or (= c 0) (scn-space? c))
+                n
+                (let [z (if (= p 0) 0 (s8 (+ p n) c))
+                      y (scn-adv f)]
+                  (recur (inc n))))))
+        z (if (= p 0) 0 (s8 (+ p n) 0))
+        y (scn-assigned f)]
+    0))
+;; c: width bytes (default 1), no NUL
+(defn- scn-c [f :i64] :i64
+  (let [w (if (< (fmt-get f SCN-W) 0) 1 (fmt-get f SCN-W))
+        p (if (= (fmt-get f SCN-SUP) 0) (scn-arg f) 0)
+        ip (fmt-get f SCN-IP)
+        got (loop [i 0]
+              (cond (>= i w) i
+                    (= (l8 (+ ip i)) 0) i
+                    :else (let [z (if (= p 0) 0 (s8 (+ p i) (l8 (+ ip i))))]
+                            (recur (inc i)))))
+        z (fmt-set f SCN-IP (+ ip got))]
+    (if (< got w)
+      (scn-in-fail f)
+      (let [y (scn-assigned f)] 0))))
+;; n: the bytes consumed so far; not counted in the result
+(defn- scn-n [f :i64] :i64
+  (let [z (if (= (fmt-get f SCN-SUP) 0)
+            (scn-store f (scn-arg f) (- (fmt-get f SCN-IP) (fmt-get f SCN-STR)))
+            0)]
+    0))
+;; c is in the set s..e (single bytes and a-z ranges; a - at either end is itself)
+(defn- scn-inset [s :i64 e :i64 c :i64] :bool
+  (loop [j s]
+    (if (>= j e)
+      false
+      (let [lo (l8 j)]
+        (if (and (< (+ j 2) e) (= (l8 (+ j 1)) 45))
+          (if (and (>= c lo) (<= c (l8 (+ j 2)))) true (recur (+ j 3)))
+          (if (= c lo) true (recur (+ j 1))))))))
+;; the ] that closes the set whose first member is at p (a ] right there is a member), or 0
+(defn- scn-set-end [p :i64] :i64
+  (loop [j p]
+    (let [c (l8 j)]
+      (cond (= c 0) 0
+            (= c 93) j
+            :else (recur (+ j 1))))))
+;; [...] and [^...]: the format cursor is just past the [
+(defn- scn-set [f :i64] :i64
+  (let [fp (fmt-get f SCN-FP)
+        neg (= (l8 fp) 94)
+        start (if neg (+ fp 1) fp)
+        endp (scn-set-end (if (= (l8 start) 93) (+ start 1) start))]
+    (if (= endp 0)
+      (scn-m-fail f)
+      (let [z0 (fmt-set f SCN-FP (+ endp 1))
+            p (if (= (fmt-get f SCN-SUP) 0) (scn-arg f) 0)
+            n (loop [n 0]
+                (let [c (scn-peek f)]
+                  (if (= c 0)
+                    n
+                    (let [in (scn-inset start endp c)
+                          ok (if neg (not in) in)]
+                      (if ok
+                        (let [z (if (= p 0) 0 (s8 (+ p n) c))
+                              y (scn-adv f)]
+                          (recur (inc n)))
+                        n)))))]
+        (if (= n 0)
+          (scn-m-fail f)
+          (let [z (if (= p 0) 0 (s8 (+ p n) 0))
+                y (scn-assigned f)]
+            0))))))
+(defn- scn-unsupported [f :i64 c :i64] :i64
+  (let [p (fmt-get f SCN-FP)]
+    (cond (= c 36) (refuse "sscanf" "unsupported conversion: positional arguments (%N$)")
+          (and (= (fmt-get f SCN-LM) 4) (or (= c 99) (or (= c 115) (= c 91))))
+          (refuse "sscanf" (string-concat "unsupported conversion %l" (str-at (- p 1) 1)))
+          :else (refuse "sscanf" (string-concat "unsupported conversion %" (str-at (- p 1) 1))))))
+(defn- scn-dispatch [f :i64 c :i64] :i64
+  (let [lm (fmt-get f SCN-LM)
+        wide (= lm 4)]
+    (cond (= c 110) (scn-n f)
+          (and wide (or (= c 99) (or (= c 115) (= c 91)))) (scn-unsupported f c)
+          (= c 99) (if (= (l8 (fmt-get f SCN-IP)) 0) (scn-in-fail f) (scn-c f))
+          (= c 91) (if (= (l8 (fmt-get f SCN-IP)) 0) (scn-in-fail f) (scn-set f))
+          (= c 37) (let [z (scn-skip-ws f) ic (l8 (fmt-get f SCN-IP))]
+                     (cond (= ic 0) (scn-in-fail f)
+                           (not= ic 37) (scn-m-fail f)
+                           :else (let [y (fmt-adv f SCN-IP 1)] 0)))
+          (= c 115) (let [z (scn-skip-ws f)]
+                      (if (= (l8 (fmt-get f SCN-IP)) 0) (scn-in-fail f) (scn-s f)))
+          (or (= c 100) (or (= c 105) (or (= c 117) (or (= c 120) (or (= c 88) (= c 111))))))
+          (let [z (scn-skip-ws f)]
+            (if (= (l8 (fmt-get f SCN-IP)) 0) (scn-in-fail f) (scn-int f c)))
+          :else (scn-unsupported f c))))
+(defn- scn-number [f :i64] :i64
+  (loop [v 0]
+    (let [c (l8 (fmt-get f SCN-FP))]
+      (if (and (>= c 48) (<= c 57))
+        (let [z (fmt-adv f SCN-FP 1)]
+          (recur (min2 2147483647 (+ (* v 10) (- c 48)))))
+        v))))
+(defn- scn-length [f :i64] :i64
+  (let [c (l8 (fmt-get f SCN-FP))]
+    (cond (= c 104)
+          (let [z (fmt-adv f SCN-FP 1)]
+            (if (= (l8 (fmt-get f SCN-FP)) 104)
+              (let [y (fmt-adv f SCN-FP 1)] (fmt-set f SCN-LM 1))
+              (fmt-set f SCN-LM 2)))
+          (= c 108)
+          (let [z (fmt-adv f SCN-FP 1)]
+            (if (= (l8 (fmt-get f SCN-FP)) 108)
+              (let [y (fmt-adv f SCN-FP 1)] (fmt-set f SCN-LM 3))
+              (fmt-set f SCN-LM 4)))
+          (or (= c 122) (or (= c 106) (or (= c 116) (= c 113))))
+          (let [z (fmt-adv f SCN-FP 1)] (fmt-set f SCN-LM 3))
+          :else (fmt-set f SCN-LM 0))))
+;; the format cursor is on a '%'
+(defn- scn-conv [f :i64] :i64
+  (let [z0 (fmt-adv f SCN-FP 1)
+        sup (if (= (l8 (fmt-get f SCN-FP)) 42) 1 0)
+        z1 (fmt-adv f SCN-FP sup)
+        z2 (fmt-set f SCN-SUP sup)
+        w (scn-number f)
+        z3 (fmt-set f SCN-W (if (= w 0) -1 w))
+        z4 (scn-length f)
+        c (l8 (fmt-get f SCN-FP))]
+    (if (= c 0)
+      (scn-m-fail f)
+      (let [z5 (fmt-adv f SCN-FP 1)]
+        (scn-dispatch f c)))))
+;; one directive of the format: 0 to go on, 1 when the result is set
+(defn- scn-step [f :i64] :i64
+  (let [fp (fmt-get f SCN-FP)
+        fc (l8 fp)]
+    (cond (= fc 0) (scn-m-fail f)
+          (scn-space? fc) (let [z (fmt-set f SCN-FP (+ fp 1))
+                                y (scn-skip-ws f)]
+                            0)
+          (not= fc 37) (let [ic (l8 (fmt-get f SCN-IP))]
+                         (cond (= ic 0) (scn-in-fail f)
+                               (not= ic fc) (scn-m-fail f)
+                               :else (let [z (fmt-set f SCN-FP (+ fp 1))
+                                           y (fmt-adv f SCN-IP 1)]
+                                       0)))
+          :else (scn-conv f))))
+(defn- scn-run [f :i64] :i64
+  (loop [i 0]
+    (if (= (scn-step f) 0) (recur (inc i)) (fmt-get f SCN-RES))))
+(defn- scn-words [f :i64 p0 :i64 p1 :i64 p2 :i64 p3 :i64 p4 :i64 p5 :i64 p6 :i64 p7 :i64 p8 :i64 p9 :i64 p10 :i64 p11 :i64 p12 :i64 p13 :i64] :i64
+  (let [z0 (fmt-set f (+ SCN-WORDS 0) p0)
+        z1 (fmt-set f (+ SCN-WORDS 8) p1)
+        z2 (fmt-set f (+ SCN-WORDS 16) p2)
+        z3 (fmt-set f (+ SCN-WORDS 24) p3)
+        z4 (fmt-set f (+ SCN-WORDS 32) p4)
+        z5 (fmt-set f (+ SCN-WORDS 40) p5)
+        z6 (fmt-set f (+ SCN-WORDS 48) p6)
+        z7 (fmt-set f (+ SCN-WORDS 56) p7)
+        z8 (fmt-set f (+ SCN-WORDS 64) p8)
+        z9 (fmt-set f (+ SCN-WORDS 72) p9)
+        z10 (fmt-set f (+ SCN-WORDS 80) p10)
+        z11 (fmt-set f (+ SCN-WORDS 88) p11)
+        z12 (fmt-set f (+ SCN-WORDS 96) p12)
+        z13 (fmt-set f (+ SCN-WORDS 104) p13)]
+    0))
+(defn- cx-__isoc23_sscanf-GLIBC_2.38 [s :i64 fmt :i64 p0 :i64 p1 :i64 p2 :i64 p3 :i64 p4 :i64 p5 :i64 p6 :i64 p7 :i64 p8 :i64 p9 :i64 p10 :i64 p11 :i64 p12 :i64 p13 :i64] :i64
+  (let [f (fmt-enter)
+        z0 (scn-words f p0 p1 p2 p3 p4 p5 p6 p7 p8 p9 p10 p11 p12 p13)
+        z1 (fmt-set f SCN-IP s)
+        z2 (fmt-set f SCN-STR s)
+        z3 (fmt-set f SCN-FP fmt)
+        z4 (fmt-set f SCN-DONE 0)
+        z5 (fmt-set f SCN-ARGI 0)
+        z6 (fmt-set f SCN-SUP 0)
+        z7 (fmt-set f SCN-W -1)
+        z8 (fmt-set f SCN-LM 0)
+        r (scn-run f)
+        z9 (fmt-leave)]
+    r))

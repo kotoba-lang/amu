@@ -244,7 +244,11 @@
   ;; EXP: one per exported FN, in (:export [...]) order (42-layout).
   [:c EF-FN 0] [:c EF-OFFSET 1 "byte offset of the entry from the code start"] [:c EF-ARITY 2] [:c EF-SPARE 3]
   ;; OUT: one byte (0..255) per word: the kseed container being written (50-out).
-  ;; HEAP: words MM-HEAP-BASE..MM-HEAP-END-1, bump-allocated by `mem-alloc`, never freed.
+  ;; HEAP: words MM-HEAP-BASE..MM-HEAP-END-1, bump-allocated by `mem-alloc`.
+  ;; General allocations are never freed. 41-a64gen alone may rewind its private
+  ;; glx label-index block after emission, only while that block is still the
+  ;; current heap top and after zeroing every word. Later allocations forbid
+  ;; that rewind. This keeps the fresh-zero contract across project resets.
   ]
 
  ;; ---------------------------------------------------------------------------------------------------------
@@ -273,7 +277,8 @@
               "60-proj: reads M[MM-CAPS] and FN2 after a module's compile (namespace :capabilities, stateful library exports)"]
   "30-lower" [:SIR :MM-SIR-N :MM-LABEL-N :MM-MAX-DEPTH "FN fields FF-SIR FF-DEPTH" :MM-ERR* "(E30nn)"]
   "40-a64enc" ["nothing: pure functions i64 -> i64"]
-  "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"]
+  "41-a64gen" [:CODE "(append)" :MM-CODE-N :FIX :MM-FIX-N :LABEL "FN field FF-CODE" :MM-ERR* "(E41nn)"
+               "its private G and HEAP blocks" :MM-HEAP-TOP "(glx may zero/release only its own top block as above)"]
   "42-layout" [:CODE "(patch fixups in place)" "LIT field LF-POOL" :EXP :MM-EXP-N :MM-POOL-OFF :MM-CODE-BYTES :MM-ERR* "(E42nn)"]
   "50-out"   [:OUT :MM-OUT-N :MM-ERR* "(E50nn)"]
   "every module" ["MM-R0..MM-R3 as return registers (rule L4)" "its own MM-STAT slots"]}

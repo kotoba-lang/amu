@@ -1,0 +1,43 @@
+;; Independent nested payload construction; no DCP normalization supplies it.
+(defn- dirp-resource [name :string] :i64
+  (cond (= name "standard-v1") 0 (= name "compiler-v1") 1 :else -1))
+(defn- dirp-nested-payload [count :i64 resource :i64] :string
+  (let [param (dc-atom "sym" "k0") body (loop [i 0 value param]
+          (if (= i count) value
+            (recur (inc i) (dc-collection "list" (typed-list-new [:list :string]
+              (dc-atom "sym" "+") value (dc-int "1")) false))))
+        kir (dc-collection-resource "map" (typed-list-new [:list :string]
+              (dc-entry "body" body) (dc-entry "op" (dc-kw "kotoba.definition/function"))
+              (dc-entry "params" (dc-collection "vec" (typed-list-new [:list :string] param) false))) true resource)
+        interface (dc-collection "map" (typed-list-new [:list :string]
+              (dc-entry "arity" (dc-int "1"))
+              (dc-entry "params" (dc-collection "vec" (typed-list-new [:list :string] (dc-kw "i64")) false))
+              (dc-entry "result" (dc-kw "i64"))) true)]
+    (dc-payload-resource "6" "2" kir (dc-collection "set" (typed-list-new [:list :string]) false)
+      interface (dc-collection "vec" (typed-list-new [:list :string]) false) resource)))
+;; Plain CBOR framing exercises only decoder bounds, not checked identities.
+(defn- dirp-codec-bound [depth :i64 resource :i64] :bool
+  (let [V (loop [i 0 v (vector-alloc (inc depth))]
+             (if (= i depth) (vector-assoc! v i 244) (recur (inc i) (vector-assoc! v i 129))))
+        D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 1)
+                    (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 resource)) V 0)]
+    (and (= (vector-at D 1) 0) (= (vector-at D 0) (vector-count V)))))
+(defn- dirp-node-bound [children :i64 resource :i64] :bool
+  (let [V (loop [i 3 v (-> (vector-alloc (+ children 3)) (vector-assoc! 0 153)
+                         (vector-assoc! 1 (quot children 256)) (vector-assoc! 2 (rem children 256)))]
+            (if (= i (vector-count v)) v (recur (inc i) (vector-assoc! v i 244))))
+        D (dc-read (-> (vector-alloc (+ 8 (* dc-nodes 5))) (vector-assoc! 2 1)
+                    (vector-assoc! 3 (vector-count V)) (vector-assoc! 5 resource)) V 0)]
+    (and (= (vector-at D 1) 0) (= (vector-at D 0) (vector-count V)))))
+(defn- dirp-large-text [] :bool
+  (let [V (loop [i 0 v (vector-alloc 32768)]
+            (if (= i 32768) v (recur (inc i) (vector-assoc! v i (rem i 128)))))
+        text (string-from-utf8 (bytes-from-vector-i64 V)) encoded (dc-string-bytes text)
+        alphabet "0123456789abcdef"]
+    (and (= (string-length encoded) 65542) (= (string-substring encoded 0 6) "798000")
+      (loop [i 0]
+        (if (= i 32768) true
+          (let [byte (rem i 128) at (+ 6 (* i 2))]
+            (and (= (string-code-point-at encoded at) (string-code-point-at alphabet (quot byte 16)))
+                 (= (string-code-point-at encoded (inc at)) (string-code-point-at alphabet (rem byte 16)))
+                 (recur (inc i)))))))))

@@ -1,0 +1,189 @@
+JUN-59 -- session 37 record: THE SAME-WINDOW JOINT PROBE (at ONE
+window, do the block-unit min statistics couple to the host-side
+proxy within each arm AND across the two arms?). ANALYSIS slice over
+session 36's COMMITTED measured run logs -- NO new hardware ran this
+session (named; UTC DAY 2026-10-28, the settling bar's day slot is
+session 31's). 2026-10-28 (UTC). Chain PR #1638
+(bot/amu-gpu-chain-20261028).
+
+1. ROW QUESTION (ONE row): SESSION 36'S NAMED-NOT-HIDDEN RESIDUAL
+   "a same-window joint probe of the proxy AND the cross-arm axis
+   (s35 and s36 probed different windows)" -- at session 36's single
+   window (the same 12 adjacent (hi,tw) block-pairs A..L,
+   byte-identical binaries), probe BOTH axes plus the second arm's
+   proxy axis on three frozen sub-statistics (all block unit n=12,
+   Spearman rho + two-sided permutation p, 100,000 trials, frozen
+   seed 20261028 -- the s35-frozen algorithm UNCHANGED): (A) rho(hi
+   block-min, hi block host_ns), (B) rho(tw block-min, tw block
+   host_ns), (C) rho(hi block-min, tw block-min). A coupling reads
+   CO-MOVE iff |rho| >= 0.60 AND p <= 0.05. The T1 letters were
+   pre-registered in protocol.txt section 0 (freeze stamp
+   2026-10-28T03:06:03Z, BEFORE the statistics were computed):
+   (a) JOINT NO-COUPLE (none of A/B/C reads CO-MOVE), (b) ANY COUPLE
+   (at least one reads CO-MOVE, named which), (c) NAMED UNRESOLVED /
+   NOT EVALUABLE on integrity failure, C1 (b) or a broken (C)
+   anchor. NAMED, NOT HIDDEN in the freeze: NEITHER letter resolves
+   threshold-artifact-vs-representation; the three sub-statistics
+   share the same 12 blocks (L15 -- not independent tests); the
+   input vectors are PUBLISHED s36 content -- the freeze guards
+   against letter-shopping, not prior exposure (checked before the
+   freeze: no committed file computes any min-vs-proxy correlation
+   at the s36 window).
+
+2. WHAT CHANGED:
+   (a) docs/evidence/gpu/anv-b3jointprobe-20261028/ -- protocol.txt
+       (frozen before the statistics were computed, freeze stamp
+       2026-10-28T03:06:03Z), analysis-s37.py + publication-s37.txt
+       (run twice, diff exit 0), derivation-census-s37.txt
+       (independent second parser, 51 rows / 0 mismatched, run
+       twice byte-identical), classify-selftest.txt, bar-eval-s37.txt,
+       gate-run1/2.txt, gate-full-run-tests.txt, this record.
+   (b) docs/evidence/gpu/settle-bar-ledger.txt -- UNTOUCHED (no
+       reading this session; verified byte-identical to HEAD in the
+       census).
+   (c) the ADR-0355 dated note (this session's step).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) NO HARDWARE RAN (named): the inputs are session 36's 78
+       committed run logs (c2 r1-3 + hi r1-36 + tw r1-36 + c8 r1-3);
+       every input quantity was MEASURED in session 36. The
+       re-derived vectors reproduce publication-s36.txt's published
+       values EXACTLY (quote-only anchor True): X = hi block-min
+       991/989/981/998/993/985/984/997/994/994/980/982; Y = tw
+       988/985/994/993/994/995/992/984/987/984/993/981; HH = hi
+       host_ns 311,901..307,113 (block order A..L as published); TH
+       = tw host_ns incl. block E 465,709. Integrity re-derived:
+       VERIFY mismatch 0 over all 78 logs; SAMPLE counts 450 per run
+       78/78; knob fields == arms; S=8 fail-closed 468/468; forcing
+       1,404/1,404; C1 (a): c2 FLOOR 31, c8 32,911 vs committed
+       32,915 (0.01%).
+   (b) T1 THE ROW QUESTION (DERIVED HERE from s36's measured logs):
+       T1 = (b) ANY COUPLE -- named: (A) THE HI ARM'S PROXY AXIS IS
+       THE ONE COUPLING -- Spearman rho(hi block-min, hi block
+       host_ns) = 0.774082, permutation p = 0.004060 (count 405 /
+       100,001) reads CO-MOVE; (B) the tw proxy axis reads NO-CO-MOVE
+       (rho 0.017575, p 0.960310); (C) the cross-arm axis reads
+       NO-CO-MOVE (rho -0.251762, p 0.425076) and reproduces s36's
+       published letter EXACTLY (integrity anchor True). THE
+       FINDING: the s35 (b) letter DOES NOT REPLICATE at session 36's
+       window -- at THIS window the hi arm's block-min wander CO-MOVES
+       with the host-side proxy (rank coupling), while at session 34's
+       window (s35) the same axis read NO-CO-MOVE and at THIS window
+       the tw arm shows no such coupling. The proxy-vs-wander coupling
+       is therefore NOT window-stable and NOT arm-stable across the
+       two probed windows; "the wander is not explained by the
+       host-side proxy" holds at s34's window ONLY and must not be
+       quoted beyond it. NAMED, NOT HIDDEN: L2 observational only, NO
+       causal mechanism (a shared driver could move both members of
+       the (A) pair; which direction the coupling runs is
+       UNMEASURED); n=12 in ONE window is LOW POWER; (A) reads over
+       the hi arm's NARROW host_ns band at this window (307,113..-
+       311,051 = 1.3% spread, vs s34's 488,151..618,664 excursion
+       window) -- the coupling is a rank coupling on a near-flat
+       proxy series, and its physical meaning is UNRESOLVED; the
+       three sub-statistics share the same 12 blocks (L15); the
+       ~1s block-pair spacing bounds the resolution (L14); estimator
+       noise vs an unmeasured physical variable STAYS UNRESOLVED and
+       threshold-artifact-vs-representation STAYS UNRESOLVED.
+   (c) DESCRIPTIVE CONTENT (DERIVED HERE): (D1) per-run-unit analogs
+       (36 points per arm; NAMED DIFFERENT UNIT L10) read NO
+       co-movement at the frozen letters: (A1) rho 0.316427, p
+       0.058799 (hi); (B1) rho 0.047843, p 0.780062 (tw); (D2) (B)
+       without block E (tw block E host_ns 465,709 = the s36 named L3
+       excursion, cause UNMEASURED; leave-one-out NAMED in the freeze,
+       descriptive only) stays NO-CO-MOVE: rho -0.164385, p 0.626894.
+   (d) B1/B2 THE BAR (the frozen evaluator, never hand-written): NO
+       reading this session -> NO ledger line, NO day-slot
+       consumption; settle-bar-eval.py --self-test 38/0 (pin); the
+       ledger eval run twice byte-identical (diff exit 0) -> "VERDICT:
+       PENDING 1/4" (s31 counted; s32/s33/s34/s36 descriptive). Next
+       executable day slot 2026-10-29.
+   (e) Gates (real runs this tick): gpu_regime_classify.py --self-test
+       TOTAL 2649/0 (pin); scoped GPU gate GREEN 123 tests / 12,162
+       assertions / 0 failures / 0 errors recorded run 1 AND run 2
+       (scratch runner scoped-gpu-gate.cljk, created, run, deleted --
+       never committed); FULL run-tests.cljk RUN LIVE THIS TICK:
+       exit 1, RED AT BASE 'Could not find namespace: kotoba.form' at
+       namespace load (ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace) -- NO green full suite claimed;
+       find docs/evidence/gpu -name '*.sh' -> 0.
+   (f) derivation-census-s37.txt: an independent second parser
+       (split-based parsing, bucket-rank Spearman, the frozen
+       permutation algorithm re-implemented) re-derives every cited
+       number from the 78 committed logs -- 51 rows, 0 mismatched --
+       and verifies the ledger's byte-identity to HEAD, the gate
+       artifacts and the no-.sh policy.
+
+4. NAMED, NOT HIDDEN (this tick): (i) NAMED DEFECTS in this tick's
+   scratch census generator's FIRST DRAFTS (both crashed with
+   traceback BEFORE any value was quoted): (d1) path resolution --
+   the generator resolved the evidence directory from its own
+   scratch location instead of the fixed evidence path (fixed
+   before any run completed); (d2) the split-based CELL key parser
+   compared the wg field as a string against an int (IndexError at
+   the (sum,128,S=16) cell lookup) -- corrected before any value was
+   quoted; the committed census records the corrected runs only;
+   (ii) the (A) coupling's narrow-proxy-band caveat (section 3b) is
+   part of the finding, not a footnote -- rho 0.774 is measured, and
+   its interpretation as physical coupling vs rank structure of two
+   near-flat series is UNRESOLVED; (iii) this session adds NO bar
+   progress and NO new measured values of GPU behavior -- every
+   number here is derived from session 36's committed logs.
+
+5. STATES (the three states, exactly):
+   ACCEPTED DESIGN ONLY: the settling bar (settle-bar.txt, session
+   30), its ledger-construction decision (s31 protocol section 0),
+   the X1R letter thresholds (s32), the T1 letter thresholds
+   (s33/s34/s35/s36) and this session's joint-letter thresholds (s37
+   protocol section 0). Not implemented in the compiler; not
+   themselves measurements.
+   IMPLEMENTED: nothing in the compiler. The analysis/census/evaluator
+   remain evidence-scoped tooling; the ledger is an evidence file;
+   nothing is wired into any namespace.
+   DERIVEable from MEASURED data (this tick): the three coupling
+   statistics (rho, p, letters) over session 36's measured samples.
+   Provisional workgroup defaults in kotoba.compiler.accelerator-
+   targets remain provisional (:measured? false) -- not optimization
+   evidence. RULE 4 unchanged: NOTHING MOVES -- no workgroup row, no
+   :measured? flag, no selection answer; NO vendor optimization
+   exists for Intel and none is claimed.
+
+6. UNMEASURED (named): WHY the min statistic wanders (now MORE
+   open, not less: the proxy coupling is window-unstable and
+   arm-unstable across the two probed windows); what the (A) coupling
+   at s36's window MEANS physically (rank coupling on a 1.3% proxy
+   band; direction of coupling UNMEASURED); a THIRD window probing
+   both axes (2 windows do not make a pattern); estimator noise vs
+   an unmeasured arm-specific physical variable; any common-mode
+   driver faster than the ~1s block-pair spacing (L14); the s31 and
+   s34-window and s36 tw block-E host-side excursions' causes; the
+   threshold-artifact-vs-representation question itself; the flip
+   location inside (252,604, 253,906]; any causal mechanism;
+   anything off the ANV host. The bar needs at least THREE more
+   qualifying UTC days (V4 PENDING 1/4); whether FOUR qualifying days
+   is ENOUGH (the bar can return UNSETTLED).
+
+7. THE TICK'S FINDING IN ONE LINE: THE JOINT PATTERN IS (b) ANY
+   COUPLE -- at session 36's single window the HI ARM'S block-min
+   wander CO-MOVES with the host-side proxy (rho 0.774082, p
+   0.004060, block unit n=12) while the tw proxy axis (rho 0.017575)
+   and the cross-arm axis (rho -0.251762, reproducing s36 exactly)
+   read NO-CO-MOVE -- so session 35's (b) DOES NOT REPLICATE at this
+   window and the proxy-vs-wander coupling is window- and
+   arm-unstable across the two probed windows (the s35 exclusion
+   binds at s34's window ONLY); L2 observational only, NO causal
+   mechanism, the (A) coupling reads over a 1.3%-spread proxy band
+   (physical meaning UNRESOLVED), n=12 LOW POWER, and
+   threshold-artifact-vs-representation stays UNRESOLVED; the bar
+   stays PENDING 1/4 (frozen evaluator, twice byte-identical), and
+   nothing in Rule 4 moves.
+
+8. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261028 (chain PR #1638), commit + push only.
+   BLOCKER-FIRST: open kotoba-lang/amu PRs with a hermes/ head
+   checked immediately before this push (the count is recorded in
+   the tick report and the chain commit message). Linear: JUN-59
+   (the com-junkawasaki issue reused for this track). Evidence:
+   docs/evidence/gpu/anv-b3jointprobe-20261028/ +
+   docs/evidence/gpu/settle-bar-ledger.txt + the ADR-0355 dated
+   note. (JUN-55, JUN-59)

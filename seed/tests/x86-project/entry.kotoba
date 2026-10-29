@@ -1,0 +1,20 @@
+(ns x86-project.entry
+  (:require [x86-project.middle :as middle]
+            [x86-project.values :as values])
+  (:export [main]))
+
+(defn main [] :i64
+  (let [record (middle/make-record)
+        document (middle/make-document)
+        value (option-value-of [:option :document]
+                (document-get document :x86-project/shared) (document-null))]
+    (cond (not (string=? (middle/label) "共有😀/middle")) 91
+          (not= (middle/keyword-value) :x86-project/shared) 92
+          (not= (:count record) 37) 93
+          (not (string=? (:label record) "共有😀")) 94
+          (not= (values/sum8 1 2 3 4 5 6 7 8) 36) 95
+          (not= (middle/run-callback) 42) 96
+          (not (string=? (document-edn-print value) "\"library😀\"")) 97
+          (not (string-contains? (document-edn-print document) ":x86-project/only-library")) 98
+          (not (string-contains? (document-edn-print document) ":x86-project/only-leaf")) 99
+          :else 42)))

@@ -1,0 +1,36 @@
+== JUN-59 session 30 derivation census (scratch generator; every
+== measured value cited by settle-bar.txt is recomputed here from
+== prior sessions COMMITTED run logs -- quote-only, never this
+== tick measurements).
+
+knob arithmetic (computed here):
+  n = (1,000,003*1024)//4033 = 253906  (expected 253906: True)
+  gcd(253906, 1,000,003) = 1 (1 = every pair is a floor approximation)
+  per-dispatch work 0.2539052; total at B=3 0.7617157
+
+F3 cross-session ledger, recomputed from committed run logs
+  (3 fresh processes pooled x 25 rounds per cell = the frozen unit):
+  s26 mid  (3,1024,4033): median 1129 (published 1129, match True); 18-cell min 1001 (published 1001, match True)
+  s27 hi   (3,1024,4033): median 1132 (published 1132, match True); 18-cell min 976 (published 976, match True)
+  s28 hi   (3,1024,4033): median 1131 (published 1131, match True); 18-cell min 991 (published 991, match True)
+
+F1/F2 session-29 content, recomputed from its committed 12 hi logs:
+  blk-A (runs [1, 2, 3]): median 1130 min 993
+  blk-B (runs [4, 5, 6]): median 1144 min 979
+  blk-C (runs [7, 8, 9]): median 1143 min 985
+  blk-D (runs [10, 11, 12]): median 1151 min 993
+  per-run 18-cell minima (DESCRIPTIVE, 25 rounds/cell unit): 977/988/1001/971/990/977/980/985/979/997/974/993
+  per-run minima span 971..1001; runs at/above the frozen 1000 boundary: r3
+  12-run pooled median 1142 (published 1142, match True -- NAMED DIFFERENT ESTIMATOR)
+
+in-band check of the cited block medians against the frozen refs
+  1129 / 1132 / 1131 (settle-bar.txt D3):
+  1130: within +/-5% of each ref -> True
+  1144: within +/-5% of each ref -> True
+  1143: within +/-5% of each ref -> True
+  1151: within +/-5% of each ref -> True
+
+STATE (settle-bar.txt section 4 D1-D5 / record.txt): nothing measured
+this tick; all numbers above are quote-only recomputations of committed
+content. The bar is ACCEPTED DESIGN ONLY; the evaluator is
+evidence-scoped tooling with a frozen fixture set.

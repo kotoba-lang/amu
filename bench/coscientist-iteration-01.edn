@@ -1,0 +1,42 @@
+{:format :amu.coscientist-iteration/v1
+ :iteration 1
+ :date "2026-10-25"
+ :repo "kotoba-lang/amu"
+ :topic "build, test and CDCI wall clock; the Embench execution speed is a different lane (bench/embench)"
+ :hypothesis "The gate scripts write independent output directories and return independent verdicts; running them concurrently and running the CDCI refusal probes 8-wide cuts the selfhost-native wall clock without changing any gate verdict."
+ :fitness {:judge :deterministic-counts
+           :lower-is-better? true
+           :counted {:serial-gate-invocations-on-critical-path 13
+                     :refusal-probe-round-trips 18
+                     :controller-step-wall-seconds 1735}
+           :wall-clock-is-observation-only true}
+ :arms {:baseline {:run "https://github.com/kotoba-lang/amu/actions/runs/40144527108"
+                   :bootstrap-arm64-seconds 2033
+                   :qualify-x86_64-seconds 2781
+                   :wall-minutes 84.2
+                   :all-gates-green true}
+        :candidate {:run "https://github.com/kotoba-lang/amu/actions/runs/40152181593"
+                    :branch "claude/ci-parallel-independent-gates"
+                    :pr "https://github.com/kotoba-lang/amu/pull/1566"
+                    :bootstrap-arm64-seconds 1671
+                    :qualify-x86_64-seconds 1446
+                    :wall-minutes 53.1
+                    :all-gates-green true
+                    :counts {:serial-gate-invocations-on-critical-path 6
+                             :refusal-probe-round-trips 3
+                             :controller-step-wall-seconds 1136}}}
+ :answer-match {:required true
+                :observed "both arms green on the same gate set; no gate's verdict changed"
+                :ok true}
+ :break-test {:measured "container run 2026-10-25: one gate exit 3 between two passing gates; the wrapper collected rc=3 and exited 1"
+              :gate-fell true}
+ :current-integration {:status :unqualified
+                       :note "Historical measurements above are retained. JUN-93 repairs nested shell pipefail and concurrent receipt writes; final native CI is required for that integration."}
+ :verdict :candidate-wins
+ :landed ["docs/adr/0377-the-independent-gates-run-in-parallel.md"
+          "PR 1566"]
+ :seed ["interior of one-compiler: are the 24 static cases' 48 compiles concurrent-able, and what share of the 966s is the F1=F2=F3 serial triple?"
+        "interior of the controller group (1136s): gate-positive's 24 case executions and the controller's container rebuild are serial; profile before changing"
+        "content-addressed derivation cache keyed on (compiler image, source unity): acceptable gate semantics? owner decision; the builds are already asserted byte-identical"
+        "larger runners for the four serial steps: cost decision"
+        "kotoba's own build/test lanes are not covered by this iteration; measure them before claiming anything about them"]}

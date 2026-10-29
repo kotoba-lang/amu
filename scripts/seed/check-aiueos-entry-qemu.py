@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import select
 import shutil
 import socket
 import struct
@@ -23,9 +24,44 @@ def pin(path):
     return dict(bytes=len(b), sha256=hashlib.sha256(b).hexdigest())
 
 
-def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False):
-    assert sum([dma_snapshot,value_context,value_call]) <= 1, 'select one functional receipt'
-    pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call
+class QmpStdio:
+    """Private QMP pipe for the LLM guest gate; no local socket listener."""
+
+    def __init__(self, process, reply_timeout=30):
+        self.reader = process.stdout
+        self.writer = process.stdin
+        self.reply_timeout = reply_timeout
+        self.pending = b""
+
+    def readline(self):
+        deadline = time.monotonic() + self.reply_timeout
+        while b"\n" not in self.pending:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, 'QMP stdio reply timeout'
+            ready, _, _ = select.select([self.reader], [], [], remaining)
+            assert ready, 'QMP stdio reply timeout'
+            chunk = os.read(self.reader.fileno(), 4096)
+            assert chunk, 'QMP stdio closed'
+            self.pending += chunk
+        line, _, self.pending = self.pending.partition(b"\n")
+        return line + b"\n"
+
+    def write(self, data):
+        self.writer.write(data)
+        self.writer.flush()
+
+    def close(self):
+        self.writer.close()
+        self.reader.close()
+
+
+def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalog=False, stack_exhaustion=False, pci_catalog=False, pci_private=False, pci_private_forgery=False, dma_snapshot=False, value_context=False, value_call=False, llm_header=False, llm_result=False, llm_keyword_text=False, llm_ticket=False, llm_digest=False, llm_admission=False):
+    llm_header = llm_header or llm_result or llm_ticket
+    llm_private = llm_header or llm_digest or llm_admission
+    assert not llm_keyword_text or llm_result, 'keyword text requires a result receipt'
+    assert not llm_ticket or llm_result, 'ticket receipt requires the request/result probe'
+    assert sum([dma_snapshot,value_context,value_call,llm_header,llm_digest,llm_admission]) <= 1, 'select one functional receipt'
+    pci_private = pci_private or pci_private_forgery or dma_snapshot or value_context or value_call or llm_private
     pci_catalog = pci_catalog or pci_private
     assert not (pci_catalog and (sealed_catalog or stack_exhaustion)), "select one versioned fixture"
     assert 0 <= remaining_fuel <= 9007199254740991
@@ -52,24 +88,30 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             "-drive", "file=fat:rw:esp,format=raw", "-boot", "order=c", "-nic", "none",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-display", "none",
             "-serial", "file:serial.log", "-debugcon", "file:debug.log", "-no-reboot",
-            "-qmp", "unix:qmp.sock,server=on,wait=off",
+            "-qmp", "stdio" if llm_private else "unix:qmp.sock,server=on,wait=off",
             "-d", "int", "-D", "exceptions.log"]
     (output / "command.json").write_text(json.dumps(args, indent=2) + "\n")
     old_cwd = Path.cwd()
     os.chdir(output)  # Keep the Unix socket name below macOS's path limit.
     log = open("qemu.log", "wb")
-    proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT)
+    proc = (subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=log, bufsize=0) if llm_private else
+            subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT))
     conn, stream, next_id = None, None, 0
     try:
-        end = time.monotonic() + 90
-        while not Path("qmp.sock").exists():
+        end = time.monotonic() + (300 if llm_digest or llm_admission else 90)
+        if llm_private:
             assert proc.poll() is None, ("QEMU exited", proc.returncode)
-            assert time.monotonic() < end, "QMP startup timeout"
-            time.sleep(0.2)
-        conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        conn.settimeout(10)
-        conn.connect("qmp.sock")
-        stream = conn.makefile("rwb", buffering=0)
+            stream = QmpStdio(proc)
+        else:
+            while not Path("qmp.sock").exists():
+                assert proc.poll() is None, ("QEMU exited", proc.returncode)
+                assert time.monotonic() < end, "QMP startup timeout"
+                time.sleep(0.2)
+            conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            conn.settimeout(10)
+            conn.connect("qmp.sock")
+            stream = conn.makefile("rwb", buffering=0)
         assert "QMP" in json.loads(stream.readline())
 
         def call(command, arguments=None):
@@ -110,7 +152,9 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         # The original literal-only probe preserves 1024. Call-bearing locked
         # fixtures supply their exact source-charge expectation explicitly.
         assert boot > 0
-        if stack_exhaustion or dma_snapshot or value_context or value_call:
+        if llm_digest or llm_admission:
+            assert 0 < fuel < remaining_fuel, (fuel, remaining_fuel)
+        elif stack_exhaustion or dma_snapshot or value_context or value_call or llm_header:
             assert 0 < fuel < 1000000, fuel  # Bounded budget, not exact fuel parity.
         else:
             assert fuel == remaining_fuel, (fuel, remaining_fuel)
@@ -209,6 +253,142 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
             dma = dict(checks=list(checks),receipt=pin(Path('dma-receipt.bin')),
                        snapshot=pin(Path('dma-snapshot.bin')),four2048ByteBuffers=True,
                        invalidIndexSizeAndAliasPreserveSnapshot=True,exactFuelParity=False)
+        llm = None
+        llm_result_receipt = None
+        llm_ticket_receipt = None
+        if llm_header:
+            scratch, pages = struct.unpack_from('<QQ', private, 272)
+            assert scratch > 0 and pages == 15
+            assert hmp(f"pmemsave 0x{scratch+4096:x} 168 llm-header-receipt.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch:x} 64 llm-header.bin") == ""
+            model_bytes = 6 if llm_keyword_text else 5
+            assert hmp(f"pmemsave 0x{scratch+8192:x} {model_bytes} llm-request-model.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+12288:x} {model_bytes} llm-selected-model.bin") == ""
+            assert hmp(f"pmemsave 0x{scratch+24576:x} 5 llm-request-prompt.bin") == ""
+            checks = struct.unpack('<21Q', Path('llm-header-receipt.bin').read_bytes())
+            header = Path('llm-header.bin').read_bytes()
+            assert checks[:12] == (1,)*12, checks
+            assert checks[12:] == (1,)*9, checks
+            assert struct.unpack_from('<10I', header) == (
+                827149387, 1, 11, model_bytes, 0, 5, 16, 0,
+                model_bytes + 5, 64)
+            assert header[40:] == bytes(24), 'header mutation was not restored'
+            expected_model = b':local' if llm_keyword_text else b'local'
+            assert Path('llm-request-model.bin').read_bytes() == expected_model
+            assert Path('llm-selected-model.bin').read_bytes() == expected_model
+            assert Path('llm-request-prompt.bin').read_bytes() == b'hello'
+            llm = dict(checks=list(checks[:12]), receipt=pin(Path('llm-header-receipt.bin')),
+                       header=pin(Path('llm-header.bin')), wire=11,
+                       providerDispatch=False, modelExecution=False,
+                       exactFuelParity=False)
+            llm_request = dict(checks=list(checks[12:]),
+                               model=pin(Path('llm-request-model.bin')),
+                               selectedModelFixture=pin(Path('llm-selected-model.bin')),
+                               prompt=pin(Path('llm-request-prompt.bin')),
+                               aliasingQualified=False, utf8ComponentValidated=True,
+                               hostPolicyQualified=False, providerDispatch=False)
+            if llm_result:
+                assert hmp(f"pmemsave 0x{scratch+12*4096:x} 48 llm-result-receipt.bin") == ""
+                assert hmp(f"pmemsave 0x{scratch+7*4096:x} 64 llm-result-header.bin") == ""
+                assert hmp(f"pmemsave 0x{scratch+8*4096:x} 2 llm-result-text.bin") == ""
+                finish_bytes = 5 if llm_keyword_text else 4
+                assert hmp(f"pmemsave 0x{scratch+9*4096:x} {finish_bytes} llm-result-finish.bin") == ""
+                result_checks = struct.unpack('<6Q', Path('llm-result-receipt.bin').read_bytes())
+                result_header = Path('llm-result-header.bin').read_bytes()
+                assert result_checks == (1,)*6, result_checks
+                assert struct.unpack_from('<8I', result_header) == (
+                    827477067, 1, 11, 1, 2, finish_bytes, 0, 0)
+                assert struct.unpack_from('<2Q', result_header, 32) == (7, 1)
+                assert struct.unpack_from('<4I', result_header, 48) == (0, 2 + finish_bytes, 0, 0)
+                assert Path('llm-result-text.bin').read_bytes() == b'ok'
+                expected_finish = b':stop' if llm_keyword_text else b'stop'
+                assert Path('llm-result-finish.bin').read_bytes() == expected_finish
+                llm_result_receipt = dict(
+                    checks=list(result_checks), receipt=pin(Path('llm-result-receipt.bin')),
+                    header=pin(Path('llm-result-header.bin')),
+                    text=pin(Path('llm-result-text.bin')),
+                    finishReason=pin(Path('llm-result-finish.bin')),
+                    resultCodecComponent=True, providerDispatch=False,
+                    userValueLowering=False)
+                if llm_ticket:
+                    assert hmp(f"pmemsave 0x{scratch+13*4096:x} 72 llm-ticket-state.bin") == ""
+                    assert hmp(f"pmemsave 0x{scratch+13*4096+256:x} 96 llm-ticket-receipt.bin") == ""
+                    assert hmp(f"pmemsave 0x{scratch+14*4096:x} 32 llm-ticket-digest.bin") == ""
+                    ticket_state = Path('llm-ticket-state.bin').read_bytes()
+                    ticket_checks = struct.unpack('<12Q', Path('llm-ticket-receipt.bin').read_bytes())
+                    assert ticket_checks == (1,)*12, ticket_checks
+                    assert ticket_state == bytes(72), 'consumed ticket retained host-owned state'
+                    assert Path('llm-ticket-digest.bin').read_bytes() == struct.pack(
+                        '<8I', 0x12345678, 0x23456789, 0x3456789a, 0x456789ab,
+                        0x56789abc, 0x6789abcd, 0x789abcde, 0x89abcdef)
+                    llm_ticket_receipt = dict(
+                        checks=list(ticket_checks), receipt=pin(Path('llm-ticket-receipt.bin')),
+                        state=pin(Path('llm-ticket-state.bin')),
+                        digest=pin(Path('llm-ticket-digest.bin')),
+                        oneUseAndBindingComponent=True, erasedOnConsume=True,
+                        trustedApproval=False,
+                        providerDispatch=False, userCall=False)
+        else:
+            llm_request = None
+        llm_digest_receipt = None
+        if llm_digest or llm_admission:
+            scratch, pages = struct.unpack_from('<QQ', private, 272)
+            assert scratch > 0 and pages == 15
+            captures = (
+                ('llm-digest-header.bin', scratch + 8*4096, 64),
+                ('llm-digest-model.bin', scratch + 9*4096, 6),
+                ('llm-digest-system.bin', scratch, 6144),
+                ('llm-digest-prompt.bin', scratch + 4*4096, 6144),
+                ('llm-digest-first.bin', scratch + 10*4096, 32),
+                ('llm-digest-changed.bin', scratch + 13*4096, 32),
+                ('llm-digest-selected.bin', scratch + 14*4096 + 256, 6),
+                ('llm-digest-result.bin', scratch + 14*4096 + 512, 64),
+                ('llm-digest-ticket.bin', scratch + (11*4096 if llm_admission else 14*4096 + 128), 72),
+                ('llm-digest-receipt.bin', scratch + 12*4096, 136 if llm_admission else 112),
+            )
+            for name, address, size in captures:
+                assert hmp(f'pmemsave 0x{address:x} {size} {name}') == ''
+            header = Path('llm-digest-header.bin').read_bytes()
+            model = Path('llm-digest-model.bin').read_bytes()
+            system = Path('llm-digest-system.bin').read_bytes()
+            prompt = Path('llm-digest-prompt.bin').read_bytes()
+            first = Path('llm-digest-first.bin').read_bytes()
+            changed = Path('llm-digest-changed.bin').read_bytes()
+            checks = struct.unpack('<17Q' if llm_admission else '<14Q',
+                                   Path('llm-digest-receipt.bin').read_bytes())
+            expected_header = struct.pack('<10I', 827149387, 1, 11, 6, 6144,
+                                          6144, 16, 0, 12294, 64) + bytes(24)
+            assert header == expected_header, 'wire-11 header not restored'
+            assert model == b':local'
+            assert Path('llm-digest-selected.bin').read_bytes() == model
+            assert Path('llm-digest-result.bin').read_bytes() == b'Z' * 64
+            assert Path('llm-digest-ticket.bin').read_bytes() == bytes(72)
+            assert system == b's' * 6144 and prompt == b'p' * 6144
+            assert checks == (1,)*(17 if llm_admission else 14), checks
+            assert first == hashlib.sha256(header + model + system + prompt).digest()
+            changed_prompt = b'q' + prompt[1:]
+            assert changed == hashlib.sha256(header + model + system + changed_prompt).digest()
+            assert first != changed
+            llm_digest_receipt = dict(
+                checks=list(checks), header=pin(Path('llm-digest-header.bin')),
+                model=pin(Path('llm-digest-model.bin')),
+                selectedModel=pin(Path('llm-digest-selected.bin')),
+                system=pin(Path('llm-digest-system.bin')),
+                prompt=pin(Path('llm-digest-prompt.bin')),
+                result=pin(Path('llm-digest-result.bin')),
+                erasedTicket=pin(Path('llm-digest-ticket.bin')),
+                first=pin(Path('llm-digest-first.bin')),
+                changed=pin(Path('llm-digest-changed.bin')),
+                receipt=pin(Path('llm-digest-receipt.bin')),
+                independentlyRootedBytes=12288, fullRequestBytes=12358,
+                rejectsLengthMismatchesAndRegionAliases=True,
+                shapeAndDigestSameCall=True,
+                fullDigestBindsOneUseTicket=True,
+                freshRequestAtConsumeComponent=llm_admission,
+                denialAndBudgetRevokeComponent=llm_admission,
+                changedProcessAndModelRefusedComponent=llm_admission,
+                hostAdmission=False,
+                userCall=False, providerDispatch=False)
         value = None
         if value_context:
             scratch, pages = struct.unpack_from('<QQ', private, 272)
@@ -265,7 +445,7 @@ def main(efi, kernel, qemu, firmware, output, remaining_fuel=1024, sealed_catalo
         report = dict(status="PASS_NATIVE_STACK_LIMIT_QEMU" if stack_exhaustion else "PASS_AIUEOS_ENTRY_QEMU", observer=pin(Path(__file__).resolve()), efi=pin(efi), kernel=pin(kernel),
                       firmware=pin(firmware), qemuVersion=subprocess.check_output([str(qemu), "--version"]).decode().splitlines()[0],
                       result=None if stack_exhaustion else 42, pc=hex(expected_pc), remainingFuel=fuel,
-                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, valueContext=value, valueCall=live_call,
+                      expectedRemainingFuel=None if stack_exhaustion or dma_snapshot or value_context or value_call or llm_private else remaining_fuel, bootInfoVersion=6 if pci_catalog else 5, pciResources=pci, dmaSnapshot=dma, llmHeader=llm, llmRequest=llm_request, llmResult=llm_result_receipt, llmTicket=llm_ticket_receipt, llmDigest=llm_digest_receipt, valueContext=value, valueCall=live_call,
                       observedPublicMapTypes=memory_types, firmwareMap=pin(Path("firmware-map.bin")), sealedCatalog=catalog,
                       framebuffer=dict(base=fb, bytes=fbsize, width=width, height=height, stride=stride, pixelFormat=pixel_format),
                       completeKernel=False, desktop=False, input=False, gpt=False, physicalHardware=False,
@@ -303,6 +483,12 @@ if __name__ == "__main__":
     p.add_argument("--dma-snapshot", action="store_true")
     p.add_argument("--value-context", action="store_true")
     p.add_argument("--value-call", action="store_true")
+    p.add_argument("--llm-header", action="store_true")
+    p.add_argument("--llm-result", action="store_true")
+    p.add_argument("--llm-keyword-text", action="store_true")
+    p.add_argument("--llm-ticket", action="store_true")
+    p.add_argument("--llm-digest", action="store_true")
+    p.add_argument("--llm-admission", action="store_true")
     a = p.parse_args()
     main(*(getattr(a, n).resolve() for n in ("efi", "kernel", "qemu", "firmware", "output")), remaining_fuel=a.remaining_fuel,
-         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call)
+         sealed_catalog=a.sealed_catalog, stack_exhaustion=a.stack_exhaustion, pci_catalog=a.pci_catalog, pci_private=a.pci_private, pci_private_forgery=a.pci_private_forgery, dma_snapshot=a.dma_snapshot, value_context=a.value_context, value_call=a.value_call, llm_header=a.llm_header, llm_result=a.llm_result, llm_keyword_text=a.llm_keyword_text, llm_ticket=a.llm_ticket, llm_digest=a.llm_digest, llm_admission=a.llm_admission)

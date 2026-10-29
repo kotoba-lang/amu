@@ -1,0 +1,151 @@
+(ns embench.slre-full (:export [batch test-slre observe bounds-probe]))
+;; Complete pinned SLRE algorithm, ASCII Embench profile, owned indexed state.
+;; Copyright 2004-2013 Sergey Lyubka and Cesanta Software Limited.
+;; Copyright 2014-2019 Embecosm Limited / University of Bristol.
+;; SPDX-License-Identifier: GPL-3.0-or-later.
+(def text "abbbababaabccababcacbcbcbabbabcbabcabcbbcbbac")
+(defn- at [s :string i :i64] :i64 (if (= i (string-length s)) 0 (string-code-point-at s i)))
+(defn- put [v :vector-i64 i :i64 x :i64] :vector-i64 (vector-assoc! v i x))
+(defn- lower [c :i64] :i64 (if (and (>= c 65) (<= c 90)) (+ c 32) c))
+(defn- digit [c :i64] :bool (and (>= c 48) (<= c 57)))
+(defn- space [c :i64] :bool (or (= c 32) (and (>= c 9) (<= c 13))))
+(defn- xdigit [c :i64] :bool (or (digit c) (and (>= (lower c) 97) (<= (lower c) 102))))
+(defn- meta [c :i64] :bool (or (= c 0) (= c 94) (= c 36) (= c 40) (= c 41) (= c 46) (= c 91) (= c 93) (= c 42) (= c 43) (= c 63) (= c 124) (= c 92) (= c 83) (= c 115) (= c 100)))
+(defn- op-len [re :string r :i64] :i64 (if (= (at re r) 92) (if (= (at re (+ r 1)) 120) 4 2) 1))
+(defn- set-len [re :string r :i64 n :i64 len :i64] :i64
+  (if (and (< len n) (not= (at re (+ r len)) 93)) (set-len re r n (+ len (op-len re (+ r len)))) (if (<= len n) (+ len 1) -1)))
+(defn- get-op-len [re :string r :i64 n :i64] :i64 (if (= (at re r) 91) (+ (set-len re (+ r 1) (- n 1) 0) 1) (op-len re r)))
+(defn- quant [re :string r :i64] :bool (or (= (at re r) 42) (= (at re r) 43) (= (at re r) 63)))
+(defn- toi [c :i64] :i64 (if (digit c) (- c 48) (- c 87)))
+(defn- hex [re :string r :i64] :i64 (bit-or (* (toi (lower (at re r))) 16) (toi (lower (at re (+ r 1))))))
+(defn- match-op [re :string r :i64 s :string p :i64 info :vector-i64] :i64
+  (let [a (at re r) b (at s p)]
+    (if (= a 92)
+      (let [c (at re (+ r 1))]
+        (if (= c 83) (if (space b) -1 1)
+          (if (= c 115) (if (space b) 1 -1)
+            (if (= c 100) (if (digit b) 1 -1)
+              (if (= c 120) (if (= (hex re (+ r 2)) b) 1 -1) (if (= c b) 1 -1))))))
+      (if (= a 124) -4 (if (= a 36) -1 (if (= a 46) 1
+        (if (= (bit-and (vector-at info 3) 1) 1) (if (= (lower a) (lower b)) 1 -1) (if (= a b) 1 -1))))))))
+(defn- set-loop [re :string r :i64 n :i64 s :string p :i64 info :vector-i64 len :i64 result :i64] :i64
+  (if (and (<= len n) (not= (at re (+ r len)) 93) (<= result 0))
+    (if (and (not= (at re (+ r len)) 45) (= (at re (+ r len 1)) 45) (not= (at re (+ r len 2)) 93) (not= (at re (+ r len 2)) 0))
+      (let [b (at s p) lo (at re (+ r len)) hi (at re (+ r len 2))
+            yes (if (not= (vector-at info 3) 0) (and (>= b lo) (<= b hi)) (and (>= (lower b) (lower lo)) (<= (lower b) (lower hi))))]
+        (set-loop re r n s p info (+ len 3) (if yes 1 0)))
+      (set-loop re r n s p info (+ len (op-len re (+ r len))) (match-op re (+ r len) s p info)))
+    result))
+(defn- match-set [re :string r :i64 n :i64 s :string p :i64 info :vector-i64] :i64
+  (let [invert (= (at re r) 94) result (set-loop re (if invert (+ r 1) r) (if invert (- n 1) n) s p info 0 -1)]
+    (if (or (and (not invert) (> result 0)) (and invert (<= result 0))) 1 -1)))
+(defn- bracket [bi :i64 f :i64] :i64 (+ 4 (* bi 4) f))
+(defn- branch [i :i64 f :i64] :i64 (+ 404 (* i 2) f))
+(defn- cap [i :i64 f :i64] :i64 (+ 604 (* i 2) f))
+(defn- plus-loop [re :string r :i64 n :i64 s :string p :i64 sl :i64 info :vector-i64 bi :i64 i :i64 j :i64 step :i64 ni :i64 ng :bool j2 :i64 nj :i64 n2 :i64] :i64
+  (let [n1 (bar re (+ r i) step s (+ p j2) (- sl j2) info bi) next-j (if (> n1 0) (+ j2 n1) j2) plus (= (at re (+ r i step)) 43)]
+    (if (and plus (< n1 0)) (plus-end re r n s p sl info bi i j step ni next-j nj n1 n2)
+      (let [next-n2 (if (>= ni n) n2 (bar re (+ r ni) (- n ni) s (+ p next-j) (- sl next-j) info bi))
+            next-nj (if (>= ni n) next-j (if (>= next-n2 0) (+ next-j next-n2) nj))]
+        (if (or (and (> next-nj j) ng) (<= n1 0))
+          (plus-end re r n s p sl info bi i j step ni next-j next-nj n1 next-n2)
+          (plus-loop re r n s p sl info bi i j step ni ng next-j next-nj next-n2))))))
+(defn- plus-end [re :string r :i64 n :i64 s :string p :i64 sl :i64 info :vector-i64 bi :i64 i :i64 j :i64 step :i64 ni :i64 j2 :i64 nj :i64 n1 :i64 n2 :i64] :i64
+  (let [star (= (at re (+ r i step)) 42) retry (and (< n1 0) star)
+        next-n2 (if retry (bar re (+ r ni) (- n ni) s (+ p j) (- sl j) info bi) n2)
+        next-nj (if (and retry (> next-n2 0)) (+ j next-n2) nj)]
+    (if (or (and (not star) (= next-nj j)) (and (= next-nj j) (< ni n) (< next-n2 0))) -1 next-nj)))
+(defn- bracket-search [re :string r :i64 n :i64 s :string p :i64 sl :i64 info :vector-i64 bi :i64 i :i64 j :i64 step :i64 j2 :i64 last :i64] :i64
+  (if (> j2 (- sl j)) last
+    (let [answer (doh re s (+ p j) (- sl (+ j j2)) info bi 0)]
+      (if (and (>= answer 0) (>= (bar re (+ r i step) (- n (+ i step)) s (+ p j answer) (- sl (+ j answer)) info bi) 0)) answer
+        (bracket-search re r n s p sl info bi i j step (+ j2 1) answer)))))
+(defn- bar-loop [re :string r :i64 n :i64 s :string p :i64 sl :i64 info :vector-i64 bi :i64 i :i64 j :i64] :i64
+  (if (and (< i n) (<= j sl))
+    (let [ch (at re (+ r i)) step (if (= ch 40) (+ (vector-at info (bracket (+ bi 1) 1)) 2) (get-op-len re (+ r i) (- n i)))]
+      (if (quant re (+ r i)) -2 (if (<= step 0) -5
+        (if (and (< (+ i step) n) (quant re (+ r i step)))
+          (if (= (at re (+ r i step)) 63)
+            (let [result (bar re (+ r i) step s (+ p j) (- sl j) info bi)]
+              (bar-loop re r n s p sl info bi (+ i step 1) (+ j (if (> result 0) result 0))))
+            (let [ni0 (+ i step 1) ng (and (< ni0 n) (= (at re (+ r ni0)) 63)) ni (if ng (+ ni0 1) ni0)]
+              (plus-loop re r n s p sl info bi i j step ni ng j j -1)))
+          (if (= ch 91)
+            (let [result (match-set re (+ r i 1) (- n (+ i 2)) s (+ p j) info)]
+              (if (<= result 0) -1 (bar-loop re r n s p sl info bi (+ i step) (+ j result))))
+            (if (= ch 40)
+              (let [next-bi (+ bi 1)]
+                (if (>= next-bi (vector-at info 0)) -4
+                  (let [result (if (<= (- n (+ i step)) 0) (doh re s (+ p j) (- sl j) info next-bi 0)
+                                  (bracket-search re r n s p sl info next-bi i j step 0 -1))]
+                    (if (< result 0) result
+                      (let [updated (if (> (vector-at info 2) 0) (put (put info (cap (- next-bi 1) 0) (+ p j)) (cap (- next-bi 1) 1) result) info)]
+                        (bar-loop re r n s p sl updated next-bi (+ i step) (+ j result)))))))
+              (if (= ch 94) (if (not= j 0) -1 (bar-loop re r n s p sl info bi (+ i step) j))
+                (if (= ch 36) (if (not= j sl) -1 (bar-loop re r n s p sl info bi (+ i step) j))
+                  (if (>= j sl) -1
+                    (let [result (match-op re (+ r i) s (+ p j) info)]
+                      (if (<= result 0) result (bar-loop re r n s p sl info bi (+ i step) (+ j result)))))))))))))
+    j))
+(defn- bar [re :string r :i64 n :i64 s :string p :i64 sl :i64 info :vector-i64 bi :i64] :i64 (bar-loop re r n s p sl info bi 0 0))
+(defn- doh [re :string s :string p :i64 sl :i64 info :vector-i64 bi :i64 i :i64] :i64
+  (let [start (vector-at info (bracket bi 0)) count (vector-at info (bracket bi 3)) base (vector-at info (bracket bi 2))
+        pos (if (= i 0) start (+ (vector-at info (branch (+ base i -1) 1)) 1))
+        len (if (= count 0) (vector-at info (bracket bi 1))
+              (if (= i count) (- (+ start (vector-at info (bracket bi 1))) pos) (- (vector-at info (branch (+ base i) 1)) pos)))
+        result (bar re pos len s p sl info bi)]
+    (if (and (<= result 0) (< i count)) (doh re s p sl info bi (+ i 1)) result)))
+(defn- baz-loop [re :string s :string sl :i64 info :vector-i64 i :i64 last :i64] :i64
+  (if (> i sl) last
+    (let [result (doh re s i (- sl i) info 0 0)]
+      (if (>= result 0) (+ result i)
+        (if (= (at re (vector-at info (bracket 0 0))) 94) result (baz-loop re s sl info (+ i 1) result))))))
+(defn- baz [re :string s :string sl :i64 info :vector-i64 i :i64] :i64 (baz-loop re s sl info i -1))
+(defn- sort-inner [info :vector-i64 i :i64 j :i64] :vector-i64
+  (if (>= j (vector-at info 1)) info
+    (let [a (vector-at info (branch i 0)) b (vector-at info (branch j 0))
+          pa (vector-at info (branch i 1)) pb (vector-at info (branch j 1))
+          updated (if (> a b) (put (put (put (put info (branch i 0) b) (branch i 1) pb) (branch j 0) a) (branch j 1) pa) info)]
+      (sort-inner updated i (+ j 1)))))
+(defn- sort-branches [info :vector-i64 i :i64] :vector-i64
+  (if (>= i (vector-at info 1)) info (sort-branches (sort-inner info i (+ i 1)) (+ i 1))))
+(defn- count-branches [info :vector-i64 i :i64 j :i64 count :i64] :vector-i64
+  (if (and (< j (vector-at info 1)) (= (vector-at info (branch j 0)) i)) (count-branches info i (+ j 1) (+ count 1))
+    (let [updated (put info (bracket i 3) count)] (setup updated (+ i 1) j))))
+(defn- setup [info :vector-i64 i :i64 j :i64] :vector-i64
+  (if (>= i (vector-at info 0)) info (count-branches (put info (bracket i 2) j) i j 0)))
+(defn- foo-loop [re :string r :i64 n :i64 s :string sl :i64 info :vector-i64 i :i64 depth :i64] :i64
+  (if (>= i n) (if (not= depth 0) -3 (baz re s sl (setup (sort-branches info 0) 0 0) 0))
+    (let [ch (at re (+ r i)) step (get-op-len re (+ r i) (- n i)) nb (vector-at info 0) nbranch (vector-at info 1)]
+      (if (= ch 124)
+        (if (>= nbranch 100) -8
+          (let [idx (if (= (vector-at info (bracket (- nb 1) 1)) -1) (- nb 1) depth)
+                updated (put (put (put info (branch nbranch 0) idx) (branch nbranch 1) (+ r i)) 1 (+ nbranch 1))]
+            (foo-loop re r n s sl updated (+ i step) depth)))
+        (if (= ch 92)
+          (if (>= i (- n 1)) -6
+            (let [x (= (at re (+ r i 1)) 120)]
+              (if (if x (or (>= i (- n 3)) (not (and (xdigit (at re (+ r i 2))) (xdigit (at re (+ r i 3)))))) (not (meta (at re (+ r i 1))))) -6
+                (foo-loop re r n s sl info (+ i step) depth))))
+          (if (= ch 40)
+            (if (>= nb 100) -9
+              (let [updated (put (put (put info (bracket nb 0) (+ r i 1)) (bracket nb 1) -1) 0 (+ nb 1))]
+                (if (and (> (vector-at info 2) 0) (> nb (vector-at info 2))) -7 (foo-loop re r n s sl updated (+ i step) (+ depth 1)))))
+            (if (= ch 41)
+              (let [idx (if (= (vector-at info (bracket (- nb 1) 1)) -1) (- nb 1) depth)
+                    updated (put info (bracket idx 1) (- (+ r i) (vector-at info (bracket idx 0)))) next-depth (- depth 1)]
+                (if (< next-depth 0) -3 (if (and (> i 0) (= (at re (+ r i -1)) 40)) -1 (foo-loop re r n s sl updated (+ i step) next-depth))))
+              (foo-loop re r n s sl info (+ i step) depth))))))))
+(defn- slre-match [re :string s :string info :vector-i64 caps :i64] :i64
+  (let [flag (and (>= (string-length re) 4) (= (at re 0) 40) (= (at re 1) 63) (= (at re 2) 105) (= (at re 3) 41))
+        r (if flag 4 0) n (- (string-length re) r)
+        updated (put (put (put (put (put (put info 3 (if flag 1 0)) 0 1) 1 0) 2 caps) (bracket 0 0) r) (bracket 0 1) n)]
+    (foo-loop re r n s (string-length s) updated 0 0)))
+(defn- body [info :vector-i64] :i64
+  (+ (slre-match "(ab)+" text info 1) (slre-match "(b.+)+" text info 1) (slre-match "a[ab]*" text info 1) (slre-match "([ab^c][ab^c])+" text info 1)))
+(defn- repeats [info :vector-i64 n :i64 result :i64] :i64 (if (= n 0) result (repeats info (- n 1) (body info))))
+(defn batch [n :i64] :i64 (if (<= n 0) 0 (if (= (repeats (vector-alloc 804) n 0) 102) 1 0)))
+(defn test-slre [] :i64 (batch 1))
+(defn bounds-probe [i :i64] :i64 (vector-at (vector-alloc 804) i))
+(defn observe [encoded :i64] :i64
+  (let [info (vector-alloc 804) answer (body info)] (if (= encoded 804) answer (vector-at info encoded))))

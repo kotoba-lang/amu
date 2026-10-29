@@ -1,0 +1,30 @@
+# device-visibility by account, run 2026-10-27 (tick); root@100.98.24.37 (tailscale), host aiueos-6600hs (per tailscale status: aiueos-6600hs-1, 100.98.24.37)
+== groups: render/video ==
+video:x:44:aiueos
+render:x:993:aiueos,murakumo-ci
+== root view ==
+GPU0:
+	vendorID           = 0x8086
+	deviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName         = Intel(R) Graphics (BMG G31)
+GPU1:
+	vendorID           = 0x10005
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 20.1.2, 256 bits)
+== aiueos view (member of render) ==
+GPU0:
+	vendorID           = 0x8086
+	deviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName         = Intel(R) Graphics (BMG G31)
+GPU1:
+	vendorID           = 0x10005
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 20.1.2, 256 bits)
+== nobody view (NOT in render) ==
+GPU0:
+	vendorID           = 0x10005
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 20.1.2, 256 bits)
+== render-node open test (open+close, no read) ==
+sh: 1: cannot open /dev/dri/renderD128: Permission denied
+aiueos-open=ok

@@ -1,0 +1,87 @@
+=== V(w) per-iteration deltas, per launch (med_per_iter, cyc/iter)
+arm   launch0    launch1    launch2    pooled(med of 3)  within-launch min..max
+M1   10.8281    10.1953    10.1445    10.1953         10.1445..10.8281
+M2   21.1328    23.4531    23.5039    23.4531         21.1328..23.5039
+M3   48.4102    48.3945    48.3828    48.3945         48.3828..48.4102
+M4   61.1406    61.1602    61.1250    61.1406         61.1250..61.1602
+M5   76.1523    78.5859    78.3594    78.3594         76.1523..78.5859
+M6   87.3047    81.1289    81.1445    81.1445         81.1289..87.3047
+M7   98.4023    98.4414    98.8750    98.4414         98.4023..98.8750
+M8   111.0859   113.3438   111.1445   111.1445        111.0859..113.3438
+F1   10.1484    12.3477    10.1484    10.1484         10.1484..12.3477
+F2   10.3555    12.4180    10.1367    10.3555         10.1367..12.4180
+F3   14.3086    14.1289    14.1289    14.1289         14.1289..14.3086
+F4   18.1641    18.1445    20.4492    18.1641         18.1445..20.4492
+F5   24.3477    24.4141    22.1289    24.3477         22.1289..24.4141
+F6   26.1445    26.2188    26.2031    26.2031         26.1445..26.2188
+F7   30.5391    30.1250    32.4102    30.5391         30.1250..32.4102
+F8   34.1797    34.1406    34.4922    34.1797         34.1406..34.4922
+
+=== launch-to-launch spread of the median (max-min over 3 launches, cyc/iter)
+    M1   spread  0.6836
+    M2   spread  2.3711
+    M3   spread  0.0273
+    M4   spread  0.0352
+    M5   spread  2.4336
+    M6   spread  6.1758
+    M7   spread  0.4727
+    M8   spread  2.2578
+    F1   spread  2.1992
+    F2   spread  2.2812
+    F3   spread  0.1797
+    F4   spread  2.3047
+    F5   spread  2.2852
+    F6   spread  0.0742
+    F7   spread  2.2852
+    F8   spread  0.3516
+
+=== length series: first differences D_T(k) = V(T^k) - V(T^(k-1)), k=2..8
+    M: D(M(2))=+13.2578  D(M(3))=+24.9414  D(M(4))=+12.7461  D(M(5))=+17.2188  D(M(6))=+2.7852  D(M(7))=+17.2969  D(M(8))=+12.7031
+    F: D(F(2))=+0.2070  D(F(3))=+3.7734  D(F(4))=+4.0352  D(F(5))=+6.1836  D(F(6))=+1.8555  D(F(7))=+4.3359  D(F(8))=+3.6406
+
+=== second differences (affine test; every |.| <= 1.0 = affine)
+    M (k=1..5 subset): +11.6836  -12.1953  +4.4727  -> NON-AFFINE
+    M (k=1..8 full):   +11.6836  -12.1953  +4.4727  -14.4336  +14.5117  -4.5938  -> NON-AFFINE
+    F (k=1..5 subset): +3.5664  +0.2617  +2.1484  -> NON-AFFINE
+    F (k=1..8 full):   +3.5664  +0.2617  +2.1484  -4.3281  +2.4805  -0.6953  -> NON-AFFINE
+
+=== slopes vs the landed MEASURED cyclic prices (P4/P5; mean of first differences)
+    s_M = 14.4213 vs landed e_MM = 14.9966 -> delta -0.5753 (ok)
+    s_F = 3.4330 vs landed e_FF = 4.0 -> delta -0.5670 (ok)
+
+=== P1: v8 REPRODUCTION (cross-run consistency, NOT a model prediction)
+    F1: v9 10.1484 vs v8 12.5039 -> delta -2.3555 (FAIL)
+    F2: v9 10.3555 vs v8 10.2266 -> delta +0.1289 (ok)
+    F3: v9 14.1289 vs v8 14.3711 -> delta -0.2422 (ok)
+    F4: v9 18.1641 vs v8 18.8359 -> delta -0.6718 (ok) [v8-noise-limited arm, spread 2.3125]
+    F5: v9 24.3477 vs v8 22.3047 -> delta +2.0430 (FAIL) [v8-noise-limited arm, spread 2.2852]
+    M1: v9 10.1953 vs v8 10.2148 -> delta -0.0195 (ok) [v8-noise-limited arm, spread 2.8750]
+    M2: v9 23.4531 vs v8 23.5156 -> delta -0.0625 (ok)
+    M3: v9 48.3945 vs v8 46.2617 -> delta +2.1328 (FAIL) [v8-noise-limited arm, spread 2.3008]
+    M4: v9 61.1406 vs v8 61.2227 -> delta -0.0821 (ok)
+    M5: v9 78.3594 vs v8 76.2266 -> delta +2.1328 (FAIL)
+
+=== P2: F non-monotonicity reproduction
+    V(F1) = 10.1484 vs V(F2) = 10.3555 -> delta -0.2070 (P2 FAIL: the named non-monotonicity does NOT reproduce; downgraded to run-specific)
+
+=== sensitivity, launch-matched indices (arms ran sequentially; pairing is nominal; NOT a prediction)
+    launch0: M second-diffs(k=1..5) +16.9727/-14.5469/+2.2812 -> NON-AFFINE; (k=1..8) +16.9727/-14.5469/+2.2812/-3.8594/-0.0547/+1.5859 -> NON-AFFINE
+    launch0: F second-diffs(k=1..5) +3.7461/-0.0977/+2.3281 -> NON-AFFINE; (k=1..8) +3.7461/-0.0977/+2.3281/-4.3867/+2.5977/-0.7539 -> NON-AFFINE
+    launch1: M second-diffs(k=1..5) +11.6836/-12.1758/+4.6602 -> NON-AFFINE; (k=1..8) +11.6836/-12.1758/+4.6602/-14.8828/+14.7695/-2.4102 -> NON-AFFINE
+    launch1: F second-diffs(k=1..5) +1.6406/+2.3047/+2.2539 -> NON-AFFINE; (k=1..8) +1.6406/+2.3047/+2.2539/-4.4648/+2.1016/+0.1094 -> NON-AFFINE
+    launch2: M second-diffs(k=1..5) +11.5195/-12.1367/+4.4922 -> NON-AFFINE; (k=1..8) +11.5195/-12.1367/+4.4922/-14.4492/+14.9453/-5.4609 -> NON-AFFINE
+    launch2: F second-diffs(k=1..5) +4.0039/+2.3281/-4.6406 -> NON-AFFINE; (k=1..8) +4.0039/+2.3281/-4.6406/+2.3945/+2.1328/-4.1250 -> NON-AFFINE
+
+=== P1..P7 VERDICT
+    P1: 6/10 arms reproduce v8 within TOL; failing: F1, F5, M3, M5
+    P2: FAIL
+    P3: M NON-AFFINE (extends); F NON-AFFINE (extends)
+    P4: ok (s_M 14.4213 vs 14.9966)
+    P5: ok (s_F 3.4330 vs 4.0)
+    P6: the e_MF/e_FM estimators are NOT computed; the split STAYS UNMEASURED
+        (structural verdicts ride in run-log.txt; P7 adjudicated there)
+    NOTHING MOVES (rule 4): no record, no :measured? flag, no selection answer, no workgroup row
+
+=== derived table: V(w) minus V(M1) and V(F1) (NOT an attribution)
+    V(w) - V(M1): M2=+13.2578  M3=+38.1992  M4=+50.9453  M5=+68.1641  M6=+70.9492  M7=+88.2461  M8=+100.9492  F1=-0.0469  F2=+0.1602  F3=+3.9336  F4=+7.9688  F5=+14.1523  F6=+16.0078  F7=+20.3438  F8=+23.9844
+    V(w) - V(F1): M1=+0.0469  M2=+13.3047  M3=+38.2461  M4=+50.9922  M5=+68.2109  M6=+70.9961  M7=+88.2930  M8=+100.9961  F2=+0.2070  F3=+3.9805  F4=+8.0156  F5=+14.1992  F6=+16.0547  F7=+20.3906  F8=+24.0312

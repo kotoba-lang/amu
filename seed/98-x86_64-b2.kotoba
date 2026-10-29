@@ -1,0 +1,183 @@
+;; x86_64-linux route B2 (--format b2, mode 5, ADR 0375): a loaderless static image whose
+;; Kotoba program loads a vendor ELF library itself and serves that library's libc calls.
+;; Same ELF, context and runtime core as seed/75 (xs-rt-core, then xs-rt-b2 of seed/76).
+;; Three things are new, and only in this format:
+;;
+;;   E1. Calls in from C. Every guest function named cx-NAME[-VERSION] gets a SysV entry thunk, and the
+;;       image carries a table of them by name and symbol version (below). The thunk is the inverse of
+;;       kxrt-ccall: it takes the C arguments (rdi rsi rdx rcx r8 r9 and stack words 6.. map to the
+;;       Kotoba parameters 0..n-1; Kotoba's parameter 5 is r9's value, parameters 6.. are the same stack
+;;       words), loads r9 = the context, runs the callee with its own fuel budget, and returns rax.
+;;   E2. 16- and 32-bit loads and stores: the intrinsics kxrt-load16, kxrt-load32, kxrt-store16 and
+;;       kxrt-store32 (stubs at the head of xs-rt-b2, replaced by inline code).
+;;   Calls out: kxrt-ccall (intrinsic 9) as in the platform-linked image; the guest reaches the
+;;       runtime only through the kxrt-b- functions of xs-rt-b2 (xb-check-api), as seed/78 does with
+;;       kxrt-p-.
+;;
+;; Absolute M cells in this format (X86_64-LINUX-ABI): 201 = the first extended intrinsic stub (FN),
+;; 252 = the address of the export table (context word 416; seed/75 already puts cell 252 there).
+;; Cell 201 is read only where xb-on? holds: seed/81 uses it for another purpose.
+
+(defn- xb-on? [M :vector-i64] :bool (and (> (vector-at M 197) 0) (= (xg-get M 2) 5)))
+(defn- xb-name-a [M :vector-i64 f :i64] :i64
+  (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-START)))
+(defn- xb-name-b [M :vector-i64 f :i64] :i64
+  (vector-at M (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W) SF-END)))
+
+;; ---- E2: the extended intrinsics ------------------------------------------------------------------
+(def XB-INTR-N 4)
+(defn- xb-intr-name [k :i64] :string
+  (case k 0 "kxrt-load16" 1 "kxrt-load32" 2 "kxrt-store16" 3 "kxrt-store32" ""))
+;; the four stubs are consecutive and in this order; cell 201 holds the first one's FN
+(defn- xb-scan-one [M :vector-i64 S :string f :i64] :vector-i64
+  (let [name (string-substring S (xb-name-a M f) (xb-name-b M f)) first (vector-at M 201) k (- f first)]
+    (cond (not (xs-rt? M f)) M
+          (string=? name (xb-intr-name 0)) (if (= first 0) (mem-set M 201 f) (xg-err M 7102 f))
+          (and (> first 0) (>= k 0) (< k XB-INTR-N) (not (string=? name (xb-intr-name k)))) (xg-err M 7102 f)
+          :else M)))
+(defn- xb-scan [M :vector-i64 S :string f :i64] :vector-i64
+  (if (or (not (xb-on? M)) (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
+    (xb-scan (xb-scan-one M S f) S (inc f))))
+(defn- xb-intr [M :vector-i64 f :i64] :i64
+  (let [k (- f (vector-at M 201))]
+    (if (and (xb-on? M) (> (vector-at M 201) 0) (>= k 0) (< k XB-INTR-N)) k -1)))
+;; operands are the call's temps t, t+1: rax = address, rcx = value; the stores return the value
+(defn- xb-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    ;; movzx rax, word [rax]
+    0 (-> M (xg-load t 0x858b48) (xg-bytes 0x00b70f48 4) (xg-save t))
+    ;; mov eax, [rax] (zero-extends)
+    1 (-> M (xg-load t 0x858b48) (xg-bytes 0x008b 2) (xg-save t))
+    ;; mov [rax], cx ; mov rax, rcx
+    2 (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bytes 0x088966 3)
+          (xg-bytes 0xc88948 3) (xg-save t))
+    ;; mov [rax], ecx ; mov rax, rcx
+    3 (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bytes 0x0889 2)
+          (xg-bytes 0xc88948 3) (xg-save t))
+    (xg-err M 7101 OP-CALL)))
+
+;; ---- the platform API ------------------------------------------------------------------------------
+;; The guest may call the runtime functions named kxrt-b- and nothing else of the runtime.
+(defn- xb-check-api [M :vector-i64 S :string i :i64 f :i64] :vector-i64
+  (if (or (not (xb-on? M)) (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) g (if (= op OP-FN) a f)]
+      (if (and (= op OP-CALL) (not (xs-rt? M g)) (xs-rt? M a)
+               (not (xs-prefix? S (xb-name-a M a) (xb-name-b M a) "kxrt-b-")))
+        (xg-err M 7101 op)
+        (xb-check-api M S (inc i) g)))))
+
+;; ---- E1: the entry thunks and the export table ----------------------------------------------------
+;; An export is a guest function named cx-NAME or cx-NAME-VERSION (NAME is a C identifier, VERSION a
+;; symbol version such as GLIBC_2.2.5; neither contains a dash). It takes at most 16 parameters, all
+;; :i64 or :bool, and returns :i64 or :bool. Its thunk, for n parameters (F = the frame size, a
+;; multiple of 16 holding the stack arguments at [rsp] and the caller's fuel at [rbp-8]):
+;;
+;;   push rbp ; mov rbp, rsp ; sub rsp, F
+;;   n > 5:  mov [rsp], r9 ;  for j = 6..n-1: mov rax, [rbp + 16 + 8(j-6)] ; mov [rsp + 8(j-5)], rax
+;;   lea r9, [context] ; mov rax, [r9+8] ; mov [rbp-8], rax ; mov qword [r9+8], XB-CALL-FUEL
+;;   call callee
+;;   lea r9, [context] ; mov rcx, [rbp-8] ; mov [r9+8], rcx
+;;   leave ; ret
+;;
+;; rbp is the only callee-saved register the generated code changes, and the thunk restores it;
+;; rsp is 16-aligned at the call. The caller's fuel is restored on return, so a call from C is its
+;; own budget and the Kotoba function that made the outgoing call keeps its meter.
+;;
+;; The table follows the thunks, 8-aligned: a count word, then per export three words (the thunk's
+;; address, the NUL-ended name's address, the NUL-ended version's address; the version is empty for
+;; an unversioned name), then the strings. It is reached through context word 416.
+(def XB-CALL-FUEL 2147483647)
+(def XB-EXPORT-MAX 1024)
+(defn- xb-dash [S :string i :i64 b :i64] :i64
+  (cond (>= i b) b (= (string-code-point-at S i) 45) i :else (xb-dash S (inc i) b)))
+(defn- xb-export? [M :vector-i64 S :string f :i64] :bool
+  (let [kind (xg-f M f FF-KIND)]
+    (and (not (xs-rt? M f)) (or (= kind FK-DEFN) (= kind FK-PRIV)) (> (xg-f M f FF-SIR) 0)
+         (xs-prefix? S (xb-name-a M f) (xb-name-b M f) "cx-"))))
+(defn- xb-scalar? [t :i64] :bool (or (= t TY-I64) (= t TY-BOOL)))
+(defn- xb-params-ok? [M :vector-i64 f :i64 i :i64 n :i64] :bool
+  (if (= i n) true (and (xb-scalar? (ck-pt M f i)) (xb-params-ok? M f (inc i) n))))
+;; the NAME span end (the first dash after the prefix, else the symbol's end)
+(defn- xb-name-end [M :vector-i64 S :string f :i64] :i64
+  (xb-dash S (+ (xb-name-a M f) 3) (xb-name-b M f)))
+(defn- xb-name-len [M :vector-i64 S :string f :i64] :i64 (- (xb-name-end M S f) (+ (xb-name-a M f) 3)))
+(defn- xb-ver-len [M :vector-i64 S :string f :i64] :i64
+  (let [e (xb-name-end M S f) b (xb-name-b M f)] (if (< e b) (- b (inc e)) 0)))
+(defn- xb-export-ok? [M :vector-i64 S :string f :i64] :bool
+  (let [n (xg-f M f FF-NPARAMS) e (xb-name-end M S f) b (xb-name-b M f)]
+    (and (<= n 16) (xb-params-ok? M f 0 n) (xb-scalar? (xg-f M f FF-RTYPE))
+         (> e (+ (xb-name-a M f) 3)) (or (= e b) (< (inc e) b)))))
+(defn- xb-count [M :vector-i64 S :string f :i64] :i64
+  (loop [g f c 0]
+    (if (>= g (vector-at M MM-FN-N)) c (recur (inc g) (if (xb-export? M S g) (inc c) c)))))
+(defn- xb-first-bad [M :vector-i64 S :string f :i64] :i64
+  (cond (>= f (vector-at M MM-FN-N)) 0
+        (and (xb-export? M S f) (not (xb-export-ok? M S f))) f
+        :else (xb-first-bad M S (inc f))))
+;; thunk size in bytes for n parameters
+(defn- xb-frame [n :i64] :i64 (if (> n 5) (bit-and (+ 8 (+ 8 (* 8 (- n 5)))) -16) 16))
+(defn- xb-thunk-size [n :i64] :i64 (+ 53 (if (> n 5) (+ 5 (* 9 (- n 6))) 0)))
+;; the thunk sizes and string bytes of the exports with FN index below f
+(defn- xb-thunks-before [M :vector-i64 S :string f :i64] :i64
+  (loop [g 1 s 0]
+    (if (>= g f) s (recur (inc g) (if (xb-export? M S g) (+ s (xb-thunk-size (xg-f M g FF-NPARAMS))) s)))))
+(defn- xb-strings-before [M :vector-i64 S :string f :i64] :i64
+  (loop [g 1 s 0]
+    (if (>= g f) s
+      (recur (inc g) (if (xb-export? M S g) (+ s (+ 2 (+ (xb-name-len M S g) (xb-ver-len M S g)))) s)))))
+(defn- xb-copy-arg [M :vector-i64 j :i64] :vector-i64
+  ;; mov rax, [rbp + 16 + 8(j-6)] ; mov [rsp + 8(j-5)], rax
+  (-> M (xg-bytes (bit-or 0x458b48 (i64-shift-left (+ 16 (* 8 (- j 6))) 24)) 4)
+        (xg-bytes (bit-or 0x24448948 (i64-shift-left (* 8 (- j 5)) 32)) 5)))
+(defn- xb-copy-args [M :vector-i64 j :i64 n :i64] :vector-i64
+  (if (>= j n) M (xb-copy-args (xb-copy-arg M j) (inc j) n)))
+(defn- xb-r9-arg [M :vector-i64 n :i64] :vector-i64
+  ;; mov [rsp], r9
+  (if (> n 5) (xg-byte (xg-bytes M 0x244c894c 4) 0) M))
+(defn- xb-thunk [M :vector-i64 f :i64] :vector-i64
+  (let [n (xg-f M f FF-NPARAMS)]
+    (-> M (xg-byte 0x55) (xg-bytes 0xe58948 3)
+          (xg-bytes (bit-or 0xec8348 (i64-shift-left (xb-frame n) 24)) 4)
+          (xb-r9-arg n) (xb-copy-args 6 n)
+          ;; lea r9,[context] ; mov rax,[r9+8] ; mov [rbp-8],rax ; mov qword [r9+8], fuel
+          (xg-rel 0x0d8d4c 3 3 0) (xg-bytes 0x08418b49 4) (xg-bytes 0xf8458948 4)
+          (xg-bytes 0x0841c749 4) (xg-bytes XB-CALL-FUEL 4)
+          (xg-rel 0xe8 1 1 f)
+          ;; lea r9,[context] ; mov rcx,[rbp-8] ; mov [r9+8],rcx ; leave ; ret
+          (xg-rel 0x0d8d4c 3 3 0) (xg-bytes 0xf84d8b48 4) (xg-bytes 0x08498949 4) (xg-bytes 0xc3c9 2))))
+(defn- xb-thunks [M :vector-i64 S :string f :i64] :vector-i64
+  (cond (>= f (vector-at M MM-FN-N)) M
+        (xb-export? M S f) (xb-thunks (xb-thunk M f) S (inc f))
+        :else (xb-thunks M S (inc f))))
+(defn- xb-pad8 [M :vector-i64] :vector-i64
+  (if (= (bit-and (xg-pos M) 7) 0) M (xb-pad8 (xg-byte M 0))))
+(defn- xb-chars [M :vector-i64 S :string i :i64 b :i64] :vector-i64
+  (if (>= i b) M (xb-chars (xg-byte M (string-code-point-at S i)) S (inc i) b)))
+(defn- xb-records [M :vector-i64 S :string g :i64 p0 :i64 sbase :i64] :vector-i64
+  (cond (>= g (vector-at M MM-FN-N)) M
+        (xb-export? M S g)
+          (let [na (+ 0x401000 (+ sbase (xb-strings-before M S g)))]
+            (xb-records (-> M (xg-bytes (+ 0x401000 (+ p0 (xb-thunks-before M S g))) 8) (xg-bytes na 8)
+                              (xg-bytes (+ na (+ 1 (xb-name-len M S g))) 8))
+                        S (inc g) p0 sbase))
+        :else (xb-records M S (inc g) p0 sbase)))
+(defn- xb-strings [M :vector-i64 S :string g :i64] :vector-i64
+  (cond (>= g (vector-at M MM-FN-N)) M
+        (xb-export? M S g)
+          (let [a (xb-name-a M g) e (xb-name-end M S g) b (xb-name-b M g)]
+            (xb-strings (-> M (xb-chars S (+ a 3) e) (xg-byte 0) (xb-chars S (if (< e b) (inc e) b) b) (xg-byte 0))
+                        S (inc g)))
+        :else (xb-strings M S (inc g))))
+(defn- xb-table [M :vector-i64 S :string n :i64 p0 :i64 t0 :i64] :vector-i64
+  (-> M (xb-pad8) (xg-bytes n 8) (xb-records S 1 p0 (+ t0 (+ 8 (* 24 n)))) (xb-strings S 1)
+        (mem-set 252 (+ 0x401000 t0))))
+;; after the program's code, before the literal pool
+(defn- xb-emit [M :vector-i64 S :string] :vector-i64
+  (if (or (not (xb-on? M)) (not= (vector-at M MM-ERR) 0)) M
+    (let [n (xb-count M S 1) bad (xb-first-bad M S 1) p0 (xg-pos M)
+          t0 (bit-and (+ 7 (+ p0 (xb-thunks-before M S (vector-at M MM-FN-N)))) -8)]
+      (cond (> bad 0) (xg-err M 7102 bad)
+            (= n 0) M
+            (> n XB-EXPORT-MAX) (xg-err M 7102 n)
+            (not= (vector-at M 252) 0) (xg-err M 7102 252)
+            :else (xb-table (xb-thunks M S 1) S n p0 t0)))))

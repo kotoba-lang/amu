@@ -1,0 +1,160 @@
+JUN-59 -- session 8 record: WORK-DOSE DISCRIMINATOR (WORKMUL),
+INSTRUMENT channel. 2026-10-27. Chain PR #1636
+(bot/amu-gpu-chain-20261027-10).
+
+1. ROW QUESTION (session 7's named residual, narrowed to ONE observable
+   axis): session 7 MEASURED that capture turns on strictly between
+   B=2 and B=3; WHY is UNMEASURED. This session asks ONE narrower,
+   observable question and tests NO causal mechanism:
+
+     AT FIXED DISPATCH COUNT B, IS THE CAPTURE DRIVEN BY THE TOTAL
+     DISPATCHED WORK -- or does capture stay out of reach at B=2 no
+     matter how much work one dispatch carries?
+
+2. INSTRUMENT DERIVATION (chain of custody): base = the archived
+   session-7 snapshot (9847b0f1..., itself the byte-identical
+   session-6 snapshot, re-sha256 MATCH in host-verify); derivation =
+   ONE parameterization edit (the WORK_MUL work-dose knob) in 4 hunks
+   (instrument-derivation.diff.txt): H1 the knob + N_ELEMENTS scaling
+   (WORK_MUL=1 reproduces the archived N_ELEMENTS 1000003u exactly),
+   H2 PARTS_CAP derived from N_ELEMENTS (one parts[] slot per
+   workgroup at any M), H3/H4 knob-identity prints (work_mul= in the
+   header and in every SAMPLE line). Sessions 1/2/4/5/6/7 instruments
+   stay byte-stable. The shader corpus is UNTOUCHED (the same 16
+   digests). cases-s8.txt cell lines are a BYTE-COPY of session 7's
+   (diff exit 0 verified at derivation time and again in
+   host-verify-s8.txt). 1 work unit = one dispatch of the archived
+   grid (n=1,000,003); an (B,M) arm runs B dispatches of an M-times
+   grid = B*M work units.
+
+3. CHAIN OF CUSTODY (host-verify-s8.txt, ALL of it before ANY run):
+   corpus 16/16 digests MATCH session 2's committed
+   compile-toolchain.txt census (parsed programmatically from that
+   committed file, never transcribed); instrument + manifest
+   local-vs-host MATCH (5c7cf2d5... / 29969b97...). GO.
+
+4. HARDWARE RAN (MEASURED): 24 fresh processes (8 arms x 3 runs), run
+   window 2026-10-27T12:27:54Z..2026-10-27T12:28:14Z, rc=0 24/24,
+   stderr 0 bytes 24/24, 450 SAMPLE lines each (18 pipeline-ok cells
+   x 25 rounds); headers byte-identical across all runs outside the
+   # n= knob line; every run's batch=/work_mul= fields == its arm,
+   barrier_n=0 and n=1,000,003*M everywhere; forcing reality 432/432;
+   VERIFY mismatch 0 everywhere; S=8 fail-closed 144/144. Host:
+   aiueos-6600hs-1 (BMG G31 / ANV), 1 tick = 52.083 ns. Per-run
+   transcript (host date -u, rc):
+   run b1m1 r1 rc=0 2026-10-27T12:27:55Z
+   run b1m1 r2 rc=0 2026-10-27T12:27:55Z
+   run b1m1 r3 rc=0 2026-10-27T12:27:55Z
+   run b2m1 r1 rc=0 2026-10-27T12:27:55Z
+   run b2m1 r2 rc=0 2026-10-27T12:27:56Z
+   run b2m1 r3 rc=0 2026-10-27T12:27:56Z
+   run b3m1 r1 rc=0 2026-10-27T12:27:56Z
+   run b3m1 r2 rc=0 2026-10-27T12:27:57Z
+   run b3m1 r3 rc=0 2026-10-27T12:27:57Z
+   run b8m1 r1 rc=0 2026-10-27T12:27:58Z
+   run b8m1 r2 rc=0 2026-10-27T12:27:59Z
+   run b8m1 r3 rc=0 2026-10-27T12:28:01Z
+   run b1m3 r1 rc=0 2026-10-27T12:28:01Z
+   run b1m3 r2 rc=0 2026-10-27T12:28:01Z
+   run b1m3 r3 rc=0 2026-10-27T12:28:02Z
+   run b1m8 r1 rc=0 2026-10-27T12:28:03Z
+   run b1m8 r2 rc=0 2026-10-27T12:28:05Z
+   run b1m8 r3 rc=0 2026-10-27T12:28:06Z
+   run b2m3 r1 rc=0 2026-10-27T12:28:07Z
+   run b2m3 r2 rc=0 2026-10-27T12:28:08Z
+   run b2m3 r3 rc=0 2026-10-27T12:28:09Z
+   run b2m8 r1 rc=0 2026-10-27T12:28:11Z
+   run b2m8 r2 rc=0 2026-10-27T12:28:12Z
+   run b2m8 r3 rc=0 2026-10-27T12:28:14Z
+
+5. FINDINGS (publication-s8.txt, produced ONLY by analysis-s8.py over
+   the committed run logs, run twice byte-identical -- diff exit 0):
+
+   (a) C1 CONTROL REPLICATION fired branch (a) -- all four controls
+       satisfy their frozen criteria (b1m1/b2m1 FLOOR at 31 ticks;
+       b3m1 5,546 vs committed 5,520 = +0.47%; b8m1 32,896 vs
+       committed 32,915 = -0.06%; both inside the frozen +/-5%).
+       b3m1/b8m1 at WORK_MUL=1 also pin the derivation edit to the
+       archived behaviour. W1-W4 are evaluated against the row.
+
+   (b) W1 fired branch (a) AS FROZEN: b2m3 and b2m8 are FLOOR (31
+       ticks at all 18 cells, band 31..32) while the b8m1 control
+       (8 work units) is CAPTURED. CAPTURE AT B=2 IS NOT REACHABLE BY
+       UP TO 8x PER-DISPATCH WORK: b2m8 carries 16 work units inside
+       the bracket -- twice b8m1's 8 units -- and the bracket stays at
+       the floor while host_ns shows 3,143,995 ns of real work. On
+       this axis the capture is NOT a total-work threshold; dispatch
+       count stays implicated. Observable only; NO causal mechanism is
+       claimed or measured.
+
+   (c) W2 (descriptive): equal-total-work pairs split hard by
+       dispatch count -- 3 units as 1 dispatch (b1m3) 31 ticks FLOOR
+       vs 3 dispatches (b3m1) 5,546 ticks CAPTURED (bracket ratio
+       0.006); 8 units as 1 dispatch (b1m8) 31 ticks FLOOR vs 8
+       dispatches (b8m1) 32,896 ticks CAPTURED (ratio 0.001). The
+       measured brackets at equal total work differ by up to 3 orders
+       of magnitude.
+
+   (d) W3 (descriptive): no single-dispatch arm captures -- b1m1,
+       b1m3, b1m8 all FLOOR at 31 ticks while host_ns rises
+       351,736 -> 794,903 -> 2,140,152 ns. Even 8x work in one
+       dispatch leaves the bracket at the floor.
+
+   (e) W4 (descriptive): host_ns per work unit falls as grids grow
+       (b1m1 351,736 ns/unit -> b2m8 196,500 ns/unit), so the b2m8
+       bracket contains even more real work than the unit count alone
+       suggests. Counts only.
+
+   RULE 4: NOTHING MOVES -- no workgroup row, no :measured? flag, no
+   selection answer; accelerator-targets defaults remain provisional
+   design assumptions (:measured? false); this is NOT the
+   basis-replacing baseline-vs-variant contract of
+   accelerator-subgroup-reduce.cljk; NO vendor optimization exists for
+   Intel and none is claimed.
+
+   UNMEASURED named: any causal mechanism for the undercount, the
+   capture, or the onset location; WHY capture turns on where it does;
+   "more work" vs "bigger grid" (the frozen named limitation -- one
+   knob scales both); any M outside {1,3,8}; any (B,M) outside the
+   eight arms; B=7; any N>0; session 2's run-1 dip cause; cross-day
+   replication; S=8 timing; every W outside {128,256}; shape 2; BT
+   ordering; any baseline-vs-variant sign; isolated single-dispatch
+   timing; non-empty barriers; anything off this host.
+
+   NAMED, NOT HIDDEN (authoring + cross-session):
+   (i) the b8m1 control's host_ns here is 2,452,475 vs session 7's
+       3,038,388 for the same knob (~20% lower) while the GPU bracket
+       replicated to -0.06% (32,896 vs 32,915) and b1m1/b2m1/b3m1
+       host_ns reproduce session 7's to within 1%; host_ns is not a
+       C1 criterion and no letter depends on it; the cause of the
+       host_ns spread is UNMEASURED;
+   (ii) a local shell sanity check in this tick's transcript printed
+       "NONEMPTY" for all 24 stderr files -- a false alarm from
+       macOS `wc -c` output padding; `ls -la` and the host-side run
+       transcript show all 24 stderr files are 0 bytes. Corrected
+       before this record;
+   (iii) analysis-s8.py needed no post-run fix; the recorded
+       publication is produced by the script as committed, run twice
+       byte-identical.
+
+   STATES: emitter arm/dispatch/selection rows IMPLEMENTED (code +
+   tests, unchanged -- this diff touches NO .cljk namespace); the
+   workmul instrument + analysis-s8.py validated by complete runs;
+   MEASURED only what publication-s8.txt sections 1-4 say.
+
+6. Gates (real runs this tick): gpu_regime_classify.py --self-test
+   TOTAL 2649 assertions/0 failed (pin); scoped GPU gate GREEN 123
+   tests / 12162 assertions / 0 failures / 0 errors run 1 AND run 2
+   (scratch runner gpu_scoped_gate.cljk, never committed); FULL
+   run-tests.cljk RUN LIVE THIS TICK: exit 1, RED AT BASE 'Could not
+   find namespace: kotoba.form' at namespace load (ADR-0362, outside
+   this diff) -- NO green full suite claimed; find this evidence dir
+   -name '*.sh' -> 0 (58 files in the dir).
+
+7. CHAIN: this commit lands on the ONE open chain branch
+   bot/amu-gpu-chain-20261027-10 (chain PR #1636), commit + push only.
+   BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head at
+   tick start and re-checked immediately before this push.
+
+Evidence: docs/evidence/gpu/anv-workmul-20261027/ + the ADR-0355 dated
+note. (JUN-55, JUN-59)

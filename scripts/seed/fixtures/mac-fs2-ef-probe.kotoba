@@ -1,0 +1,23 @@
+;; Unity fixture with seed/00-ns-static, 01-mem and 02-io.
+;; The Mac wrapper supplies FD3-scoped FS2 F metadata and E range reads.
+(defn- seed-main [] :i64
+  (let [path (io-arg 0)
+        tail (io-arg 1)
+        stat (io-fs2-text 70 path "")]
+    (if (string=? tail "F")
+      (if (= (string-length stat) 0) 0 1)
+      (let [reply (vector-i64-from-bytes
+                    (typed-cap-call :fs/app-data :string :bytes
+                      (string-concat (io-fs2-header 69 path) tail)))]
+        (if (and (> (string-length stat) 0)
+                 (= (string-code-point-at stat (- (string-length stat) 1)) 48)
+                 (= (vector-count reply) 9)
+                 (= (vector-at reply 0) 0)
+                 (= (vector-at reply 1) 70)
+                 (= (vector-at reply 2) 83)
+                 (= (vector-at reply 3) 50)
+                 (= (vector-at reply 4) 0)
+                 (= (vector-at reply 5) 77)
+                 (= (vector-at reply 6) 90))
+          (let [written (io-out "PASS_MAC_FS2_EF\n")] 0)
+          1)))))

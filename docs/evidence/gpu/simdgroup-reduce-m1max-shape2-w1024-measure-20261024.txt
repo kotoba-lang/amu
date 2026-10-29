@@ -1,0 +1,79 @@
+JUN-58 / JUN-55 -- the shape-2 W = 1024 :simdgroup-reduce cell is
+MEASURED (2026-10-24, the shape-2 series' third cell)
+
+ONE measurement: ADR-0373's :simdgroup-reduce row runs at the SECOND
+reduction shape -- n = 2^20 = 1,048,576 (a clean multiple of every W in
+[32, 1024]: the padded-lane tail the ground shape n = 1,000,003 always
+exercised is absent here) -- at W = 1024, this host (Apple M1 Max,
+reported simdgroup size 32), the same conforming channel (ADR-0360
+question (1)'s native-Metal harness family, the emitters' own bytes)
+and the byte-identical protocol of every earlier cell of this variant
+(6 fresh processes, 20 interleaved AB/BA pairs per operator per run,
+2 warmup submits per arm discarded, verified read-back). The driver is
+invoked exactly as the shape-2 records name, only --variant
+simdgroup-reduce and its own --out
+docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024
+(--op-order omitted because the driver's default IS the fixed
+sum,max,min order every earlier cell used; run-log.txt records
+op_order=sum,max,min):
+
+  python3 scripts/gpu-subgroup-reduce-metal-measure.py \
+    --runs 6 --workgroup 1024 --elements 1048576 \
+    --variant simdgroup-reduce \
+    --out docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024
+
+Full record:
+docs/evidence/gpu-simdgroup-reduce-m1max-shape2-20261024/w1024/
+{summary.md,run-log.txt,compile-log.txt,shaders/}. The shape-2 anchor
+(w256), the W = 512 cell, the six W-sweep records and every earlier
+record are untouched.
+
+PAIRED MEDIAN RATIOS (:simdgroup-reduce / :baseline gpu ns), W = 1024:
+
+  op    shape 2       shape 1, same W        the shape-2 anchor
+        (this cell)   (the W-sweep record)   (W = 256, same shape)
+  sum   0.836         0.840                  0.794
+  max   0.843         0.847                  0.811
+  min   0.841         0.850                  0.812
+
+Per-run ratios (6 fresh processes): sum 0.834 0.970 0.835 0.836 0.837
+0.838; max 0.840 0.841 0.764 0.845 0.845 0.864; min 0.841 0.841 0.839
+0.840 0.840 0.843. Median gpu ns (120 samples per arm): sum 132312 ->
+110500; max 132271 -> 111500; min 132375 -> 111354.
+
+FINDING (the record's own claim-protocol machinery, rule 2): this cell
+is REGIME-INVARIANT FASTER -- 18/18 per-run ratios below 1.0, every
+observed regime one-sided, all three operators 6/6. This is the
+shape-2 series' first one-sided cell since the anchor (W = 256) and it
+stands in direct contrast to the W = 512 cell one step earlier, whose
+:min straddled 1.0 inside one regime and made that cell
+measured-but-REGIME-SCOPED. The contrast is localized, not a family
+effect: at this width the fast clock level appears too (sum rule-1
+level 1 = run 2, baseline 106646 ns) and the variant still wins there
+(run 2's sum ratio 0.970 -- the only fast-level :sum sample of the
+shape-2 series so far, and it stays below 1.0). Medians are in family
+with the shape-1 same-W record (0.836/0.843/0.841 vs
+0.840/0.847/0.850, within ~1 ratio point) and the anchor
+(0.794/0.811/0.812). Rule 1 sees one level for max and min, two for
+sum; cross-operator level identity is REFUTED (5/15 run pairs), so
+per-operator level names stay operator-scoped.
+
+Read-back: 36 verify lines (6 per fresh process), ok=1 on every one.
+:sum 3.27e-05 (both arms) vs the CPU reference, 6.10e-05 between arms
+(regrouping; the family's low-bit divergence, consistent with every
+earlier cell). :max/:min bit-exact vs the CPU reference AND between
+arms.
+
+STATE HONESTY (nothing moves beyond the measurement itself):
+- The measurement exists. The FLIP does not: no :measured? flag, no
+  :measured-cell record, no selection answer moves in this slice.
+  apple-simdgroup-measured-workgroups stays #{32 64 128 256 512 1024};
+  the flipped cells' records keep their :shapes -- this record's shape
+  at W = 1024 is NOT in any flip key yet. The shape-2 flip of the
+  W = 1024 cell through ADR-0373's flip contract is its own next slice,
+  and unlike W = 512 nothing here blocks it on rule-2 admissibility --
+  the contract's key question there is whether a second shape may join
+  a flip key at all.
+- Shape 2 at W = 32/64/128 stays UNMEASURED (the shape-2 series'
+  remaining cells). Every shape beyond the two named in the W = 256
+  flip key is UNMEASURED everywhere. No workgroup row moved.

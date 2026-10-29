@@ -1,0 +1,149 @@
+HONEST LEFT (c) ANSWERED -- the CUDA-route three-way speed question
+(:warp-shuffle-reduce vs :subgroup-reduce vs :baseline) on xavier sm_72,
+under the ADR-0361 claim-protocol adoption
+
+Date: 2026-10-25 (JST)
+Row: HONEST LEFT (c), its own row -- the row ADR-0361's 2026-10-25
+adoption amendment named as the consumer of the claim currency
+("Only then does HONEST LEFT (c) -- the `:warp-shuffle-reduce` vs
+`:subgroup-reduce` vs `:baseline` speed question -- have claim currency
+to consume; until then it is answered by NO record, as before").
+The two named missing pieces have landed: (i) harness-side rule-1 +
+rule-2 publication for the CUDA channel (commit 82925d150), (ii) a
+fresh paired-timing session publishing both sections (commit
+3dead564f) -- and its cross-run reproduction check (commit
+ed24c7ddc). This row consumes that currency. Issues: JUN-55, JUN-57.
+
+WHAT THIS ROW IS: a decision (the answer) over committed measurements.
+NO hardware ran this tick, and no new sample exists. Every number
+below is a citation of a committed, re-derivable artifact.
+
+GROUND (committed records, REPRODUCED THIS TICK, not trusted blind):
+  - run1: docs/evidence/gpu/cuda-claimprotocol-run1-20261025/
+    (measure-log.txt = 4360 timed samples, gpu_ns + host_ns;
+    publication.txt = the claim-protocol rules-1+2 publication).
+  - run2: docs/evidence/gpu/cuda-claimprotocol-run2-20261025/ (same
+    shape; plus the three crossrun-*.txt comparison outputs).
+  - Reproduction: `python3 scripts/gpu_regime_classify.py --cuda-log
+    <measure-log.txt>` re-run over EACH committed log this tick exits 0
+    (stderr 0 bytes) and re-derives the committed publication.txt
+    BYTE-EXACTLY (diff empty, 912 lines each) -- so every verdict and
+    ratio quoted here is a citation of a tool-reproducible artifact,
+    not an eyeball reading. The verdict census below was parsed from
+    the two REPRODUCED publications by a scratch script (never
+    staged): run1 18 strata, run2 18 strata, verdict+side agreement
+    18/18.
+
+RULE-2 BASIS (the adoption's (b), carried at its letter): a
+regime-invariant sign is the only selection basis. The per-run ratio
+is the block's paired-median ratio in the named metric (median over
+the 20 within-pair ratios armA/armB; armA is the first-named arm of
+the pair, the reference arm is the denominator), and rule 2's
+correctness precondition is verified inside the measurement (both
+sessions: 218/218 verify lines ok=1). gpu_ns and host_ns are TWO
+metrics, classified separately, never mixed; rule 3 bans cross-clock
+magnitude claims and both metrics agree on every verdict here.
+
+VERDICT CENSUS (both sessions identical, parsed this tick; the
+crossrun-verdict-compare.txt of run2 agrees):
+
+  pair                    | regime-invariant faster | regime-scoped
+  ------------------------+-------------------------+--------------
+  warp-shuffle/baseline   | 6/6 (both metrics x :max/:min/:sum) | 0/6
+  warp-shuffle/subgroup   | 4/6 (:max/:min, both metrics)       | 2/6 (:sum, both metrics)
+  subgroup/baseline       | 0/6                                 | 6/6
+
+THE ANSWER (sign claims CHANNEL-SCOPED to the CUDA route and
+DEVICE-SCOPED to xavier sm_72 -- see limits below):
+
+  (1) :warp-shuffle-reduce vs :baseline: REGIME-INVARIANT FASTER in
+      every stratum -- 6/6 (both metrics x all three ops), each with
+      all 12 per-run ratios below 1.0 (12/12 faster, every observed
+      regime one-sided), in BOTH sessions. SELECTION BASIS: YES --
+      :warp-shuffle-reduce over :baseline at :max, :min and :sum.
+
+  (2) :warp-shuffle-reduce vs :subgroup-reduce: REGIME-INVARIANT
+      FASTER at :max and :min -- 4/6 strata (both metrics), 12/12
+      ratios below 1.0 in each, both sessions. SELECTION BASIS: YES
+      at :max/:min. At :sum (2/6 strata) the sign is REGIME-SCOPED
+      -- named, not hidden: the W=64 run sits ABOVE 1.0 in both
+      shapes, both clocks, BOTH sessions (run1 gpu_ns 1.0848 /
+      1.0683, host_ns 1.0874 / 1.0700; run2 gpu_ns 1.081 / 1.073,
+      host_ns 1.070 / 1.070 -- at :sum and W=64 the :subgroup-reduce
+      arm is FASTER every time it was measured), while W>=128 sits
+      far below (run1 0.58..0.69, run2 0.58..0.67) and W=32 sits at
+      ~0.99. SELECTION BASIS at :sum: NONE -- a regime-scoped sign
+      cannot choose a variant, in either direction.
+
+  (3) :subgroup-reduce vs :baseline: REGIME-SCOPED in every stratum
+      -- 6/6, no regime-invariant sign anywhere. The straddle
+      separates by regime: the W=32 regime is one-sided FASTER for
+      :subgroup-reduce (~0.88..0.93), the W>=64 regimes are one-sided
+      SLOWER (~1.03..1.18). SELECTION BASIS: NONE.
+
+SELECTION CONSEQUENCE: `select-variant`'s CUDA-route answer stays
+`:warp-shuffle-reduce` and NOTHING MOVES -- not because no evidence
+exists but because the standing answer is what the evidence supports:
+over :baseline at all three ops (regime-invariant, (1)), over
+`:subgroup-reduce` at :max/:min (regime-invariant, (2)), and at :sum
+the two variants carry NO selection basis either way ((2)'s gap), so
+the ladder's design order there stands unclaimed rather than
+measured. (:cuda-v1, :subgroup-reduce) stays by-name-only; (3) gives
+it no promotion. No code diff, no table diff, no flag diff.
+
+CROSS-RUN: verdict agreement 18/18 between the two adopted sessions
+(re-derived this tick from the reproduced publications; the committed
+crossrun-verdict-compare.txt agrees). Named, not hidden: two agreeing
+sessions bind no distribution and say nothing about a third (run 3+
+is UNMEASURED), and the one named level-side diff (gpu_ns :sum
+subgroup/baseline level 1: 2-above/6-below -> 1-above/7-below,
+crossrun-level-sides.txt) touches no verdict.
+
+LIMITS (named so no reading upgrades):
+  - ONE NVIDIA device: xavier, Jetson AGX Xavier L4T R35.4.1, sm_72.
+    Every sign above is xavier-scoped. Any other NVIDIA device is
+    UNMEASURED on this question.
+  - CHANNEL-SCOPED (ADR-0355's 2026-10-25 channel rule): these are
+    CUDA-route signs (cuda-v1 emission, cuModuleLoad execution). They
+    never flip an MSL or WGSL cell and never answer a workgroup row;
+    the rows' own channel is the wire-42 loader path / its ADR-0371
+    provider successor, which this instrument channel is not.
+  - Reduce ops :max/:min/:sum only, two shapes (n=1000003, 1048576),
+    six widths (W=32..1024). Nothing else is covered.
+  - Rule 3: cross-clock magnitude claims are inadmissible; every ratio
+    quoted is within one named metric; both metrics classify
+    separately and agree.
+
+STATES:
+  - MEASURED (committed records, consumed here, not re-measured this
+    tick): the pairwise signs (1)-(3) and their cross-run agreement.
+  - DECIDED (this row): the answer above and its no-move consequence.
+  - IMPLEMENTED: nothing -- this row is a decision over existing
+    evidence and touches no code.
+  - ACCEPTED DESIGN ONLY: the ADR-0361 claim-protocol adoption, the
+    ADR-0373 instrument class, the ADR-0358 paired-within-run
+    statistic (all cited, unchanged).
+  - UNMEASURED, named: the :sum ordering between :warp-shuffle-reduce
+    and :subgroup-reduce on ANY device including xavier (regime-scoped
+    there -- (2)); every three-way sign on any NVIDIA device other than
+    sm_72; cross-run stability beyond two sessions (run 3+); whether
+    the CUDA-route row should ever answer :subgroup-reduce (the
+    separate per-vendor question ADR-0356 names -- this row does NOT
+    decide it: (2)'s :sum gap and (3)'s W=32-only wins bear on it and
+    nothing more); every workgroup row (ADR-0355/0358) -- no
+    `:measured?` flag moves, `:arm`/`:unknown` stay provisional
+    `:measured? false`.
+
+GATES (real runs, this slice):
+  - gpu_regime_classify.py --self-test: see the gate log quoted in the
+    commit message (regression pin; no code touched).
+  - Scoped GPU gate (the 8 GPU-owned test namespaces, scratch runner
+    gpu_scoped_gate.cljk, never committed): see the commit message.
+  - FULL run-tests.cljk: NOT RUN this slice (decision + docs/evidence
+    only, no .cljk namespace touched) -- named so nothing is implied.
+    Documented red at base ("Could not find namespace: kotoba.form",
+    the W3 port path, ADR-0362), outside this diff, not re-verified
+    here. NO green full suite is claimed.
+  - Evidence hygiene: no POSIX .sh execution file anywhere under
+    docs/ (checked this tick before commit); the reproduction and
+    census scripts lived in Hermes scratch and were never staged.

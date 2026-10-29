@@ -1,0 +1,181 @@
+;; Complete ordered output-set source. Native terminal-trap unwind is unqualified.
+(ns kotoba.compiler.io-output
+  {:kotoba/export [bytes-entry text-entry write-set! write-bytes! write-text!]}
+  (:require [kotoba.compiler.filesystem :as fs]
+            [kotoba.compiler.fs-tree :as tree]
+            [kotoba.compiler.posix-path :as path]
+            [kotoba.compiler.io-buffer :as buffer])
+  (:schemas
+   {:io.output/entry [:record :io.output/entry
+                      [[:path :string] [:content [:ref :io.buffer/value]] [:text? :bool] [:mode [:option :i64]]]]
+    :io.output/resolved [:record :io.output/resolved
+                         [[:path :string] [:target :string] [:dir :string] [:content [:ref :io.buffer/value]] [:mode :i64]]]
+    :io.output/staged [:record :io.output/staged [[:path :string] [:temporary :string] [:target :string]]]}))
+
+(defn bytes-entry [path :string bytes [:ref :io.buffer/value] mode [:option :i64]] [:ref :io.output/entry]
+  (record-new [:ref :io.output/entry] path bytes false mode))
+(defn text-entry [path :string text [:ref :io.buffer/text] mode [:option :i64]] [:ref :io.output/entry]
+  (record-new [:ref :io.output/entry] path (buffer/text-buffer text) true mode))
+(defn- failure [message :string path :string] :document
+  (document-map (document-keyword :phase) (document-keyword :output)
+    (document-keyword :message) (document-string message) (document-keyword :path) (document-string path)))
+(defn- atomic-error [path :string operation :keyword cause :document] :document
+  (document-map (document-keyword :phase) (document-keyword :output)
+    (document-keyword :message) (document-string "atomic output set failed")
+    (document-keyword :path) (document-string path) (document-keyword :reason) (document-keyword operation)
+    (document-keyword :cause) cause))
+(defn- empty-resolved [] [:ref :io.output/resolved]
+  (record-new [:ref :io.output/resolved] "" "" "" (buffer/empty-buffer) 384))
+(defn- empty-staged [] [:ref :io.output/staged] (record-new [:ref :io.output/staged] "" "" ""))
+
+(defn- resolve-entry [entry [:ref :io.output/entry]] [:result [:ref :io.output/resolved] :document]
+  (let [p (record-get [:ref :io.output/entry] entry :path)
+        mode (option-value-of [:option :i64] (record-get [:ref :io.output/entry] entry :mode) 384)
+        bytes (buffer/validated-buffer (record-get [:ref :io.output/entry] entry :content))]
+    (cond
+      (or (= p "") (>= (string-find-byte p 0 0) 0))
+      (result-err-of [:result [:ref :io.output/resolved] :document] (failure "output path is required and must not hold NUL" p))
+      ;; Existing CHMOD accepts 1..6 octal digits and permission bits only.
+      ;; Keep that full nonnegative domain; None is 0600, Some(0) is 0000.
+      (or (< mode 0) (> mode 262143))
+      (result-err-of [:result [:ref :io.output/resolved] :document] (failure "output member mode could not be set" p))
+      (not (result-ok?-of [:result [:ref :io.buffer/value] :document] bytes))
+      (result-err-of [:result [:ref :io.output/resolved] :document]
+        (atomic-error p :validate (result-error-of [:result [:ref :io.buffer/value] :document] bytes (document-null))))
+      :else
+      (let [value (result-value-of [:result [:ref :io.buffer/value] :document] bytes (buffer/empty-buffer))
+            text (if (record-get [:ref :io.output/entry] entry :text?)
+                   (let [decoded (buffer/as-text value)]
+                     (if (result-ok?-of [:result [:ref :io.buffer/text] :document] decoded)
+                       (result-ok-of [:result :bool :document] true)
+                       (result-err-of [:result :bool :document]
+                         (result-error-of [:result [:ref :io.buffer/text] :document] decoded (document-null)))))
+                   (result-ok-of [:result :bool :document] true))]
+        (if (not (result-ok?-of [:result :bool :document] text))
+          (result-err-of [:result [:ref :io.output/resolved] :document]
+            (atomic-error p :validate (result-error-of [:result :bool :document] text (document-null))))
+          (let [target (path/normalize p) dir (path/dirname target) present (tree/directory? dir)]
+            (if (not (result-ok?-of [:result :bool :document] present))
+              (result-err-of [:result [:ref :io.output/resolved] :document]
+                (atomic-error p :validate (result-error-of [:result :bool :document] present (document-null))))
+              (if (not (result-value-of [:result :bool :document] present false))
+                (result-err-of [:result [:ref :io.output/resolved] :document] (failure "output parent must be a directory" p))
+                (result-ok-of [:result [:ref :io.output/resolved] :document]
+                  (record-new [:ref :io.output/resolved] p target dir value (bit-and mode 511)))))))))))
+(defn- target-present? [entries [:list [:ref :io.output/resolved]] target :string] :bool
+  (loop [index 0]
+    (if (= index (vector-count entries)) false
+      (if (= target (record-get [:ref :io.output/resolved]
+                      (typed-list-nth [:list [:ref :io.output/resolved]] entries index) :target)) true
+        (recur (+ index 1))))))
+(defn- resolve-entries [entries [:list [:ref :io.output/entry]]] [:result [:list [:ref :io.output/resolved]] :document]
+  (if (= (vector-count entries) 0)
+    (result-err-of [:result [:list [:ref :io.output/resolved]] :document] (failure "output set is required" ""))
+    (loop [index 0 dir "" out (typed-list-new [:list [:ref :io.output/resolved]])]
+      (if (= index (vector-count entries)) (result-ok-of [:result [:list [:ref :io.output/resolved]] :document] out)
+        (let [one (resolve-entry (typed-list-nth [:list [:ref :io.output/entry]] entries index))]
+          (if (not (result-ok?-of [:result [:ref :io.output/resolved] :document] one))
+            (result-err-of [:result [:list [:ref :io.output/resolved]] :document]
+              (result-error-of [:result [:ref :io.output/resolved] :document] one (document-null)))
+            (let [value (result-value-of [:result [:ref :io.output/resolved] :document] one (empty-resolved))
+                  parent (record-get [:ref :io.output/resolved] value :dir)
+                  target (record-get [:ref :io.output/resolved] value :target)
+                  p (record-get [:ref :io.output/resolved] value :path)]
+              (cond
+                (and (> index 0) (not= dir parent))
+                (result-err-of [:result [:list [:ref :io.output/resolved]] :document] (failure "output set must share one parent directory" p))
+                (target-present? out target)
+                (result-err-of [:result [:list [:ref :io.output/resolved]] :document] (failure "output set contains duplicate paths" p))
+                :else (recur (+ index 1) parent (typed-list-conj [:list [:ref :io.output/resolved]] out value))))))))))
+(defn- temporary [dir :string index :i64] :string
+  (string-concat dir (string-concat "/" (string-concat (string-from-i64 index) ".tmp"))))
+(defn- expect-one [form :i64 p :string tail :string original :string operation :keyword] [:result :bool :document]
+  (let [answer (fs/app-data form p tail)]
+    (if (not (result-ok?-of [:result :string :document] answer))
+      (result-err-of [:result :bool :document]
+        (atomic-error original operation (result-error-of [:result :string :document] answer (document-null))))
+      (if (= (result-value-of [:result :string :document] answer "") "1")
+        (result-ok-of [:result :bool :document] true)
+        (result-err-of [:result :bool :document]
+          (atomic-error original operation (failure "filesystem mutation did not succeed" p)))))))
+(defn- stage-one [dir :string index :i64 entry [:ref :io.output/resolved]] [:result [:ref :io.output/staged] :document]
+  (let [p (record-get [:ref :io.output/resolved] entry :path) temp (temporary dir index)
+        staged (fs/stage-member! temp (record-get [:ref :io.output/resolved] entry :mode)
+                 (record-get [:ref :io.output/resolved] entry :content))]
+    (if (not (result-ok?-of [:result :bool :document] staged))
+      (result-err-of [:result [:ref :io.output/staged] :document]
+        (atomic-error p :stage (result-error-of [:result :bool :document] staged (document-null))))
+      (if (not (result-value-of [:result :bool :document] staged false))
+        (result-err-of [:result [:ref :io.output/staged] :document]
+          (atomic-error p :stage (failure "output member staging did not succeed" p)))
+        (result-ok-of [:result [:ref :io.output/staged] :document]
+          (record-new [:ref :io.output/staged] p temp (record-get [:ref :io.output/resolved] entry :target)))))))
+(defn- stage-all [dir :string entries [:list [:ref :io.output/resolved]]] [:result [:list [:ref :io.output/staged]] :document]
+  (loop [index 0 out (typed-list-new [:list [:ref :io.output/staged]])]
+    (if (= index (vector-count entries)) (result-ok-of [:result [:list [:ref :io.output/staged]] :document] out)
+      (let [one (stage-one dir index (typed-list-nth [:list [:ref :io.output/resolved]] entries index))]
+        (if (not (result-ok?-of [:result [:ref :io.output/staged] :document] one))
+          (result-err-of [:result [:list [:ref :io.output/staged]] :document]
+            (result-error-of [:result [:ref :io.output/staged] :document] one (document-null)))
+          (recur (+ index 1) (typed-list-conj [:list [:ref :io.output/staged]] out
+                              (result-value-of [:result [:ref :io.output/staged] :document] one (empty-staged)))))))))
+(defn- publish-all [dir :string entries [:list [:ref :io.output/staged]]] [:result [:list :string] :document]
+  (loop [index 0 out (typed-list-new [:list :string])]
+    (if (= index (vector-count entries)) (result-ok-of [:result [:list :string] :document] out)
+      (let [entry (typed-list-nth [:list [:ref :io.output/staged]] entries index)
+            p (record-get [:ref :io.output/staged] entry :path)
+            renamed (expect-one 11 (record-get [:ref :io.output/staged] entry :temporary)
+                      (record-get [:ref :io.output/staged] entry :target) p :rename)]
+        (if (not (result-ok?-of [:result :bool :document] renamed))
+          (result-err-of [:result [:list :string] :document] (result-error-of [:result :bool :document] renamed (document-null)))
+          (let [flushed (expect-one 12 dir "" p :directory-fsync)]
+            (if (not (result-ok?-of [:result :bool :document] flushed))
+              (result-err-of [:result [:list :string] :document] (result-error-of [:result :bool :document] flushed (document-null)))
+              (recur (+ index 1) (typed-list-conj [:list :string] out p)))))))))
+(defn- cleanup [dir :string] [:result :bool :document]
+  (fs/discard-output-set! dir))
+(defn- finalize-result [primary [:result [:list :string] :document] cleaned [:result :bool :document]] [:result [:list :string] :document]
+  (if (result-ok?-of [:result :bool :document] cleaned) primary
+    (result-err-of [:result [:list :string] :document]
+      (document-map (document-keyword :phase) (document-keyword :output)
+        (document-keyword :message) (document-string "output cleanup protocol failed")
+        (document-keyword :publication) (document-keyword
+          (if (result-ok?-of [:result [:list :string] :document] primary) :complete :not-established))
+        (document-keyword :primary-error) (result-error-of [:result [:list :string] :document] primary (document-null))
+        (document-keyword :cleanup-error) (result-error-of [:result :bool :document] cleaned (document-null))))))
+
+(defn write-set! [entries [:list [:ref :io.output/entry]]] [:result [:list :string] :document]
+  (let [resolved (resolve-entries entries)]
+    (if (not (result-ok?-of [:result [:list [:ref :io.output/resolved]] :document] resolved))
+      (result-err-of [:result [:list :string] :document]
+        (result-error-of [:result [:list [:ref :io.output/resolved]] :document] resolved (document-null)))
+      (let [values (result-value-of [:result [:list [:ref :io.output/resolved]] :document] resolved
+                     (typed-list-new [:list [:ref :io.output/resolved]]))
+            first (typed-list-nth [:list [:ref :io.output/resolved]] values 0)
+            dir (record-get [:ref :io.output/resolved] first :dir)
+            made (fs/begin-output-set! dir)]
+        (if (not (result-ok?-of [:result :string :document] made))
+          (result-err-of [:result [:list :string] :document] (result-error-of [:result :string :document] made (document-null)))
+          (let [temp (result-value-of [:result :string :document] made "")]
+            (if (= temp "")
+              (result-err-of [:result [:list :string] :document]
+                (failure "output staging directory could not be created" (record-get [:ref :io.output/resolved] first :path)))
+              (let [staged (stage-all temp values)
+                    primary (if (result-ok?-of [:result [:list [:ref :io.output/staged]] :document] staged)
+                              (publish-all dir (result-value-of [:result [:list [:ref :io.output/staged]] :document] staged
+                                                 (typed-list-new [:list [:ref :io.output/staged]])))
+                              (result-err-of [:result [:list :string] :document]
+                                (result-error-of [:result [:list [:ref :io.output/staged]] :document] staged (document-null))))]
+                (finalize-result primary (cleanup temp))))))))))
+(defn- write-one [path :string entry [:ref :io.output/entry]] [:result :string :document]
+  (let [written (write-set! (typed-list-conj [:list [:ref :io.output/entry]] (typed-list-new [:list [:ref :io.output/entry]]) entry))]
+    (if (not (result-ok?-of [:result [:list :string] :document] written))
+      (result-err-of [:result :string :document] (result-error-of [:result [:list :string] :document] written (document-null)))
+      (result-ok-of [:result :string :document] path))))
+(defn write-bytes!
+  ([path :string bytes [:ref :io.buffer/value]] [:result :string :document]
+   (write-one path (bytes-entry path bytes (option-none-of [:option :i64]))))
+  ([path :string bytes [:ref :io.buffer/value] mode :i64] [:result :string :document]
+   (write-one path (bytes-entry path bytes (option-some-of [:option :i64] mode)))))
+(defn write-text! [path :string text [:ref :io.buffer/text]] [:result :string :document]
+  (write-one path (text-entry path text (option-none-of [:option :i64]))))
