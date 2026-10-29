@@ -153,6 +153,15 @@ build closure and does not qualify anything.
   #1672 were merged;
   the x86_64 compiler that root emits is byte-identical to `bin/amu-linux-x86_64`, and so
   are its x86 images of the 24 pinned cases.
+* Re-derived after main's #1662 (the AIUEOS object route's extern functions
+  in `seed/74`, a FULL-MANIFEST module): x86_64 F1 = F2 = F3 = `9c8cd664…`
+  (8,663,552 bytes); aarch64 root F1 = F2 = `867ba03c…` (3,588,608 bytes),
+  container `f89c8f3a…`, derived under qemu from the `2238db15…` root. The
+  x86_64 compiler that root emits is again byte-identical. The new compiler
+  emits the same 19 x86_64 kx64 payloads and aarch64 containers as
+  `92b3078e…`, and the same three CDCI role images, so the measurements below
+  stand. Its kernel-object output for #1662's extern cases is byte-identical to
+  main's compiler.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
