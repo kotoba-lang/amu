@@ -54,11 +54,12 @@
             (string-concat (string-substring N at value-start) (mem-u2dec value)))))))))
 (defn- gs-profile? [P :string] :bool
   (and (> (gs-override P "MM-TOK-CAP") 0) (> (gs-override P "MM-NODE-CAP") 0)
+       (> (gs-override P "MM-SIR-CAP") 0)
        (> (gs-override P "MM-CODE-CAP") 0) (> (gs-override P "MM-FIX-CAP") 0)
        (> (gs-override P "MM-LITB-CAP") 0) (> (gs-override P "MM-OUT-CAP") 0)
        (= (loop [at 0 count 0]
             (let [next (gs-find P ";; [:s " at)]
-              (if (< next 0) count (recur (+ next 7) (inc count))))) 6)))
+              (if (< next 0) count (recur (+ next 7) (inc count))))) 7)))
 (defn- seed-main [] :i64
   (if (not= (io-argc) 3) 1
     (let [N (io-read-file (vector-alloc 1) (io-arg 0))
