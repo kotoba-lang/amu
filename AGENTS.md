@@ -111,6 +111,24 @@ actual guest receipts; full scheduling and shared Browser remain separate.
   Preserve their corpus while porting genuinely missing public behavior.
 
 
+## Local reference oracle (owner decision 2026-10-29, JUN-579 / JUN-588)
+
+The legacy cljk / JVM / nbb reference route (kotoba-sema, osaho, the nbb
+`definition-cids`, `.cljk` test suites) may be run on a developer machine as a
+one-off **measurement oracle**, to obtain reference values (KIR, Definition
+CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
+`.kotoba` equivalence.
+
+- Record the exact command, tool versions, inputs and outputs as data
+  (evidence, with the date); keep downloads minimal and say what was fetched.
+- It never appears in CI, a gate script, a workflow, a build, packaging or a
+  runtime path, and is never a fallback or a required comparison route. The
+  CDCI ban on JVM/nbb is unchanged; a native result must not silently fall
+  back to it.
+- A reference value is evidence of the reference's behavior. It is not proof
+  that a native implementation is correct, and a mismatch is reported, not
+  forced to agree.
+
 ## Shared agent rule
 
 These rules apply to every agent. Migrate and qualify whole components,
