@@ -269,6 +269,8 @@ jobs:
               python3 /repo/scripts/seed/check-private-store-fault-injection.py \
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
           done
+      - name: Wire 35 WRITE/APPEND and private-store frames under a short write (arm64, AWAI-52)
+        run: python3 scripts/seed/check-short-write.py --compiler seed/bootstrap/aarch64-linux-static-root.elf --output "$RUNNER_TEMP/runtime/short-write"
       - name: Native private store and STOP/CONT sleep resume (arm64)
         run: |
           python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
