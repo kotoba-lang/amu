@@ -30,6 +30,12 @@ the embedded source with the pinned compiler, checks the entire signed image
 against the input, and executes the regenerated private image. It never
 executes an arbitrary supplied program. Program output includes the complete
 signed i64 result followed by a newline; successful return exits0.
+`run ... --receipt FILE` (JUN-282) captures stdout, prints it after the program
+ends and writes `amu.run-receipt.v1` JSON: SHA-256 of the source, the pinned
+compiler and packager, the regenerated program and stdout, plus the exit status.
+An existing receipt file refuses with `ERECEIPT`. The commands the C-loader
+removal took away (`measure-runtime`, `package-ios`, `package-macos`, `test`)
+refuse with `EREMOVED`.
 Source is limited to1MiB, raw code to4MiB. Symlink/nonregular input, unsupported
 flags, incompatible main ABI and existing output paths refuse. Import/project
 CLI parity, full Darwin runtime and independent-user release remain open.
