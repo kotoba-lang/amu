@@ -5432,3 +5432,30 @@ carry-forward s106 -- gates (b)+(c), then the append, the post-
 append evaluator pair and reconcile-s105.py --line.  Evidence:
 docs/evidence/gpu/anv-b3w6daybar-20261030/.  (JUN-55, JUN-59;
 Linear tracking JUN-499)
+
+2026-10-30 (session 106, JUN-59 -- the W6 LEDGER-LANDING, the s105
+tail completed): the standing gate set's missing halves ran and
+verified byte-equal to the s88 pins -- (b) scoped GPU gate GREEN
+123 tests / 12162 assertions / 0 failures / 0 errors twice, (c)
+FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (.err == pin;
+NO green full suite) -- and the byte-pinned s105 line was APPENDED
+to settle-bar-ledger.txt (exactly one insertion): "day=2026-10-30
+session=s105 class=INTERMEDIATE/MIXED median=1133 min=993
+flag=none".  Post-append evaluator pair (twice byte-identical):
+VERDICT: PENDING 3/4 (counted days 2026-10-28 s31 / 2026-10-29
+s73 / 2026-10-30 s105; the evaluator is the only verdict source).
+reconcile-s105.py --line on the fresh pair: RECONCILE VERDICT:
+CONSISTENT (median/min/class all MATCH, twice byte-identical).
+FINDING (named, first post-append execution): the s97 frozen
+ledger-prego.py --compat asserts the ledger's frozen NINE sessions
+and REFUSES any appended row (REFUSED-LEDGER-SHAPE exit 2; the
+reconcile --compat chain fails closed X0 PARSE-MISSING ->
+INCONSISTENT) -- the s99 adoption contract's "re-runs --compat in
+its own record" clause is structurally unsatisfiable AFTER the
+first append (it can only run green pre-append; the s99 committed
+pin stands where the proof was taken, --self-test still == pin).
+Resolution PROPOSED only, nothing accepted (carry-forward s107).
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor).  Evidence:
+docs/evidence/gpu/anv-b3w6ledgerappend-20261030/.  (JUN-55,
+JUN-59; Linear tracking JUN-499)
