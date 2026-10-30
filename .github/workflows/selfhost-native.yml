@@ -255,6 +255,16 @@ jobs:
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Spawn setup refusals under injected seccomp faults (arm64, JUN-292)
+        run: |
+          fi="$RUNNER_TEMP/runtime/spawn-faults"; mkdir -p "$fi"
+          for f in close_range fchdir; do python3 scripts/seed/check-spawn-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none close_range fchdir; do
+            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-spawn-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
