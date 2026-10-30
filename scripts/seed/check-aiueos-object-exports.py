@@ -12,6 +12,13 @@ with an independent ELF parser (Python stages and observes; it emits nothing):
   addend -4 relocation per export at the context LEA of its shim (offset 3 into
   the shim), with the shims laid out back to back;
 * nine exports: refused (E7102), nothing written.
+* exports of six and eight parameters (R4B raised to 8, ADR 0384): a long shim that stores
+  System V's sixth argument (r9) and its stack words where the internal convention expects
+  them, then sets the context exactly as the short shim does. The bytes are compared with
+  the expected encoding assembled here, the relocation sits at the LEA displacement, and
+  a six-parameter export and a two-parameter export in one object are laid out back to back;
+* a nine-parameter export (E2108) and a six-parameter private function (E7102): refused,
+  nothing written.
 
 The aiueos verifier (kotoba.aiueos verify-kotoba-kernel-object.py) takes the
 export list; this gate does not depend on it.
@@ -32,6 +39,20 @@ TWO_SOURCE = ("(ns two (:export [f g]))\n(defn f [x :i64] :i64 (+ x 1))\n"
               "(defn g [x :i64 y :i64] :i64 (* x y))\n")
 NINE_SOURCE = ("(ns nine (:export [" + " ".join(f"f{i}" for i in range(9)) + "]))\n"
                + "".join(f"(defn f{i} [x :i64] :i64 (+ x {i}))\n" for i in range(9)))
+def params_source(name, n, private=False):
+    ps = " ".join(f"a{i} :i64" for i in range(n))
+    body = "(+ " + " ".join(f"(* a{i} {i + 1})" for i in range(n)) + ")"
+    if private:
+        return (f"(ns {name} (:export [f]))\n(defn- g [{ps}] :i64 {body})\n"
+                f"(defn f [x :i64] :i64 (g {' '.join(['x'] * n)}))\n")
+    return f"(ns {name} (:export [f]))\n(defn f [{ps}] :i64 {body})\n"
+
+SIX_SOURCE = params_source("six", 6)
+EIGHT_SOURCE = params_source("eight", 8)
+NINE_PARAMS_SOURCE = params_source("ninep", 9)
+PRIVATE_SIX_SOURCE = params_source("privsix", 6, private=True)
+MIXED_SOURCE = ("(ns mixed (:export [f g]))\n" + "(defn f [" + " ".join(f"a{i} :i64" for i in range(6))
+                + "] :i64 (+ a0 a5))\n(defn g [x :i64 y :i64] :i64 (* x y))\n")
 FUEL = "1024"
 SHIM = 29      # the shim for a fuel that fits in 31 bits
 
@@ -116,6 +137,45 @@ def check_two(obj):
             raise ValueError(f"shim at {start} does not replenish fuel {FUEL}")
 
 
+def long_shim(n, fuel=int(FUEL)):
+    """The expected long shim of an n-parameter export, assembled here from the encoding."""
+    frame = (8 * (n - 5) + 15) & -16
+    out = bytes([0x55, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xEC, frame])   # push rbp; mov rbp,rsp; sub rsp,F
+    out += bytes([0x4C, 0x89, 0x4C, 0x24, 0x00])                       # mov [rsp+0],r9
+    for j in range(6, n):                                              # mov rax,[rbp+16+8(j-6)]; mov [rsp+8(j-5)],rax
+        out += bytes([0x48, 0x8B, 0x45, 16 + 8 * (j - 6), 0x48, 0x89, 0x44, 0x24, 8 * (j - 5)])
+    lea = len(out) + 3
+    out += bytes([0x4C, 0x8D, 0x0D, 0, 0, 0, 0])                       # lea r9,[rip+context]
+    out += bytes([0x49, 0xC7, 0x41, 0x08]) + struct.pack("<i", fuel)   # mov qword [r9+8], fuel
+    return out, lea                                                    # call entry; leave; ret follow
+
+
+def check_long(obj, n):
+    shim, lea = long_shim(n)
+    size = len(shim) + 5 + 2
+    text = obj["text"]
+    if text[:len(shim)] != shim or text[len(shim)] != 0xE8 or text[len(shim) + 5:size] != b"\xc9\xc3":
+        raise ValueError(f"{n}-parameter shim is not the expected sequence: {text[:size].hex()}")
+    if struct.unpack_from("<i", text, len(shim) + 1)[0] != 2:   # past leave; ret, to the code after the shim
+        raise ValueError(f"{n}-parameter shim does not call the code right after it")
+    f = [s for s in obj["symbols"] if s[0] == "f"][0]
+    if f[1] != 0x12 or f[3] != 0 or f[4] != size:
+        raise ValueError(f"export f is {f[1:]}, want GLOBAL FUNC at 0 size {size}")
+    if [(o, a) for o, i, a in obj["relas"]] != [(lea, -4)]:
+        raise ValueError(f"relocations {obj['relas']}, want one at the LEA displacement {lea}")
+    return size
+
+
+def check_mixed(obj):
+    six, lea = long_shim(6)
+    size6 = len(six) + 7
+    syms = {s[0]: s for s in obj["symbols"]}
+    if (syms["f"][3], syms["f"][4], syms["g"][3], syms["g"][4]) != (0, size6, size6, SHIM):
+        raise ValueError(f"mixed layout f={syms['f'][3:]}, g={syms['g'][3:]}")
+    if [(o, a) for o, i, a in obj["relas"]] != [(lea, -4), (size6 + 3, -4)]:
+        raise ValueError(f"mixed relocations {obj['relas']}")
+
+
 def main(compiler, output):
     gate = gate_module()
     gate.verify_macho(compiler)
@@ -136,6 +196,20 @@ def main(compiler, output):
     if "E7102" not in (result.stdout + result.stderr).decode(errors="replace") or nine.exists():
         raise ValueError("nine exports were not refused with E7102 and no output")
     report["nineExports"] = "refused E7102"
+
+    for name, source, n in (("six", SIX_SOURCE, 6), ("eight", EIGHT_SOURCE, 8)):
+        result, obj = compile_object(gate, compiler, output, name, source)
+        size = check_long(read_elf(obj), n)
+        report[f"{name}Params"] = {"sha256": hashlib.sha256(obj.read_bytes()).hexdigest(), "shimBytes": size}
+    result, mixed = compile_object(gate, compiler, output, "mixed", MIXED_SOURCE)
+    check_mixed(read_elf(mixed))
+    report["mixedLayout"] = "six-parameter shim then the short shim"
+
+    for name, source, code in (("ninep", NINE_PARAMS_SOURCE, "E2108"), ("privsix", PRIVATE_SIX_SOURCE, "E7102")):
+        result, obj = compile_object(gate, compiler, output, name, source, expected=1)
+        if code not in (result.stdout + result.stderr).decode(errors="replace") or obj.exists():
+            raise ValueError(f"{name} was not refused with {code} and no output")
+        report[name] = f"refused {code}"
 
     (output / "report.json").write_text(json.dumps(report, indent=2) + "\n")
     print("PASS_AIUEOS_OBJECT_EXPORTS " + json.dumps(report, sort_keys=True), flush=True)

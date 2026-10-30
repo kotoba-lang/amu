@@ -1932,6 +1932,10 @@
   (let [ns (gn-g M1 gn-f-ns)
         dp (gn-g M1 gn-f-dp)]
     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
+          ;; JUN-556 (R4B raised to 8): parameters past the fifth arrive on the stack internally, where AAPCS64
+          ;; passes them in x5..x7, and no aarch64 entry shim converts them yet. Refuse such an explicit export
+          ;; rather than emit an entry a native caller would call with the wrong arguments.
+          (and (= (gn-fnf M1 f FF-EXPORT) 1) (> np 5)) (gn-err M1 E-GEN-OP OP-FN)
           :else
           (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
                 M2 (sl-assign (gn-vmode (gn-assign MM) i) i f np)
