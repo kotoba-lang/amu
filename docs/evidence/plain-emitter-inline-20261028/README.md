@@ -244,15 +244,17 @@ build closure and does not qualify anything.
     identical to main's compiler.
   * The local `check-complete-x86`, the full `check-native-cdci` and
     `check-public-native-product` pass.
-* Re-derived again after main's #1699, #1714 and #1716 (aiueos boot, object
-  route and desktop sources: `seed/74`, `78`, `84`, `86`, `91`, `95`, `97`).
+* Re-derived again after main's #1699, #1712, #1714 and #1716 (aiueos boot,
+  object route and desktop sources: `seed/74`, `78`, `84`, `86`, `91`, `95`,
+  `97`).
   Following ADR 0388 (#1709), the merge restored main's pin files and every
   Linux pin was regenerated from the merged source; `sourceRevision` stays
   `null`.
-  * x86_64: F1 = F2 = F3 = `b65c7dbc…` (8,770,048 bytes).
-  * aarch64 root: F1 = F2 = `eccf892f…` (3,637,760 bytes), container
-    `d7d5a7d4…`, derived under qemu from the `87996f7e…` root. The x86_64
-    compiler it emits is byte-identical.
+  * x86_64: F1 = F2 = F3 = `5e6484f1…` (8,774,144 bytes).
+  * aarch64 root: F1 = F2 = `7f88b254…` (3,641,856 bytes), container
+    `4a6895ba…`, derived under qemu from the `eccf892f…` root (itself the
+    fixed point before #1712). The x86_64 compiler it emits is
+    byte-identical.
   * Unchanged: the CDCI images (amu-selfhost `e24347fe…`, controller
     `b1e21d6c…`, kotoba-native `06ddfe88…`), the 19 x86_64 payloads, the 19
     aarch64 containers built with `--no-crypto-hw`, and all 99 kernel-object
