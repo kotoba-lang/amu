@@ -23,10 +23,19 @@
 ;; failing site's label instead (60 descriptor, 63 location/BAR call,
 ;; 65 CloseProtocol, 67 handle/OpenProtocol), and 63/67 first keep the EFI
 ;; status in cell45, so the loader's PCI1 report names the refusing check.
+;; Site 60 also copies the first 48 descriptor bytes to cells73..78 before
+;; the pool is freed; PCI2/PCI3 report those raw words.
 (defn- ep-failed [M :vector-i64 site :i64] :vector-i64
   (-> M (iv-hex "b8") (xg-bytes (if (= (xg-get M 16) 1) site 1) 4) (ep-store 0 40)))
 (defn- ep-keep-status [M :vector-i64] :vector-i64
   (if (= (xg-get M 16) 1) (ep-store M 0 45) M))
+(defn- ep-keep-descriptor [M :vector-i64] :vector-i64
+  (if (not= (xg-get M 16) 1) M
+    (let [V (-> M (ep-load 6 39) (iv-hex "4885f6") (eb-rip 0x840f 2 72))
+          copied (loop [k 0 W V]
+                   (if (>= k 6) W
+                     (recur (inc k) (-> W (iv-hex "488b46") (xg-byte (* k 8)) (ep-store 0 (+ 73 k))))))]
+      (xg-label copied 72))))
 (defn- ep-fail-jump [M :vector-i64 label :i64] :vector-i64
   (-> M (ep-failed label) (eb-rip 0xe9 1 label)))
 (defn- ep-check [M :vector-i64 failure :i64] :vector-i64
@@ -52,7 +61,7 @@
       (ep-save-field 33 16) (ep-save-field 34 24) (ep-save-field 35 32)
       (ep-save-field 36 40) (ep-save-field 38 48) (ep-save-field 37 56)
       (ep-load 0 42) (iv-hex "48ffc0") (ep-store 0 42)
-      (eb-rip 0xe9 1 61) (xg-label 60) (ep-failed 60)
+      (eb-rip 0xe9 1 61) (xg-label 60) (ep-keep-descriptor) (ep-failed 60)
       ;; Successful GetBarAttributes owns a non-null pool even on bad data.
       (xg-label 61) (ep-load 1 39) (iv-hex "4885c9") (eb-rip 0x840f 2 63)
       (iv-hex "41ff5648") (ep-check 63)
@@ -116,10 +125,14 @@
                   (let [w (eb-external data (+ 28 k) (+ guid 40 (* k 8)))] (recur (inc k)))))]
     (-> cells (eb-external 41 EP-CATALOG) (eb-external 42 (+ EP-CATALOG 16))
         (eb-external 43 160) (eb-external 44 168)
-        (cond-> (= (xg-get M 16) 1) (eb-external 45 (+ guid 144))))))
+        (cond-> (= (xg-get M 16) 1)
+          (-> (eb-external 45 (+ guid 144)) (eb-external 73 (+ guid 152)) (eb-external 74 (+ guid 160))
+              (eb-external 75 (+ guid 168)) (eb-external 76 (+ guid 176)) (eb-external 77 (+ guid 184))
+              (eb-external 78 (+ guid 192)))))))
 (defn- ep-data [M :vector-i64] :vector-i64
   (-> M (xg-out 0x4ca568b84cf5b200 8) (xg-out 0x3eb2ec9e 4) (xg-out 0x9a02503f 4)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
-      (cond-> (= (xg-get M 16) 1) (xg-out 0 8))))
+      (cond-> (= (xg-get M 16) 1) (-> (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+                                      (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)))))

@@ -98,9 +98,8 @@
 ;; A stage-5 failure is followed by three PCI frames (PCI catalog builds):
 ;; PCI1 st=last failing EFI status fb=handle count<<32|index
 ;;      fs=(bus<<16|dev<<8|fn)<<32|vendor/device pc=code<<48|BAR<<32|stored BARs
-;; PCI2 st=descriptor bytes 0..7 fb=AddrRangeMin fs=AddrLen pc=AddrTranslationOffset
-;; PCI3 st=AddrRangeMax fb=bytes 0x1e..0x25 fs=bytes 0x2e..0x35 (end tag first) pc=0
-;; PCI2/PCI3 read the last GetBarAttributes descriptor, if one was returned.
+;; PCI2/PCI3 st fb fs pc / st fb: the refused descriptor's first 48 bytes as six
+;; little-endian words, copied by the collector before the pool was freed.
 (defn- eb-netlog-pci [M :vector-i64] :vector-i64
   (if (not= (xg-get M 15) 1) M
     (-> M (iv-hex "80fb05") (eb-rip 0x850f 2 71)
@@ -111,10 +110,10 @@
         (eb-rip 0x058b 2 37) (iv-hex "4809c1")
         (eb-rip 0x058b4c 3 40) (iv-hex "49c1e010") (eb-rip 0x050b4c 3 38)
         (iv-hex "49c1e020") (eb-rip 0x050b4c 3 42) (eb-rip 0xe8 1 70)
-        (eb-rip 0x058b48 3 39) (iv-hex "4885c0") (eb-rip 0x840f 2 71)
-        (iv-hex "488b30488b500e488b48264c8b401ebf03000000") (eb-rip 0xe8 1 70)
-        (eb-rip 0x058b48 3 39)
-        (iv-hex "488b7016488b501e488b482e4531c0bf04000000") (eb-rip 0xe8 1 70)
+        (eb-rip 0x358b48 3 73) (eb-rip 0x158b48 3 74) (eb-rip 0x0d8b48 3 75)
+        (eb-rip 0x058b4c 3 76) (iv-hex "bf03000000") (eb-rip 0xe8 1 70)
+        (eb-rip 0x358b48 3 77) (eb-rip 0x158b48 3 78) (iv-hex "31c94531c0bf04000000")
+        (eb-rip 0xe8 1 70)
         (xg-label 71))))
 (defn- eb-netlog-fail [M :vector-i64] :vector-i64
   (-> M (iv-hex "4c89febf01000000") (eb-netlog-values) (eb-rip 0xe8 1 70) (eb-netlog-pci)
@@ -235,7 +234,7 @@
 (defn- eb-build [K :vector-i64 P :vector-i64 Q :vector-i64 pci :bool netlog :bool] :vector-i64
   (let [M (eb-code (eb-setup (mem-new) K (+ (vector-count P) (vector-count Q)) pci netlog))
         data-rva (eb-align (+ 4096 (xg-pos M)) 4096)
-        size (+ (eb-align (+ (xg-get M 14) (vector-count K)) 8) 24 (if pci (if netlog 128 120) 0))
+        size (+ (eb-align (+ (xg-get M 14) (vector-count K)) 8) 24 (if pci (if netlog 176 120) 0))
         data-off (+ 512 (eb-align (xg-pos M) 512))
         layout (-> M (xg-set 9 data-rva) (xg-set 10 size) (xg-set 11 data-off)
                    (xg-set 12 (eb-align (+ data-rva size) 4096))
