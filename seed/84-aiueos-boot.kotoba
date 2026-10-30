@@ -42,14 +42,14 @@
 ;; Backend state 0..8: entry, RX file/address/size, RW file/address/size,
 ;; kernel bytes, payload bytes. 9..14: data RVA/size/file, reloc RVA/file,
 ;; embedded kernel offset. CODE is the loader; OUT is the resulting PE.
-(defn- eb-setup [M :vector-i64 K :vector-i64 payload :i64 pci :bool] :vector-i64
+(defn- eb-setup [M :vector-i64 K :vector-i64 payload :i64 pci :bool netlog :bool] :vector-i64
   (let [p (eb-le K 32 8)]
     (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
         (xg-set 0 (eb-le K 24 8)) (xg-set 1 (eb-le K (+ p 8) 8))
         (xg-set 2 (eb-le K (+ p 24) 8)) (xg-set 3 (eb-le K (+ p 32) 8))
         (xg-set 4 (eb-le K (+ p 64) 8)) (xg-set 5 (eb-le K (+ p 80) 8))
         (xg-set 6 (eb-le K (+ p 88) 8)) (xg-set 7 (vector-count K)) (xg-set 8 payload)
-        (xg-set 15 (if pci 1 0))
+        (xg-set 15 (if pci 1 0)) (xg-set 16 (if netlog 1 0))
         (xg-set 14 (eb-align (+ 16560 (if pci EP-BYTES 0) payload) 16)))))
 (defn- eb-rip [M :vector-i64 op :i64 n :i64 label :i64] :vector-i64 (xg-rel M op n 2 label))
 (defn- eb-alloc [M :vector-i64 second :bool] :vector-i64
@@ -72,17 +72,67 @@
       (xg-bytes 0x08508b 3) (eb-rip 0x1589 2 16)
       (xg-bytes 0x0c488b 3) (eb-rip 0x0d89 2 18)
       (xg-bytes 0x20508b 3) (eb-rip 0x1589 2 17) (xg-label 24)))
+;; AWAI-118 opt-in loader netlog (`--netlog v1`). Without it no byte below is
+;; emitted and the loader is unchanged. Every report is made under boot
+;; services: ConOut->OutputString, then one Ethernet broadcast frame
+;; (0.0.0.0:7799 -> 255.255.255.255:7799, UDP checksum 0) through the Simple
+;; Network protocol of LoadedImage->DeviceHandle, or the first SNP instance.
+;; Transmit is called with HeaderSize 0 and its three optional operands as
+;; explicit zero stack arguments, then GetStatus is polled until the buffer is
+;; recycled (at most 200 x Stall(1000)). No peer address is configured.
+;; Text: "AIUEOS_LOADER_FAIL|OK   s=<stage> st=<EFI status> fb=<GOP base>
+;; fs=<GOP size> pc=<PCI BAR count>\r\n". Stages: 1 GOP, 2 RX AllocateAddress,
+;; 3 RW AllocateAddress, 4 scratch, 5 payload/PCI collector, 6 memory map and
+;; ExitBootServices. A failure reports, waits Stall(10 s) and calls
+;; ResetSystem(EfiResetCold) so a PXE-first board boots the next image; the
+;; existing 0xE9 'F' / 0xF4 exit receipt is still written first.
+;; Diagnostic transport only: it grants nothing and qualifies no hardware.
+(defn- eb-stage [M :vector-i64 n :i64] :vector-i64
+  (if (= (xg-get M 16) 1) (-> M (xg-byte 0xb3) (xg-byte n)) M))
+(defn- eb-netlog-values [M :vector-i64] :vector-i64
+  (let [V (-> M (eb-rip 0x158b48 3 13) (eb-rip 0x0d8b48 3 14))]
+    (if (= (xg-get M 15) 1) (eb-rip V 0x058b4c 3 42) (iv-hex V "4531c0"))))
+(defn- eb-netlog-ok [M :vector-i64] :vector-i64
+  (if (= (xg-get M 16) 1)
+    (-> M (eb-stage 6) (iv-hex "31f631ff") (eb-netlog-values) (eb-rip 0xe8 1 70)) M))
+(defn- eb-netlog-fail [M :vector-i64] :vector-i64
+  (-> M (iv-hex "4c89febf01000000") (eb-netlog-values) (eb-rip 0xe8 1 70)
+      (iv-hex "b98096980041ff96f8000000498b455831c94c89fa4531c04531c9ff5068")))
+;; emit(edi kind, rsi status, rdx/rcx/r8 values, bl stage); r12/r13/r14 are
+;; the loader's ImageHandle/SystemTable/BootServices. Assembled from
+;; awai118 emit.s (884 bytes, sha256 c531509bf5ccdbde76bad1fdfe2db9035f85ebd4ac697d7074f35e36f804502c), position independent.
+(defn- eb-netlog-routine [M :vector-i64] :vector-i64
+  (-> M (xg-label 70)
+      (iv-hex "554889e553565741574883e4f04881ec000300004889b42480020000488994248802000048898c24900200004c898424980200004889bc24")
+      (iv-hex "a00200000fb6c348898424a8020000488d3593020000488d7c2440b993000000fcf3a44883bc24a0020000007508c74424784f4b2020488d")
+      (iv-hex "7c247f488b8424a8020000b902000000e808020000488dbc2485000000488b842480020000b910000000e8ee010000488dbc249900000048")
+      (iv-hex "8b842488020000b910000000e8d4010000488dbc24ad000000488b842490020000b910000000e8ba010000488dbc24c1000000488b842498")
+      (iv-hex "020000b910000000e8a0010000488d74246a488dbc2480010000b9690000000fb60666890748ffc64883c702ffc975ef66c7070000498b4d")
+      (iv-hex "404885c9740b488d942480010000ff510848c78424b0020000000000004c89e1488d15820100004c8d8424b002000041ff96980000004885")
+      (iv-hex "c0754a488b8424b00200004885c0743d488b48184885c9743448c78424b802000000000000488d15550100004c8d8424b802000041ff9698")
+      (iv-hex "0000004885c0750d4c8bbc24b80200004d85ff753e48c78424b802000000000000488d0d2101000031d24c8d8424b802000041ff96400100")
+      (iv-hex "004885c00f85b80000004c8bbc24b80200004d85ff0f84a7000000498b47784885c00f849a0000008b0083f802741785c075074c89f941ff")
+      (iv-hex "57084c89f931d24531c041ff57184c89f931d241b8930000004c8d4c244048c74424200000000048c74424280000000048c7442430000000")
+      (iv-hex "0041ff57604885c07548c78424c8020000c800000048c78424c0020000000000004c89f931d24c8d8424c002000041ff57584883bc24c002")
+      (iv-hex "0000007515b9e803000041ff96f8000000ff8c24c802000075c3488d65e0415f5f5e5b5dc34c8d0d1d00000089caffca4989c24183e20f47")
+      (iv-hex "0fb614114488141748c1e80485d275e6c330313233343536373839616263646566a1311b5b6295d2118e3f00a0c969723bb93298a125acd3")
+      (iv-hex "119a2d0090273fc14dffffffffffff0200000000010800450000850000000040117a6900000000ffffffff1e771e7700710000414955454f")
+      (iv-hex "535f4c4f414445525f4641494c20733d30302073743d303030303030303030303030303030302066623d3030303030303030303030303030")
+      (iv-hex "30302066733d303030303030303030303030303030302070633d303030303030303030303030303030300d0a")))
 (defn- eb-code [M :vector-i64] :vector-i64
   (let [start (-> M (xg-bytes 0x5741564155415441 8) (xg-bytes (if (= (xg-get M 15) 1) 0x38ec8348 0x28ec8348) 4)
                   (xg-bytes 0xd58949cc8949 6) (xg-bytes 0x60728b4c 4)
-                  (eb-gop) (eb-alloc false) (eb-alloc true)
+                  (eb-stage 1) (eb-gop) (eb-stage 2) (eb-alloc false) (eb-stage 3) (eb-alloc true)
+                  (eb-stage 4)
                   (xg-bytes 0x00000000b9 5) (xg-bytes 0x00000002ba 5) (xg-bytes 0xb841 2) (xg-bytes 15 4)
                   (eb-rip 0x0d8d4c 3 9) (xg-bytes 0x2856ff41 4)
-                  (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26))
+                  (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26) (eb-stage 5))
         payload (if (> (xg-get M 8) 0)
                   (-> start (eb-rip 0x058d48 3 21) (eb-rip 0x058948 3 11)
-                      (xg-byte 0xb8) (xg-bytes (xg-get M 8) 4) (eb-rip 0x058948 3 12)) start)]
-    (-> (if (= (xg-get M 15) 1) (ep-code payload) payload) (eb-rip 0x058d48 3 10) (eb-rip 0x058948 3 4) (xg-label 25)
+                      (xg-byte 0xb8) (xg-bytes (xg-get M 8) 4) (eb-rip 0x058948 3 12)) start)
+        netlog (= (xg-get M 16) 1)]
+    (-> (if (= (xg-get M 15) 1) (ep-code payload) payload) (eb-netlog-ok)
+        (eb-rip 0x058d48 3 10) (eb-rip 0x058948 3 4) (xg-label 25)
         (xg-bytes 0x00004000b8 5) (eb-rip 0x058948 3 5)
         (eb-rip 0x0d8d48 3 5) (eb-rip 0x158b48 3 4)
         (eb-rip 0x058d4c 3 8) (eb-rip 0x0d8d4c 3 6)
@@ -91,8 +141,10 @@
         (xg-bytes 0xe1894c 3) (eb-rip 0x158b48 3 8)
         (xg-bytes 0x000000e896ff41 7) (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 25)
         (eb-rip 0x3d8d48 3 3) (xg-bytes 0xb848 2) (xg-bytes (xg-get M 0) 8) (xg-bytes 0xd0ff 2)
-        (xg-label 26) (xg-bytes 0xee46b000e9ba66 7)
-        (xg-bytes 0x007fb800f4ba66 7) (xg-bytes 0xef0000 3) (xg-bytes 0xfcebf4fa 4))))
+        (xg-label 26) (cond-> netlog (iv-hex "4989c7")) (xg-bytes 0xee46b000e9ba66 7)
+        (xg-bytes 0x007fb800f4ba66 7) (xg-bytes 0xef0000 3)
+        (cond-> netlog (eb-netlog-fail)) (xg-bytes 0xfcebf4fa 4)
+        (cond-> netlog (eb-netlog-routine)))))
 (defn- eb-external [M :vector-i64 label :i64 off :i64] :vector-i64
   (mem-set M (+ MM-LABEL-BASE label) (+ 1 (- (xg-get M 9) 4096) off)))
 (defn- eb-labels [M :vector-i64] :vector-i64
@@ -158,8 +210,8 @@
         (eb-pci-data)
         (xg-pad (xg-get M 13)) (xg-out 0 4) (xg-out 12 4) (xg-out 0 4)
         (xg-pad (+ (xg-get M 13) 512)))))
-(defn- eb-build [K :vector-i64 P :vector-i64 Q :vector-i64 pci :bool] :vector-i64
-  (let [M (eb-code (eb-setup (mem-new) K (+ (vector-count P) (vector-count Q)) pci))
+(defn- eb-build [K :vector-i64 P :vector-i64 Q :vector-i64 pci :bool netlog :bool] :vector-i64
+  (let [M (eb-code (eb-setup (mem-new) K (+ (vector-count P) (vector-count Q)) pci netlog))
         data-rva (eb-align (+ 4096 (xg-pos M)) 4096)
         size (+ (eb-align (+ (xg-get M 14) (vector-count K)) 8) 24 (if pci 120 0))
         data-off (+ 512 (eb-align (xg-pos M) 512))
@@ -187,7 +239,7 @@
          (or (not= slot-version 4)
              (and (= (eb-le K (+ rw-file 464) 4) UV-V5-MAGIC)
                   (>= handler 0x101000) (< handler (+ 0x101000 rx-size)))))))
-(defn- eb-package [kernel :string payload :string extra :string out :string pci :bool] :i64
+(defn- eb-package [kernel :string payload :string extra :string out :string pci :bool netlog :bool] :i64
   (let [K (io-read-bytes kernel)
         P (if (= (string-length payload) 0) (vector-alloc 0) (io-read-bytes payload))
         Q (if (= (string-length extra) 0) (vector-alloc 0) (io-read-bytes extra))
@@ -203,14 +255,17 @@
               (> (vector-count P) 524288))
             (and (eb-pci-required? K) (not pci)))
       (let [w (io-err "seed-aiueos-boot: E7111 bounded ELF64 kernel/payload admission refused\n")] 1)
-      (let [M (eb-build K P Q pci) e (vector-at M MM-ERR)]
+      (let [M (eb-build K P Q pci netlog) e (vector-at M MM-ERR)]
         (if (not= e 0) (drv-fail M kernel)
           (let [n (dec (vector-at M MM-OUT-N)) w (out-write-v M out (+ MM-OUT-BASE 1) n)]
             (if (= (io-exists out) 1)
               (let [z (io-out (string-concat "{:ok true, :format :pe32+-embedded-kernel, :bytes " (string-concat (mem-u2dec n) "}\n")))] 0)
               (drv-fail0 E-WRITE))))))))
+;; `--netlog v1` is accepted only as the final pair, after every other option.
 (defn- eb-command [] :i64
-  (let [n (io-argc) kernel (io-arg 1) out (io-arg 3)
+  (let [argc (io-argc)
+        netlog (and (>= argc 6) (string=? (io-arg (- argc 2)) "--netlog") (string=? (io-arg (- argc 1)) "v1"))
+        n (if netlog (- argc 2) argc) kernel (io-arg 1) out (io-arg 3)
         pci (or (and (= n 6) (string=? (io-arg 4) "--pci-resources") (string=? (io-arg 5) "v1"))
                 (and (= n 8) (string=? (io-arg 6) "--pci-resources") (string=? (io-arg 7) "v1"))
                 (and (= n 10) (string=? (io-arg 8) "--pci-resources") (string=? (io-arg 9) "v1")))
@@ -221,11 +276,11 @@
                               (and (= n 8) pci (> (string-length payload) 0))
                               (and dual pci (> (string-length payload) 0) (> (string-length extra) 0))))
               (not (string=? (io-arg 2) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
-          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-boot KERNEL --output NEW_EFI [--payload FILE | --font FILE --user-slot FILE] [--pci-resources v1]; unsupported options refuse\n")] 2)
+          (let [w (io-err "seed-aiueos-boot: E7110 expected package-aiueos-boot KERNEL --output NEW_EFI [--payload FILE | --font FILE --user-slot FILE] [--pci-resources v1] [--netlog v1]; unsupported options refuse\n")] 2)
           (or (= (io-exists kernel) 0)
               (and (> (string-length payload) 0) (= (io-exists payload) 0))
               (and dual (= (io-exists extra) 0))) (drv-fail0 E-READ)
-          :else (eb-package kernel payload extra out pci))))
+          :else (eb-package kernel payload extra out pci netlog))))
 
 ;; A fixed-size region for the v6 boot-payload capability. The outer slot is
 ;; always allocated in full; its 64-byte header gives the bounded inner bytes.
