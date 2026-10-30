@@ -5459,3 +5459,43 @@ RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
 Intel (or for any vendor).  Evidence:
 docs/evidence/gpu/anv-b3w6ledgerappend-20261030/.  (JUN-55,
 JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 107, JUN-59 -- the T18 ANALYSIS half, the s84-
+frozen DL ladder cross-day level replication at W6 COMPUTED): the
+s92 pre-build adopted as analysis-s107.py (byte-identical, sha256
+425c7541...) and run twice byte-identically over the six committed
+windows (the five prior + anv-b3w6daybar-20261030 = the s80-frozen
+W6 window, tag s105).  FINDING (publication-s107.txt, 7,832
+bytes): JOINT T18 = (b) NOT-REPLICATED (IUT over DL8/DL16/DL32;
+named failing: DL8 (b) DIRECTION-CONSISTENT-NOT-SIGNIFICANT p
+0.122694 | DL32 (b) DIRECTION-REVERSED p 0.512824, 2*C_obs -1 --
+the demanding axis has now missed twice: W5 exception, W6
+reversal).  Per-pair: DL4 46->40 (2*C_obs 6) p 0.251787 (b)
+[UNINFORMATIVE-BY-S81-CAVEAT]; DL8 97->85 (12) p 0.122694 (b);
+DL16 238->184 (54) p 0.000650 (a) LEVEL-NARROWING-REPLICATED-
+CONTINUED (the one step carrying the replication); DL32 655->656
+(-1) p 0.512824 (b).  Invalidation CLEAN (six windows 78/0 all;
+named cell ok-map cell 5; C1 at W6 branch (a) -- c2 FLOOR band
+31..32, c8 32821 vs 32915 = 0.29%); prior-window reproduction +
+parser validity pins ALL EXACT (10/10, 4/4, 6/6+4/4).  D3 band
+(the s83/s89 [MIN,MAX] convention): DL16 OUTSIDE-BELOW, DL32
+OUTSIDE-ABOVE (descriptive, never a test).  Standing gate set all
+== s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 twice == pins; (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form .err == pin -- NO green full suite claimed; (d)
+evaluator self-test == pin + ledger eval pair == the s106 post-
+append pins, VERDICT: PENDING 3/4 -- the pre-append s88 eval pin
+differs by exactly the s106 append, named not hidden; (e) find
+'*.sh' -> 0).  THE BAR: ANALYSIS session -> NO hardware runs -> NO
+reading -> NO ledger line, NO day-slot consumption.  RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); these are derived inferential quantities over
+committed measurements, not new measurements.  Carry-forward
+s108: the T20 analysis half (s93 + s88, next unblocked), the
+--compat post-append design decision (PROPOSED only), the W7
+measurement half (s85; the 2026-10-31 day slot; faces the same
+--compat refusal until the design decision lands), any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6dlrep-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
