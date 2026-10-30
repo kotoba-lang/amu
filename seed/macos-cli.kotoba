@@ -163,6 +163,10 @@
           :else (let [status (mc-operation command source input artifact dir compiler packager
                                   (mc-absolute (hc-info-cwd info) output) guest-start)
                       clean (mc-clean dir)] status))))))
+;; commands the C-loader removal (amu#1460) took away: refused by name, not as a typo (JUN-282)
+(defn- mc-removed? [command :string] :bool
+  (or (string=? command "measure-runtime") (string=? command "package-ios")
+      (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
   (mc-error "usage: amu check FILE.kotoba | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [-- ARG...]" 2))
 (defn- seed-main [] :i64
@@ -179,4 +183,6 @@
           (and (string=? command "run") (or (= n 2) (and (>= n 3) (string=? (hc-arg 2) "--"))) (< n 64)))
         (let [info (hc-call 0 [])]
           (if (hc-ok? info) (mc-work command source output guest-start info) (mc-error "EHOST cannot resolve native host context" 70)))
+      (mc-removed? command)
+        (mc-error (string-concat "EREMOVED " (string-concat command " was removed with the C loader (docs/c-loader-removal.md)")) 2)
       :else (mc-usage))))
