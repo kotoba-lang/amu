@@ -154,6 +154,23 @@ images/current FULL-MANIFEST bytes. An older self-consistent descriptor is
 insufficient. Runtime/target changes must regenerate affected role/source,
 root and product pins and re-run native positive/refusal/resource checks.
 
+## Derived seed pins are regenerated, never merged (JUN-631, ADR 0388)
+
+Compiler images, `native-product.json`, `seed/bootstrap/*`, `bin/amu-linux-x86_64`,
+the public Mac CLI and foundation-starter descriptors are build outputs of the
+whole seed tree. When a seed PR conflicts with main in them:
+
+- merge main (never rebase or force-push), then run
+  `python3 scripts/seed/repin-derived-pins.py --take-pins-from FETCH_HEAD` on Mac
+  arm64. It restores main's pin files and rebuilds every pin on the merged
+  source with the two-phase writer and the public CLI repin. Do not pick
+  either side of a pin conflict by hand.
+- leave `sourceRevision` `null` after regeneration: it means the descriptor's
+  own commit and the source-revision audit checks that commit. Do not open a
+  follow-up PR to name a squash commit.
+- Target (stage 2, not implemented): PRs carry source only, CI derives the
+  compilers from the PR, and a post-merge job repins main.
+
 ## Bounded canonical Kototama native frontend (JUN-369)
 
 `compile-kototama` requires the explicit `kototama.pure-i64-aot/v1` profile,

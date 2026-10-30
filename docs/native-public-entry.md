@@ -67,7 +67,8 @@ shared-component execution, then merge/main/pin readback. Pending CI does not
 qualify a new public image. Current controller and role identities are in
 `native-product.json` and `seed/cdci/policy.json`; historical digests are not
 current pins. `sourceRevision` identifies a Git tree whose complete compiler
-sources were reproduced. It does not identify the historical first producer
+sources were reproduced; `null` (the regenerated state, ADR 0388) means the
+descriptor's own commit. It does not identify the historical first producer
 or establish independent clean-host qualification.
 
 The controller's two roles and fixed24 corpus remain. Python and GitHub Actions

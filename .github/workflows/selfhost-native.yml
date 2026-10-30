@@ -68,6 +68,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
+env:
+  # JUN-629: the runner has 4 vCPUs; every native_build_queue.py call in a job uses this shared-slot capacity.
+  KOTOBA_NATIVE_SLOT_CAPACITY: "4"
 jobs:
   native-preflight:
     runs-on: ubuntu-latest
@@ -112,7 +115,7 @@ jobs:
       - name: Independent native preflight controls through the shared two-slot plan
         run: >-
           python3 scripts/seed/native_build_queue.py
-          --manifest seed/native-preflight-plan.json --phase preflight --jobs 2
+          --manifest seed/native-preflight-plan.json --phase preflight --jobs 4
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/preflight-schedule"
       - name: Retain the actual B2 preflight admission
@@ -126,7 +129,7 @@ jobs:
           path = root / "preflight-schedule/schedule.json"
           if path.exists():
               report = json.loads(path.read_text())
-              assert report["jobs"] == report["capacity"] == 2
+              assert report["jobs"] == report["capacity"] == int(os.environ["KOTOBA_NATIVE_SLOT_CAPACITY"])
               for row in report["gates"]:
                   if row["name"] == "b2-preflight":
                       (root / "b2-libc-preflight-admission.json").write_text(json.dumps(
@@ -184,7 +187,7 @@ jobs:
           TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Fresh one-compiler derivation before independent ISA qualification
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 2 --output "$RUNNER_TEMP/pg-derive-arm64"
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -255,7 +258,7 @@ jobs:
       - name: Inline vector access, exact helper-call observations (arm64, native)
         run: python3 scripts/seed/check-inline-vectors.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/inline-vectors"
       - name: Independent arm64 gates (bounded native build queue)
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 2 --output "$RUNNER_TEMP/pg-arm64"
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
@@ -475,7 +478,7 @@ jobs:
       - name: Independent x86 gates (bounded native build queue)
         run: |
           python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
-          python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 2 --output "$RUNNER_TEMP/pg-x86"
+          python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.shard == 'core'
         with:
@@ -596,7 +599,7 @@ jobs:
         with:
           name: native-scheduling-x86-extensions
           path: ${{ runner.temp }}/x86-shards/extensions
-      - name: Require all19 original native gates and argv at capacity2 per runner
+      - name: Require all19 original native gates and argv at the bounded capacity per runner
         run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()

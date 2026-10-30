@@ -56,7 +56,7 @@ class NativeGateShardTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 S.main(ROOT/'seed/native-gate-plan.json','core',output)
 
-    def proofs(self, root):
+    def proofs(self, root, capacity=2):
         for shard in S.SHARDS:
             folder=root/shard
             (folder/'pg-x86').mkdir(parents=True)
@@ -66,7 +66,7 @@ class NativeGateShardTests(unittest.TestCase):
                 row['argv']=[token.replace('@TEMP@',str(folder)) for token in row['argv']]
                 row['exit']=0
             (folder/'pg-x86/schedule.json').write_text(json.dumps(dict(
-                status='COMPLETED',exit=0,jobs=2,capacity=2,gates=rows)))
+                status='COMPLETED',exit=0,jobs=capacity,capacity=capacity,gates=rows)))
 
     def test_join_accepts_all_nineteen_original_process_records(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -74,6 +74,19 @@ class NativeGateShardTests(unittest.TestCase):
             result=S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
             self.assertEqual(result['executedGates'],19)
             self.assertFalse(result['qualificationReplacement'])
+
+    def test_join_accepts_the_four_vcpu_runner_capacity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);self.proofs(root,4)
+            result=S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
+            self.assertEqual((result['executedGates'],result['capacityPerRunner']),(19,4))
+
+    def test_join_refuses_an_unbounded_capacity(self):
+        for capacity in (1,3,8):
+            with tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);self.proofs(root,capacity)
+                with self.assertRaises(ValueError):
+                    S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
 
     def test_join_refuses_a_missing_execution_despite_success_header(self):
         with tempfile.TemporaryDirectory() as temporary:
