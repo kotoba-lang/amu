@@ -5543,3 +5543,53 @@ row (not queued) -- with T18 (s107) and T20 (s108) computed, the
 s84/s88-frozen analysis rows are complete.  Evidence:
 docs/evidence/gpu/anv-b3w6tailrep-20261030/.  (JUN-55, JUN-59;
 Linear tracking JUN-499)
+
+2026-10-30 (session 109, JUN-59 -- the --COMPAT POST-APPEND DESIGN
+DECISION, ACCEPTED DESIGN ONLY): how the measuring record
+re-validates parser agreement post-append is now DECIDED (was
+PROPOSED at s106).  Problem (re-verified live this tick): the
+frozen ledger-prego.py --compat asserts the live ledger's day=
+session order EQUALS the frozen nine (WIN9); the s105 append made
+the ledger ten rows and every --compat run since refuses
+fail-closed (REFUSED-LEDGER-SHAPE, exit 2, twice byte-identical
+this tick) -- the s99 clause "the measuring session re-runs
+--compat in its own record" is structurally unsatisfiable after
+the first qualifying append.  ACCEPTED: (a) STEADY STATE -- the
+cohort assertion is corrected to COHORT-PREFIX (the frozen nine
+must be the exact first nine day= rows, each re-deriving
+byte-exact; every day= row must satisfy the line grammar
+fail-closed; post-cohort rows are shape-validated, not
+re-derived) and lands as a SUPERSESSION under its own freeze (s97
+bytes never edited; ledger tool v2 + reconcile driver v2 +
+adoption-manifest update + self-test/negative rows) -- NOT YET
+IMPLEMENTED, spawned as its own unqueued row; (b) W7 INTERIM (if
+the supersession has not landed and verified before the W7 session
+starts, first session at/after 2026-10-31T00:00:00Z per s85): the
+W7 record records the frozen chain's --compat refusal as the named
+structural fact, verifies the live cohort rows == the s97 pin want
+rows byte-exact (9/9 verified this tick), and carries the s99
+pre-append pin + the s102 manifest digests as the parser-agreement
+proof labeled CITED -- never claiming a post-append green.
+Premise executed-verified this tick (D2, twice byte-identical):
+frozen tool bytes over a cohort-only ledger stand-in reproduce the
+committed s97 --compat pin BYTE-IDENTICALLY (3,038 bytes) -- the
+appended row is not an input to any cohort quantity.  REJECTED:
+the scratch staged-cohort stand-in as the standing mechanism
+(per-record ceremony, unrehearsed under slot pressure; unqueued
+option only) and keeping whole-ledger equality with permanent pin-
+carrying (conflates cohort integrity with append-only growth -- the
+defect itself).  Standing gate set all == s88 pins ((a) 2649/0
+17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0 twice ==
+pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form .err
+== pin -- NO green full suite claimed; (d) evaluator self-test ==
+pin + ledger eval pair == the s106 post-append pins, VERDICT:
+PENDING 3/4; (e) find '*.sh' -> 0).  THE BAR: design session ->
+NO hardware runs -> NO reading -> NO ledger line, NO day-slot
+consumption.  RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  Carry-forward
+s110: the supersession freeze + implementation (first unblocked
+row), the W7 measurement half (s85; 2026-10-31 slot; interim
+governs if supersession not landed), any further counted-day slot
+(its own freeze) and a cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3compatdecision-20261030/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
