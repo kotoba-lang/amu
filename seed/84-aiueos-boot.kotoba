@@ -135,7 +135,7 @@
 ;; the loader's ImageHandle/SystemTable/BootServices. Assembled from
 ;; awai118 emit.s (1439 bytes, sha256 e383ddf11f9029ff97737734cff6aeebe444fe2402e7ad0c0aeb4dff65835641), position independent.
 ;; Label 81 is crumb(rdi): CRMB frames from the previous debug kernel's 16
-;; qwords in row-0 framebuffer padding (AWAI-119). Label 84 is wdt(): arms
+;; qwords in its context, left in DRAM across a watchdog reset (AWAI-119). Label 84 is wdt(): arms
 ;; the AMD FCH watchdog (90 s, reset), so a hung debug kernel resets itself.
 ;; Label 80 is dump(rdi catalog, rsi count, rdx map buffer, rcx/r8/r9/r10 the
 ;; map size/key/descriptor size/version cells): one BAR frame per catalog
@@ -175,15 +175,14 @@
       (iv-hex "90273fc14dffffffffffff0200000000010800450000850000000040117a6900000000ffffffff1e771e7700710000414955454f535f4c4f")
       (iv-hex "414445525f4641494c20733d30302073743d303030303030303030303030303030302066623d303030303030303030303030303030302066")
       (iv-hex "733d303030303030303030303030303030302070633d303030303030303030303030303030300d0a")))
-;; After GOP lookup: rdi = GOP base + 4*width when each row has at least 32
-;; invisible padding pixels (stride >= width+32), else 0; then crumb.
+;; rdi = the debug kernel's crumb in its own context (RW base + WG-CONTEXT +
+;; u32 word 140, byte 560), read before this loader reallocates and copies the RW segment.
+;; The opt-in debug kernel writes it with kernel-wbinvd, so a watchdog reset
+;; leaves it in DRAM; the firmware clears GOP memory, so GOP padding and the
+;; page past the framebuffer did not keep it on the 6600H or in QEMU.
 (defn- eb-netlog-crumb [M :vector-i64] :vector-i64
   (if (not= (xg-get M 16) 1) M
-    (-> M (eb-rip 0x3d8b48 3 13) (eb-rip 0x058b 2 15) (eb-rip 0x158b 2 17)
-        (iv-hex "8d4820") (iv-hex "39ca") (eb-rip 0x820f 2 82)
-        (iv-hex "4885ff") (eb-rip 0x840f 2 82)
-        (iv-hex "488d3c87") (eb-rip 0xe9 1 83)
-        (xg-label 82) (iv-hex "31ff") (xg-label 83) (eb-rip 0xe8 1 81))))
+    (-> M (iv-hex "48bf") (xg-bytes (+ (xg-get M 5) WG-CONTEXT 560) 8) (eb-rip 0xe8 1 81))))
 (defn- eb-code [M :vector-i64] :vector-i64
   (let [start (-> M (xg-bytes 0x5741564155415441 8) (xg-bytes (if (= (xg-get M 15) 1) 0x38ec8348 0x28ec8348) 4)
                   (xg-bytes 0xd58949cc8949 6) (xg-bytes 0x60728b4c 4)

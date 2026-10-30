@@ -21,7 +21,11 @@
 (def KM-OUT16 104)
 (def KM-IN16 105)
 (def KM-EFFECTS 106)
-(def KM-INTR-N 107)
+;; AWAI-119: write back and invalidate the caches, so a debug crumb kept in
+;; ordinary RAM reaches DRAM before a watchdog reset (CLFLUSH/WBINVD were
+;; otherwise unreachable from kernel Kotoba). v3 only, no operand, returns 0.
+(def KM-WBINVD 107)
+(def KM-INTR-N 108)
 ;; v1/v2 keep their original intrinsic trailer and exact output bytes.
 ;; Effects/port16 belong to the v3 desktop image contract only.
 (defn- km-count [] :i64
@@ -69,9 +73,9 @@
       68 "kernel-browser-surface" 69 "kernel-browser-context" 70 "kernel-native-font"
       71 "kernel-boot-payload" 72 "kernel-user-slot"
       73 "kernel-rdrand" 74 "kernel-rdseed"
-      75 "kernel-out-u16" 76 "kernel-in-u16" 77 "kernel-desktop-effects" "")))
+      75 "kernel-out-u16" 76 "kernel-in-u16" 77 "kernel-desktop-effects" 78 "kernel-wbinvd" "")))
 (defn- km-arity [k :i64] :i64
-  (cond (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0
+  (cond (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0 (= k KM-WBINVD) 0
         (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
         (< k KM-CPU-FIRST) 1
@@ -258,6 +262,7 @@
         (= k KM-USER-SLOT) (wg-user-slot M t)
         (= k KM-RDRAND) (km-entropy M 0xf0c70f48 t)
         (= k KM-RDSEED) (km-entropy M 0xf8c70f48 t)
+        (= k KM-WBINVD) (-> M (xg-bytes 0x090f 2) (xg-bytes 0xc031 2) (xg-save t))
         (>= k WG-FIRST) (wg-intrinsic M (- k WG-FIRST) t)
         (>= k UV-FIRST) (uv-intrinsic M (- k UV-FIRST) t)
         (= k LV-CALL) (lv-call M t)
