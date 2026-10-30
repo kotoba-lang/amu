@@ -159,6 +159,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-xstate.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
+      - name: AIUEOS kernel object route waits for an interrupt (JUN-633 slice 4)
+        run: |
+          python3 scripts/seed/check-aiueos-object-halt.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-halt"
       - name: AIUEOS kernel object route emits scalar SSE floats (JUN-633 slice 3)
         run: |
           python3 scripts/seed/check-aiueos-object-f32.py \
