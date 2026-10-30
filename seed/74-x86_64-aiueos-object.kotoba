@@ -90,6 +90,12 @@
 ;; emits (and so of every pinned aiueos object when it is rebuilt). A source that does not use
 ;; them compiles to the bytes it always had.
 (def XK-WIDTH-FIRST 6)
+;; ids 12..17 (JUN-556 C): the same six accesses at the 16 KiB tier, kernel-<load|store>-<u8|u16|u64>-16k. The code is
+;; that of ids 6..11 with the length bound 16384 instead of 512 (the tier kernel-load-u32-16k already has). The block
+;; follows the width block and is appended only to a source that names one of its stubs (each name contains the
+;; 512-byte name, so the width block is appended too and the ids stay positional).
+(def XK-WIDTH16-FIRST 12)
+(def XK-INTR-W16 18)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
 ;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
@@ -155,7 +161,9 @@
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
           4 "kernel-out-u8" 5 "kernel-out-u32"
           6 "kernel-load-u8" 7 "kernel-store-u8" 8 "kernel-load-u16" 9 "kernel-store-u16"
-          10 "kernel-load-u64" 11 "kernel-store-u64" ""))
+          10 "kernel-load-u64" 11 "kernel-store-u64"
+          12 "kernel-load-u8-16k" 13 "kernel-store-u8-16k" 14 "kernel-load-u16-16k" 15 "kernel-store-u16-16k"
+          16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -165,16 +173,29 @@
   (string-concat "(defn- kernel-load-u8 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u8 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
     (string-concat "(defn- kernel-load-u16 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u16 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
       "(defn- kernel-load-u64 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u64 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n")))
+;; the 16 KiB block (ids 12..17)
+(defn- xk-width16-lib [] :string
+  (string-concat "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u8-16k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-load-u16-16k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u16-16k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+      "(defn- kernel-load-u64-16k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u64-16k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n")))
+(defn- xk-uses-width16? [S :string] :bool
+  (or (or (>= (string-index-of S "kernel-load-u8-16k") 0) (>= (string-index-of S "kernel-store-u8-16k") 0))
+      (or (or (>= (string-index-of S "kernel-load-u16-16k") 0) (>= (string-index-of S "kernel-store-u16-16k") 0))
+          (or (>= (string-index-of S "kernel-load-u64-16k") 0) (>= (string-index-of S "kernel-store-u64-16k") 0)))))
 ;; true when the guest source S names one of the six width accesses
 (defn- xk-uses-widths? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-load-u8") 0) (>= (string-index-of S "kernel-store-u8") 0))
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (if (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib)) (xk-lib)))
+  (cond (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
+        (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib))
+        :else (xk-lib)))
 ;; true when the compiled text carries the width block: its first stub is defined there
 (defn- xk-has-width-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-width16-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
@@ -188,7 +209,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W16))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -212,7 +233,11 @@
         (xg-bytes 0xf84d8b4c 4)
         (cond-> (> m 0) (-> (xg-bytes 0xc48348 3) (xg-bytes (* 8 (+ m pad)) 1)))
         (xg-save t))))
-(defn- xk-intrinsic-window [M :vector-i64 k :i64 t :i64] :vector-i64
+(defn- xk-width-bound [k :i64] :i64
+  ;; cmp rcx,imm32 (48 81 f9 imm32) of a width access: 512, or 16384 for ids 12..17
+  (if (>= k XK-WIDTH16-FIRST) 0x4000f98148 0x200f98148))
+(defn- xk-intrinsic-window [M :vector-i64 k0 :i64 t :i64] :vector-i64
+  (let [k (if (>= k0 XK-WIDTH16-FIRST) (- k0 XK-WIDTH-FIRST) k0) bound (xk-width-bound k0)]
   (case k
     ;; mov rdx,[base]; mov rcx,[length]; mov rax,[index]; cmp rcx,512; ja; test rdx,rdx; jz;
     ;; cmp rax,rcx; jae; lea rsi,[rax+4]; cmp rsi,rcx; ja; mov eax,[rdx+rax]; jmp +2; ud2
@@ -259,39 +284,39 @@
     5 (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48) (xg-byte 0xef) (xg-save t))
 ;; kernel-load-u8: byte at 512, the reference emit-kernel-load-u8 of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; movzx eax,byte [rdx+rax]; jmp +2; ud2
-    6 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x18870f 6)
+    6 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes bound 7) (xg-bytes 0x18870f 6)
           (xg-bytes 0xd28548 3) (xg-bytes 0xf840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x6830f 6) (xg-bytes 0x204b60f 4) (xg-bytes 0x2eb 2)
           (xg-bytes 0xb0f 2) (xg-save t))
 ;; kernel-store-u8: byte at 512, the reference emit-kernel-store-u8 of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov [rdx+rdi],al; jmp +2; ud2
-    7 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+    7 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes bound 7)
           (xg-bytes 0x17870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0xe840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x5830f 6) (xg-bytes 0x3a0488 3)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
 ;; kernel-load-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,2; jl; test rax,1; ja; movzx eax,word [rdx+rax]; jmp +2; ud2
-    8 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+    8 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes bound 7) (xg-bytes 0x38870f 6)
           (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
           (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x204b70f 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
 ;; kernel-store-u16: 2 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,2; jl; test rdi,1; ja; mov [rdx+rdi],ax; jmp +2; ud2
-    9 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+    9 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes bound 7)
           (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
           (xg-bytes 0xfe2948 3) (xg-bytes 0x2fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x1c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048966 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
 ;; kernel-load-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rax,rcx; jae; mov rsi,rcx; sub rsi,rax; cmp rsi,8; jl; test rax,7; ja; mov rax,[rdx+rax]; jmp +2; ud2
-    10 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes 0x200f98148 7) (xg-bytes 0x38870f 6)
+    10 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x858b48) (xg-bytes bound 7) (xg-bytes 0x38870f 6)
           (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xc83948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3) (xg-bytes 0xc62948 3)
           (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c0f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x2048b48 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
 ;; kernel-store-u64: 8 bytes at 512, the reference emit-memwidth-window of kotoba-native's x86_64.cljk with the operands read from
 ;; their frame slots as the plain u32 pair does: cmp rcx,512; ja; test rdx,rdx; jz; cmp rdi,rcx; jae; mov rsi,rcx; sub rsi,rdi; cmp rsi,8; jl; test rdi,7; ja; mov [rdx+rdi],rax; jmp +2; ud2
-    11 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes 0x200f98148 7)
+    11 (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0xbd8b48) (xg-load (+ t 3) 0x858b48) (xg-bytes bound 7)
           (xg-bytes 0x38870f 6) (xg-bytes 0xd28548 3) (xg-bytes 0x2f840f 6) (xg-bytes 0xcf3948 3) (xg-bytes 0x26830f 6) (xg-bytes 0xce8948 3)
           (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
-    (xg-err M 7101 OP-CALL)))
+    (xg-err M 7101 OP-CALL))))
 (defn- xo-mmio-address [i :i64] :i64
   (case i 0 0xfee00020 1 0xfee000f0 2 0xfee00320 3 0xfee00380 4 0xfee003e0 0))
 ;; D5 record access. m = the mark minus FF-REC-MARK; low 6 bits N/4-2, then 8 bits of offset, then dir * 4 + width index.
@@ -349,7 +374,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (if (xk-has-width-block? S) XK-INTR-W XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
