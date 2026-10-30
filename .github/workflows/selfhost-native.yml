@@ -259,6 +259,16 @@ jobs:
               python3 /repo/scripts/seed/check-fs2-fault-injection.py \
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
           done
+      - name: Private-store create and append under injected write, fsync and flock faults (arm64, AWAI-52)
+        run: |
+          fi="$RUNNER_TEMP/runtime/private-store-faults"; mkdir -p "$fi"
+          for f in write fsync flock; do python3 scripts/seed/check-private-store-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none write fsync flock; do
+            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-private-store-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
       - name: Native private store and STOP/CONT sleep resume (arm64)
         run: |
           python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
