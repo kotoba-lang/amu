@@ -5499,3 +5499,47 @@ counted-day slot (its own freeze) and a cross-day tail-movement
 row (not queued).  Evidence:
 docs/evidence/gpu/anv-b3w6dlrep-20261030/.  (JUN-55, JUN-59;
 Linear tracking JUN-499)
+
+2026-10-30 (session 108, JUN-59 -- the T20 ANALYSIS half, the
+s88-frozen tail-side asymmetry replication at W6 COMPUTED): the
+s93 pre-build adopted as analysis-s108.py (byte-identical, sha256
+f6c81ef1...) and run twice byte-identically over the six committed
+windows (the five prior + anv-b3w6daybar-20261030 = the s80-frozen
+W6 window, tag s105).  FINDING (publication-s108.txt, 10,354
+bytes): JOINT T20 = (b) NOT-REPLICATED (IUT over k=16/k=32; named
+failing: k=16 (b) DIRECTION-CONSISTENT-NOT-SIGNIFICANT p
+0.1328125000).  Per family (the s88 exact-enumeration null, all
+2^12 = 4,096 whole-block side-swap assignments, NO RNG, p one-
+sided in the pre-registered direction C_obs > 0): k=4 C_obs 0
+count 2240/4,096 p 0.546875 (b) [UNINFORMATIVE-BY-S86-CAVEAT];
+k=8 C_obs 1 count 1632/4,096 p 0.398437 (b)
+[UNINFORMATIVE-BY-S86-CAVEAT]; k=16 C_obs 15 count 544/4,096 p
+0.132812 (b); k=32 C_obs 265 count 8/4,096 p 0.0019531250 (a)
+ASYMMETRY-LEFT-GREATER-REPLICATED -- the one family carrying the
+asymmetry replication; the joint's (b) does not erase its letter
+(named, not hidden).  Invalidation CLEAN (six windows 78/0 all;
+named cell ok-map cell 5; C1 at W6 branch (a) -- c2 FLOOR band
+31..32, c8 32821 vs 32915 = 0.29%); prior-window reproduction +
+parser validity pins ALL EXACT (10/10, 4/4, 14/14+14/14); s86
+decomposition identity HL_k+HR_k = D_DLk EXACT at 288 checks.
+D3 band (the s83/s89 [MIN,MAX] convention, descriptive): all four
+TS-L levels OUTSIDE their post-shift bands (L4/L8/L16 below, L32
+above) while all four TS-R levels sit INSIDE.  Standing gate set
+all == s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate
+GREEN 123/12162/0/0 twice == pins; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form .err == pin -- NO green full suite
+claimed; (d) evaluator self-test == pin + ledger eval pair == the
+s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' ->
+0).  THE BAR: ANALYSIS session -> NO hardware runs -> NO reading
+-> NO ledger line, NO day-slot consumption.  RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); these are derived inferential quantities over committed
+measurements, not new measurements.  Carry-forward s109: the
+--compat post-append design decision (PROPOSED only), the W7
+measurement half (s85; the 2026-10-31 day slot; faces the same
+--compat refusal until the design decision lands), any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued) -- with T18 (s107) and T20 (s108) computed, the
+s84/s88-frozen analysis rows are complete.  Evidence:
+docs/evidence/gpu/anv-b3w6tailrep-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
