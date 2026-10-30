@@ -159,6 +159,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-xstate.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
+      - name: AIUEOS kernel object route emits scalar SSE floats (JUN-633 slice 3)
+        run: |
+          python3 scripts/seed/check-aiueos-object-f32.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-f32"
       - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
         run: |
           python3 scripts/seed/check-aiueos-object-externs.py \
