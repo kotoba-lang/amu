@@ -299,9 +299,9 @@
                          (not= (xk-region M i (inc b) 0) page)))))
         (xg-err M 7106 i)
         ;; JUN-483: a window access whose size is a literal above its tier's maximum (512 plain, 4096 -4k,
-        ;; 16384 -16k, 65536 -64k) would only ever reach its ud2 at run time; refuse it here (E7107, detail
+        ;; 16384 -16k, 65536 -64k) would only ever reach its ud2 at run time; refuse it here (E7108, detail
         ;; raw tier index * 2^32 + size, decoded by xo-report). A size tied to a parameter keeps the run-time check.
         (let [size (if (and (>= k 0) (< k KM-MEM-N)) (xk-extent-constant M i (xk-src M i (inc (xg-si M i IF-B)) 0)) -1)]
           (if (and (>= size 4294967296) (> (- size 4294967296) (km-maximum (km-raw k))))
-            (xg-err M 7107 (+ (* (km-raw k) 4294967296) (- size 4294967296)))
+            (xg-err M 7108 (+ (* (km-raw k) 4294967296) (- size 4294967296)))
             (km-check M (inc i))))))))

@@ -58,7 +58,7 @@ def main(build, out, complete=None):
         # JUN-483: a plain-tier access over the 16544-byte boot block can only reach its ud2 at run time; it is
         # now refused at compile time, naming the intrinsic, the size and the tier maximum
         compile_('oversized-tier', '(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (kernel-boot-info) 16544 0))\n',
-                 ok=False, refusal=b'E7107 kernel-load-u8 size 16544 is above its tier maximum 512')
+                 ok=False, refusal=b'E7108 kernel-load-u8 size 16544 is above its tier maximum 512')
         compile_('valid-tier', '(ns entry (:export [main]))\n(defn main [] :i64 (- (kernel-load-u8-64k (kernel-boot-info) 16544 0) 23))\n')
         for name,text in [
             ('wrong-boot-length',boot.replace('16544','16480')),

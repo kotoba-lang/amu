@@ -4,12 +4,12 @@
 The kernel memory intrinsics trap at run time (ud2) when their size operand is above the
 tier maximum: 512 for the plain forms, 4096 for -4k, 16384 for -16k, 65536 for -64k
 (seed/86 km-maximum). When that size is a literal, km-check now refuses the call with
-E7107 naming the intrinsic, the size and the maximum, instead of compiling a function
+E7108 naming the intrinsic, the size and the maximum, instead of compiling a function
 that can only reach its ud2. Compiles with a native Amu compiler on the aiueos object
 route, over the object's own .bss / .high_bss arrays (whose literal extent is known):
 
 * object route (seed/74): the plain and 16 KiB windows at exactly their maximum compile; at
-  twice the maximum they are refused (E7107 with the intrinsic's name, the size and the
+  twice the maximum they are refused (E7108 with the intrinsic's name, the size and the
   maximum; nothing written), loads and stores, u8 to u64;
 * not exercised here: the kernel-image route (seed/86 km-check, all four tiers including
   -4k and -64k), whose source-locked multi-module compile needs the Linux producers of
@@ -65,7 +65,7 @@ def main(compiler, output):
         over = maximum * 2
         result, bad = exports.compile_object(gate, compiler, output, f"{slug}-over", source(array, over, call(intrinsic, array, over)), expected=1)
         text = (result.stdout + result.stderr).decode(errors="replace")
-        want = f"E7107 {intrinsic} size {over} is above its tier maximum {maximum}"
+        want = f"E7108 {intrinsic} size {over} is above its tier maximum {maximum}"
         if bad.exists() or want not in text:
             raise ValueError(f"{intrinsic} size {over}: want '{want}' and no output, got {text[-300:]!r}")
         report[intrinsic] = {"atMaximum": maximum, "refused": over}
