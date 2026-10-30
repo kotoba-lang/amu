@@ -249,12 +249,44 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Wire 35 replace, WRITE and APPEND under injected fsync, rename and write faults (arm64, AWAI-52)
+        run: |
+          fi="$RUNNER_TEMP/runtime/fs2-faults"; mkdir -p "$fi"
+          for f in fsync renameat write; do python3 scripts/seed/check-fs2-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none fsync renameat write-none write append-none append; do
+            case "$f" in *none) sec="" ;; append) sec="--security-opt seccomp=$fi/write.json" ;; *) sec="--security-opt seccomp=$fi/$f.json" ;; esac
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-fs2-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
+      - name: Private-store create and append under injected write, fsync and flock faults (arm64, AWAI-52)
+        run: |
+          fi="$RUNNER_TEMP/runtime/private-store-faults"; mkdir -p "$fi"
+          for f in write fsync flock; do python3 scripts/seed/check-private-store-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none write fsync flock; do
+            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-private-store-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
+      - name: Wire 35 WRITE/APPEND and private-store frames under a short write (arm64, AWAI-52)
+        run: python3 scripts/seed/check-short-write.py --compiler seed/bootstrap/aarch64-linux-static-root.elf --output "$RUNNER_TEMP/runtime/short-write"
       - name: Native private store and STOP/CONT sleep resume (arm64)
         run: |
           python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+      - name: Spawn setup refusals under injected seccomp faults (arm64, JUN-292)
+        run: |
+          fi="$RUNNER_TEMP/runtime/spawn-faults"; mkdir -p "$fi"
+          for f in close_range fchdir; do python3 scripts/seed/check-spawn-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none close_range fchdir; do
+            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-spawn-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
@@ -434,14 +466,11 @@ jobs:
     needs: derive-x86_64
     strategy:
       fail-fast: false
+      # JUN-629 (owner decision 2026-10-30): the x86 copies of label-proof-index, runtime-profile and ccf-filter run on
+      # main, the schedule and a manual dispatch only; on a pull request the arm64 phase runs them, and
+      # native_gate_shard.py --tier pr refuses the deferral if it no longer does.
       matrix:
-        include:
-          - shard: core
-            receipt: x86_64-native-receipt
-            schedule: native-scheduling-x86
-          - shard: extensions
-            receipt: x86_64-native-extension-receipt
-            schedule: native-scheduling-x86-extensions
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"}]' || '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"},{"shard":"x86-dupes","receipt":"x86_64-native-dupes-receipt","schedule":"native-scheduling-x86-dupes"}]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -595,8 +624,15 @@ jobs:
         with:
           name: native-scheduling-x86-extensions
           path: ${{ runner.temp }}/x86-shards/extensions
-      - name: Require all19 original native gates and argv at the bounded capacity per runner
-        run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --output "$RUNNER_TEMP/x86-partition-review.json"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: github.event_name != 'pull_request'
+        with:
+          name: native-scheduling-x86-dupes
+          path: ${{ runner.temp }}/x86-shards/x86-dupes
+      - name: Require the original native gates and argv at the bounded capacity per runner (all 19; on a pull request 16, the 3 deferred to main running on arm64)
+        env:
+          TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
+        run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --tier "$TIER" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

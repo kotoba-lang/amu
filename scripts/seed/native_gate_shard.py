@@ -1,4 +1,5 @@
-"""Partition process argv only; all original native gates remain mandatory."""
+"""Partition process argv only; all original native gates remain mandatory on main (on a pull request the x86 copies of
+the gates that also run on arm64 are deferred to main, JUN-629)."""
 import argparse
 import hashlib
 import json
@@ -8,10 +9,15 @@ SHARDS = {
     'core': ('native-cdci', 'aiueos-projects', 'zero-watermark', 'live-abi',
              'kototama-receipt', 'b2-image', 'kototama-i64', 'b2-libc',
              'fs2-x86', 'aiueos-boot', 'clock-entropy', 'aiueos-image'),
-    'extensions': ('label-proof-index', 'runtime-profile', 'ccf-filter',
-                   'kernel-memory', 'flock-vector', 'kototama-cache-abi',
+    'extensions': ('kernel-memory', 'flock-vector', 'kototama-cache-abi',
                    'kototama-cache-host'),
+    'x86-dupes': ('label-proof-index', 'runtime-profile', 'ccf-filter'),
 }
+# JUN-629 (owner decision 2026-10-30): on a pull request the x86 copies of these three gates are deferred to main.
+# Each also runs in the arm64 phase of the same plan on every pull request, and verify refuses the deferral unless it
+# still does. Main, the schedule and a manual dispatch run all nineteen x86 gates, as before.
+DEFERRED_ON_PR = ('x86-dupes',)
+TIERS = ('pr', 'main', 'full')
 
 def select(plan, shard):
     if plan.get('schema') != 'amu.native-gate-plan.v1' or shard not in SHARDS:
@@ -45,15 +51,22 @@ def main(manifest, shard, output):
                     qualificationReplacement=False)
     output.with_suffix('.coverage.json').write_text(json.dumps(coverage,indent=2)+'\n')
 
-def verify(manifest, root, workflow_result):
+def verify(manifest, root, workflow_result, tier='full'):
     # Native schedules alone do not cover the runtime/browser checks before
     # and after them. A failed shard job must fail the legacy aggregate check.
     if workflow_result!='success':
         raise ValueError('native qualification shard job did not succeed')
+    if tier not in TIERS:
+        raise ValueError('unknown tier')
     raw=manifest.read_bytes()
     original=json.loads(raw)
+    deferred=[name for shard in DEFERRED_ON_PR for name in SHARDS[shard]] if tier=='pr' else []
+    arm64={row['name'] for row in original['phases'].get('arm64',[])}
+    if any(name not in arm64 for name in deferred):
+        raise ValueError('a gate deferred to main does not run in the arm64 phase')
+    required=[shard for shard in SHARDS if not (tier=='pr' and shard in DEFERRED_ON_PR)]
     seen=[]; capacities=set()
-    for shard in SHARDS:
+    for shard in required:
         folder=root/shard
         coverage=json.loads((folder/'x86-shard-plan.coverage.json').read_text())
         staged=json.loads((folder/'x86-shard-plan.json').read_text())
@@ -78,9 +91,10 @@ def verify(manifest, root, workflow_result):
             if row['exit']!=0 or row['argv']!=argv:
                 raise ValueError('refused native gate or changed original argv')
         seen.extend(names)
-    if len(seen)!=19 or len(set(seen))!=19:
+    if len(seen)+len(deferred)!=19 or len(set(seen)|set(deferred))!=19:
         raise ValueError('incomplete native x86 qualification')
-    return dict(schema='amu.native-gate-partition-review.v1',status='PASS',executedGates=19,
+    return dict(schema='amu.native-gate-partition-review.v1',status='PASS',tier=tier,executedGates=len(seen),
+                deferredToMain=deferred,deferredGatesRunOnArm64=bool(deferred),
                 originalArgvPreserved=True,capacityPerRunner=max(capacities),nativeVerdictAuthority=False,
                 qualificationReplacement=False)
 
@@ -91,11 +105,12 @@ if __name__=='__main__':
     p.add_argument('--output',type=Path)
     p.add_argument('--verify-root',type=Path)
     p.add_argument('--workflow-result')
+    p.add_argument('--tier',choices=TIERS,default='full')
     args=p.parse_args()
     if args.verify_root:
         if args.shard or not args.output or not args.workflow_result:
             p.error('verification requires --verify-root, --workflow-result and --output')
-        args.output.write_text(json.dumps(verify(args.manifest,args.verify_root,args.workflow_result),indent=2)+'\n')
+        args.output.write_text(json.dumps(verify(args.manifest,args.verify_root,args.workflow_result,args.tier),indent=2)+'\n')
     else:
         if not args.shard or not args.output or args.workflow_result:
             p.error('staging requires only --shard and --output')

@@ -96,6 +96,33 @@
 ;; 512-byte name, so the width block is appended too and the ids stay positional).
 (def XK-WIDTH16-FIRST 12)
 (def XK-INTR-W16 18)
+;; ids 18..23 (JUN-633): CPU feature reads -- kernel-cpuid-<eax|ebx|ecx|edx> [leaf subleaf], kernel-rdtsc [] and
+;; kernel-rdrand [] -- named and encoded as seed/86's kernel runtime has them (km-cpu, km-entropy), except that rdtsc is
+;; preceded by lfence (the C it replaces orders its reads). None takes a base, so none is a window: the rooted-base rule
+;; does not apply and they are excluded from it below. The block follows the 16 KiB block and is appended only to a
+;; source that names one of its stubs, with both width blocks, so the ids stay positional.
+(def XK-CPU-FIRST 18)
+(def XK-INTR-CPU 24)
+;; ids 24..27 (JUN-633 slice 2): the extended-state setup -- kernel-cr4-set-bits [mask], kernel-xcr0-set-bits [mask],
+;; kernel-read-cr4 [] and kernel-xgetbv [] (XCR0). The two writes OR a mask into the register and return the new value;
+;; the mask must be a LITERAL whose bits are all in the admitted set (CR4: OSFXSR 1<<9, OSXMMEXCPT 1<<10, OSXSAVE 1<<18;
+;; XCR0: x87 1, SSE 2, AVX 4), checked at compile time (E7107) -- no other CR4 / XCR0 bit can be set from an object, and
+;; none can be cleared. A separate block, appended with the others to a source that names one of its stubs.
+(def XK-XSTATE-FIRST 24)
+(def XK-INTR-XSTATE 28)
+(def XK-CR4-ADMITTED 263680)
+;; id 28 (JUN-633 slice 4): kernel-wait-interrupt [] -- sti; hlt; cli: wait, with interrupts enabled for exactly the
+;; halt, until the next interrupt has been taken, and return 0 with interrupts disabled again (the sti shadow makes the
+;; hlt the first instruction an interrupt can land on, so one pending before the wait is not lost). The handlers are the
+;; kernel's; the object only waits. A separate block, appended with the others to a source that names it.
+(def XK-HALT-FIRST 28)
+(def XK-INTR-HALT 29)
+;; id 29 (JUN-633 slice 5): kernel-pause [] -- pause: the spin-wait hint a polling loop gives the CPU between two reads
+;; of a device's progress (it changes no architectural state), returning 0. Its own block after the halt block, so an
+;; object that names only kernel-wait-interrupt keeps its bytes.
+(def XK-PAUSE-FIRST 29)
+(def XK-INTR-PAUSE 30)
+(def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
 ;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
@@ -165,7 +192,11 @@
           6 "kernel-load-u8" 7 "kernel-store-u8" 8 "kernel-load-u16" 9 "kernel-store-u16"
           10 "kernel-load-u64" 11 "kernel-store-u64"
           12 "kernel-load-u8-16k" 13 "kernel-store-u8-16k" 14 "kernel-load-u16-16k" 15 "kernel-store-u16-16k"
-          16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k" ""))
+          16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k"
+          18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
+          22 "kernel-rdtsc" 23 "kernel-rdrand"
+          24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv"
+          28 "kernel-wait-interrupt" 29 "kernel-pause" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -184,13 +215,41 @@
   (or (or (>= (string-index-of S "kernel-load-u8-16k") 0) (>= (string-index-of S "kernel-store-u8-16k") 0))
       (or (or (>= (string-index-of S "kernel-load-u16-16k") 0) (>= (string-index-of S "kernel-store-u16-16k") 0))
           (or (>= (string-index-of S "kernel-load-u64-16k") 0) (>= (string-index-of S "kernel-store-u64-16k") 0)))))
+;; the CPU block (ids 18..23)
+(defn- xk-cpu-lib [] :string
+  (string-concat "(defn- kernel-cpuid-eax [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-ebx [a :i64 b :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-cpuid-ecx [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-edx [a :i64 b :i64] :i64 0)\n"
+      "(defn- kernel-rdtsc [] :i64 0)\n(defn- kernel-rdrand [] :i64 0)\n")))
+;; the extended-state block (ids 24..27)
+(defn- xk-xstate-lib [] :string
+  (string-concat "(defn- kernel-cr4-set-bits [m :i64] :i64 0)\n(defn- kernel-xcr0-set-bits [m :i64] :i64 0)\n"
+    "(defn- kernel-read-cr4 [] :i64 0)\n(defn- kernel-xgetbv [] :i64 0)\n"))
+;; the halt block (id 28)
+(defn- xk-halt-lib [] :string "(defn- kernel-wait-interrupt [] :i64 0)\n")
+(defn- xk-uses-halt? [S :string] :bool (>= (string-index-of S "kernel-wait-interrupt") 0))
+;; the pause block (id 29)
+(defn- xk-pause-lib [] :string "(defn- kernel-pause [] :i64 0)\n")
+(defn- xk-uses-pause? [S :string] :bool (>= (string-index-of S "kernel-pause") 0))
+(defn- xk-uses-xstate? [S :string] :bool
+  (or (or (>= (string-index-of S "kernel-cr4-set-bits") 0) (>= (string-index-of S "kernel-xcr0-set-bits") 0))
+      (or (>= (string-index-of S "kernel-read-cr4") 0) (>= (string-index-of S "kernel-xgetbv") 0))))
+(defn- xk-uses-cpu? [S :string] :bool
+  (or (>= (string-index-of S "kernel-cpuid-e") 0)
+      (or (>= (string-index-of S "kernel-rdtsc") 0) (>= (string-index-of S "kernel-rdrand") 0))))
 ;; true when the guest source S names one of the six width accesses
 (defn- xk-uses-widths? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-load-u8") 0) (>= (string-index-of S "kernel-store-u8") 0))
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
+  (cond (xk-uses-pause? S)
+          (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib))
+        (xk-uses-halt? S)
+          (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib))
+        (xk-uses-xstate? S)
+          (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib))
+        (xk-uses-cpu? S) (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib))
+        (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
         (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib))
         :else (xk-lib)))
 ;; true when the compiled text carries the width block: its first stub is defined there
@@ -198,6 +257,14 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-pause-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-pause [] :i64") 0))
+(defn- xk-has-halt-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-wait-interrupt [] :i64") 0))
+(defn- xk-has-xstate-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-cr4-set-bits [m :i64]") 0))
+(defn- xk-has-cpu-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-cpuid-eax [a :i64 b :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
@@ -211,7 +278,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W16))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-PAUSE))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -346,6 +413,34 @@
           (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes (+ len 2) 4)
           (xk-record-access dir wi off)
           (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
+;; JUN-633: c 0..3 cpuid with leaf in eax and subleaf in ecx, rbx saved around it (it is nonvolatile), the chosen
+;; register moved into eax (a 32-bit write, so rax is zero-extended); c 4 lfence; rdtsc; shl rdx,32; or rax,rdx; c 5 rdrand rax up to ten times (mov ecx,10; L:
+;; rdrand rax; jc done; dec ecx; jnz L; xor eax,eax) -- 0 is "no entropy" and callers must fail closed. The byte
+;; sequences are seed/86's km-cpu and km-entropy.
+(defn- xk-cpu-intrinsic [M :vector-i64 c :i64 t :i64] :vector-i64
+  (cond (< c 4)
+          (let [v (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-byte 83) (xg-bytes 0xa20f 2))
+                r (case c 0 v 1 (xg-bytes v 0xd889 2) 2 (xg-bytes v 0xc889 2) (xg-bytes v 0xd089 2))]
+            (-> r (xg-byte 91) (xg-save t)))
+        (= c 4) (-> M (xg-bytes 0xe8ae0f 3) (xg-bytes 0x310f 2) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        (= c 5) (-> M (xg-bytes 0xab9 5) (xg-bytes 0xf0c70f48 4) (xg-bytes 0x0672 2)
+                      (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t))
+        :else (xg-err M 7101 OP-CALL)))
+;; JUN-633 slice 2: c 0 cr4-set-bits: mov rcx,[mask]; mov rax,cr4; or rax,rcx; mov cr4,rax. c 1 xcr0-set-bits:
+;; mov rsi,[mask]; xor ecx,ecx; xgetbv; or rax,rsi; xsetbv; shl rdx,32; or rax,rdx. c 2 read-cr4: mov rax,cr4. c 3 xgetbv:
+;; xor ecx,ecx; xgetbv; shl rdx,32; or rax,rdx. The masks were checked against the admitted bits by xk-check (E7107).
+;; xsetbv raises #UD unless CR4.OSXSAVE is set: the caller sets it first, as the C it replaces does.
+(defn- xk-xstate-intrinsic [M :vector-i64 c :i64 t :i64] :vector-i64
+  (cond (= c 0) (-> M (xg-load t 0x8d8b48) (xg-bytes 0xe0200f 3) (xg-bytes 0xc80948 3) (xg-bytes 0xe0220f 3) (xg-save t))
+        (= c 1) (-> M (xg-load t 0xb58b48) (xg-bytes 0xc931 2) (xg-bytes 0xd0010f 3) (xg-bytes 0xf00948 3) (xg-bytes 0xd1010f 3)
+                      (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        (= c 2) (-> M (xg-bytes 0xe0200f 3) (xg-save t))
+        (= c 3) (-> M (xg-bytes 0xc931 2) (xg-bytes 0xd0010f 3) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        :else (xg-err M 7101 OP-CALL)))
+;; a cr4 / xcr0 mask is a literal (xk-src: 2^32 + value), non-zero, with every bit in the admitted set
+(defn- xk-mask-ok? [M :vector-i64 i :i64 b :i64 admitted :i64] :bool
+  (let [src (xk-src M i b 0) v (- src 4294967296)]
+    (and (>= src 4294967296) (< src 8589934592) (> v 0) (= (bit-and v admitted) v))))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (>= k XK-ARRAY-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-ARRAY-ADDR)) (xg-save t))
         (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
@@ -362,6 +457,12 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; JUN-633 slice 5: pause; xor eax,eax
+        (>= k XK-PAUSE-FIRST) (-> M (xg-bytes 0x90f3 2) (xg-bytes 0xc031 2) (xg-save t))
+        ;; JUN-633 slice 4: sti; hlt; cli; xor eax,eax
+        (>= k XK-HALT-FIRST) (-> M (xg-bytes 0xfaf4fb 3) (xg-bytes 0xc031 2) (xg-save t))
+        (>= k XK-XSTATE-FIRST) (xk-xstate-intrinsic M (- k XK-XSTATE-FIRST) t)
+        (>= k XK-CPU-FIRST) (xk-cpu-intrinsic M (- k XK-CPU-FIRST) t)
         :else (xk-intrinsic-window M k t)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
@@ -376,7 +477,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -614,7 +715,7 @@
 (defn- xk-record-n [M :vector-i64 callee :i64] :i64
   (* 4 (+ 2 (bit-and (- (xg-f M callee FF-EXPORT) FF-REC-MARK) 63))))
 (defn- xk-window-k? [k :i64] :bool
-  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-EXTERN)))))
+  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-CPU-FIRST)))))
 (defn- xk-record-conflict? [M :vector-i64 i :i64 st :i64 src :i64 n :i64] :bool
   (loop [c 1]
     (if (>= c (vector-at M MM-SIR-N)) false
@@ -630,10 +731,20 @@
     (and (= (xg-f M f FF-EXPORT) 1)
          (> src 8589934592) (<= src (+ 8589934592 (xg-f M f FF-NPARAMS)))
          (not (xk-record-conflict? M i st src (xk-record-n M (xg-si M i IF-A)))))))
+;; a window access id in seed/86's km-raw encoding: bit 0 store, bits 1..2 width (u8 u16 u32 u64), bits 3.. tier
+;; (0 plain, 2 the 16 KiB one); xk-raw-ok? excludes kernel-subregion (2), which is not an access
+(defn- xk-raw-ok? [k :i64] :bool (or (= k 0) (= k 1) (= k 3) (and (>= k XK-WIDTH-FIRST) (< k XK-INTR-W16))))
+(defn- xk-raw [k :i64] :i64
+  (cond (= k 0) 4 (= k 1) 5 (= k 3) 20
+        :else (let [j (mod (- k XK-WIDTH-FIRST) 6) w (case (quot j 2) 0 0 1 1 3)]
+                (+ (+ (bit-and j 1) (* 2 w)) (if (>= k XK-WIDTH16-FIRST) 16 0)))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-EXTERN)))
+      (if (or (and (= op OP-CALL) (= (xk-intr M a) XK-XSTATE-FIRST) (not (xk-mask-ok? M i b XK-CR4-ADMITTED)))
+              (and (= op OP-CALL) (= (xk-intr M a) (+ XK-XSTATE-FIRST 1)) (not (xk-mask-ok? M i b XK-XCR0-ADMITTED))))
+        (xg-err M 7107 i)
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
@@ -641,7 +752,38 @@
               (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
-        (xk-check M (inc i))))))
+        ;; JUN-483: a literal size above the window's tier maximum (512, or 16384 for the -16k forms) is refused
+        ;; at compile time (E7108, detail xk-raw * 2^32 + size); a size tied to a parameter keeps the run-time check
+        (let [k (if (= op OP-CALL) (xk-intr M a) -1)
+              size (if (xk-raw-ok? k) (xk-extent-constant M i (xk-src M i (inc b) 0)) -1)]
+          (if (and (>= size 4294967296) (> (- size 4294967296) (if (>= (xk-raw k) 16) 16384 512)))
+            (xg-err M 7108 (+ (* (xk-raw k) 4294967296) (- size 4294967296)))
+            (xk-check M (inc i)))))))))
+
+;; JUN-633 (ADR 0391): the object artifact (multi) admits the float carriers :f32 / :f64 -- the bit pattern in an i64
+;; slot -- for a private function's parameters and result. An export or an extern keeps the scalar types: System V
+;; passes a float in xmm0..7, which the shim and the extern call do not do.
+(defn- xo-type [M :vector-i64 t :i64 float :bool] :bool
+  (or (xg-type M t) (and float (= (xg-get M 4) 0) (or (= t TY-F32) (= t TY-F64)))))
+(defn- xo-types [M :vector-i64 f :i64 i :i64 n :i64 float :bool] :bool
+  (if (= i n) true (and (xo-type M (ck-pt M f i) float) (xo-types M f (inc i) n float))))
+;; The float SIR the object artifact admits (seed/70 xg-fbin / xg-fcmp / xg-fun): f64 and f32 add sub mul div, the six
+;; compares, neg abs sqrt, i64 -> f64 / f32 and f64 <-> f32. min / max (SSE's minss / maxss answer the second operand
+;; for a NaN or two zeros, the aarch64 route's fmin / fmax do not) and float -> i64 truncation (cvttss2si answers
+;; 2^63 for a NaN or an overflow, fcvtzs saturates) stay refused (E7101).
+(defn- xo-float-sir? [op :i64 a :i64] :bool
+  (cond (= op OP-BIN) (or (and (>= a BOP-F64-ADD) (<= a BOP-F64-DIV)) (and (>= a BOP-F32-ADD) (<= a BOP-F32-DIV)))
+        (= op OP-CMP) (or (and (>= a CC-F64-EQ) (<= a CC-F64-UN)) (and (>= a CC-F32-EQ) (<= a CC-F32-UN)))
+        (= op OP-UN) (or (and (>= a UOP-F64-NEG) (<= a UOP-F64-SQRT)) (and (>= a UOP-F32-NEG) (<= a UOP-F32-SQRT))
+                         (= a UOP-I64-TO-F64) (= a UOP-F64-TO-F32) (= a UOP-F32-TO-F64) (= a UOP-I64-TO-F32))
+        :else false))
+;; seed/70's xg-check-sir with the float SIR above admitted; the object artifact's only SIR check.
+(defn- xo-check-sir [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A)]
+      (if (and (= (xg-get M 4) 0) (xo-float-sir? op a)) (xo-check-sir M (inc i))
+        (let [one (xg-check-sir-at M i)]
+          (if (not= (vector-at one MM-ERR) 0) one (xo-check-sir M (inc i))))))))
 
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most eight
@@ -653,7 +795,9 @@
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
       (cond (= kind FK-DEF) (xo-check-fns-n M S (inc f) multi)
             (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
-                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (or (xo-ext-name? S a b) (= (xg-f M f FF-EXPORT) 1)) XO-EXT-MAX-ARGS 5))) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (or (xo-ext-name? S a b) (= (xg-f M f FF-EXPORT) 1)) XO-EXT-MAX-ARGS 5)))
+                (not (xo-types M f 0 n (and multi (not (xo-ext-name? S a b)) (not= (xg-f M f FF-EXPORT) 1))))
+                (not (xo-type M (xg-f M f FF-RTYPE) (and multi (not (xo-ext-name? S a b)) (not= (xg-f M f FF-EXPORT) 1))))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (= (xg-get M 4) 2)
@@ -1033,9 +1177,21 @@
         ;; ".bss\0.high_bss\0" at 50 and 55
         (cond-> (= L 2) (-> (xg-out 0x69682e007373622e 8) (xg-out 0x007373625f6867 7))))))
 
+;; E7108 (seed/86 km-check and xk-check, JUN-483): detail = raw tier index * 2^32 + size. The names and maxima repeat seed/86's
+;; km-name / km-maximum, which this earlier module cannot call.
+(defn- xo-tier-text [detail :i64] :string
+  (let [raw (quot detail 4294967296) size (- detail (* raw 4294967296)) tier (quot raw 8)
+        name (string-concat (if (= (bit-and raw 1) 0) "kernel-load-" "kernel-store-")
+               (string-concat (case (mod (quot raw 2) 4) 0 "u8" 1 "u16" 2 "u32" "u64")
+                 (case tier 0 "" 1 "-4k" 2 "-16k" "-64k")))
+        maximum (case tier 0 512 1 4096 2 16384 65536)]
+    (string-concat "seed-x86_64-aiueos-object: E7108 " (string-concat name (string-concat " size "
+      (string-concat (mem-u2dec size) (string-concat " is above its tier maximum "
+        (string-concat (mem-u2dec maximum) " (use a larger tier, or kernel-subregion)\n"))))))))
 (defn- xo-report [M :vector-i64 path :string out :string] :i64
   (let [e (vector-at M MM-ERR)]
     (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (= e 7108) (let [w (io-err (xo-tier-text (vector-at M MM-ERR-N)))] 1)
           (> e 0) (let [w (io-err (string-concat "seed-x86_64-aiueos-object: E" (string-concat (mem-u2dec e)
                             (string-concat " unsupported object profile or code limit; detail "
                               (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n")))))] 1)
@@ -1046,7 +1202,7 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xo-mark-externs S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xo-mark-externs S 1) (xo-check-sir 1) (xk-scan S) (xk-check 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
@@ -1067,8 +1223,17 @@
                                     (xg-err admitted 7102 (xg-get admitted 1))
                                     (xo-elf (xo-zero-sites (xg-fix generated 1) 1) S NS cnt X NX D DX (xo-shim-table admitted E fuel) fuel))))))))))))))
 
+;; JUN-633 (ADR 0391): the library's f32-from-bits traps an out-of-range pattern by a vector access, which this route
+;; refuses; here it traps by (assert ...) -- ud2 -- and is otherwise the same definition.
+(def XO-F32-FROM-BITS-LIB "(defn- f32-from-bits [b :i64] :f32 (if (or (< b -2147483648) (> b 2147483647)) (__r6-as :f32 (vector-at [0] 1)) (__r6-as :f32 b)))")
+(def XO-F32-FROM-BITS "(defn- f32-from-bits [b :i64] :f32 (do (assert (and (>= b -2147483648) (<= b 2147483647))) (__r6-as :f32 b)))")
+(defn- xo-lib [S :string] :string
+  (let [L (ck-r6b-lib S) at (string-index-of L XO-F32-FROM-BITS-LIB)]
+    (if (< at 0) L
+      (string-concat (string-concat (string-substring L 0 at) XO-F32-FROM-BITS)
+                     (string-substring L (+ at (string-length XO-F32-FROM-BITS-LIB)) (string-length L))))))
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
+  (let [text (string-concat (string-concat S (xo-lib S)) (xk-lib-for S)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
 ;; JUN-31: the image packaging step, in the same adopted compiler lineage.

@@ -35,10 +35,10 @@
 (defn- mc-argv [a :string] :string (hc-field a))
 (defn- mc-clean [dir :string] :i64
   (let [w (loop [i 0]
-            (if (= i 9) 0
+            (if (= i 10) 0
               (let [r (hc-path-call 4 (mc-join dir (case i
                 0 "source.kotoba" 1 "source.ksl" 2 "program.kseed" 3 "program.raw"
-                4 "extract.log" 5 "compile.log" 6 "check.log" 7 "program.macho" "sign.log")))]
+                4 "extract.log" 5 "compile.log" 6 "check.log" 7 "program.macho" 8 "run.out" "sign.log")))]
                 (recur (+ i 1)))))
         r (hc-path-call 5 dir)] 0))
 ;; Exact adopted lexer/reader/namer/checker and its refinement rounds. This
@@ -117,6 +117,20 @@
 (defn- mc-guest-args [start :i64] :string
   (loop [i start out (mc-argv "amu-program")]
     (if (>= i (hc-argc)) out (recur (+ i 1) (string-concat out (mc-argv (hc-arg i)))))))
+(defn- mc-json-str [key :string value :string] :string
+  (string-concat "\"" (string-concat key (string-concat "\":\"" (string-concat value "\"")))))
+;; amu run --receipt FILE (JUN-282): stdout is captured, then printed, and the
+;; receipt binds the source, both pinned host images, the program and stdout.
+(defn- mc-receipt [path :string source :vector-i64 image :vector-i64 status :i64 out :vector-i64] :i64
+  (let [body (string-concat "{" (string-concat (mc-json-str "schema" "amu.run-receipt.v1")
+               (string-concat "," (string-concat (mc-json-str "source" (sh-bytes source))
+               (string-concat "," (string-concat (mc-json-str "compiler" MC-COMPILER-SHA256)
+               (string-concat "," (string-concat (mc-json-str "packager" MC-PACKAGER-SHA256)
+               (string-concat "," (string-concat (mc-json-str "program" (sh-bytes image))
+               (string-concat "," (string-concat (mc-json-str "stdout" (sh-bytes out))
+               (string-concat ",\"exit\":" (string-concat (hc-dec status) "}\n"))))))))))))))]
+    (if (hc-ok? (hc-write path (hc-bytes body))) 0
+      (mc-error "ERECEIPT cannot create receipt (existing files are preserved)" 1))))
 (defn- mc-operation [command :string source :vector-i64 input :vector-i64 artifact :bool dir :string compiler :string packager :string output :string guest-start :i64] :i64
   (let [lock (hc-bytes (mc-lock (sh-bytes source)))
         wrote (hc-write (mc-join dir "source.kotoba") source)
@@ -144,9 +158,16 @@
               (if (and artifact (or (not (hc-ok? r))
                     (not (string=? (sh-bytes input) (sh-bytes (mc-read-data r))))))
                 (mc-error "EARTIFACT supplied program differs from its freshly compiled source" 1)
-                (let [result (hc-spawn 0 dir "" image (+ 1 (- (hc-argc) guest-start)) (mc-guest-args guest-start))
-                      status (mc-exit result)]
-                  (if (= status 124) (mc-error "ETIME native program exceeded 5 seconds" 124) status)))))))))
+                (let [receipt (not (string=? output ""))
+                      captured (mc-join dir "run.out")
+                      result (hc-spawn 0 dir (if receipt captured "") image (+ 1 (- (hc-argc) guest-start)) (mc-guest-args guest-start))
+                      status (mc-exit result)
+                      out (if receipt (let [o (hc-read captured)] (if (hc-ok? o) (mc-read-data o) [])) [])
+                      shown (if receipt (hc-out (hc-text out)) 0)
+                      written (if receipt (mc-receipt output source (mc-read-data r) status out) 0)]
+                  (cond (= status 124) (mc-error "ETIME native program exceeded 5 seconds" 124)
+                        (not= written 0) written
+                        :else status)))))))))
 (defn- mc-work [command :string source-path :string output :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info)) compiler (mc-join root "amu-full-root.macho")
         packager (mc-join root "kotoba-packager-root.macho")
@@ -161,22 +182,31 @@
                 (mc-error "EINPUT expected source <= 1 MiB or an Amu native program with embedded source" 1)
           (not (hc-ok? (hc-path-call 3 dir))) (mc-error "EHOST cannot create private work directory" 70)
           :else (let [status (mc-operation command source input artifact dir compiler packager
-                                  (mc-absolute (hc-info-cwd info) output) guest-start)
+                                  (if (string=? output "") "" (mc-absolute (hc-info-cwd info) output)) guest-start)
                       clean (mc-clean dir)] status))))))
+;; commands the C-loader removal (amu#1460) took away: refused by name, not as a typo (JUN-282)
+(defn- mc-removed? [command :string] :bool
+  (or (string=? command "measure-runtime") (string=? command "package-ios")
+      (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]" 2))
 (defn- seed-main [] :i64
   (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
         output-flag (and (= n 4) (or (string=? (hc-arg 2) "-o") (string=? (hc-arg 2) "--output")))
-        output (if output-flag (hc-arg 3) (mc-default-output source))
-        guest-start (if (= n 2) 2 3)]
+        receipt-flag (and (string=? command "run") (>= n 4) (string=? (hc-arg 2) "--receipt"))
+        output (cond receipt-flag (hc-arg 3) (string=? command "run") "" output-flag (hc-arg 3) :else (mc-default-output source))
+        guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu run FILE.kotoba|PROGRAM [-- ARG...]\n")
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
       (not (mc-path? source)) (mc-usage)
       (or (and (string=? command "check") (= n 2) (mc-ends? source ".kotoba"))
           (and (string=? command "compile") (or (= n 2) output-flag)
                (mc-ends? source ".kotoba") (mc-path? output))
-          (and (string=? command "run") (or (= n 2) (and (>= n 3) (string=? (hc-arg 2) "--"))) (< n 64)))
+          (and (string=? command "run") (< n 64)
+               (or (= n 2) (and (>= n 3) (string=? (hc-arg 2) "--"))
+                   (and receipt-flag (mc-path? output) (or (= n 4) (and (>= n 5) (string=? (hc-arg 4) "--")))))))
         (let [info (hc-call 0 [])]
           (if (hc-ok? info) (mc-work command source output guest-start info) (mc-error "EHOST cannot resolve native host context" 70)))
+      (mc-removed? command)
+        (mc-error (string-concat "EREMOVED " (string-concat command " was removed with the C loader (docs/c-loader-removal.md)")) 2)
       :else (mc-usage))))

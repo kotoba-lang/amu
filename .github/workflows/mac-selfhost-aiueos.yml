@@ -17,6 +17,7 @@ on:
       - 'scripts/seed/check-aiueos-object-celladdr.py'
       - 'scripts/seed/check-aiueos-object-arrays.py'
       - 'scripts/seed/check-aiueos-object-array-windows.py'
+      - 'scripts/seed/check-aiueos-kernel-tier-maximum.py'
       - 'scripts/seed/check-aiueos-object-cells.py'
       - 'scripts/seed/check-aiueos-object-mmio.py'
       - 'scripts/seed/check-aiueos-object-globals.py'
@@ -148,6 +149,31 @@ jobs:
           python3 scripts/seed/check-aiueos-object-windows16.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows16"
+      - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
+        run: |
+          python3 scripts/seed/check-aiueos-object-cpu.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-cpu"
+      - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
+        run: |
+          python3 scripts/seed/check-aiueos-object-xstate.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-xstate"
+      - name: AIUEOS kernel object route emits the spin-wait hint (JUN-633 slice 5)
+        run: |
+          python3 scripts/seed/check-aiueos-object-pause.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-pause"
+      - name: AIUEOS kernel object route waits for an interrupt (JUN-633 slice 4)
+        run: |
+          python3 scripts/seed/check-aiueos-object-halt.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-halt"
+      - name: AIUEOS kernel object route emits scalar SSE floats (JUN-633 slice 3)
+        run: |
+          python3 scripts/seed/check-aiueos-object-f32.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-f32"
       - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
         run: |
           python3 scripts/seed/check-aiueos-object-externs.py \
@@ -202,6 +228,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-array-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-array-windows"
+      - name: AIUEOS kernel window access above its tier maximum refused at compile time (JUN-483)
+        run: |
+          python3 scripts/seed/check-aiueos-kernel-tier-maximum.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-kernel-tier-maximum"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \

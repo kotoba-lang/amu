@@ -131,6 +131,9 @@ def main(compiler, output, seccomp_if_available=False):
         "two-exports": ("(ns kernel-two (:export [kotoba_aiueos_a kotoba_aiueos_b]))\n"
                         "(defn kotoba_aiueos_a [] :i64 1)\n(defn kotoba_aiueos_b [x :i64] :i64 (+ x 2))\n",
                         "kotoba_aiueos_a,kotoba_aiueos_b"),
+        "eight-params": ("(ns kernel-eight (:export [kotoba_aiueos_eight]))\n"
+                         "(defn kotoba_aiueos_eight [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64] :i64 (+ a b c d e f g h))\n",
+                         "kotoba_aiueos_eight"),
     }
     rows = []
     for name, (source, symbol) in cases.items():
@@ -149,8 +152,9 @@ def main(compiler, output, seccomp_if_available=False):
         "no-export": "(ns refused)\n(defn- helper [] :i64 1)\n",
         "nine-exports": "(ns refused (:export [" + " ".join(f"kotoba_aiueos_{i}" for i in range(9)) + "]))\n"
                        + "".join(f"(defn kotoba_aiueos_{i} [] :i64 {i})\n" for i in range(9)),
-        "six-params": "(ns refused (:export [kotoba_aiueos_six]))\n"
-                      "(defn kotoba_aiueos_six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (+ a b c d e f))\n",
+        # ADR 0384 (JUN-556) admits up to eight export parameters; nine is the first refused count.
+        "nine-params": "(ns refused (:export [kotoba_aiueos_nine]))\n"
+                       "(defn kotoba_aiueos_nine [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64 i :i64] :i64 (+ a b c d e f g h i))\n",
         "float": "(ns refused (:export [kotoba_aiueos_f]))\n"
                  "(defn kotoba_aiueos_f [] :i64 (f64-to-i64-truncating (f64-add 1.0 2.0)))\n",
         "string": "(ns refused (:export [kotoba_aiueos_s]))\n"

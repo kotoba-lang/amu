@@ -2,6 +2,7 @@
 """Observe ordinary native CLI commands and refusals, never compile in Python."""
 import argparse
 import importlib.util
+import hashlib
 import json
 import os
 import platform
@@ -53,6 +54,16 @@ def check(cli, out):
     run('execute-default', expected=0, stdout=b'42\n', image=out / 'hello')
     run('run-source', 'run', hello.name, stdout=b'42\n')
     run('run-artifact', 'run', './hello', stdout=b'42\n')
+    # JUN-282: an opt-in run receipt binds source, host images, program and stdout
+    run('run-receipt', 'run', hello.name, '--receipt', 'run-receipt.json', stdout=b'42\n')
+    receipt = json.loads((out / 'run-receipt.json').read_text())
+    assert receipt['schema'] == 'amu.run-receipt.v1' and receipt['exit'] == 0, receipt
+    assert receipt['source'] == hashlib.sha256(hello.read_bytes()).hexdigest(), receipt
+    assert receipt['stdout'] == hashlib.sha256(b'42\n').hexdigest(), receipt
+    assert all(len(receipt[k]) == 64 for k in ('compiler', 'packager', 'program')), receipt
+    kept = (out / 'run-receipt.json').read_bytes()
+    run('run-receipt-exists', 'run', hello.name, '--receipt', 'run-receipt.json', expected=1, diagnostic=b'ERECEIPT')
+    assert (out / 'run-receipt.json').read_bytes() == kept
     first = (out / 'hello').read_bytes()
     hello.write_text('(ns hello (:export [main]))\n(defn main [] :i64 43)\n')
     run('changed-source', 'run', hello.name, stdout=b'43\n')
@@ -90,8 +101,12 @@ def check(cli, out):
     for i, args in enumerate((('compile', hello.name, '--target', 'x86_64-linux'),
                               ('check', hello.name, '--source-path', '.'),
                               ('run', hello.name, '--source-lock', 'missing'),
-                              ('compile', hello.name, '-o'), ('garbage', hello.name))):
+                              ('compile', hello.name, '-o'), ('garbage', hello.name),
+                              ('run', hello.name, '--receipt'), ('run', hello.name, '--receipt', 'r.json', 'extra'))):
         run('usage' + str(i), *args, expected=2, diagnostic=b'usage:')
+    # removed with the C loader (docs/c-loader-removal.md): refused by name, not as unknown (JUN-282)
+    for name in ('measure-runtime', 'package-ios', 'package-macos', 'test'):
+        run('removed-' + name, name, hello.name, expected=2, diagnostic=b'EREMOVED ' + name.encode())
     for name, path in [('missing', out/'missing.kotoba'), ('directory', nested)]:
         run(name, 'run', path, expected=1, diagnostic=b'EINPUT')
     link = out / 'link.kotoba'

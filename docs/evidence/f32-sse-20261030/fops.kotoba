@@ -1,0 +1,28 @@
+;; JUN-633 slice 3 (ADR 0391): every float operation the aiueos object route admits, behind one export.
+;; op selects it; x and y are bit patterns (an f32 sign-extended from 32 bits, an f64 its 64 bits, an i64 itself).
+(ns fops (:export [kotoba_aiueos_fop]))
+(defn- f [x :i64] :f32 (f32-from-bits x))
+(defn- d [x :i64] :f64 (f64-from-bits x))
+(defn- b [c :bool] :i64 (if c 1 0))
+(defn- f32op [op :i64 x :f32 y :f32] :i64
+  (cond (= op 0) (f32-to-bits (f32-add x y)) (= op 1) (f32-to-bits (f32-sub x y))
+        (= op 2) (f32-to-bits (f32-mul x y)) (= op 3) (f32-to-bits (f32-div x y))
+        (= op 8) (b (f32-eq x y)) (= op 9) (b (f32-lt x y)) (= op 10) (b (f32-le x y))
+        (= op 11) (b (f32-gt x y)) (= op 12) (b (f32-ge x y)) (= op 13) (b (f32-unordered x y))
+        (= op 20) (f32-to-bits (f32-neg x)) (= op 21) (f32-to-bits (f32-abs x)) (= op 22) (f32-to-bits (f32-sqrt x))
+        (= op 29) (f64-to-bits (f32-to-f64-exact x))
+        :else -1))
+(defn- f64op [op :i64 x :f64 y :f64] :i64
+  (cond (= op 4) (f64-to-bits (f64-add x y)) (= op 5) (f64-to-bits (f64-sub x y))
+        (= op 6) (f64-to-bits (f64-mul x y)) (= op 7) (f64-to-bits (f64-div x y))
+        (= op 14) (b (f64-eq x y)) (= op 15) (b (f64-lt x y)) (= op 16) (b (f64-le x y))
+        (= op 17) (b (f64-gt x y)) (= op 18) (b (f64-ge x y)) (= op 19) (b (f64-unordered x y))
+        (= op 23) (f64-to-bits (f64-neg x)) (= op 24) (f64-to-bits (f64-abs x)) (= op 25) (f64-to-bits (f64-sqrt x))
+        (= op 28) (f32-to-bits (f64-to-f32-rounded x))
+        :else -1))
+(defn kotoba_aiueos_fop [op :i64 x :i64 y :i64] :i64
+  (cond (or (< op 4) (and (>= op 8) (<= op 13)) (and (>= op 20) (<= op 22)) (= op 29)) (f32op op (f x) (f y))
+        (= op 26) (f32-to-bits (i64-to-f32-rounded x))
+        (= op 27) (f64-to-bits (i64-to-f64-rounded x))
+        (or (< op 30) (= op 28)) (f64op op (d x) (d y))
+        :else -1))
