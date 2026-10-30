@@ -279,6 +279,18 @@ build closure and does not qualify anything.
     compiler.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1726 (JUN-633 slice 4, halt-until-interrupt
+  on the object route, `seed/74`).
+  * x86_64: F1 = F2 = F3 = `de73de98…` (8,786,432 bytes).
+  * aarch64 root: F1 = F2 = `de5d67d0…` (3,645,952 bytes), container
+    `da2ee5af…`, derived under qemu from the `e3d6c64e…` root. The x86_64
+    compiler it emits is byte-identical.
+  * Unchanged: the CDCI images, the 19 x86_64 payloads, the 19 aarch64
+    containers built with `--no-crypto-hw`, and all 109 kernel-object gate
+    sources (15 gates, including the halt gate), identical to main's
+    compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
