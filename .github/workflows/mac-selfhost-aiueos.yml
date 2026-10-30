@@ -17,6 +17,7 @@ on:
       - 'scripts/seed/check-aiueos-object-celladdr.py'
       - 'scripts/seed/check-aiueos-object-arrays.py'
       - 'scripts/seed/check-aiueos-object-array-windows.py'
+      - 'scripts/seed/check-aiueos-kernel-tier-maximum.py'
       - 'scripts/seed/check-aiueos-object-cells.py'
       - 'scripts/seed/check-aiueos-object-mmio.py'
       - 'scripts/seed/check-aiueos-object-globals.py'
@@ -217,6 +218,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-array-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-array-windows"
+      - name: AIUEOS kernel window access above its tier maximum refused at compile time (JUN-483)
+        run: |
+          python3 scripts/seed/check-aiueos-kernel-tier-maximum.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-kernel-tier-maximum"
       - name: Cross-build Linux compiler candidates from Mac fixed point
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
