@@ -279,16 +279,17 @@ build closure and does not qualify anything.
     compiler.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product` and the x86 inline-access corpus pass.
-* Re-derived again after main's #1726 (JUN-633 slice 4, halt-until-interrupt
-  on the object route, `seed/74`).
-  * x86_64: F1 = F2 = F3 = `de73de98…` (8,786,432 bytes).
-  * aarch64 root: F1 = F2 = `de5d67d0…` (3,645,952 bytes), container
-    `da2ee5af…`, derived under qemu from the `e3d6c64e…` root. The x86_64
-    compiler it emits is byte-identical.
+* Re-derived again after main's #1726 and #1727 (JUN-633 slices 4 and 5:
+  halt-until-interrupt and the spin-wait hint on the object route,
+  `seed/74`).
+  * x86_64: F1 = F2 = F3 = `0bc6fcd3…` (8,790,528 bytes).
+  * aarch64 root: F1 = F2 = `25d9b0e5…`, container `01e9eef7…`, derived
+    under qemu from the `de5d67d0…` root (the fixed point after #1726). The
+    x86_64 compiler it emits is byte-identical.
   * Unchanged: the CDCI images, the 19 x86_64 payloads, the 19 aarch64
-    containers built with `--no-crypto-hw`, and all 109 kernel-object gate
-    sources (15 gates, including the halt gate), identical to main's
-    compiler.
+    containers built with `--no-crypto-hw`, and all 111 kernel-object gate
+    sources (16 gates, including the halt and spin-wait gates), identical to
+    main's compiler.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
