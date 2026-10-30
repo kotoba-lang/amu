@@ -159,6 +159,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-xstate.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
+      - name: AIUEOS kernel object route emits the spin-wait hint (JUN-633 slice 5)
+        run: |
+          python3 scripts/seed/check-aiueos-object-pause.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-pause"
       - name: AIUEOS kernel object route waits for an interrupt (JUN-633 slice 4)
         run: |
           python3 scripts/seed/check-aiueos-object-halt.py \
