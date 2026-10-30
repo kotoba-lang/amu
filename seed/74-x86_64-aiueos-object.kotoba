@@ -701,6 +701,13 @@
     (and (= (xg-f M f FF-EXPORT) 1)
          (> src 8589934592) (<= src (+ 8589934592 (xg-f M f FF-NPARAMS)))
          (not (xk-record-conflict? M i st src (xk-record-n M (xg-si M i IF-A)))))))
+;; a window access id in seed/86's km-raw encoding: bit 0 store, bits 1..2 width (u8 u16 u32 u64), bits 3.. tier
+;; (0 plain, 2 the 16 KiB one); xk-raw-ok? excludes kernel-subregion (2), which is not an access
+(defn- xk-raw-ok? [k :i64] :bool (or (= k 0) (= k 1) (= k 3) (and (>= k XK-WIDTH-FIRST) (< k XK-INTR-W16))))
+(defn- xk-raw [k :i64] :i64
+  (cond (= k 0) 4 (= k 1) 5 (= k 3) 20
+        :else (let [j (mod (- k XK-WIDTH-FIRST) 6) w (case (quot j 2) 0 0 1 1 3)]
+                (+ (+ (bit-and j 1) (* 2 w)) (if (>= k XK-WIDTH16-FIRST) 16 0)))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
@@ -715,7 +722,13 @@
               (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
-        (xk-check M (inc i)))))))
+        ;; JUN-483: a literal size above the window's tier maximum (512, or 16384 for the -16k forms) is refused
+        ;; at compile time (E7108, detail xk-raw * 2^32 + size); a size tied to a parameter keeps the run-time check
+        (let [k (if (= op OP-CALL) (xk-intr M a) -1)
+              size (if (xk-raw-ok? k) (xk-extent-constant M i (xk-src M i (inc b) 0)) -1)]
+          (if (and (>= size 4294967296) (> (- size 4294967296) (if (>= (xk-raw k) 16) 16384 512)))
+            (xg-err M 7108 (+ (* (xk-raw k) 4294967296) (- size 4294967296)))
+            (xk-check M (inc i)))))))))
 
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most eight
@@ -1107,9 +1120,21 @@
         ;; ".bss\0.high_bss\0" at 50 and 55
         (cond-> (= L 2) (-> (xg-out 0x69682e007373622e 8) (xg-out 0x007373625f6867 7))))))
 
+;; E7108 (seed/86 km-check and xk-check, JUN-483): detail = raw tier index * 2^32 + size. The names and maxima repeat seed/86's
+;; km-name / km-maximum, which this earlier module cannot call.
+(defn- xo-tier-text [detail :i64] :string
+  (let [raw (quot detail 4294967296) size (- detail (* raw 4294967296)) tier (quot raw 8)
+        name (string-concat (if (= (bit-and raw 1) 0) "kernel-load-" "kernel-store-")
+               (string-concat (case (mod (quot raw 2) 4) 0 "u8" 1 "u16" 2 "u32" "u64")
+                 (case tier 0 "" 1 "-4k" 2 "-16k" "-64k")))
+        maximum (case tier 0 512 1 4096 2 16384 65536)]
+    (string-concat "seed-x86_64-aiueos-object: E7108 " (string-concat name (string-concat " size "
+      (string-concat (mem-u2dec size) (string-concat " is above its tier maximum "
+        (string-concat (mem-u2dec maximum) " (use a larger tier, or kernel-subregion)\n"))))))))
 (defn- xo-report [M :vector-i64 path :string out :string] :i64
   (let [e (vector-at M MM-ERR)]
     (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (= e 7108) (let [w (io-err (xo-tier-text (vector-at M MM-ERR-N)))] 1)
           (> e 0) (let [w (io-err (string-concat "seed-x86_64-aiueos-object: E" (string-concat (mem-u2dec e)
                             (string-concat " unsupported object profile or code limit; detail "
                               (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n")))))] 1)

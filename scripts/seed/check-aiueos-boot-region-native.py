@@ -36,7 +36,7 @@ def main(build, out, complete=None):
         scope.mkdir()
         src, lock = scope/'entry.kotoba', scope/'source.ksl'
         calls, artifacts = [], {}
-        def compile_(name, text, ok=True):
+        def compile_(name, text, ok=True, refusal=b'E7106'):
             src.write_text(text)
             lock.write_text(f'KSL1\nentry {src}\nroot {scope}\nfile {pin(src)["sha256"]} {src}\n')
             image = scope/(name+'.elf')
@@ -52,10 +52,13 @@ def main(build, out, complete=None):
                 assert p.returncode==0 and not p.stderr,p.stderr
                 artifacts[name]=dict(kernel=pin(image),efi=pin(efi))
             else:
-                assert r.returncode==1 and b'E7106' in r.stderr and not image.exists(),calls[-1]
+                assert r.returncode==1 and refusal in r.stderr and not image.exists(),calls[-1]
         compile_('boot-region',boot)
         compile_('widths',widths)
-        compile_('oversized-tier', '(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (kernel-boot-info) 16544 0))\n')
+        # JUN-483: a plain-tier access over the 16544-byte boot block can only reach its ud2 at run time; it is
+        # now refused at compile time, naming the intrinsic, the size and the tier maximum
+        compile_('oversized-tier', '(ns entry (:export [main]))\n(defn main [] :i64 (kernel-load-u8 (kernel-boot-info) 16544 0))\n',
+                 ok=False, refusal=b'E7108 kernel-load-u8 size 16544 is above its tier maximum 512')
         compile_('valid-tier', '(ns entry (:export [main]))\n(defn main [] :i64 (- (kernel-load-u8-64k (kernel-boot-info) 16544 0) 23))\n')
         for name,text in [
             ('wrong-boot-length',boot.replace('16544','16480')),
@@ -65,11 +68,11 @@ def main(build, out, complete=None):
             ('loaded-root',boot.replace('(kernel-load-u8 h 160 0)','(kernel-load-u8 (kernel-load-u64 h 160 0) 160 0)')),
         ]:
             compile_(name,text,ok=False)
-        results.append(dict(producer=pin(producer),artifacts=artifacts,compileRefusals=5))
+        results.append(dict(producer=pin(producer),artifacts=artifacts,compileRefusals=6))
     assert results[0]['artifacts']==results[1]['artifacts']
     report=dict(status='PASS_NATIVE_BOOT_REGION_PACKAGING',source=graph,results=results,guestExecution=False,fullKernel=False,nativeCDCI=False)
     (out/'native-boot-region.json').write_text(json.dumps(report,indent=2)+'\n')
-    print(report['status'],'fixed boot ABI, all32 memory ops and 5 refusal controls; guest gates separate')
+    print(report['status'],'fixed boot ABI, all32 memory ops and 6 refusal controls; guest gates separate')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();g=p.add_mutually_exclusive_group(required=True);g.add_argument('--build',type=Path);g.add_argument('--complete',type=Path);p.add_argument('--output',type=Path,required=True);a=p.parse_args();main(a.build.resolve() if a.build else None, a.output.resolve(), a.complete.resolve() if a.complete else None)
