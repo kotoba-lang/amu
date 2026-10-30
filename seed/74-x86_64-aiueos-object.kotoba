@@ -139,6 +139,17 @@
 ;; 200000 + k.
 (def XK-CELL-ADDR 120000)
 (def FF-CELL-ADDR-MARK 200000)
+;; JUN-556 C (ADR 0385): private bss-addr-<k>-<N> [] and highbss-addr-<k>-<N> [] (k a single digit 0..7, N a canonical decimal,
+;; a multiple of 8 in 8..65536, body the placeholder 0) return the ADDRESS of a zero-initialised LOCAL array k of N bytes in
+;; .bss or .high_bss: lea rax,[rip+disp32] with an R_X86_64_PC32 relocation against that section's STT_SECTION symbol,
+;; addend (the array's offset) - 4. Arrays of one section lie in k order at 16-byte aligned offsets. Every stub that names
+;; (section, k) must name the same N. As with cell-addr-<k>, the address is an ordinary value, not a rooted base: no window
+;; or record access accepts it, and it can only be passed on to an extern (its extent is the callee's contract, unverified).
+;; An object that names no such stub has no .bss / .high_bss and keeps its bytes. The mark is
+;; 1000000 + (section * 8 + k) * 8192 + (N / 8 - 1), section 0 for .bss and 1 for .high_bss.
+(def XK-ARRAY-ADDR 140000)
+(def FF-ARRAY-MARK 1000000)
+(def XO-ARRAY-SPAN 131072)
 (def XO-MAX-EXTERNS 16)
 (defn- xk-intr-name [k :i64] :string
   (case k 0 "kernel-load-u32" 1 "kernel-store-u32" 2 "kernel-subregion" 3 "kernel-load-u32-16k"
@@ -175,6 +186,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-STORE-MARK XO-MAX-CELLS))) (+ XK-CELL-STORE f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
+          (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
           (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W))) k
           :else -1)))
@@ -308,7 +320,8 @@
           (xk-record-access dir wi off)
           (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
+  (cond (>= k XK-ARRAY-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-ARRAY-ADDR)) (xg-save t))
+        (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
         (>= k XK-RECORD) (xk-record-intrinsic M k t)
         (>= k XK-MMIO-STORE)
           (-> M (xg-load t 0x858b48) (xg-bytes 0xb948 2)
@@ -701,6 +714,41 @@
         (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "record-store-") (= (xg-f M f FF-NPARAMS) 2))
           (xo-record-mark-rest 1 (string-substring S (+ a 13) b))
         :else -1))
+;; JUN-556 C: bss-addr-<k>-<N> / highbss-addr-<k>-<N>, k one digit 0..7, N canonical, a multiple of 8 in 8..65536
+(defn- xo-array-rest [sect :i64 S :string i :i64 b :i64] :i64
+  (if (or (< (- b i) 3) (not= (string-substring S (inc i) (+ i 2)) "-")) -1
+    (let [k (xo-cell-number S i (inc i))
+          n (if (and (<= (- b (+ i 2)) 5) (xo-digits-ok? S (+ i 2) b)) (mem-parse-dec S (+ i 2) b) -1)]
+      (if (and (>= k 0) (< k 8) (>= n 8) (<= n 65536) (= (bit-and n 7) 0)
+               (string=? (string-substring S (+ i 2) b) (mem-u2dec n)))
+        (+ FF-ARRAY-MARK (* (+ (* sect 8) k) 8192) (dec (quot n 8))) -1))))
+(defn- xo-array-mark [M :vector-i64 S :string f :i64 a :i64 b :i64] :i64
+  (cond (not= (xg-f M f FF-NPARAMS) 0) -1
+        (and (> (- b a) 9) (string=? (string-substring S a (+ a 9)) "bss-addr-")) (xo-array-rest 0 S (+ a 9) b)
+        (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "highbss-addr-")) (xo-array-rest 1 S (+ a 13) b)
+        :else -1))
+(defn- xo-array-mark? [m :i64] :bool (and (>= m FF-ARRAY-MARK) (< m (+ FF-ARRAY-MARK XO-ARRAY-SPAN))))
+(defn- xo-array-slot [m :i64] :i64 (quot (- m FF-ARRAY-MARK) 8192))     ; section * 8 + k
+(defn- xo-array-n [m :i64] :i64 (* 8 (inc (rem (- m FF-ARRAY-MARK) 8192))))
+;; the size of array slot s (0 when no stub names it), or -1 when two stubs name it with different sizes
+(defn- xo-array-size [M :vector-i64 s :i64] :i64
+  (loop [f 1 n 0]
+    (if (>= f (vector-at M MM-FN-N)) n
+      (let [m (xg-f M f FF-EXPORT)]
+        (if (and (xo-array-mark? m) (= (xo-array-slot m) s))
+          (if (or (= n 0) (= n (xo-array-n m))) (recur (inc f) (xo-array-n m)) -1)
+          (recur (inc f) n))))))
+(defn- xo-arrays-consistent? [M :vector-i64] :bool
+  (loop [s 0] (if (= s 16) true (if (< (xo-array-size M s) 0) false (recur (inc s))))))
+;; the offset of array slot s in its section: the 16-aligned sizes of the lower slots of the same section
+(defn- xo-array-offset [M :vector-i64 s :i64] :i64
+  (loop [j (* 8 (quot s 8)) off 0]
+    (if (>= j s) off (recur (inc j) (+ off (bit-and (+ (xo-array-size M j) 15) -16))))))
+(defn- xo-section-size [M :vector-i64 sect :i64] :i64
+  (loop [j (* 8 sect) off 0]
+    (if (= j (+ (* 8 sect) 8)) off (recur (inc j) (+ off (bit-and (+ (xo-array-size M j) 15) -16))))))
+(defn- xo-uses-arrays? [M :vector-i64] :bool
+  (loop [f 1] (cond (>= f (vector-at M MM-FN-N)) false (xo-array-mark? (xg-f M f FF-EXPORT)) true :else (recur (inc f)))))
 (defn- xo-dname-dash [S :string a :i64 b :i64] :i64
   (string-index-of (string-substring S (+ a 10) b) "-"))
 (defn- xo-dname-mark [S :string a :i64 b :i64] :i64
@@ -715,9 +763,14 @@
       (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "mmio-load32-"))
       (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "mmio-store32-"))
       (and (> (- b a) 12) (string=? (string-substring S a (+ a 12)) "record-load-"))
-      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "record-store-"))))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "record-store-"))
+      (and (> (- b a) 9) (string=? (string-substring S a (+ a 9)) "bss-addr-"))
+      (and (> (- b a) 13) (string=? (string-substring S a (+ a 13)) "highbss-addr-"))))
 (defn- xo-mark-externs [M :vector-i64 S :string f :i64] :vector-i64
-  (if (or (>= f (vector-at M MM-FN-N)) (not= (vector-at M MM-ERR) 0)) M
+  (cond (not= (vector-at M MM-ERR) 0) M
+        ;; JUN-556 C: two array stubs that name one (section, k) with different sizes are refused
+        (>= f (vector-at M MM-FN-N)) (if (xo-arrays-consistent? M) M (xg-err M 7102 0))
+        :else
     (let [sb (+ MM-SYM-BASE (* (xg-f M f FF-SYM) MM-SYM-W))
           a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))
           plain (and (= (xg-f M f FF-KIND) FK-PRIV) (= (xg-f M f FF-EXPORT) 0))]
@@ -730,7 +783,10 @@
               (let [m (let [c (xo-cell-mark M S f a b)]
                         (cond (>= c 0) c
                               (and (> (- b a) 10) (string=? (string-substring S a (+ a 10)) "cell-name-") (= (xg-f M f FF-NPARAMS) 0)) (xo-dname-mark S a b)
-                              :else (let [mm (xo-mmio-mark M S f a b)] (if (>= mm 0) mm (xo-record-mark M S f a b)))))]
+                              :else (let [mm (xo-mmio-mark M S f a b)]
+                                      (cond (>= mm 0) mm
+                                            (>= (xo-record-mark M S f a b) 0) (xo-record-mark M S f a b)
+                                            :else (xo-array-mark M S f a b)))))]
                 (if (and (>= m 0) (xo-extern-body-ok? M f))
                   (xo-mark-externs (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT) m) S (inc f))
                   (xg-err M 7102 f)))
@@ -778,17 +834,22 @@
   (- (+ 80 (* 8 (cond (>= m FF-CELL-ADDR-MARK) (- m FF-CELL-ADDR-MARK)
                       (>= m FF-CELL-STORE-MARK) (- m FF-CELL-STORE-MARK)
                       :else (- m FF-CELL-LOAD-MARK)))) 4))
-(defn- xo-xrelas [M :vector-i64 cnt :i64 X :vector-i64 i :i64] :vector-i64
+(defn- xo-xrelas [M :vector-i64 cnt :i64 X :vector-i64 i :i64 L :i64] :vector-i64
+  ;; L: the local section symbols after the context (2 when the object has arrays, else 0)
   (if (>= i (vector-at M MM-FIX-N)) M
     (let [b (+ MM-FIX-BASE (* i MM-FIX-W)) m (xg-f M (vector-at M (+ b 2)) FF-EXPORT)]
       (xo-xrelas
         (cond (not (xo-ext-site? M i)) M
               (= m FF-EXTERN-MARK)
                 (-> M (xg-out (vector-at M b) 8)
-                    (xg-out (+ (* (+ cnt 1 (xo-xrank X (vector-at M (+ b 2)) 1)) 4294967296) 4) 8)
+                    (xg-out (+ (* (+ cnt 1 L (xo-xrank X (vector-at M (+ b 2)) 1)) 4294967296) 4) 8)
                     (xg-out -4 8))
+              (xo-array-mark? m)
+                (-> M (xg-out (vector-at M b) 8)
+                    (xg-out (+ (* (+ 2 (quot (xo-array-slot m) 8)) 4294967296) 2) 8)
+                    (xg-out (- (xo-array-offset M (xo-array-slot m)) 4) 8))
               :else (-> M (xg-out (vector-at M b) 8) (xg-out 4294967298 8) (xg-out (xo-cell-addend m) 8)))
-        cnt X (inc i)))))
+        cnt X (inc i) L))))
 ;; the data section holds the context and 8 bytes for every cell up to the highest one a stub names
 (defn- xo-ncells [M :vector-i64 f :i64 acc :i64] :i64
   (if (>= f (vector-at M MM-FN-N)) acc
@@ -895,24 +956,29 @@
 ;; cnt exports: cnt shims laid out by SH (xo-shim-table), cnt relocations, cnt public symbols.
 ;; With one export the bytes are the ones this function always wrote.
 (defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 X :vector-i64 NX :vector-i64 D :vector-i64 DX :vector-i64 SH :vector-i64 fuel :i64] :vector-i64
-  (let [tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
+  ;; JUN-556 C: with arrays the object has two more sections (.bss 7, .high_bss 8) and two LOCAL section symbols after the
+  ;; context, so the headers grow by two and every global symbol index by two; without arrays nothing moves.
+  (let [L (if (xo-uses-arrays? M) 2 0) tlen (xg-pos M) text-off (+ 512 (* 64 L)) data-off (+ text-off tlen)
         nx (vector-at X 0) nd (vector-at D 0) sites (xo-sites M 1 0) ncells (xo-ncells M 1 0) dsize (+ 80 (* 8 ncells))
-        rela-size (* 24 (+ cnt sites)) sym-size (* 24 (+ cnt 2 nx nd))
+        rela-size (* 24 (+ cnt sites)) sym-size (* 24 (+ cnt 2 L nx nd))
         rela-off (+ data-off dsize) sym-off (+ rela-off rela-size) str-off (+ sym-off sym-size)
         names (xo-names-len NS 1 cnt 0) xnames (xo-names-len NX 1 nx 0) dnames (xo-names-len DX 1 nd 0)
-        str-len (+ names 9 xnames dnames) shstr-off (+ str-off str-len)]
+        str-len (+ names 9 xnames dnames) shstr-off (+ str-off str-len) shstr-len (if (= L 0) 50 65)]
     (-> M (mem-set MM-OUT-N 1)
         (xg-out 0x00010102464c457f 8) (xg-out 0 8)
         (xg-out 1 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0 8) (xg-out 0 8) (xg-out 64 8)
-        (xg-out 0 4) (xg-out 64 2) (xg-out 0 2) (xg-out 0 2) (xg-out 64 2) (xg-out 7 2) (xg-out 6 2)
+        (xg-out 0 4) (xg-out 64 2) (xg-out 0 2) (xg-out 0 2) (xg-out 64 2) (xg-out (+ 7 L) 2) (xg-out 6 2)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xo-shdr 1 1 6 0 text-off tlen 0 0 16 0)
         (xo-shdr 7 1 3 0 data-off dsize 0 0 8 0)
         (xo-shdr 13 4 0x40 0 rela-off rela-size 4 1 8 24)
-        (xo-shdr 24 2 0 0 sym-off sym-size 5 2 8 24)
+        (xo-shdr 24 2 0 0 sym-off sym-size 5 (+ 2 L) 8 24)
         (xo-shdr 32 3 0 0 str-off str-len 0 0 1 0)
-        (xo-shdr 40 3 0 0 shstr-off 50 0 0 1 0)
+        (xo-shdr 40 3 0 0 shstr-off shstr-len 0 0 1 0)
+        ;; .bss and .high_bss: SHT_NOBITS, SHF_WRITE | SHF_ALLOC, 16-byte aligned, no file bytes
+        (cond-> (= L 2) (-> (xo-shdr 50 8 3 0 (+ shstr-off shstr-len) (xo-section-size M 0) 0 0 16 0)
+                            (xo-shdr 55 8 3 0 (+ shstr-off shstr-len) (xo-section-size M 1) 0 0 16 0)))
         (xg-out-code 1)
         (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
@@ -923,15 +989,18 @@
         ;; on a global `context`, so locals come first (null, context, exports)
         ;; and sh_info names the first global.
         (xo-relas 0 cnt SH)
-        (xo-xrelas cnt X 1)
+        (xo-xrelas cnt X 1 L)
         (xo-sym 0 0 0 0 0)
         (xo-sym (+ names 1) 0x01 2 0 80)
+        (cond-> (= L 2) (-> (xo-sym 0 0x03 7 0 0) (xo-sym 0 0x03 8 0 0)))
         (xo-fsyms NS 1 cnt SH 1)
         (xo-xsyms NX 1 nx (+ names 9)) (xo-dsyms D DX 1 nd (+ names 9 xnames))
         (xg-out 0 1) (xo-fnames S NS 1 cnt) (xg-out 0x747865746e6f63 8) (xo-xnames S NX 1 nx) (xo-dnames S DX 1 nd)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
         (xg-out 0x006261746d79732e 8) (xg-out 0x006261747274732e 8) (xg-out 0x617472747368732e 8)
-        (xg-out 0x0062 2))))
+        (xg-out 0x0062 2)
+        ;; ".bss\0.high_bss\0" at 50 and 55
+        (cond-> (= L 2) (-> (xg-out 0x69682e007373622e 8) (xg-out 0x007373625f6867 7))))))
 
 (defn- xo-report [M :vector-i64 path :string out :string] :i64
   (let [e (vector-at M MM-ERR)]
