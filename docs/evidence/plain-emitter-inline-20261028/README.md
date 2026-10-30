@@ -261,6 +261,24 @@ build closure and does not qualify anything.
     gate sources (13 gates), identical to main's compiler.
   * The local `check-complete-x86`, the full `check-native-cdci` and
     `check-public-native-product` pass.
+* Re-derived again after main's #1718 (JUN-633, scalar SSE floats on the
+  aiueos object route, ADR 0391), which changed `seed/70` itself. Its float
+  dispatch in `xg-bin` / `xg-cmp` conflicted with this change's `xg-pair`; the
+  merge keeps both (floats first, then the integer path through `xg-pair`).
+  The float paths respect the rax cache: their operand reads are emitted
+  bytes, which clear it, and every result reaches its slot through `xg-save`
+  with rax equal to the stored value. Floats are admitted only on the object
+  route, never in the runtime profile.
+  * x86_64: F1 = F2 = F3 = `2750d271…` (8,786,432 bytes).
+  * aarch64 root: F1 = F2 = `e3d6c64e…` (3,645,952 bytes), container
+    `d9e238a2…`, derived under qemu from the `7f88b254…` root. The x86_64
+    compiler it emits is byte-identical.
+  * Unchanged: the CDCI images, the 19 x86_64 payloads, the 19 aarch64
+    containers built with `--no-crypto-hw`, and all 107 kernel-object gate
+    sources (14 gates, including the 8 f32 sources), identical to main's
+    compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
