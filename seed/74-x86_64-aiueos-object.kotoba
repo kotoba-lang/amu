@@ -103,6 +103,15 @@
 ;; source that names one of its stubs, with both width blocks, so the ids stay positional.
 (def XK-CPU-FIRST 18)
 (def XK-INTR-CPU 24)
+;; ids 24..27 (JUN-633 slice 2): the extended-state setup -- kernel-cr4-set-bits [mask], kernel-xcr0-set-bits [mask],
+;; kernel-read-cr4 [] and kernel-xgetbv [] (XCR0). The two writes OR a mask into the register and return the new value;
+;; the mask must be a LITERAL whose bits are all in the admitted set (CR4: OSFXSR 1<<9, OSXMMEXCPT 1<<10, OSXSAVE 1<<18;
+;; XCR0: x87 1, SSE 2, AVX 4), checked at compile time (E7107) -- no other CR4 / XCR0 bit can be set from an object, and
+;; none can be cleared. A separate block, appended with the others to a source that names one of its stubs.
+(def XK-XSTATE-FIRST 24)
+(def XK-INTR-XSTATE 28)
+(def XK-CR4-ADMITTED 263680)
+(def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
 ;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
@@ -174,7 +183,8 @@
           12 "kernel-load-u8-16k" 13 "kernel-store-u8-16k" 14 "kernel-load-u16-16k" 15 "kernel-store-u16-16k"
           16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k"
           18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
-          22 "kernel-rdtsc" 23 "kernel-rdrand" ""))
+          22 "kernel-rdtsc" 23 "kernel-rdrand"
+          24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -198,6 +208,13 @@
   (string-concat "(defn- kernel-cpuid-eax [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-ebx [a :i64 b :i64] :i64 0)\n"
     (string-concat "(defn- kernel-cpuid-ecx [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-edx [a :i64 b :i64] :i64 0)\n"
       "(defn- kernel-rdtsc [] :i64 0)\n(defn- kernel-rdrand [] :i64 0)\n")))
+;; the extended-state block (ids 24..27)
+(defn- xk-xstate-lib [] :string
+  (string-concat "(defn- kernel-cr4-set-bits [m :i64] :i64 0)\n(defn- kernel-xcr0-set-bits [m :i64] :i64 0)\n"
+    "(defn- kernel-read-cr4 [] :i64 0)\n(defn- kernel-xgetbv [] :i64 0)\n"))
+(defn- xk-uses-xstate? [S :string] :bool
+  (or (or (>= (string-index-of S "kernel-cr4-set-bits") 0) (>= (string-index-of S "kernel-xcr0-set-bits") 0))
+      (or (>= (string-index-of S "kernel-read-cr4") 0) (>= (string-index-of S "kernel-xgetbv") 0))))
 (defn- xk-uses-cpu? [S :string] :bool
   (or (>= (string-index-of S "kernel-cpuid-e") 0)
       (or (>= (string-index-of S "kernel-rdtsc") 0) (>= (string-index-of S "kernel-rdrand") 0))))
@@ -207,7 +224,9 @@
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-cpu? S) (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib))
+  (cond (xk-uses-xstate? S)
+          (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib))
+        (xk-uses-cpu? S) (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib))
         (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
         (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib))
         :else (xk-lib)))
@@ -216,6 +235,8 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-xstate-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-cr4-set-bits [m :i64]") 0))
 (defn- xk-has-cpu-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-cpuid-eax [a :i64 b :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
@@ -231,7 +252,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-CPU))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-XSTATE))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -379,6 +400,21 @@
         (= c 5) (-> M (xg-bytes 0xab9 5) (xg-bytes 0xf0c70f48 4) (xg-bytes 0x0672 2)
                       (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t))
         :else (xg-err M 7101 OP-CALL)))
+;; JUN-633 slice 2: c 0 cr4-set-bits: mov rcx,[mask]; mov rax,cr4; or rax,rcx; mov cr4,rax. c 1 xcr0-set-bits:
+;; mov rsi,[mask]; xor ecx,ecx; xgetbv; or rax,rsi; xsetbv; shl rdx,32; or rax,rdx. c 2 read-cr4: mov rax,cr4. c 3 xgetbv:
+;; xor ecx,ecx; xgetbv; shl rdx,32; or rax,rdx. The masks were checked against the admitted bits by xk-check (E7107).
+;; xsetbv raises #UD unless CR4.OSXSAVE is set: the caller sets it first, as the C it replaces does.
+(defn- xk-xstate-intrinsic [M :vector-i64 c :i64 t :i64] :vector-i64
+  (cond (= c 0) (-> M (xg-load t 0x8d8b48) (xg-bytes 0xe0200f 3) (xg-bytes 0xc80948 3) (xg-bytes 0xe0220f 3) (xg-save t))
+        (= c 1) (-> M (xg-load t 0xb58b48) (xg-bytes 0xc931 2) (xg-bytes 0xd0010f 3) (xg-bytes 0xf00948 3) (xg-bytes 0xd1010f 3)
+                      (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        (= c 2) (-> M (xg-bytes 0xe0200f 3) (xg-save t))
+        (= c 3) (-> M (xg-bytes 0xc931 2) (xg-bytes 0xd0010f 3) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        :else (xg-err M 7101 OP-CALL)))
+;; a cr4 / xcr0 mask is a literal (xk-src: 2^32 + value), non-zero, with every bit in the admitted set
+(defn- xk-mask-ok? [M :vector-i64 i :i64 b :i64 admitted :i64] :bool
+  (let [src (xk-src M i b 0) v (- src 4294967296)]
+    (and (>= src 4294967296) (< src 8589934592) (> v 0) (= (bit-and v admitted) v))))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (>= k XK-ARRAY-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-ARRAY-ADDR)) (xg-save t))
         (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
@@ -395,6 +431,7 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        (>= k XK-XSTATE-FIRST) (xk-xstate-intrinsic M (- k XK-XSTATE-FIRST) t)
         (>= k XK-CPU-FIRST) (xk-cpu-intrinsic M (- k XK-CPU-FIRST) t)
         :else (xk-intrinsic-window M k t)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
@@ -410,7 +447,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -667,6 +704,9 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
+      (if (or (and (= op OP-CALL) (= (xk-intr M a) XK-XSTATE-FIRST) (not (xk-mask-ok? M i b XK-CR4-ADMITTED)))
+              (and (= op OP-CALL) (= (xk-intr M a) (+ XK-XSTATE-FIRST 1)) (not (xk-mask-ok? M i b XK-XCR0-ADMITTED))))
+        (xg-err M 7107 i)
       (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
@@ -675,7 +715,7 @@
               (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
-        (xk-check M (inc i))))))
+        (xk-check M (inc i)))))))
 
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most eight
