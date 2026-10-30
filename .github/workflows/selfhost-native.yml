@@ -249,6 +249,16 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Durable replace under injected fsync and rename faults (arm64, AWAI-52)
+        run: |
+          fi="$RUNNER_TEMP/runtime/fs2-faults"; mkdir -p "$fi"
+          for f in fsync renameat; do python3 scripts/seed/check-fs2-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none fsync renameat; do
+            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+            docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
+              python3 /repo/scripts/seed/check-fs2-fault-injection.py \
+              --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
+          done
       - name: Native private store and STOP/CONT sleep resume (arm64)
         run: |
           python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
