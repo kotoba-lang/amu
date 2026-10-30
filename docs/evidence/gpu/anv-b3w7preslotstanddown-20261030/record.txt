@@ -1,0 +1,153 @@
+JUN-59 session 112 -- THE PRE-W7-SLOT STAND-DOWN (NO row taken:
+the s111 carry-forward's only queued row, the W7 measurement half,
+is day-slot-gated to the first measurement session starting at or
+after 2026-10-31T00:00:00Z, and this session starts 19 h 58 m 07 s
+before that slot opens -- the s104 pre-slot precedent applied at
+the W7 boundary; NO design slice, NO implementation slice, NO
+measurement, NO hardware runs, NO builds, NO compiles, NO GO
+stamp, NO host writes, NO day-slot consumption, NO ledger line).
+
+1. FINDING (verified by real tool output): the W7 measurement half
+   is the ONLY queued row and this session cannot take it. The s85
+   freeze (anv-b3w7daybar-20261031/protocol.txt, frozen
+   2026-10-29T06:39:16Z) defines W7 as the window whose 78 fresh
+   processes run in the first measurement session STARTING at or
+   after 00:00:00Z of the first UTC day STRICTLY AFTER the UTC day
+   named on W6's ledger line in settle-bar-ledger.txt; W6's
+   committed line reads day=2026-10-30 session=s105 (the s106
+   append), so the W7 slot opens 2026-10-31T00:00:00Z, and this
+   session started 2026-10-30T04:01:53Z -- 71,887 s (19 h 58 m
+   07 s) BEFORE the slot opens (state-s112.txt; slot_open minus
+   session_start computed by python3 datetime, the same
+   arithmetic in the state file). Running the 78 processes in
+   this session would produce an UNREGISTERED window outside the
+   frozen W7 definition -- the exact outcome the pre-registration
+   exists to prevent (the s104 reasoning, re-derived at the W7
+   boundary). Carry-forward (b) is explicitly NOT queued: every
+   further counted-day slot needs its own pre-registration freeze
+   (s85 protocol section 4(c) freezes no further day slots), and
+   the cross-day tail-movement row is not queued. Every
+   composition of the W7 record is already bound to committed
+   bytes or byte-pinned expectations -- the adoption byte binding
+   (s102, now the s110 adoption-manifest-v2 check VERDICT
+   CONSISTENT matched 27 mismatched 0), the custody-to-ledger
+   wiring on real committed window bytes (s103, zero defects, the
+   v2 tool's emit path and ledger-s<NN>.py name gate byte-
+   preserved from the s97 tool per s110), the reading->fresh-
+   census pair (s101) and the reading->reconcile pair (s100),
+   and the exact step the W7 record must re-run -- the v2
+   --compat GREEN post-append -- already executes twice byte-
+   identical over the live ten-row ledger (s110, re-verified
+   s111). Per the s103 closing rule, a tick running before the
+   slot opens has NO remaining honest preparation row and should
+   say so rather than pad. The s109 section 3(b) W7 INTERIM is
+   UNNEEDED (the supersession landed at s110/s111, before any W7
+   session starts) and must not be cited as governing.
+
+2. VERIFIED (real tool output, all runs this tick, byte-compared
+   to the s88 committed pins in anv-b3w6tailrep-20261030/ and the
+   s106 post-append pins in anv-b3w6ledgerappend-20261030/):
+   (a) gpu_regime_classify.py --self-test (scripts/): exit 0,
+       "TOTAL: 2649 assertions passed, 0 failed"; capture 17,925
+       bytes == the s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run
+       2 -- "Ran 123 tests containing 12162 assertions. 0
+       failures, 0 errors."; run 1 == run 2 == both s88 pins
+       (919 bytes, cmp exit 0 x3); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk, worktree root): exit 1, RED AT BASE
+       kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO
+       .cljk namespace; the scoped runner is deleted and never
+       committed). Capture .err 879 bytes == the s88 pin (cmp
+       exit 0); stdout 0 bytes == the pin. NO green full suite
+       is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/settle-
+       bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == the
+       s106 pin (cmp exit 0); ledger eval twice, exit 0, run 1
+       == run 2 == the s106 post-append pins (907 bytes, cmp
+       exit 0 x2) -> VERDICT: PENDING 3/4 (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73; counted day=2026-10-30 session=s105);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files
+       (gate-s112-sh.txt 0 lines);
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+       --exit-code rc=0 -- the emit path never ran).
+
+3. THE BAR: stand-down session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 3/4 and settles nothing.
+
+4. UNMEASURED (named): the W7 window itself (the s85 route; the
+   first measurement session at/after 2026-10-31T00:00:00Z);
+   every bar quantity at W7 (class/median/min of hi block A; the
+   evaluator's verdict at the fourth slot). RULE 4 unchanged:
+   NOTHING MOVES -- the accelerator-targets workgroup rows stay
+   exactly as ADR-0358 left them (:measured? true scoped to each
+   row's one named measured device for :nvidia/:apple/:intel/
+   :amd; :arm and :unknown remain provisional, :measured? false);
+   NO vendor optimization exists for Intel (or for any vendor).
+   This is gate-state verification at stand-down, not a device
+   measurement.
+
+5. NAMED, NOT HIDDEN:
+   (a) this record is a STAND-DOWN, not a preparation row --
+       nothing is bound, nothing is rehearsed, no future record
+       may build on it;
+   (b) ONE stand-down record suffices for the W7 pre-slot period
+       (the s104 rule, extended to this boundary): any further
+       tick that also starts before 2026-10-31T00:00:00Z stands
+       down WITHOUT a second commit and WITHOUT a report
+       (respond [SILENT]) unless the state changes (a hermes/
+       blocker PR appears, the chain PR merges or conflicts, the
+       gate state moves); the first tick whose START is at or
+       after 2026-10-31T00:00:00Z is the W7 session;
+   (c) the kbb engine's standing "2 dep(s) are not :local/root"
+       warning reaches no capture (.err 0 bytes wherever the
+       pins are 0);
+   (d) untracked scratch/ and deps.edn in the worktree are not
+       this row's and are not committed.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   (prlist-s112.json taken at tick start 2026-10-30T04:13:17Z;
+   re-checked immediately before this push -- the result is named
+   in the commit message and the tick report); chain PRs =
+   exactly ONE (#1665 bot/amu-gpu-chain-20261028-4 -- the one
+   this commit pushes to).
+
+7. NOT DONE (carry-forward to session 113, named):
+   (a) the W7 measurement half (the s85 freeze; the first
+       measurement session starting at or after
+       2026-10-31T00:00:00Z runs the s57 route unchanged and owns
+       its record in anv-b3w7daybar-20261031/: the adoption
+       contract adoption-check-prego.py --check
+       adoption-manifest-v2.txt . fail-closed before any adoption
+       copy, the v2 --compat GREEN post-append re-run in its own
+       record, the custody->build-pins->78-runs route, the
+       reading/fresh-census pair, the custody-to-ledger wiring,
+       the ledger append ONLY after the standing gate set
+       verifies, reconcile --line after the append; the s109
+       interim must not be cited as governing);
+   (b) any further counted-day slot (its own pre-registration
+       freeze -- s85 protocol section 4(c)) and a cross-day
+       tail-movement row (not queued);
+   (c) the standing gate set runs with each such tick.
+
+WHAT CHANGED (this commit): docs/evidence/gpu/
+anv-b3w7preslotstanddown-20261030/ gains this record (record.txt)
++ state-s112.txt + the s112 gate captures (gate-s112-classify.txt
+/.err, gate-s112-run1/2.txt/.err, gate-s112-full.out/.err,
+bar-s112-selftest.txt/.err, bar-s112-eval-run1/2.txt/.err,
+gate-s112-sh.txt, prlist-s112.json); plus the ADR-0355 dated
+note (this session's step). NO run logs (no hardware this tick),
+NO .sh files, NO statistics of any kind. The chain commit cites
+JUN-55/JUN-59 (Linear tracking JUN-499).
+
+Evidence: docs/evidence/gpu/anv-b3w7preslotstanddown-20261030/
+(this file, state-s112.txt, the s112 gate captures, prlist-
+s112.json). (JUN-55, JUN-59; Linear tracking JUN-499)

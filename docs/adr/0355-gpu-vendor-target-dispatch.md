@@ -5647,3 +5647,47 @@ in its own record), any further counted-day slot (its own freeze)
 and a cross-day tail-movement row (not queued).  Evidence:
 docs/evidence/gpu/anv-b3ledgersupersede-20261030/.  (JUN-55,
 JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 112, JUN-59 -- THE PRE-W7-SLOT STAND-DOWN, NO
+ROW TAKEN): the s111 carry-forward's only queued row, the W7
+measurement half, is day-slot-gated to the first measurement
+session starting at or after 2026-10-31T00:00:00Z (the s85
+freeze: W7's day is the first UTC day strictly after W6's
+committed ledger line day=2026-10-30 session=s105), and this
+session started 2026-10-30T04:01:53Z -- 71,887 s (19 h 58 m 07 s)
+before the slot opens (state-s112.txt).  Running the 78 processes
+now would produce an UNREGISTERED window outside the frozen W7
+definition; carry-forward (b) is explicitly not queued (further
+counted-day slots need their own pre-registration freeze -- s85
+protocol section 4(c); the cross-day tail-movement row not
+queued); every W7 record composition is already bound to
+committed bytes or byte-pinned expectations (s102/s110 adoption
+byte binding + adoption-manifest-v2 CONSISTENT 27/0, s103
+custody-to-ledger wiring on real bytes, s100/s101 reading/census
+rehearsals, the s110/s111 v2 --compat post-append GREEN twice
+byte-identical -- the exact step the W7 record re-runs), so per
+the s103 closing rule NO honest preparation row remains and this
+tick stands down rather than pads.  ONE stand-down record
+suffices for the W7 pre-slot period (the s104 rule extended):
+further ticks starting before the slot stand down report-only
+([SILENT]) unless the state changes; the first tick whose START
+is at/after 2026-10-31T00:00:00Z is the W7 session.  Standing
+gate set all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 twice == the s88 pins; (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form .err 879 bytes ==
+pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + ledger eval pair twice byte-identical == the s106
+post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' -> 0;
+(f) settle-bar-ledger.txt == HEAD).  THE BAR: stand-down session
+-> NO hardware runs -> NO reading -> NO ledger line, NO day-slot
+consumption.  RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  This is
+gate-state verification at stand-down, not a measurement.
+Carry-forward s113: the W7 measurement half (s85; the first
+session at/after 2026-10-31T00:00:00Z; adopts the v2 chain via
+adoption-manifest-v2 fail-closed and re-runs the v2 --compat
+GREEN post-append in its own record; the s109 interim must not
+be cited as governing), any further counted-day slot (its own
+freeze) and a cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3w7preslotstanddown-20261030/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
