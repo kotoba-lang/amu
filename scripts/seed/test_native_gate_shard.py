@@ -56,8 +56,8 @@ class NativeGateShardTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 S.main(ROOT/'seed/native-gate-plan.json','core',output)
 
-    def proofs(self, root, capacity=2):
-        for shard in S.SHARDS:
+    def proofs(self, root, capacity=2, shards=None):
+        for shard in (shards or S.SHARDS):
             folder=root/shard
             (folder/'pg-x86').mkdir(parents=True)
             S.main(ROOT/'seed/native-gate-plan.json',shard,folder/'x86-shard-plan.json')
@@ -87,6 +87,27 @@ class NativeGateShardTests(unittest.TestCase):
                 root=Path(temporary);self.proofs(root,capacity)
                 with self.assertRaises(ValueError):
                     S.verify(ROOT/'seed/native-gate-plan.json',root,'success')
+
+    def test_pull_request_tier_defers_only_the_arm64_duplicates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);self.proofs(root,shards=['core','extensions'])
+            result=S.verify(ROOT/'seed/native-gate-plan.json',root,'success','pr')
+            self.assertEqual(result['executedGates'],16)
+            self.assertEqual(sorted(result['deferredToMain']),sorted(S.SHARDS['x86-dupes']))
+            # main and full still require all nineteen
+            for tier in ('main','full'):
+                with self.assertRaisesRegex(ValueError,'missing|No such file'):
+                    try: S.verify(ROOT/'seed/native-gate-plan.json',root,'success',tier)
+                    except FileNotFoundError as e: raise ValueError('No such file') from e
+
+    def test_pull_request_tier_refuses_a_deferral_arm64_no_longer_covers(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            plan=copy.deepcopy(self.plan)
+            plan['phases']['arm64']=[row for row in plan['phases']['arm64'] if row['name']!='ccf-filter']
+            manifest=root/'plan.json'; manifest.write_text(json.dumps(plan)+'\n')
+            with self.assertRaisesRegex(ValueError,'arm64'):
+                S.verify(manifest,root,'success','pr')
 
     def test_join_refuses_a_missing_execution_despite_success_header(self):
         with tempfile.TemporaryDirectory() as temporary:

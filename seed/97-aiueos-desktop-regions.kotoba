@@ -34,6 +34,11 @@
         found (+ scan 2) payload-ok (+ scan 3)]
     (-> M (iv-reserve 4)
         (iv-mem 139 1 9 80) (iv-mem 139 10 1 112) (iv-mem 139 11 1 120)
+        ;; GOP may report the exact stride*height*4 (AMD 6600H: 0x1e7800).
+        ;; kernel-framebuffer-page admits whole pages only, so round the size
+        ;; up to 4 KiB first; every check below, including the BAR
+        ;; containment, then applies to the rounded size (AWAI-119).
+        (iv-hex "4981c3ff0f00004981e300f0ffff")
         (iv-hex "4981fa00100000") (xg-rel 0x820f 2 2 fail)
         (iv-hex "49f7c2ff0f0000") (xg-rel 0x850f 2 2 fail)
         (iv-hex "4981fb00100000") (xg-rel 0x820f 2 2 fail)

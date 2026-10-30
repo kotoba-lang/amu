@@ -148,6 +148,16 @@ jobs:
           python3 scripts/seed/check-aiueos-object-windows16.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows16"
+      - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
+        run: |
+          python3 scripts/seed/check-aiueos-object-cpu.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-cpu"
+      - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
+        run: |
+          python3 scripts/seed/check-aiueos-object-xstate.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-xstate"
       - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
         run: |
           python3 scripts/seed/check-aiueos-object-externs.py \
