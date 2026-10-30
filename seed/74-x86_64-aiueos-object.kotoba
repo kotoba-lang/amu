@@ -117,6 +117,11 @@
 ;; kernel's; the object only waits. A separate block, appended with the others to a source that names it.
 (def XK-HALT-FIRST 28)
 (def XK-INTR-HALT 29)
+;; id 29 (JUN-633 slice 5): kernel-pause [] -- pause: the spin-wait hint a polling loop gives the CPU between two reads
+;; of a device's progress (it changes no architectural state), returning 0. Its own block after the halt block, so an
+;; object that names only kernel-wait-interrupt keeps its bytes.
+(def XK-PAUSE-FIRST 29)
+(def XK-INTR-PAUSE 30)
 (def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
@@ -191,7 +196,7 @@
           18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
           22 "kernel-rdtsc" 23 "kernel-rdrand"
           24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv"
-          28 "kernel-wait-interrupt" ""))
+          28 "kernel-wait-interrupt" 29 "kernel-pause" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -222,6 +227,9 @@
 ;; the halt block (id 28)
 (defn- xk-halt-lib [] :string "(defn- kernel-wait-interrupt [] :i64 0)\n")
 (defn- xk-uses-halt? [S :string] :bool (>= (string-index-of S "kernel-wait-interrupt") 0))
+;; the pause block (id 29)
+(defn- xk-pause-lib [] :string "(defn- kernel-pause [] :i64 0)\n")
+(defn- xk-uses-pause? [S :string] :bool (>= (string-index-of S "kernel-pause") 0))
 (defn- xk-uses-xstate? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-cr4-set-bits") 0) (>= (string-index-of S "kernel-xcr0-set-bits") 0))
       (or (>= (string-index-of S "kernel-read-cr4") 0) (>= (string-index-of S "kernel-xgetbv") 0))))
@@ -234,7 +242,9 @@
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-halt? S)
+  (cond (xk-uses-pause? S)
+          (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib))
+        (xk-uses-halt? S)
           (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib))
         (xk-uses-xstate? S)
           (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib))
@@ -247,6 +257,8 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-pause-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-pause [] :i64") 0))
 (defn- xk-has-halt-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-wait-interrupt [] :i64") 0))
 (defn- xk-has-xstate-block? [text :string] :bool
@@ -266,7 +278,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-HALT))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-PAUSE))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -445,6 +457,8 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; JUN-633 slice 5: pause; xor eax,eax
+        (>= k XK-PAUSE-FIRST) (-> M (xg-bytes 0x90f3 2) (xg-bytes 0xc031 2) (xg-save t))
         ;; JUN-633 slice 4: sti; hlt; cli; xor eax,eax
         (>= k XK-HALT-FIRST) (-> M (xg-bytes 0xfaf4fb 3) (xg-bytes 0xc031 2) (xg-save t))
         (>= k XK-XSTATE-FIRST) (xk-xstate-intrinsic M (- k XK-XSTATE-FIRST) t)
@@ -463,7 +477,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
