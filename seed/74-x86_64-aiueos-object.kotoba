@@ -151,6 +151,8 @@
 ;; addend (the array's offset) - 4. Arrays of one section lie in k order at 16-byte aligned offsets. Every stub that names
 ;; (section, k) must name the same N. As with cell-addr-<k>, the address is an ordinary value, not a rooted base: no window
 ;; or record access accepts it, and it can only be passed on to an extern (its extent is the callee's contract, unverified).
+;; JUN-553 (ADR 0387) narrows that: the address IS a rooted base whose region is the array itself (length the literal N), so the
+;; ordinary window accesses read and write the array with their own checks; a record access and a free length still refuse it.
 ;; An object that names no such stub has no .bss / .high_bss and keeps its bytes. The mark is
 ;; 1000000 + (section * 8 + k) * 8192 + (N / 8 - 1), section 0 for .bss and 1 for .high_bss.
 (def XK-ARRAY-ADDR 140000)
@@ -559,7 +561,9 @@
 ;;     (the source of the argument at p + 1) is the length of that base;
 ;;   - the result of kernel-subregion over a rooted base, when the length it was given is the parent's length; the new region's
 ;;     length is the subregion's n;
-;;   - a let-bound local with one assignment of such a value.
+;;   - a let-bound local with one assignment of such a value;
+;;   - (JUN-553, ADR 0387) the result of an array stub bss-addr-<k>-<N> / highbss-addr-<k>-<N>: the object's own zero-initialised
+;;     array of N bytes, whose region length is the literal N (so a window over it must name N, or narrow it with kernel-subregion).
 ;; A literal is NOT a base: it would name any absolute address (ADR 0373).
 (defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
   (if (or (> depth (if (xk-project-proof? M) 24 12))
@@ -595,6 +599,8 @@
                           (let [k (xk-local-set M j b)]
                             (if (> k 0) (xk-region M k (xg-si M k IF-B) (inc depth)) -1))
                         :else -1)
+                (and (= op OP-CALL) (>= (xk-intr M a) XK-ARRAY-ADDR))
+                  (+ 4294967296 (* 8 (inc (rem (- (xg-f M a FF-EXPORT) FF-ARRAY-MARK) 8192))))
                 (= op OP-CALL)
                   (if (= (xk-intr M a) 2)
                     (let [p (xk-region M j b (inc depth))
