@@ -249,12 +249,12 @@ jobs:
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
-      - name: Durable replace under injected fsync and rename faults (arm64, AWAI-52)
+      - name: Wire 35 replace, WRITE and APPEND under injected fsync, rename and write faults (arm64, AWAI-52)
         run: |
           fi="$RUNNER_TEMP/runtime/fs2-faults"; mkdir -p "$fi"
-          for f in fsync renameat; do python3 scripts/seed/check-fs2-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
-          for f in none fsync renameat; do
-            sec=""; [ "$f" != none ] && sec="--security-opt seccomp=$fi/$f.json"
+          for f in fsync renameat write; do python3 scripts/seed/check-fs2-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
+          for f in none fsync renameat write-none write append-none append; do
+            case "$f" in *none) sec="" ;; append) sec="--security-opt seccomp=$fi/write.json" ;; *) sec="--security-opt seccomp=$fi/$f.json" ;; esac
             docker run --rm --network none $sec -v "$PWD:/repo:ro" -v "$fi:/out" python:3.12-slim \
               python3 /repo/scripts/seed/check-fs2-fault-injection.py \
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
