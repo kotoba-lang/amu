@@ -2595,16 +2595,18 @@
         (< t TY-REC-BASE) false
         (< t TY-COMP-BASE) true
         :else (or (= (ck-tcon M t) TC-FN) (= (ck-tcon M t) ck-r6m-tc-var))))
-(defn- ck-r6m-xparams? [M :vector-i64 f :i64] :bool
+(defn- ck-r6m-xparams? [M :vector-i64 f :i64 most :i64] :bool
   (loop [k 0]
-    (cond (> (nm-ff M f FF-NPARAMS) 5) false
+    (cond (> (nm-ff M f FF-NPARAMS) most) false
           (= k (nm-ff M f FF-NPARAMS)) true
-          (ck-r6m-xty? M (nm-ff M f (+ FF-PT0 k))) (recur (+ k 1))
+          (ck-r6m-xty? M (ck-pt M f k)) (recur (+ k 1))   ; ck-pt: FF-PT0..4, then the parameter vector (R4B)
           :else false)))
 ;; 1 when f can be exported (R6M: value types in and out)
 (defn- ck-exportable [M :vector-i64 f :i64] :i64
   (let [rt (nm-ff M f FF-RTYPE)]
-    (cond (not (ck-r6m-xparams? M f)) 0
+    ;; an implicit export (R1, no :export clause) stays at 5 parameters: a defn of 6..8 is not
+    ;; silently promoted to an export by JUN-556's raise, which only explicit exports get
+    (cond (not (ck-r6m-xparams? M f 5)) 0
           (ck-r6m-xty? M rt) 1
           :else 0)))
 
@@ -2614,8 +2616,8 @@
   (let [rt (nm-ff M f FF-RTYPE)]
     (cond (nm-ne (nm-ff M f FF-EXPORT) 1) (ck-touch M)
           (< rt 1) (ck-touch M)
-          (> (nm-ff M f FF-NPARAMS) 5) (ck-err M E-CHECK-PARAMS nm 0)   ; R4B: an export takes at most 5
-          (not (ck-r6m-xparams? M f)) (ck-err M E-CHECK-TYPE nm TY-I64)
+          (> (nm-ff M f FF-NPARAMS) 8) (ck-err M E-CHECK-PARAMS nm 0)   ; R4B: an export takes at most 8 (JUN-556)
+          (not (ck-r6m-xparams? M f 8)) (ck-err M E-CHECK-TYPE nm TY-I64)
           (ck-r6m-xty? M rt) (ck-touch M)   ; R6M: any value type (was i64 / bool)
           :else (ck-err M E-CHECK-TYPE nm TY-I64))))
 
@@ -2627,8 +2629,9 @@
     (cond (nm-ne (nm-kind M p) ND-VEC) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (bit-and (nm-count M p) 1) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
           (> (nm-count M p) 32) (ck-err M E-CHECK-PARAMS16 nm 0)
-          ;; R4B: a clause takes up to 16 parameters; an explicit export or a variadic clause up to 5
-          (and (> (nm-count M p) 10) (or (= (nm-ff M f FF-EXPORT) 1) (= (nm-nf M p NF-TYPE) 1))) (ck-err M E-CHECK-PARAMS nm 0)
+          ;; R4B: a clause takes up to 16 parameters, an explicit export up to 8 (JUN-556), a variadic clause up to 5
+          (and (> (nm-count M p) 16) (= (nm-ff M f FF-EXPORT) 1)) (ck-err M E-CHECK-PARAMS nm 0)
+          (and (> (nm-count M p) 10) (= (nm-nf M p NF-TYPE) 1)) (ck-err M E-CHECK-PARAMS nm 0)
           (= (ck-is-tform M r) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-BODY nm 0)
           (= (ck-is-infer M r) 1) (ck-sig-defn2 (nm-put M MM-R0 -1) f p nm)

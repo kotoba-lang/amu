@@ -27,12 +27,40 @@
   (if (<= fuel 2147483647) (xg-bytes (xg-bytes M 0x0841c749 4) fuel 4)
     (xg-bytes (xg-bytes (xg-bytes M 0xba49 2) fuel 8) 0x0851894d 4)))
 (defn- xo-shim-len [fuel :i64] :i64 (if (<= fuel 2147483647) 29 35))
-(defn- xo-shim [M :vector-i64 fuel :i64 entry :i64] :vector-i64
+(defn- xo-shim-short [M :vector-i64 fuel :i64 entry :i64] :vector-i64
   ;; lea r9,[rip+context]; mov qword [r9+8], fuel; sub rsp,8;
   ;; call entry; add rsp,8; ret.
   (-> M (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xo-replenish fuel)
       (xg-bytes 0x08ec8348 4) (xg-rel 0xe8 1 1 entry)
       (xg-bytes 0x08c48348 4) (xg-byte 0xc3)))
+;; JUN-556 (R4B raised to 8): an export with 6..8 parameters. The internal convention passes
+;; parameters 0..4 in rdi rsi rdx rcx r8 (as System V does), keeps the context in r9, and passes
+;; parameter k >= 5 at [rsp + 8(k-5)] at the call (seed/98-x86_64-b2's export thunk relies on the
+;; same layout). System V gives parameter 5 in r9 and 6, 7 at [rbp+16], [rbp+24], so the shim
+;; stores r9 and copies the stack words before the context LEA takes r9:
+;;   push rbp; mov rbp,rsp; sub rsp,F; mov [rsp+0],r9; (mov rax,[rbp+16+8(j-6)];
+;;   mov [rsp+8(j-5)],rax for j = 6..n-1); lea r9,[rip+context]; mov qword [r9+8], fuel;
+;;   call entry; leave; ret
+;; F rounds 8(n-5) up to 16, so the callee sees the same alignment the short shim gives it.
+;; Exports with at most 5 parameters keep the short shim byte for byte.
+(defn- xo-frame [n :i64] :i64 (bit-and (+ (* 8 (- n 5)) 15) -16))
+(defn- xo-lea-at [n :i64] :i64 (if (<= n 5) 3 (+ 16 (* 9 (- n 6)))))
+(defn- xo-shim-n [n :i64 fuel :i64] :i64
+  (if (<= n 5) (xo-shim-len fuel) (+ (+ 27 (* 9 (- n 6))) (if (<= fuel 2147483647) 8 14))))
+(defn- xo-copy-args [M :vector-i64 j :i64 n :i64] :vector-i64
+  (if (>= j n) M
+    (xo-copy-args (-> M (xg-bytes (bit-or 0x458b48 (i64-shift-left (+ 16 (* 8 (- j 6))) 24)) 4)
+                        (xg-bytes (bit-or 0x24448948 (i64-shift-left (* 8 (- j 5)) 32)) 5))
+                  (inc j) n)))
+(defn- xo-shim [M :vector-i64 fuel :i64 entry :i64] :vector-i64
+  (let [n (xg-f M entry FF-NPARAMS)]
+    (if (<= n 5) (xo-shim-short M fuel entry)
+      (-> M (xg-byte 0x55) (xg-bytes 0xe58948 3)
+            (xg-bytes (bit-or 0xec8348 (i64-shift-left (xo-frame n) 24)) 4)
+            (xg-bytes 0x244c894c 4) (xg-byte 0)
+            (xo-copy-args 6 n)
+            (xg-bytes 0x0d8d4c 3) (xg-bytes 0 4) (xo-replenish fuel)
+            (xg-rel 0xe8 1 1 entry) (xg-bytes 0xc3c9 2)))))
 
 ;; ADR 0373: bounded kernel memory windows. The source library below is appended to
 ;; the guest source for this route only; its private functions are stubs whose
@@ -572,15 +600,16 @@
         (xk-check M (inc i))))))
 
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
-;; different export rule: exactly one exported defn, any name, at most five
-;; scalar parameters, scalar result. `main` carries no special meaning.
+;; different export rule: exactly one exported defn, any name, at most eight
+;; scalar parameters (five before JUN-556 raised R4B), scalar result. `main` carries no
+;; special meaning. A private function keeps at most five.
 (defn- xo-check-fns-n [M :vector-i64 S :string f :i64 multi :bool] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= f (vector-at M MM-FN-N))) M
     (let [kind (xg-f M f FF-KIND) n (xg-f M f FF-NPARAMS) sym (xg-f M f FF-SYM)
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
       (cond (= kind FK-DEF) (xo-check-fns-n M S (inc f) multi)
             (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
-                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (xo-ext-name? S a b) XO-EXT-MAX-ARGS 5))) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (or (xo-ext-name? S a b) (= (xg-f M f FF-EXPORT) 1)) XO-EXT-MAX-ARGS 5))) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (= (xg-get M 4) 2)
@@ -839,20 +868,33 @@
 (defn- xo-names-len [NS :vector-i64 i :i64 cnt :i64 acc :i64] :i64
   (if (> i cnt) acc
     (xo-names-len NS (inc i) cnt (+ acc (- (vector-at NS (* 2 i)) (vector-at NS (- (* 2 i) 1))) 1))))
-(defn- xo-relas [M :vector-i64 i :i64 cnt :i64 shim :i64] :vector-i64
+;; SH: shim i (1-based) starts at SH[2i-1], is SH[2i] bytes long, and has its context LEA
+;; displacement at SH[2i-1] + SH[2cnt+i]. With every export at most 5 parameters, shim i starts at
+;; (i-1) * shim and the displacement is at +3, as it always was.
+(defn- xo-shim-table [M :vector-i64 E :vector-i64 fuel :i64] :vector-i64
+  (let [cnt (vector-at E 0)]
+    (loop [i 1 at 0 SH (vector-alloc (+ (* 3 cnt) 1))]
+      (if (> i cnt) SH
+        (let [n (xg-f M (vector-at E i) FF-NPARAMS) len (xo-shim-n n fuel)]
+          (recur (inc i) (+ at len)
+                 (vector-assoc! (vector-assoc! (vector-assoc! SH (- (* 2 i) 1) at) (* 2 i) len)
+                                (+ (* 2 cnt) i) (xo-lea-at n))))))))
+(defn- xo-relas [M :vector-i64 i :i64 cnt :i64 SH :vector-i64] :vector-i64
   (if (>= i cnt) M
-    (xo-relas (-> M (xg-out (+ (* i shim) 3) 8) (xg-out 4294967298 8) (xg-out -4 8)) (inc i) cnt shim)))
-(defn- xo-fsyms [M :vector-i64 NS :vector-i64 i :i64 cnt :i64 shim :i64 off :i64] :vector-i64
+    (xo-relas (-> M (xg-out (+ (vector-at SH (+ (* 2 i) 1)) (vector-at SH (+ (* 2 cnt) (inc i)))) 8)
+                    (xg-out 4294967298 8) (xg-out -4 8))
+              (inc i) cnt SH)))
+(defn- xo-fsyms [M :vector-i64 NS :vector-i64 i :i64 cnt :i64 SH :vector-i64 off :i64] :vector-i64
   (if (> i cnt) M
-    (xo-fsyms (xo-sym M off 0x12 1 (* (dec i) shim) shim) NS (inc i) cnt shim
+    (xo-fsyms (xo-sym M off 0x12 1 (vector-at SH (- (* 2 i) 1)) (vector-at SH (* 2 i))) NS (inc i) cnt SH
               (+ off (- (vector-at NS (* 2 i)) (vector-at NS (- (* 2 i) 1))) 1))))
 (defn- xo-fnames [M :vector-i64 S :string NS :vector-i64 i :i64 cnt :i64] :vector-i64
   (if (> i cnt) M
     (xo-fnames (-> M (out-put-span S (vector-at NS (- (* 2 i) 1)) (vector-at NS (* 2 i))) (xg-out 0 1)) S NS (inc i) cnt)))
 
-;; cnt exports: cnt shims of shim bytes each, cnt relocations, cnt public symbols.
+;; cnt exports: cnt shims laid out by SH (xo-shim-table), cnt relocations, cnt public symbols.
 ;; With one export the bytes are the ones this function always wrote.
-(defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 X :vector-i64 NX :vector-i64 D :vector-i64 DX :vector-i64 shim :i64 fuel :i64] :vector-i64
+(defn- xo-elf [M :vector-i64 S :string NS :vector-i64 cnt :i64 X :vector-i64 NX :vector-i64 D :vector-i64 DX :vector-i64 SH :vector-i64 fuel :i64] :vector-i64
   (let [tlen (xg-pos M) text-off 512 data-off (+ text-off tlen)
         nx (vector-at X 0) nd (vector-at D 0) sites (xo-sites M 1 0) ncells (xo-ncells M 1 0) dsize (+ 80 (* 8 ncells))
         rela-size (* 24 (+ cnt sites)) sym-size (* 24 (+ cnt 2 nx nd))
@@ -875,16 +917,16 @@
         (xg-out 0 8) (xg-out fuel 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
         (xg-out 0 8) (xg-out 0 8) (xo-zero-words ncells)
-        ;; Every shim has the same length, so shim i starts at i * shim and its
-        ;; context LEA displacement is at +3. The context symbol (index 1) is
+        ;; Shim i starts at SH[2i-1] and its context LEA displacement is SH[2cnt+i] into it
+        ;; (+3 for an export of at most 5 parameters). The context symbol (index 1) is
         ;; LOCAL (P1 review): two objects linked into one kernel must not collide
         ;; on a global `context`, so locals come first (null, context, exports)
         ;; and sh_info names the first global.
-        (xo-relas 0 cnt shim)
+        (xo-relas 0 cnt SH)
         (xo-xrelas cnt X 1)
         (xo-sym 0 0 0 0 0)
         (xo-sym (+ names 1) 0x01 2 0 80)
-        (xo-fsyms NS 1 cnt shim 1)
+        (xo-fsyms NS 1 cnt SH 1)
         (xo-xsyms NX 1 nx (+ names 9)) (xo-dsyms D DX 1 nd (+ names 9 xnames))
         (xg-out 0 1) (xo-fnames S NS 1 cnt) (xg-out 0x747865746e6f63 8) (xo-xnames S NX 1 nx) (xo-dnames S DX 1 nd)
         (xg-out 0x2e00747865742e00 8) (xg-out 0x65722e0061746164 8) (xg-out 0x00747865742e616c 8)
@@ -923,7 +965,7 @@
                                   (if (or (xo-clash? S NS cnt DX 1 1 nd) (xo-clash? S NX (vector-at X 0) DX 1 1 nd)
                                           (xo-dself-clash? S DX 1 2 nd))
                                     (xg-err admitted 7102 (xg-get admitted 1))
-                                    (xo-elf (xo-zero-sites (xg-fix generated 1) 1) S NS cnt X NX D DX (xo-shim-len fuel) fuel))))))))))))))
+                                    (xo-elf (xo-zero-sites (xg-fix generated 1) 1) S NS cnt X NX D DX (xo-shim-table admitted E fuel) fuel))))))))))))))
 
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
   (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
