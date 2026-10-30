@@ -96,6 +96,13 @@
 ;; 512-byte name, so the width block is appended too and the ids stay positional).
 (def XK-WIDTH16-FIRST 12)
 (def XK-INTR-W16 18)
+;; ids 18..23 (JUN-633): CPU feature reads -- kernel-cpuid-<eax|ebx|ecx|edx> [leaf subleaf], kernel-rdtsc [] and
+;; kernel-rdrand [] -- named and encoded as seed/86's kernel runtime has them (km-cpu, km-entropy), except that rdtsc is
+;; preceded by lfence (the C it replaces orders its reads). None takes a base, so none is a window: the rooted-base rule
+;; does not apply and they are excluded from it below. The block follows the 16 KiB block and is appended only to a
+;; source that names one of its stubs, with both width blocks, so the ids stay positional.
+(def XK-CPU-FIRST 18)
+(def XK-INTR-CPU 24)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
 ;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
@@ -165,7 +172,9 @@
           6 "kernel-load-u8" 7 "kernel-store-u8" 8 "kernel-load-u16" 9 "kernel-store-u16"
           10 "kernel-load-u64" 11 "kernel-store-u64"
           12 "kernel-load-u8-16k" 13 "kernel-store-u8-16k" 14 "kernel-load-u16-16k" 15 "kernel-store-u16-16k"
-          16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k" ""))
+          16 "kernel-load-u64-16k" 17 "kernel-store-u64-16k"
+          18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
+          22 "kernel-rdtsc" 23 "kernel-rdrand" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -184,13 +193,22 @@
   (or (or (>= (string-index-of S "kernel-load-u8-16k") 0) (>= (string-index-of S "kernel-store-u8-16k") 0))
       (or (or (>= (string-index-of S "kernel-load-u16-16k") 0) (>= (string-index-of S "kernel-store-u16-16k") 0))
           (or (>= (string-index-of S "kernel-load-u64-16k") 0) (>= (string-index-of S "kernel-store-u64-16k") 0)))))
+;; the CPU block (ids 18..23)
+(defn- xk-cpu-lib [] :string
+  (string-concat "(defn- kernel-cpuid-eax [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-ebx [a :i64 b :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-cpuid-ecx [a :i64 b :i64] :i64 0)\n(defn- kernel-cpuid-edx [a :i64 b :i64] :i64 0)\n"
+      "(defn- kernel-rdtsc [] :i64 0)\n(defn- kernel-rdrand [] :i64 0)\n")))
+(defn- xk-uses-cpu? [S :string] :bool
+  (or (>= (string-index-of S "kernel-cpuid-e") 0)
+      (or (>= (string-index-of S "kernel-rdtsc") 0) (>= (string-index-of S "kernel-rdrand") 0))))
 ;; true when the guest source S names one of the six width accesses
 (defn- xk-uses-widths? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-load-u8") 0) (>= (string-index-of S "kernel-store-u8") 0))
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
+  (cond (xk-uses-cpu? S) (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib))
+        (xk-uses-width16? S) (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib))
         (xk-uses-widths? S) (string-concat (xk-lib) (xk-width-lib))
         :else (xk-lib)))
 ;; true when the compiled text carries the width block: its first stub is defined there
@@ -198,6 +216,8 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-cpu-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-cpuid-eax [a :i64 b :i64]") 0))
 ;; Only the object route recognizes the stubs. The static route (seed/75, M[197] > 0) keeps
 ;; kxrt-ccall's function id in M[200], so without the M[197] guard the three functions after it
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
@@ -211,7 +231,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-W16))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-CPU))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -346,6 +366,19 @@
           (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes (+ len 2) 4)
           (xk-record-access dir wi off)
           (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
+;; JUN-633: c 0..3 cpuid with leaf in eax and subleaf in ecx, rbx saved around it (it is nonvolatile), the chosen
+;; register moved into eax (a 32-bit write, so rax is zero-extended); c 4 lfence; rdtsc; shl rdx,32; or rax,rdx; c 5 rdrand rax up to ten times (mov ecx,10; L:
+;; rdrand rax; jc done; dec ecx; jnz L; xor eax,eax) -- 0 is "no entropy" and callers must fail closed. The byte
+;; sequences are seed/86's km-cpu and km-entropy.
+(defn- xk-cpu-intrinsic [M :vector-i64 c :i64 t :i64] :vector-i64
+  (cond (< c 4)
+          (let [v (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-byte 83) (xg-bytes 0xa20f 2))
+                r (case c 0 v 1 (xg-bytes v 0xd889 2) 2 (xg-bytes v 0xc889 2) (xg-bytes v 0xd089 2))]
+            (-> r (xg-byte 91) (xg-save t)))
+        (= c 4) (-> M (xg-bytes 0xe8ae0f 3) (xg-bytes 0x310f 2) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
+        (= c 5) (-> M (xg-bytes 0xab9 5) (xg-bytes 0xf0c70f48 4) (xg-bytes 0x0672 2)
+                      (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t))
+        :else (xg-err M 7101 OP-CALL)))
 (defn- xk-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
   (cond (>= k XK-ARRAY-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-ARRAY-ADDR)) (xg-save t))
         (>= k XK-CELL-ADDR) (-> M (xg-rel 0x058d48 3 1 (- k XK-CELL-ADDR)) (xg-save t))
@@ -362,6 +395,7 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        (>= k XK-CPU-FIRST) (xk-cpu-intrinsic M (- k XK-CPU-FIRST) t)
         :else (xk-intrinsic-window M k t)))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
@@ -376,7 +410,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -614,7 +648,7 @@
 (defn- xk-record-n [M :vector-i64 callee :i64] :i64
   (* 4 (+ 2 (bit-and (- (xg-f M callee FF-EXPORT) FF-REC-MARK) 63))))
 (defn- xk-window-k? [k :i64] :bool
-  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-EXTERN)))))
+  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-CPU-FIRST)))))
 (defn- xk-record-conflict? [M :vector-i64 i :i64 st :i64 src :i64 n :i64] :bool
   (loop [c 1]
     (if (>= c (vector-at M MM-SIR-N)) false
@@ -633,7 +667,7 @@
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-EXTERN)))
+      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
                    (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
                      (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
