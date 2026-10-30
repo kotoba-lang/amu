@@ -5593,3 +5593,57 @@ governs if supersession not landed), any further counted-day slot
 (its own freeze) and a cross-day tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3compatdecision-20261030/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (sessions 110-111, JUN-59 -- THE LEDGER --COMPAT
+COHORT-PREFIX SUPERSESSION, IMPLEMENTED): the s109 decision
+section 3(a) is now IMPLEMENTED (code + tests), not design only.
+The s97 frozen ledger-prego.py --compat's whole-ledger equality is
+superseded -- under its own freeze (freeze-record-s110.txt, stamp
+2026-10-30T03:35:36Z; the s97/s99 bytes never edited) -- by
+ledger-prego-v2.py (db1cb000...) asserting COHORT-PREFIX: the
+frozen nine (WIN9) must be the exact first nine day= rows, each
+re-deriving byte-exact (a difference reports MISMATCH and fails);
+EVERY day= row must satisfy the frozen line grammar fail-closed
+(REFUSED-LEDGER-GRAMMAR); post-cohort rows are shape-validated,
+NOT re-derived, and named in the POST-COHORT report row.  The
+post-append GREEN --compat now exists: over the live ten-row
+ledger the v2 tool exits 0 twice byte-identical ('TOTAL: 9 rows,
+0 mismatched', 'POST-COHORT: 1 row(s) shape-validated, not
+re-derived: s105') -- the s106-named structurally-unsatisfiable
+clause ("the measuring session re-runs --compat in its own
+record") is satisfiable again.  reconcile-prego-v2.py
+(fc359fcb...; only the LEDGER stage path + 4 self-identity
+strings differ from the s99 tool) runs its chain --compat over the
+live post-append ledger CONSISTENT (stage rows 7 failed 0 | cross
+rows 31 mismatched 0) and --line on the committed s73 pair
+CONSISTENT (perturbed-scratch negative fires MISMATCH/INCONSISTENT
+rc 1).  adoption-manifest-v2.txt rebinds exactly the
+ledger+reconcile slots to the v2 bytes (s97/s99 digests in
+superseded= chains; all other rows byte-identical to the frozen
+s102 manifest); the adoption contract for every future measurement
+session is adoption-check-prego.py --check .../adoption-manifest-
+v2.txt . fail-closed before any adoption copy.  Self-test
+batteries: ledger v2 42/0 (the s97 battery + 15 new rows:
+post-append GREEN / dropped REFUSED / altered MISMATCH / renamed
+REFUSED / reordered REFUSED / malformed REFUSED / determinism),
+reconcile v2 17/0, adoption check CONSISTENT 27/0 + negative
+INCONSISTENT 26/1 -- every capture twice byte-identical, every
+tool re-run at s111 byte-identical to its s110 capture.  Standing
+gate set all == s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 twice == pins; (c) FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form .err == pin -- NO green full suite
+claimed; (d) evaluator self-test == pin + ledger eval pair == the
+s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' ->
+0).  THE BAR: implementation session -> NO hardware runs -> NO
+reading -> NO ledger line, NO day-slot consumption.  RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor).  The s109 section 3(b) W7 INTERIM is now
+UNNEEDED (the supersession lands before the W7 session starts,
+first session at/after 2026-10-31T00:00:00Z per s85) and must not
+be cited as governing.  Carry-forward s112: the W7 measurement
+half (s85; 2026-10-31 slot; adopts the v2 chain via
+adoption-manifest-v2 and re-runs the v2 --compat GREEN post-append
+in its own record), any further counted-day slot (its own freeze)
+and a cross-day tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3ledgersupersede-20261030/.  (JUN-55,
+JUN-59; Linear tracking JUN-499)

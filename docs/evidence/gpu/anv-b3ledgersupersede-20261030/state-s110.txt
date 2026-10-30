@@ -1,0 +1,62 @@
+2026-10-30 (session 110) -- SECTION-6(i) SUPERSESSION: STARTED, NOT
+FINISHED at runtime-budget cutoff.  Row: the s109 carry-forward (a)
+-- the section-3(a) cohort-prefix supersession (freeze +
+implementation + self-test rows + adoption-manifest update).
+
+DONE AND VERIFIED THIS TICK (captures in this dir):
+- ledger-prego-v2.py (frozen db1cb000f9b7015104d9dd1ac84448d47b105f7a64934124b2cb9d34de0afe9a,
+  freeze-record-s110.txt stamp 2026-10-30T03:35:36Z): --compat now
+  asserts COHORT-PREFIX (the s97 whole-ledger equality removed);
+  emit name-gate ledger-s<NN>.py and every derive/REFUSED surface
+  byte-preserved.  --self-test 42 assertions 0 failed (the s97
+  battery + 15 new rows: post-append shape GREEN / pre-append GREEN
+  / dropped cohort REFUSED-LEDGER-SHAPE / altered cohort MISMATCH at
+  s51 / renamed REFUSED / reordered REFUSED / malformed appended
+  REFUSED-LEDGER-GRAMMAR / malformed cohort REFUSED / determinism),
+  run1==run2, .err 0.  --compat over the LIVE ten-row ledger: rc 0
+  TWICE BYTE-IDENTICAL (the post-append GREEN -- the s106 structural
+  refusal removed), 9 cohort rows re-derived MATCH, POST-COHORT: 1
+  row (s105) shape-validated not re-derived.  Post-freeze
+  reproduction: both captures cmp-identical re-run after the freeze
+  stamp (the frozen bytes produced every capture).
+- reconcile-prego-v2.py (frozen fc359fcbf6e199a0ae62bacc8c19483ab6b71ffa2b9db72d2505d8a907e05e8e):
+  only the LEDGER stage path + 4 self-identity strings differ from
+  the s99 tool.  --self-test 17/0 twice identical; --compat chain
+  over the LIVE post-append ledger CONSISTENT (stage rows 7 failed
+  0 | cross rows 31 mismatched 0; STAGE ledger-prego-v2.py --compat
+  rc=0 rows=9 -> OK) twice byte-identical; --line on the committed
+  s73 pair CONSISTENT twice identical + negative probe (scratch
+  perturbed median) fires MISMATCH/INCONSISTENT rc 1.
+- adoption-manifest-v2.txt (written once under the same freeze):
+  the s102 manifest with exactly the ledger+reconcile slots rebound
+  to the v2 bytes (s97/s99 digests in superseded= chains; all other
+  rows byte-identical to s102).  adoption-check-prego.py --check:
+  VERDICT CONSISTENT (matched 27, mismatched 0) twice identical;
+  negative (scratch perturbed ledger digest) INCONSISTENT row 5
+  named, twice identical.  scratch copies created/run/deleted.
+- Standing gate set PARTIAL: (a) classify --self-test 2649/0
+  17,925 bytes == the s88 pin (cmp 0), .err 0; (b) scoped GPU gate
+  GREEN 123/12162/0/0 run1==run2==both s88 pins (919 bytes, cmp 0
+  x4), .err 0 (scratch/scoped-gpu-gate.cljk created/run/DELETED);
+  (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+  --exit-code rc=0 -- no emit, no ledger line, no day-slot
+  consumption).
+
+NOT DONE AT CUTOFF (the next tick's first duty):
+- gate (c) FULL run-tests.cljk live, gate (d) evaluator self-test +
+  ledger eval pair (expected PENDING 3/4 unchanged), gate (e)
+  find '*.sh' -> 0.
+- record.txt for this dir (this state file is the interim record);
+  the ADR-0355 dated note.
+- NOTHING was committed or pushed this tick; the chain branch
+  bot/amu-gpu-chain-20261028-4 is UNCHANGED (HEAD a73c3d6df, PR
+  #1665) and the new dir is untracked.  Blocker-first was checked
+  once at tick start (2026-10-30T03:19Z: 0 open kotoba-lang/amu PRs
+  with a hermes/ head) and must be re-checked before the push.
+- Linear: not recorded this tick (budget cutoff before the
+  connector call) -- the landing comment must be posted to JUN-499
+  when this row lands.
+- The W7 interim (s109 section 3(b)) is NOT needed if this
+  supersession lands before the W7 session starts (first session
+  at/after 2026-10-31T00:00:00Z, s85 freeze) -- landing it early is
+  now the priority.
