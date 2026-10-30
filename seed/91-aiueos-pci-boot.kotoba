@@ -44,6 +44,11 @@
   (-> M (ep-load 0 label) (iv-mem 137 0 7 offset)))
 (defn- ep-resource [M :vector-i64] :vector-i64
   (-> M (ep-load 6 39) (iv-hex "4885f6") (eb-rip 0x840f 2 60)
+      ;; A list holding only the end tag is the firmware's "no resources"
+      ;; answer for an unimplemented BAR (AMD 6600H host bridge 00:00.0
+      ;; BAR0, AWAI-118); skip it like EFI_UNSUPPORTED. Anything else that
+      ;; is not one QWORD memory descriptor plus end tag still refuses.
+      (iv-hex "803e79") (eb-rip 0x840f 2 61)
       (iv-hex "803e8a") (eb-rip 0x850f 2 60)
       (iv-hex "66837e012b") (eb-rip 0x850f 2 60)
       (iv-hex "807e2e79") (eb-rip 0x850f 2 60)
