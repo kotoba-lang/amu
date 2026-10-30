@@ -730,6 +730,31 @@
             (xg-err M 7108 (+ (* (xk-raw k) 4294967296) (- size 4294967296)))
             (xk-check M (inc i)))))))))
 
+;; JUN-633 (ADR 0391): the object artifact (multi) admits the float carriers :f32 / :f64 -- the bit pattern in an i64
+;; slot -- for a private function's parameters and result. An export or an extern keeps the scalar types: System V
+;; passes a float in xmm0..7, which the shim and the extern call do not do.
+(defn- xo-type [M :vector-i64 t :i64 float :bool] :bool
+  (or (xg-type M t) (and float (= (xg-get M 4) 0) (or (= t TY-F32) (= t TY-F64)))))
+(defn- xo-types [M :vector-i64 f :i64 i :i64 n :i64 float :bool] :bool
+  (if (= i n) true (and (xo-type M (ck-pt M f i) float) (xo-types M f (inc i) n float))))
+;; The float SIR the object artifact admits (seed/70 xg-fbin / xg-fcmp / xg-fun): f64 and f32 add sub mul div, the six
+;; compares, neg abs sqrt, i64 -> f64 / f32 and f64 <-> f32. min / max (SSE's minss / maxss answer the second operand
+;; for a NaN or two zeros, the aarch64 route's fmin / fmax do not) and float -> i64 truncation (cvttss2si answers
+;; 2^63 for a NaN or an overflow, fcvtzs saturates) stay refused (E7101).
+(defn- xo-float-sir? [op :i64 a :i64] :bool
+  (cond (= op OP-BIN) (or (and (>= a BOP-F64-ADD) (<= a BOP-F64-DIV)) (and (>= a BOP-F32-ADD) (<= a BOP-F32-DIV)))
+        (= op OP-CMP) (or (and (>= a CC-F64-EQ) (<= a CC-F64-UN)) (and (>= a CC-F32-EQ) (<= a CC-F32-UN)))
+        (= op OP-UN) (or (and (>= a UOP-F64-NEG) (<= a UOP-F64-SQRT)) (and (>= a UOP-F32-NEG) (<= a UOP-F32-SQRT))
+                         (= a UOP-I64-TO-F64) (= a UOP-F64-TO-F32) (= a UOP-F32-TO-F64) (= a UOP-I64-TO-F32))
+        :else false))
+;; seed/70's xg-check-sir with the float SIR above admitted; the object artifact's only SIR check.
+(defn- xo-check-sir [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) a (xg-si M i IF-A)]
+      (if (and (= (xg-get M 4) 0) (xo-float-sir? op a)) (xo-check-sir M (inc i))
+        (let [one (xg-check-sir-at M i)]
+          (if (not= (vector-at one MM-ERR) 0) one (xo-check-sir M (inc i))))))))
+
 ;; Admission. The scalar profile is the x86_64-linux profile 0 subset with a
 ;; different export rule: exactly one exported defn, any name, at most eight
 ;; scalar parameters (five before JUN-556 raised R4B), scalar result. `main` carries no
@@ -740,7 +765,9 @@
           sb (+ MM-SYM-BASE (* sym MM-SYM-W)) a (vector-at M (+ sb SF-START)) b (vector-at M (+ sb SF-END))]
       (cond (= kind FK-DEF) (xo-check-fns-n M S (inc f) multi)
             (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
-                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (or (xo-ext-name? S a b) (= (xg-f M f FF-EXPORT) 1)) XO-EXT-MAX-ARGS 5))) (not (xg-types M f 0 n)) (not (xg-type M (xg-f M f FF-RTYPE)))
+                (< n 0) (> n (if (= (xg-get M 4) 2) 16 (if (or (xo-ext-name? S a b) (= (xg-f M f FF-EXPORT) 1)) XO-EXT-MAX-ARGS 5)))
+                (not (xo-types M f 0 n (and multi (not (xo-ext-name? S a b)) (not= (xg-f M f FF-EXPORT) 1))))
+                (not (xo-type M (xg-f M f FF-RTYPE) (and multi (not (xo-ext-name? S a b)) (not= (xg-f M f FF-EXPORT) 1))))
                 (<= (xg-f M f FF-SIR) 0) (> (xg-frame M f) 4096)) (xg-refuse-fn M S f a b)
             (= (xg-f M f FF-EXPORT) 1)
               (if (= (xg-get M 4) 2)
@@ -1145,7 +1172,7 @@
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 
 (defn- xo-build [M :vector-i64 S :string fuel :i64] :vector-i64
-  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xo-mark-externs S 1) (xg-check-sir 1) (xk-scan S) (xk-check 1))]
+  (let [admitted (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 fuel) (xg-set 4 0) (xo-check-fns-n S 1 true) (xo-mark-externs S 1) (xo-check-sir 1) (xk-scan S) (xk-check 1))]
     (cond (not= (vector-at admitted MM-ERR) 0) admitted
           (= (xg-get admitted 1) 0) (xg-err admitted 7102 0)
           (not= (vector-at admitted MM-CAPS) 0) (xg-err admitted 7101 OP-CAP)
@@ -1166,8 +1193,17 @@
                                     (xg-err admitted 7102 (xg-get admitted 1))
                                     (xo-elf (xo-zero-sites (xg-fix generated 1) 1) S NS cnt X NX D DX (xo-shim-table admitted E fuel) fuel))))))))))))))
 
+;; JUN-633 (ADR 0391): the library's f32-from-bits traps an out-of-range pattern by a vector access, which this route
+;; refuses; here it traps by (assert ...) -- ud2 -- and is otherwise the same definition.
+(def XO-F32-FROM-BITS-LIB "(defn- f32-from-bits [b :i64] :f32 (if (or (< b -2147483648) (> b 2147483647)) (__r6-as :f32 (vector-at [0] 1)) (__r6-as :f32 b)))")
+(def XO-F32-FROM-BITS "(defn- f32-from-bits [b :i64] :f32 (do (assert (and (>= b -2147483648) (<= b 2147483647))) (__r6-as :f32 b)))")
+(defn- xo-lib [S :string] :string
+  (let [L (ck-r6b-lib S) at (string-index-of L XO-F32-FROM-BITS-LIB)]
+    (if (< at 0) L
+      (string-concat (string-concat (string-substring L 0 at) XO-F32-FROM-BITS)
+                     (string-substring L (+ at (string-length XO-F32-FROM-BITS-LIB)) (string-length L))))))
 (defn- xo-source [S :string path :string out :string fuel :i64] :i64
-  (let [text (string-concat (string-concat S (ck-r6b-lib S)) (xk-lib-for S)) front (xg-front text)]
+  (let [text (string-concat (string-concat S (xo-lib S)) (xk-lib-for S)) front (xg-front text)]
     (if (= (vector-at front MM-ERR) 0) (xo-report (xo-build front text fuel) path out) (drv-fail front path))))
 
 ;; JUN-31: the image packaging step, in the same adopted compiler lineage.
