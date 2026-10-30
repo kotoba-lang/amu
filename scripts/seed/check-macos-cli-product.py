@@ -92,6 +92,9 @@ def check(cli, out):
                               ('run', hello.name, '--source-lock', 'missing'),
                               ('compile', hello.name, '-o'), ('garbage', hello.name))):
         run('usage' + str(i), *args, expected=2, diagnostic=b'usage:')
+    # removed with the C loader (docs/c-loader-removal.md): refused by name, not as unknown (JUN-282)
+    for name in ('measure-runtime', 'package-ios', 'package-macos', 'test'):
+        run('removed-' + name, name, hello.name, expected=2, diagnostic=b'EREMOVED ' + name.encode())
     for name, path in [('missing', out/'missing.kotoba'), ('directory', nested)]:
         run(name, 'run', path, expected=1, diagnostic=b'EINPUT')
     link = out / 'link.kotoba'
