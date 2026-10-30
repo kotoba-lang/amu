@@ -5409,3 +5409,26 @@ further counted-day slot (its own freeze) and a cross-day
 tail-movement row (not queued).  Evidence:
 docs/evidence/gpu/anv-b3w6preslotstanddown-20261029/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 105, JUN-59 -- the W6 MEASUREMENT session, the
+s80 freeze's named first session at/after 2026-10-30T00:00:00Z):
+the anchor-class settling bar's third counted-day measurement RAN
+on aiueos-6600hs (78 fresh processes, frozen order, GO stamp
+2026-10-30T00:19:52Z, build pins 4/4 BYTE-IDENTICAL, window
+00:20:33Z-00:20:51Z).  Reading (reading-s105.py, twice byte-
+identical): s105 median 1133 min..max 993..1449, class
+INTERMEDIATE/MIXED, in-band True; C1 branch (a) (c2 FLOOR; c8 32821
+vs 32,915 = 0.29% delta).  Cross-check (fresh-census-s105.py --w6):
+CONSISTENT, 66 claim rows 0 mismatched, 125 digit runs 0 UNCLAIMED.
+Custody wiring (s103-rehearsed, first real-window execution):
+flag=none, pin=ok, go=ok -> ledger line EMITTED byte-pinned
+("day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133
+min=993 flag=none") -- NOT APPENDED: the standing gate set's (b)
+scoped GPU gate and (c) FULL run-tests.cljk were not run before the
+runtime budget cutoff (a/d/e verified == s88 pins; bar PENDING 2/4
+unchanged).  RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor).  STARTED, NOT FINISHED:
+carry-forward s106 -- gates (b)+(c), then the append, the post-
+append evaluator pair and reconcile-s105.py --line.  Evidence:
+docs/evidence/gpu/anv-b3w6daybar-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
