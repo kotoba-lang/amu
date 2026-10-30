@@ -19,10 +19,16 @@
   (eb-rip M (case reg 0 0x058948 1 0x0d8948 2 0x158948 6 0x358948 7 0x3d8948 15 0x3d894c 0) 3 label))
 (defn- ep-zero [M :vector-i64 label :i64] :vector-i64
   (-> M (iv-hex "31c0") (ep-store 0 label)))
-(defn- ep-failed [M :vector-i64] :vector-i64
-  (-> M (iv-hex "b801000000") (ep-store 0 40)))
+;; The failure flag is 1. With the AWAI-118 `--netlog v1` loader it is the
+;; failing site's label instead (60 descriptor, 63 location/BAR call,
+;; 65 CloseProtocol, 67 handle/OpenProtocol), and 63/67 first keep the EFI
+;; status in cell45, so the loader's PCI1 report names the refusing check.
+(defn- ep-failed [M :vector-i64 site :i64] :vector-i64
+  (-> M (iv-hex "b8") (xg-bytes (if (= (xg-get M 16) 1) site 1) 4) (ep-store 0 40)))
+(defn- ep-keep-status [M :vector-i64] :vector-i64
+  (if (= (xg-get M 16) 1) (ep-store M 0 45) M))
 (defn- ep-fail-jump [M :vector-i64 label :i64] :vector-i64
-  (-> M (ep-failed) (eb-rip 0xe9 1 label)))
+  (-> M (ep-failed label) (eb-rip 0xe9 1 label)))
 (defn- ep-check [M :vector-i64 failure :i64] :vector-i64
   (-> M (iv-hex "4885c0") (eb-rip 0x850f 2 failure)))
 (defn- ep-save-field [M :vector-i64 label :i64 offset :i64] :vector-i64
@@ -46,7 +52,7 @@
       (ep-save-field 33 16) (ep-save-field 34 24) (ep-save-field 35 32)
       (ep-save-field 36 40) (ep-save-field 38 48) (ep-save-field 37 56)
       (ep-load 0 42) (iv-hex "48ffc0") (ep-store 0 42)
-      (eb-rip 0xe9 1 61) (xg-label 60) (ep-failed)
+      (eb-rip 0xe9 1 61) (xg-label 60) (ep-failed 60)
       ;; Successful GetBarAttributes owns a non-null pool even on bad data.
       (xg-label 61) (ep-load 1 39) (iv-hex "4885c9") (eb-rip 0x840f 2 63)
       (iv-hex "41ff5648") (ep-check 63)
@@ -91,12 +97,12 @@
       (iv-hex "4d89e148c74424200000000048c74424280200000041ff9618010000") (ep-check 67)
       (ep-load 15 32) (iv-hex "4d85ff") (eb-rip 0x840f 2 63)
       (ep-location) (ep-bars)
-      (xg-label 63) (ep-failed)
+      (xg-label 63) (ep-keep-status) (ep-failed 63)
       (xg-label 65) (ep-load 1 31) (eb-rip 0x158d48 3 27)
       (iv-hex "4d89e04531c941ff96200100004885c0") (eb-rip 0x840f 2 66)
-      (ep-failed) (xg-label 66) (ep-load 0 40) (iv-hex "4885c0") (eb-rip 0x850f 2 68)
+      (ep-failed 65) (xg-label 66) (ep-load 0 40) (iv-hex "4885c0") (eb-rip 0x850f 2 68)
       (ep-load 0 30) (iv-hex "48ffc0") (ep-store 0 30) (eb-rip 0xe9 1 51)
-      (xg-label 67) (ep-failed)
+      (xg-label 67) (ep-keep-status) (ep-failed 67)
       (xg-label 68) (ep-load 1 29) (iv-hex "4885c9") (eb-rip 0x840f 2 69)
       (iv-hex "41ff5648") (ep-check 26)
       (xg-label 69) (ep-load 0 40) (ep-check 26)
@@ -109,9 +115,11 @@
                 (if (>= k 13) data
                   (let [w (eb-external data (+ 28 k) (+ guid 40 (* k 8)))] (recur (inc k)))))]
     (-> cells (eb-external 41 EP-CATALOG) (eb-external 42 (+ EP-CATALOG 16))
-        (eb-external 43 160) (eb-external 44 168))))
+        (eb-external 43 160) (eb-external 44 168)
+        (cond-> (= (xg-get M 16) 1) (eb-external 45 (+ guid 144))))))
 (defn- ep-data [M :vector-i64] :vector-i64
   (-> M (xg-out 0x4ca568b84cf5b200 8) (xg-out 0x3eb2ec9e 4) (xg-out 0x9a02503f 4)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
       (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
-      (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)))
+      (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+      (cond-> (= (xg-get M 16) 1) (xg-out 0 8))))
