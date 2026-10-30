@@ -16,6 +16,10 @@ seccomp profile that returns an errno for one syscall, and requires the refusal 
   append  fsync -> EIO      2     "orig\\n" + TEXT   written but not acknowledged: journal damage
   append  flock -> EAGAIN   2     "orig\\n"
 
+The no-fault run also holds the journal's flock from a second process (no seccomp): a
+compare-append under an exclusive holder refuses with the journal unchanged, and a read under a
+shared holder succeeds.
+
 TEXT is 37 bytes, and the write fault matches only a 37-byte write(2) on fd >= 3, so the
 container runtime and Python are unaffected. The runtime's own comment says an interrupted
 append is fail-closed journal damage for the caller to detect; this gate pins which bytes that
@@ -28,6 +32,7 @@ leaves. Run on Linux arm64, one fault per container:
     --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault fsync --output /out/fsync
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import platform
@@ -56,6 +61,28 @@ def profile(fault):
 def pin(path):
     data = Path(path).read_bytes()
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def contended(image, env, output):
+    """A second process holds the journal's flock (no seccomp): the probe's non-blocking lock
+    must refuse a compare-append under an exclusive holder and leave the journal unchanged, and
+    a read must still succeed under a shared holder."""
+    private = output / "contended-private"
+    private.mkdir(mode=0o700)
+    journal = private / "journal"
+    journal.write_text("orig\n")
+    journal.chmod(0o600)
+    seen = {}
+    for name, mode, argv, want in [
+            ("append under an exclusive holder", fcntl.LOCK_EX, ["A", str(journal), "orig\n", TEXT], (2, "0 1 \n")),
+            ("read under a shared holder", fcntl.LOCK_SH, ["R", str(journal)], (0, "1 6 orig\n\n"))]:
+        with open(journal) as held:
+            fcntl.flock(held, mode)
+            x = subprocess.run([str(image), *argv], env=env, capture_output=True, text=True, timeout=20)
+        assert (x.returncode, x.stdout, x.stderr, journal.read_text()) == (*want, "", "orig\n"), \
+            (name, x.returncode, x.stdout, x.stderr[-300:], journal.read_text())
+        seen[name] = dict(exit=x.returncode, answer=x.stdout)
+    return seen
 
 
 def main(compiler, fault, output):
@@ -95,13 +122,14 @@ def main(compiler, fault, output):
             again = subprocess.run([str(image), "C", str(journal), TEXT], env=env, capture_output=True, text=True, timeout=20)
             assert again.returncode == 2 and journal.read_text() == want_disk, (op, fault, "retry", again.returncode)
         results.append(dict(op=op, exit=x.returncode, answer=x.stdout, journal=on_disk))
-    report = dict(status="PASS_PRIVATE_STORE_FAULT_INJECTION", fault=fault, results=results,
+    contention = contended(image, env, output) if fault == "none" else None
+    report = dict(status="PASS_PRIVATE_STORE_FAULT_INJECTION", fault=fault, results=results, contention=contention,
                   compiler=pin(compiler), image=pin(image), probe=pin(PROBE),
                   injected=None if fault == "none" else profile(fault),
                   host=[platform.system(), platform.machine(), platform.release()],
                   notCovered=["a power cut: an fsync that returns is what is checked, not the device",
                               "a short write: the fault refuses the whole write(2), it does not shorten it",
-                              "two processes racing on the lock (flock is refused here, not contended)"])
+                              "a holder that keeps the lock across the whole operation window (contention is checked only before the probe locks)"])
     (output / "private-store-fault-injection.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], fault, " ".join(f"{r['op']}={r['exit']}:{r['journal']!r}" for r in results), flush=True)
 
