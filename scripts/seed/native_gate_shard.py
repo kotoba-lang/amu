@@ -52,7 +52,7 @@ def verify(manifest, root, workflow_result):
         raise ValueError('native qualification shard job did not succeed')
     raw=manifest.read_bytes()
     original=json.loads(raw)
-    seen=[]
+    seen=[]; capacities=set()
     for shard in SHARDS:
         folder=root/shard
         coverage=json.loads((folder/'x86-shard-plan.coverage.json').read_text())
@@ -62,9 +62,12 @@ def verify(manifest, root, workflow_result):
         if (coverage['sourceManifestSHA256']!=hashlib.sha256(raw).hexdigest()
                 or coverage['shard']!=shard or staged!=expected):
             raise ValueError('changed native gate source or partition')
+        # A runner schedules at most its vCPU count: 2 (the original bounded runner) or 4 (JUN-629, the 4-vCPU CI
+        # runner), with jobs equal to the capacity. Scheduling only: every gate below still runs with its original argv.
         if (schedule['status']!='COMPLETED' or schedule['exit']!=0
-                or schedule['jobs']!=2 or schedule['capacity']!=2):
-            raise ValueError('native gate shard did not complete at capacity2')
+                or schedule['capacity'] not in (2, 4) or schedule['jobs']!=schedule['capacity']):
+            raise ValueError('native gate shard did not complete at a bounded capacity (2 or 4)')
+        capacities.add(schedule['capacity'])
         rows=schedule['gates']
         names=[row['name'] for row in rows]
         if len(set(names))!=len(names) or set(names)!=set(SHARDS[shard]):
@@ -78,7 +81,7 @@ def verify(manifest, root, workflow_result):
     if len(seen)!=19 or len(set(seen))!=19:
         raise ValueError('incomplete native x86 qualification')
     return dict(schema='amu.native-gate-partition-review.v1',status='PASS',executedGates=19,
-                originalArgvPreserved=True,capacityPerRunner=2,nativeVerdictAuthority=False,
+                originalArgvPreserved=True,capacityPerRunner=max(capacities),nativeVerdictAuthority=False,
                 qualificationReplacement=False)
 
 if __name__=='__main__':

@@ -30,6 +30,9 @@ permissions:
 concurrency:
   group: native-checked-source-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  # JUN-629: the runner has 4 vCPUs; every native_build_queue.py call in a job uses this shared-slot capacity.
+  KOTOBA_NATIVE_SLOT_CAPACITY: "4"
 jobs:
   source:
     strategy:
@@ -82,7 +85,7 @@ jobs:
         run: >-
           python3 scripts/seed/native_build_queue.py
           --manifest "$RUNNER_TEMP/source-identity-plan.json"
-          --phase source-identity --jobs 2
+          --phase source-identity --jobs 4
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/source-identity-schedule"
       - name: Retain completed gate admission records
@@ -98,7 +101,7 @@ jobs:
           schedule = root / "source-identity-schedule/schedule.json"
           if schedule.exists():
               report = json.loads(schedule.read_text())
-              assert report["jobs"] == report["capacity"] == 2
+              assert report["jobs"] == report["capacity"] == int(os.environ["KOTOBA_NATIVE_SLOT_CAPACITY"])
               names = {"checked-source": "source-admission.json",
                        "identity-resource": "identity-resource-admission.json",
                        "definition-effects": "effects-admission.json",
