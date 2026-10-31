@@ -60,7 +60,8 @@ REFUSALS = [
     ("string-key", "(defn main [] :i64 (let [{a \"a\"} {:a 1}] a))", "E2111"),
     ("rest-of-list", "(defn main [] :i64 (let [[a & r] (typed-list-new [:list :i64] 1 2)] a))", "E2104"),
     ("or-on-record", "(defn main [] :i64 (let [{:keys [a] :or {a 1}} {:a 2}] a))", "E2104"),
-    ("typed-map-no-default", "(defn main [] :i64 (let [{:keys [a]} (typed-map-new [:map :keyword :i64] :a 2)] a))", "E2104"),
+    # JUN-734: (get g :a) on a typed map is [:option :i64], so `a` is an option and main's :i64 result refuses
+    ("typed-map-no-default", "(defn main [] :i64 (let [{:keys [a]} (typed-map-new [:map :keyword :i64] :a 2)] a))", "E2121"),
     ("untyped-pattern-param", "(defn f [[a b]] :i64 (+ a b))\n(defn main [] :i64 (f 1))", "E2104"),
     ("fn-literal-pattern", "(defn main [] :i64 ((fn [[a b]] (+ a b)) [1 2]))", "E2139"),
     ("duplicate-name", "(defn main [] :i64 (let [[a a] [1 2]] a))", "E2112"),
