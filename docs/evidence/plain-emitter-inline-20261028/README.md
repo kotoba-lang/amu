@@ -565,6 +565,32 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Compacted to fit the static token budget (CI `source` arm64, E101
+  region 1). The aarch64-linux build of FULL-MANIFEST plus the
+  source-loop harness, with the native runtime appended, must fit the
+  static profile's MM-TOK-CAP 786432. After #1754, main has 1,698 tokens
+  of headroom there and 1,922 in the x86_64-linux build, and this change
+  added 1,875. Headroom was measured by bisecting a padding call until
+  lexing refused. The native x86 compiler targeting aarch64-linux and the
+  aarch64 root under qemu both measure 1,698 for main.
+  * Compaction: one constant table for both ISAs (`xg-run`, up to seven
+    code bytes per entry with their count in the top byte, the descriptor
+    sequences folded in), one shared in-line call classifier (`xg-inl`), a
+    mask test and one sum for the rax cache's mov forms, and holds recorded
+    in every profile (`xg-held?` answers only in the runtime profile).
+  * The change now adds 1,436 tokens: 262 of headroom remain in the
+    aarch64-linux build and 486 in the x86_64-linux build.
+  * Not a byte of output changes. The previous fixed point compiling the
+    compacted unity (3,895,956 bytes, `a455489c…`) gives `8bd04a16…`
+    (9,359,872 bytes), which rebuilds itself identically (F1 = F2 = F3).
+    The old and the new compiler build that aarch64-linux harness to the
+    same bytes. The CDCI images, the 19 x86_64 payloads, the 19 aarch64
+    containers, the 233 kernel-object sources and the 13 user-plc cases
+    are unchanged.
+  * The `--format host-entry` image is `2bee1c07…` (9,359,872 bytes).
+    aarch64 root: F1 = F2 = `2745dc29…` (3,908,096 bytes), container
+    `9bc00d12…`, derived under qemu from the `70409d44…` root, emitting
+    the same x86_64 compiler and host entry.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
