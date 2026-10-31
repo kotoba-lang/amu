@@ -179,9 +179,17 @@
   [:c HD-DEFN-PRIV 4 "(defn- NAME [p :T ...] :R body) -- private, same shape"]
   [:c HD-DEF 5 "(def NAME literal) -- literal is an integer, a string or a vector literal of integer
                 literals; the type is the literal's. A reference evaluates the literal again (no storage)"]
-  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body"]
+  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body.
+                JUN-729: a binder may be a destructuring pattern (lang/guest-grammar.edn :nested-destructuring), reader
+                sugar that 21-check expands before typing into plain pairs: [a b & r :as v] e -> g e a (nth g 0)
+                b (nth g 1) r (vector-drop g 2) v g; {:keys [x] y :k :or {x d} :as v} e -> g e x (get g :x d)
+                y (get g :k) v g; g a fresh gensym, nested patterns each take one, `_` inside a pattern binds nothing.
+                Refused E2111: a keyword other than :as in a vector pattern, anything but :as after & r, :strs :syms
+                and other keyword keys, a non-keyword lookup key, a :keys item that is not a symbol or whose keyword is
+                never written in the module, :as / :or of the wrong shape. The lookups are typed as written (E2104)"]
   [:c HD-LOOP 7 "(loop [n1 e1 ...] body) -- 1..10 bindings (R4B: 1..20) of type i64/bool/string; a value (may be non-tail);
-                 type = body"]
+                 type = body. JUN-729: with a pattern binder it is clojure.core/loop's expansion
+                 (let [g e p g x e2 ..] (loop [g g x x ..] (let [p g x x ..] body)))"]
   [:c HD-RECUR 8 "(recur e1 ...) -- only in tail position of the innermost loop, or of a defn body that has
                   no enclosing loop (then it re-enters the defn). Count = binding/param count (E2107, E2106)"]
   [:c HD-IF 9 "(if c a b) -- c:b, a and b the same type (E2104), exactly 3 args (E2110); result that type"]
@@ -366,7 +374,11 @@
                      and 2 (E2136 otherwise): the first item seeds the fold, an empty coll answers (f)"]
   [:c HD-LIST 138 "(list e ..) -> [:list T] (T the first item's type; (list) is [:list :i64]); at most 64 items"]
   [:c HD-AMP 139 "& -- only in a parameter vector of a defn clause: [p .. & rest] (rest a bare name: [:list :i64], E2111 otherwise);
-                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export"]
+                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export.
+                  JUN-729: also the rest marker of a vector destructuring pattern (HD-LET). A defn parameter (also the
+                  rest) may be a pattern -- a map, or a vector that is not a type form: 20-names counts it as one
+                  parameter, 21-check gives the clause a fresh parameter g (its type form stays) and the body
+                  (let [pattern g] body). A fn literal parameter stays a symbol (E2139)"]
   [:c HD-CALLK 140 "(no spelling) NF-RES of (f a ..) where f is a known function slot: CALL of the lifted function with the
                     arguments, then the captured slots"]
   [:c HD-CALLV 141 "(no spelling) NF-RES of (g a ..) where g is a fn-typed local or ((..) a ..) where the head is a fn-typed
