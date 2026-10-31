@@ -1,0 +1,30 @@
+(ns seed.macos-keyword-intern (:export [main exhaust-main]))
+;; JUN-707: the Mac runtime's keyword intern rows (context ABI slots 96/104).
+;; main returns 0 when every keyword path agrees; exhaust-main interns more
+;; names than 262144 rows hold and must be refused with exit 70.
+;; native-keyword-intern.kotoba also exercises the public kgraph (slots 80/88),
+;; which the Mac runtime does not install yet, so this oracle keeps to keywords.
+(defn- many-keywords [] :i64
+  (loop [i 0]
+    (if (= i 1800) 0
+      (let [name (string-concat "kw-test/名-" (string-from-i64 i))
+            key (keyword-from-string name) again (keyword-from-string name)]
+        (if (and (= key again) (string=? (keyword-name key) (string-concat "名-" (string-from-i64 i))))
+          (recur (+ i 1)) 1)))))
+(defn- document-keyword-of [d :document] :keyword
+  (option-value-of [:option :keyword] (document-keyword-value d) :none))
+(defn main [] :i64
+  (let [keys (many-keywords)
+        literal (= (keyword-from-string "a") :a)
+        doc (= (document-keyword-of (document-keyword :b)) :b)
+        scoped (arena-scope (__r6-as :i64 (keyword-from-string "scoped/persistent")))]
+    (cond (not= keys 0) 1
+          (not literal) 2
+          (not doc) 3
+          (not (string=? (keyword-name (__r6-as :keyword scoped)) "persistent")) 4
+          :else 0)))
+(defn exhaust-main [] :i64
+  (loop [i 0]
+    (if (= i 200000) 0
+      (let [k (keyword-from-string (string-concat "exhaust/key-number-" (string-from-i64 i)))]
+        (recur (+ i 1))))))
