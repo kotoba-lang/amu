@@ -1,0 +1,104 @@
+;; tools/c/30-nvgpu-channel.kotoba -- route C step 3 (JUN-714): a channel the GPU runs. A TSG and a channel, the
+;; channel bound to the address space of 20-nvgpu-memory and to the TSG, an object context, a GPFIFO, and a pushbuffer
+;; submitted through it.
+;;
+;; The ioctls are the L4T 35.4.1 kernel's (5.10.120-tegra; on Xavier under
+;; /usr/src/linux-headers-5.10.120-tegra-ubuntu20.04_aarch64/nvgpu/include/uapi/linux/): nvgpu-ctrl.h ('G' = 0x47),
+;; nvgpu-as.h ('A' = 0x41) and nvgpu.h (channels 'H' = 0x48, TSGs 'T' = 0x54). Every number is that header's
+;; _IOC(dir, type, nr, size) with the size of the struct as laid out below (aarch64, natural alignment).
+;;
+;; What the GPU executes -- the GPFIFO entry and the pushbuffer methods -- is the Volta host class's,
+;; VOLTA_CHANNEL_GPFIFO_A (0xC36F, the gpfifo_class C1 reads), as NVIDIA's open-gpu-doc defines it in
+;; classes/host/clc36f.h (NVC36F_GP_ENTRY*, NVC36F_DMA_*, NVC36F_SEM_*).
+
+;; ---- the channel's ioctls --------------------------------------------------------------------------------------
+;; NVGPU_GPU_IOCTL_OPEN_TSG _IOWR('G', 9, struct nvgpu_gpu_open_tsg_args {__u32 tsg_fd; __u32 reserved}): 8 bytes
+(def NVGPU-GPU-IOCTL-OPEN-TSG 0xC0084709)
+;; NVGPU_GPU_IOCTL_OPEN_CHANNEL _IOWR('G', 11, struct nvgpu_gpu_open_channel_args): 4 bytes, a union of
+;; __s32 in.runlist_id (-1: the primary graphics runlist) and __s32 out.channel_fd
+(def NVGPU-GPU-IOCTL-OPEN-CHANNEL 0xC004470B)
+;; NVGPU_AS_IOCTL_BIND_CHANNEL _IOWR('A', 1, struct nvgpu_as_bind_channel_args {__u32 channel_fd}): 4 bytes
+(def NVGPU-AS-IOCTL-BIND-CHANNEL 0xC0044101)
+;; NVGPU_TSG_IOCTL_BIND_CHANNEL _IOW('T', 1, int): the channel fd
+(def NVGPU-TSG-IOCTL-BIND-CHANNEL 0x40045401)
+;; NVGPU_IOCTL_CHANNEL_ALLOC_OBJ_CTX _IOWR('H', 108, struct nvgpu_alloc_obj_ctx_args): 16 bytes, __u32 class_num 0,
+;; __u32 flags 4, __u64 obj_id 8 (out)
+(def NVGPU-IOCTL-CHANNEL-ALLOC-OBJ-CTX 0xC010486C)
+;; NVGPU_IOCTL_CHANNEL_SETUP_BIND _IOWR('H', 128, struct nvgpu_channel_setup_bind_args): 80 bytes,
+;; __u32 num_gpfifo_entries 0, __u32 num_inflight_jobs 4, __u32 flags 8, __s32 userd_dmabuf_fd 12,
+;; __s32 gpfifo_dmabuf_fd 16, __u32 work_submit_token 20, __u64 userd_dmabuf_offset 24, __u64 gpfifo_dmabuf_offset 32,
+;; __u32 reserved[9] 40 (76, padded to 80). flags 0: kernel-mode submits, the kernel allocates USERD and the GPFIFO
+;; ring, so both dma-buf fds are -1.
+(def NVGPU-IOCTL-CHANNEL-SETUP-BIND 0xC0504880)
+;; the ring: a power of 2. With 32 entries the kernel's job cleanup trails the GPU and a submit after about 90 quick
+;; ones answers EAGAIN; 1024 holds a run of 200 with room to spare.
+(def C3-GPFIFO-ENTRIES 1024)
+;; NVGPU_IOCTL_CHANNEL_SUBMIT_GPFIFO _IOWR('H', 107, struct nvgpu_submit_gpfifo_args): 24 bytes, __u64 gpfifo 0 (a
+;; user pointer to struct nvgpu_gpfifo {__u32 entry0; __u32 entry1} entries, which the kernel copies),
+;; __u32 num_entries 8, __u32 flags 12, struct nvgpu_fence {__u32 id; __u32 value} 16. flags 0: no fences.
+(def NVGPU-IOCTL-CHANNEL-SUBMIT-GPFIFO 0xC018486B)
+(def EAGAIN -11)
+
+;; ---- what the GPU executes (clc36f.h) -------------------------------------------------------------------------
+;; GP entry: entry0 GET 31:2 (the pushbuffer's VA, bits 31:2), FETCH 0:0 = 0 (unconditional); entry1 GET_HI 7:0 (VA
+;; bits 39:32), PRIV 8:8 = 0 (user), LEVEL 9:9 = 0 (main), LENGTH 30:10 (in 32-bit words), SYNC 31:31 = 0 (proceed)
+(defn- gp-entry0 [va :i64] :i64 (bit-and va 0xFFFFFFFC))
+(defn- gp-entry1 [va :i64 words :i64] :i64 (bit-or (bit-and (u64-shift-right va 32) 0xFF) (i64-shift-left words 10)))
+;; a method header: SEC_OP 31:29 = INC_METHOD (1), COUNT 28:16, SUBCHANNEL 15:13, ADDRESS 11:0 (the method's byte
+;; byte offset / 4; the DMA method address field is in 32-bit words)
+(defn- inc-method [subch :i64 method :i64 count :i64] :i64
+  (bit-or (i64-shift-left 1 29) (bit-or (i64-shift-left count 16) (bit-or (i64-shift-left subch 13) (u64-shift-right method 2)))))
+;; NVC36F_SEM_ADDR_LO 0x5c (OFFSET 31:2), SEM_ADDR_HI 0x60 (OFFSET 7:0), SEM_PAYLOAD_LO 0x64, SEM_PAYLOAD_HI 0x68,
+;; SEM_EXECUTE 0x6c: OPERATION 2:0 = RELEASE (1), RELEASE_WFI 20:20 = EN, PAYLOAD_SIZE 24:24 = 32BIT
+(def NVC36F-SEM-ADDR-LO 0x5C)
+(def NVC36F-SEM-EXECUTE-RELEASE-WFI 0x100001)
+(def C3-GPFIFO-CLASS 0xC36F)
+
+;; ---- the channel -----------------------------------------------------------------------------------------------
+(defn- nv-open-tsg [ctrl :i64] :i64
+  (let [a (kxrt-b-alloc 4096) r (ioctl! ctrl NVGPU-GPU-IOCTL-OPEN-TSG a "NVGPU_GPU_IOCTL_OPEN_TSG")] (i32 (l32 a))))
+(defn- nv-open-channel [ctrl :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a -1) r (ioctl! ctrl NVGPU-GPU-IOCTL-OPEN-CHANNEL a "NVGPU_GPU_IOCTL_OPEN_CHANNEL")]
+    (i32 (l32 a))))
+(defn- as-bind-channel [as :i64 ch :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a ch)] (ioctl! as NVGPU-AS-IOCTL-BIND-CHANNEL a "NVGPU_AS_IOCTL_BIND_CHANNEL")))
+(defn- tsg-bind-channel [tsg :i64 ch :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a ch)] (ioctl! tsg NVGPU-TSG-IOCTL-BIND-CHANNEL a "NVGPU_TSG_IOCTL_BIND_CHANNEL")))
+(defn- ch-alloc-obj-ctx [ch :i64 class :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a class) r (ioctl! ch NVGPU-IOCTL-CHANNEL-ALLOC-OBJ-CTX a "NVGPU_IOCTL_CHANNEL_ALLOC_OBJ_CTX")]
+    (l64 (+ a 8))))
+(defn- ch-setup-bind [ch :i64 entries :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a entries) y (s32 (+ a 12) -1) z (s32 (+ a 16) -1)]
+    (ioctl! ch NVGPU-IOCTL-CHANNEL-SETUP-BIND a "NVGPU_IOCTL_CHANNEL_SETUP_BIND")))
+
+;; a semaphore release of the 32-bit payload at GPU VA sem, written as pushbuffer words at p; how many words
+(defn- pb-sem-release [p :i64 sem :i64 payload :i64] :i64
+  (let [a (s32 p (inc-method 0 NVC36F-SEM-ADDR-LO 5)) b (s32 (+ p 4) (bit-and sem 0xFFFFFFFC))
+        c (s32 (+ p 8) (bit-and (u64-shift-right sem 32) 0xFF)) d (s32 (+ p 12) payload) e (s32 (+ p 16) 0)
+        f (s32 (+ p 20) NVC36F-SEM-EXECUTE-RELEASE-WFI)]
+    6))
+
+;; submit one GP entry (the GP entry block gp, 8 bytes, as the kernel copies it) for the pushbuffer of words words at
+;; GPU VA pb; EAGAIN (the ring is full until the kernel's job cleanup) is retried, up to max times. The retries.
+(defn- ch-submit [ch :i64 gp :i64 pb :i64 words :i64 max :i64] :i64
+  (let [x (s32 gp (gp-entry0 pb)) y (s32 (+ gp 4) (gp-entry1 pb words))
+        a (kxrt-b-alloc 4096) z (s64 a gp) w (s32 (+ a 8) 1)]
+    (loop [n 0]
+      (let [r (ioctl ch NVGPU-IOCTL-CHANNEL-SUBMIT-GPFIFO a)]
+        (cond (= r 0) n
+              (and (= r EAGAIN) (< n max)) (recur (inc n))
+              :else (refuse "nvgpu" (string-concat "NVGPU_IOCTL_CHANNEL_SUBMIT_GPFIFO failed: " (dec-str r))))))))
+
+;; CLOCK_MONOTONIC in ns (clock_gettime into the timespec at t)
+(defn- now-ns [t :i64] :i64
+  (let [r (sys2 SYS-CLOCK-GETTIME 1 t)]
+    (if (< r 0) (refuse "clock_gettime" (dec-str r)) (+ (* (l64 t) 1000000000) (l64 (+ t 8))))))
+
+;; wait, by spinning on the CPU mapping, until the 32-bit word at p is v; the clock is read every 256 spins and
+;; the wait gives up, by name, limit ns after start. The time the value was seen.
+(defn- wait-word [p :i64 v :i64 t :i64 start :i64 limit :i64] :i64
+  (loop [i 0]
+    (if (= (l32 p) v) (now-ns t)
+      (if (and (= (bit-and i 255) 255) (> (- (now-ns t) start) limit))
+        (refuse "nvgpu" (string-concat "semaphore release timed out after " (string-concat (dec-str (quot limit 1000000)) " ms")))
+        (recur (inc i))))))
