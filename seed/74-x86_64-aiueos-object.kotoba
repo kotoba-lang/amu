@@ -129,6 +129,26 @@
 ;; appended (with every earlier block, so the ids stay positional) only to a source that names one of them.
 (def XK-SIMD-FIRST 30)
 (def XK-INTR-SIMD 32)
+;; ids 32..34 (JUN-600, ADR 0399): the bounded model-specific-register and port-input accesses -- kernel-read-msr [index],
+;; kernel-write-msr [index value] and kernel-in-u32 [port]. Each is a block of its own, appended (with every earlier block,
+;; so the ids stay positional) only to a source that names it or a later one. The operand that selects WHAT is accessed --
+;; the MSR index, the port -- must be an integer LITERAL in a closed list, checked at compile time (E7107): no computed or
+;; parameter index, no other register, no other port. The lists are what the AIUEOS kernel's MSR and PCI objects reach:
+;;   MSR (read and write): 0x1b IA32_APIC_BASE, 0xc0000080 IA32_EFER, 0xc0000081 IA32_STAR, 0xc0000082 IA32_LSTAR,
+;;     0xc0000084 IA32_FMASK (0xc0000083 IA32_CSTAR, between them, is NOT admitted: nothing programs it);
+;;   port (in-u32): 0xcfc, the PCI configuration data port.
+;; The written VALUE is a run-time operand (the kernel hands it in), so it is bounded at run time where the kernel's use
+;; allows: a write of IA32_APIC_BASE may only SET bit 11 (the xAPIC global enable) and a write of IA32_EFER may only SET
+;; bit 0 (SCE) and bit 11 (NXE) relative to the register's current value -- any other change, a clear included, reaches
+;; ud2 before the wrmsr (the CR4 / XCR0 rule of ids 24..25, applied to a value that is not a literal). STAR, LSTAR and
+;; FMASK take the kernel's selectors, entry address and flag mask whole: their value is not bounded beyond the CPU's own
+;; #GP checks (ADR 0399 lists what is and is not bounded).
+(def XK-RDMSR-FIRST 32)
+(def XK-INTR-RDMSR 33)
+(def XK-WRMSR-FIRST 33)
+(def XK-INTR-WRMSR 34)
+(def XK-IN-FIRST 34)
+(def XK-INTR-IN 35)
 (def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
@@ -203,7 +223,8 @@
           18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
           22 "kernel-rdtsc" 23 "kernel-rdrand"
           24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv"
-          28 "kernel-wait-interrupt" 29 "kernel-pause" 30 "kernel-dot-f32" 31 "kernel-dequant-dot-ptq1-0" ""))
+          28 "kernel-wait-interrupt" 29 "kernel-pause" 30 "kernel-dot-f32" 31 "kernel-dequant-dot-ptq1-0"
+          32 "kernel-read-msr" 33 "kernel-write-msr" 34 "kernel-in-u32" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -243,6 +264,16 @@
     "(defn- kernel-dequant-dot-ptq1-0 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 0)\n"))
 (defn- xk-uses-simd? [S :string] :bool
   (or (>= (string-index-of S "kernel-dot-f32") 0) (>= (string-index-of S "kernel-dequant-dot-ptq1-0") 0)))
+;; the MSR read block (id 32), the MSR write block (id 33) and the port-input block (id 34)
+(defn- xk-rdmsr-lib [] :string "(defn- kernel-read-msr [m :i64] :i64 0)\n")
+(defn- xk-wrmsr-lib [] :string "(defn- kernel-write-msr [m :i64 v :i64] :i64 v)\n")
+(defn- xk-in-lib [] :string "(defn- kernel-in-u32 [p :i64] :i64 0)\n")
+(defn- xk-uses-rdmsr? [S :string] :bool (>= (string-index-of S "kernel-read-msr") 0))
+(defn- xk-uses-wrmsr? [S :string] :bool (>= (string-index-of S "kernel-write-msr") 0))
+(defn- xk-uses-in? [S :string] :bool (>= (string-index-of S "kernel-in-u32") 0))
+;; every block up to and including the fused reductions (ids 0..31)
+(defn- xk-simd-all-lib [] :string
+  (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib)) (xk-simd-lib)))
 (defn- xk-uses-xstate? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-cr4-set-bits") 0) (>= (string-index-of S "kernel-xcr0-set-bits") 0))
       (or (>= (string-index-of S "kernel-read-cr4") 0) (>= (string-index-of S "kernel-xgetbv") 0))))
@@ -255,8 +286,10 @@
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-simd? S)
-          (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib)) (xk-simd-lib))
+  (cond (xk-uses-in? S) (string-concat (string-concat (string-concat (xk-simd-all-lib) (xk-rdmsr-lib)) (xk-wrmsr-lib)) (xk-in-lib))
+        (xk-uses-wrmsr? S) (string-concat (string-concat (xk-simd-all-lib) (xk-rdmsr-lib)) (xk-wrmsr-lib))
+        (xk-uses-rdmsr? S) (string-concat (xk-simd-all-lib) (xk-rdmsr-lib))
+        (xk-uses-simd? S) (xk-simd-all-lib)
         (xk-uses-pause? S)
           (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib))
         (xk-uses-halt? S)
@@ -272,6 +305,12 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-in-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-in-u32 [p :i64]") 0))
+(defn- xk-has-wrmsr-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-write-msr [m :i64 v :i64]") 0))
+(defn- xk-has-rdmsr-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-read-msr [m :i64]") 0))
 (defn- xk-has-simd-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-dot-f32 [a :i64 an :i64") 0))
 (defn- xk-has-pause-block? [text :string] :bool
@@ -295,7 +334,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-SIMD))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-IN))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -454,6 +493,34 @@
         (= c 2) (-> M (xg-bytes 0xe0200f 3) (xg-save t))
         (= c 3) (-> M (xg-bytes 0xc931 2) (xg-bytes 0xd0010f 3) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
         :else (xg-err M 7101 OP-CALL)))
+;; JUN-600 (ADR 0399): kernel-write-msr. mov rcx,[index]; mov rsi,[value]; then, for IA32_APIC_BASE (0x1b) and IA32_EFER
+;; (0xc0000080) only, the run-time value bound: r8d = the bits the write may set (0x800, 0x801); rdmsr; rax = the current
+;; value; the write must equal current | (value & r8), else ud2 -- it may set those bits and change nothing else. Then
+;; mov rax,rsi; mov rdx,rsi; shr rdx,32; wrmsr. The result is the written value, as kotoba-native's :write-msr leaves it.
+;;   cmp ecx,0x1b; je A; cmp ecx,0xc0000080; jne W; mov r8d,0x801; jmp G; A: mov r8d,0x800;
+;;   G: rdmsr; shl rdx,32; or rax,rdx; and r8,rsi; or r8,rax; cmp r8,rsi; jne T;
+;;   W: mov rax,rsi; mov rdx,rsi; shr rdx,32; wrmsr; jmp +2; T: ud2
+;; The index was checked against the admitted list by xk-check (E7107), so rcx holds one of the five.
+(defn- xk-wrmsr [M :vector-i64 t :i64] :vector-i64
+  (-> M (xg-load t 0x8d8b48) (xg-load (inc t) 0xb58b48)
+      (xg-bytes 0x1bf983 3) (xg-bytes 0x1074 2) (xg-bytes 0x80f981 3) (xg-bytes 0xc00000 3) (xg-bytes 0x2275 2)
+      (xg-bytes 0x0801b841 4) (xg-bytes 0 2) (xg-bytes 0x06eb 2)
+      (xg-bytes 0x0800b841 4) (xg-bytes 0 2)
+      (xg-bytes 0x320f 2) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3)
+      (xg-bytes 0xf02149 3) (xg-bytes 0xc00949 3) (xg-bytes 0xf03949 3) (xg-bytes 0x0e75 2)
+      (xg-bytes 0xf08948 3) (xg-bytes 0xf28948 3) (xg-bytes 0x20eac148 4) (xg-bytes 0x300f 2) (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2)
+      (xg-save t)))
+;; JUN-600: the integer literal that temp t holds at the call i, -1 when it is not a non-negative literal below 2^32 (an
+;; MSR index such as 0xc0000080 is above xk-src's 2^31 bound, so the lists are matched against the literal itself)
+(defn- xk-lit [M :vector-i64 i :i64 t :i64] :i64
+  (let [j (xk-writer M i t)]
+    (if (and (>= j 0) (= (xg-si M j IF-OP) OP-CONST))
+      (let [v (xg-si M j IF-B)] (if (and (>= v 0) (< v 4294967296)) v -1))
+      -1)))
+;; the admitted MSR indices (read and write) and input ports
+(defn- xk-msr-admitted? [v :i64] :bool
+  (or (or (= v 27) (= v 3221225600)) (or (or (= v 3221225601) (= v 3221225602)) (= v 3221225604))))
+(defn- xk-in-port-admitted? [v :i64] :bool (= v 3324))
 ;; a cr4 / xcr0 mask is a literal (xk-src: 2^32 + value), non-zero, with every bit in the admitted set
 (defn- xk-mask-ok? [M :vector-i64 i :i64 b :i64 admitted :i64] :bool
   (let [src (xk-src M i b 0) v (- src 4294967296)]
@@ -474,6 +541,10 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; JUN-600 (ADR 0399): in eax,dx / rdmsr / guarded wrmsr
+        (>= k XK-IN-FIRST) (-> M (xg-load t 0x958b48) (xg-byte 0xed) (xg-save t))
+        (>= k XK-WRMSR-FIRST) (xk-wrmsr M t)
+        (>= k XK-RDMSR-FIRST) (-> M (xg-load t 0x8d8b48) (xg-bytes 0x320f 2) (xg-bytes 0x20e2c148 4) (xg-bytes 0xd00948 3) (xg-save t))
         ;; JUN-633 slice 6: the fused reductions (ADR 0394)
         (>= k XK-SIMD-FIRST) (if (= k XK-SIMD-FIRST) (xf-dot-f32 M t) (xf-dequant-ptq1 M t))
         ;; JUN-633 slice 5: pause; xor eax,eax
@@ -682,7 +753,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-simd-block? S) XK-INTR-SIMD (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-in-block? S) XK-INTR-IN (xk-has-wrmsr-block? S) XK-INTR-WRMSR (xk-has-rdmsr-block? S) XK-INTR-RDMSR (xk-has-simd-block? S) XK-INTR-SIMD (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -954,7 +1025,10 @@
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
       (if (or (and (= op OP-CALL) (= (xk-intr M a) XK-XSTATE-FIRST) (not (xk-mask-ok? M i b XK-CR4-ADMITTED)))
-              (and (= op OP-CALL) (= (xk-intr M a) (+ XK-XSTATE-FIRST 1)) (not (xk-mask-ok? M i b XK-XCR0-ADMITTED))))
+              (and (= op OP-CALL) (= (xk-intr M a) (+ XK-XSTATE-FIRST 1)) (not (xk-mask-ok? M i b XK-XCR0-ADMITTED)))
+              ;; JUN-600 (ADR 0399): an MSR index or an input port is a literal in its closed list
+              (and (= op OP-CALL) (or (= (xk-intr M a) XK-RDMSR-FIRST) (= (xk-intr M a) XK-WRMSR-FIRST)) (not (xk-msr-admitted? (xk-lit M i b))))
+              (and (= op OP-CALL) (= (xk-intr M a) XK-IN-FIRST) (not (xk-in-port-admitted? (xk-lit M i b)))))
         (xg-err M 7107 i)
       (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
                    (not (xk-pair-ok? M i b)))
