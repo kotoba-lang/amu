@@ -95,7 +95,8 @@ aarch64-macos`).
   - No omitted-target output is Wasm or Kototama. Control: the detector flags the explicit `wasm32-browser` output.
   - Explicit command lines give identical results on both images: `aarch64-linux`, unknown targets including
     `kototama`, `--target` in a later position, `check` and usage errors.
-  - The compiler refuses an omitted target with E2 and writes nothing.
+  - The compiler refuses `compile SRC` and `compile SRC --output OUT` with E2 and writes nothing. With `--format` and no
+    target, the flag is already a usage error (E1).
   - Control: `aarch64-linux` output differs from the omitted-target output.
 - **aarch64** (`native-cross-arm64`): the Linux ARM64 root refuses an omitted target with E2 and refuses an unknown
   target. Control: the explicit `aarch64-linux` compile runs to 42.

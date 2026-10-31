@@ -19,7 +19,8 @@ were absent.
     flag the explicit --target wasm32-browser output;
   * explicit command lines (other targets, an unknown target, --target in a
     later position, check, usage errors) are identical on both images;
-  * the compiler refuses an omitted target with E2 and writes nothing;
+  * the compiler refuses an omitted target with E2 and writes nothing (with
+    --format and no target, the flag itself is already a usage error, E1);
   * an unknown target is refused by both and writes nothing;
   * control: the byte comparison tells x86_64-linux from aarch64-linux output.
 --isa aarch64 (native Linux ARM64): there is no public Linux ARM64 entry; the
@@ -141,7 +142,8 @@ def check_x86(compiler, host, out, reproduce):
     forms = {"static": ["compile", "hello.kotoba", "--output", "a.out", "--format", "static"],
              "kx64-v1": ["compile", "hello.kotoba", "--output", "a.out", "--format", "kx64-v1"],
              "kx64-runner": ["compile", "hello.kotoba", "--output", "a.out", "--format", "kx64-runner"],
-             "default-format": ["compile", "hello.kotoba", "--output", "a.out"]}
+             "default-format": ["compile", "hello.kotoba", "--output", "a.out"],
+             "bare": ["compile", "hello.kotoba"]}
     results = {}
     for name, args in forms.items():
         a, b, c = run.lane(f"{name}-omitted"), run.lane(f"{name}-explicit"), run.lane(f"{name}-compiler")
@@ -205,20 +207,28 @@ def check_x86(compiler, host, out, reproduce):
     report["explicitUnchanged"] = explicit_results
 
     # the engine-neutral compiler still refuses an omitted target
-    report["compilerRefusesOmitted"] = refuse_omitted(run, compiler, ("static", "default-format"), forms)
+    report["compilerRefusesOmitted"] = refuse_omitted(run, compiler)
     report["calls"] = run.calls
     return report
 
 
-def refuse_omitted(run, image, names, forms):
+# An engine-neutral root refuses an omitted target with E2 (exit 1). With
+# --format and no target the flag itself is a usage error (E1, exit 2): the
+# root has no target-free --format. Neither writes anything.
+REFUSALS = {"bare": (["compile", "hello.kotoba"], 1, b"seed: E2 "),
+            "default-format": (["compile", "hello.kotoba", "--output", "a.out"], 1, b"seed: E2 "),
+            "static": (["compile", "hello.kotoba", "--output", "a.out", "--format", "static"], 2, b"seed: E1 ")}
+
+
+def refuse_omitted(run, image):
     seen = {}
-    for name in names:
+    for name, (args, code, marker) in REFUSALS.items():
         d = run.lane(f"refuse-{name}-{Path(image).name}")
-        r = run.run(f"refuse-omitted-{name}", image, d, forms[name])
-        need(r.returncode == 1 and b"E2" in r.stderr and b"KEXE_TRAP" not in r.stderr,
-             f"{Path(image).name} must refuse an omitted target with E2 ({name}): {r.returncode} {r.stderr[-200:]}")
+        r = run.run(f"refuse-omitted-{name}", image, d, args)
+        need(r.returncode == code and marker in r.stderr and b"KEXE_TRAP" not in r.stderr,
+             f"{Path(image).name} must refuse an omitted target ({name}) with {marker!r}: {r.returncode} {r.stderr[-200:]}")
         need(not (d / "a.out").exists(), f"{name}: the refusal wrote output")
-        seen[name] = {"exit": r.returncode, "E2": True}
+        seen[name] = {"exit": r.returncode, "diagnostic": marker.decode().strip()}
     return seen
 
 
@@ -230,7 +240,7 @@ def check_aarch64(root, out):
     forms = {"static": ["compile", "hello.kotoba", "--output", "a.out", "--format", "static"],
              "default-format": ["compile", "hello.kotoba", "--output", "a.out"]}
     report = {"isa": "aarch64", "root": pin(root), "publicLinuxArm64Entry": None}
-    report["rootRefusesOmitted"] = refuse_omitted(run, root, tuple(forms), forms)
+    report["rootRefusesOmitted"] = refuse_omitted(run, root)
     d = run.lane("explicit")
     r = run.run("explicit-aarch64-linux", root, d, explicit(forms["static"], "aarch64-linux"))
     need(r.returncode == 0 and (d / "a.out").is_file() and kind((d / "a.out").read_bytes()) == "elf",
@@ -287,10 +297,10 @@ def check_macos(out):
 
     root_dir = run.lane("root")
     r = mac.native_run(root, root_dir, "compile", "hello.kotoba", "--output", "a.kseed", expected=1)
-    need(b"E2" in r.stderr and not (root_dir / "a.kseed").exists(), "Mac root must refuse an omitted target with E2")
+    need(b"seed: E2 " in r.stderr and not (root_dir / "a.kseed").exists(), "Mac root must refuse an omitted target with E2")
     r = mac.native_run(root, root_dir, "compile", "hello.kotoba", "--target", "aarch64-bogus",
                        "--output", "b.kseed", expected=1)
-    need(b"E2" in r.stderr and not (root_dir / "b.kseed").exists(), "Mac root must refuse an unknown target with E2, no output")
+    need(b"seed: E2 " in r.stderr and not (root_dir / "b.kseed").exists(), "Mac root must refuse an unknown target with E2, no output")
     mac.native_run(root, root_dir, "compile", "hello.kotoba", "--target", "aarch64-macos", "--output", "c.kseed")
     need((root_dir / "c.kseed").is_file(), "control: the explicit aarch64-macos root compile must succeed")
     report["rootRefusesOmitted"] = {"E2": True}
