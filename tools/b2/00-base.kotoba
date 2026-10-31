@@ -1,9 +1,11 @@
 ;; tools/b2/00-base.kotoba -- the base of route B2's Kotoba loader and libc subset (ADR 0375, JUN-377).
 ;;
 ;; The B2 unit is these files concatenated in tools/b2/MANIFEST order after one ns line, compiled with
-;; --format b2 (seed/98). The program reaches the machine only through the kxrt-b- API of seed/76; the
-;; libc functions the loaded library imports are the guest functions named cx-NAME-VERSION below, which
-;; the compiler gives SysV entry thunks and lists in the export table (name and glibc symbol version).
+;; --format b2 (seed/98, or seed/80 on aarch64-linux). The program reaches the machine only through the kxrt-b-
+;; API of seed/76 (seed/77); the libc functions the loaded library imports are the guest functions named
+;; cx-NAME-VERSION below, which the compiler gives SysV (AAPCS64) entry thunks and lists in the export table (name
+;; and glibc symbol version). What differs between the targets is in 01-arch-x86_64.kotoba and
+;; 01-arch-aarch64.kotoba (system call numbers, relocation types, the thread pointer, stubs, va_list, faults).
 ;;
 ;; A C caller passes int arguments with undefined upper 32 bits: an exported function that takes an
 ;; int, unsigned or size_t-as-int normalizes it with (i32 x) or (u32 x). A pointer or a long is whole.
@@ -30,6 +32,8 @@
 (def ST-TCB 456)         ;; the thread control block the FS base points to
 (def ST-STUBS 464)       ;; the page of refusing stubs for unresolved imports
 (def ST-NSTUBS 472)      ;; how many
+(def ST-HELPER 480)      ;; aarch64: the helper page (01-arch-aarch64)
+(def ST-GUARD 488)       ;; aarch64: the data object __stack_chk_guard (the canary word itself)
 (def ST-CALL 512)        ;; a 128-byte argument block for outgoing C calls
 (def ST-OUT 20480)       ;; a 4096-byte scratch buffer for messages
 
@@ -53,28 +57,13 @@
 ;; round n up to a multiple of the power of two p
 (defn- align-up [n :i64 p :i64] :i64 (bit-and (+ n (- p 1)) (- 0 p)))
 
-;; ---- system calls (the numbers of x86_64 Linux) ---------------------------------------------------------
+;; ---- system calls (the numbers are the target's, 01-arch-*.kotoba) ------------------------------------------
 (defn- sys0 [n :i64] :i64 (kxrt-b-syscall n 0 0 0 0 0 0))
 (defn- sys1 [n :i64 a :i64] :i64 (kxrt-b-syscall n a 0 0 0 0 0))
 (defn- sys2 [n :i64 a :i64 b :i64] :i64 (kxrt-b-syscall n a b 0 0 0 0))
 (defn- sys3 [n :i64 a :i64 b :i64 c :i64] :i64 (kxrt-b-syscall n a b c 0 0 0))
 (defn- sys4 [n :i64 a :i64 b :i64 c :i64 d :i64] :i64 (kxrt-b-syscall n a b c d 0 0))
 (defn- sys6 [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (kxrt-b-syscall n a b c d e f))
-(def SYS-READ 0)
-(def SYS-WRITE 1)
-(def SYS-CLOSE 3)
-(def SYS-MMAP 9)
-(def SYS-MPROTECT 10)
-(def SYS-MUNMAP 11)
-(def SYS-PREAD 17)
-(def SYS-ACCESS 21)
-(def SYS-LSEEK 8)
-(def SYS-READLINK 89)
-(def SYS-ARCH-PRCTL 158)
-(def SYS-GETDENTS64 217)
-(def SYS-EXIT-GROUP 231)
-(def SYS-OPENAT 257)
-(def SYS-GETRANDOM 318)
 
 ;; ---- C strings ------------------------------------------------------------------------------------------
 (defn- c-strlen [p :i64] :i64 (loop [i 0] (if (= (l8 (+ p i)) 0) i (recur (inc i)))))

@@ -2,12 +2,14 @@
 ;; applies its relocations, binds its imports to the libc subset of this unit, runs its initializers, and
 ;; serves dlopen, dlsym, dlerror and dlclose. Slice 1 loads libvulkan.so.1 alone.
 ;;
-;; What it does, for an ET_DYN object of x86_64:
+;; What it does, for an ET_DYN object of the target (x86_64 or aarch64; the numbers are in 01-arch-*.kotoba):
 ;;  * maps every PT_LOAD segment from the file at a base the kernel chooses (MAP_PRIVATE, file-backed, so
 ;;    /proc/self/maps names the file), zeroes bss, and makes the PT_GNU_RELRO range read-only after
 ;;    relocation;
 ;;  * applies RELATIVE, 64, GLOB_DAT and JUMP_SLOT relocations, all at load (as DF_BIND_NOW); any other type
-;;    refuses by name;
+;;    refuses by name. With DT_TEXTREL (or DF_TEXTREL) the read-only segments are writable while the relocations
+;;    are applied, then get their own protection back, and the executable ones are synchronized with the
+;;    instruction cache (as glibc does; NVIDIA's aarch64 libvulkan.so.1 has one RELATIVE in its text);
 ;;  * resolves an undefined symbol, with its version from versym/verneed, in this order: the data objects of
 ;;    the libc subset (stderr), the export table of this image (name and version must both match: a name
 ;;    with another version refuses), the definitions of the other loaded objects (GNU hash), a weak
@@ -15,7 +17,7 @@
 ;;    fallback;
 ;;  * DT_NEEDED names that are the C library's (libc, libm, libdl, libpthread, ld.so) are this image;
 ;;    any other is looked up among the loaded objects and refuses when it is not there.
-;; Not in slice 1 (each refuses by name): PT_TLS and the TLS relocations, IRELATIVE, DT_RELR, TEXTREL,
+;; Not in slice 1 (each refuses by name): PT_TLS and the TLS relocations, IRELATIVE, DT_RELR,
 ;; loading a dependency from disk, dlopen of a file.
 ;;
 ;; A library record is 256 bytes (malloc'd); the ELF- constants are its word offsets. Handles are record
@@ -47,6 +49,7 @@
 (def ELF-RELROSZ 184)
 (def ELF-INITED 192)
 (def ELF-NEEDED 200)      ;; how many DT_NEEDED entries (the first one's offset is found by walking DT_NEEDED)
+(def ELF-TEXTREL 208)     ;; 1 when the object relocates its read-only segments (DT_TEXTREL, DF_TEXTREL)
 (def ELF-RECORD 256)
 
 (def ELF-PAGE 4096)
@@ -85,7 +88,7 @@
         (not= (l8 (+ hdr 4)) 2) (refuse path "not ELFCLASS64")
         (not= (l8 (+ hdr 5)) 1) (refuse path "not little-endian")
         (not= (l16 (+ hdr 16)) 3) (refuse path "not ET_DYN (a shared object)")
-        (not= (l16 (+ hdr 18)) 62) (refuse path "not x86_64")
+        (not= (l16 (+ hdr 18)) ELF-MACHINE) (refuse path (string-concat "not " (elf-machine-name)))
         (not= (l16 (+ hdr 54)) 56) (refuse path "unexpected program header size")
         (> (+ (l64 (+ hdr 32)) (* 56 (l16 (+ hdr 56)))) got) (refuse path "program headers beyond the first 4096 bytes")
         :else 0))
@@ -160,7 +163,8 @@
     (loop [p dyn]
       (let [tag (l64 p) val (l64 (+ p 8))]
         (cond (= tag 0) 0
-              (= tag 22) (refuse path "DT_TEXTREL (text relocations)")
+              (= tag 22) (let [z (s64 (+ lib ELF-TEXTREL) 1)] (recur (+ p 16)))
+              (and (= tag 30) (not= (bit-and val 4) 0)) (let [z (s64 (+ lib ELF-TEXTREL) 1)] (recur (+ p 16)))
               (= tag 36) (refuse path "DT_RELR (packed relative relocations) is not supported yet")
               (= tag 14) (let [z (s64 (+ lib ELF-SONAME) val)] (recur (+ p 16)))
               :else (let [z (dyn-set lib tag (if (dyn-addr? tag) (+ base val) val))] (recur (+ p 16))))))))
@@ -203,26 +207,29 @@
 ;; the export table: count at t, then {thunk, name, version} per export
 (defn- exp-n [] :i64 (l64 (kxrt-b-exports)))
 (defn- exp-rec [i :i64] :i64 (+ (kxrt-b-exports) (+ 8 (* 24 i))))
-;; the thunk of NAME at VERSION (version 0: any, and an unversioned export matches any requirement); a
-;; negative result -1 means the name exists at other versions only
+;; the thunk of NAME at VERSION (version 0: any, and an unversioned export matches any requirement; on aarch64 the
+;; base version GLIBC_2.17 also matches an older export, ver-base-match?); a negative result -1 means the name
+;; exists at other versions only
 (defn- exp-find [name :i64 ver :i64] :i64
   (let [n (exp-n)]
     (loop [i 0 other 0]
       (if (= i n) (if (= other 0) 0 -1)
         (let [r (exp-rec i)]
           (if (c-same? (l64 (+ r 8)) name)
-            (if (or (= ver 0) (= (l8 (l64 (+ r 16))) 0) (c-same? (l64 (+ r 16)) ver)) (l64 r) (recur (inc i) 1))
+            (if (or (= ver 0) (= (l8 (l64 (+ r 16))) 0) (c-same? (l64 (+ r 16)) ver) (ver-base-match? ver (l64 (+ r 16))))
+              (l64 r) (recur (inc i) 1))
             (recur (inc i) other)))))))
 (defn- exp-named [s :string] :i64
   (let [n (exp-n)]
     (loop [i 0] (cond (= i n) 0 (c-eq? (l64 (+ (exp-rec i) 8)) s) (l64 (exp-rec i)) :else (recur (inc i))))))
 ;; the data objects of the libc subset
 (defn- data-sym [name :i64] :i64
-  (if (c-eq? name "stderr") (st ST-STDERR-CELL) 0))
+  (if (c-eq? name "stderr") (st ST-STDERR-CELL) (arch-data-sym name)))
 
-;; refusing stubs: slot i of the page is `mov edi, i ; mov rax, <b2_unresolved> ; jmp rax`; the name and
-;; the library of slot i are in the table after the code slots. The code slots are read-execute except while a
-;; stub is written (W^X); the table stays read-write.
+;; refusing stubs: slot i of the page calls b2_unresolved(i) (stub-write, 01-arch-*.kotoba); the name and the
+;; library of slot i are in the table after the code slots. The code slots are read-execute except while a stub is
+;; written (W^X), and the slot is synchronized with the instruction cache after (code-sync); the table stays
+;; read-write.
 (def STUB-SLOTS 1024)
 (def STUB-NAMES 32768)
 (defn- stub-page [] :i64
@@ -241,10 +248,9 @@
             thunk (exp-named "b2_unresolved")
             ;; the code page is writable only while the stub is written, then read-execute
             pg (page-down slot) w (sys3 SYS-MPROTECT pg 4096 3)
-            a (s8 slot 0xbf) b (s32 (+ slot 1) n)
-            c (s8 (+ slot 5) 0x48) d (s8 (+ slot 6) 0xb8) e (s64 (+ slot 7) thunk)
-            f (s8 (+ slot 15) 0xff) g (s8 (+ slot 16) 0xe0)
+            a (stub-write slot n thunk)
             x (sys3 SYS-MPROTECT pg 4096 5)
+            y (code-sync slot 32)
             h (s64 rec name) i (s64 (+ rec 8) (l64 (+ lib ELF-PATH)))
             j (st! ST-NSTUBS (inc n))]
         slot))))
@@ -270,17 +276,31 @@
                                 :else (make-stub name lib))))))))))
 
 ;; ---- relocation -----------------------------------------------------------------------------------------------
+;; RELATIVE, GLOB_DAT, JUMP_SLOT and 64 (R-*, 01-arch-*.kotoba). R-SLOT-ADDEND says whether GLOB_DAT and JUMP_SLOT
+;; add the addend (aarch64: S + A; x86_64: S).
 (defn- elf-reloc [lib :i64 r :i64] :i64
   (let [base (l64 (+ lib ELF-BASE)) off (l64 r) info (l64 (+ r 8)) addend (l64 (+ r 16))
         type (bit-and info 4294967295) sym (u64-shift-right info 32) where (+ base off)]
-    (case type
-      8 (s64 where (+ base addend))
-      6 (s64 where (elf-resolve lib sym))
-      7 (s64 where (elf-resolve lib sym))
-      1 (s64 where (+ (elf-resolve lib sym) addend))
-      (refuse (c-str (l64 (+ lib ELF-PATH))) (string-concat "relocation type " (dec-str type))))))
+    (cond (= type R-RELATIVE) (s64 where (+ base addend))
+          (or (= type R-GLOB-DAT) (= type R-JUMP-SLOT))
+            (s64 where (+ (elf-resolve lib sym) (* R-SLOT-ADDEND addend)))
+          (= type R-ABS64) (s64 where (+ (elf-resolve lib sym) addend))
+          :else (refuse (c-str (l64 (+ lib ELF-PATH))) (string-concat "relocation type " (dec-str type))))))
 (defn- elf-reloc-table [lib :i64 tbl :i64 size :i64] :i64
   (loop [k 0] (if (>= k size) k (let [z (elf-reloc lib (+ tbl k))] (recur (+ k 24))))))
+;; the read-only PT_LOAD segments of hdr: writable (on), or back to their own protection and synchronized with the
+;; instruction cache when executable (off)
+(defn- elf-text-prot [path :string bias :i64 hdr :i64 on :bool] :i64
+  (loop [i 0]
+    (if (= i (l16 (+ hdr 56))) 0
+      (let [p (ph hdr i) flags (l32 (+ p 4)) vaddr (l64 (+ p 16))
+            a (+ bias (page-down vaddr)) n (- (page-up (+ vaddr (l64 (+ p 40)))) (page-down vaddr))
+            z (if (and (= (l32 p) 1) (= (bit-and flags 2) 0))
+                (let [r (sys3 SYS-MPROTECT a n (if on (bit-or (prot-of flags) 2) (prot-of flags)))
+                      c (if (< r 0) (refuse path "mprotect for text relocations failed") 0)]
+                  (if (and (not on) (not= (bit-and flags 1) 0)) (code-sync a n) 0))
+                0)]
+        (recur (inc i))))))
 (defn- elf-relocate [lib :i64] :i64
   (let [a (elf-reloc-table lib (l64 (+ lib ELF-RELA)) (l64 (+ lib ELF-RELASZ)))
         b (elf-reloc-table lib (l64 (+ lib ELF-JMPREL)) (l64 (+ lib ELF-PLTRELSZ)))
@@ -290,7 +310,7 @@
 ;; ---- needed libraries -----------------------------------------------------------------------------------------
 (defn- c-lib? [n :i64] :bool
   (or (c-eq? n "libc.so.6") (c-eq? n "libm.so.6") (c-eq? n "libdl.so.2") (c-eq? n "libpthread.so.0")
-      (c-eq? n "librt.so.1") (c-eq? n "ld-linux-x86-64.so.2")))
+      (c-eq? n "librt.so.1") (arch-ld-so? n)))
 (defn- soname-of [lib :i64] :i64
   (let [s (l64 (+ lib ELF-SONAME))] (if (= s 0) 0 (+ (l64 (+ lib ELF-STRTAB)) s))))
 (defn- lib-loaded? [name :i64] :bool
@@ -330,7 +350,9 @@
                 g (elf-needed path lib)
                 h (s64 (+ lib ELF-NEXT) (st ST-LIBS))
                 k (st! ST-LIBS lib)
+                t (if (= (l64 (+ lib ELF-TEXTREL)) 0) 0 (elf-text-prot path bias hdr true))
                 r (elf-relocate lib)
+                u (if (= (l64 (+ lib ELF-TEXTREL)) 0) 0 (elf-text-prot path bias hdr false))
                 cl (sys1 SYS-CLOSE fd) fr (malloc-free hdr)]
             lib))))))
 ;; run DT_INIT and DT_INIT_ARRAY with (argc, argv, envp), as the dynamic linker does
@@ -374,14 +396,11 @@
 (defn- cx-dlerror-GLIBC_2.34 [] :i64
   (if (= (st ST-ERR-PENDING) 0) 0 (let [z (st! ST-ERR-PENDING 0)] (st ST-ERR))))
 (defn- cx-dlclose-GLIBC_2.34 [handle :i64] :i64 0)
+;; before glibc 2.34 these lived in libdl at the target's base version (GLIBC_2.2.5 on x86_64, which the aarch64
+;; base GLIBC_2.17 also matches); glibc still exports them there for compatibility
+(defn- cx-dlopen-GLIBC_2.2.5 [path :i64 flags :i64] :i64 (cx-dlopen-GLIBC_2.34 path flags))
+(defn- cx-dlsym-GLIBC_2.2.5 [handle :i64 name :i64] :i64 (cx-dlsym-GLIBC_2.34 handle name))
+(defn- cx-dlerror-GLIBC_2.2.5 [] :i64 (cx-dlerror-GLIBC_2.34))
+(defn- cx-dlclose-GLIBC_2.2.5 [handle :i64] :i64 0)
 
-;; ---- the thread control block (E4) -------------------------------------------------------------------------------
-;; glibc's tcbhead_t: fs:0 holds the thread pointer itself, fs:8 the dtv, fs:0x10 the thread pointer again,
-;; fs:0x28 the stack protector canary. A random canary with a zero low byte, as glibc makes it.
-(defn- tcb-init [] :i64
-  (let [m (sys6 SYS-MMAP 0 4096 3 34 -1 0)]
-    (if (< m 0) (refuse "tcb" "mmap failed")
-      (let [a (s64 m m) b (s64 (+ m 16) m) c (sys3 SYS-GETRANDOM (+ m 40) 8 0)
-            d (s8 (+ m 40) 0) e (st! ST-TCB m)
-            r (sys2 SYS-ARCH-PRCTL 4098 m)]
-        (if (< r 0) (refuse "tcb" (string-concat "arch_prctl(ARCH_SET_FS) failed: " (dec-str r))) m)))))
+;; the thread control block (E4) is the target's: tcb-init, 01-arch-*.kotoba

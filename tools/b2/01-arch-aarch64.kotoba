@@ -1,0 +1,124 @@
+;; tools/b2/01-arch-aarch64.kotoba -- what route B2's loader and libc subset need to know about aarch64 Linux
+;; (JUN-701). The same names as 01-arch-x86_64.kotoba; the image is --format b2 for --target aarch64-linux.
+
+;; ---- system call numbers (the generic table; aarch64 has no access, readlink or arch_prctl) -------------------
+(def SYS-READ 63)
+(def SYS-WRITE 64)
+(def SYS-CLOSE 57)
+(def SYS-MMAP 222)
+(def SYS-MPROTECT 226)
+(def SYS-MUNMAP 215)
+(def SYS-PREAD 67)
+(def SYS-FACCESSAT 48)
+(def SYS-LSEEK 62)
+(def SYS-READLINKAT 78)
+(def SYS-GETDENTS64 61)
+(def SYS-EXIT-GROUP 94)
+(def SYS-OPENAT 56)
+(def SYS-GETRANDOM 278)
+(def SYS-SIGACTION 134)
+(def SYS-SIGALTSTACK 132)
+(def SYS-MINCORE 232)
+(def SYS-GETUID 174)
+(def SYS-GETGID 176)
+(def SYS-GETEUID 175)
+(def SYS-GETEGID 177)
+(def SYS-CLOCK-GETTIME 113)
+;; opendir's open flags: O_RDONLY | O_NONBLOCK 0x800 | O_DIRECTORY 0x4000 | O_LARGEFILE 0x20000 | O_CLOEXEC 0x80000
+;; (aarch64's O_DIRECTORY differs from x86_64's 0x10000, which is O_DIRECT here)
+(def O-OPENDIR 673792)
+(defn- sys-access [path :i64 mode :i64] :i64 (sys4 SYS-FACCESSAT -100 path mode 0))
+(defn- sys-readlink [path :i64 buf :i64 size :i64] :i64 (sys4 SYS-READLINKAT -100 path buf size))
+
+;; ---- ELF ---------------------------------------------------------------------------------------------------
+(def ELF-MACHINE 183)
+(defn- elf-machine-name [] :string "aarch64")
+(def R-RELATIVE 1027)
+(def R-GLOB-DAT 1025)
+(def R-JUMP-SLOT 1026)
+(def R-ABS64 257)
+(def R-SLOT-ADDEND 1)
+(defn- arch-ld-so? [n :i64] :bool (c-eq? n "ld-linux-aarch64.so.1"))
+;; glibc's oldest symbol version on aarch64 is GLIBC_2.17: every symbol older than it carries GLIBC_2.17 there.
+;; So an import at GLIBC_2.17 binds to an export whose (x86_64) version is GLIBC_2.17 or older; an import at a
+;; later version binds to that version only.
+(defn- ver-num [p :i64 i :i64 acc :i64] :i64
+  (let [c (l8 (+ p i))] (if (and (>= c 48) (<= c 57)) (ver-num p (inc i) (+ (* acc 10) (- c 48))) acc)))
+(defn- ver-dot [p :i64 i :i64] :i64
+  (let [c (l8 (+ p i))] (cond (= c 0) -1 (= c 46) (inc i) (and (>= c 48) (<= c 57)) (ver-dot p (inc i)) :else -1)))
+;; GLIBC_a.b[.c] as a*1000000 + b*1000 + c, or -1
+(defn- glibc-ver [p :i64] :i64
+  (if (not (and (= (l8 p) 71) (= (l8 (+ p 5)) 95) (= (l8 (+ p 1)) 76))) -1
+    (let [a (ver-num p 6 0) d1 (ver-dot p 6)]
+      (if (< d1 0) -1
+        (let [b (ver-num p d1 0) d2 (ver-dot p d1)]
+          (+ (* a 1000000) (+ (* b 1000) (if (< d2 0) 0 (ver-num p d2 0)))))))))
+(defn- ver-base-match? [want :i64 have :i64] :bool
+  (and (c-eq? want "GLIBC_2.17") (>= (glibc-ver have) 0) (<= (glibc-ver have) 2017000)))
+;; __stack_chk_guard: the stack protector canary is a global word on aarch64 (not in the thread control block)
+(defn- arch-data-sym [name :i64] :i64
+  (if (c-eq? name "__stack_chk_guard") (+ (kxrt-b-state) ST-GUARD) 0))
+(defn- vk-path-1 [] :string "/usr/lib/aarch64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-2 [] :string "/lib/aarch64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-3 [] :string "/usr/lib64/libvulkan.so.1")
+
+;; ---- the helper page: the two things only an instruction does ------------------------------------------------
+;; TPIDR_EL0 (the thread pointer) and the instruction cache are reached by instructions, not system calls. The
+;; helper page holds them; it is written while read-write and then made read-execute, so the kernel
+;; synchronizes the instruction cache for it when it first maps it executable.
+;;   0:  msr tpidr_el0, x0 ; ret
+;;   16: sync(start, len): dc cvau over the range, dsb ish, ic ivau over the range, dsb ish, isb, ret (4-byte steps)
+(defn- helper-words [] :vector-i64
+  [0xD51BD040 0xD65F03C0 0xD503201F 0xD503201F
+   0x8B010001 0xAA0003E2 0xD50B7B22 0x91001042 0xEB01005F 0x54FFFFA3 0xD5033B9F
+   0xAA0003E2 0xD50B7522 0x91001042 0xEB01005F 0x54FFFFA3 0xD5033B9F 0xD5033FDF 0xD65F03C0])
+(defn- helper-page [] :i64
+  (let [h (st ST-HELPER)]
+    (if (not= h 0) h
+      (let [m (sys6 SYS-MMAP 0 4096 3 34 -1 0) ws (helper-words) n 19]
+        (if (< m 0) (refuse "helper" "mmap failed")
+          (let [z (loop [i 0] (if (= i n) 0 (let [w (s32 (+ m (* 4 i)) (vector-at ws i))] (recur (inc i)))))
+                x (sys3 SYS-MPROTECT m 4096 5)]
+            (if (< x 0) (refuse "helper" "mprotect failed") (let [y (st! ST-HELPER m)] m))))))))
+(defn- code-sync [a :i64 n :i64] :i64 (call-c (+ (helper-page) 16) a n 0 0 0 0))
+
+;; ---- the thread control block (E4) -------------------------------------------------------------------------
+;; glibc's aarch64 tcbhead_t at TPIDR_EL0: the dtv at tp+0, a private word at tp+8, static TLS from tp+16.
+;; The canary is the global __stack_chk_guard: random, with a zero low byte, as glibc makes it.
+(defn- tcb-init [] :i64
+  (let [m (sys6 SYS-MMAP 0 4096 3 34 -1 0)]
+    (if (< m 0) (refuse "tcb" "mmap failed")
+      (let [g (+ (kxrt-b-state) ST-GUARD) c (sys3 SYS-GETRANDOM g 8 0)
+            d (s8 g 0) e (st! ST-TCB m)
+            r (call-c (helper-page) m 0 0 0 0 0)]
+        m))))
+
+;; ---- refusing stubs ----------------------------------------------------------------------------------------
+;; slot (32 bytes): movz w0, #n ; ldr x16, [pc + 12] ; br x16 ; nop ; the thunk's address at slot + 16
+(defn- stub-write [slot :i64 n :i64 thunk :i64] :i64
+  (let [a (s32 slot (bit-or 0x52800000 (i64-shift-left n 5))) b (s32 (+ slot 4) 0x58000070)
+        c (s32 (+ slot 8) 0xD61F0200) d (s32 (+ slot 12) 0xD503201F) e (s64 (+ slot 16) thunk)]
+    slot))
+
+;; ---- va_list -----------------------------------------------------------------------------------------------
+;; the next integer or pointer argument of an AAPCS64 va_list (passed by reference):
+;; {void *__stack, void *__gr_top, void *__vr_top, i32 __gr_offs, i32 __vr_offs}
+(defn- va-next-int [ap :i64] :i64
+  (let [gr (i32 (l32 (+ ap 24)))]
+    (if (or (>= gr 0) (> (+ gr 8) 0))
+      (let [z (if (< gr 0) (s32 (+ ap 24) (+ gr 8)) 0) stk (l64 ap) v (l64 stk) y (s64 ap (+ stk 8))] v)
+      (let [z (s32 (+ ap 24) (+ gr 8))] (l64 (+ (l64 (+ ap 8)) gr))))))
+
+;; ---- the fault report --------------------------------------------------------------------------------------
+;; ucontext_t: uc_mcontext (struct sigcontext) at 176: fault_address, regs[31] at 184, sp at 432, pc at 440
+(defn- uc-pc [uc :i64] :i64 (l64 (+ uc 440)))
+(defn- uc-sp [uc :i64] :i64 (l64 (+ uc 432)))
+(defn- uc-fp [uc :i64] :i64 (l64 (+ uc (+ 184 (* 8 29)))))
+(defn- uc-args [uc :i64] :string
+  (string-concat "x0 0x" (string-concat (hex-str (l64 (+ uc 184))) (string-concat " x1 0x" (string-concat (hex-str (l64 (+ uc 192))) (string-concat " x2 0x" (string-concat (hex-str (l64 (+ uc 200))) (string-concat " lr 0x" (hex-str (l64 (+ uc 424)))))))))))
+(defn- sp-name [] :string "sp")
+;; the signals the report covers: SIGSEGV, SIGBUS, SIGILL, SIGFPE and SIGTRAP (a Kotoba trap: brk)
+(defn- fault-signals [act :i64] :i64
+  (let [i (sys4 SYS-SIGACTION 11 act 0 8) j (sys4 SYS-SIGACTION 7 act 0 8)
+        k (sys4 SYS-SIGACTION 4 act 0 8) l (sys4 SYS-SIGACTION 8 act 0 8) m (sys4 SYS-SIGACTION 5 act 0 8)]
+    0))
