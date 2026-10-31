@@ -6048,3 +6048,48 @@ counted-day slot (next is a NEW UTC day, its own freeze) and the
 cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect11-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (sessions 133-135, JUN-59 -- TWELFTH CUT
+PRE-REGISTRATION LANDING: THE MID-ONLY NARROWING CUT, the first
+cut through the channel the eleventh cut's W1 (b) re-opened at
+mid; the claim THE B=3 CLASS FLIP LIES ABOVE n=254,882 -- bracket
+narrows at mid to (254,882, 255,208] iff W1 (a) = C3 (a), the
+claim rests on C3 alone, named; lower endpoint 254,557 -> 254,882
+only; NO claim at hi, NO claim at 255,045 under any outcome. NEW
+bisect point: the exact floor midpoint of (254,882, 255,208] =
+255,045.0, NEW knob pair (WORK_MUL=316, NDIV=1239) -- 33 in-box
+pairs map to 255,045, smallest (316, 1239), 8 in-box same-ratio
+doubles, gcd = 1, (1,000,003*316)//1239 == 255,045 (L8 named; NO
+prior binary, NO byte-identity pin; NAMED: no committed prior
+run exists at n=255,045 so no committed-run self-validation
+exists for the new target by construction -- the search
+self-validates against s123 AND s131 for 254,882/255,208, MATCH
+x2 per run). ARM TABLE c2/mid/bis/c8 k=3/24/24/3 = 54 fresh
+processes (mid (3,248,973) the claimed anchor in-window
+replication at its byte-identical pinned binary cabff942...; bis
+(3,316,1239) the new grid point; hi NOT measured, channel
+closed). Design derivation s133 (state only), freeze s134
+(protocol.txt write-once, freeze stamp 2026-10-31T15:33:51Z, NO
+run log of this cut exists at freeze + freeze-record-s133.txt;
+knob-search-s133.py twice byte-identical 9,582 bytes), landing
+tail s135 (gates (d)(e)(f) live + this note + record.txt; all
+s134 claims byte-re-verified from the committed captures first).
+ACCEPTED DESIGN ONLY -- every twelfth-cut quantity and the truth
+of the MID-ONLY NARROWING CLAIM are UNMEASURED until a future
+measurement-half session runs 54 fresh processes under the
+frozen protocol (NOT queued). Standing gates all == pins:
+(a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted); (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err == pin -- NO green full suite
+claimed; (d) evaluator self-test 38/0 == pin + eval pair twice
+byte-identical == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s136: the twelfth cut's
+measurement half (its own session, NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect12prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
