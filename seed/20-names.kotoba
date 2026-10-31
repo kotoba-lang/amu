@@ -756,11 +756,22 @@
           (and (= (nm-kind M c) ND-SYM) (nm-ne (nm-head-of M c) HD-AMP)) (recur (nm-next M c) (+ i 1))
           :else (recur (nm-next M c) i))))
 
-;; parameter count of a defn form: the symbols of its third child when that is a vector
+;; JUN-729: the parameters of parameter vector n: its symbols (not `&`) and its destructuring patterns -- a map, or a
+;; vector that is not a type form (a type form [:list ..] starts with a keyword); 21-check replaces each pattern by a
+;; fresh parameter
+(defn- nm-count-params [M :vector-i64 n :i64] :i64
+  (loop [c (nm-first M n) i 0]
+    (cond (= c 0) i
+          (and (= (nm-kind M c) ND-SYM) (nm-ne (nm-head-of M c) HD-AMP)) (recur (nm-next M c) (+ i 1))
+          (= (nm-kind M c) ND-MAP) (recur (nm-next M c) (+ i 1))
+          (and (= (nm-kind M c) ND-VEC) (or (= (nm-first M c) 0) (nm-ne (nm-kind M (nm-first M c)) ND-KW))) (recur (nm-next M c) (+ i 1))
+          :else (recur (nm-next M c) i))))
+
+;; parameter count of a defn form: the parameters of its third child when that is a vector
 (defn- nm-nparams [M :vector-i64 n :i64 fk :i64] :i64
   (let [p (nm-nth M n 2)]
     (cond (= fk FK-DEF) 0
-          (= (nm-kind M p) ND-VEC) (nm-count-syms M p)
+          (= (nm-kind M p) ND-VEC) (nm-count-params M p)
           :else 0)))
 
 ;; 1 for an R0 head code (1..42): a definition may not take that name. R1 heads (43..) are library sugar that a
@@ -796,7 +807,7 @@
     (cond (= c 0) (nm-touch M)
           (>= f MM-FN-CAP) (nm-err M E-HEAP-REGION 0 6)
           :else (nm-clauses (-> M (nm-put (nm-fa f FF-SYM) s) (nm-put (nm-fa f FF-NODE) n) (nm-put (nm-fa f FF-KIND) fk)
-                                (nm-put (nm-fa f FF-NPARAMS) (if (= (nm-kind M p) ND-VEC) (nm-count-syms M p) 0))
+                                (nm-put (nm-fa f FF-NPARAMS) (if (= (nm-kind M p) ND-VEC) (nm-count-params M p) 0))
                                 (nm-put MM-FN-N (+ f 1)))
                             n fk (nm-next M c)))))
 

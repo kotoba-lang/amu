@@ -1457,13 +1457,342 @@
         M2 (ck-chain2 M1 c x)]
     (ck-rehead M2 n HD-SUB c)))
 
+;; ---------------------------------------------------------------------------------------------------------
+;; JUN-729: destructuring is reader sugar (lang/guest-grammar.edn :nested-destructuring, L2: "sequential temp-bound
+;; pair/map lookups"; lang/surface-equivalence-corpus.edn :destructuring). It is expanded here, before typing, into the
+;; plain form a programmer would write, so both spell one canonical form (and one Definition CID):
+;;   (let [[a b] e] ..)              -> (let [g e a (nth g 0) b (nth g 1)] ..)
+;;   [p0 p1 & r :as v]               -> pi (nth g i), r (vector-drop g i) (a :vector-i64 rest), v g; nested patterns
+;;                                      take a fresh temporary each; `_` inside a pattern binds nothing
+;;   {:keys [x] y :k :or {x d} :as v} -> x (get g :x d), y (get g :k), v g (a default only where :or names it); a nested
+;;                                      pattern q :k takes (get g :k); entries in written order
+;;   (defn f [[a b] :T c] ..)        -> (defn f [g :T c] (let [a (nth g 0) b (nth g 1)] ..)) (also a variadic rest)
+;;   (loop [p e x e2] ..)            -> clojure.core/loop: (let [g e p g x e2] (loop [g g x x] (let [p g x x] ..)))
+;; g is a gensym (no spelling names it), so a pattern over a gensym needs no further temporary. The lookups are the
+;; native heads: nth traps out of range (no nil), get on a record takes no default, get on a typed map needs one;
+;; the checker refuses the rest by type (E2104). Refused here with E2111: a keyword other than :as in a vector pattern,
+;; anything after `& r` but :as, :strs / :syms / ::k / other keyword keys, a :keys item that is not a symbol or whose
+;; keyword is not spelled in the module (the keyword value is its spelling), a malformed :or or :as.
+;; ---------------------------------------------------------------------------------------------------------
+(def ck-dx-h-vector-drop 6494910307221814324)   ; FNV-1a of "vector-drop" (ck-r6b-name-bit)
+
+;; a let binder that is a pattern
+(defn- ck-dx-binder? [M :vector-i64 b :i64] :bool (or (= (nm-kind M b) ND-VEC) (= (nm-kind M b) ND-MAP)))
+;; a parameter that is a pattern: a map, or a vector that is not a type form ([:list ..] starts with a keyword)
+(defn- ck-dx-pat? [M :vector-i64 p :i64] :bool
+  (or (= (nm-kind M p) ND-MAP)
+      (and (= (nm-kind M p) ND-VEC) (or (zero? (nm-first M p)) (nm-ne (nm-kind M (nm-first M p)) ND-KW)))))
+
+;; true when list n is (let|loop [.. pattern e ..] ..)
+(defn- ck-dx-let? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)]
+    (if (or (zero? h) (nm-ne (nm-kind M h) ND-SYM) (and (nm-ne (nm-head-of M h) HD-LET) (nm-ne (nm-head-of M h) HD-LOOP)))
+      false
+      (let [v (nm-next M h)]
+        (and (pos? v) (= (nm-kind M v) ND-VEC)
+             (loop [b (nm-first M v)]
+               (cond (zero? b) false
+                     (ck-dx-binder? M b) true
+                     (zero? (nm-next M b)) false
+                     :else (recur (nm-next M (nm-next M b))))))))))
+
+(defn- ck-dx [M :vector-i64 S :string n :i64] :vector-i64
+  (if (= (nm-head-of M (nm-first M n)) HD-LOOP) (ck-dx-loop M n) (ck-dx-let M S n)))
+
+;; true when node e refers to a fresh local (a gensym: empty span, no head code)
+(defn- ck-dx-gref? [M :vector-i64 e :i64] :bool
+  (if (nm-ne (nm-kind M e) ND-SYM)
+    false
+    (let [s (nm-sym-of M e)]
+      (and (pos? s) (= (nm-sf M s SF-START) (nm-sf M s SF-END)) (zero? (nm-sf M s SF-HEAD))))))
+
+;; true when node k is the keyword spelled t
+(defn- ck-dx-kw? [M :vector-i64 S :string k :i64 t :string] :bool
+  (if (nm-ne (nm-kind M k) ND-KW)
+    false
+    (let [s (nm-sym-of M k)]
+      (string=? (string-substring S (nm-sf M s SF-START) (nm-sf M s SF-END)) t))))
+
+;; the pair (b e) after node tail; R0 = e, the new tail
+(defn- ck-dx-pair [M :vector-i64 tail :i64 b :i64 e :i64] :vector-i64
+  (nm-put (ck-link (ck-link M tail b) b e) MM-R0 e))
+
+;; (nth g i)
+(defn- ck-dx-nth [M :vector-i64 tok :i64 g :i64 i :i64] :vector-i64
+  (let [M1 (ck-n-ref M tok g)
+        r (ck-r M1)
+        M2 (ck-n-int M1 tok i)
+        M3 (ck-chain2 M2 r (ck-r M2))]
+    (ck-mkh M3 tok HD-NTH r)))
+;; (vector-drop g i), a call of the library defn (seed library group vec); E2111 at node a when it is absent
+(defn- ck-dx-drop [M :vector-i64 a :i64 g :i64 i :i64] :vector-i64
+  (let [f (ck-r6b-fn M ck-dx-h-vector-drop)
+        tok (nm-nf M a NF-TOK)]
+    (if (zero? f)
+      (ck-err M E-CHECK-BINDINGS a 0)
+      (let [M1 (ck-n-ref M tok (nm-ff M f FF-SYM))
+            h (ck-r M1)
+            M2 (ck-n-ref M1 tok g)
+            r (ck-r M2)
+            M3 (ck-n-int M2 tok i)
+            M4 (ck-chain3 M3 h r (ck-r M3))]
+        (ck-n-list M4 tok h)))))
+;; (get g k) or (get g k d'); k a keyword node, d 0 for none, d' a copy of d (the :or map is read again later)
+(defn- ck-dx-get [M :vector-i64 tok :i64 g :i64 k :i64 d :i64] :vector-i64
+  (let [M0 (if (zero? d) (nm-put M MM-R0 0) (ck-dx-copy M d))
+        dc (ck-r M0)
+        M1 (ck-n-ref M0 tok g)
+        r (ck-r M1)
+        M2 (if (zero? dc) (ck-chain2 M1 r k) (ck-chain3 M1 r k dc))]
+    (ck-mkh M2 tok HD-GET r)))
+
+;; bind pattern p to the value of expression e after tail; R0 = the new tail. A symbol is one pair (`_` binds nothing
+;; inside a pattern, top = false); a vector or map pattern reads a fresh temporary bound to e (none when e is one)
+(defn- ck-dx-bind [M :vector-i64 S :string tail :i64 p :i64 e :i64 top :bool] :vector-i64
+  (cond (nm-failed M) (nm-put M MM-R0 tail)
+        (= (nm-kind M p) ND-SYM) (if (and (not top) (ck-let-wild? M p)) (nm-put M MM-R0 tail) (ck-dx-pair M tail p e))
+        (not (ck-dx-binder? M p)) (ck-err M E-CHECK-BINDINGS p 0)
+        (ck-dx-gref? M e) (ck-dx-pat M S tail p (nm-sym-of M e))
+        :else (let [tok (nm-nf M p NF-TOK)
+                    M1 (nm-gensym M (nm-tf M tok TF-START) 0)
+                    g (ck-r M1)
+                    M2 (ck-n-ref M1 tok g)
+                    M3 (ck-dx-pair M2 tail (ck-r M2) e)]
+                (ck-dx-pat M3 S (ck-r M3) p g))))
+(defn- ck-dx-pat [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (if (= (nm-kind M p) ND-VEC) (ck-dx-vec M S tail p g) (ck-dx-map M S tail p g)))
+
+;; [p0 p1 .. & r :as v] read from g, in written order
+(defn- ck-dx-vec [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (loop [M1 M t tail c (nm-first M p) i 0 after false]
+    (if (or (nm-failed M1) (zero? c))
+      (nm-put M1 MM-R0 t)
+      (let [x (nm-next M1 c)
+            nx (if (zero? x) 0 (nm-next M1 x))
+            tok (nm-nf M1 c NF-TOK)]
+        (cond (ck-dx-kw? M1 S c ":as")
+              (if (or (zero? x) (nm-ne (nm-kind M1 x) ND-SYM))
+                (ck-err M1 E-CHECK-BINDINGS c 0)
+                (let [M2 (ck-n-ref M1 tok g)
+                      M3 (ck-dx-pair M2 t x (ck-r M2))]
+                  (recur M3 (ck-r M3) nx i after)))
+              after (ck-err M1 E-CHECK-BINDINGS c 0)
+              (and (= (nm-kind M1 c) ND-SYM) (= (nm-head-of M1 c) HD-AMP))
+              (if (zero? x)
+                (ck-err M1 E-CHECK-BINDINGS c 0)
+                (let [M2 (ck-dx-drop M1 c g i)
+                      M3 (ck-dx-bind M2 S t x (ck-r M2) false)]
+                  (recur M3 (ck-r M3) nx i true)))
+              (= (nm-kind M1 c) ND-KW) (ck-err M1 E-CHECK-BINDINGS c 0)
+              :else
+              (let [M2 (ck-dx-nth M1 tok g i)
+                    M3 (ck-dx-bind M2 S t c (ck-r M2) false)]
+                (recur M3 (ck-r M3) x (inc i) after)))))))
+
+;; the value of the :or entry of map pattern p (0 when none); E2111 when it is not a map of symbol keys
+(defn- ck-dx-or [M :vector-i64 S :string p :i64] :vector-i64
+  (let [o (loop [k (nm-first M p)]
+            (cond (zero? k) 0
+                  (zero? (nm-next M k)) 0
+                  (ck-dx-kw? M S k ":or") (nm-next M k)
+                  :else (recur (nm-next M (nm-next M k)))))
+        bad (if (zero? o)
+              0
+              (if (nm-ne (nm-kind M o) ND-MAP)
+                o
+                (loop [k (nm-first M o)]
+                  (cond (zero? k) 0
+                        (or (nm-ne (nm-kind M k) ND-SYM) (zero? (nm-next M k))) k
+                        :else (recur (nm-next M (nm-next M k)))))))]
+    (if (pos? bad) (ck-err M E-CHECK-BINDINGS bad 0) (nm-put M MM-R0 o))))
+;; the default for binder symbol node s in :or map o (0 when none; the last entry for s wins, as `into {}`)
+(defn- ck-dx-or-of [M :vector-i64 o :i64 s :i64] :i64
+  (if (or (zero? o) (nm-ne (nm-kind M s) ND-SYM))
+    0
+    (loop [k (nm-first M o) d 0]
+      (if (zero? k)
+        d
+        (recur (nm-next M (nm-next M k)) (if (= (nm-sym-of M k) (nm-sym-of M s)) (nm-next M k) d))))))
+
+;; {k v ..} read from g, entries in written order
+(defn- ck-dx-map [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (let [M0 (ck-dx-or M S p)
+        o (ck-r M0)]
+    (loop [M1 M0 t tail k (nm-first M0 p)]
+      (if (or (nm-failed M1) (zero? k))
+        (nm-put M1 MM-R0 t)
+        (let [v (nm-next M1 k)
+              nk (if (zero? v) 0 (nm-next M1 v))
+              tok (nm-nf M1 k NF-TOK)]
+          (cond (zero? v) (ck-err M1 E-CHECK-BINDINGS k 0)
+                (ck-dx-kw? M1 S k ":or") (recur M1 t nk)
+                (ck-dx-kw? M1 S k ":as")
+                (if (nm-ne (nm-kind M1 v) ND-SYM)
+                  (ck-err M1 E-CHECK-BINDINGS k 0)
+                  (let [M2 (ck-n-ref M1 tok g)
+                        M3 (ck-dx-pair M2 t v (ck-r M2))]
+                    (recur M3 (ck-r M3) nk)))
+                (ck-dx-kw? M1 S k ":keys")
+                (if (nm-ne (nm-kind M1 v) ND-VEC)
+                  (ck-err M1 E-CHECK-BINDINGS k 0)
+                  (let [M2 (ck-dx-keys M1 S t v g o)]
+                    (recur M2 (ck-r M2) nk)))
+                (= (nm-kind M1 k) ND-KW) (ck-err M1 E-CHECK-BINDINGS k 0)   ; :strs :syms ::k :ns/keys ..
+                (nm-ne (nm-kind M1 v) ND-KW) (ck-err M1 E-CHECK-BINDINGS v 0)
+                :else
+                (let [M2 (ck-dx-get M1 tok g v (ck-dx-or-of M1 o k))
+                      M3 (ck-dx-bind M2 S t k (ck-r M2) false)]
+                  (recur M3 (ck-r M3) nk))))))))
+;; :keys [s ..]: s <- (get g :s [d]); the keyword :s must be spelled in the module (its value is its spelling)
+(defn- ck-dx-keys [M :vector-i64 S :string tail :i64 v :i64 g :i64 o :i64] :vector-i64
+  (loop [M1 M t tail s (nm-first M v)]
+    (if (or (nm-failed M1) (zero? s))
+      (nm-put M1 MM-R0 t)
+      (let [nx (nm-next M1 s)
+            tok (nm-nf M1 s NF-TOK)
+            ks (if (= (nm-kind M1 s) ND-SYM) (ck-find-kw M1 S (nm-tf M1 tok TF-START) (nm-tf M1 tok TF-END)) 0)]
+        (if (zero? ks)
+          (ck-err M1 E-CHECK-BINDINGS s 0)
+          (let [M2 (ck-new M1 ND-KW (ck-dx-kwtok M1 ks tok) 0 ks)
+                M3 (ck-dx-get M2 tok g (ck-r M2) (ck-dx-or-of M2 o s))
+                M4 (ck-dx-pair M3 t s (ck-r M3))]
+            (recur M4 (ck-r M4) nx)))))))
+
+;; the token of a keyword node with symbol ks (a written :s, so the node prints as the keyword), else tok
+(defn- ck-dx-kwtok [M :vector-i64 ks :i64 tok :i64] :i64
+  (loop [x 1]
+    (cond (>= x (vector-at M MM-NODE-N)) tok
+          (and (= (nm-kind M x) ND-KW) (= (nm-sym-of M x) ks)) (nm-nf M x NF-TOK)
+          :else (recur (inc x)))))
+
+;; (let [.. b e ..] ..): every pattern pair is expanded in place, in order; the other pairs are kept
+(defn- ck-dx-let [M :vector-i64 S :string n :i64] :vector-i64
+  (let [v (nm-next M (nm-first M n))
+        M1 (ck-new M ND-INT (nm-nf M v NF-TOK) 0 0)   ; a scratch head for the new chain
+        d (ck-r M1)
+        M2 (loop [M2 M1 t d b (nm-first M1 v)]
+             (cond (nm-failed M2) M2
+                   (zero? b) (ck-link M2 t 0)
+                   (zero? (nm-next M2 b)) (ck-err M2 E-CHECK-BINDINGS b 0)
+                   :else (let [e (nm-next M2 b)
+                               nb (nm-next M2 e)
+                               M3 (ck-dx-bind M2 S t b e true)]
+                           (recur M3 (ck-r M3) nb))))]
+    (if (nm-failed M2) M2 (nm-set-nf M2 v NF-FIRST (nm-next M2 d)))))
+
+;; a copy of node x and its children (kind, token, aux, symbol); R0 = the copy
+(defn- ck-dx-copy [M :vector-i64 x :i64] :vector-i64
+  (let [M1 (ck-new M (nm-kind M x) (nm-nf M x NF-TOK) (nm-nf M x NF-AUX) (nm-nf M x NF-SYM))
+        y (ck-r M1)
+        M2 (loop [M2 M1 c (nm-first M1 x) t 0]
+             (if (or (zero? c) (nm-failed M2))
+               M2
+               (let [M3 (ck-dx-copy M2 c)
+                     z (ck-r M3)
+                     M4 (if (zero? t) (nm-set-nf M3 y NF-FIRST z) (ck-link M3 t z))]
+                 (recur M4 (nm-next M4 c) z))))]
+    (nm-put M2 MM-R0 y)))
+
+;; (loop [b e ..] body) with a pattern binder, as clojure.core/loop:
+;; (let [g e b' g x e2 ..] (loop [g g x x ..] (let [b g x x ..] body))); g fresh for a pattern, x itself for a symbol,
+;; b' a copy of pattern b (the outer let gives later inits the destructured names)
+(defn- ck-dx-loop [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        v (nm-next M h)
+        body (nm-next M v)
+        tok (nm-nf M h NF-TOK)
+        M1 (ck-new M ND-INT tok 0 0)   ; scratch heads of the three chains
+        o (ck-r M1)
+        M2 (ck-new M1 ND-INT tok 0 0)
+        l (ck-r M2)
+        M3 (ck-new M2 ND-INT tok 0 0)
+        i (ck-r M3)
+        M4 (loop [M4 M3 b (nm-first M3 v) to o tl l ti i]
+             (cond (nm-failed M4) M4
+                   (zero? b) (ck-link (ck-link (ck-link M4 to 0) tl 0) ti 0)
+                   (zero? (nm-next M4 b)) (ck-err M4 E-CHECK-BINDINGS b 0)
+                   :else
+                   (let [e (nm-next M4 b)
+                         nb (nm-next M4 e)
+                         bt (nm-nf M4 b NF-TOK)
+                         sym (= (nm-kind M4 b) ND-SYM)
+                         M5 (if sym (nm-put M4 MM-R0 (nm-sym-of M4 b)) (nm-gensym M4 (nm-tf M4 bt TF-START) 0))
+                         g (ck-r M5)
+                         M6 (ck-n-ref M5 bt g)
+                         M7 (ck-dx-pair M6 to (ck-r M6) e)
+                         to1 (ck-r M7)
+                         M8 (if sym
+                              M7
+                              (let [M9 (ck-dx-copy M7 b)
+                                    bc (ck-r M9)
+                                    M10 (ck-n-ref M9 bt g)]
+                                (ck-dx-pair M10 to1 bc (ck-r M10))))
+                         to2 (ck-r M8)
+                         M11 (ck-n-ref M8 bt g)
+                         a1 (ck-r M11)
+                         M12 (ck-n-ref M11 bt g)
+                         M13 (ck-dx-pair M12 tl a1 (ck-r M12))
+                         tl2 (ck-r M13)
+                         M14 (ck-n-ref M13 bt g)
+                         M15 (ck-dx-pair M14 ti b (ck-r M14))]
+                     (recur M15 nb to2 tl2 (ck-r M15)))))]
+    (if (nm-failed M4)
+      M4
+      (let [M5 (ck-n-vec M4 tok (nm-next M4 i))
+            iv (ck-r M5)
+            M6 (ck-link M5 iv body)
+            M7 (ck-mkh M6 tok HD-LET iv)
+            il (ck-r M7)
+            M8 (ck-n-vec M7 tok (nm-next M7 l))
+            lv (ck-r M8)
+            M9 (ck-chain2 M8 lv il)
+            M10 (ck-mkh M9 tok HD-LOOP lv)
+            lp (ck-r M10)
+            M11 (ck-n-vec M10 tok (nm-next M10 o))
+            ov (ck-r M11)
+            M12 (ck-chain2 M11 ov lp)]
+        (ck-rehead M12 n HD-LET ov)))))
+
+;; each pattern parameter of vector p is replaced by a fresh parameter g (a type form after it stays); R0 = the binding
+;; vector [pattern g ..] for the body, 0 when no parameter is a pattern
+(defn- ck-dx-params [M :vector-i64 p :i64] :vector-i64
+  (let [M1 (ck-new M ND-INT (nm-nf M p NF-TOK) 0 0)
+        d (ck-r M1)]
+    (loop [M2 M1 prev 0 c (nm-first M1 p) t d]
+      (cond (zero? c)
+            (let [M3 (ck-link M2 t 0)]
+              (if (= t d) (nm-put M3 MM-R0 0) (ck-n-vec M3 (nm-nf M3 p NF-TOK) (nm-next M3 d))))
+            (ck-dx-pat? M2 c)
+            (let [nx (nm-next M2 c)
+                  tok (nm-nf M2 c NF-TOK)
+                  M3 (nm-gensym M2 (nm-tf M2 tok TF-START) 0)
+                  g (ck-r M3)
+                  M4 (ck-n-ref M3 tok g)
+                  gp (ck-r M4)
+                  M5 (ck-link M4 gp nx)
+                  M6 (if (zero? prev) (nm-set-nf M5 p NF-FIRST gp) (ck-link M5 prev gp))
+                  M7 (ck-n-ref M6 tok g)
+                  M8 (ck-dx-pair M7 t c (ck-r M7))]
+              (recur M8 gp nx (ck-r M8)))
+            :else (recur M2 c (nm-next M2 c) t)))))
+;; the normalized (defn NAME [..] :R body) n gets body (let pv body)
+(defn- ck-dx-wrap [M :vector-i64 n :i64 pv :i64] :vector-i64
+  (let [rt (nm-nth M n 3)
+        body (nm-next M rt)
+        tok (nm-nf M pv NF-TOK)
+        M1 (ck-chain2 M pv body)
+        M2 (ck-mkh M1 tok HD-LET pv)
+        l (ck-r M2)]
+    (ck-link (ck-link M2 rt l) l 0)))
+
 ;; rewrite n until it is no sugar, then walk its children
-(defn- ck-ds-walk [M :vector-i64 S :string n :i64] :vector-i64
+(defn- ck-ds-walk[M :vector-i64 S :string n :i64] :vector-i64
   (let [k (nm-kind M n)
         hd (ck-ds-hd M n)]
     (cond (= n 0) (ck-touch M)
           (nm-failed M) (ck-touch M)
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
+          (and (= k ND-LIST) (ck-dx-let? M n)) (ck-ds-walk (ck-dx M S n) S n)   ; JUN-729: destructuring
           (ck-r6f-dinl? M n) (ck-ds-walk (ck-r6f-dinl M S n) S n)   ; R6F (before R6B's document folds)
           (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (pos? (ck-r6m-ods-code M n)) (ck-ds-walk (ck-r6m-ods M n) S n)   ; R6M: if-some when-some if-let when-let
@@ -1542,7 +1871,11 @@
         :else 1))
 
 (defn- ck-ds-defn [M :vector-i64 n :i64] :vector-i64
-  (let [p (nm-nth M n 2)] (ck-ds-defn1 (ck-r5b-ceiling-take (if (= (nm-kind M p) ND-VEC) (ck-ds-rest M p) M) n) n)))
+  (let [p (nm-nth M n 2)
+        M0 (if (= (nm-kind M p) ND-VEC) (ck-dx-params M p) (nm-put M MM-R0 0))   ; JUN-729: pattern parameters
+        pv (ck-r M0)
+        M1 (ck-ds-defn1 (ck-r5b-ceiling-take (if (= (nm-kind M0 p) ND-VEC) (ck-ds-rest M0 p) M0) n) n)]
+    (if (or (zero? pv) (nm-failed M1) (nm-ne (nm-count M1 n) 5)) M1 (ck-dx-wrap M1 n pv))))
 (defn- ck-ds-defn1 [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)
         p (nm-nth M n 2)
@@ -4883,24 +5216,31 @@
 
 ;; the library groups module text S needs: the groups it spells, minus single-function groups it defines; exi needs doc,
 ;; doc needs kw
+;; JUN-729: st is a stack of the open brackets, one bit each (1 for [ and {, 0 for ( ), low bit innermost. A `&` whose two
+;; innermost brackets are both [ or { is the rest marker of a destructuring pattern ([[a & r] ..], {[a & r] :k}), which
+;; 21-check expands to (vector-drop g i): it needs the vec group. The `&` of a parameter vector [p & r] sits in a (.
+(defn- ck-r6b-push [st :i64 b :i64] :i64 (bit-and (bit-or (* st 2) b) 4611686018427387903))
 (defn- ck-r6b-scan [S :string] :i64
   (let [n (string-length S)
-        r (loop [i 0 used 0 defd 0 pd false]
+        r (loop [i 0 used 0 defd 0 pd false st 0]
             (if (>= i n)
               (bit-and used (bit-not (bit-and defd (bit-not (bit-or ck-r6b-g-kw ck-r6b-g-doc)))))
               (let [c (string-code-point-at S i)]
-                (cond (= c 59) (recur (lx-eol S i) used defd false)
-                      (= c 34) (recur (ck-r6b-strend S i) used defd false)
-                      (= c 92) (recur (ck-r6b-charend S i) used defd false)
+                (cond (= c 59) (recur (lx-eol S i) used defd false st)
+                      (= c 34) (recur (ck-r6b-strend S i) used defd false st)
+                      (= c 92) (recur (ck-r6b-charend S i) used defd false st)
                       (= c 40) (let [b (ck-r6b-symend S (+ i 1))]
                                  (if (= b (+ i 1))
-                                   (recur b used defd false)
-                                   (recur b (bit-or used (ck-r6b-head-bit S (+ i 1) b)) defd (ck-r6b-defhead? S (+ i 1) b))))
+                                   (recur b used defd false (ck-r6b-push st 0))
+                                   (recur b (bit-or used (ck-r6b-head-bit S (+ i 1) b)) defd (ck-r6b-defhead? S (+ i 1) b) (ck-r6b-push st 0))))
                       (= c 58) (let [b (ck-r6b-symend S (+ i 1))]
-                                 (recur b (if (ck-r6b-is? S i b ":document") (bit-or used ck-r6b-g-doc) used) defd false))
+                                 (recur b (if (ck-r6b-is? S i b ":document") (bit-or used ck-r6b-g-doc) used) defd false st))
                       (lx-symch? c) (let [b (ck-r6b-symend S i)]
-                                      (recur b used (if pd (bit-or defd (bit-or (ck-r6b-name-bit (nm-hash S i b)) (bit-or (ck-r6f-name-bit S i b) (ck-r6m-name-bit S i b)))) defd) false))
-                      :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false))))))
+                                      (recur b (if (and (= c 38) (= b (+ i 1)) (= (bit-and st 3) 3)) (bit-or used ck-r6b-g-vec) used)
+                                             (if pd (bit-or defd (bit-or (ck-r6b-name-bit (nm-hash S i b)) (bit-or (ck-r6f-name-bit S i b) (ck-r6m-name-bit S i b)))) defd) false st))
+                      (or (= c 91) (= c 123)) (recur (+ i 1) used defd false (ck-r6b-push st 1))
+                      (or (= c 41) (= c 93) (= c 125)) (recur (+ i 1) used defd false (quot st 2))
+                      :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false) st)))))
         r2 (if (pos? (bit-and r (bit-or ck-r6b-g-exi ck-r6f-g-symp))) (bit-or r ck-r6b-g-doc) r)]   ; R6F: symbol? needs doc
     (if (pos? (bit-and r2 (bit-or ck-r6b-g-doc ck-r6f-g-kwo))) (bit-or r2 ck-r6b-g-kw) r2)))   ; R6F: kwo needs kw
 

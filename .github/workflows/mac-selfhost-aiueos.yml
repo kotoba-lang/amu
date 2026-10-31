@@ -31,6 +31,8 @@ on:
       - 'scripts/seed/check-document-edn-read.py'
       - 'scripts/seed/check-keyword-map-record.py'
       - 'seed/tests/native-keyword-map-record.kotoba'
+      - 'scripts/seed/check-destructuring.py'
+      - 'seed/tests/native-destructuring.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
@@ -164,6 +166,11 @@ jobs:
           python3 scripts/seed/check-keyword-map-record.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-keyword-map-record"
+      - name: destructuring is reader sugar with the pure form's Definition CID (JUN-729)
+        run: |
+          python3 scripts/seed/check-destructuring.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-destructuring"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
