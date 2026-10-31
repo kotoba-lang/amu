@@ -29,6 +29,8 @@ on:
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
       - 'scripts/seed/check-document-edn-read.py'
+      - 'scripts/seed/check-keyword-map-record.py'
+      - 'seed/tests/native-keyword-map-record.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
@@ -157,6 +159,11 @@ jobs:
           python3 scripts/seed/check-document-edn-read.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-document-edn-read"
+      - name: keyword map literals are closed records and record fields may be :f64 (JUN-728)
+        run: |
+          python3 scripts/seed/check-keyword-map-record.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-keyword-map-record"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
