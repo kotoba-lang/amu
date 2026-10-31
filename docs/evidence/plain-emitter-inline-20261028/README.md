@@ -365,6 +365,31 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1734 (JUN-701: route B2 on aarch64-linux,
+  `--format b2` in `seed/80` and `xa-rt-b2` in `seed/77`), which changes the
+  two aarch64 modules this change rewrites.
+  * Both merge without conflict. The new code keeps the x9 cache invariant:
+    the E2 loads and stores load through `xa-lt` and emit through `xa-w`
+    (which ends the cache), store x10 (which never claims it), and the ccall
+    loads x16 through the cache-aware loader. The b2 start sets the v11
+    context words 288..328 the inline vector and pair access read.
+  * `check-b2-image.py` passes with this branch's compiler: x86_64 build and
+    run (8 runs); aarch64-linux build, and the run phase under qemu-user, where
+    only the misaligned-caller control cannot fault (qemu does not emulate
+    SCTLR_EL1.SA0) and the other 7 runs, including both fuel checks, pass.
+    The inline-access corpus passes on aarch64-linux (39 cases, 78 runs).
+  * x86_64: F1 = F2 = F3 = `02ad3dbd…` (9,249,280 bytes), from the
+    3,833,354-byte unity `6cff518f…`. Its `--format host-entry` image is
+    `d92a906b…` (9,253,376 bytes).
+  * aarch64 root: F1 = F2 = `30bcee14…` (3,863,040 bytes), container
+    `2c79a263…`, derived under qemu from the `6e62d382…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * Unchanged: the CDCI images, the 19 x86_64 payloads, the 19 aarch64
+    containers built with `--no-crypto-hw`, and all 154 kernel-object sources
+    (19 gates), identical to main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
