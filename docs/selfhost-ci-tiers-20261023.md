@@ -34,7 +34,7 @@ source every day.
 
 | Tier | Trigger | arm64 (`selfhost-bootstrap.py --tier`) | x86_64 (`check-x86_64-native.py --tier`) |
 |---|---|---|---|
-| `pr` | pull request | F → F′ (= root; otherwise F′ must rebuild itself); F's runners and x86_64 compiler; F's core route = adoption image; packed arity refusal (E7105); named diagnostic with a source span (E2101, JUN-334); runtime boundary corpus; 24 cases; the 24 cases and two probes compiled to `wasm32-browser`, float refusals (JUN-353); hardening; capabilities | X2 = cross-built compiler; runtime boundary corpus; 24 cases; hardening; the `wasm32-browser` modules in headless Chrome (`check-wasm32-browser.py`) |
+| `pr` | pull request | F → F′ (= root; otherwise F′ must rebuild itself); F's runners and x86_64 compiler; F's core route = adoption image; packed arity refusal (E7105); named diagnostic with a source span (E2101, JUN-334); runtime boundary corpus; 24 cases; hardening; capabilities | X2 = cross-built compiler; runtime boundary corpus; 24 cases; hardening |
 | `main` | push to main | + G2/G3 through the aarch64 runner (= adoption image); P = pack(G3) rebuilds the core; the Linux selfhost closure S built by F and S′ = S | + X3 = X2; KX64V1 runner G1 = G2 = G3; scalar ELF suite; aiueos objects |
 | `full` | daily schedule, `workflow_dispatch` | + the `00-ns-static` guard; C0 (from S) → the adoption image; C0 → Kw → Pw → F's own container | same as `main` |
 
@@ -58,9 +58,21 @@ it: pull requests no longer run C0, and the full tier reuses nothing.
 
 ## wasm32-browser (JUN-353)
 
-F's `wasm32-browser` modules of the 24 cases run in headless Chromium, and
-must match their pinned result, trap and remaining fuel. The arm64 runner
-image has no Chrome or Chromium, so the arm64 job compiles and pins the
-modules, and the `qualify-x86_64` job runs them in the image's
-`google-chrome`. A host with a Chromium, such as `python:3.12-alpine` with
-`apk add chromium`, runs them inside the bootstrap.
+The `wasm32-browser` target is not a native tier (KOTOBA-174, owner decision
+2026-10-31: native selfhost is the foundation and Wasm is one build target).
+A broken Wasm emitter fails the target's own jobs and not the native
+qualification. Both jobs run in every tier and are mandatory:
+
+- `wasm32-browser-compile` ("wasm32-browser target (compile, arm64)") runs
+  `selfhost-bootstrap.py --wasm32-browser --bootstrap BOOT`. The native
+  bootstrap's fixed point F, checked against BOOT's receipt, compiles the
+  runtime cases and five probes to `wasm32-browser`. The float cases must be
+  refused (E7101).
+- `wasm32-browser-chrome` ("wasm32-browser target (headless Chrome, x86_64)")
+  runs those modules in the image's `google-chrome` with
+  `check-wasm32-browser.py`. They must match their pinned result, trap and
+  remaining fuel, and the consent broker's runs must pass. The arm64 runner
+  image has no Chrome or Chromium.
+
+A host with a Chromium, such as `python:3.12-alpine` with `apk add chromium`,
+runs the modules inside the `--wasm32-browser` step.

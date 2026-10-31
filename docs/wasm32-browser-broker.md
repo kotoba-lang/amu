@@ -60,11 +60,11 @@ runs guest code. The guest's module runs in a Worker inside a sandboxed iframe
 through its fixed `kotoba:host` imports. That is why the broker host refuses
 every other profile.
 
-## Qualification (CI: `qualify-x86_64`, the image's google-chrome)
+## Qualification (CI: `wasm32-browser-chrome`, the image's google-chrome)
 
 `scripts/seed/check-wasm32-browser.py --modules DIR` runs the broker's runs
-when `DIR/probe-cap.wasm` is present. The pr tier of `selfhost-bootstrap.py`
-compiles `probe-cap` (one call of wire 45, then the answer is written) and
+when `DIR/probe-cap.wasm` is present. `selfhost-bootstrap.py --wasm32-browser` (every
+tier, separate from the native tiers, KOTOBA-174) compiles `probe-cap` (one call of wire 45, then the answer is written) and
 `probe-cap-twice` (two calls) with F.
 
 **Setup.**
