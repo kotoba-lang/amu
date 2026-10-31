@@ -56,13 +56,6 @@
 (defn- page-down [n :i64] :i64 (bit-and n -4096))
 (defn- page-up [n :i64] :i64 (align-up n 4096))
 
-;; ---- the call-out helpers ------------------------------------------------------------------------------------
-;; C functions are called with kxrt-b-ccall; the argument block is the 14 words of ST-CALL
-(defn- call-c [fp :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
-  (let [v (+ (kxrt-b-state) ST-CALL)
-        z0 (s64 v a) z1 (s64 (+ v 8) b) z2 (s64 (+ v 16) c) z3 (s64 (+ v 24) d) z4 (s64 (+ v 32) e) z5 (s64 (+ v 40) f)]
-    (kxrt-b-ccall fp v)))
-
 ;; ---- errors for dlerror ---------------------------------------------------------------------------------------
 (defn- dl-fail [msg :string] :i64
   (let [buf (if (= (st ST-ERR) 0) (st! ST-ERR (malloc-alloc 512)) 0) b (st ST-ERR)

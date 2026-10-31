@@ -145,7 +145,34 @@ The compiler container fixed point is unchanged (`7d09635f…`). Before the
 change, a `bin/amu run` of the keyword probe exited 139; after it, the probe
 prints 1.
 
-Still open: the public kgraph slots 80/88 (`__r6-kgput` / `__r6-kgget`) are
-not installed on the Mac either, so `seed/tests/native-keyword-intern.kotoba`
-(which also writes the public graph) still dies there. That is a separate
-gap.
+## Status update, 2026-10-31 (JUN-710)
+
+The public keyword graph, context ABI slots 80/88 (`__r6-kgput` /
+`__r6-kgget`, seed/77 on Linux), had the same gap, so the repository's own
+`seed/tests/native-keyword-intern.kotoba` still died on the Mac.
+
+The intern block became `kg-words` at `KG-START` (3720). It installs all four
+slots, and both tables share one put and one get. Each entry sets the table's
+context offset (x15) and row limit (x14):
+
+| Table | Base | Count | Row limit | Linux |
+|---|---|---|---|---|
+| graph | ctx+1760 | ctx+1768 | 4096 | G+736/G+744 |
+| intern rows | ctx+1800 | ctx+1808 | 262144 | G+776/G+784 |
+
+Each table gets its own anonymous mapping of limit*24 bytes on first use, so
+the tables never share rows and arena-scope never rolls either back. The
+refusal line is now `seed: keyword table failed (Mac runtime)` (exit 70). It
+is placed at `KG-MSG-START` (4944, the free span before the vector runtime),
+and the layout patches its `adr` (`adr-x1`).
+
+`check-macos-keyword-intern.py` now also runs the Linux oracle:
+
+| Program | Exit |
+|---|---|
+| main | 0 |
+| graph-full-main (4096 datoms beside the intern rows) | 0 |
+| graph-overflow-main (datom 4097) | 70 |
+
+It also has a wrong-tag control for slot 80, alongside the slot-96 one. Pins
+moved through the staged run, `--phase source`, and `repin-derived-pins.py`.
