@@ -5891,3 +5891,44 @@ Evidence: docs/evidence/gpu/anv-b3bisect9prereg-20261031/.
 cut at the same pair/grid (CAPTURED vs INTERMEDIATE/MIXED, boundary
 min 986 -> 1,005 at overlapping medians), so NO bracket narrowing is
 claimed; mid at n=254,882 measured INTERMEDIATE/MIXED.
+
+2026-10-31 (sessions 126/127/128, JUN-59 -- THE TENTH CUT
+PRE-REGISTRATION (POINT-CLASS STABILITY CUT) + its LANDING: the
+s125 carry-forward (a) confrontation of the C2 (b) class-
+instability at n=254,557). FINDING (verified by real tool output):
+THE TENTH CUT IS PRE-REGISTERED AND LANDED -- the design half
+(s126: knob-search-s126.py twice byte-identical 5,625 bytes,
+zero NOT PARSED, self-validates against the s119/s123 committed
+censuses; protocol.txt freeze stamp 2026-10-31T07:35:39Z +
+freeze-record-s126.txt) and the landing tail (s128 completing the
+interrupted s126/s127 slices, named provenance the
+s92/s100/s101/s120/s122 precedent). The cut measures NO new grid
+point (the first cut in the chain that does not): 42 fresh
+processes at the three committed bisect points at byte-identical
+pinned binaries (lo (405,1591) n=254,557 x12 the disputed point,
+mid (248,973) n=254,882 x12, hi (1213,4753) n=255,208 x12, c2/c8
+x3 each), classified in 4 frozen-method blocks of 3 runs plus
+pooled-12; the RESUMABILITY RULE (narrowing re-opens only if the
+stability precondition HOLDS); the committed bracket stays exactly
+(254,557, 255,208]. Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 ==
+both s88 pins (run 2 RE-RUN at s128 after s126/s127 cutoffs; the
+50-byte interrupted stubs preserved per the w7-attempt1 precedent;
+scratch runner deleted after run 2 -- freeze-record-s126.txt 3(e)'s
+"run twice, deleted this tick" was VOID as written and is corrected
+in record.txt/commit, the freeze-record being write-once); (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err 879 == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117 post-append
+pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find
+'*.sh' -> 0; (f) ledger == HEAD. ACCEPTED DESIGN ONLY -- every
+tenth-cut quantity (block classes, pooled-12 classes, dispersion,
+host_ns) is UNMEASURED until a future measurement-half session runs
+(NOT queued). RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the workgroup
+rows stay as ADR-0358 left them. Carry-forward s129: the tenth
+cut's measurement half (its own session, NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect10prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
