@@ -46,6 +46,18 @@ Default run, 2026-10-31: `run.sh OUT F2`, QEMU 10.0.3, zig 0.15.2. The object SH
 The FNV hash covers every case's trap flag and answer. It is identical on the two CPU models and under both MXCSR
 rounding modes.
 
+Exhaustive run, 2026-10-31: `TIMEOUT=9000 run.sh OUT F2 1 0`. It covers every one of the 2^32 patterns, plus the
+specials and the edge mantissas, in both MXCSR passes. Each CPU took about 64 minutes under TCG.
+
+| run | cases | returned | trapped | diffs | indefinite answers | hash |
+|---|---|---|---|---|---|---|
+| `exhaustive-qemu64.txt` | 8,589,951,142 | 6,375,354,362 | 2,214,596,780 | 0 | 0 | `df87e256459509c7` |
+| `exhaustive-max.txt` | 8,589,951,142 | 6,375,354,362 | 2,214,596,780 | 0 | 0 | `df87e256459509c7` |
+
+The trap count per pass is what the semantics predicts. The sweep traps 16,777,216 NaN / Inf patterns and 1,090,519,039
+patterns with |x| >= 2^63 (exponents 190 .. 254, both signs, less -2^63 itself). The edge sweep adds 2,111 traps and
+the specials 24, for 1,107,298,390.
+
 ## Mutants
 
 Each mutant is `MUTANT=... run.sh OUT F2` with `mutate.py`. The differential must go red, and every mutant does, on

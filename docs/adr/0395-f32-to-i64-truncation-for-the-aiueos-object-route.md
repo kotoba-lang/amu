@@ -97,7 +97,7 @@ conversion. That is a separate decision.
   - The default run has 6,112,168 cases per CPU: named specials, the first and last eight mantissas of every
     exponent and sign, a stride-4099 sweep of all 2^32 patterns, and random patterns and in-range values. There are
     0 differences and 0 indefinite answers.
-  - The exhaustive run covers every 2^32 pattern in both MXCSR passes. Its result is in that README.
+  - The exhaustive run covers every 2^32 pattern in both MXCSR passes: 8,589,951,142 cases per CPU, 0 differences.
   - Three mutants go red: rounding (cvtss2si), the guard skipped, and the -2^63 exemption moved.
 - The derived pins are regenerated with `repin-derived-pins.py` (ADR 0388). The committed kotoba native-route
   objects recompile byte-identical.
