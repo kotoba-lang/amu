@@ -1,0 +1,68 @@
+{
+  "status": "PASS_C_NVGPU_MEMORY",
+  "compiler": {
+    "bytes": 3912192,
+    "sha256": "6bcb09684e269b29e42dc7b119fc8a0d2233273046c07597f1bd00de9f1b86ba"
+  },
+  "image": {
+    "bytes": 344576,
+    "sha256": "7d3924fafe0e682e0c14b42a7c000bb3f6bff5dbcfffcfc87eeea0ac77543e5f"
+  },
+  "unit": {
+    "tools/b2/00-base.kotoba": {
+      "bytes": 7636,
+      "sha256": "645b87aa3ddf4f5a67f1dee3de26c1cdf399827143555c7071474d4557474363"
+    },
+    "tools/b2/01-arch-aarch64.kotoba": {
+      "bytes": 7078,
+      "sha256": "3980ab50a848b0fcd0b2adeb78e3a82bbe6dc3e55ea69293058c4f4cbfcbdd99"
+    },
+    "tools/c/10-nvgpu.kotoba": {
+      "bytes": 2490,
+      "sha256": "7db720f343a733733ecbf78985e5d316871a1bf1ebd7c71fea9b51c85408e6f0"
+    },
+    "tools/c/20-nvgpu-memory.kotoba": {
+      "bytes": 7733,
+      "sha256": "50946510850d0a70bf20bd5ada8cd3a6f9e950be2fa9fc8204ecfbefeae86c2c"
+    },
+    "tools/c/91-nvgpu-memory.kotoba": {
+      "bytes": 3438,
+      "sha256": "cb7f33d8368c84eb0a84954832136c8ea2a1d596ecc0e4cfd05de0e6e94f85a2"
+    }
+  },
+  "host": [
+    "Linux",
+    "aarch64",
+    "5.10.120-tegra"
+  ],
+  "devices": [
+    "/dev/nvmap",
+    "/dev/nvgpu/igpu0/ctrl"
+  ],
+  "memory": {
+    "nvmap": "buffer size 0x100000 heap 0x40000000 flags 0x1",
+    "pattern_words": "0x20000",
+    "mismatches_cpu_mapping": "0x0",
+    "mismatches_second_cpu_mapping": "0x0",
+    "mismatches_kernel_read": "0x0",
+    "last_word": "0x1ffffa5a3a5a6",
+    "va_regions": "0x1",
+    "va_region": "0 offset 0x200000 page_size 0x1000 pages 0x1fffe00",
+    "gpu_va": "0x1fffe00000",
+    "gpu_va_alignment_log2": "0x15",
+    "gpu_va_in_region": "0x1",
+    "map_page_size": "0x0",
+    "map_flags": "0x100",
+    "unmap": "0x0",
+    "free": "0x0"
+  },
+  "negativeControl": {
+    "change": "C2-INCOMPR-KIND 0 -> -1 (NV_KIND_INVALID)",
+    "exit": 127,
+    "stderr": "b2: refused: nvgpu: NVGPU_AS_IOCTL_MAP_BUFFER_EX failed: -12"
+  },
+  "oracle": "the same ioctl sequence from Python (fcntl.ioctl and mmap through the system libc); compared, not used by the product route",
+  "notClaimed": "GPU-side visibility of the buffer (step C3, JUN-714)",
+  "vendorUserSpaceCode": false,
+  "cCompilerOrLoader": false
+}

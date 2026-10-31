@@ -1,0 +1,126 @@
+;; tools/c/20-nvgpu-memory.kotoba -- route C step 2 (JUN-712): memory the GPU can use. A buffer from nvmap, its dma-buf
+;; fd, CPU mappings of it, an nvgpu GPU address space and the buffer mapped at a GPU virtual address.
+;;
+;; The interface is the L4T 35.4.1 kernel's (5.10.120-tegra; on Xavier under
+;; /usr/src/linux-headers-5.10.120-tegra-ubuntu20.04_aarch64/): nvidia/include/uapi/linux/nvmap.h for the nvmap
+;; ioctls, nvidia/include/linux/nvmap.h for the heap and cache flags, nvgpu/include/uapi/linux/nvgpu-ctrl.h and
+;; nvgpu-as.h for the address space. Every ioctl number is that header's _IOC(dir, type, nr, size) with the size of
+;; the struct as laid out below (aarch64: natural alignment, unsigned long is 8 bytes); every field is named with its
+;; C name and read or written at its byte offset.
+;;
+;; This kernel's nvmap does not implement NVMAP_IOC_PARAM ("Unknown NVMAP_IOC = 0xc0104e08" in the kernel log,
+;; ENOTTY), although the header declares it; nothing here uses it.
+
+(def NVMAP "/dev/nvmap")
+
+;; ---- nvmap (uapi/linux/nvmap.h, NVMAP_IOC_MAGIC 'N' = 0x4E) ----------------------------------------------------
+;; struct nvmap_create_handle (8 bytes): union {__u32 size; __s32 fd} at 0, __u32 handle at 4
+;; NVMAP_IOC_CREATE _IOWR('N', 0, struct nvmap_create_handle): size in at 0, the handle out at 4
+(def NVMAP-IOC-CREATE 0xC0084E00)
+;; NVMAP_IOC_ALLOC _IOW('N', 3, struct nvmap_alloc_handle {__u32 handle; __u32 heap_mask; __u32 flags; __u32 align}): 16 bytes
+(def NVMAP-IOC-ALLOC 0x40104E03)
+;; NVMAP_IOC_FREE _IO('N', 4): the argument is the handle itself
+(def NVMAP-IOC-FREE 0x4E04)
+;; NVMAP_IOC_READ _IOW('N', 7, struct nvmap_rw_handle): 56 bytes, __u64 addr 0, __u32 handle 8, __u64 offset 16,
+;; __u64 elem_size 24, __u64 hmem_stride 32, __u64 user_stride 40, __u64 count 48
+(def NVMAP-IOC-READ 0x40384E07)
+;; NVMAP_IOC_GET_FD _IOWR('N', 15, struct nvmap_create_handle): the handle in at 4, the dma-buf fd out at 0
+(def NVMAP-IOC-GET-FD 0xC0084E0F)
+;; linux/nvmap.h: NVMAP_HEAP_IOVMM (1ul<<30) and NVMAP_HANDLE_WRITE_COMBINE (0x1ul << 0)
+(def NVMAP-HEAP-IOVMM 0x40000000)
+(def NVMAP-HANDLE-WRITE-COMBINE 1)
+
+;; ---- the GPU address space (uapi/linux/nvgpu-ctrl.h 'G' = 0x47, nvgpu-as.h 'A' = 0x41) -------------------------
+;; NVGPU_GPU_IOCTL_ALLOC_AS _IOWR('G', 8, struct nvgpu_alloc_as_args): 64 bytes, __u32 big_page_size 0,
+;; __s32 as_fd 4, __u32 flags 8, __u32 reserved 12, __u64 va_range_start 16, __u64 va_range_end 24,
+;; __u64 va_range_split 32, __u32 padding[6] 40
+(def NVGPU-GPU-IOCTL-ALLOC-AS 0xC0404708)
+(def NVGPU-GPU-IOCTL-ALLOC-AS-FLAGS-UNIFIED-VA 2)
+;; the range asked for: [2 MiB, 128 GiB), inside the GPU's 40-bit VA (gpu_va_bit_count, C1). big_page_size 0: no big
+;; pages (gv11b's characteristics report big_page_size 0); UNIFIED_VA, so va_range_split is 0 as the header requires.
+;; The driver refuses an all-zero range (EINVAL).
+(def C2-VA-START 0x200000)
+(def C2-VA-END 0x2000000000)
+;; NVGPU_AS_IOCTL_MAP_BUFFER_EX _IOWR('A', 7, struct nvgpu_as_map_buffer_ex_args): 40 bytes, __u32 flags 0,
+;; __s16 compr_kind 4, __s16 incompr_kind 6, __u32 dmabuf_fd 8, __u32 page_size 12, __u64 buffer_offset 16,
+;; __u64 mapping_size 24, __u64 offset 32 (out: the GPU VA)
+(def NVGPU-AS-IOCTL-MAP-BUFFER-EX 0xC0284107)
+(def NVGPU-AS-MAP-BUFFER-FLAGS-DIRECT-KIND-CTRL 256)
+(def NV-KIND-INVALID -1)
+;; the PTE kind of an incompressible pitch buffer: 0 (gv11b's pitch kind; the uapi headers carry no kind table, the
+;; value is the hardware's). compr_kind is NV_KIND_INVALID: no compression.
+(def C2-INCOMPR-KIND 0)
+;; NVGPU_AS_IOCTL_UNMAP_BUFFER _IOWR('A', 5, struct nvgpu_as_unmap_buffer_args {__u64 offset}): 8 bytes
+(def NVGPU-AS-IOCTL-UNMAP-BUFFER 0xC0084105)
+;; NVGPU_AS_IOCTL_GET_VA_REGIONS _IOWR('A', 8, struct nvgpu_as_get_va_regions_args): 16 bytes, __u64 buf_addr 0,
+;; __u32 buf_size 8 (in: the buffer's size, out: the kernel's), __u32 reserved 12. The buffer holds
+;; struct nvgpu_as_va_region (24 bytes): __u64 offset 0, __u32 page_size 8, __u32 reserved 12, __u64 pages 16
+(def NVGPU-AS-IOCTL-GET-VA-REGIONS 0xC0104108)
+(def NVGPU-VA-REGION 24)
+
+;; mmap: PROT_READ | PROT_WRITE, MAP_SHARED
+(def PROT-RW 3)
+(def MAP-SHARED 1)
+
+;; an ioctl that must succeed; its result, or a named refusal
+(defn- ioctl! [fd :i64 req :i64 arg :i64 what :string] :i64
+  (let [r (ioctl fd req arg)] (if (< r 0) (refuse "nvgpu" (string-concat what (string-concat " failed: " (dec-str r)))) r)))
+
+;; a new nvmap handle of size bytes (no memory yet)
+(defn- nvmap-create [nv :i64 size :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a size) y (s32 (+ a 4) 0) r (ioctl! nv NVMAP-IOC-CREATE a "NVMAP_IOC_CREATE")]
+    (l32 (+ a 4))))
+
+;; memory for the handle, from heap with flags, aligned
+(defn- nvmap-alloc [nv :i64 h :i64 heap :i64 flags :i64 align :i64] :i64
+  (let [a (kxrt-b-alloc 4096) w (s32 a h) x (s32 (+ a 4) heap) y (s32 (+ a 8) flags) z (s32 (+ a 12) align)]
+    (ioctl! nv NVMAP-IOC-ALLOC a "NVMAP_IOC_ALLOC")))
+
+;; the handle's dma-buf fd
+(defn- nvmap-get-fd [nv :i64 h :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 a 0) y (s32 (+ a 4) h) r (ioctl! nv NVMAP-IOC-GET-FD a "NVMAP_IOC_GET_FD")]
+    (i32 (l32 a))))
+
+;; the kernel copies n bytes of the handle's memory from offset to dst (one atom of n bytes)
+(defn- nvmap-read [nv :i64 h :i64 offset :i64 dst :i64 n :i64] :i64
+  (let [a (kxrt-b-alloc 4096) p (s64 a dst) q (s32 (+ a 8) h) r (s64 (+ a 16) offset) s (s64 (+ a 24) n)
+        t (s64 (+ a 32) n) u (s64 (+ a 40) n) v (s64 (+ a 48) 1)]
+    (ioctl! nv NVMAP-IOC-READ a "NVMAP_IOC_READ")))
+
+(defn- nvmap-free [nv :i64 h :i64] :i64 (ioctl! nv NVMAP-IOC-FREE h "NVMAP_IOC_FREE"))
+
+;; a CPU mapping of size bytes of the dma-buf fd
+(defn- cpu-map [fd :i64 size :i64] :i64
+  (let [p (sys6 SYS-MMAP 0 size PROT-RW MAP-SHARED fd 0)]
+    (if (< p 0) (refuse "nvgpu" (string-concat "mmap of the dma-buf failed: " (dec-str p))) p)))
+
+;; a new GPU address space; its fd
+(defn- nv-alloc-as [ctrl :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s32 (+ a 8) NVGPU-GPU-IOCTL-ALLOC-AS-FLAGS-UNIFIED-VA)
+        y (s64 (+ a 16) C2-VA-START) z (s64 (+ a 24) C2-VA-END)
+        r (ioctl! ctrl NVGPU-GPU-IOCTL-ALLOC-AS a "NVGPU_GPU_IOCTL_ALLOC_AS")]
+    (i32 (l32 (+ a 4)))))
+
+;; the address space's VA regions into buf (room for max of them); how many
+(defn- as-va-regions [as :i64 buf :i64 max :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s64 a buf) y (s32 (+ a 8) (* max NVGPU-VA-REGION))
+        r (ioctl! as NVGPU-AS-IOCTL-GET-VA-REGIONS a "NVGPU_AS_IOCTL_GET_VA_REGIONS")]
+    (quot (l32 (+ a 8)) NVGPU-VA-REGION)))
+(defn- va-region-offset [buf :i64 i :i64] :i64 (l64 (+ buf (* i NVGPU-VA-REGION))))
+(defn- va-region-page-size [buf :i64 i :i64] :i64 (l32 (+ buf (+ (* i NVGPU-VA-REGION) 8))))
+(defn- va-region-pages [buf :i64 i :i64] :i64 (l64 (+ buf (+ (* i NVGPU-VA-REGION) 16))))
+
+;; map the whole dma-buf at a GPU VA the driver picks; the args block (offset 32: the VA, 12: page_size, 0: flags, as
+;; the driver returns them). buffer_offset and mapping_size stay 0: without FIXED_OFFSET the driver refuses a non-zero
+;; mapping_size (EINVAL, "map_size && non-fixed-mapping!" in the kernel log).
+(defn- as-map [as :i64 dfd :i64] :i64
+  (let [a (kxrt-b-alloc 4096) w (s32 a NVGPU-AS-MAP-BUFFER-FLAGS-DIRECT-KIND-CTRL)
+        x (s16 (+ a 4) NV-KIND-INVALID) y (s16 (+ a 6) C2-INCOMPR-KIND) z (s32 (+ a 8) dfd)
+        r (ioctl! as NVGPU-AS-IOCTL-MAP-BUFFER-EX a "NVGPU_AS_IOCTL_MAP_BUFFER_EX")]
+    a))
+(defn- map-va [m :i64] :i64 (l64 (+ m 32)))
+(defn- map-page-size [m :i64] :i64 (l32 (+ m 12)))
+(defn- map-flags [m :i64] :i64 (l32 m))
+
+(defn- as-unmap [as :i64 va :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s64 a va)] (ioctl! as NVGPU-AS-IOCTL-UNMAP-BUFFER a "NVGPU_AS_IOCTL_UNMAP_BUFFER")))
