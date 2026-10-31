@@ -149,6 +149,20 @@
 (def XK-INTR-WRMSR 34)
 (def XK-IN-FIRST 34)
 (def XK-INTR-IN 35)
+;; ids 35..42 (JUN-708, ADR 0401): the 4 KiB tier, kernel-<load|store>-<u8|u16|u32|u64>-4k, as kotoba-native's machine-ir
+;; maps them ([:gmir/kernel-<op>-<w> 4096]) and kotoba-compiler/1 emitted them: the memwidth window of ids 12..17 with the
+;; length bound 4096 -- length <= 4096, base non-null, index < length, length - index >= width, and (above one byte)
+;; index % width = 0, each reaching ud2 before the access; a store answers its value. Unlike the 512-byte u32 pair the 4 KiB
+;; u32 forms check alignment, as the reference does (only [kernel-load-u32 512] / [kernel-store-u32 512] are exempt there).
+;; A block of its own, appended (with every earlier block, so the ids stay positional) only to a source that names one.
+(def XK-W4K-FIRST 35)
+(def XK-INTR-W4K 43)
+;; ids 43..45 (JUN-708, ADR 0401): kernel-fence-load [] / kernel-fence-store [] / kernel-fence-full [] -- lfence (0f ae e8),
+;; sfence (0f ae f8), mfence (0f ae f0), each answering 0 (xor eax,eax), the bytes kotoba-native's machine-ir encodes for
+;; :fence-load / :fence-store / :fence-full. No operand, no window. A block of its own after the 4 KiB block, appended with
+;; every earlier block only to a source that names one of them.
+(def XK-FENCE-FIRST 43)
+(def XK-INTR-FENCE 46)
 (def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
@@ -224,7 +238,10 @@
           22 "kernel-rdtsc" 23 "kernel-rdrand"
           24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv"
           28 "kernel-wait-interrupt" 29 "kernel-pause" 30 "kernel-dot-f32" 31 "kernel-dequant-dot-ptq1-0"
-          32 "kernel-read-msr" 33 "kernel-write-msr" 34 "kernel-in-u32" ""))
+          32 "kernel-read-msr" 33 "kernel-write-msr" 34 "kernel-in-u32"
+          35 "kernel-load-u8-4k" 36 "kernel-store-u8-4k" 37 "kernel-load-u16-4k" 38 "kernel-store-u16-4k"
+          39 "kernel-load-u32-4k" 40 "kernel-store-u32-4k" 41 "kernel-load-u64-4k" 42 "kernel-store-u64-4k"
+          43 "kernel-fence-load" 44 "kernel-fence-store" 45 "kernel-fence-full" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -271,6 +288,25 @@
 (defn- xk-uses-rdmsr? [S :string] :bool (>= (string-index-of S "kernel-read-msr") 0))
 (defn- xk-uses-wrmsr? [S :string] :bool (>= (string-index-of S "kernel-write-msr") 0))
 (defn- xk-uses-in? [S :string] :bool (>= (string-index-of S "kernel-in-u32") 0))
+;; the 4 KiB block (ids 35..42) and the fence block (ids 43..45). Unlike the earlier blocks these look for the name in
+;; call position, "(kernel-...": a source that only mentions one in a comment (kotoba's acpi-checksum-ok names
+;; `kernel-load-u8-4k` in prose) keeps the bytes it had before the block existed.
+(defn- xk-w4k-lib [] :string
+  (string-concat "(defn- kernel-load-u8-4k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u8-4k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+    (string-concat "(defn- kernel-load-u16-4k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u16-4k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+      (string-concat "(defn- kernel-load-u32-4k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32-4k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"
+        "(defn- kernel-load-u64-4k [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u64-4k [b :i64 n :i64 i :i64 v :i64] :i64 0)\n"))))
+(defn- xk-fence-lib [] :string
+  "(defn- kernel-fence-load [] :i64 0)\n(defn- kernel-fence-store [] :i64 0)\n(defn- kernel-fence-full [] :i64 0)\n")
+(defn- xk-uses-w4k? [S :string] :bool
+  (or (or (>= (string-index-of S "(kernel-load-u8-4k") 0) (>= (string-index-of S "(kernel-store-u8-4k") 0))
+      (or (or (>= (string-index-of S "(kernel-load-u16-4k") 0) (>= (string-index-of S "(kernel-store-u16-4k") 0))
+          (or (or (>= (string-index-of S "(kernel-load-u32-4k") 0) (>= (string-index-of S "(kernel-store-u32-4k") 0))
+              (or (>= (string-index-of S "(kernel-load-u64-4k") 0) (>= (string-index-of S "(kernel-store-u64-4k") 0))))))
+(defn- xk-uses-fence? [S :string] :bool (>= (string-index-of S "(kernel-fence-") 0))
+;; every block up to and including the port input (ids 0..34)
+(defn- xk-in-all-lib [] :string
+  (string-concat (string-concat (string-concat (xk-simd-all-lib) (xk-rdmsr-lib)) (xk-wrmsr-lib)) (xk-in-lib)))
 ;; every block up to and including the fused reductions (ids 0..31)
 (defn- xk-simd-all-lib [] :string
   (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib)) (xk-simd-lib)))
@@ -286,7 +322,9 @@
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-in? S) (string-concat (string-concat (string-concat (xk-simd-all-lib) (xk-rdmsr-lib)) (xk-wrmsr-lib)) (xk-in-lib))
+  (cond (xk-uses-fence? S) (string-concat (string-concat (xk-in-all-lib) (xk-w4k-lib)) (xk-fence-lib))
+        (xk-uses-w4k? S) (string-concat (xk-in-all-lib) (xk-w4k-lib))
+        (xk-uses-in? S) (xk-in-all-lib)
         (xk-uses-wrmsr? S) (string-concat (string-concat (xk-simd-all-lib) (xk-rdmsr-lib)) (xk-wrmsr-lib))
         (xk-uses-rdmsr? S) (string-concat (xk-simd-all-lib) (xk-rdmsr-lib))
         (xk-uses-simd? S) (xk-simd-all-lib)
@@ -305,6 +343,10 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-w4k-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-load-u8-4k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-fence-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-fence-load [] :i64") 0))
 (defn- xk-has-in-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-in-u32 [p :i64]") 0))
 (defn- xk-has-wrmsr-block? [text :string] :bool
@@ -334,7 +376,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-IN))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-FENCE))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -443,6 +485,31 @@
           (xg-bytes 0xfe2948 3) (xg-bytes 0x8fe8148 7) (xg-bytes 0x138c0f 6) (xg-bytes 0x7c7f748 7) (xg-bytes 0x6870f 6) (xg-bytes 0x3a048948 4)
           (xg-bytes 0x2eb 2) (xg-bytes 0xb0f 2) (xg-save t))
     (xg-err M 7101 OP-CALL))))
+;; JUN-708 (ADR 0401): a 4 KiB window access, j = store bit + 2 * width index (u8 u16 u32 u64). The memwidth window of
+;; kotoba-native's machine-ir (x86-kernel-bounds-check, aligned) with the operands read from their frame slots:
+;;   mov rdx,[base]; mov rcx,[length]; mov rax|rdi,[index]; (store: mov rax,[value];) cmp rcx,4096; ja T; test rdx,rdx; jz T;
+;;   cmp index,rcx; jae T; [width > 1: mov rsi,rcx; sub rsi,index; cmp rsi,width; jl T; test index,width-1; ja T;]
+;;   ACCESS; jmp +2; T: ud2
+;; every branch a rel32 to the one ud2. A store leaves its (untruncated) value in rax, the answer the reference gives.
+(defn- xk-window-4k [M :vector-i64 j :i64 t :i64] :vector-i64
+  (let [store (= (bit-and j 1) 1) wi (quot j 2) width (i64-shift-left 1 wi)
+        alen (if store (if (or (= wi 0) (= wi 2)) 3 4) (if (= wi 2) 3 4))
+        tail (+ alen 2) d-jae (+ tail (if (> width 1) 32 0)) d-jz (+ d-jae 9) d-ja (+ d-jz 9)
+        v (-> M (xg-load t 0x958b48) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) (if store 0xbd8b48 0x858b48)))
+        v1 (if store (xg-load v (+ t 3) 0x858b48) v)
+        checked (-> v1 (xg-bytes 0xf98148 3) (xg-bytes 4096 4) (xg-bytes 0x870f 2) (xg-bytes d-ja 4)
+                    (xg-bytes 0xd28548 3) (xg-bytes 0x840f 2) (xg-bytes d-jz 4)
+                    (xg-bytes (if store 0xcf3948 0xc83948) 3) (xg-bytes 0x830f 2) (xg-bytes d-jae 4))
+        wide (if (= width 1) checked
+               (-> checked (xg-bytes 0xce8948 3) (xg-bytes (if store 0xfe2948 0xc62948) 3)
+                   (xg-bytes 0xfe8148 3) (xg-bytes width 4) (xg-bytes 0x8c0f 2) (xg-bytes (+ tail 13) 4)
+                   (xg-bytes (if store 0xc7f748 0xc0f748) 3) (xg-bytes (dec width) 4) (xg-bytes 0x870f 2) (xg-bytes tail 4)))
+        accessed (if store
+                   (case wi 0 (xg-bytes wide 0x3a0488 3) 1 (xg-bytes wide 0x3a048966 4)
+                            2 (xg-bytes wide 0x3a0489 3) (xg-bytes wide 0x3a048948 4))
+                   (case wi 0 (xg-bytes wide 0x0204b60f 4) 1 (xg-bytes wide 0x0204b70f 4)
+                            2 (xg-bytes wide 0x02048b 3) (xg-bytes wide 0x02048b48 4)))]
+    (-> accessed (xg-bytes 0x02eb 2) (xg-bytes 0x0b0f 2) (xg-save t))))
 (defn- xo-mmio-address [i :i64] :i64
   (case i 0 0xfee00020 1 0xfee000f0 2 0xfee00320 3 0xfee00380 4 0xfee003e0 0))
 ;; D5 record access. m = the mark minus FF-REC-MARK; low 6 bits N/4-2, then 8 bits of offset, then dir * 4 + width index.
@@ -549,6 +616,11 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; JUN-708 (ADR 0401): lfence / sfence / mfence; xor eax,eax
+        (>= k XK-FENCE-FIRST)
+          (-> M (xg-bytes (case (- k XK-FENCE-FIRST) 0 0xe8ae0f 1 0xf8ae0f 0xf0ae0f) 3) (xg-bytes 0xc031 2) (xg-save t))
+        ;; JUN-708 (ADR 0401): the 4 KiB window tier
+        (>= k XK-W4K-FIRST) (xk-window-4k M (- k XK-W4K-FIRST) t)
         ;; JUN-600 (ADR 0399): in eax,dx / rdmsr / guarded wrmsr
         (>= k XK-IN-FIRST) (-> M (xg-load t 0x958b48) (xg-byte 0xed) (xg-save t))
         (>= k XK-WRMSR-FIRST) (xk-wrmsr M t)
@@ -761,7 +833,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-in-block? S) XK-INTR-IN (xk-has-wrmsr-block? S) XK-INTR-WRMSR (xk-has-rdmsr-block? S) XK-INTR-RDMSR (xk-has-simd-block? S) XK-INTR-SIMD (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-fence-block? S) XK-INTR-FENCE (xk-has-w4k-block? S) XK-INTR-W4K (xk-has-in-block? S) XK-INTR-IN (xk-has-wrmsr-block? S) XK-INTR-WRMSR (xk-has-rdmsr-block? S) XK-INTR-RDMSR (xk-has-simd-block? S) XK-INTR-SIMD (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -1004,7 +1076,7 @@
 (defn- xk-record-n [M :vector-i64 callee :i64] :i64
   (* 4 (+ 2 (bit-and (- (xg-f M callee FF-EXPORT) FF-REC-MARK) 63))))
 (defn- xk-window-k? [k :i64] :bool
-  (and (>= k 0) (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-CPU-FIRST)))))
+  (and (>= k 0) (or (or (< k XK-WINDOW-N) (and (>= k XK-WIDTH-FIRST) (< k XK-CPU-FIRST))) (and (>= k XK-W4K-FIRST) (< k XK-INTR-W4K)))))
 (defn- xk-record-conflict? [M :vector-i64 i :i64 st :i64 src :i64 n :i64] :bool
   (loop [c 1]
     (if (>= c (vector-at M MM-SIR-N)) false
@@ -1024,9 +1096,12 @@
          (not (xk-record-conflict? M i st src (xk-record-n M (xg-si M i IF-A)))))))
 ;; a window access id in seed/86's km-raw encoding: bit 0 store, bits 1..2 width (u8 u16 u32 u64), bits 3.. tier
 ;; (0 plain, 2 the 16 KiB one); xk-raw-ok? excludes kernel-subregion (2), which is not an access
-(defn- xk-raw-ok? [k :i64] :bool (or (= k 0) (= k 1) (= k 3) (and (>= k XK-WIDTH-FIRST) (< k XK-INTR-W16))))
+(defn- xk-raw-ok? [k :i64] :bool
+  (or (or (= k 0) (= k 1)) (or (= k 3) (or (and (>= k XK-WIDTH-FIRST) (< k XK-INTR-W16)) (and (>= k XK-W4K-FIRST) (< k XK-INTR-W4K))))))
 (defn- xk-raw [k :i64] :i64
   (cond (= k 0) 4 (= k 1) 5 (= k 3) 20
+        ;; the 4 KiB tier (raw tier 1): store bit, then width index u8 u16 u32 u64
+        (>= k XK-W4K-FIRST) (+ 8 (- k XK-W4K-FIRST))
         :else (let [j (mod (- k XK-WIDTH-FIRST) 6) w (case (quot j 2) 0 0 1 1 3)]
                 (+ (+ (bit-and j 1) (* 2 w)) (if (>= k XK-WIDTH16-FIRST) 16 0)))))
 (defn- xk-check [M :vector-i64 i :i64] :vector-i64
@@ -1041,8 +1116,7 @@
               (and (= op OP-CALL) (= (xk-intr M a) 4) (not (xk-out-u8-port-admitted? (xk-lit M i b))))
               (and (= op OP-CALL) (= (xk-intr M a) 5) (not (xk-out-u32-port-admitted? (xk-lit M i b)))))
         (xg-err M 7107 i)
-      (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
-                   (not (xk-pair-ok? M i b)))
+      (if (or (and (= op OP-CALL) (xk-window-k? (xk-intr M a)) (not (xk-pair-ok? M i b)))
               ;; JUN-633 slice 6: a fused reduction reads two windows, (a, a-len) at b and (b, b-len) at b + 2
               (and (= op OP-CALL) (xk-simd-k? (xk-intr M a)) (or (not (xk-pair-ok? M i b)) (not (xk-pair-ok? M i (+ b 2)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
@@ -1050,11 +1124,11 @@
               (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))
               (and (= op OP-CALL) (> (xg-f M a FF-EXPORT) 0) (< (xg-f M a FF-EXPORT) FF-EXTERN-MARK)))
         (xg-err M 7106 i)
-        ;; JUN-483: a literal size above the window's tier maximum (512, or 16384 for the -16k forms) is refused
+        ;; JUN-483: a literal size above the window's tier maximum (512, 4096 for the -4k forms, 16384 for -16k) is refused
         ;; at compile time (E7108, detail xk-raw * 2^32 + size); a size tied to a parameter keeps the run-time check
         (let [k (if (= op OP-CALL) (xk-intr M a) -1)
               size (if (xk-raw-ok? k) (xk-extent-constant M i (xk-src M i (inc b) 0)) -1)]
-          (if (and (>= size 4294967296) (> (- size 4294967296) (if (>= (xk-raw k) 16) 16384 512)))
+          (if (and (>= size 4294967296) (> (- size 4294967296) (case (quot (xk-raw k) 8) 0 512 1 4096 16384)))
             (xg-err M 7108 (+ (* (xk-raw k) 4294967296) (- size 4294967296)))
             (xk-check M (inc i)))))))))
 
