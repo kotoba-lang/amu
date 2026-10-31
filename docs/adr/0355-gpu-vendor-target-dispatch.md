@@ -5731,3 +5731,42 @@ adoption check), any further counted-day slot (its own freeze) and a
 cross-day tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 117, JUN-59 -- THE W7 LEDGER-LANDING: the append
+tail of the s105/s106 split): the standing gate set verified == the
+s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 twice == the s88 pins; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff) .err 879 ==
+pin -- NO green full suite claimed; (d) evaluator self-test 38/0 ==
+pin + pre-append eval pair == the s106 post-append pins, PENDING
+3/4; (e) find '*.sh' -> 0; (f) ledger == HEAD pre-append), then the
+byte-pinned s113 line appended VERBATIM (git diff exactly ONE
+insertion): day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED
+median=1137 min=986 flag=none. THE FINDING -- the evaluator (the
+only verdict source) prints VERDICT: SETTLED INTERMEDIATE/MIXED over
+the four counted readings of four distinct UTC days (s31 1142 /
+s73 1131 / s105 1133 / s113 1137, all INTERMEDIATE/MIXED, in band,
+mutually within 5%): THE ANCHOR-CLASS SETTLING BAR SETTLES
+INTERMEDIATE/MIXED (settle-bar.txt V3). NAMED: the s116 carry-
+forward's "expected PENDING 4/4" does not realize -- the frozen
+check order prints PENDING only below four counted. WHAT IT SETTLES
+(frozen scope): ONLY the frozen class of the (1024,4033) anchor at
+n=253,906, B=3 at the frozen section-4 threshold -- no flip-bracket
+narrowing, no interpolation, no (2048,8066) twin judgment, NO Rule
+4 row or :measured? flag touched, no causal claim. reconcile-s113.py
+--line on the fresh pair RECONCILE VERDICT: CONSISTENT (median/min/
+class all MATCH) twice byte-identical; --self-test 17/0 == the s111
+v2 pin; adoption-manifest-v2 check CONSISTENT 27/0 twice byte-
+identical before any copy; the v2 --compat GREEN post-append re-run:
+ledger-prego-v2.py --compat rc 0 twice byte-identical (9 cohort rows
+re-derive MATCH, "POST-COHORT: 2 row(s) shape-validated: s105 s113")
++ reconcile-s113.py --compat RECONCILE VERDICT: CONSISTENT twice
+byte-identical (7/7 stages OK, cross rows 31 mismatched 0). RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); the workgroup rows stay as ADR-0358 left them.
+The 2026-10-31 day slot is CONSUMED (first qualifying reading).
+Carry-forward s118: the V3-named bisect re-open (NEW pre-registered
+cut session, NOT queued), any further counted-day slot (its own
+freeze) and the cross-day tail-movement row (not queued) -- no
+queued row remains. Evidence:
+docs/evidence/gpu/anv-b3w7ledgerappend-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
