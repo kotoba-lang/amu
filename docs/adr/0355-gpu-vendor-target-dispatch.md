@@ -6207,3 +6207,54 @@ instability content (NOT queued), any further counted-day slot
 tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3bisect13-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 141-142, JUN-59 -- THE CONFRONTATION SPEC, the
+s139/s140 branch texts' "named here, not specified here" gap): what
+"confront this cut's 16-block content first" requires of any future
+narrowing claim at mid (n=254,882) or bis (n=255,045) is now
+SPECIFIED (ACCEPTED DESIGN ONLY -- a design specification, not a
+measurement and not a cut pre-registration; freeze stamp
+2026-10-31T18:37:55Z, write-once): (a) CONTENT CONFRONTATION (quote
+the claimed point's s139 16-block content and name which letter
+supersedes which reading); (b) BLOCK-GRANULARITY FLOOR (>= 16
+disjoint blocks of 3 at byte-identical pinned binaries;
+single-class across all blocks AND the pooled arm -- the s139
+C2/C3 (a)/(b) shape); (c) STATISTIC CONFRONTATION (the frozen
+class rule rides CAPTURED-vs-not on the block's 18-cell MIN at the
+frozen 1,000-tick threshold, and that statistic is measured
+within-window unstable at byte-identical binaries near the
+boundary -- so pre-register BEFORE RUNS a different statistic, or
+a tolerance rule confronting the measured wander band block-unit
+981..1,015 / per-run 974..1,023, or points single-class stable
+outside that band); (d) CLAIM-FORM CONFRONTATION (quote the
+dual-class content and the cross-window disagreement; the MID-ONLY
+NARROWING CLAIM stays SUSPENDED, named not claimed). Every number
+the spec cites is QUOTE-ONLY re-derived from committed
+publication-s139.txt / publication-s34.txt bytes by
+confrontation-census-s141.py (pure stdlib, fail-closed; run twice
+byte-identical and byte-re-verified again at s142); analysis-s139.py
+re-run twice reproduces the committed publication-s139.txt
+BYTE-IDENTICALLY (repro-identity-s141.txt). Under the spec NOTHING
+MOVES: the committed bracket stays EXACTLY (254,557, 255,208]; L9
+binds at both points at 16-block granularity (and at hi n=255,208
+at 8-block granularity); no boundary between grid points is claimed
+(L5); WHY any class occurs is UNMEASURED (L2 binds); NO causal
+mechanism is claimed; the spec queues NO cut. The landing tail
+(s142): standing gates (a)-(f) run live, all == pins ((a) 2649/0
+17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run
+2 == both s88 pins, scratch runner deleted; (c) FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff) .err
+879 == pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD). RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s143: a fourteenth cut ONLY through a NEW
+pre-registered cut session (its own freeze) whose pre-registration
+must satisfy this spec and confront the s139 16-block content
+first -- NOT queued; any further counted-day slot (the 2026-10-31
+slot is consumed at s117; the next slot is a NEW UTC day and its
+own freeze) and the cross-day tail-movement row (not queued) -- NO
+queued row remains.
+Evidence: docs/evidence/gpu/anv-b3confrontation-spec-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
