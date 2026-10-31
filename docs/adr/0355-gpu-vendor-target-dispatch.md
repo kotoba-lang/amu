@@ -6310,3 +6310,55 @@ own freeze) and the cross-day tail-movement row (not queued) -- NO
 queued row remains.
 Evidence: docs/evidence/gpu/anv-b3bisect14prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 147-149, JUN-59 -- THE FOURTEENTH CUT,
+THE WANDER-BAND TOLERANCE CUT AT MID, MEASURED AND ANALYZED;
+the s146/s147/s148 carry-forwards): the pre-registered cut is
+now MEASURED (s147: 54 fresh processes c2/mid/c8 k=3/48/3 on
+aiueos-6600hs under the frozen protocol, freeze stamp
+2026-10-31T19:54:33Z; GO 2026-10-31T21:08:06Z; rc=0 54/54,
+VERIFY mismatch 0, 108 logs byte-identical host==local
+8c8ef864...; BUILD PINS 3/3 BYTE-IDENTICAL, mid cabff942...
+the sixth byte-identical mid build) AND ANALYZED (s148 wrote
+analysis-s147.py at a runtime-budget cutoff, committed UNRUN;
+s149 ran it TWICE BYTE-IDENTICAL -> publication-s147.txt
+29,876 bytes sha256 d41df35a..., input rule verified from the
+8 open() sites). THE FROZEN LETTERS: C1 (a) True (c2 31 FLOOR
+in band 31..32; c8 32,842 vs 32,915 -0.22%); C2 (c)
+TOLERANCE-UNRESOLVED at mid (248,973) n=254,882 -- ALL 16
+block 18-cell minima and the pooled-48 min 1,005 are
+IN-BAND-UNDECIDED under THE WANDER-BAND TOLERANCE RULE (the
+thresholds frozen BEFORE runs), both stable-tolerant branches
+FAIL, L9 binds at mid under the tolerance rule too; W1 (c)
+NOTHING MOVES -- the committed bracket stays EXACTLY
+(254,557, 255,208] and the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed), NO claim at 255,045 (bis NOT
+measured this cut), NO claim at hi/lo, no boundary between
+grid points (L5); W2 (descriptive) crossings 13/48 at
+>= 1,000, in-band 48/48; W3 (descriptive) the FOURTH window at
+cabff942... (pooled-48 1,148) confronts the named cross-window
+disagreement, cause UNMEASURED (L2 binds); X1 (descriptive)
+mid spread 2.3% -- the s136 excursions do NOT replicate, cause
+UNMEASURED. The landing tail (s149): standing gates (a)-(f)
+run live, all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins,
+scratch runner deleted; (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err 879 ==
+pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD).
+BAR NON-INTERFERENCE held (bisect content: no ledger append,
+no day-slot, no bar/Rule-4/:measured? movement); RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay as ADR-0358
+left them. Carry-forward s150: a fifteenth cut ONLY through a
+NEW pre-registered cut session (its own freeze; the
+confrontation spec's four arms apply, this cut's
+TOLERANCE-UNRESOLVED content confronted first) -- NOT queued;
+any further counted-day slot (the 2026-10-31 slot is consumed
+at s117; the next slot is a NEW UTC day and its own freeze)
+and the cross-day tail-movement row (not queued) -- NO queued
+row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect14-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
