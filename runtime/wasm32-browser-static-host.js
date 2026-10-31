@@ -8,7 +8,7 @@
 // ({:status :ok :result R :fuel {...}} or {:status :trap :exit 120 :fuel {...}});
 // report is that line and output is stdout before it.
 //
-// Message in: {bytes | module, fuel, allow?, args?, files?}. bytes is the
+// Message in: {bytes | module, fuel, allow?, args?, files?, bind?}. bytes is the
 // module's bytes (or module an already compiled WebAssembly.Module); allow
 // lists the wires the page grants, as KEXE_ALLOW does natively, and only
 // 35 (:fs/app-data, read-only), 37 (:io/write), 38 (:cli/args) and
@@ -18,11 +18,28 @@
 // the entry ABI (seed/82) reads them, and nothing else. Without allow every
 // wire is refused, as in Phase 1.
 //
+// bind (Phase 2, restricted-wasm-v1 only) lists the wires that the trusted
+// host page has bound to one operation of its kotoba.app.client-runtime.v1
+// descriptor; 35, 37, 38 and 39 cannot be bound. The page grants them too, and
+// a guest call of a bound wire goes to the shared consent broker
+// (kotoba-client-runtime.js) through the restricted guest shell
+// (wasm32-browser-restricted-guest.html): this Worker posts
+// {cap: {id, wire, payload}} and suspends the guest (JSPI,
+// WebAssembly.Suspending) until {capReply: {id, ok, status, content, error}}
+// arrives. Without JSPI, or for an unbound wire, cap refuses (-1) without
+// posting anything. This Worker holds no network authority: the broker on the
+// trusted page validates, asks for consent and sends.
+//
 // Imports (module "kotoba:host"), all i64:
 //   write(fd, ptr, len) -> len   fd 1 = stdout, 2 = stderr; other fds -> -9 (EBADF)
-//   cap(wire, ptr, len) -> -1    every capability is refused until Phase 2; this is
-//                                where the shared consent broker
-//                                (kotoba-client-runtime.js) plugs in (Phase 2)
+//   cap(wire, ptr, len) -> length or -1
+//                                an unbound wire -> -1. A bound wire's request
+//                                (UTF-8 "METHOD TARGET", then optionally "\n"
+//                                and the body; TARGET is resolved against the
+//                                declared endpoint's origin by the broker)
+//                                goes to the broker; the answer is the length
+//                                of "STATUS\n" + the response text, or -1 for
+//                                every refusal (undeclared, denied, failed)
 //   now() -> nanoseconds since the epoch
 //   exit(code)                   ends the run (throws out of the module)
 //   input(kind, i, ptr, len, dst, cap) -> length or -1
@@ -33,6 +50,7 @@
 //                                length. Serves :cli/args and read-only
 //                                :fs/app-data (wires 38, 35). kind 2 asks
 //                                whether the page grants wire i (1 or 0).
+//                                kind 3 copies the last cap answer to dst.
 //                                Not a capability: no service is reached.
 //
 // The function is written so that a page can start it as a Worker from a Blob
@@ -74,7 +92,12 @@ function kotobaWasm32BrowserStaticHost() {
   async function run(msg) {
     const fuel = msg.fuel || 0;
     const { argv, fs } = inputs(msg.args, msg.files);
-    const allow = new Set((msg.allow || []).map(Number).filter((w) => [35, 37, 38, 39].includes(w)));
+    const local = [35, 37, 38, 39];
+    const allow = new Set((msg.allow || []).map(Number).filter((w) => local.includes(w)));
+    const bound = new Set((msg.bind || []).map(Number).filter((w) => Number.isInteger(w) && w >= 0 && w < 64 && !local.includes(w)));
+    const jspi = bound.size > 0 && typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function";
+    const capLog = [];
+    let capAnswer = undefined;
     const stdout = [], stderr = [];
     let memory = null;
     const answer = (bytes, dst, cap) => {
@@ -92,12 +115,40 @@ function kotobaWasm32BrowserStaticHost() {
           (fd === 1n ? stdout : stderr).push(chunk);
           return len;
         },
-        cap(wire, ptr, len) { return -1n; },
+        cap: jspi ? new WebAssembly.Suspending(async (wire, ptr, len) => {
+          capAnswer = undefined;
+          const w = Number(wire);
+          let request;
+          try {
+            request = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, Number(ptr), Number(len)));
+          } catch (e) { capLog.push({ wire: w, outcome: "refused", error: "request is not UTF-8" }); return -1n; }
+          const nl = request.indexOf("\n");
+          const line = nl < 0 ? request : request.slice(0, nl);
+          const m = /^([A-Z]{1,16}) ([^\s]+)$/.exec(line);
+          if (!bound.has(w) || !m) {
+            capLog.push({ wire: w, outcome: "refused", error: bound.has(w) ? "malformed request" : "wire not bound" });
+            return -1n;
+          }
+          const init = { method: m[1] };
+          if (nl >= 0) init.body = request.slice(nl + 1);
+          const reply = await self.kotobaCapRequest({ wire: w, payload: { input: m[2], init } });
+          if (!reply || reply.ok !== true || typeof reply.content !== "string" || !Number.isSafeInteger(reply.status)) {
+            capLog.push({ wire: w, outcome: "refused", error: String((reply && reply.error) || "no response").slice(0, 256) });
+            return -1n;
+          }
+          capAnswer = new TextEncoder().encode(reply.status + "\n" + reply.content);
+          capLog.push({ wire: w, outcome: "answered", status: reply.status, bytes: capAnswer.length });
+          return BigInt(capAnswer.length);
+        }) : function cap(wire, ptr, len) {
+          if (bound.size > 0) capLog.push({ wire: Number(wire), outcome: "refused", error: "no JSPI (WebAssembly.Suspending)" });
+          return -1n;
+        },
         now() { return BigInt(Date.now()) * 1000000n; },
         exit(code) { throw new HostExit(Number(code)); },
         input(kind, i, ptr, len, dst, cap) {
           if (kind === 0n) return i === -1n ? BigInt(argv.length) : answer(argv[Number(i)], dst, cap);
-          if (kind === 2n) return allow.has(Number(i)) ? 1n : 0n;
+          if (kind === 2n) return allow.has(Number(i)) || bound.has(Number(i)) ? 1n : 0n;
+          if (kind === 3n) return answer(capAnswer, dst, cap);
           if (kind !== 1n) return -1n;
           let path;
           try {
@@ -114,7 +165,8 @@ function kotobaWasm32BrowserStaticHost() {
         ? await WebAssembly.instantiate(msg.module, imports)
         : (await WebAssembly.instantiate(msg.bytes, imports)).instance;
       memory = instance.exports.memory;
-      instance.exports.start(BigInt(fuel));
+      if (jspi) await WebAssembly.promising(instance.exports.start)(BigInt(fuel));
+      else instance.exports.start(BigInt(fuel));
       wasmTrap = "start returned without exit";
     } catch (e) {
       if (e instanceof HostExit) exit = e.code;
@@ -126,10 +178,27 @@ function kotobaWasm32BrowserStaticHost() {
     const out = concat(stdout);
     const cut = out.lastIndexOf("{:status ", out.length - 2);
     const last = cut >= 0 && (cut === 0 || out[cut - 1] === "\n") && out.endsWith("}\n");
-    return { exit, stdout: out, stderr: concat(stderr), wasmTrap,
+    return { exit, stdout: out, stderr: concat(stderr), wasmTrap, capLog,
              output: last ? out.slice(0, cut) : out, report: last ? out.slice(cut, -1) : null };
   }
+  // cap requests in flight: id -> resolve (one at a time: the guest is suspended)
+  const pending = new Map();
+  let nextCap = 0;
+  self.kotobaCapRequest = (cap) => new Promise((resolve) => {
+    const id = "cap-" + (++nextCap);
+    pending.set(id, resolve);
+    self.postMessage({ cap: Object.assign({ id }, cap) });
+  });
+  let started = false;
   self.onmessage = async (e) => {
+    const reply = e.data && e.data.capReply;
+    if (reply) {
+      const resolve = pending.get(reply.id);
+      if (resolve) { pending.delete(reply.id); resolve(reply); }
+      return;
+    }
+    if (started) return;
+    started = true;
     self.postMessage(await run(e.data));
   };
 }

@@ -122,6 +122,13 @@
 ;; object that names only kernel-wait-interrupt keeps its bytes.
 (def XK-PAUSE-FIRST 29)
 (def XK-INTR-PAUSE 30)
+;; ids 30..31 (JUN-633 slice 6, ADR 0394): the fused f32 reductions kernel-dot-f32 [a a-len b b-len count] and
+;; kernel-dequant-dot-ptq1-0 [weights w-len input i-len blocks], kotoba-native's x86-kernel-dot-f32 and
+;; x86-kernel-dequant-dot (PTQ1_0) as kotoba-compiler/1 emitted them into qwen35-matvec.o. Each reads TWO windows, (a,
+;; a-len) and (b, b-len), and both pairs obey the rooted-base and owner-length rule of the window accesses. The block is
+;; appended (with every earlier block, so the ids stay positional) only to a source that names one of them.
+(def XK-SIMD-FIRST 30)
+(def XK-INTR-SIMD 32)
 (def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
@@ -196,7 +203,7 @@
           18 "kernel-cpuid-eax" 19 "kernel-cpuid-ebx" 20 "kernel-cpuid-ecx" 21 "kernel-cpuid-edx"
           22 "kernel-rdtsc" 23 "kernel-rdrand"
           24 "kernel-cr4-set-bits" 25 "kernel-xcr0-set-bits" 26 "kernel-read-cr4" 27 "kernel-xgetbv"
-          28 "kernel-wait-interrupt" 29 "kernel-pause" ""))
+          28 "kernel-wait-interrupt" 29 "kernel-pause" 30 "kernel-dot-f32" 31 "kernel-dequant-dot-ptq1-0" ""))
 (defn- xk-memory-lib [] :string
   "\n(defn- kernel-load-u32 [b :i64 n :i64 i :i64] :i64 0)\n(defn- kernel-store-u32 [b :i64 n :i64 i :i64 v :i64] :i64 0)\n(defn- kernel-subregion [b :i64 n :i64 o :i64 l :i64] :i64 b)\n(defn- kernel-load-u32-16k [b :i64 n :i64 i :i64] :i64 0)\n")
 (defn- xk-lib [] :string
@@ -230,6 +237,12 @@
 ;; the pause block (id 29)
 (defn- xk-pause-lib [] :string "(defn- kernel-pause [] :i64 0)\n")
 (defn- xk-uses-pause? [S :string] :bool (>= (string-index-of S "kernel-pause") 0))
+;; the fused-reduction block (ids 30..31)
+(defn- xk-simd-lib [] :string
+  (string-concat "(defn- kernel-dot-f32 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 0)\n"
+    "(defn- kernel-dequant-dot-ptq1-0 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 0)\n"))
+(defn- xk-uses-simd? [S :string] :bool
+  (or (>= (string-index-of S "kernel-dot-f32") 0) (>= (string-index-of S "kernel-dequant-dot-ptq1-0") 0)))
 (defn- xk-uses-xstate? [S :string] :bool
   (or (or (>= (string-index-of S "kernel-cr4-set-bits") 0) (>= (string-index-of S "kernel-xcr0-set-bits") 0))
       (or (>= (string-index-of S "kernel-read-cr4") 0) (>= (string-index-of S "kernel-xgetbv") 0))))
@@ -242,7 +255,9 @@
       (or (or (>= (string-index-of S "kernel-load-u16") 0) (>= (string-index-of S "kernel-store-u16") 0))
           (or (>= (string-index-of S "kernel-load-u64") 0) (>= (string-index-of S "kernel-store-u64") 0)))))
 (defn- xk-lib-for [S :string] :string
-  (cond (xk-uses-pause? S)
+  (cond (xk-uses-simd? S)
+          (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib)) (xk-simd-lib))
+        (xk-uses-pause? S)
           (string-concat (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib)) (xk-pause-lib))
         (xk-uses-halt? S)
           (string-concat (string-concat (string-concat (string-concat (string-concat (xk-lib) (xk-width-lib)) (xk-width16-lib)) (xk-cpu-lib)) (xk-xstate-lib)) (xk-halt-lib))
@@ -257,6 +272,8 @@
   (>= (string-index-of text "(defn- kernel-load-u8 [b :i64 n :i64 i :i64]") 0))
 (defn- xk-has-width16-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-load-u8-16k [b :i64 n :i64 i :i64]") 0))
+(defn- xk-has-simd-block? [text :string] :bool
+  (>= (string-index-of text "(defn- kernel-dot-f32 [a :i64 an :i64") 0))
 (defn- xk-has-pause-block? [text :string] :bool
   (>= (string-index-of text "(defn- kernel-pause [] :i64") 0))
 (defn- xk-has-halt-block? [text :string] :bool
@@ -278,7 +295,7 @@
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-ADDR-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-ADDR-MARK XO-MAX-CELLS))) (+ XK-CELL-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-ARRAY-MARK) (< (xg-f M f FF-EXPORT) (+ FF-ARRAY-MARK XO-ARRAY-SPAN))) (+ XK-ARRAY-ADDR f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-REC-MARK) (< (xg-f M f FF-EXPORT) (+ FF-REC-MARK XO-REC-SPAN))) (+ XK-RECORD f)
-          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-PAUSE))) k
+          (and (= (vector-at M 197) 0) (> first 0) (>= k 0) (< k (if (> (vector-at M 201) 0) XK-WINDOW-N XK-INTR-SIMD))) k
           :else -1)))
 ;; JUN-556 E (ADR 0383): arguments of an extern call follow the System V order, not the object route's
 ;; own five-register convention: rdi rsi rdx rcx r8, then r9, then the stack. The stack arguments are
@@ -457,6 +474,8 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; JUN-633 slice 6: the fused reductions (ADR 0394)
+        (>= k XK-SIMD-FIRST) (if (= k XK-SIMD-FIRST) (xf-dot-f32 M t) (xf-dequant-ptq1 M t))
         ;; JUN-633 slice 5: pause; xor eax,eax
         (>= k XK-PAUSE-FIRST) (-> M (xg-bytes 0x90f3 2) (xg-bytes 0xc031 2) (xg-save t))
         ;; JUN-633 slice 4: sti; hlt; cli; xor eax,eax
@@ -464,6 +483,192 @@
         (>= k XK-XSTATE-FIRST) (xk-xstate-intrinsic M (- k XK-XSTATE-FIRST) t)
         (>= k XK-CPU-FIRST) (xk-cpu-intrinsic M (- k XK-CPU-FIRST) t)
         :else (xk-intrinsic-window M k t)))
+;; JUN-633 slice 6 (ADR 0394): the fused f32 reductions. kotoba-native's x86-kernel-dot-f32 and x86-kernel-dequant-dot
+;; (PTQ1_0), instruction for instruction in both arms, except that a guard failure is a local `jcc +2; ud2` rather than a
+;; branch to one shared trap, and the operands are read from their frame slots (as every intrinsic here reads them) into
+;; r10 / rcx / r11 / rdx / rax instead of being rescued from allocated registers.
+;;
+;; THE ACCUMULATION TREE IS THE CONTRACT (kotoba-kir ADR 0233): four lane accumulators at +0.0; for each eight-element
+;; block, element k of the lower half into lane k, then element k of the upper half into the same lane; then
+;; (lane0 + lane1) + (lane2 + lane3); then, for the dot only, the remaining elements one by one onto that sum. The AVX2
+;; arm keeps the four lanes in xmm0 (vextractf128 + two vaddps per block, two vhaddps at the end); the scalar arm keeps
+;; them in xmm0..xmm3 (mulss / addss per element, three addss at the end). Both arms compute the same additions in the
+;; same order, so they agree bit for bit. No FMA: a fused multiply-add rounds once and answers a different number.
+;;
+;; THE GUARDS, in the oracle's order, each an unsigned trap (ud2) before any access: both lengths <= 65536, both bases
+;; non-null, count <= 16384 (dot) / blocks <= 128 (PTQ1_0: min(65536/28, 65536/512)) -- checked before the spans are
+;; formed, so they cannot wrap -- then count*4 <= a-len and <= b-len (dot), blocks*28 <= w-len and blocks*512 <= i-len.
+;;
+;; THE ARM is chosen per call, kotoba-native's x86-dot-avx2-guard: cpuid leaf 0 >= 7; leaf 1 ECX bits 27 (OSXSAVE) and
+;; 28 (AVX); only then xgetbv, XCR0 bits 1 and 2 (the OS saves SSE and YMM state); leaf 7 EBX bit 5 (AVX2). rbx is
+;; callee-saved and cpuid writes it, so it is pushed around the whole sequence (it holds the count / block counter). r9
+;; (the context) is untouched; rax rcx rdx rsi r8 r10 r11 and the vector registers are scratch. The AVX2 arm ends with
+;; vzeroupper. The answer is the binary32 pattern sign-extended from bit 31 (the canonical f32 word), saved to t.
+(defn- xf-put32 [M :vector-i64 at :i64 v :i64] :vector-i64
+  (-> M (xg-put-byte at v) (xg-put-byte (+ at 1) (u64-shift-right v 8))
+      (xg-put-byte (+ at 2) (u64-shift-right v 16)) (xg-put-byte (+ at 3) (u64-shift-right v 24))))
+;; a forward rel32 whose field ends at `end` now lands here
+(defn- xf-patch [M :vector-i64 end :i64] :vector-i64
+  (if (not= (vector-at M MM-ERR) 0) M (xf-put32 M (- end 4) (- (xg-pos M) end))))
+;; jae rel32 back to `target`
+(defn- xf-jae-back [M :vector-i64 target :i64] :vector-i64
+  (let [m (xg-bytes M 0x830f 2)] (xg-bytes m (- target (+ (xg-pos m) 4)) 4)))
+;; jbe +2; ud2 (the trap of an unsigned `ja`) and jnz +2; ud2 (the trap of a `jz`)
+(defn- xf-trap-above [M :vector-i64] :vector-i64 (xg-bytes M 0x0b0f0276 4))
+(defn- xf-trap-zero [M :vector-i64] :vector-i64 (xg-bytes M 0x0b0f0275 4))
+;; mov r10,[a]; mov rcx,[a-len]; mov r11,[b]; mov rdx,[b-len]; mov rax,[count]; cmp rcx,0x10000; ja trap;
+;; cmp rdx,0x10000; ja trap; test r10,r10; jz trap; test r11,r11; jz trap; cmp rax,limit; ja trap
+(defn- xf-operands [M :vector-i64 t :i64 limit :i64] :vector-i64
+  (-> M (xg-load t 0x958b4c) (xg-load (+ t 1) 0x8d8b48) (xg-load (+ t 2) 0x9d8b4c) (xg-load (+ t 3) 0x958b48)
+      (xg-load (+ t 4) 0x858b48)
+      (xg-bytes 0x010000f98148 7) (xf-trap-above) (xg-bytes 0x010000fa8148 7) (xf-trap-above)
+      (xg-bytes 0xd2854d 3) (xf-trap-zero) (xg-bytes 0xdb854d 3) (xf-trap-zero)
+      (xg-bytes 0x3d48 2) (xg-bytes limit 4) (xf-trap-above)))
+;; mov r8,rax; push rbx; the AVX2 question (eax = 1 when usable, else 0); mov rbx,r8; test eax,eax; jz <scalar> (rel32
+;; left for xf-patch). The short displacements are the distances to `fail` (xor eax,eax): 0x37, 0x20, 0x13.
+(defn- xf-guard [M :vector-i64] :vector-i64
+  (-> M (xg-bytes 0xc08949 3) (xg-byte 0x53)
+      (xg-bytes 0xa20fc931c031 6) (xg-bytes 0x377207f883 5)
+      (xg-bytes 0x01b8 5) (xg-bytes 0xa20fc931 4) (xg-bytes 0x18000000e181 6) (xg-bytes 0x18000000f981 6) (xg-bytes 0x2075 2)
+      (xg-bytes 0xd0010fc931 5) (xg-bytes 0x06f88306e083 6) (xg-bytes 0x1375 2)
+      (xg-bytes 0x07b8 5) (xg-bytes 0xa20fc931 4) (xg-bytes 0x01e08305e8c1d889 8) (xg-bytes 0x02eb 2)
+      (xg-bytes 0xc031 2) (xg-bytes 0xc3894c 3) (xg-bytes 0xc085 2) (xg-bytes 0x840f 2) (xg-bytes 0 4)))
+;; jmp <check> (rel32 left for xf-patch)
+(defn- xf-jmp [M :vector-i64] :vector-i64 (-> M (xg-byte 0xe9) (xg-bytes 0 4)))
+;; join: pop rbx; movsxd rax,eax; the answer to t
+(defn- xf-answer [M :vector-i64 t :i64] :vector-i64 (-> M (xg-byte 0x5b) (xg-bytes 0xc06348 3) (xg-save t)))
+;; ---- kernel-dot-f32 [a a-len b b-len count]
+;; movss xmm4,[r10+d]; movss xmm5,[r11+d]; mulss xmm4,xmm5; addss xmm<lane>,xmm4
+(defn- xf-dot-step [M :vector-i64 disp :i64 lane :i64] :vector-i64
+  (-> M (xg-bytes 0x62100f41f3 5) (xg-byte disp) (xg-bytes 0x6b100f41f3 5) (xg-byte disp)
+      (xg-bytes 0xe5590ff3 4) (xg-bytes (bit-or 0xc4580ff3 (i64-shift-left (* 8 lane) 24)) 4)))
+;; add r10,k; add r11,k; sub rbx,n
+(defn- xf-advance [M :vector-i64 k :i64 n :i64] :vector-i64
+  (-> M (xg-bytes 0xc28349 3) (xg-byte k) (xg-bytes 0xc38349 3) (xg-byte k) (xg-bytes 0xeb8348 3) (xg-byte n)))
+;; cmp rbx,n; jae target
+(defn- xf-until [M :vector-i64 n :i64 target :i64] :vector-i64
+  (-> M (xg-bytes 0xfb8348 3) (xg-byte n) (xf-jae-back target)))
+(defn- xf-dot-avx [M :vector-i64] :vector-i64
+  ;; vxorps xmm0; blocks of eight: vmovups ymm1,[r10]; vmovups ymm2,[r11]; vmulps ymm1,ymm1,ymm2;
+  ;; vextractf128 xmm2,ymm1,1; vaddps xmm0,xmm0,xmm1; vaddps xmm0,xmm0,xmm2
+  (let [m0 (-> M (xg-bytes 0xc057f8c5 4) (xf-jmp)) j0 (xg-pos m0)
+        m1 (-> m0 (xg-bytes 0x0a107cc1c4 5) (xg-bytes 0x13107cc1c4 5) (xg-bytes 0xca59f4c5 4) (xg-bytes 0x01ca197de3c4 6)
+               (xg-bytes 0xc158f8c5 4) (xg-bytes 0xc258f8c5 4) (xf-advance 32 8) (xf-patch j0) (xf-until 8 j0))
+        ;; two vhaddps: (s0+s1)+(s2+s3) in lane 0; then the tail: vmovss xmm1,[r10]; vmovss xmm2,[r11];
+        ;; vmulss xmm1,xmm1,xmm2; vaddss xmm0,xmm0,xmm1
+        m2 (-> m1 (xg-bytes 0xc07cfbc5 4) (xg-bytes 0xc07cfbc5 4) (xf-jmp)) j1 (xg-pos m2)
+        m3 (-> m2 (xg-bytes 0x0a107ac1c4 5) (xg-bytes 0x13107ac1c4 5) (xg-bytes 0xca59f2c5 4) (xg-bytes 0xc158fac5 4)
+               (xf-advance 4 1) (xf-patch j1) (xf-until 1 j1))]
+    ;; vmovd eax,xmm0; vzeroupper
+    (-> m3 (xg-bytes 0xc07ef9c5 4) (xg-bytes 0x77f8c5 3))))
+(defn- xf-dot-scalar [M :vector-i64] :vector-i64
+  ;; xorps xmm0..xmm3; blocks of eight, elements 0..3 then 4..7 into lanes 0..3
+  (let [m0 (-> M (xg-bytes 0xc0570f 3) (xg-bytes 0xc9570f 3) (xg-bytes 0xd2570f 3) (xg-bytes 0xdb570f 3) (xf-jmp)) j0 (xg-pos m0)
+        m1 (-> m0 (xf-dot-step 0 0) (xf-dot-step 4 1) (xf-dot-step 8 2) (xf-dot-step 12 3)
+               (xf-dot-step 16 0) (xf-dot-step 20 1) (xf-dot-step 24 2) (xf-dot-step 28 3)
+               (xf-advance 32 8) (xf-patch j0) (xf-until 8 j0))
+        ;; addss xmm0,xmm1; addss xmm2,xmm3; addss xmm0,xmm2; the tail onto xmm0
+        m2 (-> m1 (xg-bytes 0xc1580ff3 4) (xg-bytes 0xd3580ff3 4) (xg-bytes 0xc2580ff3 4) (xf-jmp)) j1 (xg-pos m2)
+        m3 (-> m2 (xf-dot-step 0 0) (xf-advance 4 1) (xf-patch j1) (xf-until 1 j1))]
+    ;; movd eax,xmm0
+    (xg-bytes m3 0xc07e0f66 4)))
+(defn- xf-dot-f32 [M :vector-i64 t :i64] :vector-i64
+  ;; after the guards: mov rsi,rax; add rsi,rsi; add rsi,rsi; cmp rsi,rcx; ja trap; cmp rsi,rdx; ja trap
+  (let [m0 (-> M (xf-operands t 16384) (xg-bytes 0xc68948 3) (xg-bytes 0xf60148 3) (xg-bytes 0xf60148 3)
+               (xg-bytes 0xce3948 3) (xf-trap-above) (xg-bytes 0xd63948 3) (xf-trap-above) (xf-guard))
+        js (xg-pos m0)
+        m1 (-> m0 (xf-dot-avx) (xf-jmp)) jj (xg-pos m1)]
+    (-> m1 (xf-patch js) (xf-dot-scalar) (xf-patch jj) (xf-answer t))))
+;; ---- kernel-dequant-dot-ptq1-0 [weights w-len input i-len blocks]
+;; A 28-byte block: qs[24] at 0 (five base-3 digits a byte), qh[2] at 24 (four), d as fp16 at 26; 128 elements. Element e
+;; is digit n of the byte at o (ADR 0088): e < 80: o = e mod 16, n = e / 16; e < 120: o = 16 + (e - 80) mod 8,
+;; n = (e - 80) / 8; else o = 24 + (e - 120) mod 2, n = (e - 120) / 2. Digit n of a byte is ((byte * 3^n) & 255) * 3 >> 8
+;; and the weight is (digit - 1) * d; the term is that times the input element, accumulated into lane e mod 4.
+(defn- xf-ptq1-off [e :i64] :i64
+  (cond (< e 80) (rem e 16) (< e 120) (+ 16 (rem (- e 80) 8)) :else (+ 24 (rem (- e 120) 2))))
+(defn- xf-ptq1-digit [e :i64] :i64
+  (cond (< e 80) (quot e 16) (< e 120) (quot (- e 80) 8) :else (quot (- e 120) 2)))
+(defn- xf-pow3 [n :i64] :i64 (case n 0 1 1 3 2 9 3 27 81))
+;; movzx eax,byte [r10+o]; imul rax,rax,3^n (n > 0); and rax,255; imul rax,rax,3; shr rax,8
+(defn- xf-digit [M :vector-i64 o :i64 n :i64] :vector-i64
+  (-> M (xg-bytes 0x42b60f41 4) (xg-byte o) (cond-> (> n 0) (-> (xg-bytes 0xc06b48 3) (xg-byte (xf-pow3 n))))
+      (xg-bytes 0x0000ff2548 6) (xg-bytes 0x03c06b48 4) (xg-bytes 0x08e8c148 4)))
+;; the fp16 scale at [r10+26] as a binary32 pattern in eax (kotoba-native's x86-dequant-fp16): sign to bit 31 in rcx,
+;; (h & 0x7fff) << 13 in rdx; exponent 31 is (rdx & 0x7fffff) | 0x7f800000, any other is rdx as binary32 times 2^112
+;; (xmm7, the magic 0x77800000) -- vmulss in the AVX2 arm, mulss in the scalar one. Clobbers rax rcx rdx xmm6.
+(defn- xf-fp16 [M :vector-i64 vex :bool] :vector-i64
+  (-> M (xg-bytes 0x1a42b70f41 5)
+      (xg-bytes 0xc18948 3) (xg-bytes 0x00008000e18148 7) (xg-bytes 0x10e1c148 4)
+      (xg-bytes 0xc28948 3) (xg-bytes 0x00007fffe28148 7) (xg-bytes 0x0de2c148 4)
+      (xg-bytes 0x00007c002548 6) (xg-bytes 0x00007c003d48 6) (xg-bytes 0x0e74 2)
+      (cond-> vex (-> (xg-bytes 0xf26ef9c5 4) (xg-bytes 0xf759cac5 4) (xg-bytes 0xf07ef9c5 4)))
+      (cond-> (not vex) (-> (xg-bytes 0xf26e0f66 4) (xg-bytes 0xf7590ff3 4) (xg-bytes 0xf07e0f66 4)))
+      (xg-bytes 0x0feb 2)
+      (xg-bytes 0xd08948 3) (xg-bytes 0x007fffff2548 6) (xg-bytes 0x7f8000000d48 6)
+      (xg-bytes 0xc80948 3)))
+;; add r10,28; add r11,512; sub rbx,1
+(defn- xf-ptq1-advance [M :vector-i64] :vector-i64
+  (-> M (xg-bytes 0x1cc28349 4) (xg-bytes 0x00000200c38149 7) (xg-bytes 0x01eb8348 4)))
+;; AVX2 arm, group g of a block. Groups 0..14 read eight consecutive bytes at one digit: vpmovzxbd ymm1,[r10+o]; t <- 3t
+;; mod 256 n times (vpslld ymm2,ymm1,2; vpsubd ymm1,ymm2,ymm1; vpand ymm1,ymm1,ymm4); then 3t >> 8 (vpslld; vpsubd;
+;; vpsrld ymm1,ymm1,8). Group 15 builds its eight digits as bytes in rdx (mov rdx,rax, then shl rax,8j; or rdx,rax) and
+;; widens them: vmovq xmm1,rdx; vpmovzxbd ymm1,xmm1.
+(defn- xf-times3 [M :vector-i64 n :i64] :vector-i64
+  (if (= n 0) M (xf-times3 (-> M (xg-bytes 0x02f172edc5 5) (xg-bytes 0xc9faedc5 4) (xg-bytes 0xccdbf5c5 4)) (dec n))))
+(defn- xf-gather [M :vector-i64 j :i64] :vector-i64
+  (if (= j 8) (-> M (xg-bytes 0xca6ef9e1c4 5) (xg-bytes 0xc9317de2c4 5))
+    (let [m (xf-digit M (xf-ptq1-off (+ 120 j)) (xf-ptq1-digit (+ 120 j)))]
+      (xf-gather (if (= j 0) (xg-bytes m 0xc28948 3) (-> m (xg-bytes 0xe0c148 3) (xg-byte (* 8 j)) (xg-bytes 0xc20948 3)))
+                 (inc j)))))
+(defn- xf-avx-group [M :vector-i64 g :i64] :vector-i64
+  (let [e (* 8 g)
+        m (if (= g 15) (xf-gather M 0)
+            (-> M (xg-bytes 0x4a317dc2c4 5) (xg-byte (xf-ptq1-off e)) (xf-times3 (xf-ptq1-digit e))
+                (xg-bytes 0x02f172edc5 5) (xg-bytes 0xc9faedc5 4) (xg-bytes 0x08d172f5c5 5)))]
+    ;; vpsubd ymm1,ymm1,ymm5 (digit - 1); vcvtdq2ps ymm1,ymm1; vmulps ymm1,ymm1,ymm3 (* d); vmovups ymm2,[r11+32g];
+    ;; vmulps ymm1,ymm1,ymm2 (* x); vextractf128 xmm2,ymm1,1; vaddps xmm0,xmm0,xmm1; vaddps xmm0,xmm0,xmm2
+    (-> m (xg-bytes 0xcdfaf5c5 4) (xg-bytes 0xc95bfcc5 4) (xg-bytes 0xcb59f4c5 4)
+        (xg-bytes 0x93107cc1c4 5) (xg-bytes (* 32 g) 4) (xg-bytes 0xca59f4c5 4) (xg-bytes 0x01ca197de3c4 6)
+        (xg-bytes 0xc158f8c5 4) (xg-bytes 0xc258f8c5 4))))
+(defn- xf-avx-groups [M :vector-i64 g :i64] :vector-i64
+  (if (= g 16) M (xf-avx-groups (xf-avx-group M g) (inc g))))
+;; scalar arm, element e: the digit in rax; sub rax,1; cvtsi2ss xmm4,rax; mulss xmm4,xmm6 (* d);
+;; movss xmm5,[r11+4e]; mulss xmm4,xmm5 (* x); addss xmm<e mod 4>,xmm4
+(defn- xf-sc-element [M :vector-i64 e :i64] :vector-i64
+  (-> M (xf-digit (xf-ptq1-off e) (xf-ptq1-digit e)) (xg-bytes 0x01e88348 4) (xg-bytes 0xe02a0f48f3 5)
+      (xg-bytes 0xe6590ff3 4) (xg-bytes 0xab100f41f3 5) (xg-bytes (* 4 e) 4) (xg-bytes 0xe5590ff3 4)
+      (xg-bytes (bit-or 0xc4580ff3 (i64-shift-left (* 8 (rem e 4)) 24)) 4)))
+(defn- xf-sc-elements [M :vector-i64 e :i64] :vector-i64
+  (if (= e 128) M (xf-sc-elements (xf-sc-element M e) (inc e))))
+(defn- xf-ptq1-avx [M :vector-i64] :vector-i64
+  ;; vxorps xmm0; mov eax,0x77800000; vmovd xmm7,eax; mov eax,255; vmovd xmm4,eax; vpbroadcastd ymm4,xmm4;
+  ;; mov eax,1; vmovd xmm5,eax; vpbroadcastd ymm5,xmm5
+  (let [m0 (-> M (xg-bytes 0xc057f8c5 4) (xg-bytes 0x77800000b8 5) (xg-bytes 0xf86ef9c5 4)
+               (xg-bytes 0x000000ffb8 5) (xg-bytes 0xe06ef9c5 4) (xg-bytes 0xe4587de2c4 5)
+               (xg-bytes 0x00000001b8 5) (xg-bytes 0xe86ef9c5 4) (xg-bytes 0xed587de2c4 5) (xf-jmp))
+        j0 (xg-pos m0)
+        ;; per block: d (vmovd xmm3,eax; vbroadcastss ymm3,xmm3), the sixteen groups, the advance
+        m1 (-> m0 (xf-fp16 true) (xg-bytes 0xd86ef9c5 4) (xg-bytes 0xdb187de2c4 5) (xf-avx-groups 0) (xf-ptq1-advance)
+               (xf-patch j0) (xf-until 1 j0))]
+    ;; vhaddps x2; vmovd eax,xmm0; vzeroupper
+    (-> m1 (xg-bytes 0xc07cfbc5 4) (xg-bytes 0xc07cfbc5 4) (xg-bytes 0xc07ef9c5 4) (xg-bytes 0x77f8c5 3))))
+(defn- xf-ptq1-scalar [M :vector-i64] :vector-i64
+  ;; xorps xmm0..xmm3; mov eax,0x77800000; movd xmm7,eax
+  (let [m0 (-> M (xg-bytes 0xc0570f 3) (xg-bytes 0xc9570f 3) (xg-bytes 0xd2570f 3) (xg-bytes 0xdb570f 3)
+               (xg-bytes 0x77800000b8 5) (xg-bytes 0xf86e0f66 4) (xf-jmp))
+        j0 (xg-pos m0)
+        ;; per block: d in xmm6 (movd xmm6,eax), the 128 elements, the advance
+        m1 (-> m0 (xf-fp16 false) (xg-bytes 0xf06e0f66 4) (xf-sc-elements 0) (xf-ptq1-advance)
+               (xf-patch j0) (xf-until 1 j0))]
+    ;; addss xmm0,xmm1; addss xmm2,xmm3; addss xmm0,xmm2; movd eax,xmm0
+    (-> m1 (xg-bytes 0xc1580ff3 4) (xg-bytes 0xd3580ff3 4) (xg-bytes 0xc2580ff3 4) (xg-bytes 0xc07e0f66 4))))
+(defn- xf-dequant-ptq1 [M :vector-i64 t :i64] :vector-i64
+  ;; after the guards: imul rsi,rax,28; cmp rsi,rcx; ja trap; imul rsi,rax,512; cmp rsi,rdx; ja trap
+  (let [m0 (-> M (xf-operands t 128) (xg-bytes 0x1cf06b48 4) (xg-bytes 0xce3948 3) (xf-trap-above)
+               (xg-bytes 0x00000200f06948 7) (xg-bytes 0xd63948 3) (xf-trap-above) (xf-guard))
+        js (xg-pos m0)
+        m1 (-> m0 (xf-ptq1-avx) (xf-jmp)) jj (xg-pos m1)]
+    (-> m1 (xf-patch js) (xf-ptq1-scalar) (xf-patch jj) (xf-answer t))))
 ;; The selected stubs are the final functions, in id order, named as above. A source that
 ;; leaves them out or reorders them (it cannot: the library is appended here) is refused.
 (defn- xk-scan-count [M :vector-i64 S :string count :i64 local-call :bool] :vector-i64
@@ -477,7 +682,7 @@
                           (if (and local-call (= k 1)) "kernel-local-model-call" (xk-intr-name k)))
               (recur (inc k)) (xg-err M 7102 f))))))))
 (defn- xk-scan [M :vector-i64 S :string] :vector-i64
-  (xk-scan-count M S (cond (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
+  (xk-scan-count M S (cond (xk-has-simd-block? S) XK-INTR-SIMD (xk-has-pause-block? S) XK-INTR-PAUSE (xk-has-halt-block? S) XK-INTR-HALT (xk-has-xstate-block? S) XK-INTR-XSTATE (xk-has-cpu-block? S) XK-INTR-CPU (xk-has-width16-block? S) XK-INTR-W16 (xk-has-width-block? S) XK-INTR-W :else XK-INTR-N) false))
 
 ;; ROOTED BASES (ADR 0373, kotoba-native docs/threat-model.md). Narrowing a window with
 ;; (+ base offset), or taking a base out of memory, would conjure a window nothing
@@ -710,6 +915,11 @@
                       (if (and (>= p 0) (not= l0 0) (xk-same-extent? M j l0 p) (not= n 0)) n -1))
                     (km-owned-region M a j b))
                 :else -1))))))
+;; the window pair whose base is the temp b of the call at i: the base is rooted and the length is its region's own
+(defn- xk-pair-ok? [M :vector-i64 i :i64 b :i64] :bool
+  (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
+    (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r))))
+(defn- xk-simd-k? [k :i64] :bool (and (>= k XK-SIMD-FIRST) (< k XK-INTR-SIMD)))
 ;; D5: a record access names a base that is an unassigned parameter of an EXPORTED function, every access to that parameter
 ;; names the same N, and the parameter is not also the base of a window access.
 (defn- xk-record-n [M :vector-i64 callee :i64] :i64
@@ -721,8 +931,10 @@
     (if (>= c (vector-at M MM-SIR-N)) false
       (if (and (= (xg-si M c IF-OP) OP-CALL) (= (xk-fn-start M c) st))
         (let [k2 (xk-intr M (xg-si M c IF-A))]
-          (if (and (or (and (>= k2 XK-RECORD) (< k2 XK-CELL-ADDR)) (xk-window-k? k2)) (= (xk-src M c (xg-si M c IF-B) 0) src)
-                   (or (xk-window-k? k2) (not= (xk-record-n M (xg-si M c IF-A)) n)))
+          (if (or (and (or (and (>= k2 XK-RECORD) (< k2 XK-CELL-ADDR)) (xk-window-k? k2)) (= (xk-src M c (xg-si M c IF-B) 0) src)
+                       (or (xk-window-k? k2) (not= (xk-record-n M (xg-si M c IF-A)) n)))
+                  ;; either window of a fused reduction (JUN-633 slice 6) over a record base is a conflict
+                  (and (xk-simd-k? k2) (or (= (xk-src M c (xg-si M c IF-B) 0) src) (= (xk-src M c (+ (xg-si M c IF-B) 2) 0) src))))
             true (recur (inc c))))
         (recur (inc c))))))
 (defn- xk-record-ok? [M :vector-i64 i :i64] :bool
@@ -745,8 +957,9 @@
               (and (= op OP-CALL) (= (xk-intr M a) (+ XK-XSTATE-FIRST 1)) (not (xk-mask-ok? M i b XK-XCR0-ADMITTED))))
         (xg-err M 7107 i)
       (if (or (and (= op OP-CALL) (>= (xk-intr M a) 0) (or (< (xk-intr M a) XK-WINDOW-N) (and (>= (xk-intr M a) XK-WIDTH-FIRST) (< (xk-intr M a) XK-CPU-FIRST)))
-                   (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
-                     (not (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r)))))
+                   (not (xk-pair-ok? M i b)))
+              ;; JUN-633 slice 6: a fused reduction reads two windows, (a, a-len) at b and (b, b-len) at b + 2
+              (and (= op OP-CALL) (xk-simd-k? (xk-intr M a)) (or (not (xk-pair-ok? M i b)) (not (xk-pair-ok? M i (+ b 2)))))
               ;; the exported function's parameters are rooted because the kernel hands them in: a guest call of the export would
               ;; hand them in again with a base of its own making, so nothing in the object may call the export
               (and (= op OP-CALL) (>= (xk-intr M a) XK-RECORD) (< (xk-intr M a) XK-CELL-ADDR) (not (xk-record-ok? M i)))

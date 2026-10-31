@@ -16,10 +16,7 @@ pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
          diagnostic with a source span is named (E2101), not a trap;
       4. the runtime boundary corpus, the runtime cases
          (seed/static-cases.json), hardening and capabilities, all with F;
-      5. the runtime cases and three probes as wasm32-browser modules (JUN-353),
-         run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
-         one is installed; the float cases are refused. Without a browser the
-         modules are compiled and pinned, and the qualify-x86_64 job runs them.
+      (the wasm32-browser target is not a native tier: see --wasm32-browser below);
 main  + G1, G2 through the aarch64 runner give G2, G3 (= G1); S3 packs G3 as
         P, which rebuilds the core; the Linux selfhost closure S built by F
         rebuilds itself (S = S').
@@ -27,6 +24,16 @@ full  + the deep provenance from source: S builds the core as a static image
         C0 (seed/CORE-STATIC-MANIFEST); C0 compiles seed/MANIFEST to the
         adoption image, and seed/CORE-STATIC-MANIFEST to Kw; S packs Kw as Pw,
         and Pw compiles FULL-MANIFEST to F's own container.
+
+--wasm32-browser --bootstrap BOOT (KOTOBA-174, owner decision 2026-10-31: native
+selfhost is the foundation and Wasm is one build target, qualified on its own
+and not a condition of the native tiers): with BOOT a passing native bootstrap
+output, its fixed point F (checked against BOOT's receipt) compiles the runtime
+cases and five probes as wasm32-browser modules (JUN-353; two probes are the
+consent broker's, Phase 2) into OUTPUT/wasm32; the float cases are refused. The
+modules run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
+one is installed; without a browser they are compiled and pinned, and the
+workflow's wasm32-browser Chrome job runs them.
 
 Content-addressed reuse (--reuse DIR / --store DIR, scripts/seed/content_reuse.py)
 may stand in only for C0's compile of the core, and only on an exact key. The
@@ -218,42 +225,6 @@ def main(out, tier, reuse=None, store=None):
                        "--target", "aarch64-linux", "--seccomp-if-available"], {})
         io_acceptance[name] = json.loads((out / name / f"{name}.json").read_text())
 
-    # 5. JUN-353: the same cases, and three probes, as wasm32-browser modules
-    wasm_dir = out / "wasm32"
-    wasm_dir.mkdir()
-    for case in json.loads((ROOT / CASES).read_text())["cases"]:
-        compile_(F, out / f"case-{case['name']}.kotoba", wasm_dir / f"case-{case['name']}.wasm", "wasm32-browser", None,
-                 f"case-{case['name']}-wasm32", senv)
-    wasm_probes = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
-                   "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
-                   # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
-                   "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
-                            "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
-                            "  (string-length s)))"}
-    for name, body in wasm_probes.items():
-        src = out / f"wasm-probe-{name}.kotoba"
-        src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
-        compile_(F, src, wasm_dir / f"probe-{name}.wasm", "wasm32-browser", None, f"probe-{name}-wasm32", senv)
-    float_refusals = []
-    for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
-        src = out / f"float-{case['name']}.kotoba"
-        src.write_text(case["source"])
-        r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
-                    scope, success=False)
-        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
-            and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
-        float_refusals.append(case["name"])
-    wasm_modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
-    browser = shutil.which(os.environ.get("KOTOBA_BROWSER", "")) or next(
-        (shutil.which(b) for b in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable") if shutil.which(b)), None)
-    if browser:
-        run.run("wasm32-browser", [sys.executable, ROOT / WASM_CHECK, "--modules", wasm_dir, "--output", out / "wasm32-browser",
-                                   "--browser", browser], dict(HOME=str(out)))
-        wasm32 = dict(executed=True, **json.loads((out / "wasm32-browser/wasm32-browser.json").read_text()))
-    else:
-        wasm32 = dict(executed=False, reason="no Chromium or Chrome on this host: the qualify-x86_64 job runs these modules")
-    wasm32.update(modules=wasm_modules, floatRefusals=float_refusals)
-
     # hardening, natively
     probes = {"value": "(defn main [] :i64 42)",
               "spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
@@ -363,7 +334,7 @@ def main(out, tier, reuse=None, store=None):
                                arityRefusal=arity_refusal, expectedNativeImage=adoption["nativeImageSHA256"]),
                   diagnostic=diagnostic, closure=closure, provenance=provenance,
                   cases=results, ioAcceptance=io_acceptance,
-                  wasm32Browser=wasm32, hardening=hardening, runtimeBoundary=runtime_boundary,
+                  hardening=hardening, runtimeBoundary=runtime_boundary,
                   steps=[dict(name=c["name"], seconds=c["seconds"], **({"reused": c["reused"]} if "reused" in c else
                                                                      dict(ran=True, **({"key": c["key"]} if "key" in c else {}))))
                          for c in run.calls],
@@ -371,7 +342,85 @@ def main(out, tier, reuse=None, store=None):
                   cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
     (out / "selfhost-bootstrap.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], tier, "F", gens[-1]["image"]["sha256"][:16], "root reproduces" if root_reproduces else f"root differs (re-pin to F{len(gens)})",
-          "adoption image", len(results), "cases", "wasm32-browser", "executed" if wasm32["executed"] else "compiled", flush=True)
+          "adoption image", len(results), "cases", flush=True)
+
+
+WASM_PROBES = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
+               "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
+               # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
+               "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
+                        "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
+                        "  (string-length s)))",
+               # the consent broker (Phase 2): a call of wire 45, which the broker page binds to a declared
+               # operation; once and twice (one approval covers one invocation)
+               "cap": "(defn main [] :i64 (let [r (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                      "  w (typed-cap-call :io/write :string :string r)]\n  (string-length r)))",
+               "cap-twice": "(defn main [] :i64 (let [a (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                            "  w (typed-cap-call :io/write :string :string a)\n"
+                            "  b (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                            "  x (typed-cap-call :io/write :string :string b)]\n  (+ (string-length a) (string-length b))))"}
+
+
+def wasm32_browser(out, boot):
+    """The wasm32-browser target (JUN-353), selected explicitly and separate from
+    the native tiers (KOTOBA-174): F of a passing native bootstrap output BOOT
+    compiles the runtime cases and five probes, and refuses the float cases."""
+    assert platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"), "run on arm64 Linux"
+    receipt = json.loads((boot / "selfhost-bootstrap.json").read_text())
+    assert receipt["status"] == "PASS_LOADERLESS_SELFHOST_BOOTSTRAP", "BOOT is not a passing native bootstrap"
+    fixed = receipt["generations"][-1]
+    assert pin(boot / f"{fixed['name']}.elf") == fixed["image"], "F differs from the native bootstrap receipt"
+    out.mkdir(parents=True, exist_ok=False)
+    run = Runs(out)
+    scope = {"KEXE_CAP_RESOURCES_35": str(out)}
+    senv = dict(scope, KEXE_STACK_BYTES=ADOPTED_STACK)
+    F = out / "F.elf"
+    F.write_bytes((boot / f"{fixed['name']}.elf").read_bytes())
+    F.chmod(0o755)
+
+    def compile_(src, dst, name):
+        run.run(name, [F, "compile", src, "--target", "wasm32-browser", "--output", dst], senv)
+        return pin(dst)
+
+    wasm_dir = out / "wasm32"
+    wasm_dir.mkdir()
+    for case in json.loads((ROOT / CASES).read_text())["cases"]:
+        src = out / f"case-{case['name']}.kotoba"
+        src.write_text(case["source"])
+        compile_(src, wasm_dir / f"case-{case['name']}.wasm", f"case-{case['name']}-wasm32")
+    for name, body in WASM_PROBES.items():
+        src = out / f"wasm-probe-{name}.kotoba"
+        src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
+        compile_(src, wasm_dir / f"probe-{name}.wasm", f"probe-{name}-wasm32")
+    float_refusals = []
+    for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
+        src = out / f"float-{case['name']}.kotoba"
+        src.write_text(case["source"])
+        r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
+                    scope, success=False)
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+            and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
+        float_refusals.append(case["name"])
+    modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
+    cases = len(json.loads((ROOT / CASES).read_text())["cases"])
+    assert len(modules) == cases + len(WASM_PROBES), ("wasm32-browser modules", sorted(modules))
+    browser = shutil.which(os.environ.get("KOTOBA_BROWSER", "")) or next(
+        (shutil.which(b) for b in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable") if shutil.which(b)), None)
+    if browser:
+        run.run("wasm32-browser", [sys.executable, ROOT / WASM_CHECK, "--modules", wasm_dir, "--output", out / "wasm32-browser",
+                                   "--browser", browser], dict(HOME=str(out)))
+        browser_run = dict(executed=True, **json.loads((out / "wasm32-browser/wasm32-browser.json").read_text()))
+    else:
+        browser_run = dict(executed=False, reason="no Chromium or Chrome on this host: the workflow's wasm32-browser Chrome job runs these modules")
+    report = dict(status="PASS_WASM32_BROWSER_TARGET", target="wasm32-browser",
+                  host=[platform.system(), platform.machine(), platform.release()],
+                  nativeBootstrap=dict(receipt=pin(boot / "selfhost-bootstrap.json"), tier=receipt["tier"], F=dict(name=fixed["name"], **pin(F))),
+                  modules=modules, floatRefusals=float_refusals, browser=browser_run,
+                  steps=[dict(name=c["name"], seconds=c["seconds"], ran=True) for c in run.calls],
+                  cCompilerOrLoader=False, JVMNodeOrGraalFallback=False, emulation=False)
+    (out / "wasm32-browser-target.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(report["status"], "F", fixed["name"], pin(F)["sha256"][:16], len(modules), "modules", len(float_refusals), "float refusals",
+          "executed" if browser_run["executed"] else "compiled", flush=True)
 
 
 if __name__ == "__main__":
@@ -380,6 +429,13 @@ if __name__ == "__main__":
     parser.add_argument("--tier", choices=TIERS, default="full", help="pr, main or full (default: everything)")
     parser.add_argument("--reuse", type=Path, help="content-addressed results to reuse for identical calls; new results are added")
     parser.add_argument("--store", type=Path, help="record content-addressed results without reusing any (full run)")
+    parser.add_argument("--wasm32-browser", action="store_true",
+                        help="the wasm32-browser target only (not a native tier): F of --bootstrap compiles the modules")
+    parser.add_argument("--bootstrap", type=Path, help="with --wasm32-browser: a passing native bootstrap output")
     a = parser.parse_args()
+    if a.wasm32_browser:
+        assert a.bootstrap and not (a.reuse or a.store), "--wasm32-browser takes --bootstrap and no reuse"
+        sys.exit(wasm32_browser(a.output.resolve(), a.bootstrap.resolve()))
+    assert not a.bootstrap, "--bootstrap is only for --wasm32-browser"
     assert not (a.reuse and a.store), "--reuse and --store are exclusive"
     main(a.output.resolve(), a.tier, a.reuse and a.reuse.resolve(), (a.store or a.reuse) and (a.store or a.reuse).resolve())

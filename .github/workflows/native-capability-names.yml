@@ -1,0 +1,34 @@
+name: native-capability-names
+# KOTOBA-173: every admitted capability wire can be declared in a namespace and is named in E2176.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "seed/**"
+      - "scripts/seed/check-capability-declaration-names.py"
+      - ".github/workflows/native-capability-names.yml"
+  push:
+    branches: [main]
+    paths:
+      - "seed/**"
+      - "scripts/seed/check-capability-declaration-names.py"
+      - ".github/workflows/native-capability-names.yml"
+permissions:
+  contents: read
+concurrency:
+  group: native-capability-names-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  names:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Declared capabilities check; omitted ones are refused with E2176 naming them
+        run: |
+          sha=$(python3 -c 'import json; print(json.load(open("seed/bootstrap/aarch64-linux-static-root.json"))["image"]["sha256"])')
+          python3 scripts/seed/check-capability-declaration-names.py \
+            --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --compiler-sha256 "$sha" \
+            --output "$RUNNER_TEMP/capability-names"

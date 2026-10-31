@@ -1,6 +1,7 @@
 ;; seed/78-full-entry.kotoba -- the entry of the combined compiler (seed/FULL-MANIFEST, JUN-331): the adopted core
 ;; (ADR 0370) plus the loaderless Linux targets in one image. An explicit --target aarch64-linux, x86_64-linux,
-;; x86_64-aiueos-kernel-v1, x86_64-aiueos-user-v1/v2 or wasm32-browser goes to its emitter; every other command (check, the core's aarch64-macos compile, project
+;; x86_64-aiueos-kernel-v1, x86_64-aiueos-user-v1/v2 or wasm32-browser goes to its emitter; `definition-cids` goes to the
+;; native definition-identity layer (04-09); every other command (check, the core's aarch64-macos compile, project
 ;; compile, extract-native, compile-kir) is the core driver, unchanged.
 (defn- full-target? [t :string] :i64
   (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target") (string=? (io-arg 3) t)) 1 0))
@@ -97,12 +98,22 @@
     (and (>= index 0) (string=? (io-arg index) "platform-linked"))))
 ;; malformed x86_64-linux arguments (70's xg-main) are a usage error, as in 73
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
+;; `definition-cids <file.kotoba> [--groups]` (ADR 0300, JUN-584): one row per top-level definition in declaration
+;; order, `name<TAB>CID` or `name<TAB>REFUSED:<marker>`, then `SCANNED<TAB><identified>/<total>`. No admission runs
+;; and nothing is granted: a CID is identity, never authority. Exit 0 = report, 66 = no identity could be computed
+;; (stdout empty, a DSB:* line on stderr), 2 = usage. Identity: payload-v2, profile 6 / desugar 2.
+(defn- full-definition-cids [format :i64] :i64
+  (if (= (dsr-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
         (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)
         (string=? (io-arg 0) "compile-kototama-cache") (k3-command)
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
+        (string=? (io-arg 0) "definition-cids")
+          (cond (= (io-argc) 2) (full-definition-cids 1)
+                (and (= (io-argc) 3) (string=? (io-arg 2) "--groups")) (full-definition-cids 2)
+                :else (drv-usage))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
         (not (full-argv-ok? 1)) (drv-usage)
         (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
