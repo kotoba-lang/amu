@@ -922,14 +922,14 @@
 ;; the catalogue name of capability wire w
 (defn- drv-r5b-wname [w :i64] :string
   (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
-        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" 20 ":process/spawn"
+        39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" 20 ":process/spawn" 23 ":entropy/draw" 40 ":sys/cwd"
         43 ":net/listen" 44 ":net/accept" 45 ":net/dial" 46 ":net/read" 47 ":net/write" (mem-u2dec w)))
 ;; the wire of a capability name (with ':'), -1 when none
 (defn- drv-r5b-wire [s :string] :i64
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
         (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
-        (string=? s ":process/spawn") 20
+        (string=? s ":process/spawn") 20 (string=? s ":entropy/draw") 23 (string=? s ":sys/cwd") 40
         (string=? s ":net/listen") 43 (string=? s ":net/accept") 44 (string=? s ":net/dial") 45
         (string=? s ":net/read") 46 (string=? s ":net/write") 47 :else -1))
 ;; the items of mask m (bit 47 = :state first, then the wires in ascending order), each wrapped by pre/post, as #{..}. R5B rung
@@ -977,8 +977,7 @@
         b (vector-at M MM-ERR-B)
         op (bit-and (u64-shift-right n 48) 3)
         t1 (bit-and n drv-r5b-m24)
-        t2 (bit-and (u64-shift-right n 24) drv-r5b-m24)
-        nd (vector-at M (+ MM-NODE-BASE (* t1 MM-NODE-W) NF-TOK))]
+        t2 (bit-and (u64-shift-right n 24) drv-r5b-m24)]
     (cond (string=? key "name") (drv-slice path a b)
           (string=? key "n") (mem-u2dec n)
           (string=? key "t") (drv-tyname n)
@@ -987,7 +986,9 @@
           (string=? key "ty2") (drv-r5b-ty M path t2 0)
           (string=? key "kw2") (drv-r5b-ty M path t2 1)
           (string=? key "fx") (drv-r5b-set (bit-and n (bit-or drv-r5b-m47 drv-r5b-state)) "" "")
-          (string=? key "node") (drv-slice path (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-START)) (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-END)))
+          ;; the node is read only for {node}: for an effect mask (E2176's {fx}) bits 0..23 are wires, not a node index
+          (string=? key "node") (let [nd (vector-at M (+ MM-NODE-BASE (* t1 MM-NODE-W) NF-TOK))]
+                                  (drv-slice path (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-START)) (vector-at M (+ MM-TOK-BASE (* nd MM-TOK-W) TF-END))))
           (string=? key "want") (if (= op 2) "[state value]" "[state]")
           (string=? key "req") (drv-r5b-set n "[:cap/call " "]")
           (string=? key "allow") (drv-r5b-set a "[:cap/call " "]")
