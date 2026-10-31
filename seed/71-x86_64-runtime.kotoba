@@ -5,8 +5,53 @@
 (defn- xr-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
   (if (= i n) M
     (xr-args (xg-load M (+ t i) (case i 0 0xb58b48 1 0x958b48 2 0x8d8b48 3 0x858b4c 4 0x8d8b4c 0)) t (inc i) n)))
+;; Inline vector reads and writes: a bounds-checked load or store in place of
+;; the helper call. Context v11 words: 312 = &vector-used, 320 = descriptors
+;; (offset, length), 328 = items; they are fixed after the runtime's start.
+;; The helpers' checks run in their order (handle 1..used, then index
+;; 0..length-1) and a failure is the helpers' own ud2, so results, fuel,
+;; arena counters and traps are unchanged. Nothing is cached across ops.
+;; The fixed instruction runs below come from seed/70's constant table (xg-run):
+;; the same bytes as one xg-bytes call per instruction in far fewer SIR records
+;; and tokens, since every whole-compiler build (this file included) must fit
+;; MM-SIR-CAP and MM-TOK-CAP.
+;; rax = handle -> rax = &descriptor, after (h - 1) <u used (u = 312 and b = u + 8
+;; = 320 for vectors, u = 288 and b = 296 for pairs):
+;; mov rdx,[r9+u] ; mov rdx,[rdx] ; dec rax ; cmp rax,rdx ; jb +2 ; ud2 ;
+;; shl rax,4 ; add rax,[r9+b]
+;; rcx = index temp t+1 after i <u length: mov rcx,[t+1] ; cmp rcx,[rax+8] ;
+;; jb +2 ; ud2 ; add rcx,[rax] ; mov rdx,[r9+328] -- the item is [rdx+rcx*8]
+;; (string-code-point-at s i), the R4 rule (seed/HEADS; 41-a64gen gn-rt-cpa,
+;; seed/SIR :a64 :r4): when the pair is valid, its offset code-relative (>= 0),
+;; its length >= 0, i <u length and offset + length <= code_length ([r9+392]),
+;; the byte at code_base ([r9+384]) + offset + i is the result if < 0x80; every
+;; other case calls the helper, which checks, validates and refuses as before.
+;;   mov rdx,[r9+288] ; mov rdx,[rdx] ; lea rcx,[rax-1] ; cmp rcx,rdx ; jae SLOW ;
+;;   shl rcx,4 ; add rcx,[r9+296] ; mov rdx,[rcx] ; mov rcx,[rcx+8] ;
+;;   test rdx,rdx ; js SLOW ; test rcx,rcx ; js SLOW ; mov rsi,[t+1] ; cmp rsi,rcx ;
+;;   jae SLOW ; add rcx,rdx ; cmp rcx,[r9+392] ; ja SLOW ; add rdx,[r9+384] ;
+;;   movzx eax,byte [rdx+rsi] ; test al,al ; jns DONE ; SLOW: the call ; DONE:
+(defn- xr-cpa [M :vector-i64 t :i64] :vector-i64
+  (let [F (-> M (xg-load t 0x858b48)
+              (xg-run 13 21)
+              (xg-bytes (xg-temp M (inc t)) 4)
+              (xg-run 21 26))
+        at (xg-pos F)
+        S (-> F (xr-args t 0 2) (xr-call RT-STRING-CODE-POINT-AT))]
+    (-> S (xg-put-byte (dec at) (- (xg-pos S) at)) (xg-save t))))
+;; Kinds (seed/70 xg-inl): (vector-at v i) mov rax,[rdx+rcx*8]; (vector-assoc!
+;; v i x) mov rax,[t+2] ; mov [rdx+rcx*8],rax, the result v already in temp t;
+;; (count v) and pair-second / string-length mov rax,[rax+8]; pair-first mov
+;; rax,[rax]; string-code-point-at xr-cpa.
 (defn- xr-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
-  (-> M (xr-args t 0 n) (xr-call slot) (xg-save t)))
+  (let [k (xg-inl slot n)]
+    (cond (= k 0) (-> M (xr-args t 0 n) (xr-call slot) (xg-save t))
+          (= k 6) (xr-cpa M t)
+          :else (-> M (xg-load t 0x858b48) (xg-run (if (< k 4) 0 5) (if (< k 4) 5 10))
+                    (cond-> (< k 3) (-> (xg-load (inc t) 0x8d8b48) (xg-run 10 13)))
+                    (cond-> (= k 2) (xg-load (+ t 2) 0x858b48))
+                    (xg-bytes (case k 1 0xca048b48 2 0xca048948 4 0x008b48 0x08408b48) (if (= k 4) 3 4))
+                    (cond-> (not= k 2) (xg-save t))))))
 (defn- xr-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
   (-> M (xg-load t 0x858b4c) (xg-byte 0xbe) (xg-bytes wire 4)
       (xg-byte 0xba) (xg-bytes kind 4) (xg-byte 0xb9) (xg-bytes kind 4)
@@ -21,19 +66,26 @@
 (defn- xr-alloc [M :vector-i64 n :i64] :vector-i64
   (-> M (xg-byte 0xbe) (xg-bytes n 4) (xr-call RT-VECTOR-ALLOC)
       (xg-bytes 0x858948 3) (xg-bytes (xr-scratch M) 4)))
+;; The items go straight into the fresh vector (its handle is rax after
+;; xr-alloc, valid by construction, so no check is due): rdx = &items[offset]
+;; by dec rax ; shl rax,4 ; add rax,[r9+320] ; mov rcx,[rax] ; mov rdx,[r9+328] ;
+;; lea rdx,[rdx+rcx*8]; a literal's words are read from rsi = the pool entry.
+(defn- xr-vec-base [M :vector-i64 lit :i64] :vector-i64
+  (-> M (xg-run 26 30)
+      (cond-> (not= lit 0) (xg-rel 0x358d48 3 5 lit))))
+;; mov rax,[t+k] (or mov rax,[rsi+8k]) ; mov [rdx+8k],rax
 (defn- xr-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
   (if (= k n) M
     (xr-vec-items
-      (-> (if (= lit 0) (xg-load M (+ t k) 0x8d8b48)
-            (-> M (xg-rel 0x058d48 3 5 lit) (xg-bytes 0x888b48 3) (xg-bytes (* 8 k) 4)))
-          (xg-bytes 0xb58b48 3) (xg-bytes (xr-scratch M) 4)
-          (xg-byte 0xba) (xg-bytes k 4) (xr-call RT-VECTOR-ASSOC-IN-PLACE)) t (inc k) n lit)))
+      (-> (if (= lit 0) (xg-load M (+ t k) 0x858b48)
+            (-> M (xg-bytes 0x868b48 3) (xg-bytes (* 8 k) 4)))
+          (xg-bytes 0x828948 3) (xg-bytes (* 8 k) 4)) t (inc k) n lit)))
 (defn- xr-vec-finish [M :vector-i64 t :i64] :vector-i64
   (-> M (xg-bytes 0x858b48 3) (xg-bytes (xr-scratch M) 4) (xg-save t)))
 (defn- xr-vec [M :vector-i64 t :i64 n :i64] :vector-i64
-  (-> M (xr-alloc n) (xr-vec-items t 0 n 0) (xr-vec-finish t)))
+  (-> M (xr-alloc n) (cond-> (> n 0) (-> (xr-vec-base 0) (xr-vec-items t 0 n 0))) (xr-vec-finish t)))
 (defn- xr-vecp [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
-  (-> M (xr-alloc n) (xr-vec-items t 0 n lit) (xr-vec-finish t)))
+  (-> M (xr-alloc n) (cond-> (> n 0) (-> (xr-vec-base lit) (xr-vec-items t 0 n lit))) (xr-vec-finish t)))
 (defn- xr-tab [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
   (-> M (xg-load t 0x858b48) (xg-bytes 0xf88148 3) (xg-bytes n 4)
       (xg-bytes 0x0272 2) (xg-bytes 0x0b0f 2)

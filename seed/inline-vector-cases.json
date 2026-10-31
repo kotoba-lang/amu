@@ -1,0 +1,1024 @@
+{
+ "schema": "amu.inline-vector-corpus.v1",
+ "reference": "observations of the helper-call compiler bin/amu aa021865659c6d889f1fa633167f80bd2e842c79a41275ff03f3389a0b11c1d2 (x86_64-linux natively; aarch64-linux recorded locally and re-checked natively by CI)",
+ "fuel": [
+  1000000,
+  2000
+ ],
+ "cases": [
+  {
+   "name": "arena",
+   "source": "(ns probe (:export [main]))\n(defn- work [n :i64] :i64 (let [v (vector-assoc! (vector-alloc n) 1 n)] (vector-at v 1)))\n(defn main [] :i64 (+ (arena-scope (work 5)) (arena-scope (work 7))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 12 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 12 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 12 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 12 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "assoc-len",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 2)] (vector-at (vector-assoc! v 2 5) 0)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "assoc-neg",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 2)] (vector-at (vector-assoc! v -1 5) 0)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "at-huge",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 3)] (vector-at v 9223372036854775807)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "at-len",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 3)] (vector-at v (+ 1 2))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "at-min",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 3)] (vector-at v -9223372036854775808)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "at-neg",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 3) i (- 0 1)] (vector-at v i)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 3 :heap-bytes 40 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "at-ok",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-assoc! (vector-alloc 5) 3 41)] (+ (vector-at v 3) (vector-at v 0) 1)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 42 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 5 :heap-bytes 56 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 42 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 5 :heap-bytes 56 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 42 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 5 :heap-bytes 56 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 42 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 5 :heap-bytes 56 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "conj-at",
+   "source": "(ns probe (:export [main]))\n(defn- build [v :vector-i64 i :i64] :vector-i64 (if (= i 50) v (build (vector-conj v (* 3 i)) (inc i))))\n(defn main [] :i64 (let [v (build [] 0)] (+ (vector-at v 49) (count v))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 197 :fuel {:initial 1000000 :remaining 999948}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 51 :vector-items 50 :heap-bytes 1216 :conj 50 :conj-tail 50 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 197 :fuel {:initial 2000 :remaining 1948}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 51 :vector-items 50 :heap-bytes 1216 :conj 50 :conj-tail 50 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 197 :fuel {:initial 1000000 :remaining 999948}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 51 :vector-items 50 :heap-bytes 1216 :conj 50 :conj-tail 50 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 197 :fuel {:initial 2000 :remaining 1948}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 51 :vector-items 50 :heap-bytes 1216 :conj 50 :conj-tail 50 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "count",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (+ (count (vector-alloc 7)) (count [1 2 3 4])))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 11 :heap-bytes 120 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 11 :heap-bytes 120 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 11 :heap-bytes 120 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 11 :heap-bytes 120 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "drop-at",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-assoc! (vector-assoc! (vector-alloc 6) 4 8) 5 9) d (vector-drop v 4)] (+ (* 10 (vector-at d 0)) (vector-at d 1) (* 100 (count d)))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 289 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 289 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 289 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 289 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "drop-oob",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [v (vector-alloc 6) d (vector-drop v 4)] (vector-at d 2)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 8 :heap-bytes 96 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "loop-fuel",
+   "source": "(ns probe (:export [main]))\n(defn- sum [v :vector-i64 i :i64 s :i64] :i64 (if (= i (count v)) s (sum v (inc i) (+ s (vector-at v i)))))\n(defn- fill [v :vector-i64 i :i64] :vector-i64 (if (= i (count v)) v (fill (vector-assoc! v i (* i i)) (inc i))))\n(defn main [] :i64 (sum (fill (vector-alloc 1000) 0) 0 0))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 332833500 :fuel {:initial 1000000 :remaining 997997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 1000 :heap-bytes 8016 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 0}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 1000 :heap-bytes 8016 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 332833500 :fuel {:initial 1000000 :remaining 997997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 1000 :heap-bytes 8016 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 0}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 1000 :heap-bytes 8016 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "persist",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (let [a (vector-alloc 3) b (vector-assoc a 1 9) c (vector-assoc! a 1 4)] (+ (* 10 (vector-at b 1)) (vector-at c 1))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 94 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 94 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 94 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 94 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "vcount",
+   "source": "(ns probe (:export [main]))\n(defn main [] :i64 (vector-count (vector-alloc 9)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 9 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 9 :heap-bytes 88 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 9 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 9 :heap-bytes 88 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 9 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 9 :heap-bytes 88 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 9 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 9 :heap-bytes 88 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "vec-empty",
+   "source": "(ns probe (:export [main]))\n(defn- f [] :vector-i64 [])\n(defn main [] :i64 (count (f)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 0 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 0 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 0 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 0 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "vec-items",
+   "source": "(ns probe (:export [main]))\n(defn- f [a :i64] :vector-i64 [a (+ a 1) (* a 3) (- a 7)])\n(defn main [] :i64 (let [v (f 5)] (+ (* 1000 (vector-at v 0)) (* 100 (vector-at v 1)) (* 10 (vector-at v 2)) (vector-at v 3))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5748 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 4 :heap-bytes 48 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5748 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 4 :heap-bytes 48 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5748 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 4 :heap-bytes 48 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5748 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 4 :heap-bytes 48 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "vec-then-oob",
+   "source": "(ns probe (:export [main]))\n(defn- f [a :i64] :vector-i64 [a a])\n(defn main [] :i64 (vector-at (f 1) 2))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1999}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 1 :vector-items 2 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "vecp",
+   "source": "(ns probe (:export [main]))\n(defn- g [v :vector-i64 i :i64] :i64 (vector-at v i))\n(defn main [] :i64 (+ (g [10 20 30 40] 3) (g [1 2] 0)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 2 :vector-items 6 :heap-bytes 80 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-lit-sum",
+   "source": "(ns probe (:export [main]))\n(defn- sum [s :string] :i64 (loop [i 0 acc 7] (if (= i (string-length s)) acc (recur (inc i) (bit-and (+ (* acc 31) (string-code-point-at s i)) 1048575)))))\n(defn main [] :i64 (sum \"abcxyz019 ~\"))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 84664 :fuel {:initial 1000000 :remaining 999987}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 84664 :fuel {:initial 2000 :remaining 1987}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 84664 :fuel {:initial 1000000 :remaining 999987}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 84664 :fuel {:initial 2000 :remaining 1987}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-utf8-lead",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (let [s \"aé€😀z\"] (+ (+ (+ (at s 0) (at s 1)) (+ (at s 3) (at s 6))) (+ (at s 10) (* 1000000 (string-length s))))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11137328 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11137328 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11137328 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 11137328 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-utf8-cont",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at \"aé\" 2))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-at-len",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at \"abc\" 3))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-at-neg",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at \"abc\" (- 0 1)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-at-huge",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at \"abc\" 9223372036854775807))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-at-min",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at \"abc\" (- -9223372036854775807 1)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-empty",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (+ (string-length \"\") (at \"\" 0)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-pool",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn- sum [s :string] :i64 (loop [i 0 acc 7] (if (= i (string-length s)) acc (recur (inc i) (bit-and (+ (* acc 31) (string-code-point-at s i)) 1048575)))))\n(defn main [] :i64 (let [s (string-concat \"ab\" \"cé\") t (string-concat \"xy\" \"z\")] (+ (* 1000 (sum t)) (+ (at s 3) (* 100 (string-length s))))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 327730733 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 8 :vectors 0 :vector-items 0 :heap-bytes 104 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 8 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 327730733 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 8 :vectors 0 :vector-items 0 :heap-bytes 104 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 8 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 327730733 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 8 :vectors 0 :vector-items 0 :heap-bytes 104 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 8 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 327730733 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 8 :vectors 0 :vector-items 0 :heap-bytes 104 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 8 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-pool-oob",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at (string-concat \"ab\" \"cd\") 4))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 3 :string-pool-bytes 4 :vectors 0 :vector-items 0 :heap-bytes 52 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 4 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 3 :string-pool-bytes 4 :vectors 0 :vector-items 0 :heap-bytes 52 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 4 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 3 :string-pool-bytes 4 :vectors 0 :vector-items 0 :heap-bytes 52 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 4 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 3 :string-pool-bytes 4 :vectors 0 :vector-items 0 :heap-bytes 52 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 4 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-view",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (let [v (string-substring \"hello world\" 6 11)] (+ (* 1000 (string-length v)) (+ (at v 0) (at v 4)))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5219 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5219 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5219 :fuel {:initial 1000000 :remaining 999997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 5219 :fuel {:initial 2000 :remaining 1997}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-view-oob",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (at (string-substring \"hello world\" 0 5) 5))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-from-i64",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn- sum [s :string] :i64 (loop [i 0 acc 7] (if (= i (string-length s)) acc (recur (inc i) (bit-and (+ (* acc 31) (string-code-point-at s i)) 1048575)))))\n(defn main [] :i64 (let [s (string-from-i64 -12345)] (+ (* 100 (at s 0)) (sum s))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 1033345 :fuel {:initial 1000000 :remaining 999991}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 6 :vectors 13 :vector-items 11 :heap-bytes 318 :conj 11 :conj-tail 11 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 1033345 :fuel {:initial 2000 :remaining 1991}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 6 :vectors 13 :vector-items 11 :heap-bytes 318 :conj 11 :conj-tail 11 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 1033345 :fuel {:initial 1000000 :remaining 999991}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 6 :vectors 13 :vector-items 11 :heap-bytes 318 :conj 11 :conj-tail 11 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 1033345 :fuel {:initial 2000 :remaining 1991}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 1 :string-pool-bytes 6 :vectors 13 :vector-items 11 :heap-bytes 318 :conj 11 :conj-tail 11 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-then-ops",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn main [] :i64 (let [s \"kotoba\" t (string-concat \"koto\" \"ba\")] (+ (+ (at s 1) (if (string=? s t) 100 0)) (+ (* 1000 (string-compare s \"kotob\")) (* 10000 (string-index-of t \"ba\"))))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41211 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 6 :vectors 0 :vector-items 0 :heap-bytes 102 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 6 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41211 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 6 :vectors 0 :vector-items 0 :heap-bytes 102 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 6 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41211 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 6 :vectors 0 :vector-items 0 :heap-bytes 102 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 6 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 41211 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 6 :string-pool-bytes 6 :vectors 0 :vector-items 0 :heap-bytes 102 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 6 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-arena",
+   "source": "(ns probe (:export [main]))\n(defn- at [s :string i :i64] :i64 (string-code-point-at s i))\n(defn- f [n :i64] :i64 (at (string-concat \"ab\" (string-from-i64 n)) 2))\n(defn main [] :i64 (+ (arena-scope (f 7)) (arena-scope (f 31))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 106 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 6 :conj-tail 6 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 7 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 106 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 6 :conj-tail 6 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 7 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 106 :fuel {:initial 1000000 :remaining 999995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 6 :conj-tail 6 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 7 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 106 :fuel {:initial 2000 :remaining 1995}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 6 :conj-tail 6 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 2 :string-regions 0 :string-region-appends 0 :string-copied-bytes 7 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "str-loop-fuel",
+   "source": "(ns probe (:export [main]))\n(defn- sum [s :string] :i64 (loop [i 0 acc 7] (if (= i (string-length s)) acc (recur (inc i) (bit-and (+ (* acc 31) (string-code-point-at s i)) 1048575)))))\n(defn main [] :i64 (loop [k 0 acc 0] (if (= k 61) acc (recur (inc k) (bit-xor acc (sum \"abbbababaabccababcacbcbcbabbabcbabcabcbbcbbac\"))))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 876217 :fuel {:initial 1000000 :remaining 997132}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 61 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 976 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 0}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\nKEXE_ARENA_USE {:pairs 43 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 688 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result 876217 :fuel {:initial 1000000 :remaining 997132}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 61 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 976 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 0}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGTRAP}\nKEXE_TRAP {:kind :budget :reason :budget/fuel}\nKEXE_ARENA_USE {:pairs 43 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 688 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "pair-ok",
+   "source": "(ns probe (:export [main]))\n(defn- pf [p :i64] :i64 (pair-first p))\n(defn- ps [p :i64] :i64 (pair-second p))\n(defn main [] :i64 (let [p (pair 3 4) q (pair p -9)] (+ (+ (pf p) (* 10 (ps p))) (+ (* 100 (pf (pf q))) (* 1000 (ps q))))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result -8657 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result -8657 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result -8657 :fuel {:initial 1000000 :remaining 999994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 0,
+     "stdout": "{:status :ok :result -8657 :fuel {:initial 2000 :remaining 1994}}\n",
+     "stderr": "KEXE_ARENA_USE {:pairs 2 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 32 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "pair-zero",
+   "source": "(ns probe (:export [main]))\n(defn- pf [p :i64] :i64 (pair-first p))\n(defn- ps [p :i64] :i64 (pair-second p))\n(defn main [] :i64 (pf 0))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "pair-past",
+   "source": "(ns probe (:export [main]))\n(defn- pf [p :i64] :i64 (pair-first p))\n(defn- ps [p :i64] :i64 (pair-second p))\n(defn main [] :i64 (let [p (pair 1 2)] (ps (+ p 1000))))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 1 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 16 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  },
+  {
+   "name": "pair-neg",
+   "source": "(ns probe (:export [main]))\n(defn- pf [p :i64] :i64 (pair-first p))\n(defn- ps [p :i64] :i64 (pair-second p))\n(defn main [] :i64 (ps (- 0 5)))\n",
+   "expected": {
+    "x86_64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "x86_64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 1000000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 1000000 :remaining 999998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    },
+    "aarch64-linux 2000": {
+     "exit": 120,
+     "stdout": "{:status :trap :exit 120 :fuel {:initial 2000 :remaining 1998}}\n",
+     "stderr": "KEXE_TRAP {:kind :signal :signal :SIGILL}\nKEXE_ARENA_USE {:pairs 0 :string-pool-bytes 0 :vectors 0 :vector-items 0 :heap-bytes 0 :conj 0 :conj-tail 0 :conj-region 0 :conj-copy 0 :copied-words 0 :reserved-words 0 :regions 0 :scope-releases 0 :string-regions 0 :string-region-appends 0 :string-copied-bytes 0 :string-reserved-bytes 0}\n"
+    }
+   }
+  }
+ ]
+}

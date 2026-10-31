@@ -4,6 +4,7 @@
 ;; CODE packs eight bytes per word; CODE-N still counts bytes plus one.
 ;; Absolute M[192..196] are reserved by X86_64-LINUX-ABI for this route,
 ;; after lowering: current function, main, fuel, data offset, profile. NOT STAT.
+;; M[190..191] hold the runtime profile's rax cache (xg-held? below).
 
 (defn- xg-get [M :vector-i64 k :i64] :i64 (vector-at M (+ 192 k)))
 (defn- xg-set [M :vector-i64 k :i64 v :i64] :vector-i64 (mem-set M (+ 192 k) v))
@@ -22,9 +23,37 @@
   (let [n (vector-at M MM-CODE-N)]
     (cond (not= (vector-at M MM-ERR) 0) M
           (>= n (* 8 MM-CODE-CAP)) (xg-err M 7104 n)
-          :else (-> M (xg-put-byte (dec n) b) (mem-set MM-CODE-N (inc n))))))
+          :else (-> M (xg-put-byte (dec n) b) (mem-set MM-CODE-N (inc n)) (mem-set 191 0)))))
 (defn- xg-bytes [M :vector-i64 bits :i64 n :i64] :vector-i64
   (if (= n 0) M (xg-bytes (xg-byte M bits) (u64-shift-right bits 8) (dec n))))
+;; The emitters' fixed instruction runs, one constant table (OP-TAB: no allocation,
+;; one SIR record per read) for both ISAs. Entry = up to seven code bytes, their
+;; count in the top byte; xg-run emits entries [a, b): 0-5 x86 desc312, 5-10 x86 desc288, 10-13 xr item, 13-21
+;; xr-cpa 1, 21-26 xr-cpa 2, 26-30 xr-vec-base, 30-35 a64 desc312, 35-40 a64 desc288, 40-43 xa item, 43-50
+;; xa-cpa 1, 50-56 xa-cpa 2, 56-60 xa-vec-base.
+;; The runtime helper calls both routes emit in line (seed/71 xr-rt, seed/80
+;; xa-rt): 1 (vector-at v i), 2 (vector-assoc! v i x), 3 (count v), 4
+;; pair-first, 5 pair-second (= string-length), 6 (string-code-point-at s i);
+;; 0 for every other call.
+(defn- xg-inl [slot :i64 n :i64] :i64
+  (cond (and (= slot RT-VECTOR-AT) (= n 2)) 1
+        (and (= slot RT-VECTOR-ASSOC-IN-PLACE) (= n 3)) 2
+        (not= n 1) (if (and (= slot RT-STRING-CODE-POINT-AT) (= n 2)) 6 0)
+        (= slot RT-VECTOR-COUNT) 3 (= slot RT-PAIR-FIRST) 4 (= slot RT-PAIR-SECOND) 5
+        :else 0))
+(defn- xg-run [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (>= a b) M
+    (let [v (vector-at [0x700000138918b49 0x748c8ff48128b48 0x7480b0f0272d039 0x74081034904e0c1 0x300000000000001 0x700000120918b49
+                        0x748c8ff48128b48 0x7480b0f0272d039 0x72881034904e0c1 0x300000000000001 0x70f027208483b48 0x7918b490803480b
+                        0x400000000000148 0x700000120918b49 0x7ff488d48128b48 0x7c1484373d13948 0x7012889034904e1 0x78b48118b480000
+                        0x72c78d285480849 0x78b482778c98548 0x1000000000000b5 0x701481b73ce3948 0x7000188893b49d1 0x7809103490f7700
+                        0x73204b60f000001 0x40000000079c084 0x704e0c148c8ff48 0x700000140810349 0x748918b49088b48 0x7ca148d48000001
+                        0x7400210f9409cf0 0x7013fd1000529f9 0x70054000043eb10 0x7f940a0f0000000 0x40000008b091210 0x7400210f94090f0
+                        0x7013fd1000529f9 0x70054000043eb10 0x7f94094f0000000 0x40000008b091210 0x7000043eb10015f 0x702310000000054
+                        0x600f940a4f08b0a 0x7400210f94090f0 0x7023fd1000531f9 0x7f054000282eb10 0x78b111210f94094 0x700023fa9404211
+                        0x7021f540001ebf1 0x600540001abf100 0x7000142eb10015f 0x7c4eb8b10023054 0x7c8eb0b021ff940 0x7f940c0f0540000
+                        0x76a6a008b110210 0x50000f102001f38 0x740a0f1d1000410 0x702108b101230f9 0x730f940a4f1f940 0x3000000008b100e] a)]
+      (xg-run (xg-bytes M v (u64-shift-right v 56)) (inc a) b))))
 (defn- xg-rel [M :vector-i64 op :i64 size :i64 kind :i64 target :i64] :vector-i64
   (let [v (xg-bytes M op size) at (xg-pos v) k (vector-at v MM-FIX-N)
         b (+ MM-FIX-BASE (* k MM-FIX-W))]
@@ -35,10 +64,33 @@
 ;; rbp-8 = context; locals s at -8(s+1); temps t below all locals.
 (defn- xg-local [s :i64] :i64 (- 0 (* 8 (inc s))))
 (defn- xg-temp [M :vector-i64 t :i64] :i64 (- 0 (* 8 (+ 2 (xg-f M (xg-get M 0) FF-NSLOTS) t))))
-(defn- xg-load [M :vector-i64 t :i64 op :i64] :vector-i64
-  (xg-bytes (xg-bytes M op 3) (xg-temp M t) 4))
-(defn- xg-save [M :vector-i64 t :i64] :vector-i64
-  (xg-bytes (xg-bytes M 0x858948 3) (xg-temp M t) 4))
+;; The runtime profile's rax cache: M[190] = the rbp displacement whose word rax
+;; holds, M[191] = CODE-N right after the store or load that made it so. Any
+;; emitted byte (xg-byte) and any LABEL clear it, so it only ever describes the
+;; fall-through point straight after that instruction; a load of that word
+;; there reuses rax (none for rax itself, mov r,rax for another register).
+(defn- xg-held? [M :vector-i64 d :i64] :bool
+  (and (= (xg-get M 4) 1) (= (vector-at M 191) (vector-at M MM-CODE-N)) (= (vector-at M 190) d)))
+(defn- xg-hold [M :vector-i64 d :i64] :vector-i64
+  (-> M (mem-set 190 d) (mem-set 191 (vector-at M MM-CODE-N))))
+;; op is mov r64,[rbp+disp32] when op & 0xc7fffb = 0x858b48 (REX.W(+R) 8B,
+;; ModRM 10 rrr 101); on a hit such a load becomes mov r,rax: REX.W(+B) 89,
+;; ModRM 11 000 rrr. Holds are recorded in every profile; xg-held? only ever
+;; answers yes in the runtime profile, so the other profiles' bytes are those
+;; of the plain loads and stores.
+(defn- xg-ldd [M :vector-i64 d :i64 op :i64] :vector-i64
+  (let [h (vector-at M 190) hit (xg-held? M d) mv (= (bit-and op 0xc7fffb) 0x858b48) live (and mv (xg-held? M h))]
+    (cond (= op 0x858b48) (if hit M (xg-hold (xg-bytes (xg-bytes M op 3) d 4) d))
+          (and hit mv) (xg-hold (xg-bytes M (+ 0xc08948 (bit-and (u64-shift-right op 2) 1) (bit-and (u64-shift-right op 3) 0x70000)) 3) d)
+          :else (cond-> (xg-bytes (xg-bytes M op 3) d 4) live (xg-hold h)))))
+(defn- xg-std [M :vector-i64 d :i64] :vector-i64 (xg-hold (xg-bytes (xg-bytes M 0x858948 3) d 4) d))
+(defn- xg-load [M :vector-i64 t :i64 op :i64] :vector-i64 (xg-ldd M (xg-temp M t) op))
+(defn- xg-save [M :vector-i64 t :i64] :vector-i64 (xg-std M (xg-temp M t)))
+;; rax = temp t, rcx = temp t+1, rcx first when rax already holds t+1
+(defn- xg-pair [M :vector-i64 t :i64] :vector-i64
+  (if (xg-held? M (xg-temp M (inc t)))
+    (-> M (xg-load (inc t) 0x8d8b48) (xg-load t 0x858b48))
+    (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48))))
 (defn- xg-arg-op [i :i64 load :bool] :i64
   (if load (case i 0 0xbd8b48 1 0xb58b48 2 0x958b48 3 0x8d8b48 4 0x858b4c 0)
     (case i 0 0xbd8948 1 0xb58948 2 0x958948 3 0x8d8948 4 0x85894c 0)))
@@ -95,7 +147,7 @@
           (xg-fout (= p 0xf3) t)))))
 (defn- xg-bin [M :vector-i64 op :i64 t :i64] :vector-i64
   (if (>= op BOP-F64-ADD) (xg-fbin M op t)
-    (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48) (xg-bin-op op) (xg-save t))))
+    (-> M (xg-pair t) (xg-bin-op op) (xg-save t))))
 (defn- xg-cc [cc :i64] :i64 (case cc 1 0x94 2 0x9c 3 0x9f 4 0x9e 5 0x9d 0))
 ;; eq lt le gt ge unordered: ucomiss / ucomisd, then a flag test that is false when unordered (lt and le compare the
 ;; operands the other way round so that seta / setae apply); eq is ZF and not PF.
@@ -112,7 +164,7 @@
         (xg-bytes 0xc0b60f 3) (xg-save t))))
 (defn- xg-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
   (if (>= cc CC-F64-EQ) (xg-fcmp M cc t)
-  (-> M (xg-load t 0x858b48) (xg-load (inc t) 0x8d8b48)
+  (-> M (xg-pair t)
       (xg-bytes 0xc83948 3) (xg-byte 0x0f) (xg-byte (xg-cc cc)) (xg-byte 0xc0)
       (xg-bytes 0xc0b60f 3) (xg-save t))))
 ;; neg / abs flip / clear the sign bit in the integer slot (btc / btr rax,63; xor / and eax then movsxd); sqrt and the
@@ -145,7 +197,7 @@
 (defn- xg-label [M :vector-i64 label :i64] :vector-i64
   (let [old (vector-at M (+ MM-LABEL-BASE label))]
     (if (not= (bit-and old 4294967295) 0) (xg-err M 7103 label)
-      (mem-set M (+ MM-LABEL-BASE label) (bit-or old (vector-at M MM-CODE-N))))))
+      (-> M (mem-set (+ MM-LABEL-BASE label) (bit-or old (vector-at M MM-CODE-N))) (mem-set 191 0)))))
 ;; LABEL packs SIR position in high32, emitted code position+1 in low32.
 ;; This prepass lets tail admission follow pure label/jump continuations.
 (defn- xg-index-labels [M :vector-i64 i :i64] :vector-i64
@@ -168,8 +220,8 @@
     (case op
       1 (xg-fn M a b) 2 M
       3 (-> M (xg-bytes 0xb848 2) (xg-bytes b 8) (xg-save a))
-      4 (-> M (xg-bytes 0x858b48 3) (xg-bytes (xg-local b) 4) (xg-save a))
-      5 (-> M (xg-load b 0x858b48) (xg-bytes 0x858948 3) (xg-bytes (xg-local a) 4))
+      4 (-> M (xg-ldd (xg-local b) 0x858b48) (xg-save a))
+      5 (-> M (xg-load b 0x858b48) (xg-std (xg-local a)))
       6 (xg-bin M a b) 7 (xg-cmp M a b) 8 (xg-un M a b)
       9 (xg-label M a) 10 (xg-rel M 0xe9 1 2 a)
       11 (-> M (xg-load a 0x858b48) (xg-bytes 0xc08548 3) (xg-rel 0x840f 2 2 b))

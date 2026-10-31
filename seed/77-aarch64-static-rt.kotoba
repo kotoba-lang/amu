@@ -216,15 +216,15 @@
             z (kxrt-store8 (+ (kxrt-gl 16) u) 0) w (kxrt-gs 8 (inc u))]
         (inc u)))))
 (defn- kxrt-pair [h :i64] :i64
-  (if (or (<= h 0) (> h (kxrt-gl 8))) (kxrt-fail) (+ (kxrt-gl 0) (* (dec h) 16))))
+  (let [g (kxrt-g)] (if (or (<= h 0) (> h (kxrt-load64 (+ g 8)))) (kxrt-fail) (+ (kxrt-load64 g) (* (dec h) 16)))))
 (defn- kxrt-pf [h :i64] :i64 (kxrt-load64 (kxrt-pair h)))
 (defn- kxrt-ps [h :i64] :i64 (kxrt-load64 (+ (kxrt-pair h) 8)))
 (defn- kxrt-mark [h :i64] :i64 (let [z (kxrt-store8 (+ (kxrt-gl 16) (dec h)) 1)] h))
 ;; address of n bytes at string offset off, or -1
 (defn- kxrt-span [off :i64 n :i64] :i64
   (cond (< n 0) -1
-        (>= off 0) (if (or (> n (kxrt-load64 (+ (kxrt-ctx) 392))) (> off (- (kxrt-load64 (+ (kxrt-ctx) 392)) n))) -1 (+ (kxrt-load64 (+ (kxrt-ctx) 384)) off))
-        :else (let [p (- -1 off)] (if (or (> n (kxrt-gl 32)) (> p (- (kxrt-gl 32) n))) -1 (+ (kxrt-gl 24) p)))))
+        (>= off 0) (let [c (kxrt-ctx) m (kxrt-load64 (+ c 392))] (if (or (> n m) (> off (- m n))) -1 (+ (kxrt-load64 (+ c 384)) off)))
+        :else (let [g (kxrt-g) u (kxrt-load64 (+ g 32)) p (- -1 off)] (if (or (> n u) (> p (- u n))) -1 (+ (kxrt-load64 (+ g 24)) p)))))
 (defn- kxrt-saddr [h :i64] :i64
   (let [a (kxrt-span (kxrt-pf h) (kxrt-ps h))] (if (< a 0) (kxrt-fail) a)))
 ;; 0 = canonical UTF-8, else the loader's utf8_invalid_reason
@@ -277,10 +277,15 @@
       (let [a (kxrt-saddr h) v (kxrt-valid h)]
         (if (or (kxrt-cont? a s n) (kxrt-cont? a e n)) (kxrt-fail)
           (kxrt-mark (kxrt-pair-new (if (>= off 0) (+ off s) (- off s)) (- e s))))))))
+;; one G, the pair read once; same checks and order as ps, saddr and valid
 (defn- kxrt-code-point-at [h :i64 i :i64] :i64
-  (let [n (kxrt-ps h)]
+  (let [g (kxrt-g)
+        p (if (or (<= h 0) (> h (kxrt-load64 (+ g 8)))) (kxrt-fail) (+ (kxrt-load64 g) (* (dec h) 16)))
+        n (kxrt-load64 (+ p 8))]
     (if (or (< n 0) (< i 0) (>= i n)) (kxrt-fail)
-      (let [a (kxrt-saddr h) v (kxrt-valid h) b0 (kxrt-load8 (+ a i))]
+      (let [a (kxrt-span (kxrt-load64 p) n)
+            v (cond (< a 0) (kxrt-fail) (= (kxrt-load8 (+ (kxrt-load64 (+ g 16)) (dec h))) 1) h :else (kxrt-valid h))
+            b0 (kxrt-load8 (+ a i))]
         (cond (< b0 128) b0
               (< b0 192) (kxrt-fail)
               (< b0 224) (bit-or (i64-shift-left (bit-and b0 31) 6) (bit-and (kxrt-load8 (+ a i 1)) 63))
@@ -362,21 +367,24 @@
 (defn- kxrt-voff [h :i64] :i64 (kxrt-load64 (kxrt-vec h)))
 (defn- kxrt-vlen [h :i64] :i64 (kxrt-load64 (+ (kxrt-vec h) 8)))
 (defn- kxrt-item [off :i64 i :i64] :i64 (+ (kxrt-gl 56) (* 8 (+ off i))))
+;; The allocation path reads and writes its globals through one G (kxrt-gl k is
+;; (kxrt-load64 (+ G k)), kxrt-gs k v is (kxrt-store64 (+ G k) v)): the same
+;; checks, writes and order as the helper calls, without their call chains.
 (defn- kxrt-vnew [off :i64 n :i64] :i64
-  (let [u (kxrt-gl 48)]
+  (let [g (kxrt-g) u (kxrt-load64 (+ g 48))]
     (if (>= u KXRT-VECTORS) (kxrt-arena 2)
-      (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))]
+      (let [p (+ (kxrt-load64 (+ g 40)) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-load64 (+ g 688)) (* u 8)) 0) high (if (> (+ off n) (kxrt-load64 (+ g 760))) (kxrt-store64 (+ g 760) (+ off n)) 0) w (kxrt-store64 (+ g 48) (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
   (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
 (defn- kxrt-vector-alloc [n :i64] :i64
-  (let [u (kxrt-gl 64)]
+  (let [g (kxrt-g) u (kxrt-load64 (+ g 64))]
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
-      (let [high (kxrt-gl 760) stop (if (< high (+ u n)) high (+ u n))
+      (let [high (kxrt-load64 (+ g 760)) stop (if (< high (+ u n)) high (+ u n))
             count (if (> stop u) (- stop u) 0)
-            base (kxrt-item u 0) byte-end (+ base (* 8 count))
+            base (+ (kxrt-load64 (+ g 56)) (* 8 u)) byte-end (+ base (* 8 count))
             z (loop [cursor base] (if (= cursor byte-end) 0 (let [w (kxrt-store64 cursor 0)] (recur (+ cursor 8)))))
-            w (kxrt-gs 64 (+ u n))]
+            w (kxrt-store64 (+ g 64) (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
   (let [n (kxrt-vlen h)] (if (or (< i 0) (>= i n)) (kxrt-fail) (kxrt-load64 (kxrt-item (kxrt-voff h) i)))))

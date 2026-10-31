@@ -157,13 +157,14 @@ def main(compiler, out):
     report["mutations"].append(dict(name="off-by-one-vector-bound", builtSuccessfully=True,
                                      executed=True, compiler=pin(bound_mutant), image=pin(bound_bad),
                                      detectedBy="missing named vector-table refusal"))
-    highwater = "r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))"
-    without = "r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) w (kxrt-gs 48 (inc u))"
-    assert unity.count(highwater) == 2
+    # kxrt-vnew reads and writes its globals through one G (seed/76, seed/77).
+    highwater = "r (kxrt-store64 (+ (kxrt-load64 (+ g 688)) (* u 8)) 0) high (if (> (+ off n) (kxrt-load64 (+ g 760))) (kxrt-store64 (+ g 760) (+ off n)) 0) w (kxrt-store64 (+ g 48) (inc u))"
+    without = "r (kxrt-store64 (+ (kxrt-load64 (+ g 688)) (* u 8)) 0) w (kxrt-store64 (+ g 48) (inc u))"
+    assert unity.count(highwater) == 2 and unity.count("(kxrt-store64 (+ g 760) (+ off n))") == 2
     zero_source = (ROOT / "seed/tests/native-zero-watermark.kotoba").read_text()
     for name, changed in (
             ("missing-watermark", unity.replace(highwater, without)),
-            ("relative-watermark", unity.replace("(kxrt-gs 760 (+ off n))", "(kxrt-gs 760 n)")),
+            ("relative-watermark", unity.replace("(kxrt-store64 (+ g 760) (+ off n))", "(kxrt-store64 (+ g 760) n)")),
             ("last-word", unity.replace("byte-end (+ base (* 8 count))",
                                        "byte-end (+ base (* 8 (if (> count 0) (dec count) 0)))"))):
         mutated = build(name + "-compiler", changed)
