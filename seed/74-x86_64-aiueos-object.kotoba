@@ -165,6 +165,10 @@
 (def XK-INTR-FENCE 46)
 (def XK-XCR0-ADMITTED 7)
 (def XU-LOCAL-CALL-FLAG 211)
+;; KOTOBA-175 (ADR 0402): the function index of the x86_64-aiueos-user-plc-v1 cap-call stub (0 = no such route). Only
+;; xpl-build sets it, so every other route keeps xk-intr's answers and its bytes.
+(def XU-CAP-CALL-FN 212)
+(def XK-CAP-CALL 47)
 ;; JUN-556 D1 (ADR 0380): a private function named extern-<symbol> is a declaration of a function
 ;; of another object. It is marked FF-EXPORT 9 after admission; its call sites are rebuilt as
 ;; "call rel32" with an R_X86_64_PLT32 relocation against the undefined GLOBAL symbol <symbol>. A call
@@ -368,7 +372,8 @@
 ;; would be taken for the store, subregion and 16 KiB load (found by an independent review).
 (defn- xk-intr [M :vector-i64 f :i64] :i64
   (let [first (vector-at M 200) k (- f first)]
-    (cond (and (= (vector-at M 197) 0) (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)) (+ XK-EXTERN f)
+    (cond (and (> (vector-at M XU-CAP-CALL-FN) 0) (= f (vector-at M XU-CAP-CALL-FN))) XK-CAP-CALL
+          (and (= (vector-at M 197) 0) (= (xg-f M f FF-EXPORT) FF-EXTERN-MARK)) (+ XK-EXTERN f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-LOAD-MARK XO-MMIO-N))) (+ XK-MMIO-LOAD f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-MMIO-STORE-MARK) (< (xg-f M f FF-EXPORT) (+ FF-MMIO-STORE-MARK XO-MMIO-N))) (+ XK-MMIO-STORE f)
           (and (= (vector-at M 197) 0) (>= (xg-f M f FF-EXPORT) FF-CELL-LOAD-MARK) (< (xg-f M f FF-EXPORT) (+ FF-CELL-LOAD-MARK XO-MAX-CELLS))) (+ XK-CELL-LOAD f)
@@ -616,6 +621,8 @@
           (-> M (xg-load t 0x858b48) (xg-rel 0x058948 3 1 (- k XK-CELL-STORE)) (xg-save t))
         (>= k XK-CELL-LOAD) (-> M (xg-rel 0x058b48 3 1 (- k XK-CELL-LOAD)) (xg-save t))
         (>= k XK-EXTERN) (xk-extern-call M (- k XK-EXTERN) t)
+        ;; KOTOBA-175 (ADR 0402): the user-plc-v1 capability call (before the fences: 47 is above their first id)
+        (= k XK-CAP-CALL) (xpl-cap-call M t)
         ;; JUN-708 (ADR 0401): lfence / sfence / mfence; xor eax,eax
         (>= k XK-FENCE-FIRST)
           (-> M (xg-bytes (case (- k XK-FENCE-FIRST) 0 0xe8ae0f 1 0xf8ae0f 0xf0ae0f) 3) (xg-bytes 0xc031 2) (xg-save t))
@@ -1865,4 +1872,135 @@
                                     (string-concat target
                                       (string-concat ", :format :elf64-exec, :bytes "
                                         (string-concat (mem-u2dec n) "}\n")))))]
+                      (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))
+;; ==== KOTOBA-175 (ADR 0402): x86_64-aiueos-user-plc-v1 =================================================================
+;;   compile SOURCE --target x86_64-aiueos-user-plc-v1 --capabilities ID,ID,.. --output NEW
+;; The user-v1 scalar slice (zero-argument `main`, no heap, no runtime) plus raw `(cap-call ID ARG)`, laid out as the
+;; image kotoba's plc-user-elf-valid admits: entry 0x1e1000 (text at file 4096), the 88-byte context at 0x1e2000 (file
+;; 8192), fuel 512 at context+8, the capability bitmap at context+16 and the syscall trampoline 0x1e1020 at context+48.
+;; The user-v1..v5 targets and their 0x220000.. layouts are unchanged.
+;;
+;; THE CAPABILITY SET is the --capabilities list: canonical decimal IDs 0..63, strictly ascending, comma separated, at
+;; least one. The bitmap written at context+16 is exactly that set. Every (cap-call ID ARG) must name ID as an integer
+;; literal written to the argument temp on every path to the call (xpl-literal: the last write of that temp before the
+;; call is a CONST, and no branch outside that span enters it), else E7109; an ID outside the set is E7101 (detail
+;; 65536 + ID). Arity and argument types are the stub's own, so the checker refuses a wrong arity (E2103).
+;;
+;; THE CALL (the AIUEOS runtime-call ABI, kotoba kernel/syscall.c AIUEOS_SYSCALL_RUNTIME_CALL): rsi = ID, rdx = ARG,
+;; rdi = the context; a run-time `bt` of the context bitmap traps (ud2) before an unset ID; then `call` the image's own
+;; trampoline at 0x1e1020 (mov eax,5; mov rdi,[rdi+0x50]; syscall; ret), i.e. syscall 5 with rdi = the runtime handle
+;; the kernel stored at context+80, rsi = ID, rdx = ARG. The kernel's dispatcher clobbers r9 (System V caller-saved),
+;; so the context register is reloaded from [rbp-8]. The answer (rax) is the call's value.
+(defn- xpl-lib [] :string "\n(defn- cap-call [capability :i64 argument :i64] :i64 0)\n")
+(defn- xpl-seg-end [s :string i :i64] :i64
+  (let [rest (string-substring s i (string-length s)) c (string-index-of rest ",")]
+    (if (< c 0) (string-length s) (+ i c))))
+;; the canonical decimal ID in s[i..e), or -1
+(defn- xpl-cap-at [s :string i :i64 e :i64] :i64
+  (if (and (< i e) (<= (- e i) 2) (xo-digits-ok? s i e))
+    (let [k (mem-parse-dec s i e)]
+      (if (and (>= k 0) (< k 64) (string=? (string-substring s i e) (mem-u2dec k))) k -1))
+    -1))
+(defn- xpl-caps-ok? [s :string i :i64 prev :i64] :bool
+  (let [e (xpl-seg-end s i) k (xpl-cap-at s i e)]
+    (cond (or (< k 0) (<= k prev)) false
+          (= e (string-length s)) true
+          :else (and (< (inc e) (string-length s)) (xpl-caps-ok? s (inc e) k)))))
+(defn- xpl-caps-mask [s :string i :i64 acc :i64] :i64
+  (let [e (xpl-seg-end s i) m (bit-or acc (i64-shift-left 1 (xpl-cap-at s i e)))]
+    (if (>= e (string-length s)) m (xpl-caps-mask s (inc e) m))))
+;; does a branch outside (lo, hi) of the function enter a label inside it?
+(defn- xpl-label-in? [M :vector-i64 lo :i64 hi :i64 label :i64] :bool
+  (loop [k (inc lo)]
+    (cond (>= k hi) false
+          (and (= (xg-si M k IF-OP) OP-LABEL) (= (xg-si M k IF-A) label)) true
+          :else (recur (inc k)))))
+(defn- xpl-entered? [M :vector-i64 lo :i64 hi :i64] :bool
+  (loop [k (inc (xk-fn-start M hi))]
+    (let [op (xg-si M k IF-OP)]
+      (cond (or (>= k (vector-at M MM-SIR-N)) (= op OP-END) (= op OP-FN)) false
+            (and (or (<= k lo) (>= k hi)) (or (= op OP-BR) (= op OP-BRZ) (= op OP-BRNZ))
+                 (xpl-label-in? M lo hi (xg-si M k (if (= op OP-BR) IF-A IF-B)))) true
+            :else (recur (inc k))))))
+;; the literal 0..63 that reaches temp t of the call at SIR i on every path, or -1. Only CONST/LGET (IF-A) and
+;; BIN/CMP/UN/CALL (IF-B) write a temp in this route's SIR (xg-check-sir admits nothing else that writes one).
+(defn- xpl-literal [M :vector-i64 i :i64 t :i64] :i64
+  (loop [j (dec i)]
+    (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
+      (cond (or (< j 1) (= op OP-FN) (= op OP-END)) -1
+            (or (and (or (= op OP-CONST) (= op OP-LGET)) (= a t))
+                (and (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-CALL)) (= b t)))
+              (if (and (= op OP-CONST) (>= b 0) (< b 64) (not (xpl-entered? M j i))) b -1)
+            :else (recur (dec j))))))
+(defn- xpl-check [M :vector-i64 i :i64 stub :i64 mask :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+    (if (and (= (xg-si M i IF-OP) OP-CALL) (= (xg-si M i IF-A) stub))
+      (let [id (xpl-literal M i (xg-si M i IF-B))]
+        (cond (< id 0) (xg-err M 7109 i)
+              (= (bit-and (u64-shift-right mask id) 1) 0) (xg-err M 7101 (+ 65536 id))
+              :else (xpl-check M (inc i) stub mask)))
+      (xpl-check M (inc i) stub mask))))
+(defn- xpl-cap-call [M :vector-i64 t :i64] :vector-i64
+  ;; mov rsi,[ID]; mov rax,[r9+16]; bt rax,rsi; jc +2; ud2; mov rdx,[ARG]; mov rdi,r9; mov eax,0x1e1020; call rax;
+  ;; mov r9,[rbp-8]; the answer to t
+  (-> M (xg-load t 0xb58b48) (xg-bytes 0x10418b49 4) (xg-bytes 0xf0a30f48 4) (xg-bytes 0x0b0f0272 4)
+      (xg-load (inc t) 0x958b48) (xg-bytes 0xcf894c 3) (xg-byte 0xb8) (xg-bytes 0x1e1020 4) (xg-bytes 0xd0ff 2)
+      (xg-bytes 0xf84d8b4c 4) (xg-save t)))
+(defn- xpl-image [M :vector-i64 mask :i64] :vector-i64
+  (let [h (-> M (mem-set MM-OUT-N 1) (xg-out 0x00010102464c457f 8) (xg-out 0 8)
+              (xg-out 2 2) (xg-out 62 2) (xg-out 1 4) (xg-out 0x1e1000 8)
+              (xg-out 64 8) (xg-out 0 8) (xg-out 0 4) (xg-out 64 2)
+              (xg-out 56 2) (xg-out 2 2) (xg-out 0 2) (xg-out 0 2) (xg-out 0 2))
+        n (xg-pos h)]
+    (-> h (xg-out 1 4) (xg-out 5 4) (xg-out 4096 8) (xg-out 0x1e1000 8) (xg-out 0x1e1000 8)
+        (xg-out n 8) (xg-out n 8) (xg-out 4096 8)
+        (xg-out 1 4) (xg-out 6 4) (xg-out 8192 8) (xg-out 0x1e2000 8) (xg-out 0x1e2000 8)
+        (xg-out 88 8) (xg-out 88 8) (xg-out 4096 8)
+        (xg-pad 4096) (xg-out-code 1) (xg-pad 8192)
+        (xg-out 0 8) (xg-out 512 8) (xg-out mask 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8)
+        (xg-out 0x1e1020 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8) (xg-out 0 8))))
+(defn- xpl-build [M :vector-i64 S :string mask :i64] :vector-i64
+  (let [stub (dec (vector-at M MM-FN-N))
+        sb (+ MM-SYM-BASE (* (xg-f M stub FF-SYM) MM-SYM-W))
+        base (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 512) (xg-set 4 0)
+                 (mem-set XU-LOCAL-CALL-FLAG 0) (mem-set XU-CAP-CALL-FN 0))
+        a (xg-check-sir (xo-refuse-externs (xg-check-fns base S 1) S 1) 1)
+        b (if (string=? (string-substring S (vector-at M (+ sb SF-START)) (vector-at M (+ sb SF-END))) "cap-call")
+            (xpl-check a 1 stub mask) (xg-err a 7102 stub))]
+    (cond (not= (vector-at b MM-ERR) 0) b
+          (= (xg-get b 1) 0) (xg-err b 7102 0)
+          (not (xu-main? b S)) (xg-err b 7102 (xg-get b 1))
+          (not= (xg-f b (xg-get b 1) FF-NPARAMS) 0) (xg-err b 7102 (xg-get b 1))
+          (not= (vector-at b MM-CAPS) 0) (xg-err b 7101 OP-CAP)
+          :else (let [g (-> b (mem-set XU-CAP-CALL-FN stub) (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1)
+                            (xg-index-labels 1) (xu-entry (xg-get b 1) false false)
+                            (xg-code 1) (mem-set XU-CAP-CALL-FN 0))]
+                  (if (or (> (xg-pos g) 4096) (>= 8281 MM-OUT-CAP))
+                    (xg-err g 7104 (xg-pos g))
+                    (xpl-image (xg-fix (xg-set g 3 8192) 1) mask))))))
+(defn- xpl-report [M :vector-i64 path :string out :string] :i64
+  (let [e (vector-at M MM-ERR) d (vector-at M MM-ERR-N)]
+    (cond (= e 7109) (let [w (io-err (string-concat "seed-x86_64-aiueos-user-plc: E7109 malformed cap-call: the capability must be an integer literal 0..63 on every path; detail SIR "
+                                       (string-concat (mem-u2dec d) "\n")))] 1)
+          (and (= e 7101) (>= d 65536)) (let [w (io-err (string-concat "seed-x86_64-aiueos-user-plc: E7101 cap-call capability "
+                                       (string-concat (mem-u2dec (- d 65536)) " is not declared by --capabilities\n")))] 1)
+          :else (xo-report M path out))))
+(defn- xpl-command [] :i64
+  (let [src (io-arg 1) caps (io-arg 5) out (io-arg 7)]
+    (cond (or (not= (io-argc) 8) (not (string=? (io-arg 4) "--capabilities")) (not (string=? (io-arg 6) "--output"))
+              (= (string-length out) 0) (= (io-exists out) 1))
+          (drv-fail0 E-USAGE)
+          (not (xpl-caps-ok? caps 0 -1))
+          (let [w (io-err "seed-x86_64-aiueos-user-plc: E7109 expected --capabilities ID,ID,.. (canonical decimal 0..63, strictly ascending)\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [s (string-concat (drv-read src) (xpl-lib))
+                      mask (xpl-caps-mask caps 0 0)
+                      front (xg-front s)
+                      image (if (= (vector-at front MM-ERR) 0) (xpl-build front s mask) front)]
+                  (if (not= (vector-at image MM-ERR) 0)
+                    (xpl-report image src out)
+                    (let [n (dec (vector-at image MM-OUT-N))
+                          written (out-write-v image out (+ MM-OUT-BASE 1) n)
+                          w (io-out (string-concat "{:ok true, :target :x86_64-aiueos-user-plc-v1, :format :elf64-exec, :bytes "
+                                      (string-concat (mem-u2dec n) "}\n")))]
                       (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))))
