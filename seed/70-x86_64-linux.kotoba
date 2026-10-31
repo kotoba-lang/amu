@@ -23,10 +23,37 @@
   (let [n (vector-at M MM-CODE-N)]
     (cond (not= (vector-at M MM-ERR) 0) M
           (>= n (* 8 MM-CODE-CAP)) (xg-err M 7104 n)
-          :else (-> M (xg-put-byte (dec n) b) (mem-set MM-CODE-N (inc n))
-                    (cond-> (not= (vector-at M 191) 0) (mem-set 191 0))))))
+          :else (-> M (xg-put-byte (dec n) b) (mem-set MM-CODE-N (inc n)) (mem-set 191 0)))))
 (defn- xg-bytes [M :vector-i64 bits :i64 n :i64] :vector-i64
   (if (= n 0) M (xg-bytes (xg-byte M bits) (u64-shift-right bits 8) (dec n))))
+;; The emitters' fixed instruction runs, one constant table (OP-TAB: no allocation,
+;; one SIR record per read) for both ISAs. Entry = up to seven code bytes, their
+;; count in the top byte; xg-run emits entries [a, b): 0-5 x86 desc312, 5-10 x86 desc288, 10-13 xr item, 13-21
+;; xr-cpa 1, 21-26 xr-cpa 2, 26-30 xr-vec-base, 30-35 a64 desc312, 35-40 a64 desc288, 40-43 xa item, 43-50
+;; xa-cpa 1, 50-56 xa-cpa 2, 56-60 xa-vec-base.
+;; The runtime helper calls both routes emit in line (seed/71 xr-rt, seed/80
+;; xa-rt): 1 (vector-at v i), 2 (vector-assoc! v i x), 3 (count v), 4
+;; pair-first, 5 pair-second (= string-length), 6 (string-code-point-at s i);
+;; 0 for every other call.
+(defn- xg-inl [slot :i64 n :i64] :i64
+  (cond (and (= slot RT-VECTOR-AT) (= n 2)) 1
+        (and (= slot RT-VECTOR-ASSOC-IN-PLACE) (= n 3)) 2
+        (not= n 1) (if (and (= slot RT-STRING-CODE-POINT-AT) (= n 2)) 6 0)
+        (= slot RT-VECTOR-COUNT) 3 (= slot RT-PAIR-FIRST) 4 (= slot RT-PAIR-SECOND) 5
+        :else 0))
+(defn- xg-run [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (>= a b) M
+    (let [v (vector-at [0x700000138918b49 0x748c8ff48128b48 0x7480b0f0272d039 0x74081034904e0c1 0x300000000000001 0x700000120918b49
+                        0x748c8ff48128b48 0x7480b0f0272d039 0x72881034904e0c1 0x300000000000001 0x70f027208483b48 0x7918b490803480b
+                        0x400000000000148 0x700000120918b49 0x7ff488d48128b48 0x7c1484373d13948 0x7012889034904e1 0x78b48118b480000
+                        0x72c78d285480849 0x78b482778c98548 0x1000000000000b5 0x701481b73ce3948 0x7000188893b49d1 0x7809103490f7700
+                        0x73204b60f000001 0x40000000079c084 0x704e0c148c8ff48 0x700000140810349 0x748918b49088b48 0x7ca148d48000001
+                        0x7400210f9409cf0 0x7013fd1000529f9 0x70054000043eb10 0x7f940a0f0000000 0x40000008b091210 0x7400210f94090f0
+                        0x7013fd1000529f9 0x70054000043eb10 0x7f94094f0000000 0x40000008b091210 0x7000043eb10015f 0x702310000000054
+                        0x600f940a4f08b0a 0x7400210f94090f0 0x7023fd1000531f9 0x7f054000282eb10 0x78b111210f94094 0x700023fa9404211
+                        0x7021f540001ebf1 0x600540001abf100 0x7000142eb10015f 0x7c4eb8b10023054 0x7c8eb0b021ff940 0x7f940c0f0540000
+                        0x76a6a008b110210 0x50000f102001f38 0x740a0f1d1000410 0x702108b101230f9 0x730f940a4f1f940 0x3000000008b100e] a)]
+      (xg-run (xg-bytes M v (u64-shift-right v 56)) (inc a) b))))
 (defn- xg-rel [M :vector-i64 op :i64 size :i64 kind :i64 target :i64] :vector-i64
   (let [v (xg-bytes M op size) at (xg-pos v) k (vector-at v MM-FIX-N)
         b (+ MM-FIX-BASE (* k MM-FIX-W))]
@@ -46,24 +73,17 @@
   (and (= (xg-get M 4) 1) (= (vector-at M 191) (vector-at M MM-CODE-N)) (= (vector-at M 190) d)))
 (defn- xg-hold [M :vector-i64 d :i64] :vector-i64
   (-> M (mem-set 190 d) (mem-set 191 (vector-at M MM-CODE-N))))
-;; mov r64,[rbp+disp32]: REX.W(+R) 8B, ModRM 10 rrr 101
-(defn- xg-mov-op? [op :i64] :bool
-  (and (or (= (bit-and op 255) 0x48) (= (bit-and op 255) 0x4c))
-       (= (bit-and (u64-shift-right op 8) 255) 0x8b)
-       (= (bit-and (u64-shift-right op 16) 0xc7) 0x85)))
-;; mov r,rax: REX.W(+B) 89, ModRM 11 000 r
-(defn- xg-from-rax [op :i64] :i64
-  (let [r (+ (bit-and (u64-shift-right op 19) 7) (if (= (bit-and op 255) 0x4c) 8 0))]
-    (bit-or (if (>= r 8) 0x49 0x48) (bit-or 0x8900 (i64-shift-left (bit-or 0xc0 (bit-and r 7)) 16)))))
+;; op is mov r64,[rbp+disp32] when op & 0xc7fffb = 0x858b48 (REX.W(+R) 8B,
+;; ModRM 10 rrr 101); on a hit such a load becomes mov r,rax: REX.W(+B) 89,
+;; ModRM 11 000 rrr. Holds are recorded in every profile; xg-held? only ever
+;; answers yes in the runtime profile, so the other profiles' bytes are those
+;; of the plain loads and stores.
 (defn- xg-ldd [M :vector-i64 d :i64 op :i64] :vector-i64
-  (let [hit (xg-held? M d) live (xg-held? M (vector-at M 190))]
-    (cond (not (xg-mov-op? op)) (xg-bytes (xg-bytes M op 3) d 4)
-          (= op 0x858b48) (if hit M (cond-> (xg-bytes (xg-bytes M op 3) d 4) (= (xg-get M 4) 1) (xg-hold d)))
-          hit (xg-hold (xg-bytes M (xg-from-rax op) 3) d)
-          live (xg-hold (xg-bytes (xg-bytes M op 3) d 4) (vector-at M 190))
-          :else (xg-bytes (xg-bytes M op 3) d 4))))
-(defn- xg-std [M :vector-i64 d :i64] :vector-i64
-  (cond-> (xg-bytes (xg-bytes M 0x858948 3) d 4) (= (xg-get M 4) 1) (xg-hold d)))
+  (let [h (vector-at M 190) hit (xg-held? M d) mv (= (bit-and op 0xc7fffb) 0x858b48) live (and mv (xg-held? M h))]
+    (cond (= op 0x858b48) (if hit M (xg-hold (xg-bytes (xg-bytes M op 3) d 4) d))
+          (and hit mv) (xg-hold (xg-bytes M (+ 0xc08948 (bit-and (u64-shift-right op 2) 1) (bit-and (u64-shift-right op 3) 0x70000)) 3) d)
+          :else (cond-> (xg-bytes (xg-bytes M op 3) d 4) live (xg-hold h)))))
+(defn- xg-std [M :vector-i64 d :i64] :vector-i64 (xg-hold (xg-bytes (xg-bytes M 0x858948 3) d 4) d))
 (defn- xg-load [M :vector-i64 t :i64 op :i64] :vector-i64 (xg-ldd M (xg-temp M t) op))
 (defn- xg-save [M :vector-i64 t :i64] :vector-i64 (xg-std M (xg-temp M t)))
 ;; rax = temp t, rcx = temp t+1, rcx first when rax already holds t+1

@@ -11,34 +11,16 @@
 ;; The helpers' checks run in their order (handle 1..used, then index
 ;; 0..length-1) and a failure is the helpers' own ud2, so results, fuel,
 ;; arena counters and traps are unchanged. Nothing is cached across ops.
-;; The fixed instruction runs below, one entry per instruction (bits, byte
-;; count), read as constant tables (OP-TAB: no allocation, one SIR record per
-;; read). xr-run emits entries [a, b): the same bytes as one xg-bytes call per
-;; instruction in far fewer SIR records, since every whole-compiler build
-;; (this file included) must fit MM-SIR-CAP. 0-4 xr-desc, 5-8 xr-item, 9-22 and
-;; 23-31 xr-cpa, 32-37 xr-vec-base.
-(defn- xr-run [M :vector-i64 a :i64 b :i64] :vector-i64
-  (if (>= a b) M
-    (xr-run (xg-bytes M
-              (vector-at [0x128b48 0xc8ff48 0xd03948 0xb0f0272 0x4e0c148 0x8483b48 0xb0f0272 0x80348
-                          0x148918b49 0x120918b49 0x128b48 0xff488d48 0xd13948 0x4373 0x4e1c148 0x128890349
-                          0x118b48 0x8498b48 0xd28548 0x2c78 0xc98548 0x2778 0xb58b48 0xce3948
-                          0x1b73 0xd10148 0x188893b49 0xf77 0x180910349 0x3204b60f 0xc084 0x79
-                          0xc8ff48 0x4e0c148 0x140810349 0x88b48 0x148918b49 0xca148d48] a)
-              (vector-at [3 3 3 4 4 4 4 3 7 7 3 4 3 2 4 7 3 4 3 2 3 2 3 3 2 3 7 2 7 4 2 2 3 4 7 3 7 4] a))
-            (inc a) b)))
+;; The fixed instruction runs below come from seed/70's constant table (xg-run):
+;; the same bytes as one xg-bytes call per instruction in far fewer SIR records
+;; and tokens, since every whole-compiler build (this file included) must fit
+;; MM-SIR-CAP and MM-TOK-CAP.
 ;; rax = handle -> rax = &descriptor, after (h - 1) <u used (u = 312 and b = u + 8
 ;; = 320 for vectors, u = 288 and b = 296 for pairs):
 ;; mov rdx,[r9+u] ; mov rdx,[rdx] ; dec rax ; cmp rax,rdx ; jb +2 ; ud2 ;
 ;; shl rax,4 ; add rax,[r9+b]
-(defn- xr-desc [M :vector-i64 u :i64] :vector-i64
-  (-> M (xg-bytes (bit-or 0x918b49 (i64-shift-left u 24)) 7)
-      (xr-run 0 5)
-      (xg-bytes (bit-or 0x810349 (i64-shift-left (+ u 8) 24)) 7)))
 ;; rcx = index temp t+1 after i <u length: mov rcx,[t+1] ; cmp rcx,[rax+8] ;
 ;; jb +2 ; ud2 ; add rcx,[rax] ; mov rdx,[r9+328] -- the item is [rdx+rcx*8]
-(defn- xr-item [M :vector-i64 t :i64] :vector-i64
-  (-> M (xg-load (inc t) 0x8d8b48) (xr-run 5 9)))
 ;; (string-code-point-at s i), the R4 rule (seed/HEADS; 41-a64gen gn-rt-cpa,
 ;; seed/SIR :a64 :r4): when the pair is valid, its offset code-relative (>= 0),
 ;; its length >= 0, i <u length and offset + length <= code_length ([r9+392]),
@@ -51,29 +33,25 @@
 ;;   movzx eax,byte [rdx+rsi] ; test al,al ; jns DONE ; SLOW: the call ; DONE:
 (defn- xr-cpa [M :vector-i64 t :i64] :vector-i64
   (let [F (-> M (xg-load t 0x858b48)
-              (xr-run 9 23)
+              (xg-run 13 21)
               (xg-bytes (xg-temp M (inc t)) 4)
-              (xr-run 23 32))
+              (xg-run 21 26))
         at (xg-pos F)
         S (-> F (xr-args t 0 2) (xr-call RT-STRING-CODE-POINT-AT))]
     (-> S (xg-put-byte (dec at) (- (xg-pos S) at)) (xg-save t))))
+;; Kinds (seed/70 xg-inl): (vector-at v i) mov rax,[rdx+rcx*8]; (vector-assoc!
+;; v i x) mov rax,[t+2] ; mov [rdx+rcx*8],rax, the result v already in temp t;
+;; (count v) and pair-second / string-length mov rax,[rax+8]; pair-first mov
+;; rax,[rax]; string-code-point-at xr-cpa.
 (defn- xr-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
-  (cond
-    ;; (vector-at v i): mov rax,[rdx+rcx*8]
-    (and (= slot RT-VECTOR-AT) (= n 2))
-      (-> M (xg-load t 0x858b48) (xr-desc 312) (xr-item t) (xg-bytes 0xca048b48 4) (xg-save t))
-    ;; (vector-assoc! v i x): mov rax,[t+2] ; mov [rdx+rcx*8],rax; the result is
-    ;; v, which temp t already holds
-    (and (= slot RT-VECTOR-ASSOC-IN-PLACE) (= n 3))
-      (-> M (xg-load t 0x858b48) (xr-desc 312) (xr-item t) (xg-load (+ t 2) 0x858b48)
-          (xg-bytes 0xca048948 4))
-    ;; one-handle reads: (count v) and pair-second / string-length mov rax,[rax+8],
-    ;; pair-first mov rax,[rax]
-    (and (= n 1) (or (= slot RT-VECTOR-COUNT) (= slot RT-PAIR-FIRST) (= slot RT-PAIR-SECOND)))
-      (-> M (xg-load t 0x858b48) (xr-desc (if (= slot RT-VECTOR-COUNT) 312 288))
-          (xg-bytes (if (= slot RT-PAIR-FIRST) 0x008b48 0x08408b48) (if (= slot RT-PAIR-FIRST) 3 4)) (xg-save t))
-    (and (= slot RT-STRING-CODE-POINT-AT) (= n 2)) (xr-cpa M t)
-    :else (-> M (xr-args t 0 n) (xr-call slot) (xg-save t))))
+  (let [k (xg-inl slot n)]
+    (cond (= k 0) (-> M (xr-args t 0 n) (xr-call slot) (xg-save t))
+          (= k 6) (xr-cpa M t)
+          :else (-> M (xg-load t 0x858b48) (xg-run (if (< k 4) 0 5) (if (< k 4) 5 10))
+                    (cond-> (< k 3) (-> (xg-load (inc t) 0x8d8b48) (xg-run 10 13)))
+                    (cond-> (= k 2) (xg-load (+ t 2) 0x858b48))
+                    (xg-bytes (case k 1 0xca048b48 2 0xca048948 4 0x008b48 0x08408b48) (if (= k 4) 3 4))
+                    (cond-> (not= k 2) (xg-save t))))))
 (defn- xr-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
   (-> M (xg-load t 0x858b4c) (xg-byte 0xbe) (xg-bytes wire 4)
       (xg-byte 0xba) (xg-bytes kind 4) (xg-byte 0xb9) (xg-bytes kind 4)
@@ -93,7 +71,7 @@
 ;; by dec rax ; shl rax,4 ; add rax,[r9+320] ; mov rcx,[rax] ; mov rdx,[r9+328] ;
 ;; lea rdx,[rdx+rcx*8]; a literal's words are read from rsi = the pool entry.
 (defn- xr-vec-base [M :vector-i64 lit :i64] :vector-i64
-  (-> M (xr-run 32 38)
+  (-> M (xg-run 26 30)
       (cond-> (not= lit 0) (xg-rel 0x358d48 3 5 lit))))
 ;; mov rax,[t+k] (or mov rax,[rsi+8k]) ; mov [rdx+8k],rax
 (defn- xr-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64] :vector-i64
