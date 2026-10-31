@@ -374,6 +374,195 @@ def op_shr(guard, deps, d, a, shift, signed):
     return finish(e, guard, deps)
 
 
+
+# ---------------------------------------------------------------------------
+# The decode kernels' operations (JUN-739), from the same NAK revision.
+
+
+def op_fadd_neg(guard, deps, d, a, b, na, nb):
+    # OpFAdd with FNeg source modifiers: src0 neg 72 (abs 73), src1 neg 63 (abs 62)
+    e = Instr()
+    alu(e, 0x021, d, r(a), r(b), None)
+    e.set_bit(72, na)
+    e.set_bit(63, nb)
+    fmods(e, 0, False, False)
+    return finish(e, guard, deps)
+
+
+def op_iadd3_neg(guard, deps, d, a, b, c, na, nb, nc):
+    # OpIAdd3 with INeg modifiers: src0 neg 72, src1 neg 63, src2 neg 75
+    e = Instr()
+    alu(e, 0x010, d, r(a), r(b), r(c))
+    e.set_bit(72, na)
+    e.set_bit(63, nb)
+    e.set_bit(75, nc)
+    e.set_field(87, 90, 7)
+    e.set_bit(90, True)
+    e.set_field(77, 80, 7)
+    e.set_bit(80, True)
+    e.set_field(81, 84, 7)
+    e.set_field(84, 87, 7)
+    return finish(e, guard, deps)
+
+
+FLOAT_CMP = {"lt": 1, "eq": 2, "le": 3, "gt": 4, "ne": 5, "ge": 6, "num": 7, "nan": 8,
+             "ltu": 9, "equ": 10, "leu": 11, "gtu": 12, "neu": 13, "geu": 14}
+
+
+def op_fsetp(guard, deps, pd, a, b, cmp, ftz):
+    e = Instr()
+    alu(e, 0x00B, None, r(a), b, None)
+    e.set_field(81, 84, pd)
+    e.set_field(84, 87, 7)       # dst1 None: PT
+    e.set_field(87, 90, 7)       # accum: true
+    e.set_bit(90, False)
+    e.set_field(74, 76, 0)       # PredSetOp::And
+    e.set_field(76, 80, FLOAT_CMP[cmp])
+    e.set_bit(80, ftz)
+    return finish(e, guard, deps)
+
+
+def op_fmnmx(guard, deps, d, a, b, is_min, ftz):
+    e = Instr()
+    alu(e, 0x009, d, r(a), r(b), None)
+    e.set_field(87, 90, 7)       # min: PT, not = !min
+    e.set_bit(90, not is_min)
+    e.set_bit(80, ftz)
+    e.set_bit(65, False)
+    return finish(e, guard, deps)
+
+
+def op_imnmx(guard, deps, d, a, b, is_min, signed):
+    e = Instr()
+    alu(e, 0x017, d, r(a), r(b), None)
+    e.set_field(87, 90, 7)
+    e.set_bit(90, not is_min)
+    e.set_bit(73, signed)
+    return finish(e, guard, deps)
+
+
+def op_sel(guard, deps, d, a, b, p, pinv):
+    e = Instr()
+    alu(e, 0x007, d, r(a), b, None)
+    e.set_field(87, 90, p)
+    e.set_bit(90, pinv)
+    return finish(e, guard, deps)
+
+
+MUFU = {"cos": 0, "sin": 1, "ex2": 2, "lg2": 3, "rcp": 4, "rsq": 5, "sqrt": 8}
+
+
+def op_mufu(guard, deps, d, a, fn):
+    # encode_alu_base(0x108, dst, None, src, None); sm < 90: bit 73 = F16
+    e = Instr()
+    alu(e, 0x108, d, None, r(a), None)
+    e.set_bit(73, False)
+    e.set_field(74, 80, MUFU[fn])
+    return finish(e, guard, deps)
+
+
+def op_i2f(guard, deps, d, a, signed, rnd):
+    e = Instr()
+    alu(e, 0x106, d, None, r(a), None)
+    e.set_field(60, 62, 0)
+    e.set_bit(74, signed)
+    e.set_field(75, 77, 2)       # ilog2(32 / 8)
+    e.set_field(78, 80, rnd)
+    e.set_field(84, 86, 2)
+    return finish(e, guard, deps)
+
+
+def op_f2i(guard, deps, d, a, signed, rnd, ftz):
+    e = Instr()
+    alu(e, 0x105, d, None, r(a), None)
+    e.set_bit(72, signed)
+    e.set_field(75, 77, 2)
+    e.set_bit(77, False)
+    e.set_field(78, 80, rnd)
+    e.set_bit(80, ftz)
+    e.set_field(84, 86, 2)
+    return finish(e, guard, deps)
+
+
+def op_lop3(guard, deps, d, a, b, c, lut):
+    e = Instr()
+    alu(e, 0x012, d, r(a), b, r(c))
+    e.set_field(87, 90, 7)       # set_pred_src(87..90, 90, False): PT, not
+    e.set_bit(90, True)
+    e.set_field(72, 80, lut)
+    e.set_bit(80, False)
+    e.set_field(81, 84, 7)
+    return finish(e, guard, deps)
+
+
+SHF_TYPE = {"s64": 0, "u64": 1, "s32": 2, "u32": 3}
+
+
+def op_shf(guard, deps, d, lo, s, hi, ty, wrap, right, high):
+    e = Instr()
+    alu(e, 0x019, d, r(lo), s, r(hi))
+    e.set_field(73, 75, SHF_TYPE[ty])
+    e.set_bit(75, wrap)
+    e.set_bit(76, right)
+    e.set_bit(80, high)
+    return finish(e, guard, deps)
+
+
+def op_sgxt(guard, deps, d, a, bits, signed):
+    e = Instr()
+    alu(e, 0x01A, d, r(a), i(bits), None)
+    e.set_bit(73, signed)
+    e.set_bit(75, False)
+    return finish(e, guard, deps)
+
+
+def decode_cases():
+    C1_, C2_ = C1, C2
+    c = {}
+    c["fadd.neg.b"] = op_fadd_neg(G, C0, 4, 5, 6, False, True)
+    c["fadd.neg.ab.rz"] = op_fadd_neg(G, C2_, 4, 5, RZ, True, True)
+    c["iadd3.neg.b"] = op_iadd3_neg(G, C0, 1, 2, 3, RZ, False, True, False)
+    c["iadd3.neg.ac"] = op_iadd3_neg(G, C0, 1, RZ, 3, 4, True, False, True)
+    c["fsetp.lt"] = op_fsetp(G, C0, 0, 4, r(5), "lt", False)
+    c["fsetp.neu.ftz.np2"] = op_fsetp((2, True), C2_, 6, 4, r(5), "neu", True)
+    c["fsetp.imm.neu.zero"] = op_fsetp(G, C0, 3, 9, i(0), "neu", False)
+    c["fsetp.imm.gt"] = op_fsetp(G, C0, 1, 9, i(0x41A00000), "gt", False)
+    c["fmnmx.max"] = op_fmnmx(G, C0, 4, 5, 6, False, False)
+    c["fmnmx.min.ftz"] = op_fmnmx(G, C2_, 4, 5, 6, True, True)
+    c["imnmx.min.u32"] = op_imnmx(G, C0, 4, 5, 6, True, False)
+    c["imnmx.max.s32"] = op_imnmx(G, C0, 4, 5, 6, False, True)
+    c["sel.p2"] = op_sel(G, C0, 7, 8, r(9), 2, False)
+    c["sel.np5.rz"] = op_sel(G, C2_, 7, 8, r(RZ), 5, True)
+    c["sel.imm"] = op_sel(G, C0, 7, 8, i(0x3F800000), 0, False)
+    for fn in ("cos", "sin", "ex2", "lg2", "rcp"):
+        c[f"mufu.{fn}"] = op_mufu(G, C1_, 10, 11, fn)
+    c["mufu.rsq"] = op_mufu(G, C2_, 10, 11, "rsq")
+    c["mufu.sqrt"] = op_mufu(G, C0, 10, 11, "sqrt")
+    c["i2f.u32"] = op_i2f(G, C1_, 12, 13, False, 0)
+    c["i2f.s32.rz"] = op_i2f(G, C2_, 12, 13, True, 3)
+    c["f2i.u32.trunc"] = op_f2i(G, C1_, 12, 13, False, 3, False)
+    c["f2i.s32.rn.ftz"] = op_f2i(G, C1_, 12, 13, True, 0, True)
+    c["lop3.and3"] = op_lop3(G, C0, 4, 5, r(6), 7, 0x80)
+    c["lop3.or.rz"] = op_lop3(G, C0, 4, 5, r(6), RZ, 0xFC)
+    c["lop3.imm.and"] = op_lop3(G, C2_, 4, 5, i(0xFF), RZ, 0xC0)
+    c["shf.l.w.s32"] = op_shf(G, C0, 4, 5, r(6), RZ, "s32", True, False, False)
+    c["shf.r.w.u32.hi"] = op_shf(G, C0, 4, RZ, r(6), 5, "u32", True, True, True)
+    c["shf.l.imm"] = op_shf(G, C0, 4, 5, i(3), RZ, "s32", True, False, False)
+    c["shf.r.s32.hi.imm"] = op_shf(G, C2_, 4, RZ, i(24), 5, "s32", True, True, True)
+    c["imad.wide.u32.rz"] = op_imad_wide(G, C0, 6, r(2), r(3), r(RZ), False)
+    c["imad.wide.s32.pair"] = op_imad_wide(G, C0, 6, r(2), r(3), r(8), True)
+    c["sgxt.s8"] = op_sgxt(G, C0, 4, 5, 8, True)
+    c["sgxt.u4"] = op_sgxt(G, C0, 4, 5, 4, False)
+    refusals = {
+        "refuse.fadd.neg": E_ENUM, "refuse.iadd3.neg2": E_ENUM, "refuse.fsetp.cmp": E_ENUM,
+        "refuse.fsetp.pd": E_PRED, "refuse.mufu.tanh": E_ENUM, "refuse.mufu.rcp64h": E_ENUM,
+        "refuse.i2f.rnd": E_ENUM, "refuse.lop3.lut": E_ENUM, "refuse.shf.imm": E_IMM,
+        "refuse.shf.type": E_ENUM, "refuse.wide.reg.odd": E_REG, "refuse.sel.pred": E_PRED,
+        "refuse.sgxt.bits": E_IMM,
+    }
+    c.update({k: ("R", v) for k, v in refusals.items()})
+    return c
+
 # ---------------------------------------------------------------------------
 # The cases: the same names and operands as the Kotoba test.
 
@@ -476,6 +665,7 @@ def cases():
     ]
     for k, w in enumerate(saxpy):
         c[f"saxpy.{k}"] = w
+    c.update(decode_cases())
     return c
 
 
@@ -495,7 +685,7 @@ LISTING = {
 
 # Built mutants: (name, old text, new text, cases that must then differ).
 MUTANTS = [
-    ("iadd3-opcode", "(alu-lo 0x010 1 d a)", "(alu-lo 0x011 1 d a)", ["iadd3"]),
+    ("iadd3-opcode", "(alu-lo 0x010 1 d a) 32 8 b) (iadd3-hi c)", "(alu-lo 0x011 1 d a) 32 8 b) (iadd3-hi c)", ["iadd3"]),
     ("bra-split", "(hf 64 18 (i64-shift-right w 30))", "(hf 64 18 (i64-shift-right w 31))", ["bra.far.fwd"]),
     ("ldg-offset-field", "(lf 24 8 a) (lf 40 24 off))\n                (mem-hi (hf 0 81 3 7)",
      "(lf 24 8 a) (lf 41 23 off))\n                (mem-hi (hf 0 81 3 7)", ["ldg.e.64.weak.off"]),
@@ -513,6 +703,20 @@ MUTANTS = [
     ("bsync-bar-field", "(lf 0 12 0x941) (lf 16 4 b)", "(lf 0 12 0x941) (lf 17 4 b)", ["bsync.b9.p2"]),
     ("shr-type", "(hf 73 2 (- 3 sgn))", "(hf 73 2 (- 2 sgn))", ["shr.u32.1"]),
     ("shr-high", "(hf 76 1 1) (hf 80 1 1)", "(hf 76 1 1) (hf 80 1 0)", ["shr.u32.1"]),
+    # JUN-739: the decode kernels' operations
+    ("fadd-neg-src1-bit", "(lf 32 8 b) (lf 63 1 nb)) (hf 0 72 1 na)", "(lf 32 8 b) (lf 62 1 nb)) (hf 0 72 1 na)", ["fadd.neg.b"]),
+    ("iadd3-neg-src2-bit", "(hf 72 1 na) (hf 75 1 nc)", "(hf 72 1 na) (hf 74 1 nc)", ["iadd3.neg.ac"]),
+    ("fsetp-opcode", "(lf 0 9 0x00b) (lf 9 3 1)", "(lf 0 9 0x00a) (lf 9 3 1)", ["fsetp.lt"]),
+    ("fsetp-cmp-width", "(hf 76 4 cmp)", "(hf 76 3 cmp)", ["fsetp.neu.ftz.np2"]),
+    ("fmnmx-min-sense", "(hf 87 3 7) (hf 90 1 (- 1 mn))))))\n\n;; IMNMX", "(hf 87 3 7) (hf 90 1 mn)))))\n\n;; IMNMX", ["fmnmx.max"]),
+    ("sel-cond-field", "(-> 0 (hf 87 3 p) (hf 90 1 pinv)))))\n\n(defn sm70-sel-imm", "(-> 0 (hf 86 3 p) (hf 90 1 pinv)))))\n\n(defn sm70-sel-imm", ["sel.p2"]),
+    ("mufu-fn-field", "(hf 74 6 func)", "(hf 75 6 func)", ["mufu.sin"]),
+    ("i2f-signed-bit", "(hf 74 1 sgn) (hf 75 2 2)", "(hf 73 1 sgn) (hf 75 2 2)", ["i2f.s32.rz"]),
+    ("f2i-rnd-field", "(hf 77 1 0) (hf 78 2 rnd)", "(hf 77 1 0) (hf 79 2 rnd)", ["f2i.u32.trunc"]),
+    ("lop3-pred-not", "(hf 87 3 7) (hf 90 1 1)))\n\n(defn sm70-lop3", "(hf 87 3 7) (hf 90 1 0)))\n\n(defn sm70-lop3", ["lop3.and3"]),
+    ("shf-right-bit", "(hf 75 1 wrap) (hf 76 1 right)", "(hf 75 1 wrap) (hf 77 1 right)", ["shf.r.w.u32.hi"]),
+    ("imad-wide-reg-form", "(lf (alu-lo 0x025 1 d a) 32 8 b)", "(lf (alu-lo 0x025 4 d a) 32 8 b)", ["imad.wide.u32.rz"]),
+    ("sgxt-signed-bit", "(-> 0 (hf 73 1 sgn) (hf 75 1 0))", "(-> 0 (hf 72 1 sgn) (hf 75 1 0))", ["sgxt.s8"]),
 ]
 
 # ---------------------------------------------------------------------------
