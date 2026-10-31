@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SEED = ROOT / "scripts/seed"
 PINS = [
     "bin/amu-linux-x86_64",
+    "bin/x86_64-linux/amu",
     "examples/foundation-starter/MACOS-ARM64.md",
     "examples/foundation-starter/candidate.json",
     "native-product.json",

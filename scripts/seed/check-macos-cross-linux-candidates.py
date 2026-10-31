@@ -31,6 +31,8 @@ PRODUCT = ROOT / "native-product.json"
 ARM_ROOT = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
 ARM_IMAGE = ROOT / "seed/bootstrap/aarch64-linux-static-root.elf"
 X86_IMAGE = ROOT / "bin/amu-linux-x86_64"
+# KOTOBA-174 / ADR 0396: the public Linux x86_64 host entry (omitted target = x86_64-linux)
+HOST_IMAGE = ROOT / "bin/x86_64-linux/amu"
 
 
 def module():
@@ -77,7 +79,7 @@ def static_elf(path, machine):
     return pin(path)
 
 
-def check_product_bindings(full, arm, x86):
+def check_product_bindings(full, arm, x86, host):
     """Refuse stale checked-in images before the costly native ISA gates."""
     product = json.loads(PRODUCT.read_text())
     root = json.loads(ARM_ROOT.read_text())
@@ -91,6 +93,10 @@ def check_product_bindings(full, arm, x86):
         raise ValueError("Mac ARM fixed point differs from checked-in root image")
     if x86 != product["image"] or x86 != pin(X86_IMAGE):
         raise ValueError("Mac x86 fixed point differs from checked-in public image")
+    if (product["hostEntry"]["target"] != "x86_64-linux" or
+            host != product["hostEntry"]["image"] or not HOST_IMAGE.is_file() or
+            HOST_IMAGE.is_symlink() or host != pin(HOST_IMAGE)):
+        raise ValueError("Mac x86 host entry differs from checked-in host entry")
 
 
 def main(mac_build, output, produce=False):
@@ -136,8 +142,14 @@ def main(mac_build, output, produce=False):
                     "--target", "x86_64-linux", "--output", "F-x86_64.elf",
                     "--format", "static")
     x86 = static_elf(output / "F-x86_64.elf", 62)
+    gate.native_run(producer, output, "compile", "full-unity.kotoba",
+                    "--target", "x86_64-linux", "--output", "H-x86_64.elf",
+                    "--format", "host-entry")
+    host = static_elf(output / "H-x86_64.elf", 62)
+    if host == x86:
+        raise ValueError("host entry is the root image: the host start is missing")
     if not produce:
-        check_product_bindings(full, arm, x86)
+        check_product_bindings(full, arm, x86, host)
     gate.native_run(producer, output, "compile", "selfhost-unity.kotoba",
                     "--target", "x86_64-linux", "--output", "S-x86_64.elf",
                     "--format", "static")
@@ -150,7 +162,7 @@ def main(mac_build, output, produce=False):
               "macSelfhostReport": pin(report_path), "producer": final["signed"],
               "fullSource": full, "selfhostSource": selfhost, "runnerSource": runner,
               "container": container, "aarch64Root": arm,
-              "x86FullCompiler": x86, "x86SelfhostCompiler": x86_selfhost,
+              "x86FullCompiler": x86, "x86HostEntry": host, "x86SelfhostCompiler": x86_selfhost,
               "linuxProcessInThisGate": False, "nativeLinuxExecutionQualified": False,
               "observer": pin(Path(__file__))}
     (output / "cross.json").write_text(json.dumps(report, indent=2) + "\n")

@@ -22,6 +22,14 @@ def main():
     assert identity((ROOT / "bin/amu-linux-x86_64").read_bytes()) == product["image"]
     for alias in product["aliases"]:
         assert (ROOT / alias).resolve() == (ROOT / "bin/amu-linux-x86_64").resolve()
+    # KOTOBA-174 / ADR 0396: the public Linux x86_64 host entry names x86_64-linux
+    host = product["hostEntry"]
+    assert host["target"] == "x86_64-linux" and host["entry"] == "bin/x86_64-linux/amu"
+    host_image = ROOT / host["entry"]
+    assert not host_image.is_symlink() and identity(host_image.read_bytes()) == host["image"]
+    assert host["image"] != product["image"], "host entry must not be the engine-neutral compiler image"
+    for alias in host["aliases"]:
+        assert (ROOT / alias).is_symlink() and (ROOT / alias).resolve() == host_image.resolve()
     assert identity((ROOT / "seed/bootstrap/aarch64-linux-static-root.elf").read_bytes()) == root["image"] == product["rootImage"]
     mac = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
     assert mac["fullSource"] == product["sourceUnity"]
