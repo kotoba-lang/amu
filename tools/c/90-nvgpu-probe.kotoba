@@ -1,0 +1,20 @@
+;; tools/c/90-nvgpu-probe.kotoba -- route C step 1 (JUN-701 C1): open nvgpu's control node and print the GPU's
+;; characteristics, one `name value` line each (scripts/seed/check-c-nvgpu.py compares them with an oracle).
+
+(defn- show [name :string v :i64] :i64 (say (string-concat name (string-concat " 0x" (hex-str v)))))
+
+(defn main [] :i64
+  (let [ctrl (nv-open NVGPU-CTRL)
+        c (kxrt-b-alloc 4096)
+        size (nv-characteristics ctrl c)
+        w0 (say (string-concat "nvgpu characteristics size " (dec-str size)))
+        a (show "arch" (ch-arch c)) b (show "impl" (ch-impl c)) d (show "rev" (ch-rev c))
+        e (show "num_gpc" (ch-num-gpc c)) f (show "L2_cache_size" (ch-l2-size c))
+        g (show "num_tpc_per_gpc" (ch-num-tpc-per-gpc c)) h (show "big_page_size" (ch-big-page-size c))
+        i (show "compute_class" (ch-compute-class c)) j (show "gpfifo_class" (ch-gpfifo-class c))
+        k (show "dma_copy_class" (ch-dma-copy-class c)) l (show "gpc_mask" (ch-gpc-mask c))
+        m (show "sm_arch_sm_version" (ch-sm-version c)) n (show "sm_arch_spa_version" (ch-spa-version c))
+        o (show "sm_arch_warp_count" (ch-warp-count c)) p (show "gpu_va_bit_count" (ch-va-bits c))
+        q (say (string-concat "chipname " (ch-chipname c)))
+        x (sys1 SYS-CLOSE ctrl)]
+    0))
