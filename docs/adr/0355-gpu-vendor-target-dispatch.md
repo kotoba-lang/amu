@@ -5842,3 +5842,45 @@ any further counted-day slot (its own freeze) and the cross-day
 tail-movement row -- none queued. Evidence:
 docs/evidence/gpu/anv-b3bisect8-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 123, JUN-59 -- THE NINTH CUT PRE-REGISTRATION:
+the s122 carry-forward (a), the ninth cut's DESIGN HALF -- the
+knob-search derivation + the write-once protocol.txt (freeze stamp
+2026-10-31T05:42:23Z) + freeze-record-s123.txt + the standing gate
+set; NO hardware runs, NO builds, NO compiles, NO GO stamp, NO
+day-slot consumption, NO ledger line). FINDING (verified by real
+tool output): THE NINTH CUT IS PRE-REGISTERED -- the eighth cut's
+committed W1 (b) verdict (INTERMEDIATE/MIXED at n=254,557
+((405,1591), s121 pooled median 1,156), publication-s121.txt)
+brackets the B=3 class flip in (254,557, 255,208] n-units (next
+committed CAPTURED point n=255,208 ((1213,4753): s24 mid 1,166 /
+s25 hi 1,166 / s26 hi 1,156, parsed from committed bytes)), and
+the ninth cut measures the EXACT floor midpoint n=254,882 (bracket
+midpoint 254,882.5 -- NOT an integer this cut, the floor is taken
+and named; 35 in-box knob pairs, smallest (248,973), eq3 in-box
+double (496,1946), gcd(254,882, 1,000,003) = 1; the search
+SELF-VALIDATES against s27's committed census (253,255 MATCH x3)
+AND s119's committed run (254,557 MATCH x3; 255,208 MATCH x2);
+knob-search-s123.py twice byte-identical 5,014 bytes, zero NOT
+PARSED). Build pins as parsed: c2 e5ed903e..., c8 480925e5...,
+lo (405,1591) triple 0ce4616c... (s121 build census, the pair's
+first measured digest), hi (1213,4753) triple 123e8f73...; the
+ninth cut's mid/eq3/b2m (3,248,973)/(3,496,1946)/(2,248,973) are
+NEW knob triples (named). ACCEPTED DESIGN ONLY -- not implemented
+compiler code, not a measurement; every ninth-cut quantity is
+UNMEASURED until the measurement half (21 fresh processes under
+this frozen protocol) runs in a future session (NOT queued).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 twice == the s88 pins; (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err 879 == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s124: the ninth cut's measurement half (its own
+session under the frozen protocol), any further counted-day slot
+(its own freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect9prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
