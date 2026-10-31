@@ -23,6 +23,8 @@ on:
       - 'scripts/seed/check-aiueos-object-globals.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-aiueos-object-windows16.py'
+      - 'scripts/seed/check-aiueos-object-windows4k.py'
+      - 'scripts/seed/check-aiueos-object-fence.py'
       - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
@@ -164,6 +166,16 @@ jobs:
           python3 scripts/seed/check-aiueos-object-windows16.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows16"
+      - name: AIUEOS kernel object route u8 / u16 / u32 / u64 window accesses at the 4 KiB tier (JUN-708)
+        run: |
+          python3 scripts/seed/check-aiueos-object-windows4k.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-windows4k"
+      - name: AIUEOS kernel object route emits lfence / sfence / mfence (JUN-708)
+        run: |
+          python3 scripts/seed/check-aiueos-object-fence.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-fence"
       - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
         run: |
           python3 scripts/seed/check-aiueos-object-cpu.py \
