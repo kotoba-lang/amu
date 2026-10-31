@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Route B2, slice 1 (ADR 0375, JUN-377): the system libvulkan.so.1 through the Kotoba loader. GPU hosts only.
+"""Route B2, slice 1 (ADR 0375, JUN-377): the system libvulkan.so.1 through the Kotoba loader. GPU hosts only:
+an x86_64 Linux host (gad, the B70) or an aarch64 Linux host (Xavier, JUN-701); the unit and the image are the
+host's architecture (tools/b2/01-arch-x86_64.kotoba or 01-arch-aarch64.kotoba).
 
 The unit tools/b2 (the Kotoba loader and the libc subset) is compiled with --compiler (--format b2) and the image
 is run on this host. It maps /usr/lib/.../libvulkan.so.1 itself (no ld.so, no glibc is loaded into the image),
@@ -8,21 +10,24 @@ vkEnumerateInstanceExtensionProperties. No ICD is loaded: the loader refuses eac
 
 Checked, with the receipt written to --output/b2-libvulkan.json:
 * the library's import table, parsed from its section headers (dynsym, versym, verneed): every undefined symbol
-  is either exported by the image at the version the library requires, the data object stderr, a weak
-  reference (bound to 0), or one of the declared stubs (pow: a refusal by name that is not reached);
+  is either exported by the image at the version the library requires (on aarch64 an import at the base version
+  GLIBC_2.17 is met by an export at GLIBC_2.17 or older), a data object of the libc subset (stderr; on aarch64 also
+  __stack_chk_guard), a weak reference (bound to 0), or one of the target's declared stubs (refusals by name that
+  are not reached: pow on x86_64; pow, floor, localtime and mktime for NVIDIA's aarch64 libvulkan);
 * the image's own export table is read from its bytes, not from the source;
 * the run: exit 0, the program's lines, `stubs for unresolved imports` equal to the declared stubs, the five
   /proc/self/maps lines of the library (paths and offsets from the file, permissions from its program headers,
   RELRO read-only), the instance version equal to the file's version, results 0;
 * an independent oracle, only to compare results (not part of the product route): the same two calls made through
-  the system's own ld.so and glibc (Python ctypes) with the drivers hidden (VK_DRIVER_FILES names a file that
-  does not exist), which must give the same version, count and extension names and spec versions as the
+  the system's own ld.so and glibc (Python ctypes) with the drivers hidden (VK_DRIVER_FILES and, for loaders older
+  than 1.3.207, VK_ICD_FILENAMES name a file that does not exist), which must give the same version, count and
+  extension names and spec versions as the
   image under the same environment, and as the image under the default environment (where each ICD's dlopen is
   refused: the log shows every manifest found and every refusal);
 * the negative control: the same image with VK_LOADER_DEBUG=error,driver shows the loader reading each manifest through the
   libc subset (opendir, fopen, fread, sscanf) and the refusal of each library.
 
-  python3 check-b2-libvulkan.py --compiler F.elf --output OUT [--libvulkan PATH]      (gad or the B70)
+  python3 check-b2-libvulkan.py --compiler F.elf --output OUT [--libvulkan PATH]      (gad, the B70 or Xavier)
 """
 import argparse
 import hashlib
@@ -37,9 +42,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 B2 = ROOT / "tools/b2"
 NS = "(ns g (:export [main]))\n"
-PATHS = ["/usr/lib/x86_64-linux-gnu/libvulkan.so.1", "/lib/x86_64-linux-gnu/libvulkan.so.1", "/usr/lib64/libvulkan.so.1"]
-DECLARED_STUBS = {"pow"}
-DATA_SYMBOLS = {"stderr"}
+# per host architecture: the unit's arch file, the image's target, the library paths, the declared stubs, the data objects
+ARCHS = {
+    "x86_64": dict(target="x86_64-linux", paths=["/usr/lib/x86_64-linux-gnu/libvulkan.so.1", "/lib/x86_64-linux-gnu/libvulkan.so.1",
+                                                 "/usr/lib64/libvulkan.so.1"], stubs={"pow"}, data={"stderr"}),
+    "aarch64": dict(target="aarch64-linux", paths=["/usr/lib/aarch64-linux-gnu/libvulkan.so.1", "/lib/aarch64-linux-gnu/libvulkan.so.1",
+                                                   "/usr/lib64/libvulkan.so.1"],
+                    stubs={"pow", "floor", "localtime", "mktime"}, data={"stderr", "__stack_chk_guard"}),
+}
 ORACLE = r'''
 import ctypes
 lib = ctypes.CDLL("libvulkan.so.1")
@@ -122,8 +132,9 @@ def load_segments(path):
     return [p for p in ph if p["type"] == 1], next((p for p in ph if p["type"] == 0x6474E552), None)
 
 
-def expected_maps(path):
-    """(offset, permissions) of each mapping the loader makes: PT_LOAD pages, the RW segment split at RELRO."""
+def expected_maps(path, with_vaddr=False):
+    """(offset, permissions) of each mapping the loader makes: PT_LOAD pages, the RW segment split at RELRO; with_vaddr
+    adds each mapping's page address in the object (the loader maps at base + that address)."""
     loads, relro = load_segments(path)
     down = lambda n: n & -4096
     rows = []
@@ -132,20 +143,31 @@ def expected_maps(path):
         off = down(p["offset"])
         if p["flags"] & 2 and relro and down(relro["vaddr"]) == down(p["vaddr"]):
             end = (relro["vaddr"] + relro["memsz"] + 4095) & -4096
-            rows.append((off, "r--p"))
+            rows.append((off, "r--p", down(p["vaddr"])))
             if end < ((p["vaddr"] + p["memsz"] + 4095) & -4096):
-                rows.append((off + end - down(p["vaddr"]), perm))
+                rows.append((off + end - down(p["vaddr"]), perm, end))
         else:
-            rows.append((off, perm))
-    return rows
+            rows.append((off, perm, down(p["vaddr"])))
+    return rows if with_vaddr else [r[:2] for r in rows]
 
 
-def unit_source():
-    text = NS
-    for line in (B2 / "MANIFEST").read_text().splitlines():
-        if line and not line.startswith("#"):
-            text += (ROOT / line).read_text() + "\n"
-    return text
+def unit_files(arch):
+    return [l.replace("@ARCH@", arch) for l in (B2 / "MANIFEST").read_text().splitlines() if l and not l.startswith("#")]
+
+
+def unit_source(arch):
+    return NS + "".join((ROOT / line).read_text() + "\n" for line in unit_files(arch))
+
+
+def glibc_version(v):
+    """GLIBC_a.b[.c] as a tuple, or None."""
+    m = re.fullmatch(r"GLIBC_(\d+)\.(\d+)(?:\.(\d+))?", v)
+    return (int(m[1]), int(m[2]), int(m[3] or 0)) if m else None
+
+
+def base_match(arch, want, have):
+    """aarch64's base version GLIBC_2.17 is met by an export at GLIBC_2.17 or older (tools/b2 ver-base-match?)."""
+    return arch == "aarch64" and want == "GLIBC_2.17" and glibc_version(have) is not None and glibc_version(have) <= (2, 17, 0)
 
 
 def run_image(img, env, args=()):
@@ -172,8 +194,11 @@ def parse_oracle(stdout):
 
 
 def main(compiler, output, libvulkan):
-    assert platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64"), "an x86_64 Linux GPU host"
-    lib = Path(libvulkan or next((p for p in PATHS if Path(p).exists()), "")).resolve()
+    arch = {"x86_64": "x86_64", "AMD64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}.get(platform.machine())
+    assert platform.system() == "Linux" and arch, "an x86_64 or aarch64 Linux GPU host"
+    A = ARCHS[arch]
+    DECLARED_STUBS, DATA_SYMBOLS = A["stubs"], A["data"]
+    lib = Path(libvulkan or next((p for p in A["paths"] if Path(p).exists()), "")).resolve()
     assert lib.exists(), "libvulkan.so.1 not found; pass --libvulkan"
     image_check = load_module("check_b2_image", ROOT / "scripts/seed/check-b2-image.py")
     output.mkdir(parents=True, exist_ok=False)
@@ -183,8 +208,8 @@ def main(compiler, output, libvulkan):
     producer.write_bytes(compiler.read_bytes())
     producer.chmod(0o755)
     src, img = art / "b2-vk-probe.kotoba", art / "b2-vk-probe.elf"
-    src.write_text(unit_source())
-    z = subprocess.run([str(producer), "compile", str(src), "--target", "x86_64-linux", "--output", str(img), "--format", "b2"],
+    src.write_text(unit_source(arch))
+    z = subprocess.run([str(producer), "compile", str(src), "--target", A["target"], "--output", str(img), "--format", "b2"],
                        cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art)}, capture_output=True, timeout=900)
     assert z.returncode == 0 and not z.stderr and b":format :b2" in z.stdout, (z.returncode, z.stderr[-400:])
     img.chmod(0o755)
@@ -202,6 +227,8 @@ def main(compiler, output, libvulkan):
             how = "weak reference, bound to 0"
         elif (n, v) in have or (n in names_have and v == ""):
             how = "exported by the image"
+        elif any(name == n and base_match(arch, v, ver) for name, ver in have):
+            how = "exported by the image at an older version than the base " + v
         elif n in DECLARED_STUBS:
             how = "declared stub: refuses by name when called"
         else:
@@ -212,7 +239,7 @@ def main(compiler, output, libvulkan):
     base_env = {"PATH": "/usr/bin:/bin"}
     none_dir = output / "no-icd"
     none_dir.mkdir()
-    none_env = dict(base_env, VK_DRIVER_FILES=str(none_dir / "does-not-exist.json"))
+    none_env = dict(base_env, VK_DRIVER_FILES=str(none_dir / "does-not-exist.json"), VK_ICD_FILENAMES=str(none_dir / "does-not-exist.json"))
     runs = {}
     # the image: explicit path, default search, drivers hidden, and the debug log
     rc, out, err = run_image(img, base_env, [str(lib)])
@@ -247,17 +274,22 @@ def main(compiler, output, libvulkan):
     want = expected_maps(lib)
     assert [(int(o, 16), p) for _, _, p, o, _ in maps] == want, (maps, want)
     assert all(Path(p).resolve() == lib for *_, p in maps), maps
+    # each mapping at base + its page address in the object (the gaps between segments stay the reservation's)
     starts = [int(a, 16) for a, *_ in maps]
-    assert starts == sorted(starts) and all(int(b, 16) == int(a2, 16) for (a1, b, *_), (a2, *_) in zip(maps, maps[1:])), "contiguous"
+    base = int(re.search(r"^loaded: base 0x([0-9a-f]+) ", out, re.M)[1], 16)
+    assert starts == [base + v for _, _, v in expected_maps(lib, with_vaddr=True)], ("mapped at base + vaddr", hex(base), maps)
     # the driver log: every manifest found is read and every library refused by name; none is loaded
     log = err3 + out3
-    manifests = list(dict.fromkeys(re.findall(r"Found ICD manifest file (\S+),", log)))
-    refused = list(dict.fromkeys(re.findall(r"Failed loading library associated with ICD JSON (\S+)\. Ignoring this JSON", log)))
+    # two loader log formats: 1.3.275 names each manifest and each refused library's JSON; 1.3.204 lists the manifests
+    # after "Found the following files:" and names the refused library
+    manifests = list(dict.fromkeys(re.findall(r"Found ICD manifest file (\S+),", log)
+                                   + re.findall(r"^DRIVER: {7}(/\S+\.json)$", log, re.M)))
+    refused = list(dict.fromkeys(re.findall(r"Failed loading library associated with ICD JSON (\S+)\. Ignoring this JSON", log)
+                                 + re.findall(r"Failed to add ICD JSON (\S+)\.  Skipping ICD JSON", log)))
     assert len(manifests) == len(refused) >= 1 and "not loaded by this loader" in log, (manifests, refused)
     runs = dict(default=dict(exit=rc, parsed=default), noIcd=dict(exit=rc2, parsed=no_icd), oracleNoIcd=oracle,
                 driverLog=dict(manifestsFound=manifests, librariesRefused=refused))
-    report = dict(status="PASS_B2_LIBVULKAN", compiler=pin(compiler), image=pin(img), unit={p: pin(ROOT / p) for p in
-                  [l for l in (B2 / "MANIFEST").read_text().splitlines() if l and not l.startswith("#")]},
+    report = dict(status="PASS_B2_LIBVULKAN", arch=arch, compiler=pin(compiler), image=pin(img), unit={p: pin(ROOT / p) for p in unit_files(arch)},
                   host=[platform.system(), platform.machine(), platform.release()],
                   library=dict(path=str(lib), **pin(lib), imports=len(coverage)),
                   imports=coverage, exportsOfImage=len(table), runs=runs, maps=[list(m) for m in maps], expectedMaps=[list(w) for w in want],

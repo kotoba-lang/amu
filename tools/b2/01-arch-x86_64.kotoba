@@ -1,0 +1,100 @@
+;; tools/b2/01-arch-x86_64.kotoba -- what route B2's loader and libc subset need to know about x86_64 Linux
+;; (ADR 0375, JUN-377; split out of the other files by JUN-701). tools/b2/MANIFEST names 01-arch-@ARCH@.kotoba:
+;; the checks put this file or 01-arch-aarch64.kotoba there. Each target's file defines the same names.
+
+;; ---- system call numbers ---------------------------------------------------------------------------------
+(def SYS-READ 0)
+(def SYS-WRITE 1)
+(def SYS-CLOSE 3)
+(def SYS-MMAP 9)
+(def SYS-MPROTECT 10)
+(def SYS-MUNMAP 11)
+(def SYS-PREAD 17)
+(def SYS-ACCESS 21)
+(def SYS-LSEEK 8)
+(def SYS-READLINK 89)
+(def SYS-ARCH-PRCTL 158)
+(def SYS-GETDENTS64 217)
+(def SYS-EXIT-GROUP 231)
+(def SYS-OPENAT 257)
+(def SYS-GETRANDOM 318)
+(def SYS-SIGACTION 13)
+(def SYS-SIGALTSTACK 131)
+(def SYS-MINCORE 27)
+(def SYS-GETUID 102)
+(def SYS-GETGID 104)
+(def SYS-GETEUID 107)
+(def SYS-GETEGID 108)
+(def SYS-CLOCK-GETTIME 228)
+;; opendir's open flags (O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_CLOEXEC and 0x20000, as before JUN-701)
+(def O-OPENDIR 722944)
+(defn- sys-access [path :i64 mode :i64] :i64 (sys2 SYS-ACCESS path mode))
+(defn- sys-readlink [path :i64 buf :i64 size :i64] :i64 (sys3 SYS-READLINK path buf size))
+
+;; ---- ELF ---------------------------------------------------------------------------------------------------
+(def ELF-MACHINE 62)
+(defn- elf-machine-name [] :string "x86_64")
+(def R-RELATIVE 8)
+(def R-GLOB-DAT 6)
+(def R-JUMP-SLOT 7)
+(def R-ABS64 1)
+(def R-SLOT-ADDEND 0)
+;; the dynamic linker's name, which a DT_NEEDED entry names as part of the C library
+(defn- arch-ld-so? [n :i64] :bool (c-eq? n "ld-linux-x86-64.so.2"))
+;; glibc's oldest symbol version on this target is GLIBC_2.2.5, the version of every export below that
+;; predates its own: an import binds to an export at the same version only
+(defn- ver-base-match? [want :i64 have :i64] :bool false)
+;; the data objects only this target's glibc has
+(defn- arch-data-sym [name :i64] :i64 0)
+;; the system paths of libvulkan.so.1
+(defn- vk-path-1 [] :string "/usr/lib/x86_64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-2 [] :string "/lib/x86_64-linux-gnu/libvulkan.so.1")
+(defn- vk-path-3 [] :string "/usr/lib64/libvulkan.so.1")
+
+;; ---- the thread control block (E4) -------------------------------------------------------------------------
+;; glibc's tcbhead_t: fs:0 holds the thread pointer itself, fs:8 the dtv, fs:0x10 the thread pointer again,
+;; fs:0x28 the stack protector canary. A random canary with a zero low byte, as glibc makes it.
+(defn- tcb-init [] :i64
+  (let [m (sys6 SYS-MMAP 0 4096 3 34 -1 0)]
+    (if (< m 0) (refuse "tcb" "mmap failed")
+      (let [a (s64 m m) b (s64 (+ m 16) m) c (sys3 SYS-GETRANDOM (+ m 40) 8 0)
+            d (s8 (+ m 40) 0) e (st! ST-TCB m)
+            r (sys2 SYS-ARCH-PRCTL 4098 m)]
+        (if (< r 0) (refuse "tcb" (string-concat "arch_prctl(ARCH_SET_FS) failed: " (dec-str r))) m)))))
+
+;; ---- refusing stubs ----------------------------------------------------------------------------------------
+;; slot (32 bytes): mov edi, n ; mov rax, thunk ; jmp rax
+(defn- stub-write [slot :i64 n :i64 thunk :i64] :i64
+  (let [a (s8 slot 0xbf) b (s32 (+ slot 1) n)
+        c (s8 (+ slot 5) 0x48) d (s8 (+ slot 6) 0xb8) e (s64 (+ slot 7) thunk)
+        f (s8 (+ slot 15) 0xff) g (s8 (+ slot 16) 0xe0)]
+    slot))
+;; x86 keeps the instruction cache coherent with stores
+(defn- code-sync [a :i64 n :i64] :i64 0)
+
+;; ---- va_list -----------------------------------------------------------------------------------------------
+;; the next integer or pointer argument of a SysV x86-64 va_list: {u32 gp_offset, u32 fp_offset, overflow_arg_area, reg_save_area}
+(defn- va-next-int [ap :i64] :i64
+  (let [gp (l32 ap)]
+    (if (< gp 48)
+      (let [v (l64 (+ (l64 (+ ap 16)) gp))
+            z (s32 ap (+ gp 8))]
+        v)
+      (let [ov (l64 (+ ap 8))
+            v (l64 ov)
+            z (s64 (+ ap 8) (+ ov 8))]
+        v))))
+
+;; ---- the fault report --------------------------------------------------------------------------------------
+;; ucontext_t: gregs at 40; REG_RDI 8, REG_RSI 9, REG_RBP 10, REG_RDX 12, REG_RSP 15, REG_RIP 16
+(defn- uc-pc [uc :i64] :i64 (l64 (+ uc 168)))
+(defn- uc-sp [uc :i64] :i64 (l64 (+ uc 160)))
+(defn- uc-fp [uc :i64] :i64 (l64 (+ uc 120)))
+(defn- uc-args [uc :i64] :string
+  (string-concat "rdi 0x" (string-concat (hex-str (l64 (+ uc 104))) (string-concat " rsi 0x" (string-concat (hex-str (l64 (+ uc 112))) (string-concat " rdx 0x" (hex-str (l64 (+ uc 136)))))))))
+(defn- sp-name [] :string "rsp")
+;; the signals the report covers: SIGSEGV, SIGBUS, SIGILL (a Kotoba trap: ud2), SIGFPE
+(defn- fault-signals [act :i64] :i64
+  (let [i (sys4 SYS-SIGACTION 11 act 0 8) j (sys4 SYS-SIGACTION 7 act 0 8)
+        k (sys4 SYS-SIGACTION 4 act 0 8) l (sys4 SYS-SIGACTION 8 act 0 8)]
+    0))
