@@ -90,7 +90,7 @@ def static_capacity_layout():
     constants = lambda b: {k.decode(): int(v) for k, v in re.findall(rb"\(def (MM-[A-Z0-9-]+) ([0-9]+)\)", b)}
     a, b = constants(normal), constants(static)
     assert a.keys() == b.keys()
-    overrides = dict(TOK=786432, NODE=786432, SIR=589824, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
+    overrides = dict(TOK=1048576, NODE=786432, SIR=589824, CODE=2097152, FIX=262144, LITB=1048576, OUT=12582912)
     regions = "TOK NODE SYM HASH FN SCOPE SIR LABEL CODE FIX LIT LITB EXP OUT".split()
     for name in regions:
         assert b[f"MM-{name}-W"] == a[f"MM-{name}-W"]
