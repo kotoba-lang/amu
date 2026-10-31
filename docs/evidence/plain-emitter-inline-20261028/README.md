@@ -348,6 +348,23 @@ build closure and does not qualify anything.
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce`, the identity-resource gate and the x86 inline-access corpus
     pass.
+* Re-derived again after main's #1738 (JUN-600, ADR 0399: bounded MSR
+  read/write and PCI data-port input on the object route, `seed/74`).
+  * x86_64: F1 = F2 = F3 = `d0238a74…` (9,232,896 bytes), from the
+    3,822,974-byte unity `9de4a952…`. Its `--format host-entry` image is
+    `02d1ae3b…` (9,236,992 bytes).
+  * aarch64 root: F1 = F2 = `6e62d382…` (3,854,848 bytes), container
+    `6bc8ae13…`, derived under qemu from the `8198e87c…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * Unchanged: the CDCI images (amu-selfhost `6d610126…`, controller
+    `f6e86336…`, kotoba-native `06ddfe88…`), the 19 x86_64 payloads and the
+    19 aarch64 containers built with `--no-crypto-hw`. All 154 kernel-object
+    sources (the 19 `check-aiueos-object-*` gates including msr, their
+    evidence sources and the 12 kernel-memory dot cases) compile identically
+    to main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
