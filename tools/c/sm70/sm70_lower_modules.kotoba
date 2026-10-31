@@ -1,0 +1,25 @@
+(ns sm70-lower-modules (:export [main]))
+
+;; The KIR v2 modules that scripts/seed/check-sm70-lower.py lowers (JUN-723):
+;; this ns line, then tools/spirv_encode.kotoba, tools/spirv_check.kotoba,
+;; tools/gpu_kernel_kir2.kotoba and tools/gpu_kernels_v2.kotoba without their
+;; ns lines, then the rest of this file. One line per module:
+;;   S <name> <words...>   (decimal u32 words)
+;; and main answers the number of modules. The lowering unit
+;; (sm70_lower_test.kotoba) takes these words as its arguments, so this
+;; slower unit is built once per check.
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 1))
+
+(defn- module [name :string M :vector-i64] :i64
+  (say (loop [k 0 s (string-concat "S " name)]
+         (if (>= k (spv-count M)) s (recur (inc k) (string-concat s (string-concat " " (string-from-i64 (spv-word M k)))))))))
+
+;; ewise operators: 1 add, 2 sub, 3 mul (kir2-ewise)
+(defn main [] :i64
+  (+ (module "ewise-add-wg256" (kir2-ewise 1 256))
+     (module "ewise-add-wg64" (kir2-ewise 1 64))
+     (module "ewise-mul-wg256" (kir2-ewise 3 256))
+     (module "ewise-sub-wg256" (kir2-ewise 2 256))
+     (module "dot-rows" (kir2-dot-rows))))
