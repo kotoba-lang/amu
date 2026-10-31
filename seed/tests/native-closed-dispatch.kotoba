@@ -1,0 +1,32 @@
+;; JUN-730: closed multimethods, admitted natively (scripts/seed/check-closed-dispatch.py). main answers 0.
+;; lang/guest-grammar.edn :closed-multimethod -> one module-local defn with static case dispatch.
+(ns d (:export [main]))
+
+;; an unqualified dispatch function, integer keys; defmethods may come before their defmulti
+(defn kind [n :i64] :i64 (if (< n 2) 0 1))
+(defmethod fib 0 [n :i64] n)
+(defmulti fib "the docstring is admitted" kind)
+(defmethod fib 1 [n :i64] (+ (fib (- n 1)) (fib (- n 2))))
+
+;; a keyword dispatch function on a record, keyword keys, several body forms, :default
+(defrecord Shape [kind :keyword w :i64 h :i64])
+(defmulti shape-area :kind)
+(defmethod shape-area :square [s [:ref :d/Shape]] (* (:w s) (:w s)))
+(defmethod shape-area :rect [s [:ref :d/Shape]] (let [w (:w s)] (+ w 0) (* w (:h s))))
+(defmethod shape-area :default [s [:ref :d/Shape]] 0)
+
+;; two parameters; a method may abort and the caller handles it
+(defn sign [a :i64 b :i64] :i64 (if (< a b) -1 (if (= a b) 0 1)))
+(defmulti cmp sign)
+(defmethod cmp -1 [a :i64 b :i64] (- b a))
+(defmethod cmp 0 [a :i64 b :i64] (throw 7))
+(defmethod cmp 1 [a :i64 b :i64] (* 2 (- a b)))
+(defn safe-cmp [a :i64 b :i64] :i64 (try (cmp a b) (catch :i64 e (+ e 100))))
+
+(defn main [] :i64
+  (let [a (fib 10)                                     ; 55
+        b (+ (shape-area (->Shape :square 3 0))        ; 9
+             (+ (shape-area (->Shape :rect 2 5))       ; 10
+                (shape-area (->Shape :tri 4 4))))      ; 0
+        c (+ (safe-cmp 1 4) (+ (safe-cmp 5 5) (safe-cmp 6 2)))]   ; 3 + 107 + 8
+    (- (+ a (+ b c)) 192)))
