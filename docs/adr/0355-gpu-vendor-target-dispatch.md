@@ -5884,3 +5884,10 @@ session under the frozen protocol), any further counted-day slot
 (its own freeze) and the cross-day tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3bisect9prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (s125): the ninth cut MEASUREMENT half landed
+(docs/evidence/gpu/anv-b3bisect9-20261031/): C1 (a) / C2 (b) / C3 (a)
+/ W1 (d) FLAGGED -- the lo anchor class DISAGREED with the eighth
+cut at the same pair/grid (CAPTURED vs INTERMEDIATE/MIXED, boundary
+min 986 -> 1,005 at overlapping medians), so NO bracket narrowing is
+claimed; mid at n=254,882 measured INTERMEDIATE/MIXED.
