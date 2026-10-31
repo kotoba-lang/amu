@@ -6129,3 +6129,41 @@ any further counted-day slot (next slot is a NEW UTC day, its own
 freeze) and the cross-day tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3bisect12-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 137-138, JUN-59 -- THIRTEENTH CUT
+PRE-REGISTRATION + LANDING, the s136 carry-forward (a)): THE
+16-BLOCK STABILITY CONFRONTATION CUT is PRE-REGISTERED AND FROZEN
+(ACCEPTED DESIGN ONLY): the s137 design half (knob-search-s137.py
+twice byte-identical 9,848 bytes; protocol.txt write-once, freeze
+stamp 2026-10-31T16:52:54Z, NO run log of this cut exists at
+freeze), landing tail s138 (freeze-record-s137.txt + gates
+(a)-(f) live + record.txt + this note; all s137 claims
+byte-re-verified from the committed captures first). The cut
+confronts the twelfth cut's 8-block BLOCK-UNSTABLE content at mid
+(248,973) n=254,882 AND bis (3,316,1239) n=255,045 at 16 blocks
+of 3 at byte-identical pinned binaries (mid cabff942... 4-way;
+bis 440604ef... == s136 first measured digest, DECLARED the pin),
+ZERO NEW KNOB TRIPLES: arms c2/mid/bis/c8 k=3/48/48/3 = 102 fresh
+processes, 16 blocks of 3 per B=3 arm + pooled-48 (named
+extension). Letters re-defined for the 16-block confrontation; the
+pre-named cross-window disagreement at mid (s132 pooled-24 1,133
+I/M vs s136 pooled-24 1,148 CAPTURED at the same binary) is named
+content confronted in W3. Under ALL outcomes NO bracket movement
+(254,557, 255,208] and the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed). Every thirteenth-cut quantity is
+UNMEASURED until a future measurement-half session runs 102 fresh
+processes under the frozen protocol (NOT queued). Standing gates
+all == pins: (a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted); (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair
+twice byte-identical == the s117 post-append pin, VERDICT:
+SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0;
+(f) ledger == HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the workgroup
+rows stay as ADR-0358 left them. Carry-forward s139: the
+thirteenth cut's measurement half (its own session, NOT queued),
+any further counted-day slot (next slot is a NEW UTC day, its own
+freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect13prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
