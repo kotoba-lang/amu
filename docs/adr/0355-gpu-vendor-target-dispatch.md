@@ -5770,3 +5770,43 @@ freeze) and the cross-day tail-movement row (not queued) -- no
 queued row remains. Evidence:
 docs/evidence/gpu/anv-b3w7ledgerappend-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 120, JUN-59 -- THE EIGHTH CUT
+PRE-REGISTRATION: completing the interrupted s118/s119 slice, the
+V3-named bisect re-open's design half): the knob-search (d1) regex
+defects fixed at source and knob-search-s119.py re-run twice
+BYTE-IDENTICAL (3,463 bytes, ZERO NOT PARSED -- the s27
+section-3 citation "1,166 / 1,166 / 1,156 CAPTURED" and the s24
+C3 (b) "1,000 vs 994 at n=255,208" both parse; self-validation
+MATCH x3 vs s27's committed census). THE FINDING -- THE EIGHTH
+CUT IS PRE-REGISTERED: the settle-bar V3 settled class
+(INTERMEDIATE/MIXED at the (1024,4033) anchor, n=253,906, B=3)
+re-opens the B=3 flip bracket toward the next committed CAPTURED
+point -- the (1213,4753) pair at n=255,208 (three committed
+readings, all CAPTURED: s24 mid 1,166 / s25 hi 1,166 / s26 hi
+1,156; the s118 "single quote reading" phrasing stands corrected
+-- named) -- so the flip is bracketed in (253,906, 255,208]
+n-units and the eighth cut measures its exact floor midpoint
+n=254,557 (31 in-box knob pairs, smallest (405,1591), eq3 double
+(810,3182), gcd 1; 255,208's smallest in-box pair IS the
+committed (1213,4753)). protocol.txt written once (freeze stamp
+2026-10-31T03:53:30Z) + freeze-record-s120.txt: arm table
+c2/lo/mid/eq3/hi/b2m/c8, build pins as parsed, C1/C2/C3/W1/W2/W3/
+X1 letters, BAR NON-INTERFERENCE clause, frozen limitations.
+ACCEPTED DESIGN ONLY -- not implemented compiler code, not a
+measurement; every eighth-cut quantity is UNMEASURED until the
+measurement half (21 fresh processes) runs in a future session
+(NOT queued). Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 twice == the s88
+pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair ==
+the s117 post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); the workgroup rows stay as ADR-0358 left
+them.  Carry-forward s121: the eighth cut's measurement half
+(its own session under the frozen protocol), any further
+counted-day slot (its own freeze) and the cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect8prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
