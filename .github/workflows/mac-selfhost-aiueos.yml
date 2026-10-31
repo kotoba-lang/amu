@@ -29,6 +29,10 @@ on:
       - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
+      - 'scripts/seed/check-js-browser.py'
+      - 'runtime/js-browser-static-run.html'
+      - 'runtime/wasm32-browser-static-host.js'
+      - 'seed/81-js-esm.kotoba'
       - 'scripts/seed/check-document-edn-read.py'
       - 'scripts/seed/check-keyword-map-record.py'
       - 'seed/tests/native-keyword-map-record.kotoba'
@@ -161,6 +165,12 @@ jobs:
         run: |
           python3 scripts/seed/check-macos-keyword-intern.py \
             --output "$RUNNER_TEMP/mac-keyword-intern"
+      - name: js-browser target, 24 cases identical to wasm32-browser in headless Chrome (ADR 0397, JUN-706)
+        run: |
+          python3 scripts/seed/check-js-browser.py \
+            --compiler seed/bootstrap/aarch64-macos/amu-full-root.macho \
+            --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+            --output "$RUNNER_TEMP/mac-js-browser"
       - name: document-edn-read treats comma, newline, tab, comments and edge whitespace as EDN delimiters (JUN-650)
         run: |
           python3 scripts/seed/check-document-edn-read.py \

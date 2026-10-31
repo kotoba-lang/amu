@@ -1,0 +1,267 @@
+;; js-browser-static/v1 (ADR 0397, JUN-706): the same SIR seed/81-wasm32 consumes -- the guest and the
+;; Kotoba runtime (seed/82's xw-rt-src, shared unchanged, so the wasm and JS runtimes cannot drift) --
+;; emitted as one restricted ES module instead of WebAssembly. The text is written straight to OUT.
+;;
+;; The module exports only instantiate(host) and names no global: host is the five kotoba:host
+;; functions (write, cap, now, exit, input; i64 arguments and answers as BigInt, exactly as the wasm
+;; imports), and the result is {memory, start} with memory.buffer and start(fuel), the shape of a
+;; wasm instance's exports, so runtime/wasm32-browser-static-host.js serves both targets.
+;;
+;; Every value is a BigInt wrapped to 64 bits after arithmetic (W), shift counts are masked to 63 as
+;; wasm masks them, and quot traps on 0 and on MIN/-1. Slot s is local l(s-1) (the parameters are the
+;; function's parameters); temp t is l(nslots+t); then one scratch local. Each function is
+;; `L: for(;;){ switch(pc){ case 0: .. case k: .. } U(); }` over its basic blocks (block 0 = entry,
+;; block k = the k-th LABEL, numbered by seed/81's xw-blocks); a branch sets pc and continues L.
+;; Linear memory is one resizable ArrayBuffer read through a length-tracking DataView with wasm32's
+;; layout (context at XW-CTX, the literal pool at XW-POOL, then the runtime's arena grown by
+;; kxrt-wasm-grow in 64 KiB pages). FADDR/CALLI go through a table of the functions themselves (a JS
+;; function ignores the padding arguments a wasm thunk drops). Fuel is charged at ctx+8 where seed/81
+;; charges it; traps go through the runtime's handler (vector-at M 250) as on wasm. Floats, the syscall
+;; and call-at intrinsics are refused (E7101), as on seed/80 and seed/81. JS has no proper tail
+;; calls, so a call in tail position (where seed/81 emits return_call) returns a deferred call,
+;; `new TC(f,[args])`, and every other call site runs R(..), which resumes deferred calls until a value
+;; comes back: tail recursion of any depth runs in constant stack, as on wasm. Unbounded recursion that
+;; is not in tail position ends in the engine's stack overflow, which the host reports as a trap
+;; outside the handler (exit 120), as wasm's stack exhaustion is.
+
+;; ---- text into OUT (every emitted string is ASCII) ----
+(defn- xj-o [M :vector-i64 s :string] :vector-i64
+  (loop [i 0 m M]
+    (if (or (>= i (string-length s)) (not= (vector-at m MM-ERR) 0)) m
+      (recur (inc i) (out-put m (string-code-point-at s i))))))
+(defn- xj-n [v :i64] :string (string-concat (mem-u2dec v) "n"))
+(defn- xj-l [k :i64] :string (string-concat "l" (mem-u2dec k)))
+(defn- xj-t [M :vector-i64 t :i64] :string (xj-l (xw-t M t)))
+(defn- xj-f [M :vector-i64 f :i64] :string (string-concat "f" (mem-u2dec (xw-idx M f))))
+(defn- xj-set [M :vector-i64 t :i64 e :string] :vector-i64
+  (xj-o M (string-concat (xj-t M t) (string-concat "=" (string-concat e ";\n")))))
+(defn- xj-scr [M :vector-i64] :string (xj-l (xw-scr M)))
+(defn- xj-ctx [] :string (xj-n XW-CTX))
+;; operands t .. t+n-1 as a comma-separated list, with a leading comma when lead
+(defn- xj-args [M :vector-i64 t :i64 i :i64 n :i64 lead :bool acc :string] :string
+  (if (= i n) acc
+    (xj-args M t (inc i) n true (string-concat acc (string-concat (if lead "," "") (xj-t M (+ t i)))))))
+(defn- xj-zeros [n :i64 acc :string] :string (if (<= n 0) acc (xj-zeros (dec n) (string-concat acc ",0n"))))
+
+;; ---- traps ----
+(defn- xj-trap [M :vector-i64 sig :i64] :string
+  (let [h (vector-at M 250)]
+    (if (> h 0) (string-concat "R(" (string-concat (xj-f M h) (string-concat "(" (string-concat (xj-n sig) "));U();")))) "U();")))
+
+;; ---- functions ----
+(defn- xj-params [k :i64 n :i64 acc :string] :string
+  (if (= k n) acc (xj-params (inc k) n (string-concat acc (string-concat (if (= k 0) "" ",") (xj-l k))))))
+(defn- xj-lets [k :i64 n :i64 acc :string] :string
+  (if (>= k n) acc (xj-lets (inc k) n (string-concat acc (string-concat "," (string-concat (xj-l k) "=0n"))))))
+(defn- xj-fn [M :vector-i64 S :string i :i64 f :i64] :vector-i64
+  (let [m (-> M (xg-set 0 f) (xw-blocks (inc i) 1))
+        np (xg-f m f FF-NPARAMS) total (inc (xw-scr m))]
+    (xj-o m (string-concat "// " (string-concat (xw-name m S f) (string-concat "\nfunction " (string-concat (xj-f m f) (string-concat "(" (string-concat (xj-params 0 np "")
+             (string-concat "){let pc=0" (string-concat (xj-lets np total "") ";\nL:for(;;){switch(pc){case 0:\n")))))))))))
+(defn- xj-end [M :vector-i64] :vector-i64 (xj-o M "}U();}}\n"))
+(defn- xj-target [M :vector-i64 l :i64] :string
+  (let [j (bit-and (vector-at M (+ MM-LABEL-BASE l)) 4294967295)]
+    (if (or (<= l 0) (>= l MM-LABEL-CAP) (= j 0)) "" (string-concat "pc=" (string-concat (mem-u2dec j) ";continue L;")))))
+(defn- xj-br [M :vector-i64 l :i64] :vector-i64
+  (let [g (xj-target M l)] (if (= (string-length g) 0) (xg-err M 7103 l) (xj-o M (string-concat g "\n")))))
+(defn- xj-brif [M :vector-i64 t :i64 l :i64 nz :bool] :vector-i64
+  (let [g (xj-target M l)]
+    (if (= (string-length g) 0) (xg-err M 7103 l)
+      (xj-o M (string-concat "if(" (string-concat (xj-t M t) (string-concat (if nz "!==0n){" "===0n){") (string-concat g "}\n"))))))))
+(defn- xj-quot [M :vector-i64 t :i64] :vector-i64
+  (let [a (xj-t M t) b (xj-t M (inc t))]
+    (-> M (xj-o (string-concat "if(" (string-concat b (string-concat "===0n||(" (string-concat b (string-concat "===-1n&&" (string-concat a
+                 (string-concat "===-9223372036854775808n)){" (string-concat (xj-trap M 5) "}\n")))))))))
+          (xj-set t (string-concat a (string-concat "/" b))))))
+(defn- xj-bin [M :vector-i64 op :i64 t :i64] :vector-i64
+  (let [a (xj-t M t) b (xj-t M (inc t)) s (string-concat "(" (string-concat b "&63n)"))]
+    (case op
+      4 (xj-quot M t)
+      1 (xj-set M t (string-concat "W(" (string-concat a (string-concat "+" (string-concat b ")")))))
+      2 (xj-set M t (string-concat "W(" (string-concat a (string-concat "-" (string-concat b ")")))))
+      3 (xj-set M t (string-concat "W(" (string-concat a (string-concat "*" (string-concat b ")")))))
+      5 (xj-set M t (string-concat a (string-concat "&" b)))
+      6 (xj-set M t (string-concat a (string-concat "|" b)))
+      7 (xj-set M t (string-concat a (string-concat "^" b)))
+      8 (xj-set M t (string-concat "W(" (string-concat a (string-concat "<<" (string-concat s ")")))))
+      9 (xj-set M t (string-concat "W(BigInt.asUintN(64," (string-concat a (string-concat ")>>" (string-concat s ")")))))
+      10 (xj-set M t (string-concat a (string-concat ">>" s)))
+      (xg-err M 7101 op))))
+(defn- xj-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
+  (xj-set M t (string-concat "(" (string-concat (xj-t M t)
+                (string-concat (case cc 2 "<" 3 ">" 4 "<=" 5 ">=" "===")
+                  (string-concat (xj-t M (inc t)) ")?1n:0n"))))))
+(defn- xj-un [M :vector-i64 op :i64 t :i64] :vector-i64
+  (xj-set M t (string-concat (xj-t M t) (if (= op UOP-NOT) "^1n" "^-1n"))))
+
+;; ---- calls ----
+(defn- xj-host [k :i64] :string
+  (case k 0 "host.write" 1 "host.cap" 2 "host.now" 3 "host.exit" "host.input"))
+(defn- xj-callee [M :vector-i64 f :i64] :string
+  (if (< (xw-idx M f) XW-NIMPORT) (xj-host (xw-idx M f)) (xj-f M f)))
+(defn- xj-tail? [M :vector-i64 i :i64 t :i64 c :i64] :bool (and (<= c 5) (xg-tail? M (inc i) t 64)))
+;; callee f applied to args: a deferred call in tail position, else R(f(args)) into t
+(defn- xj-apply [M :vector-i64 i :i64 t :i64 c :i64 f :string args :string] :vector-i64
+  (if (xj-tail? M i t c)
+    (xj-o M (string-concat "return new TC(" (string-concat f (string-concat ",[" (string-concat args "]);\n")))))
+    (xj-set M t (string-concat "R(" (string-concat f (string-concat "(" (string-concat args "))")))))))
+(defn- xj-call [M :vector-i64 i :i64 f :i64 t :i64 c :i64] :vector-i64
+  (let [k (xw-inline M f) args (xj-args M t 0 c false "")]
+    (cond (= k 1) (xj-set M t (string-concat "G(" (string-concat (xj-t M t) ")")))
+          (= k 2) (xj-set M t "BigInt(buf.byteLength/65536)")
+          (< (xw-idx M f) XW-NIMPORT)
+            (let [e (string-concat (xj-host (xw-idx M f)) (string-concat "(" (string-concat args ")")))]
+              (if (xj-tail? M i t c) (xj-o M (string-concat "return " (string-concat e ";\n"))) (xj-set M t e)))
+          :else (xj-apply M i t c (xj-f M f) args))))
+(defn- xj-calli [M :vector-i64 i :i64 t :i64 c :i64] :vector-i64
+  (xj-apply M i t c (string-concat "tab[A(" (string-concat (xj-t M (+ t c)) ")]"))
+    (string-concat (xj-args M t 0 c false "") (if (= c 0) (string-substring (xj-zeros 5 "") 1 15) (xj-zeros (- 5 c) "")))))
+(defn- xj-rt [M :vector-i64 slot :i64 t :i64 n :i64] :vector-i64
+  (let [f (xw-slot-fn M slot n)]
+    (if (= f 0) (xg-err M 7101 slot)
+      (xj-set M t (string-concat "R(" (string-concat (xj-f M f) (string-concat "(" (string-concat (xj-ctx) (string-concat (xj-args M t 0 n true "") "))")))))))))
+(defn- xj-rtf [M :vector-i64 slot :i64 n :i64] :string
+  (let [f (xw-slot-fn M slot n)] (if (= f 0) "" (xj-f M f))))
+;; R(f(ctx,args)): a runtime function's answer, its deferred tail calls resumed
+(defn- xj-rcall [f :string args :string] :string
+  (string-concat "R(" (string-concat f (string-concat "(" (string-concat (xj-ctx) (string-concat args "))"))))))
+(defn- xj-cap [M :vector-i64 wire :i64 kind :i64 t :i64] :vector-i64
+  (let [f (xj-rtf M RT-TYPED-CAP-CALL 4)]
+    (if (= (string-length f) 0) (xg-err M 7101 RT-TYPED-CAP-CALL)
+      (xj-set M t (xj-rcall f (string-concat "," (string-concat (xj-n wire) (string-concat "," (string-concat (xj-n kind)
+                    (string-concat "," (string-concat (xj-n kind) (string-concat "," (xj-t M t)))))))))))))
+(defn- xj-str [M :vector-i64 t :i64 lit :i64] :vector-i64
+  (let [f (xj-rtf M RT-PAIR-NEW 2)]
+    (if (= (string-length f) 0) (xg-err M 7101 RT-PAIR-NEW)
+      (xj-set M t (xj-rcall f (string-concat "," (string-concat (xj-n (xw-lit M lit LF-POOL))
+                    (string-concat "," (xj-n (xw-lit M lit LF-LEN))))))))))
+;; vectors: vector_alloc(n) into the scratch local, then assoc_in_place per item
+(defn- xj-item [M :vector-i64 t :i64 k :i64 lit :i64] :string
+  (if (= lit 0) (xj-t M (+ t k))
+    (string-concat "dv.getBigInt64(" (string-concat (mem-u2dec (+ XW-POOL (xw-lit M lit LF-POOL) (* 8 k))) ",true)"))))
+(defn- xj-vec-items [M :vector-i64 t :i64 k :i64 n :i64 lit :i64 assoc :string] :vector-i64
+  (if (= k n) M
+    (xj-vec-items (xj-o M (string-concat (xj-rcall assoc (string-concat "," (string-concat (xj-scr M) (string-concat ","
+                    (string-concat (xj-n k) (string-concat "," (xj-item M t k lit))))))) ";\n"))
+                  t (inc k) n lit assoc)))
+(defn- xj-vec [M :vector-i64 t :i64 n :i64 lit :i64] :vector-i64
+  (let [alloc (xj-rtf M RT-VECTOR-ALLOC 1) assoc (xj-rtf M RT-VECTOR-ASSOC-IN-PLACE 3)]
+    (if (or (= (string-length alloc) 0) (= (string-length assoc) 0)) (xg-err M 7101 RT-VECTOR-ALLOC)
+      (-> M (xj-o (string-concat (xj-scr M) (string-concat "=" (string-concat (xj-rcall alloc (string-concat "," (xj-n n))) ";\n"))))
+            (xj-vec-items t 0 n lit assoc) (xj-set t (xj-scr M))))))
+(defn- xj-table-at [M :vector-i64 t :i64 lit :i64 n :i64] :vector-i64
+  (let [a (xj-t M t)]
+    (-> M (xj-o (string-concat "if(BigInt.asUintN(64," (string-concat a (string-concat ")>=" (string-concat (xj-n n)
+                 (string-concat "){" (string-concat (xj-trap M 5) "}\n")))))))
+          (xj-set t (string-concat "dv.getBigInt64(" (string-concat (mem-u2dec (+ XW-POOL (xw-lit M lit LF-POOL)))
+                     (string-concat "+A(" (string-concat a ")*8,true)"))))))))
+(defn- xj-fuel [M :vector-i64] :vector-i64
+  (let [x (xj-scr M) at (mem-u2dec (+ XW-CTX 8))]
+    (xj-o M (string-concat x (string-concat "=dv.getBigInt64(" (string-concat at (string-concat ",true);if(" (string-concat x
+             (string-concat "<=0n){" (string-concat (xj-trap M 5) (string-concat "}dv.setBigInt64(" (string-concat at
+               (string-concat "," (string-concat x "-1n,true);\n"))))))))))))))
+;; intrinsics (seed/75's list; the runtime source is seed/82)
+(defn- xj-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (let [a (xj-t M t) b (xj-t M (inc t))]
+    (case k
+      0 (xj-set M t (string-concat "dv.getBigInt64(A(" (string-concat a "),true)")))
+      1 (-> M (xj-o (string-concat "dv.setBigInt64(A(" (string-concat a (string-concat ")," (string-concat b ",true);\n")))))
+            (xj-set t b))
+      2 (xj-set M t (string-concat "BigInt(dv.getUint8(A(" (string-concat a ")))")))
+      3 (-> M (xj-o (string-concat "dv.setUint8(A(" (string-concat a (string-concat "),Number(" (string-concat b "&255n));\n")))))
+            (xj-set t b))
+      5 (xj-set M t (xj-ctx))
+      6 (xj-set M t (string-concat "R(" (string-concat (xj-f M (xg-get M 1)) "())")))
+      7 (xj-o M (string-concat (xj-trap M 4) "\n"))
+      (xg-err M 7101 OP-CALL))))
+(defn- xj-one [M :vector-i64 S :string i :i64] :vector-i64
+  (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
+    (case op
+      1 (xj-fn M S i a) 2 (xj-end M)
+      3 (xj-set M a (xj-n b))
+      4 (xj-set M a (xj-l (xw-slot b)))
+      5 (xj-o M (string-concat (xj-l (xw-slot a)) (string-concat "=" (string-concat (xj-t M b) ";\n"))))
+      6 (xj-bin M a b) 7 (xj-cmp M a b) 8 (xj-un M a b)
+      9 (let [k (inc (vector-at M 201))] (xj-o (mem-set M 201 k) (string-concat "case " (string-concat (mem-u2dec k) ":\n"))))
+      10 (xj-br M a)
+      11 (xj-brif M a b false)
+      12 (xj-brif M a b true)
+      13 (if (>= (xs-intr M a) 0) (xj-intrinsic M (xs-intr M a) b) (xj-call M i a b c))
+      14 (xj-rt M a b c) 15 (xj-cap M a b c) 16 (xj-str M a b) 17 (xj-vec M a b 0)
+      18 (if (xs-rt? M (xg-get M 0)) M (xj-fuel M))
+      19 (xj-o M (string-concat "return " (string-concat (xj-t M a) ";\n")))
+      20 (xj-o M (string-concat (xj-trap M 5) "\n"))
+      21 (xj-table-at M a b c)
+      22 (xj-set M a (xj-n (xw-tab M b)))
+      23 (xj-calli M i b c)
+      24 (xj-vec M a c b)
+      25 (xj-set M a "g0")
+      26 (xj-o M (string-concat "g0=" (string-concat (xj-t M (inc a)) (string-concat ";return " (string-concat (xj-t M a) ";\n")))))
+      (xg-err M 7101 op))))
+(defn- xj-code [M :vector-i64 S :string i :i64] :vector-i64
+  (cond (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
+        (and (= (xg-si M i IF-OP) OP-FN) (let [f (xg-si M i IF-A)] (or (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
+          (xj-code M S (xw-skip M i))
+        :else (xj-code (xj-one M S i) S (inc i))))
+
+;; ---- module frame ----
+(defn- xj-pool [M :vector-i64 a :i64 b :i64] :vector-i64
+  (if (or (>= a b) (not= (vector-at M MM-ERR) 0)) M
+    (xj-pool (xj-o M (string-concat (if (= a 0) "" ",") (mem-u2dec (xg-code-byte M a)))) (inc a) b)))
+(defn- xj-tab [M :vector-i64 k :i64 n :i64 lead :bool] :vector-i64
+  (cond (or (= k n) (not= (vector-at M MM-ERR) 0)) M
+        (not= (xw-fix M k 1) 31) (xj-tab M (inc k) n lead)
+        :else (xj-tab (xj-o M (string-concat (if lead "" ",") (xj-f M (xw-fix M k 2)))) (inc k) n false)))
+(defn- xj-head [M :vector-i64] :vector-i64
+  (let [plen (xg-get M 2) pages (quot (+ XW-POOL plen 65535) 65536)]
+    (-> M
+        (xj-o "// js-browser-static/v1 (amu seed/81-js-esm, ADR 0397): guest and Kotoba runtime from one SIR.\n")
+        (xj-o "export function instantiate(host){\"use strict\";\n")
+        (xj-o (string-concat "let buf=new ArrayBuffer(" (string-concat (mem-u2dec (* pages 65536)) ",{maxByteLength:2147483648});\n")))
+        (xj-o "const dv=new DataView(buf);let g0=0n;\n")
+        (xj-o "const W=(x)=>BigInt.asIntN(64,x);const A=(x)=>Number(BigInt.asUintN(32,x));\n")
+        (xj-o "function U(){throw new Error(\"unreachable\");}\n")
+        (xj-o "function TC(f,a){this.f=f;this.a=a;}\nfunction R(x){while(x instanceof TC){x=x.f(...x.a);}return x;}\n")
+        (xj-o "function G(n){const old=buf.byteLength/65536;try{buf.resize(buf.byteLength+Number(n)*65536);}catch(e){return -1n;}return BigInt(old);}\n")
+        (xj-o "new Uint8Array(buf).set([") (xj-pool 0 plen)
+        (xj-o (string-concat "]," (string-concat (mem-u2dec XW-POOL) ");\n")))
+        (xj-o (string-concat "dv.setBigInt64(" (string-concat (mem-u2dec (+ XW-CTX 384)) (string-concat "," (string-concat (xj-n XW-POOL) ",true);\n")))))
+        (xj-o (string-concat "dv.setBigInt64(" (string-concat (mem-u2dec (+ XW-CTX 392)) (string-concat "," (string-concat (xj-n plen) ",true);\n"))))))))
+(defn- xj-foot [M :vector-i64] :vector-i64
+  (-> M (xj-o "const tab=[") (xj-tab 1 (vector-at M MM-FIX-N) true) (xj-o "];\n")
+      (xj-o (string-concat "return {memory:{get buffer(){return buf;}},start:(fuel)=>R(" (string-concat (xj-f M (vector-at M 199)) "(fuel))};}\n")))))
+
+(defn- xj-build [M :vector-i64 S :string rt :i64] :vector-i64
+  (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 3 0) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+    (cond (not= (vector-at a MM-ERR) 0) a
+          (= (xg-get a 1) 0) (xg-err a 7102 0)
+          (or (= (vector-at a 199) 0) (= (vector-at a 198) 0) (= (vector-at a 250) 0)) (xg-err a 7102 1)
+          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xw-pool 1)
+                            (xw-assign S 1 XW-NIMPORT) (xw-tables 1) (mem-set MM-OUT-N 1))]
+                  (if (not= (vector-at g MM-ERR) 0) g (xj-foot (xj-code (xj-head g) S 1)))))))
+(defn- xj-report [M :vector-i64 path :string out :string] :i64
+  (let [e (vector-at M MM-ERR)]
+    (cond (and (> e 0) (< e 7100)) (drv-fail M path)
+          (> e 0) (let [w (io-err (string-concat "seed-js-browser: E" (string-concat (mem-u2dec e)
+                            (string-concat (case e 7101 " unsupported operation (floating point, the syscall or call-at intrinsic, or outside the runtime profile)"
+                                                   7102 " unsupported function (floating point, arity, kind or runtime layout)"
+                                                   7103 " malformed control flow" " code limit")
+                              (string-concat "; detail " (string-concat (mem-u2dec (vector-at M MM-ERR-N)) "\n"))))))] 1)
+          :else (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
+                      w (io-out (string-concat "{:ok true, :target :js-browser, :format :esm, :functions "
+                           (string-concat (mem-u2dec (xg-get M 3))
+                             (string-concat ", :pool-bytes " (string-concat (mem-u2dec (xg-get M 2))
+                               (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
+                  (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+;; compile SRC --target js-browser --output NEW
+(defn- xj-command [] :i64
+  (let [src (io-arg 1) out (io-arg 5)]
+    (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-js-browser: E7100 expected compile SOURCE --target js-browser --output NEW_MJS\n")] 2)
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          (= (string-length (xw-rt-src)) 0)
+            (let [w (io-err "seed-js-browser: E7106 a section marker of the seed/77 runtime text is missing\n")] 1)
+          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+                      s (string-concat guest (xw-rt-src))]
+                  (xj-report (xj-build (xg-front s) s (string-length guest)) src out)))))

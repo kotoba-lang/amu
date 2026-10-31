@@ -130,10 +130,15 @@
 ;; The complete44 public static build also appends its native runtime. It
 ;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
 ;; the normal adopted18 source, widths and heap size remain unchanged.
+;; TOK growth (2026-11-01, ADR 0397 / JUN-706): adding seed/81-js-esm (the js-browser emitter) to the full
+;; compiler pushed the x86_64 static cross compile of seed/FULL-MANIFEST (which also appends the native runtime)
+;; over TOK 786432 (E101 region 1); main had about 3,000 tokens to spare (measured by padding). The static
+;; profile raises TOK by 131072 entries (917504); every later base, MM-HEAP-END and MM-WORDS shift by 524288
+;; words (MM-WORDS 31981568 < 2^25, heap size unchanged).
 ;; These seven rows are consumed by seed/gen-static-ns.kotoba. That native
 ;; generator derives every downstream base and checks the2^25 vector bound.
 ;; BEGIN STATIC OVERRIDES
-;; [:s MM-TOK-CAP 786432]
+;; [:s MM-TOK-CAP 917504]
 ;; [:s MM-NODE-CAP 786432]
 ;; [:s MM-CODE-CAP 2097152]
 ;; [:s MM-FIX-CAP 262144]
