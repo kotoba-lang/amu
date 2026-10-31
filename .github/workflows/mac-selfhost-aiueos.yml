@@ -172,6 +172,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-f2i.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-f2i"
+      - name: aarch64 route truncates f32 to i64 with the same traps as x86 (JUN-633, ADR 0397)
+        run: |
+          python3 scripts/seed/check-a64-f2i.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-a64-f2i"
       - name: AIUEOS kernel object route emits the fused f32 reductions (JUN-633 slice 6)
         run: |
           python3 scripts/seed/check-aiueos-object-fused-dot.py \
