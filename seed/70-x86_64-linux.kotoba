@@ -116,8 +116,12 @@
       (xg-bytes 0xc83948 3) (xg-byte 0x0f) (xg-byte (xg-cc cc)) (xg-byte 0xc0)
       (xg-bytes 0xc0b60f 3) (xg-save t))))
 ;; neg / abs flip / clear the sign bit in the integer slot (btc / btr rax,63; xor / and eax then movsxd); sqrt and the
-;; conversions read the slot with sqrtss / sqrtsd, cvtsi2ss / cvtsi2sd (qword), cvtsd2ss and cvtss2sd. float -> i64
-;; truncation is not emitted.
+;; conversions read the slot with sqrtss / sqrtsd, cvtsi2ss / cvtsi2sd (qword), cvtsd2ss and cvtss2sd.
+;; JUN-633 (ADR 0395): f32 -> i64 truncates toward zero (cvttss2si rax, qword). cvttss2si answers the integer
+;; indefinite 0x8000000000000000 for a NaN and for every value outside [-2^63, 2^63); the only in-range f32 with that
+;; answer is -2^63 itself (0xdf000000). So the answer is negated in rcx (OF is set for INT64_MIN alone) and, when it is
+;; INT64_MIN, the operand's f32 word must be 0xdf000000 or the code reaches ud2 -- the route never answers a silent
+;; indefinite. f64 -> i64 truncation is not emitted.
 (defn- xg-fun [M :vector-i64 op :i64 t :i64] :vector-i64
   (case op
     16 (-> M (xg-load t 0x858b48) (xg-bytes 0x3ff8ba0f48 5) (xg-save t))
@@ -130,6 +134,9 @@
     34 (-> M (xg-fmem t 0x855a0ff2 4) (xg-f32-out t))
     35 (-> M (xg-fmem t 0x855a0ff3 4) (xg-f64-out t))
     36 (-> M (xg-fmem t 0x852a0f48f3 5) (xg-f32-out t))
+    37 (-> M (xg-fmem t 0x852c0f48f3 5) (xg-bytes 0xc18948 3) (xg-bytes 0xd9f748 3) (xg-bytes 0x0e71 2)
+           (xg-bytes 0xbd81 2) (xg-bytes (xg-temp M t) 4) (xg-bytes 0xdf000000 4) (xg-bytes 0x0274 2) (xg-bytes 0x0b0f 2)
+           (xg-save t))
     (xg-err M 7101 op)))
 (defn- xg-un [M :vector-i64 op :i64 t :i64] :vector-i64
   (if (>= op UOP-F64-NEG) (xg-fun M op t)
