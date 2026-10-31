@@ -12,12 +12,14 @@ lang/guest-grammar.edn, against the native checker as measured at amu 05668c77
   parameter vectors identical and plain, no hierarchy / prefer / extension;
 * :protocol-dispatch / :protocol-extension -- an implementation of a
   defprotocol method for a record of the module (inline in defrecord, in
-  extend-type or in extend-protocol, whose `default` section is specialized for
-  every record without one) becomes a private defn whose receiver is typed
-  [:ref R]; seed/21-check binds a call's receiver to a fresh local and calls
+  extend-type or in extend-protocol) becomes a private defn whose receiver is
+  typed [:ref R]; seed/21-check binds a call's receiver to a fresh local and calls
   the implementation for its static record type (ADR 0204: no runtime type
   test). Another receiver type is E2180;
-* reify stays a permanent refusal (E2181).
+* reify stays a permanent refusal (E2181). An extend-protocol `default`
+  section is refused E2006 for now: its per-record specialization did not fit
+  the x86 static profile's token table (MM-TOK-CAP 786432) next to the rest of
+  FULL-MANIFEST.
 
 This gate, on Apple Silicon:
 
@@ -92,9 +94,6 @@ MUTANTS = [
         ("                   (or (zero? blk) (= (nm-sf M (nm-sym-of M (nm-nth M (nm-nth M (nm-nth M d 2) 1) 1)) SF-REC) blk)))",
          "                   true)")],
      "E2104 type mismatch"),
-    ("no-default-specialization", NAMES, [
-        ("(nm-dp-each 4) (nm-dp-each 5))", "(nm-dp-each 4))")],
-     "E2180 no static implementation of protocol method 'tag'"),
     ("multimethod-drops-default", NAMES, [
         ("    (let [M1 (if (zero? prev) M (nm-set-nf M prev NF-NEXT dflt))",
          "    (let [M1 (if (zero? prev) M (nm-set-nf M prev NF-NEXT 0))")],
@@ -155,11 +154,8 @@ REFUSALS = [
     ("multi-arity-signature", "(defprotocol C (m [this] [this x]))\n(defn main [] :i64 0)", "E2006"),
     ("method-in-two-protocols", "(defprotocol A (m [this]))\n(defprotocol B (m [this]))\n(defn main [] :i64 0)",
      "E2001 duplicate definition 'm'"),
-    ("two-default-sections",
-     P + "(extend-protocol Area default (area [this] 1) (scale [this k] this))\n"
-         "(extend-protocol Area default (area [this] 2) (scale [this k] this))\n(defn main [] :i64 0)", "E2006"),
-    ("incomplete-default", P + "(extend-protocol Area default (area [this] 1))\n(defn main [] :i64 0)",
-     "E2006 malformed closed dispatch form 'default'"),
+    ("extend-protocol-default", P + "(extend-protocol Area default (area [this] 1) (scale [this k] this))\n"
+                                    "(defn main [] :i64 0)", "E2006 malformed closed dispatch form 'default'"),
     ("receiver-not-a-record", P + IMPL + "(defn main [] :i64 (area 5))",
      "E2180 no static implementation of protocol method 'area'"),
     ("record-without-implementation", P + IMPL + "(defn main [] :i64 (area (->Rect 1 2)))",

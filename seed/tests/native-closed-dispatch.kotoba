@@ -15,7 +15,7 @@
 (defmethod shape-area :rect [s [:ref :d/Shape]] (let [w (:w s)] (+ w 0) (* w (:h s))))
 (defmethod shape-area :default [s [:ref :d/Shape]] 0)
 
-;; -- protocols: inline in defrecord, extend-type, extend-protocol, and a default specialization --
+;; -- protocols: inline in defrecord, extend-type, extend-protocol --
 (defprotocol Area
   "the area and a grown copy"
   (area [this])
@@ -37,7 +37,8 @@
   (grow [this k] (->Tri (+ (:b this) k) (:h this))))
 (extend-protocol Named
   Circle (tag [this] 100)
-  default (tag [this] 7))
+  Sq (tag [this] 7)
+  Tri (tag [this] 7))
 
 (defn sum-sq [n :i64] :i64
   (loop [i 0 acc 0] (if (> i n) acc (recur (+ i 1) (+ acc (area (->Sq i)))))))
