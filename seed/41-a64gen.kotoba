@@ -2104,6 +2104,23 @@
 (defn- gn-fl-un-ok? [uop :i64] :bool
   (or (and (>= uop UOP-F64-NEG) (<= uop UOP-F64-SQRT)) (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT))
       (and (>= uop UOP-F64-TO-I64) (<= uop UOP-F32-TO-I64))))
+;; f32 -> i64 (UOP-F32-TO-I64, JUN-633, ADR 0398): ADR 0395's semantics, as on the x86 object route. In range
+;; (-2^63 <= x < 2^63) fcvtzs truncates toward zero; NaN, +-Inf and every other |x| >= 2^63 reach brk #0 (the SIR trap
+;; convention) instead of fcvtzs's saturated answer. d is the scratch for the bound: x is consumed by the first fmov.
+;;   fmov s0,wX ; movz xD,#0xdf00,lsl #16 ; fmov s1,wD (-2^63) ; fcmp s0,s1 ; b.lt trap (below, or unordered) ;
+;;   fneg s1,s1 (2^63) ; fcmp s1,s0 ; b.gt ok (2^63 > x, ordered) ; trap: brk #0 ; ok: fcvtzs xD,s0
+(defn- gn-fl-f32-to-i64 [M :vector-i64 d :i64 x :i64] :vector-i64
+  (-> M
+      (gn-emit (enc-fmov-to-fp 0 0 x))
+      (gn-emit (enc-movz d 0xdf00 1))
+      (gn-emit (enc-fmov-to-fp 0 1 d))
+      (gn-emit (enc-fcmp 0 0 1))
+      (gn-emit (enc-bcond (enc-cond-lt) 4))
+      (gn-emit (enc-fop1 0 0 1 1))
+      (gn-emit (enc-fcmp 0 1 0))
+      (gn-emit (enc-bcond (enc-cond-gt) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-fcvtzs 0 d 0))))
 ;; d := (uop) x
 (defn- gn-fl-un [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
   (cond (<= uop UOP-F64-SQRT) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fop1 (- uop UOP-F64-NEG) 1 0 0)) (gn-fl-out 1 d))
@@ -2113,7 +2130,7 @@
         (= uop UOP-F64-TO-F32) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 0 0)) (gn-fl-out 0 d))
         (= uop UOP-F32-TO-F64) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvt 0 0 0)) (gn-fl-out 1 d))
         (= uop UOP-I64-TO-F32) (-> M (gn-emit (enc-scvtf 0 0 x)) (gn-fl-out 0 d))
-        :else (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvtzs 0 d 0)))))
+        :else (gn-fl-f32-to-i64 M d x)))
 (defn- gn-fl-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
   (if (gn-fl-un-ok? uop)
     (let [s (gn-co M i t)
