@@ -1,0 +1,380 @@
+{
+  "status": "PASS_B2_IMAGE_BUILD_AND_RUN",
+  "target": "aarch64-linux",
+  "compiler": {
+    "bytes": 3662608,
+    "sha256": "22d23d7f06b9b8bf45f9397303b91c37389f2d460a70eafa7913c64eda43f969"
+  },
+  "host": [
+    "Darwin",
+    "arm64",
+    "25.4.0"
+  ],
+  "sources": {
+    "seed/98-x86_64-b2.kotoba": {
+      "bytes": 11417,
+      "sha256": "de5ed7e3cb8664b0c9ca33b671fc34f02d43793a6a2e5508bac171c3231c1307"
+    },
+    "seed/80-aarch64-linux.kotoba": {
+      "bytes": 24057,
+      "sha256": "fcccad141507ad41f2297ea4524e6a1e1ba395e3f29571e067b4afe14dd92e6d"
+    },
+    "seed/77-aarch64-static-rt.kotoba": {
+      "bytes": 162041,
+      "sha256": "a9d894c778f53b4b0de6bf86daaa18b4af40bf006bac8046171a242d2026fbcd"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 14690,
+      "sha256": "fb5c707b4d4f2e0487f2b266ab406cfb087c2bb20418c49f246cd051beb76a54"
+    },
+    "tools/b2/tests/image_abi_a64_t.kotoba": {
+      "bytes": 4409,
+      "sha256": "53671ff9172af53b3247c35502a21fa497f41e0d7a2535d463c38dadf00ab256"
+    },
+    "tools/b2/tests/image_arch_aarch64.kotoba": {
+      "bytes": 264,
+      "sha256": "efebd85e1b36c4b9cd03af1036f0dded3c340ec94af4f9b82d6bc840a21cc03f"
+    }
+  },
+  "images": {
+    "hello": "artifacts/hello.elf",
+    "mem": "artifacts/mem.elf",
+    "abi": "artifacts/abi.elf"
+  },
+  "results": {
+    "structure": {
+      "hello": {
+        "image": {
+          "bytes": 307712,
+          "sha256": "80ead29e8cab979ba96107527eab71ee6ebe8c134a559a9b6d46b5894d01ffe3"
+        },
+        "exports": 0,
+        "table": 0
+      },
+      "mem": {
+        "image": {
+          "bytes": 311808,
+          "sha256": "745a0004e2e10ee1643cbf239519935e3fad2884a04a2f2ca8f5385f506ca8fa"
+        },
+        "exports": 0,
+        "table": 0
+      },
+      "abi": {
+        "image": {
+          "bytes": 332288,
+          "sha256": "f610d9c88bb879313418d922bc33867e9536094bf78a25136e3f7b8e4c930745"
+        },
+        "exports": 10,
+        "table": "0x44fc08",
+        "thunks": [
+          {
+            "name": "zero",
+            "version": "",
+            "parameters": 0,
+            "thunk": "0x44f7b8",
+            "thunkBytes": 96,
+            "callee": "0x401d70"
+          },
+          {
+            "name": "add5",
+            "version": "TESTV1",
+            "parameters": 5,
+            "thunk": "0x44f818",
+            "thunkBytes": 96,
+            "callee": "0x401da4"
+          },
+          {
+            "name": "six",
+            "version": "",
+            "parameters": 6,
+            "thunk": "0x44f878",
+            "thunkBytes": 100,
+            "callee": "0x401ed0"
+          },
+          {
+            "name": "mix14",
+            "version": "GLIBC_2.2.5",
+            "parameters": 14,
+            "thunk": "0x44f8dc",
+            "thunkBytes": 156,
+            "callee": "0x401fac"
+          },
+          {
+            "name": "sixteen",
+            "version": "",
+            "parameters": 16,
+            "thunk": "0x44f978",
+            "thunkBytes": 172,
+            "callee": "0x40233c"
+          },
+          {
+            "name": "flag",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x44fa24",
+            "thunkBytes": 96,
+            "callee": "0x4024bc"
+          },
+          {
+            "name": "neg",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x44fa84",
+            "thunkBytes": 96,
+            "callee": "0x402510"
+          },
+          {
+            "name": "probe",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x44fae4",
+            "thunkBytes": 96,
+            "callee": "0x402560"
+          },
+          {
+            "name": "spin",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x44fb44",
+            "thunkBytes": 96,
+            "callee": "0x4025f4"
+          },
+          {
+            "name": "pair",
+            "version": "",
+            "parameters": 2,
+            "thunk": "0x44fba4",
+            "thunkBytes": 96,
+            "callee": "0x4032b8"
+          }
+        ]
+      },
+      "negativeControls": {
+        "thunk-epilogue": "refused",
+        "thunk-fuel": "refused",
+        "export-name": "refused",
+        "context-mode": "refused"
+      }
+    },
+    "refusals": {
+      "runtime-call-outside-the-api": "E7101",
+      "api-in-format-static": "E2101 (the name is not defined outside --format b2)",
+      "export-string-parameter": "E7102",
+      "export-empty-name": "E7102",
+      "export-empty-version": "E7102",
+      "export-seventeen-parameters": "E2178"
+    },
+    "cxOutsideB2": {
+      "bytes": 311808,
+      "sha256": "ce5063ed0dc0065a80b121428a208021052d1cb90ff33a8a6f899aca0ba6b92e"
+    },
+    "unchangedFormats": {
+      "previousCompiler": {
+        "bytes": 3646192,
+        "sha256": "4cb7dd1353e948142ce78bced48bd498c8b15b96f020f9da519a561324be37cc"
+      },
+      "sameBytes": {
+        "x86_64-linux-static": {
+          "bytes": 389632,
+          "sha256": "053634599f773b8559b55a69f7fe616f466b87350418feabbba810c2273ba9c5"
+        },
+        "x86_64-linux-kx64-runner": {
+          "bytes": 389632,
+          "sha256": "27349b7edfea5833f41263cdbf6195e5f26848bfb491e406c2d826987194d3b2"
+        },
+        "x86_64-linux-launcher": {
+          "bytes": 467456,
+          "sha256": "6350f25a424c790430ef093172b35a9a9ba3e85b964d8f2f41dfaba0199241b9"
+        },
+        "aarch64-linux-static": {
+          "bytes": 311808,
+          "sha256": "ce5063ed0dc0065a80b121428a208021052d1cb90ff33a8a6f899aca0ba6b92e"
+        },
+        "aarch64-linux-launcher": {
+          "bytes": 377344,
+          "sha256": "6d3c7436cced05c4250450d02a548d1a4b92aa20d0855483e7a52a6afdaae449"
+        }
+      },
+      "previousCompilerRefusesFormat": true
+    }
+  },
+  "calls": [
+    {
+      "name": "hello",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "mem",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "abi",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "refuse-runtime",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-b-api-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-string-parameter",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-empty-name",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-empty-version",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-seventeen-parameters",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 1
+    },
+    {
+      "name": "cx-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "dx-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-kx64-runner",
+      "format": "kx64-runner",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-kx64-runner",
+      "format": "kx64-runner",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-x86_64-linux-launcher",
+      "format": "launcher",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-x86_64-linux-launcher",
+      "format": "launcher",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-aarch64-linux-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-aarch64-linux-static",
+      "format": "static",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-new-aarch64-linux-launcher",
+      "format": "launcher",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "same-old-aarch64-linux-launcher",
+      "format": "launcher",
+      "target": "aarch64-linux",
+      "exit": 0
+    },
+    {
+      "name": "previous-refuses",
+      "format": "b2",
+      "target": "aarch64-linux",
+      "exit": 2
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "run": {
+    "host": [
+      "Linux",
+      "aarch64",
+      "5.10.120-tegra"
+    ],
+    "rows": {
+      "hello": {
+        "exit": 7,
+        "stdout": "hello b2\n"
+      },
+      "hello-argc": {
+        "exit": 9,
+        "stdout": "hello b2\n"
+      },
+      "mem": {
+        "exit": 0,
+        "stdout": "0\n"
+      },
+      "abi": {
+        "exit": 0,
+        "stdout": "zero ok\nadd5 ok\nsix ok\nmix14 ok\nsixteen ok\nflag ok\nneg ok\nmissing-version ok\nA returns ok\nx19 ok\nx20 ok\nx21 ok\nx22 ok\nx23 ok\nx24 ok\nx25 ok\nx26 ok\nx27 ok\nx28 ok\nsp ok\ncontrol returns ok\ncontrol x19 ok\naligned probe ok\n"
+      },
+      "abi-alignment-control": {
+        "exit": -7,
+        "stdout": ""
+      },
+      "fuel-own-budget": {
+        "exit": 0,
+        "stdout": "3000000\n"
+      },
+      "fuel-caller-meter-restored": {
+        "exit": -5,
+        "stdout": "3000000\n"
+      },
+      "fuel-unmetered": {
+        "exit": 0,
+        "stdout": "3000000\n"
+      }
+    },
+    "notRun": [
+      "the libvulkan image: GPU hosts only (tools/b2/90-vk-probe.kotoba, check-b2-libvulkan.py)"
+    ]
+  }
+}

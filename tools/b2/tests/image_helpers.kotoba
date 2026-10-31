@@ -12,9 +12,9 @@
           z (loop [i (dec n) x v] (if (< i 0) 0 (let [w (kxrt-b-store8 (+ a i) (+ 48 (- x (* 10 (quot x 10)))))] (recur (dec i) (quot x 10)))))]
       n)))
 (defn- say [s :string] :i64
-  (let [m (kxrt-b-alloc 4096) n (put-str m s) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall 1 1 m (inc n) 0 0 0)] n))
+  (let [m (kxrt-b-alloc 4096) n (put-str m s) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall B2T-SYS-WRITE 1 m (inc n) 0 0 0)] n))
 (defn- say-int [v :i64] :i64
-  (let [m (kxrt-b-alloc 4096) n (put-dec m v) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall 1 1 m (inc n) 0 0 0)] n))
+  (let [m (kxrt-b-alloc 4096) n (put-dec m v) z (kxrt-b-store8 (+ m n) 10) w (kxrt-b-syscall B2T-SYS-WRITE 1 m (inc n) 0 0 0)] n))
 (defn- hexv [c :i64] :i64 (if (< c 58) (- c 48) (- c 87)))
 ;; hex text -> bytes at a; returns the byte count
 (defn- put-hex [a :i64 s :string] :i64
