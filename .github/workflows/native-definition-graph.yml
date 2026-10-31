@@ -9,6 +9,7 @@ on:
       - "bin/amu-linux-x86_64"
       - "native-product.json"
       - "scripts/seed/check-definition-graph-native.py"
+      - "scripts/seed/check-token-headroom-native.py"
       - ".github/workflows/native-definition-graph.yml"
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - "bin/amu-linux-x86_64"
       - "native-product.json"
       - "scripts/seed/check-definition-graph-native.py"
+      - "scripts/seed/check-token-headroom-native.py"
       - ".github/workflows/native-definition-graph.yml"
 permissions:
   contents: read
@@ -36,7 +38,8 @@ jobs:
             isa: x86_64
             compiler: bin/amu-linux-x86_64
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 20
+    # +10 for the token-headroom bisection (about 100 compiles that stop after reading).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -54,6 +57,17 @@ jobs:
           python3 scripts/seed/check-definition-graph-native.py
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-graph"
+      - name: Token-table headroom of the largest static builds (JUN-737)
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --phase native-token-headroom
+          --slot-dir "$RUNNER_TEMP/native-build-slots"
+          --output "$RUNNER_TEMP/token-headroom-admission.json" --
+          python3 scripts/seed/check-token-headroom-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/token-headroom"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -67,4 +81,6 @@ jobs:
             ${{ runner.temp }}/definition-graph/unit.elf
             ${{ runner.temp }}/definition-graph/whole-producer.elf
             ${{ runner.temp }}/graph-admission.json
+            ${{ runner.temp }}/token-headroom/token-headroom.json
+            ${{ runner.temp }}/token-headroom-admission.json
           if-no-files-found: error
