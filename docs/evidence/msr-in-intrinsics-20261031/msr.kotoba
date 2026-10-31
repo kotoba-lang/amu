@@ -1,0 +1,6 @@
+(ns msr (:export [kotoba_aiueos_msr_read kotoba_aiueos_msr_write pcr]))
+(defn kotoba_aiueos_msr_read [i :i64] :i64
+  (cond (= i 27) (kernel-read-msr 27) (= i 3221225600) (kernel-read-msr 3221225600) (= i 3221225601) (kernel-read-msr 3221225601) (= i 3221225602) (kernel-read-msr 3221225602) (= i 3221225604) (kernel-read-msr 3221225604) :else 0))
+(defn kotoba_aiueos_msr_write [i :i64 v :i64] :i64
+  (cond (= i 27) (kernel-write-msr 27 v) (= i 3221225600) (kernel-write-msr 3221225600 v) (= i 3221225601) (kernel-write-msr 3221225601 v) (= i 3221225602) (kernel-write-msr 3221225602 v) (= i 3221225604) (kernel-write-msr 3221225604 v) :else 0))
+(defn pcr [a :i64] :i64 (let [x (kernel-out-u32 3320 a)] (kernel-in-u32 3324)))
