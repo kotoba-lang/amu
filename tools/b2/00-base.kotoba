@@ -65,6 +65,13 @@
 (defn- sys4 [n :i64 a :i64 b :i64 c :i64 d :i64] :i64 (kxrt-b-syscall n a b c d 0 0))
 (defn- sys6 [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (kxrt-b-syscall n a b c d e f))
 
+;; ---- calls out to machine code (the loaded objects, the helper page) ----------------------------------------
+;; kxrt-b-ccall with the 14 words of ST-CALL; the first six are the arguments here
+(defn- call-c [fp :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (let [v (+ (kxrt-b-state) ST-CALL)
+        z0 (s64 v a) z1 (s64 (+ v 8) b) z2 (s64 (+ v 16) c) z3 (s64 (+ v 24) d) z4 (s64 (+ v 32) e) z5 (s64 (+ v 40) f)]
+    (kxrt-b-ccall fp v)))
+
 ;; ---- C strings ------------------------------------------------------------------------------------------
 (defn- c-strlen [p :i64] :i64 (loop [i 0] (if (= (l8 (+ p i)) 0) i (recur (inc i)))))
 ;; n bytes from src to dst (not overlapping)
