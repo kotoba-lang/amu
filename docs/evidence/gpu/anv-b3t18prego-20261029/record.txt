@@ -1,0 +1,216 @@
+JUN-59 session 92 T18 ANALYSIS PRE-BUILD (the T18 row's ANALYSIS
+machinery preparation half -- NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO host writes, NO day-slot consumption, NO
+ledger line). Row: the s91 carry-forward's item (b) (the T18
+ANALYSIS half, the s84 freeze), taken to its PREPARATION half (the
+s69/s90 pre-build precedent applied to the s84-frozen analysis path,
+docs/evidence/gpu/anv-b3w6dlrep-20261030/protocol.txt sections
+1/3/4/5/6/7). The analysis half itself REMAINS day-slot-gated
+behind the W6 measurement half (STARTED, NOT FINISHED): it runs
+only after the W6 measurement half (the first measurement session
+at/after 2026-10-30T00:00:00Z) commits the W6 run logs; this tick
+runs 2026-10-29T10:4xZ-11:0xZ, ~12.9h before that slot opens
+(NAMED, not skipped silently).
+
+1. WHAT THE PRE-BUILD IS (honest states): an IMPLEMENTATION
+   pre-build of the complete frozen T18 row -- the construction
+   (s84 section 1: named cell (max,128,S=default) ok-map cell 5,
+   tw arm, 12 blocks of 3, per-block pooled-75 EXACT-INTEGER D at
+   the closed DL vocabulary DL4/DL8/DL16/DL32), the pre-registered
+   directions (section 3), the frozen null (section 4: the s78
+   two-window run-exchangeability machinery verbatim -- ONE
+   random.Random(2026102918), 20,000 trials per probe, ONE
+   rng.shuffle of a fresh list(range(72)) per trial, consumed in
+   the frozen probe order DL4/DL8/DL16/DL32), the letters and the
+   IUT joint (section 5; DL4 excluded from the joint per the s81
+   section-4(c) caveat, its letter published with the standing
+   UNINFORMATIVE-BY-S81-CAVEAT tag), the invalidation machinery
+   (section 6: integrity/C1/block-min/anchors/parser validity pins)
+   and the D-family (section 7 -- D3's band under the s83/s89
+   CORRECTED closed interval [MIN,MAX] convention, NAMED). It is
+   NOT the T18 session's script: the analysis session adopts this
+   file as analysis-s<NN>.py (the filename IS the mode switch --
+   full mode is UNREACHABLE under the pre-build name) and owns its
+   record. STATE: the machinery is IMPLEMENTED (code + tests); the
+   T18 row itself stays ACCEPTED DESIGN ONLY (the s84 freeze) with
+   its analysis half STARTED, NOT FINISHED.
+
+2. PROVENANCE (named, not hidden): the file arrived as this bot's
+   own interrupted-run scaffold (untracked
+   docs/evidence/gpu/anv-b3t18prego-20261029/analysis-t18-prego.py,
+   mtime 2026-10-29T10:40Z, docstring stamped session 92, no other
+   process running it). It was reviewed line by line this tick and
+   REPAIRED before any validation -- bugs found by running it, all
+   named here: (i) the pair-table construction dict(DL_PAIRS)/
+   dict(QP_PAIRS) raised ValueError on the 3-tuple pair tables at
+   every null-engine call site (fixed: explicit DL_TBL/QP_TBL);
+   (ii) the REF_X/REF_Y block-min constants lacked the s73 (W5)
+   vectors the five-window invalidation loop needs (KeyError
+   's73'; fixed from the bytes publication-s82.txt section 3
+   prints for W5) and the anchor loop iterated five windows
+   instead of the s84 section-6 four prior anchor rows (fixed:
+   ANCHOR_WINS); (iii) two self-test FIXTURES were wrong -- a
+   "joint DL4-excluded" hand case that actually failed the
+   INFORMATIVE DL32 step with want (a) (the ENGINE was correct,
+   the fixture's want was wrong; renamed joint DL32-failing-named
+   with the correct want) and an unescaped "2*L" regex that could
+   not match its own publication text; plus hygiene (dead code in
+   Corpus.ckey and the compat want lookup removed; a
+   missing-want guard so an unparsable publication line is a
+   mismatched row, not a crash; two degenerate mock checks
+   replaced by real ones -- the D3 verdict check now verifies the
+   placement of 2*L_W6 in the [MIN,MAX] band). The engine's
+   frozen contract (sections 1/3/4/5/6/7) is untouched by the
+   repairs. Final bytes: analysis-t18-prego.py 49,842 bytes,
+   sha256 425c75418432b729fc22e51fef206707c8fde785b0afb3e8d04bca28eb3806d9.
+
+3. VALIDATED (real tool output this tick):
+   --self-test (fixture suite; every quantity in it is a FIXTURE,
+   never a measurement): run 1 == run 2 BYTE-IDENTICAL (7,793
+   bytes, cmp exit 0, stderr 0 bytes both runs), "TOTAL: 99
+   assertions passed, 0 failed" exit 0 -- pair-D identity on
+   deterministic pooled-75 permutations, 2*L identity
+   (hand-computable), the degenerate null at the FULL 20,000
+   trials (every C* = 0 -> count = all -> p = 1), an INDEPENDENT
+   pure-Python twin of the null engine (NO numpy, explicit
+   sorted() order statistics) cross-checked in-loop on synthetic
+   data (l2A/l2B/c2_obs/count/p per probe), the RNG stream
+   determinism pins (generated ONCE at pre-build -- they certify
+   stream stability across runs, NOT RNG correctness), the
+   letter/joint tables (incl. DL4-excluded and named-failure
+   cases), the p-formula, and a MOCK end-to-end run of the
+   full-row glue on a deterministic synthetic 78-log window
+   (scratch/mck-w6-s92/, MOCK numbers are FIXTURES; the mock
+   publication and fixture window stay in scratch/, never
+   committed).
+   --compat (the default mode under this pre-build name): run 1
+   == run 2 BYTE-IDENTICAL (7,208 bytes, cmp exit 0, stderr 0
+   bytes both runs), "TOTAL: 37 rows, 0 mismatched" exit 0 --
+   the s84 section-6 PARSER VALIDITY PINS recomputed over the
+   FIVE committed windows (390 run logs parsed; integrity rows
+   per window: 78 runs, VERIFY mismatch 0, counts/knobs/S=8
+   fail-closed/cell map all ok) and two-way-checked against the
+   COMMITTED publication bytes (want values PARSED from
+   publication-s78.txt / publication-s82.txt, never
+   transcribed): sec1 integrity 5 + named cell 1 (ok-map cell 5,
+   raw idx 7), C1 at W5 3 (c2 FLOOR, band 31..32 within; c8
+   pooled median 32709 vs 32915, 0.63%; branch (a)), the s78
+   NULL REPRODUCTION 2 -- the SAME frozen engine at the T15
+   row's seed 2026102815, probe order INNER then OUTER, pair
+   (s36, W5), reproduces publication-s78.txt's PUBLISHED T15
+   counts/p EXACTLY (INNER (28,48) 2*L 118/100, 2*C_obs 18,
+   count 1477, p 0.073896; OUTER (9,67) 496/502, -6, count
+   11558, p 0.577921) -- a validity recomputation of published
+   frozen content, NOT a T18 statistic; the QP validity vectors
+   4 (INNER/OUTER five-window 2*L + W5 block D); the DL validity
+   vectors 8 (DL4 46/47/48/38/40, DL8 97/84/99/79/83, DL16
+   238/187/201/188/178, DL32 655/537/572/564/658 + the four W5
+   block D vectors) EXACT; and the REF-CONSTANT cross-check 14
+   (section F -- the REF_X/REF_Y/REF_ANCHOR constants vs the
+   publication-s82.txt section 3/3b bytes, including s73's
+   published block-min vector).
+   NO T18 quantity is computed anywhere in this pre-build: no
+   (s36, W6) contrast, no T18 p-value, no T18 letter on any real
+   window pair (T18 exists only at the (s36, W6) pair and only
+   after the W6 measurement half commits the logs).
+
+4. GATES (real runs this tick, byte-compared to the s88 committed
+   pins in docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed"; capture 17,925 bytes == the
+       s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this
+       tick, never committed): GREEN run 1 AND run 2 -- "Ran 123
+       tests containing 12162 assertions. 0 failures, 0 errors.";
+       run 1 == run 2 == the s88 pins (919 bytes, cmp exit 0
+       x4); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this session touches NO .cljk namespace). Capture .err 879
+       bytes == the s88 pin (cmp exit 0); stdout 0 bytes == the
+       pin. NO green full suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL 38
+       assertions passed, 0 failed, capture 3,590 bytes == the
+       s88 pin (cmp exit 0); ledger eval twice, exit 0, run 1 ==
+       run 2 == the s88 pin (823 bytes) -> VERDICT: PENDING 2/4
+       unchanged (counted day=2026-10-28 session=s31; counted
+       day=2026-10-29 session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff 0
+       bytes -- verified this tick).
+
+5. THE BAR: preparation session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 2/4. Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- the settle-bar.txt
+   section-2 rule).
+
+6. UNMEASURED (named): every W6 quantity (the W6 run logs do not
+   exist at this tick); the T18 contrast and its p; the T20
+   contrast; the W7 window. RULE 4 unchanged: NOTHING MOVES --
+   the accelerator-targets workgroup rows stay exactly as
+   ADR-0358 left them (:measured? true scoped to each row's one
+   named measured device for :nvidia/:apple/:intel/:amd; :arm
+   and :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor). This
+   pre-build validates ANALYSIS MACHINERY only -- it is not a
+   device measurement.
+
+7. WHAT CHANGED (this commit): docs/evidence/gpu/
+   anv-b3t18prego-20261029/ gains analysis-t18-prego.py,
+   compat-prego-validation.txt, t18prego-selftest.txt/.err, this
+   record (record.txt) and the s92 gate captures
+   (gate-s92-classify.txt/.err, gate-s92-run1/2.txt/.err,
+   gate-s92-full.out/.err, bar-s92-selftest.txt/.err,
+   bar-s92-eval-run1/2.txt/.err); plus the ADR-0355 dated note.
+   NO run logs (no hardware this tick), NO .sh files. The chain
+   commit cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+8. NOT DONE (carry-forward to session 93, named):
+   (a) the W6 measurement half (the s80 freeze; the first session
+       at/after 2026-10-30T00:00:00Z) -- the gate for the T18
+       analysis half, the T20 analysis half and the W7
+       measurement half; the W6 session adopts s90's reading
+       pair, s91's custody baseline and (for the analysis half)
+       this pre-build as analysis-s<NN>.py, and owns their
+       record;
+   (b) the T18 ANALYSIS half (this pre-build binds; the s84
+       freeze binds) -- STARTED, NOT FINISHED, day-slot-gated
+       behind (a);
+   (c) the T20 ANALYSIS half (the s88 freeze binds) -- its own
+       analysis pre-build is the same s90/s92 precedent if a
+       preparation slice is needed before the slot;
+   (d) the W7 measurement half (the s85 freeze; day-slot-gated
+       behind W6's ledger line);
+   (e) any further counted-day slot (its own future freeze);
+   (f) a cross-day tail-movement row (NOT queued);
+   (g) the standing gate set runs with each such tick;
+   (h) the band-convention correction record stands (record-s89.txt
+       section 4): any future row quoting a band placement uses
+       the protocol [MIN,MAX] convention and names it.
+
+WHY THIS ROW (named): of the s91 carry-forward items, (a) the W6
+measurement half is day-slot-gated (the slot opens
+2026-10-30T00:00:00Z; this tick runs ~12.9h before it) and (b)(c)
+(d) all gate behind its ledger line; the honest one-tick slice
+today is the PREPARATION half of the first gated analysis row
+(item (b), T18) -- the s90 reading-pre-build precedent applied to
+the s84 analysis path: the run-exchangeability null, letters,
+IUT joint and invalidation machinery existed nowhere in the
+tree, and building + validating them BEFORE any W6 quantity
+exists binds the analysis to the published frozen numbers (the
+compat 37/37, incl. the T15 null reproduction EXACT) before it
+ever touches fresh data. NAMED, NOT HIDDEN: this session found
+and repaired four real defects in the interrupted scaffold
+(section 2) -- the pre-build is validated exactly because it was
+run, not because it was written.
+
+Evidence: docs/evidence/gpu/anv-b3t18prego-20261029/ (this file +
+analysis-t18-prego.py + compat-prego-validation.txt +
+t18prego-selftest.txt/.err + the s92 gate captures). (JUN-55,
+JUN-59; Linear tracking JUN-499)

@@ -1,0 +1,53 @@
+== JUN-59 session 129 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, TENTH CUT -- THE POINT-CLASS STABILITY CUT,  ==
+== the MEASUREMENT half of the s126 pre-registration) -- every    ==
+== value below computed in this script (scratch generator, never  ==
+== committed) or PARSED from committed bytes. ==
+
+manifest: cases-s129-a.txt
+  cell lines byte-copy of cases-s27-a.txt cell lines: True (24 lines)
+  cases-s27-a.txt sha256: 3a5d13423fc5d418fb98dcc0da913e6eb890a0e8dd4d56df0c29dc64529597e7
+  cases-s129-a.txt sha256: 2e0cfd6c60c9acf9661fb369ecf6045e2fb15b9b3ab0c86f94d0539663a6af40
+instrument: byte-copy of session 27's committed NDIV-derived source
+  gpu-subgroup-reduce-anv-ndiv.c sha256 (== session 27's committed .c.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 (byte-copy identity True)
+expected-corpus.sha256 byte-copy of session 27's: local sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 (s27 file sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 -- byte-copy identity True)
+
+arm table parsed from the frozen protocol.txt section 0 (committed bytes of anv-b3bisect10prereg-20261031/protocol.txt):
+
+nominal work units (definition, L1):
+  c2  B=2 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 2.0000000 k=3
+  lo  B=3 WM=405   NDIV=1591  n=254557  per-dispatch 0.2545562 total 0.7636687 k=12
+  mid  B=3 WM=248   NDIV=973   n=254882  per-dispatch 0.2548812 total 0.7646437 k=12
+  hi  B=3 WM=1213  NDIV=4753  n=255208  per-dispatch 0.2552072 total 0.7656217 k=12
+  c8  B=8 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 8.0000000 k=3
+
+arm n self-checks (computed vs the frozen protocol section 0 table):
+  c2: n=1000003 want=1000003 -> ok
+  lo: n=254557 want=254557 -> ok
+  mid: n=254882 want=254882 -> ok
+  hi: n=255208 want=255208 -> ok
+  c8: n=1000003 want=1000003 -> ok
+
+BUILD REPLICATION PINS (declared in the frozen protocol section 2;
+prior censuses parsed programmatically here, never transcribed)
+compared against the live build capture (scratch/s129-capture/binary-sha.txt, host-side sha256sum, verbatim):
+  anv-bb-c2: built e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  pinned e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  -> BYTE-IDENTICAL
+  anv-bb-lo: built 0ce4616c2131389ec15fb0304c187a19ddd4e29edbabd6b620821f0a1bfe8941  pinned 0ce4616c2131389ec15fb0304c187a19ddd4e29edbabd6b620821f0a1bfe8941  -> BYTE-IDENTICAL
+  anv-bb-mid: built cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589  pinned cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589  -> BYTE-IDENTICAL
+  anv-bb-hi: built 123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec  pinned 123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec  -> BYTE-IDENTICAL
+  anv-bb-c8: built 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  pinned 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  -> BYTE-IDENTICAL
+  5/5 pins BYTE-IDENTICAL: True
+  pin sources (committed bytes): c2/c8 derivation-census-s27.txt anv-bb-c2/c8 expected; lo build-census-s121.txt anv-bb-mid line (s121's
+  mid IS (3,405,1591)); mid build-census-s125.txt anv-bb-mid line (s125's mid IS (3,248,973)); hi derivation-census-s26.txt anv-bb-hi
+  expected (s26's hi IS (3,1213,4753)). ZERO NEW KNOB TRIPLES this cut: every triple is OLD and pinned (protocol section 0).
+
+frozen cross-session reference values (QUOTE-ONLY, protocol section
+3; parsed here from committed bytes -- never this session's
+measurements):
+  committed controls (s27 census): committed controls: c2 31 (floor band 31..32); c8 32,915 (session 4 pooled median)
+  lo = the (405,1591) pair at n=254,557: session 121 mid row (publication-s121.txt): 1156         1142..1176           986..1459         309798; class INTERMEDIATE/MIXED
+  lo = the (405,1591) pair at n=254,557: session 125 lo row (publication-s125.txt): 1143         1129..1180          1005..1457         311020; class CAPTURED
+  mid = the (248,973) pair at n=254,882: session 125 mid row: 1129         1117..1133           982..1452         308876; class INTERMEDIATE/MIXED
+  hi = the (1213,4753) pair: committed trio (s27 census): 1,166/1,166/1,156; session 121 hi median 1160; session 125 hi row: 1142         1131..1195          1002..1451         307273; class CAPTURED
+  settle-bar settled verdict (bar-s117-eval-post-run1.txt): SETTLED INTERMEDIATE/MIXED
+  gcd(254557, 1,000,003) = 1; gcd(254882, 1,000,003) = 1; gcd(255208, 1,000,003) = 1

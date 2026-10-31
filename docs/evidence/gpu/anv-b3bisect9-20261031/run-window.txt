@@ -1,0 +1,71 @@
+JUN-59 session 125 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, NINTH CUT (B=3 at
+n=254,557/254,882/255,208 -- lo/mid/hi + eq3/b2m/c2/c8).
+protocol.txt freeze stamp 2026-10-31T05:42:23Z (anv-b3bisect9prereg-
+20261031/, frozen BEFORE the first run of this cut; this run window
+starts after it). GO stamp 2026-10-31T06:53:37Z precedes the build
+loop and all runs (host-verify-s125.txt, build-census-s125.txt).
+21 fresh processes (7 arms x 3 runs -- the protocol section 0 arm
+table's 7 rows govern the count). Per-run transcript (host date -u,
+taken immediately BEFORE the run invocation, seconds granular; rc,
+stderr byte count and line counts captured by the driver), verbatim
+from the driver's per-run steps (each run's stdout/stderr preserved
+verbatim in run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-31T06:53:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-31T06:53:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-31T06:53:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r1 rc=0 host-date=2026-10-31T06:53:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r2 rc=0 host-date=2026-10-31T06:53:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r3 rc=0 host-date=2026-10-31T06:53:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r1 rc=0 host-date=2026-10-31T06:53:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r2 rc=0 host-date=2026-10-31T06:53:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r3 rc=0 host-date=2026-10-31T06:53:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r1 rc=0 host-date=2026-10-31T06:53:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r2 rc=0 host-date=2026-10-31T06:53:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r3 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r1 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r2 rc=0 host-date=2026-10-31T06:53:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r3 rc=0 host-date=2026-10-31T06:53:42Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-31T06:53:42Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-31T06:53:43Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-31T06:53:44Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+rc=0 21/21 printed AND 21/21 '# done cells=24' (tail column above).
+host-file-mtime cross-check (stat -c '%y' on the host run logs vs the
+per-run host-date stamps; deltas computed programmatically in-session):
+  run-c2-r1.txt: host-date 2026-10-31T06:53:38Z mtime 2026-10-31 06:53:38.862935693 +0000 delta 0s
+  run-c2-r2.txt: host-date 2026-10-31T06:53:38Z mtime 2026-10-31 06:53:39.204933835 +0000 delta 1s
+  run-c2-r3.txt: host-date 2026-10-31T06:53:39Z mtime 2026-10-31 06:53:39.551931950 +0000 delta 0s
+  run-lo-r1.txt: host-date 2026-10-31T06:53:39Z mtime 2026-10-31 06:53:39.735930951 +0000 delta 0s
+  run-lo-r2.txt: host-date 2026-10-31T06:53:39Z mtime 2026-10-31 06:53:39.938929848 +0000 delta 0s
+  run-lo-r3.txt: host-date 2026-10-31T06:53:39Z mtime 2026-10-31 06:53:40.121928854 +0000 delta 1s
+  run-mid-r1.txt: host-date 2026-10-31T06:53:40Z mtime 2026-10-31 06:53:40.303927865 +0000 delta 0s
+  run-mid-r2.txt: host-date 2026-10-31T06:53:40Z mtime 2026-10-31 06:53:40.484926882 +0000 delta 0s
+  run-mid-r3.txt: host-date 2026-10-31T06:53:40Z mtime 2026-10-31 06:53:40.664925905 +0000 delta 0s
+  run-eq3-r1.txt: host-date 2026-10-31T06:53:40Z mtime 2026-10-31 06:53:40.842924937 +0000 delta 0s
+  run-eq3-r2.txt: host-date 2026-10-31T06:53:40Z mtime 2026-10-31 06:53:41.020923970 +0000 delta 1s
+  run-eq3-r3.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:41.197923009 +0000 delta 0s
+  run-hi-r1.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:41.373922053 +0000 delta 0s
+  run-hi-r2.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:41.549921097 +0000 delta 0s
+  run-hi-r3.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:41.724920146 +0000 delta 0s
+  run-b2m-r1.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:41.872919342 +0000 delta 0s
+  run-b2m-r2.txt: host-date 2026-10-31T06:53:41Z mtime 2026-10-31 06:53:42.021918533 +0000 delta 1s
+  run-b2m-r3.txt: host-date 2026-10-31T06:53:42Z mtime 2026-10-31 06:53:42.170917723 +0000 delta 0s
+  run-c8-r1.txt: host-date 2026-10-31T06:53:42Z mtime 2026-10-31 06:53:43.206912095 +0000 delta 1s
+  run-c8-r2.txt: host-date 2026-10-31T06:53:43Z mtime 2026-10-31 06:53:44.246906444 +0000 delta 1s
+  run-c8-r3.txt: host-date 2026-10-31T06:53:44Z mtime 2026-10-31 06:53:45.451899897 +0000 delta 1s
+21/21 consistent (worst delta 1s).
+VERIFY mismatch total over all runs (driver-side awk over every
+VERIFY line): verify_mismatch_total=0 (the frozen INVALIDATION
+criterion -- protocol section 4 -- did not fire).
+Run-file custody: every run log was pulled to this directory
+byte-identical (the 42-file per-file-digest aggregate sha256 matches
+host vs local: de26a4b166d481b431349ed4df2a2c8d4e71836c4699eff5204a991ba92186b9).
+NAMED, NOT HIDDEN: rc and host-date are LIVE-ONLY fields (they exist
+nowhere in the run logs); the driver captured them at run time on the
+host. NAMED, NOT HIDDEN: the GO stamp (06:53:37Z) shares its
+second-granular second with the first two build stamps (see
+host-verify-s125.txt's timeline note); every run stamp and run-log
+mtime is strictly later.

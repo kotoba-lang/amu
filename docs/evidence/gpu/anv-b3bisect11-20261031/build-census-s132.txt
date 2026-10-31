@@ -1,0 +1,50 @@
+== JUN-59 session 132 build census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, ELEVENTH CUT -- THE MULTI-BLOCK STABILITY   ==
+== REQUIREMENT CUT, the MEASUREMENT half of the s131            ==
+== pre-registration) ==
+Build window (host timeline): builds ran after the GO stamp and
+before the first run (run-window-s132.txt).
+== host ==
+aiueos-6600hs (murakumo-ci-6600hs, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-b3bisect11-20261031, runs
+cwd=shaders/ (manifest passed as ../cases-s132-a.txt; binaries
+../anv-bb-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 26's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> ==
+== -o anv-bb-<tag> gpu-subgroup-reduce-anv-ndiv.c -lvulkan (4 arms, ==
+== one binary each) -- live ssh capture, verbatim: ==
+GO=2026-10-31T14:22:08Z
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) build_rc=0 @2026-10-31T14:22:08Z
+build mid (-DBATCH=3 -DWORK_MUL=248 -DNDIV=973) build_rc=0 @2026-10-31T14:22:08Z
+build hi (-DBATCH=3 -DWORK_MUL=1213 -DNDIV=4753) build_rc=0 @2026-10-31T14:22:08Z
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) build_rc=0 @2026-10-31T14:22:08Z
+== build stderr byte counts (host-side wc -c, verbatim) ==
+0 build-c2.err
+0 build-c8.err
+0 build-hi.err
+0 build-mid.err
+0 total
+== binary sha256 (host-side sha256sum, verbatim) ==
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589  anv-bb-mid
+123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec  anv-bb-hi
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+BUILD REPLICATION PINS (declared in the frozen protocol.txt section 2 in
+advance; prior censuses parsed programmatically --
+derivation-census-s132.txt):
+  BYTE-IDENTICAL: anv-bb-c2 e5ed903e5b9dfd64... == pinned e5ed903e5b9dfd64... -- PIN OK
+  BYTE-IDENTICAL: anv-bb-mid cabff9420aaf6b01... == pinned cabff9420aaf6b01... -- PIN OK
+  BYTE-IDENTICAL: anv-bb-hi 123e8f739a92b51a... == pinned 123e8f739a92b51a... -- PIN OK
+  BYTE-IDENTICAL: anv-bb-c8 480925e58d28e7d3... == pinned 480925e58d28e7d3... -- PIN OK
+  4/4 pins BYTE-IDENTICAL (ZERO NEW KNOB TRIPLES this cut: every
+  (BATCH,WORK_MUL,NDIV) triple is OLD and has a byte-identity pin --
+  the same custody position as the tenth cut, named as such in the
+  frozen protocol section 0).
+NAMED, NOT HIDDEN: this file is assembled in the session from the live
+ssh capture transcripts quoted verbatim above (the capture is
+session-held).

@@ -1,0 +1,177 @@
+JUN-59 session 100 -- THE W6 READING-BLOCK RECONCILIATION PRE-BUILD
+(the W6 measurement row's READING-SHAPE preparation half -- the s90
+reading w6-block extension that closes the reconciliation surface
+s99's --line exposed; NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO host writes, NO day-slot consumption, NO ledger line;
+the measurement half remains day-slot-gated behind the
+2026-10-30T00:00:00Z slot -- this tick runs ~6.2h before it --
+STARTED, NOT FINISHED: the fresh-window census-check duty named in
+section 5 stays queued).
+
+PROVENANCE, NAMED NOT HIDDEN (the s92 precedent): this slice was
+DRAFTED by an interrupted tick of this same job (working window
+2026-10-29T16:35Z-17:39Z UTC: reading-s1000.py, the rehearsal
+captures and the final reading-s1001.py edit; never run to
+completion, never committed) and COMPLETED by this continuation
+tick (the execution/verification/record/commit half, run
+2026-10-29T17:46Z-18:0xZ UTC).  The draft was reviewed before
+execution below (the s1000->s1001 and s1001-vs-fixed diffs, the
+w6 block, the --line contract in reconcile-prego.py); every run in
+sections 1-2 was executed by THIS tick.
+
+1. FINDING (verified by real tool output): the W6 session's
+   publication, as the s90 reading pre-build would have emitted it,
+   CANNOT survive the s99 reconciler.  reconcile-prego.py --line's
+   parse_pub_tuples treats every "median N min..max N..N ... class
+   X" row as a bar tuple; the s90 w6 block printed its five
+   section-4 prior rows WITH class tokens, so a fully consistent
+   publication+ledger pair parsed as 6 tuples / 5 distinct ->
+   pub-rows-agree=False -> RECONCILE VERDICT: INCONSISTENT while
+   the X median/min/class rows all MATCHed -- a FALSE INCONSISTENT
+   that would have stopped the W6 session at its own reconciliation
+   gate.  Demonstrated on the W5-stand-in rehearsal pair
+   (rehearsal-line-unfixed-run1/2.txt, 608 bytes, run twice
+   BYTE-IDENTICAL, sha256
+   01f9987831488e4bd6e77c77c89d061ed99446bfb603ef8ce8944ad02aec2656).
+   THE FIX (reading-s1001.py -- the s98 provenance pattern: the s90
+   original is committed UNCHANGED at
+   anv-b3w6prego-20261029/reading-prego.py, git diff empty; THIS
+   file supersedes it for W6 adoption; sha256
+   b8dbcfcb9c749864a30c974d7b1532342836f17e47630b15373e55d6ef418e93):
+   (a) the section-4 prior rows print in the frozen
+       publication-s73.txt section-3b row shape -- want values
+       PARSED from the committed publication-s73.txt bytes
+       (PRIOR_RE + the assert set(PRIORS) == {s36,s38,s39,s51,s73}),
+       never transcribed, and NO class token on a prior row;
+   (b) a section-6 D4-shape bar row -- the second class-bearing
+       row, equal to section 3's fresh row by construction (the
+       shape --line was validated against at s99 on the committed
+       publication-s73.txt pair);
+   (c) the ok-map label names its index base (the s80 section-3
+       phrase "ok-map cell 5" is the 0-based ok-map index of raw
+       idx 7; the s90 form printed the 1-based position unlabeled);
+   (d) the verifier-twin note corrected: derivation-census-prego.py
+       is --compat-only (the five committed windows) and has NO w6
+       mode -- the fresh-window "every published integer
+       cross-checked" duty is a NAMED gap (queued), not machinery
+       that exists.
+   reading-prego-fixed.py (sha256
+   acec9f15424b357052fa9232b980d4a3f8f7f7db892329819b704f380ba00d35)
+   is the adoption copy: byte-equal to reading-s1001.py except line
+   95, W6_DIR = "anv-b3w6daybar-20261030" (the real W6 workdir) vs
+   the rehearsal stand-in.
+
+2. VERIFIED (real tool output, all runs this tick):
+   (a) reading-prego-fixed.py --compat (under its own name the file
+       is in compat mode): exit 0 twice BYTE-IDENTICAL and
+       BYTE-IDENTICAL to the s90 pin (2,930 bytes == the s90
+       committed anv-b3w6prego-20261029/compat-prego-validation.txt,
+       cmp exit 0 x3; sha256
+       8509d52a424f56f11c7f34db4fd1c83908a422b333074e801cffc4264aad00e9),
+       stderr 0 bytes -- the s100 edits touch w6 mode ONLY.
+   (b) reading-s1001.py w6 rehearsal -- REHEARSAL STAND-IN, the
+       committed W5 window anv-b3w5xdayrep-20261029 stands in for
+       the W6 window; EVERY rehearsal number here is a FIXTURE, NOT
+       a measurement: exit 0 twice BYTE-IDENTICAL (4,009 bytes,
+       sha256
+       c38927b2cfd7540404824022be9123ec16f26ab8cd69a5250728b1e4e608a279),
+       stderr 0 bytes.  Content: section 1 six windows 78/0 each
+       (s1001 = the stand-in), named cell "ok-map cell 5, raw idx
+       7" with the 0-based/1-based note (fix c); section 2 FLOOR /
+       32709 vs 32915 (0.63%) / branch (a); section 3 fresh row
+       "s1001 (NEW): median 1131 min..max 998..1442; class
+       INTERMEDIATE/MIXED"; section 4 five prior rows in the
+       classless section-3b shape (fix a), all five reproduction
+       EXACT: True; section 5 day census 78 parsed / 1 distinct
+       (2026-10-29); section 6 D4 bar row equal to section 3 (fix
+       b); the verifier-twin NAMED gap note (fix d).
+   (c) reconcile-prego.py --line on the fixed rehearsal pair
+       (publication vs the committed s73 ledger line, tag s73):
+       exit 0 twice BYTE-IDENTICAL (469 bytes, sha256
+       423295f873a25b1cb3c45a0d3089faeb70e4084e05c2991e3e54d82923cb7107),
+       stderr 0 bytes -- publication rows parsed 2,
+       pub-rows-agree=True (one tuple), X median/min/class all
+       MATCH -> RECONCILE VERDICT: CONSISTENT; and the capture is
+       BYTE-IDENTICAL to the s99 committed-pair capture
+       (anv-b3w6reconcilerego-20261029/reconcile-line-s73-run1.txt,
+       cmp exit 0) -- the fixed rehearsal pair yields exactly the
+       validated s99 shape.  The defect is closed at the rehearsal
+       level: same pair, same ledger line, unfixed INCONSISTENT vs
+       fixed CONSISTENT.
+   (d) Standing gates (the standing set, real runs this tick,
+       byte-compared to the s88 committed pins in
+       docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+       gpu_regime_classify.py --self-test exit 0, capture == pin
+       (17,925 bytes, cmp exit 0), .err 0 bytes;
+       scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s88 run-1 pin == the s88 run-2 pin (919
+       bytes, cmp exit 0 x4), .err 0 bytes both (the "kbb: 2
+       dep(s)..." classpath sub-invocation notice is terminal
+       output, not part of the capture -- established convention);
+       FULL run-tests.cljk RUN LIVE (worktree root): exit 1, RED AT
+       BASE kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO .cljk
+       namespace), .err 879 bytes == the s88 pin, stdout 0 bytes ==
+       the pin -- NO green full suite claimed;
+       settle-bar evaluator --self-test == pin (3,590 bytes) + the
+       ledger eval twice BYTE-IDENTICAL == the s88 pin (823 bytes)
+       -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+       find docs/evidence/gpu -name '*.sh' -> 0 files;
+       settle-bar-ledger.txt == HEAD (git diff empty verified).
+
+3. THE BAR: preparation session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption.  The bar
+   stays PENDING 2/4.  Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- settle-bar.txt section 2).
+
+4. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z; this tick
+   runs 2026-10-29T17:46Z-18:0xZ); every W6 live field; every
+   rehearsal number above (W5 stand-in FIXTURES); every T18/T20/W7
+   quantity (all gate behind W6's ledger line).  RULE 4 unchanged:
+   NOTHING MOVES -- the accelerator-targets workgroup rows stay
+   exactly as ADR-0358 left them; NO vendor optimization exists
+   for Intel (or for any vendor); this is publication-shape
+   reconciliation machinery, not a device measurement.
+
+5. ADOPTION CONTRACT (amended): the W6 session adopts
+   reading-prego-fixed.py as reading-s<NN>.py (superseding the s90
+   copy for adoption; provenance named) alongside the s90 census
+   twin, s91's custody baseline, s95's run-window driver, s98's
+   checker, s97's emitter and s99's reconciler (reconcile-s<NN>.py
+   --line runs on the fresh pair after the append).  W7 the same,
+   with the s94-named W7_DIR repoint.  NAMED GAP CARRIED FORWARD,
+   NOT CLOSED HERE: the fresh-window "every published integer
+   cross-checked" duty (an independent second parser over the
+   fresh window -- derivation-census-prego.py is --compat-only and
+   has NO w6 mode) is QUEUED as its own pre-build; the cross-tool
+   check that exists today is reconcile-prego.py --line.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (the one open chain PR is
+   the chain PR this commit pushes to).
+
+Carry-forward to session 101: the W6 measurement half (the s80
+freeze; the first measurement session starting at or after
+2026-10-30T00:00:00Z adopts the six tools above and owns their
+record) -- the gate for the T18 analysis half (s92 pre-build +
+s84 freeze bind), the T20 analysis half (s93 pre-build + s88
+freeze bind) and the W7 measurement half (s85 freeze; behind W6's
+ledger line); if a tick runs before the slot opens, the honest
+preparation row is the queued fresh-window census-check pre-build
+(section 5).  Then any further counted-day slot (its own freeze)
+and a cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6censuscheckrego-20261029/
+(reading-s1000.py [the unfixed demonstration provenance] +
+reading-s1001.py + reading-prego-fixed.py + rehearsal-publication
+unfixed / rehearsal-line-unfixed / rehearsal-fixed /
+rehearsal-line-fixed / compat-s100 run captures + this record +
+the s100 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

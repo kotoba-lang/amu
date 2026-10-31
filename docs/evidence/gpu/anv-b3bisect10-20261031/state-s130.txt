@@ -1,0 +1,65 @@
+2026-10-31 (session 130)
+== session 130 state capture -- TENTH CUT MEASUREMENT HALF         ==
+== LANDING (completing the interrupted s129 landing tail)         ==
+
+ROW: the state-s129.txt NOT DONE list, completed exactly (named
+provenance: the s92/s100/s101/s120/s122/s128 precedent).
+
+DONE this tick (all real tool output, captures in
+docs/evidence/gpu/anv-b3bisect10-20261031/):
+- s129 claims byte re-verified: publication-s129.txt sha256
+  87a02b47... unchanged across analysis-s129.py's RE-RUN (third
+  run, rc 0, stdout/stderr 0 bytes -> analysis-s130-reverify.*);
+  42 run logs tail-clean 42/42, 42 stderr captures 0 bytes; s129's
+  gate (a)/(b) captures == the s88 pins (cmp exit 0 each).
+- gates run live at s130: (b) scoped GPU gate GREEN 123 tests /
+  12162 assertions / 0 failures / 0 errors, run 1 == run 2 == both
+  s88 pins (919 bytes, cmp exit 0 x3), .err 0 (scratch runner
+  created/run twice/DELETED, never committed); (c) FULL
+  run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+  this diff -- NO committed .cljk namespace touched), stdout 0
+  == pin, .err 879 == pin -- NO green full suite claimed; (d)
+  evaluator self-test 38/0 3,590 bytes == pin + eval pair twice
+  byte-identical (1,006 bytes) == the s117 post-append pin ->
+  VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find
+  docs/evidence/gpu -name '*.sh' -> 0; (f) settle-bar-ledger.txt
+  == HEAD (git diff --exit-code rc 0).
+- record.txt + the ADR-0355 dated note written.
+
+THE FINDING (unchanged from state-s129.txt, verified by the
+captures): C1 (a) True; C2 (a) STABLE-INTERMEDIATE at lo
+(405,1591) n=254,557 (pooled-12 1,141); C3 (c) BLOCK-UNSTABLE at
+mid (248,973) n=254,882; W1 (c) BLOCK-UNSTABLE at hi (1213,4753)
+n=255,208 (pooled-12 CAPTURED 1,154). CUT VERDICT: the stability
+precondition DOES NOT HOLD; L9 BINDS at mid AND hi. NO bracket
+movement under any outcome: the committed bracket stays exactly
+(254,557, 255,208]. WHY is UNMEASURED; NO causal mechanism is
+claimed.
+
+RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets rows
+stay as ADR-0358 left them (:measured? true scoped to each row's
+one named measured device for :nvidia/:apple/:intel/:amd; :arm and
+:unknown remain provisional, :measured? false); NO vendor
+optimization exists for Intel (or for any vendor). BAR
+NON-INTERFERENCE held (no ledger append, no day-slot consumption,
+no bar/Rule-4/:measured? movement).
+
+BLOCKER-FIRST (2026-10-31T12:39:50Z, prlist-s130-prepush.json):
+0 open kotoba-lang/amu PRs with a hermes/ head (13 open PRs
+total); chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-20261028-4
+MERGEABLE -- the one this commit pushes to).
+
+STATE: the tenth cut's measurement quantities are MEASURED and
+this tick LANDS them (the block classes, pooled-12 classes,
+dispersion, host_ns -- real tool output, publication-s129.txt).
+Capture naming NAMED (record.txt section 4): the tail gates' s130
+number per the completing-session precedent. Carry-forward to
+s131: (a) any eleventh cut ONLY through a NEW pre-registered cut
+session confronting the L9 block-run-instability content (the
+RESUMABILITY RULE re-open condition did NOT fire) -- NOT queued;
+(b) any further counted-day slot (next slot is a NEW UTC day, its
+own freeze) and the cross-day tail-movement row (not queued) --
+NO queued row remains; s131 takes a row only if one is queued or
+frozen to run, else stands down.
+(JUN-55, JUN-59; Linear tracking JUN-499 -- Linear comment posted
+this tick after the push)

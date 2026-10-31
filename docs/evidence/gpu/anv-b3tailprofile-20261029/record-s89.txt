@@ -1,0 +1,184 @@
+JUN-59 session 89 -- the T19 DERIVATION CENSUS (publication-
+s87.txt section 5's own queued item "the 12 W5 block values (for
+a future census)" -- verification slice; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO day-slot consumption, NO
+ledger line).
+
+1. FINDING (verified by real tool output): derivation-census-
+   s87.py -- the INDEPENDENT second parser for publication-
+   s87.txt -- re-derives EVERY published computed value from the
+   390 committed run logs of the five fixed directories and
+   matches the committed bytes on EVERY row: 92/92 two-way rows,
+   0 mismatched (integrity 5 + named-cell 1 + decomposition 1,
+   C1 3, block-min vectors 15, anchors 5, parser validity pins
+   7, the T19 table 25, section 5b 20, the verdict summary 10).
+   The T19 vectors -- the QUOTE-ONLY priors the frozen T18 and
+   T20 rows quote at W6 -- are no longer one generator's output
+   alone. THE CENSUS'S ONE SUBSTANTIVE FINDING (section 4
+   below): the publication's band subsection prints min..median
+   interval tops under a [MIN,MAX] label, and under the frozen
+   protocol convention 2 of 8 band verdicts CHANGE.
+
+2. INDEPENDENCE CONTRACT (frozen at s89, named in the script
+   header): NO regex / no re module (split()-based k=v run-log
+   parsing, find/split publication parsing -- analysis-s87.py
+   parsed with re.compile regexes); the observed half-pair/pair
+   spreads, pooled-75 cell medians and 2*L statistics are
+   computed on the numpy np.partition kth paths (analysis-s87.py
+   is pure stdlib -- sorted() order statistics and a pure-Python
+   float median -- and imports NO numpy at all), cross-checked
+   IN-LOOP against pure-Python sorted() explicit order statistics
+   (the algorithm family analysis-s87.py used); the DL
+   decomposition identity HL_k+HR_k = D_k is re-checked per
+   block. NO RNG anywhere, no clock.
+
+3. VERIFIED (real tool output): run 1 -> scratch/census-s87-
+   run1-pin.txt, run 2 -> derivation-census-s87.txt, BOTH
+   "TOTAL: 92 rows, 0 mismatched | B: 0 | C: 0 | D: 2 of 8
+   verdicts changed" exit 0, cmp exit 0, sha256
+   ebf261dd50e0b3a5d3e3ec62b28524d8f63b80d2553f63422a12397de8f1
+   463c for BOTH (29,790 bytes), stderr 0 bytes both runs.
+   Section B (estimator cross-check, in-loop dual computation):
+   pair-spread cross-check 1,080 comparisons (the output
+   parenthetical "14 pairs" counts DISTINCT index pairs; the
+   computed streams are 18 -- the four DL index pairs are
+   computed both as DL streams and as validity streams under
+   their published labels -- 18 streams x 5 windows x 12 blocks
+   = 1,080 is the exact count, named not hidden), pooled-median
+   cross-check 2,255 comparisons, 2*L cross-check 90
+   comparisons, decomposition identity 240 block checks -- 0
+   mismatched everywhere. Section C (evidence hygiene): evidence
+   .sh count 0; W5 run-window 78 host-dates all 2026-10-29;
+   ledger reading-line count 9; ledger session=s89 line count 0
+   (this row writes NO line); publication-s87.txt 13,188 bytes,
+   sha256 ebe4daa7...b174 (the committed pin) exact.
+
+4. BAND CONVENTION NAMED, NOT HIDDEN (the census's substantive
+   finding beyond byte-reproduction -- the s83 precedent
+   recurrences sharper): the published section-5 band lines
+   print sorted[0]..sorted[1] of the three {s38,s39,s51} 2*L
+   values (and judge W5 against sorted[1]) while BOTH the frozen
+   protocol.txt section 5 AND the printed label itself name
+   "the closed interval [MIN,MAX] spanned by {s38,s39,s51}" --
+   with three values sorted[1] is the MEDIAN, so every printed
+   interval top is understated (8 of 8: TS-L4 21..24 vs 21..30;
+   TS-R4 16..18 vs 16..22; TS-L8 47..51 vs 47..52; TS-R8 32..38
+   vs 32..49; TS-L16 103..103 vs 103..115; TS-R16 82..85 vs
+   82..100; TS-L32 342..362 vs 342..397; TS-R32 183..186 vs
+   183..204). UNDER THE FROZEN PROTOCOL CONVENTION 2 OF 8 BAND
+   VERDICTS CHANGE: TS-R4 (W5 19: printed OUTSIDE-ABOVE vs
+   printed top 18 -> protocol INSIDE in 16..22) and TS-R8 (W5
+   41: printed OUTSIDE-ABOVE vs printed top 38 -> protocol
+   INSIDE in 32..49) -- BOTH changed pairs sit in the
+   UNINFORMATIVE-BY-S86-CAVEAT k=4/8 families; the four
+   INFORMATIVE-family verdicts are INVARIANT (TS-L16 90 < 103
+   OUTSIDE-BELOW; TS-R16 77 < 82 OUTSIDE-BELOW; TS-L32 439 >
+   397 OUTSIDE-ABOVE; TS-R32 214 > 204 OUTSIDE-ABOVE;
+   informative-family verdicts changed 0). The generator defect
+   is named at its source: analysis-s87.py prints band[0]..
+   band[1] and judges l2_w5 vs band[1] while protocol.txt
+   section 5 (and the printed label) freeze [MIN,MAX] -- the s82
+   min..median recurrence despite the named s83 correction.
+   IMPACT ON FROZEN ROWS: NONE -- T20's pre-registered direction
+   rests only on the five-window 2*L vectors (verified EXACT,
+   row section 5/6) and T18's freeze already names the [MIN,MAX]
+   convention; the band subsection is descriptive content quoted
+   by NO frozen row. publication-s87.txt stands as published
+   bytes and this census is its correction record (the s83
+   precedent); any future row quoting a band placement must use
+   the protocol [MIN,MAX] convention and name it.
+
+5. STANDING GATES (real runs this tick, byte-compared to the s88
+   committed pins in docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed"; capture 17,925 bytes == the
+       s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run
+       2 -- "Ran 123 tests containing 12162 assertions. 0
+       failures, 0 errors."; run 1 == run 2 == the s88 pins
+       (919 bytes, cmp exit 0 x3); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk, worktree root): exit 1, RED AT BASE
+       kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO
+       .cljk namespace). Capture .err 879 bytes == the s88 pin
+       (cmp exit 0); stdout 0 bytes == the pin. NO green full
+       suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL
+       38 assertions passed, 0 failed, capture 3,590 bytes ==
+       the s88 pin (cmp exit 0); ledger eval twice, exit 0,
+       run 1 == run 2 == the s88 pin (823 bytes) -> VERDICT:
+       PENDING 2/4 unchanged (counted day=2026-10-28
+       session=s31; counted day=2026-10-29 session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff 0
+       bytes -- verified this tick).
+
+6. THE BAR: verification session -> NO hardware runs -> NO
+   reading -> NO settle-bar-ledger line, NO day-slot
+   consumption. The bar stays PENDING 2/4. Nothing this UTC day
+   can advance the bar (2026-10-29's counted slot is CONSUMED
+   by s73 -- the settle-bar.txt section-2 rule).
+
+7. UNMEASURED (named): every W6 quantity (the W6 measurement
+   half has not run -- the s80 slot opens 2026-10-30T00:00:00Z;
+   this tick runs 2026-10-29T08:3xZ-09:0xZ); the T20 contrast
+   itself; which tail MOVES across days (not queued); the TS
+   asymmetry's mechanism; the W7 window itself. RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+   rows stay exactly as ADR-0358 left them (:measured? true
+   scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor). T19's descriptive table stays
+   IMPLEMENTED content (code + publication, s87) now TWO-PARSER-
+   VERIFIED at its vectors; the band subsection carries this
+   record's convention caveat; T18/T20 stay ACCEPTED DESIGN
+   ONLY.
+
+8. WHAT CHANGED (this commit): docs/evidence/gpu/
+   anv-b3tailprofile-20261029/ gains derivation-census-s87.py +
+   derivation-census-s87.txt + this record (record-s89.txt) and
+   the s89 gate captures (gate-s89-classify.txt/.err,
+   gate-s89-run1/2.txt/.err, gate-s89-full.out/.err,
+   bar-s89-selftest.txt/.err, bar-s89-eval-run1/2.txt/.err);
+   plus the ADR-0355 dated note. NO run logs (no hardware this
+   tick), NO .sh files. The chain commit cites JUN-55/JUN-59
+   (Linear tracking JUN-499).
+
+9. NOT DONE (carry-forward to session 90, named):
+   (a) the W6 measurement half (the s80 freeze; the first
+       session at/after 2026-10-30T00:00:00Z) -- the gate for
+       the T18 analysis half, the T20 analysis half and the
+       W7 measurement half;
+   (b) the T18 ANALYSIS half (the s84 freeze binds);
+   (c) the T20 ANALYSIS half (the s88 freeze binds) -- STARTED,
+       NOT FINISHED;
+   (d) the W7 measurement half (the s85 freeze; day-slot-gated
+       behind W6's ledger line);
+   (e) any further counted-day slot (its own future freeze);
+   (f) a cross-day tail-movement row (NOT queued);
+   (g) the standing gate set runs with each such tick;
+   (h) the band-convention correction record stands: any future
+       row quoting a band placement uses the protocol [MIN,MAX]
+       convention and names it.
+
+WHY THIS ROW (named): of the s88 carry-forward items (a)-(d)
+are ALL gated behind the W6 measurement half (the slot opens
+2026-10-30T00:00:00Z; this tick runs ~15.x h before it), (e) is
+contingency-only and (f) is explicitly NOT queued -- the only
+honest one-tick slice today is the verification slice the
+publication itself queued (publication-s87.txt section 5: "the
+12 W5 block values (for a future census)"), the s82->s83
+precedent, and its exactness check lands BEFORE the T18/T20
+analysis halves quote these vectors at W6.
+
+Evidence: docs/evidence/gpu/anv-b3tailprofile-20261029/ (this
+file, derivation-census-s87.py/.txt, the s89 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

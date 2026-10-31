@@ -1,0 +1,127 @@
+JUN-59 session 102 -- THE W6 ADOPTION-MANIFEST PRE-BUILD (the
+ADOPTION-BINDING preparation half of the W6 measurement row; NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO host writes,
+NO day-slot consumption, NO ledger line; the W6 measurement half
+REMAINS day-slot-gated behind the 2026-10-30T00:00:00Z slot -- this
+tick runs 2026-10-29T19:46Z-20:0xZ UTC, ~4h before it -- STARTED, NOT
+FINISHED).
+
+1. FINDING (verified by real tool output): the W6 adoption surface --
+   the only W6 surface still bound by PROSE ALONE -- now has a
+   fail-closed binding.  The eight adoption contracts (s90 census
+   twin, s91 custody baseline, s95 run-window driver, s96/s98
+   custody checker, s97 emitter, s99 reconciler, s100 reading,
+   s101 fresh-census) are distributed across eight records and two
+   carry SUPERSESSION chains (reading-prego-fixed.py supersedes
+   reading-s1001.py / reading-s1000.py / reading-prego.py;
+   custody-check-prego.py supersedes custody-prego.py); nothing in
+   the tree bound them to exact committed bytes, so a wrong or
+   superseded copy adopted under slot pressure would have run
+   undetected.  adoption-manifest.txt (this directory, frozen) names
+   every slot's canonical source path + sha256 + adoption name
+   (SESSION-CHOSEN for the one slot the frozen route leaves unnamed,
+   s95) + provenance; adoption-check-prego.py re-derives every digest
+   from committed bytes at --check time and refuses on any mismatch.
+   The s91 custody baseline is bound as four frozen rows (instrument
+   source a5e539f0..., expected-corpus eefba52e..., manifest
+   c568e32e... re-derived from committed bytes; the manifest
+   cell-line chain 873025d6... RE-DERIVED mechanically by the named
+   construction sha256 over the 24 non-comment cell lines each + \n,
+   reproduced EXACTLY -- the s91/s94 chain value).
+
+   DEFECTS FOUND BY FIRST EXECUTION, FIXED AT SOURCE:
+   (a) ENGINE WRONG: the relation claim-row format string carried
+       five specifiers against four arguments (got-diff bound to %d,
+       TypeError before any claim row printed);
+   (b) FIXTURE WRONG: the bad-digest case expected (7,1); the
+       perturbation also fires the provenance digest-presence row by
+       design (fail-closed) -- corrected to (6,2);
+   (c) FIXTURE WRONG: the relation-match fixture pointed at ref.txt
+       after the clean-case pair was refitted (3-line diff, not 1) --
+       refsrc.txt added.
+
+2. VERIFIED (real tool output, all runs this tick):
+   (a) --self-test (MOCK fixtures only, never measurements; reads NO
+       committed window): TOTAL 42 assertions passed 0 failed;
+       run 1 AND run 2 BYTE-IDENTICAL (cmp exit 0), stderr 0 bytes.
+   (b) --check over the real committed tree: VERDICT: CONSISTENT
+       (matched 25, mismatched 0) -- 11 manifest rows: 7 tool
+       digests + 4 frozen custody rows re-derived from committed
+       bytes; 5 record-named provenance sub-checks PRESENT (digest +
+       assoc token); 4 superseded digests MATCH (and none equals its
+       source); the s100-named relation holds mechanically
+       (lines-differ-only:95 want=95 got=95); cell-lines chain
+       re-derived 873025d6... == frozen value; cross rows
+       slots/tool-paths/adopted unique 11/7/7; run 1 AND run 2
+       BYTE-IDENTICAL (cmp exit 0), stderr 0 bytes.
+   (c) NEGATIVE (a MOCK perturbation -- the run-window digest's
+       first hex char in a scratch manifest copy, never a
+       measurement): exit 1 twice BYTE-IDENTICAL, row 3
+       (run-window) MISMATCH named, VERDICT: INCONSISTENT (matched
+       24, mismatched 1); stderr 0 bytes.
+   (d) Standing gates (byte-compared to the s88 committed pins in
+       anv-b3w6tailrep-20261030/): gpu_regime_classify.py
+       --self-test exit 0 == pin (17,925 bytes, cmp exit 0), .err 0
+       bytes; scoped GPU gate GREEN run 1 AND run 2 -- "Ran 123
+       tests containing 12162 assertions. 0 failures, 0 errors."
+       (scratch runner scratch/scoped-gpu-gate.cljk, the eight
+       GPU-owned test namespaces, created/run/deleted, never
+       committed) run 1 == run 2 == both s88 pins (919 bytes, cmp
+       exit 0 x4), .err 0 bytes; FULL run-tests.cljk RUN LIVE: exit
+       1, RED AT BASE kotoba.form ("Could not find namespace:
+       kotoba.form", ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace), .err 879 bytes == pin, stdout 0
+       bytes == pin -- NO green full suite claimed; settle-bar
+       evaluator --self-test == pin (3,590 bytes) + ledger eval
+       twice BYTE-IDENTICAL == pin (823 bytes) -> VERDICT: PENDING
+       2/4 unchanged (counted day=2026-10-28 session=s31; counted
+       day=2026-10-29 session=s73); find docs/evidence/gpu -name
+       '*.sh' -> 0 files; settle-bar-ledger.txt == HEAD (git diff
+       empty).
+
+3. THE BAR: preparation session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption.  The bar
+   stays PENDING 2/4.
+
+4. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z; this tick runs
+   ~4h before it); every W6 live field.  RULE 4 unchanged: NOTHING
+   MOVES -- the accelerator-targets workgroup rows stay exactly as
+   ADR-0358 left them (:measured? true scoped to each row's one
+   named measured device for :nvidia/:apple/:intel/:amd; :arm and
+   :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor); this is
+   adoption-binding machinery, not a device measurement.
+
+5. NAMED, NOT HIDDEN (limits): (a) record-named provenance is two
+   presence sub-checks (digest + assoc token in the record text),
+   positional binding NOT enforced; (b) the manifest guards adoption
+   mistakes, not repository compromise (a tampered manifest + source
+   pair would pass); (c) adopted-name uniqueness is over literal
+   manifest tokens; exactly one SESSION-CHOSEN row exists (s95).
+   ADOPTION CONTRACT (no new tool): the W6 session runs
+   `python3 docs/evidence/gpu/anv-b3w6adoptionprego-20261029/
+   adoption-check-prego.py --check docs/evidence/gpu/
+   anv-b3w6adoptionprego-20261029/adoption-manifest.txt .` from the
+   worktree root BEFORE any adoption copy; VERDICT INCONSISTENT =>
+   do not adopt (fail-closed); the adopted copies must be byte-equal
+   to the manifest-named sources.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (the one open chain PR is
+   the chain PR this commit pushes to).
+
+Carry-forward to session 103: the W6 measurement half (the s80
+freeze; the first measurement session starting at or after
+2026-10-30T00:00:00Z adopts the seven tools -- manifest-checked --
+and owns their record) -- the gate for the T18 analysis half (s92
+pre-build + s84 freeze bind), the T20 analysis half (s93 pre-build
++ s88 freeze bind) and the W7 measurement half (s85 freeze; behind
+W6's ledger line); then any further counted-day slot (its own
+freeze) and a cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6adoptionprego-20261029/
+(adoption-check-prego.py + adoption-manifest.txt + selftest-s102-
+run1/2 + check-s102-run1/2 + negative-run1/2 captures (.txt/.err) +
+this record + the s102 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

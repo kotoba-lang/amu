@@ -1,0 +1,51 @@
+== JUN-59 session 136 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, TWELFTH CUT -- THE MID-ONLY NARROWING CUT;    ==
+== ZERO derivation edits at the s133 freeze; ONE NEW KNOB TRIPLE    ==
+== (bis (3,316,1239), L8 named -- NO prior binary, NO byte-identity ==
+== pin; its first measured digest is recorded in build-census-s136.txt) ==)
+every value below is COMPUTED here (sha256) or PARSED from committed
+bytes (knob-search-s133-run1.txt, committed in
+anv-b3bisect12prereg-20261031/); nothing is transcribed.
+
+ZERO-DERIVATION CUSTODY (computed here, local files):
+  instrument gpu-subgroup-reduce-anv-ndiv.c.txt sha256: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+  == parsed pin (s26 committed NDIV-derived source, knob-search-s133-run1.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 -> MATCH
+  expected-corpus.sha256 sha256: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+  == parsed pin (byte-copy of s27's, knob-search-s133-run1.txt): eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 -> MATCH
+  cases-s136-a.txt sha256: 5c1c1a57156dce0c3ddefd721a9db5475ea3b74829e643ac3ac0cb7817edfce0 (s136 header + 24 cell lines)
+  the 24 cell lines' block sha256: 873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+  s27's cases-s27-a.txt cell-line block sha256:            873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200 -> MATCH
+  s132's cases-s132-a.txt cell-line block sha256:          873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200 -> MATCH
+  (cell lines byte-equal to sessions 9-27's a-set; the byte-copy check
+   is this measuring session's derivation-census duty -- discharged)
+
+HOST-SIDE DIGESTS (verbatim in host-stage-s136.txt / host-digests-s136.txt):
+  host instrument sha256 a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 == local -> MATCH
+  host expected-corpus.sha256 sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 == local -> MATCH
+  manifest cases-s136-a.txt host==local sha256 5c1c1a57156dce0c3ddefd721a9db5475ea3b74829e643ac3ac0cb7817edfce0 -> MATCH
+  corpus: 16/16 sha256sum -c OK on host (shaders/ byte-copy from
+  ~/anv-b3bisect11-20261031's verified corpus), corpus_rc=0
+
+BUILD REPLICATION PINS (parsed from committed bytes via
+knob-search-s133-run1.txt; compared to the s136 build census):
+  anv-bb-c2 built e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+    pin (s27 census anv-bb-c2, parsed): e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 -> BYTE-IDENTICAL (PIN OK)
+  anv-bb-mid built cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589
+    pin (s125 census anv-bb-mid, parsed): cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589 -> BYTE-IDENTICAL (PIN OK)
+    cross-check (s129 census): cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589 -> MATCH
+    cross-check (s132 census): cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589 -> MATCH (3-way)
+  anv-bb-c8 built 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+    pin (s27 census anv-bb-c8, parsed): 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 -> BYTE-IDENTICAL (PIN OK)
+  anv-bb-bis built 440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440
+    pin: NONE -- NEW knob triple, NO committed prior binary (L8
+    named); THIS SESSION's build census records the pair's FIRST
+    measured digest (the future pin). NO byte-identity pin exists to
+    compare -- by construction, named, not hidden.
+  3/3 pinned OLD binaries BYTE-IDENTICAL; 1/1 NEW triple recorded
+  fresh.
+
+NAMED, NOT HIDDEN: the measuring host alias aiueos-6600hs-1 of prior
+records does not resolve in this session's ssh config; the same host
+is reached as murakumo-ci-6600hs (tailscale 100.98.24.37, user
+murakumo-ci) and reports hostname aiueos-6600hs -- same host, named,
+no capture touched.
