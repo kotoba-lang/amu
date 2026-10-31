@@ -23,6 +23,7 @@ on:
       - 'scripts/seed/check-aiueos-object-globals.py'
       - 'scripts/seed/check-aiueos-object-windows.py'
       - 'scripts/seed/check-aiueos-object-windows16.py'
+      - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
       - 'scripts/seed/check-document-edn-read.py'
@@ -179,6 +180,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-msr.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-msr"
+      - name: AIUEOS kernel object route writes only listed output ports, literal-bounded per width (JUN-600)
+        run: |
+          python3 scripts/seed/check-aiueos-object-outport.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-outport"
       - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
         run: |
           python3 scripts/seed/check-aiueos-object-xstate.py \

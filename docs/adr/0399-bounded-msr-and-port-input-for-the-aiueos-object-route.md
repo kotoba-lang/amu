@@ -69,8 +69,8 @@ Not bounded:
 - **STAR, LSTAR and FMASK** take the kernel's selectors, entry address and flag mask whole. The value goes to the
   register as given, and only the CPU's own checks apply (#GP for a non-canonical LSTAR, or a reserved FMASK bit).
 - **The read value** is returned exactly, bit 63 included.
-- **The port-write side** is outside this ADR. `kernel-out-u8` and `kernel-out-u32` (ids 4..5, ADR 0373) still take
-  any port, computed or not. This ADR does not tighten them.
+- **The port-write side** is outside this ADR. `kernel-out-u8` and `kernel-out-u32` (ids 4..5, ADR 0373) still took
+  any port, computed or not. ADR 0400 later gave them literal per-width allowlists.
 
 ### Opt-in
 
