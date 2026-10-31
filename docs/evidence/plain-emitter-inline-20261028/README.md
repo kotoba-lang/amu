@@ -317,6 +317,37 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, the identity-resource gate and the x86
     inline-access corpus pass.
+* Re-derived again after main's #1735 (JUN-633, ADR 0398: aarch64 f32 -> i64
+  traps as on x86, a core change in `seed/41-a64gen`, core pins `7ebbac8b…` /
+  `d18d5eda…`), #1732 (JUN-633 slice 7: f32 -> i64 truncation, `seed/70` op 37
+  and `seed/74`) and #1733 (KOTOBA-174, ADR 0396: `--format host-entry` in
+  `seed/75`/`76` and the new derived pin `bin/x86_64-linux/amu`).
+  * `seed/70` and `seed/76` merge without conflict. Op 37 keeps the rax cache
+    invariant: its operand read is emitted bytes, which clear the cache, and
+    its result reaches the slot through `xg-save` with rax equal to the stored
+    value. The host start finds the standard start's argument-vector line
+    exactly once in this change's `seed/76`.
+  * x86_64: F1 = F2 = F3 = `7695a1d9…` (9,228,800 bytes), from the
+    3,816,887-byte unity `abba47b5…`. Its `--format host-entry` image
+    `bin/x86_64-linux/amu` is `b42c01e1…` (9,228,800 bytes).
+  * aarch64 root: F1 = F2 = `8198e87c…` (3,850,752 bytes), container
+    `fecf5924…`, derived under qemu from the `702760f7…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `6d610126…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `d18d5eda…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `f6e86336…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 139 kernel-object sources (the 18
+    `check-aiueos-object-*` gates including f2i, their evidence sources and
+    the 12 `seed/tests/kernel-memory` dot cases) compile identically to
+    main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce`, the identity-resource gate and the x86 inline-access corpus
+    pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
