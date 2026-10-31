@@ -156,8 +156,8 @@ fresh controller/cold24/refusal18/parent cleanup/public linkage pass. Guest
 and compile deadlines, tamper/capacity/concurrency, failure cleanup and fresh
 admission afterward remain native-verdict gates.
 
-The current static NODE786432/MM-WORDS31064064 profile is inherited from
-main7eb and reproduced by its native generator. Normal18 core source,
+The static NODE786432 profile is inherited from main7eb (MM-WORDS was31064064
+there; it is now32505856 with TOK1048576, JUN-737), and reproduced by its native generator. Normal18 core source,
 heap1765120 words and all guest fuel/authority/arena/stack limits are unchanged.
 All14 kernel packaging suites, memory guards and new static/live/user/desktop
 admission gates pass locally on x86. Their guest/live exclusions are retained.

@@ -95,7 +95,11 @@ actual guest receipts; full scheduling and shared Browser remain separate.
 - The complete candidate uses `seed/FULL-MANIFEST` (48 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
+  also uses LitB1MiB, TOK1048576, NODE786432, SIR589824 and MM-WORDS32,505,856 (<2^25).
+  TOK is not fixed: it was raised from 786432 by owner decision (2026-11-01, JUN-737), and
+  `scripts/seed/check-token-headroom-native.py` (native-definition-graph `headroom` job) reports
+  the TOK/NODE/FN table headroom of the largest static builds and fails below its floors. Change any capacity through the `seed/MEMORY-MAP` static
+  overrides and `seed/gen-static-ns.kotoba`, never by hand. Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
