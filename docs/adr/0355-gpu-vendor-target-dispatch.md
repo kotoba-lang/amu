@@ -6258,3 +6258,55 @@ own freeze) and the cross-day tail-movement row (not queued) -- NO
 queued row remains.
 Evidence: docs/evidence/gpu/anv-b3confrontation-spec-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 143-146, JUN-59 -- THE FOURTEENTH CUT
+PRE-REGISTRATION, THE WANDER-BAND TOLERANCE CUT AT MID): the first
+pre-registration written under the confrontation spec's four arms
+(ACCEPTED DESIGN ONLY -- a cut pre-registration, not a measurement
+and not implemented compiler code; freeze stamp
+2026-10-31T19:54:33Z, write-once; NO run log of the cut existed at
+freeze): mid (248,973) n=254,882 only (bis NOT measured -- no
+claim at 255,045 from this cut), the MID-ONLY NARROWING CLAIM's
+realization attempt. (a) CONTENT CONFRONTATION: mid's s139 16-block
+content quoted from committed bytes + the named supersession (this
+cut's C2 tolerant classes supersede the committed frozen-rule
+labels AT MID FOR THIS CLAIM'S DECISION ONLY; every committed label
+rode the 18-cell MIN at the frozen 1,000-tick threshold -- the
+statistic named unstable); (b) BLOCK-GRANULARITY FLOOR: 16 disjoint
+blocks of 3 + pooled-48 at the byte-identical pinned binary
+cabff942... (5-way MATCH), single-class across ALL blocks AND the
+pooled arm; (c) STATISTIC CONFRONTATION option (ii) -- THE
+WANDER-BAND TOLERANCE RULE (frozen thresholds, pre-registered
+BEFORE runs): 18-cell min <= 980 TOLERANT-INTERMEDIATE/MIXED,
+>= 1,016 TOLERANT-CAPTURED, 981..1,015 (the measured wander band)
+IN-BAND-UNDECIDED; (d) CLAIM-FORM CONFRONTATION: the dual-class
+content + the cross-window disagreement at cabff942... (s132/s136/
+s139) confronted in W3 (the FOURTH window at the pinned binary).
+W1: (a) C2 (a) -> THE MID-ONLY NARROWING CLAIM IS REALIZED,
+bracket narrows AT MID to (254,882, 255,208]; (b)/(c) NOTHING
+MOVES, claim SUSPENDED; (d) INVALID. Quote-only census
+(pre-reg-census-s143.py, fail-closed, run twice byte-identical):
+all 34 committed minima are IN-BAND -> every committed block/pooled
+arm is IN-BAND-UNDECIDED under the tolerance rule (the supersession
+content); knob arithmetic (1,000,003*248)//973 == 254,882.
+MEASUREMENT HALF NOT RUN: 54 fresh processes (c2/mid/c8 k=3/48/3,
+ZERO NEW KNOB TRIPLES) are frozen for a future session (NOT
+queued); every fourteenth-cut quantity is UNMEASURED and the
+MID-ONLY NARROWING CLAIM stays SUSPENDED (named, not claimed).
+The landing tail (s146): standing gates (a)-(f) run live, all ==
+pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins, scratch runner
+deleted; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair
+twice byte-identical == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger ==
+HEAD). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s147: the fourteenth cut's
+MEASUREMENT half ONLY through its own session under the frozen
+protocol (NOT queued); any further counted-day slot (the 2026-10-31
+slot is consumed at s117; the next slot is a NEW UTC day and its
+own freeze) and the cross-day tail-movement row (not queued) -- NO
+queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect14prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
