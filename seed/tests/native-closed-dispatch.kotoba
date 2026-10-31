@@ -1,0 +1,61 @@
+;; JUN-730: closed static dispatch, admitted natively (scripts/seed/check-closed-dispatch.py). main answers 0.
+;; lang/guest-grammar.edn :closed-multimethod -> one module-local defn with static case dispatch;
+;; :protocol-dispatch / :protocol-extension -> per-record implementations chosen by the receiver's static record type.
+(ns d (:export [main]))
+
+;; -- closed multimethods: an unqualified dispatch function or a keyword, integer / keyword keys, :default --
+(defn kind [n :i64] :i64 (if (< n 2) 0 1))
+(defmethod fib 0 [n :i64] n)
+(defmulti fib "defmethods may come before their defmulti" kind)
+(defmethod fib 1 [n :i64] (+ (fib (- n 1)) (fib (- n 2))))
+
+(defrecord Shape [kind :keyword w :i64 h :i64])
+(defmulti shape-area :kind)
+(defmethod shape-area :square [s [:ref :d/Shape]] (* (:w s) (:w s)))
+(defmethod shape-area :rect [s [:ref :d/Shape]] (let [w (:w s)] (+ w 0) (* w (:h s))))
+(defmethod shape-area :default [s [:ref :d/Shape]] 0)
+
+;; -- protocols: inline in defrecord, extend-type, extend-protocol, and a default specialization --
+(defprotocol Area
+  "the area and a grown copy"
+  (area [this])
+  (grow [this k]))
+(defprotocol Named (tag [this]))
+(defrecord Sq [w :i64]
+  Area
+  (area [this] (* (:w this) (:w this)))
+  (grow [this k] (->Sq (+ (:w this) k))))
+(defrecord Circle [r :i64])
+(defrecord Tri [b :i64 h :i64])
+(extend-type Circle
+  Area
+  (area [this] (* 3 (* (:r this) (:r this))))
+  (grow [this k] (->Circle (+ (:r this) k))))
+(extend-protocol Area
+  Tri
+  (area [this] (quot (* (:b this) (:h this)) 2))
+  (grow [this k] (->Tri (+ (:b this) k) (:h this))))
+(extend-protocol Named
+  Circle (tag [this] 100)
+  default (tag [this] 7))
+
+(defn sum-sq [n :i64] :i64
+  (loop [i 0 acc 0] (if (> i n) acc (recur (+ i 1) (+ acc (area (->Sq i)))))))
+(defn twice [s [:ref :d/Sq]] :i64 (+ (area (grow s 1)) (area (grow s 2))))
+
+;; -- an implementation may abort; the caller handles it --
+(defprotocol Checked (value [this]))
+(defrecord Pos [x :i64])
+(extend-type Pos Checked (value [this] (if (> (:x this) 0) (:x this) (throw 7))))
+(defn safe [p [:ref :d/Pos]] :i64 (try (value p) (catch :i64 e (+ e 100))))
+
+(defn main [] :i64
+  (let [a (fib 10)                                         ; 55
+        b (+ (shape-area (->Shape :square 3 0))            ; 9
+             (+ (shape-area (->Shape :rect 2 5))           ; 10
+                (shape-area (->Shape :tri 4 4))))          ; 0
+        c (+ (sum-sq 3) (twice (->Sq 1)))                  ; 14 + 13
+        d (+ (area (grow (->Circle 1) 1)) (area (->Tri 4 3)))   ; 12 + 6
+        e (+ (tag (->Circle 1)) (+ (tag (->Sq 1)) (tag (->Tri 1 1))))   ; 100 + 7 + 7
+        f (+ (safe (->Pos 1)) (safe (->Pos 0)))]           ; 1 + 107
+    (- (+ a (+ b (+ c (+ d (+ e f))))) 341)))

@@ -1794,6 +1794,7 @@
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
           (and (= k ND-LIST) (ck-dx-let? M n)) (ck-ds-walk (ck-dx M S n) S n)   ; JUN-729: destructuring
           (ck-vassoc? M n) (ck-ds-walk (ck-vassoc M n) S n)   ; JUN-734: variadic assoc
+          (ck-pr-wrap? M n) (ck-ds-walk (ck-pr-wrap M n) S n)   ; JUN-730: a protocol call's receiver is a fresh local
           (ck-r6f-dinl? M n) (ck-ds-walk (ck-r6f-dinl M S n) S n)   ; R6F (before R6B's document folds)
           (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (pos? (ck-r6m-ods-code M n)) (ck-ds-walk (ck-r6m-ods M n) S n)   ; R6M: if-some when-some if-let when-let
@@ -1808,6 +1809,63 @@
           (= k ND-MAP) (let [M1 (ck-kwmap-sort M S n)] (ck-ds-kids M1 S (nm-first M1 n)))   ; JUN-728
           (= k ND-SET) (ck-ds-kids M S (nm-first M n))
           :else (ck-touch M))))
+;; JUN-730: closed static protocol dispatch (20-names nm-dp-norm). Each implementation of protocol method m for record R is a
+;; top-level (defn- G [this [:ref R] ..] ..) whose list node carries NF-SYM = m. A call (m x ..) of such an m (no module
+;; definition, no head, not a local) gets its receiver bound to a fresh local first, (let [g x] (m g ..)) -- x is evaluated
+;; once, before the other arguments, as before -- and pass B then calls the implementation for g's static record type
+;; (ck-pr-call); a receiver of any other type is E2180, never a runtime type test (ADR 0204).
+;; the FN implementing method symbol s for record block blk (blk 0: any record), 0 when there is none
+(defn- ck-pr-impl [M :vector-i64 s :i64 blk :i64] :i64
+  (if (zero? (vector-at M (+ MM-STAT-BASE 21)))
+    0
+    (loop [f 1]
+      (let [d (nm-ff M f FF-NODE)]
+        (cond (>= f (vector-at M MM-FN-N)) 0
+              (and (= (nm-ff M f FF-KIND) FK-PRIV) (= (nm-kind M d) ND-LIST) (= (nm-nf M d NF-SYM) s)
+                   (or (zero? blk) (= (nm-sf M (nm-sym-of M (nm-nth M (nm-nth M (nm-nth M d 2) 1) 1)) SF-REC) blk)))
+              f
+              :else (recur (+ f 1)))))))
+;; 1 when list n calls a protocol method: its head is a symbol with no module definition and no head code
+(defn- ck-pr-head? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)
+        s (nm-sym-of M h)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (zero? (nm-sf M s SF-FN)) (zero? (nm-sf M s SF-HEAD))
+         (nm-ne (nm-sf M s SF-HASH) 0) (pos? (ck-pr-impl M s 0)))))
+;; a call whose receiver is not yet a gensym local
+(defn- ck-pr-wrap? [M :vector-i64 n :i64] :bool
+  (and (= (nm-kind M n) ND-LIST) (pos? (vector-at M (+ MM-STAT-BASE 21))) (ck-pr-head? M n)
+       (let [a (nm-next M (nm-first M n))]
+         (and (pos? a) (not (and (= (nm-kind M a) ND-SYM) (zero? (nm-sf M (nm-sym-of M a) SF-HASH))))))))
+;; (m x a ..) -> (let [g x] (m g a ..))
+(defn- ck-pr-wrap [M :vector-i64 n :i64] :vector-i64
+  (let [tok (ck-htok M n)
+        h (nm-first M n)
+        x (nm-next M h)
+        rs (nm-next M x)
+        M1 (nm-gensym M (nm-tf M tok TF-START) 0)
+        g (ck-r M1)
+        M2 (ck-n-ref M1 tok g)
+        gc (ck-r M2)
+        M3 (ck-link (ck-link M2 h gc) gc rs)
+        M4 (ck-n-list M3 tok h)
+        cl (ck-r M4)
+        M5 (ck-n-ref M4 tok g)
+        b (ck-r M5)
+        M6 (ck-chain2 M5 b x)
+        M7 (ck-n-vec M6 tok b)
+        v (ck-r M7)
+        M8 (ck-chain2 M7 v cl)]
+    (ck-rehead M8 n HD-LET v)))
+;; pass B: the call n of protocol method h on receiver local g -> a call of the implementation for g's record type
+(defn- ck-pr-call [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)
+        M1 (if (= (nm-kind M a) ND-SYM) (ck-expr M a fx 0) (ck-err M E-CHECK-DISPATCH h 0))
+        blk (if (nm-failed M1) 0 (ck-blk M1 (ck-ty M1)))
+        f (if (zero? blk) 0 (ck-pr-impl M1 (nm-sym-of M1 h) blk))]
+    (cond (nm-failed M1) M1
+          (zero? f) (ck-err M1 E-CHECK-DISPATCH h 0)
+          :else (ck-list (nm-set-nf M1 h NF-SYM (nm-ff M1 f FF-SYM)) n fx ctx))))
 ;; JUN-734: (assoc m k1 v1 k2 v2 ..) -> (assoc (assoc m k1 v1) k2 v2 ..), clojure.core/assoc's variadic arity folded
 ;; left; each step is then the record / typed-map / document assoc its type selects. The arguments keep their order. An
 ;; odd number of keys and values stays E2103 (the 4-child check); a module defn named assoc is not the head.
@@ -2257,6 +2315,8 @@
           (= (ck-callable M fi) 1) (ck-call M n fi fx)
           (> hd 0) (ck-head (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx ctx)
           (pos? (ck-fl-code (nm-sf M s SF-HASH))) (ck-fl-op M n h (+ ck-fl-base (ck-fl-code (nm-sf M s SF-HASH))) fx)   ; FLOAT
+          (ck-pr-head? M n) (ck-pr-call M n fx ctx)   ; JUN-730: a protocol method
+          (= (nm-sf M s SF-HASH) -3568532113232994950) (ck-err M E-CHECK-REIFY h 0)   ; JUN-730: reify (FNV-1a)
           :else (ck-err M E-CHECK-HEAD h 0))))
 
 (defn- ck-head [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
