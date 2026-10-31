@@ -38,7 +38,7 @@ jobs:
             isa: x86_64
             compiler: bin/amu-linux-x86_64
     runs-on: ${{ matrix.runner }}
-    # +10 for the token-headroom bisection (about 100 compiles that stop after reading).
+    # +10 for the token/node headroom bisection (about 200 compiles that stop after reading).
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -57,7 +57,7 @@ jobs:
           python3 scripts/seed/check-definition-graph-native.py
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-graph"
-      - name: Token-table headroom of the largest static builds (JUN-737)
+      - name: Token- and node-table headroom of the largest static builds (JUN-737)
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
