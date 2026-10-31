@@ -54,7 +54,20 @@ Default run, 2026-10-31: `run-a64.sh OUT F2`.
 **Cross-ISA:** the hash is identical to the x86 object's. Over every case, both ISAs agree on which operands trap and
 on every returned answer.
 
-Exhaustive run: in progress; recorded in a follow-up commit on this branch.
+Exhaustive run, 2026-10-31: `run-a64.sh OUT F2 1 0 8`. It covers every one of the 2^32 patterns, plus the specials
+and the edge mantissas, in both FPCR passes.
+
+| run | cases | returned | trapped | diffs | indefinite | bad traps | hash |
+|---|---|---|---|---|---|---|---|
+| `exhaustive-linux.txt` (about 80 min, 5 vCPUs) | 8,589,951,142 | 6,375,354,362 | 2,214,596,780 | 0 | 0 | 0 | `df87e256459509c7` |
+| x86 QEMU (`../f32-to-i64-20261031/exhaustive-*.txt`) | 8,589,951,142 | 6,375,354,362 | 2,214,596,780 | 0 | 0 | - | `df87e256459509c7` |
+
+The exhaustive hash is also identical across the ISAs. Over all 2^32 operands, in both rounding modes, aarch64 and
+x86 trap on exactly the same inputs and return the same answer for every other input.
+
+**Ordering, stated plainly.** amu#1735 merged on the default macOS run, the mutants, this Linux arm64 exhaustive
+run and the cross-ISA hash. The macOS exhaustive run was still in progress at merge. Its result goes to Linear
+JUN-633 when it finishes. A difference there would be fixed forward.
 
 ## Mutants
 
@@ -72,7 +85,8 @@ number of trapping cases.
 
 ## Gaps, stated rather than rounded up
 
-- One CPU model, the M1 Max, in two OS environments. Other aarch64 implementations are not run.
+- One CPU model, the M1 Max, in two OS environments. Other aarch64 implementations are not run. The exhaustive run
+  has finished on Linux; on macOS it had not finished when this was written.
 - FPCR.FZ (flush-to-zero) and DN are left clear. With FZ set, a denormal compares and truncates as 0, which gives the
   same answer, 0.
 - The harness calls one extracted function directly. A whole-program trap is covered by `check-a64-f2i.py`: packaged,
