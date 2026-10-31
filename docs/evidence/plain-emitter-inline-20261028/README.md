@@ -405,6 +405,29 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1744 (JUN-650: native document-edn-read
+  treats EDN delimiters as the spec does, a core change in `seed/21-check`,
+  core pins `fee5ddcc…` / `f97b37aa…`) and #1747 (JUN-708, ADR 0401: the
+  4 KiB window tier and fences on the object route, `seed/74`).
+  * x86_64: F1 = F2 = F3 = `182255f3…` (9,261,568 bytes), from the
+    3,843,172-byte unity `9fadcfb5…`. Its `--format host-entry` image is
+    `3fd4f62e…` (9,265,664 bytes).
+  * aarch64 root: F1 = F2 = `db9469f6…` (3,867,136 bytes), container
+    `8206dfbe…`, derived under qemu from the `c8925690…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `24fdf35e…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `f97b37aa…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `24e40c03…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 224 kernel-object sources (the 22
+    `check-aiueos-object-*` gates, their evidence sources and every
+    `seed/tests/kernel-memory` case) compile identically to main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
