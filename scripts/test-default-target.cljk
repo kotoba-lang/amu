@@ -1,5 +1,11 @@
 (ns test-default-target
-  "The default application artifact is the canonical Kototama VM program.
+  "RETIRED (2026-10-31, KOTOBA-174, ADR 0396). This legacy nbb test asserted ADR 0355's
+  Kototama default, which no current entry implements and which is superseded. It is not
+  run in CI and refuses to run. The current rule (each public entry names its own host,
+  roots refuse an omitted target with E2, no Kototama or Wasm default) is checked natively
+  by scripts/seed/check-host-default-target.py.
+
+  Historical description: the default application artifact was the canonical Kototama VM program.
 
   This runs the real Amu and Kotoba launchers on the same source. It checks
   that host OS does not leak into the default artifact, that the explicit
@@ -11,6 +17,8 @@
             [scripts.lib :as lib]
             ["node:child_process" :as child]
             ["node:fs" :as fs]))
+
+(throw (js/Error. "test-default-target is retired (KOTOBA-174, ADR 0396); run scripts/seed/check-host-default-target.py"))
 
 (def directory (lib/temp-dir "amu-default-target-"))
 (def amu (lib/join lib/root "bin" "amu"))
@@ -57,10 +65,9 @@
     (let [default (amu! ["compile" source "--output" default-out])
           default-bytes (bytes-of default-out)
           provenance (str default-out ".provenance.edn")]
-      (report! (and (ok? default)
-                    (str/includes? (out default) ":target :kototama-core-v1")
-                    (str/includes? (out default) ":format :kototama/program-v1"))
-               "omitted --target compiles the canonical Kototama VM program" (out default))
+      ;; ADR 0396: an omitted --target is never Kototama (was ADR 0355's default assertion)
+      (report! (not (str/includes? (out default) ":target :kototama-core-v1"))
+               "omitted --target never compiles the Kototama VM program (ADR 0396)" (out default))
       (report! (and default-bytes (.existsSync fs provenance) (not (wasm? default-bytes)))
                "default output is DAG-CBOR plus provenance, not Wasm" (pr-str {:bytes? (some? default-bytes)
                                                                                 :provenance? (.existsSync fs provenance)}))

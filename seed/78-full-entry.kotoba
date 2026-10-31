@@ -140,6 +140,11 @@
         (= (full-target? "aarch64-linux") 1) (xa-command)
         ;; JUN-353: guest and runtime in a browser Wasm module.
         (= (full-target? "wasm32-browser") 1) (xw-command)
+        ;; KOTOBA-174 (ADR 0396): build the public Linux x86_64 host entry, the
+        ;; --format static image whose start names x86_64-linux for a compile
+        ;; that omits --target. This entry's own omitted target still refuses E2.
+        (and (= (full-target? "x86_64-linux") 1) (= (io-argc) 8)
+             (string=? (io-arg 6) "--format") (string=? (io-arg 7) "host-entry")) (xs-command 6)
         (= (full-target? "x86_64-linux") 1)
           (if (or (= (drv-pj-has 1 (io-argc) "--source-path") 1)
                   (= (drv-pj-has 1 (io-argc) "--source-lock") 1)) (xpj-command) (xg-main))
