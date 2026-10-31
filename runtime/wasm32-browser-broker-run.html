@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- wasm32-browser broker run page (JUN-353 Phase 2, profile restricted-wasm-v1).
+     The trusted host page: it alone holds the shared consent host and operation
+     broker (kotoba-client-runtime.js, vendored byte-for-byte and pinned by the
+     import map's integrity), and each guest module runs isolated in the
+     restricted guest shell (a sandboxed iframe, connect-src 'none') and its
+     Worker. broker-runs.js sets window.KOTOBA_BROKER_RUNS = [{name, runtime,
+     requestedCapabilities, hostSupportedOperations, guest: base64, sha256,
+     revision}, ...]. One JSON line per run is written to #results, then the
+     title becomes "kotoba-done". The connect-src below must equal what
+     clientRuntimeConnectSrc derives from every run's descriptor; the page
+     refuses to run otherwise. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob:; worker-src blob:; style-src 'unsafe-inline'; frame-src 'self'; connect-src https://service.invalid">
+<title>kotoba-pending</title>
+<script type="importmap">
+{"integrity": {"./kotoba-client-runtime.js": "sha256-Tm727qiGQbIMSQaS0nHOV4keU+AfzFwwMTWjJbL1tpM="}}
+</script>
+</head>
+<body>
+<pre id="results"></pre>
+<div id="guest"></div>
+<script src="broker-runs.js"></script>
+<script type="module" src="wasm32-browser-broker-run.js"></script>
+</body>
+</html>
