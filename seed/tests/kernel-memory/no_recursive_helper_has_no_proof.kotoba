@@ -1,0 +1,4 @@
+(ns t (:export [f]))
+(defn- g [w :i64 n :i64 i :i64] :i64
+  (if (>= i 2) (kernel-load-u32 w n 0) (+ 1 (g w n (+ i 1)))))
+(defn f [b :i64 n :i64 i :i64] :i64 (g b n 0))

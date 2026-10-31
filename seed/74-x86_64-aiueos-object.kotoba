@@ -1004,7 +1004,28 @@
                          (or (= extent -1) (= extent r)))
                   (recur (inc c) r) -1))))
           (recur (inc c) extent))))))
+;; JUN-708 (ADR 0403): the object-profile proof of a helper parameter is a function of (helper, parameter) alone, so
+;; xk-check keeps a table of proven answers (base in cell XK-REGION-MEMO, 0 = no table: the original walk) and each pair
+;; is walked once, from depth 0. A pair met again while its own walk is open reaches itself through a cycle of calls:
+;; it has no finite proof and answers -1, as the unbounded walk would. Answers: 0 not yet, 1 open, 2 refused, else the
+;; source itself (always >= 2^32).
+(def XK-REGION-MEMO 213)
+(def XK-REGION-BUDGET 214)
+(def XK-REGION-STRIDE 16)
+(defn- xk-memo-on? [M :vector-i64] :bool (> (vector-at M XK-REGION-MEMO) 0))
 (defn- xk-object-param-region [M :vector-i64 f :i64 b :i64 depth :i64] :i64
+  (let [m (vector-at M XK-REGION-MEMO)]
+    (if (or (= m 0) (< b 1) (> b XK-REGION-STRIDE) (< f 1) (>= f (vector-at M MM-FN-N)))
+      (xk-object-param-walk M f b depth)
+      (let [at (+ m (+ (* f XK-REGION-STRIDE) (dec b))) v (vector-at M at)]
+        (cond (= v 1) -1
+              (= v 2) -1
+              (> v 2) v
+              :else (let [open (mem-set M at 1)
+                          r (xk-object-param-walk M f b 0)
+                          done (mem-set M at (if (< r 0) 2 r))]
+                      r))))))
+(defn- xk-object-param-walk [M :vector-i64 f :i64 b :i64 depth :i64] :i64
   (let [np (xg-f M f FF-NPARAMS)]
     (loop [c 1 pairok 1 constant -2]
       (if (>= c (vector-at M MM-SIR-N))
@@ -1032,7 +1053,8 @@
 (defn- xk-region [M :vector-i64 i :i64 t :i64 depth :i64] :i64
   (if (or (> depth (if (xk-project-proof? M) 24 12))
           (and (not (xk-project-proof? M))
-               (> (vector-at (mem-set M 198 (inc (vector-at M 198))) 198) 40000))) -1
+               (> (vector-at (mem-set M 198 (inc (vector-at M 198))) 198)
+                  (if (xk-memo-on? M) (vector-at M XK-REGION-BUDGET) 40000)))) -1
     (let [j (xk-writer M i t)]
       (if (< j 0) -1
         (let [op (xg-si M j IF-OP) a (xg-si M j IF-A) b (xg-si M j IF-B)]
@@ -1075,7 +1097,7 @@
                 :else -1))))))
 ;; the window pair whose base is the temp b of the call at i: the base is rooted and the length is its region's own
 (defn- xk-pair-ok? [M :vector-i64 i :i64 b :i64] :bool
-  (let [r (xk-region (mem-set M 198 0) i b 0) ln (xk-src M i (inc b) 0)]
+  (let [r (xk-region (if (xk-memo-on? M) M (mem-set M 198 0)) i b 0) ln (xk-src M i (inc b) 0)]
     (and (>= r 0) (not= ln 0) (xk-same-extent? M i ln r))))
 (defn- xk-simd-k? [k :i64] :bool (and (>= k XK-SIMD-FIRST) (< k XK-INTR-SIMD)))
 ;; D5: a record access names a base that is an unassigned parameter of an EXPORTED function, every access to that parameter
@@ -1111,7 +1133,7 @@
         (>= k XK-W4K-FIRST) (+ 8 (- k XK-W4K-FIRST))
         :else (let [j (mod (- k XK-WIDTH-FIRST) 6) w (case (quot j 2) 0 0 1 1 3)]
                 (+ (+ (bit-and j 1) (* 2 w)) (if (>= k XK-WIDTH16-FIRST) 16 0)))))
-(defn- xk-check [M :vector-i64 i :i64] :vector-i64
+(defn- xk-check-at [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (>= i (vector-at M MM-SIR-N))) M
     (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B)]
       (if (or (and (= op OP-CALL) (= (xk-intr M a) XK-XSTATE-FIRST) (not (xk-mask-ok? M i b XK-CR4-ADMITTED)))
@@ -1137,7 +1159,30 @@
               size (if (xk-raw-ok? k) (xk-extent-constant M i (xk-src M i (inc b) 0)) -1)]
           (if (and (>= size 4294967296) (> (- size 4294967296) (case (quot (xk-raw k) 8) 0 512 1 4096 16384)))
             (xg-err M 7108 (+ (* (xk-raw k) 4294967296) (- size 4294967296)))
-            (xk-check M (inc i)))))))))
+            (xk-check-at M (inc i)))))))))
+;; JUN-708 (ADR 0403): the object profiles (xg-get 4 = 0) check with the (helper, parameter) table, in heap words above
+;; the current top that are saved, zeroed, and restored afterwards with the top itself, so nothing after admission sees
+;; it. Budget: every xk-region step is a root at one checked operand (at most two per instruction) or one call site in
+;; one helper's walk (at most 16 per call instruction), each followed by an in-function chain of at most 13 steps;
+;; 256 per SIR instruction covers 13 x 18 with room, plus the old per-check 40000. No room: the original walk.
+(defn- xk-check [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (xg-get M 4) 0) (not= (vector-at M MM-ERR) 0) (xk-memo-on? M)) (xk-check-at M i)
+    (let [words (* (vector-at M MM-FN-N) XK-REGION-STRIDE) top (vector-at M MM-HEAP-TOP)
+          steps (vector-at M 198)]
+      (if (or (<= words 0) (> (+ top words) MM-HEAP-END) (< top 256)) (xk-check-at M i)
+        (let [saved (loop [k 0 V (vector-alloc words)]
+                      (if (>= k words) V
+                        (let [w (vector-assoc! V k (vector-at M (+ top k))) z (mem-set M (+ top k) 0)]
+                          (recur (inc k) w))))
+              table (-> M (mem-set MM-HEAP-TOP (+ top words)) (mem-set 198 0)
+                          (mem-set XK-REGION-BUDGET (+ 40000 (* 256 (vector-at M MM-SIR-N))))
+                          (mem-set XK-REGION-MEMO top))
+              checked (xk-check-at M i)
+              restored (loop [k 0]
+                         (if (>= k words) M
+                           (let [w (mem-set M (+ top k) (vector-at saved k))] (recur (inc k)))))]
+          (-> M (mem-set XK-REGION-MEMO 0) (mem-set XK-REGION-BUDGET 0)
+                (mem-set 198 steps) (mem-set MM-HEAP-TOP top)))))))
 
 ;; JUN-633 (ADR 0391): the object artifact (multi) admits the float carriers :f32 / :f64 -- the bit pattern in an i64
 ;; slot -- for a private function's parameters and result. An export or an extern keeps the scalar types: System V
