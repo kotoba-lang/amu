@@ -5810,3 +5810,35 @@ counted-day slot (its own freeze) and the cross-day tail-movement
 row (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect8prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 122, JUN-59 -- THE EIGHTH CUT MEASUREMENT HALF
+LANDING: the s121 measurement half (21 fresh processes under the
+frozen protocol.txt, freeze stamp 2026-10-31T03:53:30Z) completed
+and landed; s121 hit its budget cutoff before the landing tail and
+s122 completed exactly that tail with named provenance; all s121
+claims byte-re-verified in s122). FINDING (publication-s121.txt):
+C1 (a)=True; C2 (a)=True; C3 (a)=True; W1 (b) MID-INTERMEDIATE --
+mid at n=254,557 (405,1591) class INTERMEDIATE/MIXED (pooled
+median 1,156, 18-cell 986..1,459) -- THE B=3 CLASS FLIP SITS IN
+(254,557, 255,208] n-units = (0.2545562, 0.2552072] work-units:
+the eighth cut NARROWS the flip bracket from (253,906, 255,208] to
+(254,557, 255,208]; b2m FLOOR extends 'B=2 never captures' to
+n=254,557 (total work 0.5091125); eq3 (810,3182) class-identical
+to mid (C3 (a), scoreboard s24 (b) / s25 (a) / s26 (b) / s27 (a) /
+s121 (a)). Build pins 4/4 byte-identical (c2 e5ed903e..., c8
+480925e5..., (1024,4033) triple a6c31b6c..., (1213,4753) triple
+123e8f73...). BAR NON-INTERFERENCE held: no ledger append, no
+day-slot consumption, no bar/Rule-4/:measured? movement. Standing
+gates: (a)(b)(d) run in s121 and byte-verified in s122 against the
+s88 pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (e) find '*.sh' -> 0; (f) ledger == HEAD.
+analysis-s121.py third run byte-identical to publication-s121.txt.
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); measured on ONE host (aiueos-6600hs),
+not a workgroup-default measurement. Carry-forward s123: any ninth
+cut only through a NEW pre-registered cut session (its own freeze),
+any further counted-day slot (its own freeze) and the cross-day
+tail-movement row -- none queued. Evidence:
+docs/evidence/gpu/anv-b3bisect8-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
