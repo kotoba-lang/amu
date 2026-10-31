@@ -928,34 +928,22 @@
             :else (recur M1 (nm-next M1 n) n)))))
 ;; ==== END R6B top-level shapes ====
 
-;; ==== JUN-730: closed static dispatch (lang/guest-grammar.edn :closed-multimethod, :protocol-dispatch, :protocol-extension).
-;; Reader sugar, expanded here before any name is registered, into plain top-level defns of this module:
-;;   (defmulti NAME [doc] DISPATCH) and every (defmethod NAME KEY [params] body ..) of the module ->
-;;     (defn NAME [params] (case (DISPATCH p ..) KEY body .. [the :default body])), in place of the defmulti.
-;;     DISPATCH is an unqualified symbol or a keyword; KEY an integer or keyword literal; all parameter vectors identical
-;;     and plain (symbols, each optionally typed); several body forms are one (do ..). No hierarchy, prefer or extension.
-;;   (defprotocol P [doc] (m [this ..] [doc]) ..) declares the methods; an implementation (m [this ..] body ..) of P for a
-;;     record R of this module -- inline in (defrecord R [..] P ..), in (extend-type R P ..) or in (extend-protocol P R ..) --
-;;     becomes (defn- G [this [:ref R] ..] body ..) in place of its owner form (after the defrecord), G a gensym; its list
-;;     node carries NF-SYM = m. A `default` section of extend-protocol is specialized (cloned) for every record of the module
-;;     that has no implementation of P [not yet: E2006, see below]. 21-check resolves (m x ..) on the static record type of x.
-;; Refused: E2006 a malformed form (and, for now, an extend-protocol `default` section: its per-record specialization does
-;; not fit the static profile's token table (MM-TOK-CAP) yet), E2007 a defmethod/extension of a multimethod, protocol or record this module does not
-;; declare (no cross-module or runtime extension), E2001 a method name that is also defined (or declared twice).
+;; ==== JUN-730: closed multimethods (lang/guest-grammar.edn :closed-multimethod). Reader sugar, expanded here before any
+;; name is registered: (defmulti NAME [doc] DISPATCH) and every (defmethod NAME KEY [params] body ..) of the module ->
+;; (defn NAME [params] (case (DISPATCH p ..) KEY body .. [the :default body])), in place of the defmulti. DISPATCH is an
+;; unqualified symbol or a keyword; KEY an integer or keyword literal; all parameter vectors identical and plain (symbols,
+;; each optionally typed); several body forms are one (do ..). No hierarchy, prefer or runtime extension.
+;; Refused: E2006 a malformed form, E2007 a defmethod of a multimethod this module does not declare (no cross-module
+;; extension), E2001 a defmulti of a name defined before. defprotocol / extend-type / extend-protocol stay E2003 (the
+;; protocol half of JUN-730 does not fit the static profile's token table, MM-TOK-CAP, yet).
 (defn- nm-dp-hash [M :vector-i64 n :i64] :i64 (if (= (nm-kind M n) ND-SYM) (nm-sf M (nm-sym-of M n) SF-HASH) 0))
-;; 1 defmulti 2 defmethod 3 defprotocol 4 extend-type 5 extend-protocol 6 defrecord with implementations, else 0
-;; (FNV-1a of the head spelling)
+;; 1 defmulti 2 defmethod, else 0 (FNV-1a of the head spelling)
 (defn- nm-dp-kind [M :vector-i64 n :i64] :i64
-  (if (nm-ne (nm-kind M n) ND-LIST)
-    0
-    (let [h (nm-dp-hash M (nm-first M n))]
-      (cond (= h 7861214348977533273) 1
-            (= h 3326915533004130693) 2
-            (= h -1958457126718279464) 3
-            (= h -3664327388371435996) 4
-            (= h -4425811502593754760) 5
-            (and (= (nm-form-head M n) HD-DEFRECORD) (> (nm-count M n) 3)) 6
-            :else 0))))
+  (let [h (nm-dp-hash M (nm-first M n))]
+    (cond (nm-ne (nm-kind M n) ND-LIST) 0
+          (= h 7861214348977533273) 1
+          (= h 3326915533004130693) 2
+          :else 0)))
 (defn- nm-dp-root [M :vector-i64] :i64 (nm-first M (vector-at M MM-ROOT)))
 (defn- nm-dp-any? [M :vector-i64] :bool
   (loop [c (nm-dp-root M)] (cond (zero? c) false (pos? (nm-dp-kind M c)) true :else (recur (nm-next M c)))))
@@ -1065,153 +1053,38 @@
         x (nm-nth M d 2)
         disp (if (and (= (nm-kind M x) ND-STR) (pos? (nm-next M x))) (nm-next M x) x)]
     (cond (nm-ne (nm-kind M nmn) ND-SYM) (nm-err-node M E-NAMES-DISPATCH (nm-first M d) 0)
-          (pos? (nm-dp-find M 8 (nm-sym-of M nmn) d)) (nm-err-node M E-NAMES-DUP nmn 0)   ; an earlier definition
+          (pos? (nm-dp-find M (nm-sym-of M nmn) d)) (nm-err-node M E-NAMES-DUP nmn 0)   ; an earlier definition
           (or (zero? disp) (pos? (nm-next M disp))
               (not (or (= (nm-kind M disp) ND-KW) (and (= (nm-kind M disp) ND-SYM) (nm-ne (nm-head-of M disp) HD-AMP)))))
           (nm-err-node M E-NAMES-DISPATCH nmn 0)
           :else (nm-dp-multi2 M d nmn disp (nm-nf M (nm-first M d) NF-TOK)))))
 
-;; ---- protocols ----
-;; the first top-level form before stop named by symbol s, of nm-dp-kind k, or 7 a defrecord, or 8 a def / defn / defn- /
-;; defmulti; 0 when there is none
-(defn- nm-dp-find [M :vector-i64 k :i64 s :i64 stop :i64] :i64
+;; the first top-level def / defn / defn- / defmulti before stop named by symbol s, 0 when there is none
+(defn- nm-dp-find [M :vector-i64 s :i64 stop :i64] :i64
   (loop [c (nm-dp-root M)]
     (cond (or (zero? c) (= c stop)) 0
-          (and (= (nm-sym-of M (nm-nth M c 1)) s)
-               (case k
-                 7 (= (nm-form-head M c) HD-DEFRECORD)
-                 8 (or (= (nm-dp-kind M c) 1) (pos? (nm-form-kind (nm-form-head M c))))
-                 (= (nm-dp-kind M c) k)))
-          c
+          (and (= (nm-sym-of M (nm-nth M c 1)) s) (or (= (nm-dp-kind M c) 1) (pos? (nm-form-kind (nm-form-head M c))))) c
           :else (recur (nm-next M c)))))
-;; the first signature of protocol form d (after its name and an optional docstring)
-(defn- nm-dp-sig0 [M :vector-i64 d :i64] :i64
-  (let [x (nm-nth M d 2)] (if (= (nm-kind M x) ND-STR) (nm-next M x) x)))
-;; the signature of method symbol m in protocol form d, 0 when it has none
-(defn- nm-dp-sig [M :vector-i64 d :i64 m :i64] :i64
-  (loop [c (nm-dp-sig0 M d)]
-    (cond (zero? c) 0
-          (= (nm-sym-of M (nm-first M c)) m) c
-          :else (recur (nm-next M c)))))
-;; (defprotocol P [doc] (m [this ..]) ..): every signature has a name that is no head and no top-level definition, and one
-;; parameter vector of plain symbols (the receiver first). Two protocols may share a method name: dispatch is on the record
-(defn- nm-dp-protocol [M :vector-i64 d :i64] :vector-i64
-  (let [p (nm-nth M d 1)]
-    (cond (nm-ne (nm-kind M p) ND-SYM) (nm-err-node M E-NAMES-DISPATCH (nm-first M d) 0)
-          (nm-ne (nm-dp-find M 3 (nm-sym-of M p) 0) d) (nm-err-node M E-NAMES-DUP p 0)
-          :else
-          (loop [c (nm-dp-sig0 M d)]
-            (let [m (nm-first M c)
-                  pv (nm-next M m)
-                  f (nm-dp-find M 8 (nm-sym-of M m) 0)]
-              (cond (zero? c) (nm-touch M)
-                    (or (nm-ne (nm-kind M c) ND-LIST) (nm-ne (nm-kind M m) ND-SYM) (pos? (nm-head-of M m))
-                        (not (nm-dp-plain? M pv)) (nm-ne (nm-count-syms M pv) (nm-count M pv)) (pos? (nm-next M pv)))
-                    (nm-err-node M E-NAMES-DISPATCH (if (zero? m) c m) 0)
-                    (pos? f) (nm-err-node M E-NAMES-DUP (nm-nth M f 1) 0)
-                    :else (recur (nm-next M c))))))))
-
-;; 1 when some owner form of the module has a rewritten implementation of method m for record r: (defn- G [this [:ref r] ..] ..)
-(defn- nm-dp-has-impl? [M :vector-i64 m :i64 r :i64] :bool
-  (loop [c (nm-dp-root M)]
-    (cond (zero? c) false
-          (and (>= (nm-dp-kind M c) 4)
-               (loop [i (nm-first M c)]
-                 (cond (zero? i) false
-                       (and (= (nm-nf M i NF-SYM) m) (= (nm-sym-of M (nm-nth M (nm-nth M (nm-nth M i 2) 1) 1)) r)) true
-                       :else (recur (nm-next M i)))))
-          true
-          :else (recur (nm-next M c)))))
-;; implementation i = (m [this ..] body ..) -> (defn- G [this [:ref R] ..] body ..) with NF-SYM = m
-(defn- nm-dp-impl [M :vector-i64 i :i64 r :i64] :vector-i64
-  (let [mn (nm-first M i)
-        pv (nm-next M mn)
-        rcv (nm-first M pv)
-        tok (nm-nf M mn NF-TOK)
-        M1 (nm-dp-gnode M ND-KW tok KW-REF)
-        kr (vector-at M1 MM-R0)
-        M2 (nm-dp-new M1 ND-KW tok r 0)
-        M3 (nm-dp-new (nm-set-nf M2 kr NF-NEXT (vector-at M2 MM-R0)) ND-VEC tok 0 kr)
-        rv (vector-at M3 MM-R0)
-        M5 (nm-dp-gnode (-> M3 (nm-set-nf rv NF-NEXT (nm-next M3 rcv)) (nm-set-nf rcv NF-NEXT rv)) ND-SYM tok 0)
-        g (vector-at M5 MM-R0)
-        M6 (nm-dp-gnode M5 ND-SYM tok HD-DEFN-PRIV)
-        h (vector-at M6 MM-R0)]
-    (-> M6 (nm-set-nf h NF-NEXT g) (nm-set-nf g NF-NEXT pv) (nm-set-nf i NF-FIRST h) (nm-set-nf i NF-SYM (nm-sym-of M6 mn)))))
-;; the implementations from i (up to the next non-list) of protocol form d for record r: each a method of d with its arity,
-;; an untyped receiver and a body, not implemented for r before; then every method of d must be (else E2006 at node at).
-;; R0 = the node after the section
-(defn- nm-dp-section [M :vector-i64 i :i64 d :i64 r :i64 at :i64] :vector-i64
-  (let [M1 (loop [M2 M x i]
-             (let [mn (nm-first M2 x)
-                   pv (nm-next M2 mn)
-                   sig (nm-dp-sig M2 d (nm-sym-of M2 mn))]
-               (cond (or (zero? x) (nm-ne (nm-kind M2 x) ND-LIST) (nm-failed M2)) M2
-                     (or (nm-ne (nm-kind M2 mn) ND-SYM) (zero? sig) (not (nm-dp-plain? M2 pv)) (zero? (nm-next M2 pv))
-                         (nm-dp-tform? M2 (nm-next M2 (nm-first M2 pv))) (nm-ne (nm-count-syms M2 pv) (nm-count-syms M2 (nm-nth M2 sig 1)))
-                         (nm-dp-has-impl? M2 (nm-sym-of M2 mn) r))
-                     (nm-err-node M2 E-NAMES-DISPATCH (if (zero? mn) x mn) 0)
-                     :else (recur (nm-dp-impl M2 x r) (nm-next M2 x)))))
-        stop (loop [x i] (if (and (pos? x) (= (nm-kind M1 x) ND-LIST)) (recur (nm-next M1 x)) x))]
-    (loop [sg (nm-dp-sig0 M1 d)]
-      (cond (nm-failed M1) M1
-            (zero? sg) (nm-put M1 MM-R0 stop)
-            (nm-dp-has-impl? M1 (nm-sym-of M1 (nm-first M1 sg)) r) (recur (nm-next M1 sg))
-            :else (nm-err-node M1 E-NAMES-DISPATCH at 0)))))
-;; the sections of owner form o of kind k (4 extend-type, 5 extend-protocol, 6 defrecord): a protocol symbol (a record
-;; symbol for extend-protocol) and its implementations, repeated
-(defn- nm-dp-owner [M :vector-i64 o :i64 k :i64] :vector-i64
-  (let [nm1 (nm-nth M o 1)
-        c0 (nm-nth M o (if (= k 6) 3 2))]
-    (cond (zero? (nm-dp-find M (if (= k 5) 3 7) (nm-sym-of M nm1) 0)) (nm-err-node M E-NAMES-OPEN nm1 0)
-          :else
-          (loop [M1 M c c0]
-            (let [p (if (= k 5) nm1 c)
-                  r (if (= k 5) c nm1)]
-              (cond (or (zero? c) (nm-failed M1)) M1
-                    (or (nm-ne (nm-kind M1 c) ND-SYM) (zero? (nm-next M1 c)) (= (nm-dp-hash M1 c) -1464332787667384834))   ; `default`
-                    (nm-err-node M1 E-NAMES-DISPATCH c 0)
-                    (zero? (nm-dp-find M1 3 (nm-sym-of M1 p) 0)) (nm-err-node M1 E-NAMES-OPEN p 0)
-                    (zero? (nm-dp-find M1 7 (nm-sym-of M1 r) 0)) (nm-err-node M1 E-NAMES-OPEN r 0)
-                    :else (let [M2 (nm-dp-section M1 (nm-next M1 c) (nm-dp-find M1 3 (nm-sym-of M1 p) 0) (nm-sym-of M1 r) c)]
-                            (recur M2 (vector-at M2 MM-R0)))))))))
-
 ;; ---- the pass ----
 (defn- nm-dp-each [M :vector-i64 k :i64] :vector-i64
   (loop [M1 M c (nm-dp-root M)]
     (let [x (nm-dp-kind M1 c)]
       (cond (or (zero? c) (nm-failed M1)) M1
             (and (= k 2) (= x 2) (nm-ne (nm-nf M1 c NF-SYM) -1)) (nm-err-node M1 E-NAMES-OPEN (nm-nth M1 c 1) 0)
-            (and (= k 4) (>= x 4)) (recur (nm-dp-owner M1 c x) (nm-next M1 c))
             (and (= k 1) (= x 1)) (recur (nm-dp-multi M1 c) (nm-next M1 c))
-            (and (= k 3) (= x 3)) (recur (nm-dp-protocol M1 c) (nm-next M1 c))
             :else (recur M1 (nm-next M1 c))))))
-;; the new top level: defmultis in place (now defns), defmethods and defprotocols dropped, each owner form replaced by its
-;; implementations (list children with NF-SYM > 0; a defrecord keeps its first three children and is followed by them)
+;; drop the consumed defmethods from the top level
 (defn- nm-dp-relink [M :vector-i64] :vector-i64
-  (loop [M1 M c (nm-dp-root M) l 0 x 0]
-    (let [k (nm-dp-kind M1 c)]
-      (cond (and (zero? c) (zero? x))
-            (let [M2 (if (zero? l) (nm-set-nf M1 (vector-at M1 MM-ROOT) NF-FIRST 0) (nm-set-nf M1 l NF-NEXT 0))]
-              (nm-set-nf M2 (vector-at M2 MM-ROOT) NF-AUX (nm-count M2 (vector-at M2 MM-ROOT))))
-            ;; x > 0: the chain of an owner form's children (impl list nodes are appended), then the root again from c
-            (pos? x) (let [nx (nm-next M1 x)]
-                       (if (and (= (nm-kind M1 x) ND-LIST) (pos? (nm-nf M1 x NF-SYM)))
-                         (recur (nm-dp-app M1 l x) c x nx)
-                         (recur M1 c l nx)))
-            (or (= k 2) (= k 3)) (recur M1 (nm-next M1 c) l 0)
-            (= k 6) (let [fv (nm-nth M1 c 2) x0 (nm-next M1 fv)]
-                      (recur (nm-set-nf (nm-dp-app M1 l c) fv NF-NEXT 0) (nm-next M1 c) c x0))
-            (>= k 4) (recur M1 (nm-next M1 c) l (nm-first M1 c))
-            :else (recur (nm-dp-app M1 l c) (nm-next M1 c) c 0)))))
-;; append node x to the new root chain whose last node is l
-(defn- nm-dp-app [M :vector-i64 l :i64 x :i64] :vector-i64
-  (if (zero? l) (nm-set-nf M (vector-at M MM-ROOT) NF-FIRST x) (nm-set-nf M l NF-NEXT x)))
+  (loop [M1 M c (nm-dp-root M) l 0]
+    (cond (zero? c) (let [M2 (if (zero? l) (nm-set-nf M1 (vector-at M1 MM-ROOT) NF-FIRST 0) (nm-set-nf M1 l NF-NEXT 0))]
+                      (nm-set-nf M2 (vector-at M2 MM-ROOT) NF-AUX (nm-count M2 (vector-at M2 MM-ROOT))))
+          (= (nm-dp-kind M1 c) 2) (recur M1 (nm-next M1 c) l)
+          :else (recur (if (zero? l) (nm-set-nf M1 (vector-at M1 MM-ROOT) NF-FIRST c) (nm-set-nf M1 l NF-NEXT c)) (nm-next M1 c) c))))
 (defn- nm-dp-norm [M :vector-i64] :vector-i64
   (if (or (nm-failed M) (not (nm-dp-any? M)))
     (nm-touch M)
-    (let [M1 (-> M (nm-dp-each 3) (nm-dp-each 1) (nm-dp-each 2) (nm-dp-each 4))]
-      (if (nm-failed M1) M1 (nm-put (nm-dp-relink M1) (+ MM-STAT-BASE 21) 1)))))
+    (let [M1 (-> M (nm-dp-each 1) (nm-dp-each 2))]
+      (if (nm-failed M1) M1 (nm-dp-relink M1)))))
 ;; ==== END JUN-730 ====
 
 ;; the whole pass
