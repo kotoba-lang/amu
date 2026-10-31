@@ -2,8 +2,8 @@
 ;; JUN-707: the Mac runtime's keyword intern rows (context ABI slots 96/104).
 ;; main returns 0 when every keyword path agrees; exhaust-main interns more
 ;; names than 262144 rows hold and must be refused with exit 70.
-;; native-keyword-intern.kotoba also exercises the public kgraph (slots 80/88),
-;; which the Mac runtime does not install yet, so this oracle keeps to keywords.
+;; native-keyword-intern.kotoba, run beside this one, covers the public graph
+;; (slots 80/88, JUN-710).
 (defn- many-keywords [] :i64
   (loop [i 0]
     (if (= i 1800) 0
