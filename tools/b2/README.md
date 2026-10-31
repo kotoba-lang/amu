@@ -37,6 +37,10 @@ provider.
 ## Checks
 
 * `scripts/seed/check-b2-image.py`: the image format (any x86_64 Linux kernel; wired into the native CI job).
+  `--target aarch64-linux` checks the same format on aarch64 (JUN-701; build on Linux or Mac arm64, run on any aarch64
+  Linux kernel; wired into the native CI job's arm64 phase). The tests of `tests/` are per target where they hold
+  machine code or system call numbers: `image_arch_*.kotoba`, and `image_abi_t.kotoba` (SysV) or
+  `image_abi_a64_t.kotoba` (AAPCS64) after `image_abi_common.kotoba`.
 * `scripts/seed/check-b2-libc.py`: the libc subset, from Kotoba, with the tests of `tests/` (any x86_64 Linux kernel;
   wired into the native CI job).
 * `scripts/seed/check-b2-libvulkan.py`: the system `libvulkan.so.1` through the loader, against an independent

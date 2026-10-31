@@ -387,7 +387,8 @@ are NUL-ended bytes in memory. The wrappers' scratch is a 16 KiB page that
 
 ### Route B2 image (`--format b2`, seed module 98)
 
-Context word 408 = 5 (ADR 0375, JUN-377), x86_64-linux only, dispatched by seed/70. The same ELF, context and
+Context word 408 = 5 (ADR 0375, JUN-377), x86_64-linux (dispatched by seed/70) and aarch64-linux (seed/80, JUN-701;
+"Route B2 on aarch64-linux" below). The same ELF, context and
 runtime core as a static image; the runtime text is `xs-rt-core` followed by `xs-rt-b2` (seed/76). It is the image of
 the Kotoba loader of route B2: a program that maps a vendor shared object itself (no ld.so, no libc), binds the
 object's libc imports to functions written in Kotoba, and calls into the object. No signal handlers, limits or
@@ -431,13 +432,45 @@ Absolute header cells in this format: 201 = the first extended intrinsic stub, 2
 * **E4, the thread control block** needs no change here: the program sets the FS base with `arch_prctl`
   (`kxrt-b-syscall 158 0x1002 tcb`) and writes the TCB itself.
 * **Refusals.** E7101: the program calls a runtime function outside `kxrt-b-`. E7102: a malformed export or
-  extended-intrinsic order, or `kxrt-b-` in another format (the name is unknown there: E2101). The format on
-  aarch64-linux: E7100. A `cx-` function in any other format is an ordinary function.
+  extended-intrinsic order, or `kxrt-b-` in another format (the name is unknown there: E2101). A `cx-` function in
+  any other format is an ordinary function.
   `scripts/seed/check-b2-image.py` checks all of this; the other formats' bytes are unchanged.
+
+### Route B2 on aarch64-linux (`--format b2`, seed modules 80 and 77, JUN-701)
+
+The same format on EM_AARCH64: context word 408 = 5, the export table at context word 416, the `kxrt-b-` API, the
+scan and the export rules (seed/98's `xb-` functions), and the runtime text `xa-rt-core` followed by `xa-rt-b2`
+(seed/77; the system calls are aarch64's: getcwd 17, mmap 222). What differs is the instructions:
+
+* **`ccall fp argv`** (intrinsic 9): word i of the 14 is the C function's integer argument i, so the same argv serves
+  both targets: words 0..7 go to x0..x7 and 8..13 to [sp] (the frame's outgoing area), then `blr fp` and x7 =
+  the context again. The callee preserves x19..x28, x29 and sp; the generated code keeps nothing in x18.
+* **E2.** `ldrh w9, [x9]`; `ldr w9, [x9]`; `strh w10, [x9]`; `str w10, [x9]` (x9 = address, x10 = value; the stores
+  return the value).
+* **E1.** The AAPCS64 thunk for n parameters (F = 32 + the outgoing words 8(n-5), rounded up to 16):
+
+      sub sp, sp, #F ; stp x29, x30, [sp, #F-16] ; add x29, sp, #F-16
+      for j = 5..min(n,8)-1: str xj, [sp, #8(j-5)]
+      for j = 8..n-1:        ldr x16, [x29, #16+8(j-8)] ; str x16, [sp, #8(j-5)]
+      x7 := context (movz + 3 movk) ; ldr x16, [x7, #8] ; str x16, [sp, #F-32]
+      x16 := 0x7fffffff (movz + 3 movk) ; str x16, [x7, #8]
+      bl callee
+      x7 := context ; ldr x16, [sp, #F-32] ; str x16, [x7, #8]
+      ldp x29, x30, [sp, #F-16] ; add sp, sp, #F ; ret
+
+  C passes x0..x7 and then stack words; the Kotoba callee takes parameters 0..4 in x0..x4 and 5.. at [sp], with the
+  context in x7. The result is x0. The generated code touches only x0..x17, x29, x30 and sp, so x19..x28 survive;
+  sp is 16-aligned at the call. The fuel budget and the restored meter are as on x86_64. Each thunk is
+  4(24 + min(3, n-5) + 2(n-8)) bytes, the terms counting only when positive.
+* **E4** on aarch64 is TPIDR_EL0, which only an instruction writes (`msr tpidr_el0, x0`); the loader runs that
+  instruction from a page it maps (tools/b2).
+* A guest trap is `brk #0` (SIGTRAP), as in every aarch64 image: fuel exhausted inside a call from C traps there.
+  `scripts/seed/check-b2-image.py --target aarch64-linux` checks this format (build on Linux or Mac arm64, run on an
+  aarch64 Linux kernel).
 
 ## aarch64-linux-static (seed modules 77, 80)
 
-`compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher`
+`compile SOURCE --target aarch64-linux --output NEW --format static|runner|launcher|b2`
 (and `--format packed --payload KSEED`, below) (Linux selfhost closure;
 dispatched by 73) emits the same image shape for
 EM_AARCH64. Module 80 is a plain stack-machine emitter for the runtime-profile
