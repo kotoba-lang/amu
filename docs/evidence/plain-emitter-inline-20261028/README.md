@@ -503,6 +503,24 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1752 (KOTOBA-175, ADR 0402: the
+  `x86_64-aiueos-user-plc-v1` target, cap-call against a declared
+  capability set in the PLC ELF layout, `seed/74` and `seed/78`; the core
+  and CDCI are unchanged).
+  * x86_64: F1 = F2 = F3 = `8dac8fe5…` (9,335,296 bytes), from the
+    3,882,768-byte unity `3cde2bb5…`. Its `--format host-entry` image is
+    `1ff57cbb…` (9,339,392 bytes).
+  * aarch64 root: F1 = F2 = `e17063e3…` (3,895,808 bytes), container
+    `a4d41071…`, derived under qemu from the `134aa062…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * Unchanged: the CDCI images, the 19 x86_64 payloads and the 19 aarch64
+    containers built with `--no-crypto-hw`. All 224 kernel-object sources
+    compile identically to main's compiler, and so do the 13
+    `check-aiueos-user-plc-native` cases (the motor ELF and the scalar
+    user-v1 ELF hit their pinned SHA-256s; the refusals match).
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
