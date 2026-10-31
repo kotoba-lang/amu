@@ -75,6 +75,11 @@ the f64 pattern 0xc3e0000000000000. It is left for a slice with its own evidence
 
 ## Relation to the aarch64 route
 
+> **Amended 2026-10-31 (ADR 0398, owner decision on JUN-633: "Yes, align aarch64").** seed/41 now emits code 37
+> with a guarded `fcvtzs` that traps with `brk #0` on exactly the operands this route traps on. The answers are
+> bit-identical, and the cross-ISA differential hash matches. The paragraph below describes the state before
+> that amendment.
+
 The two routes agree on case 1: truncation toward zero, bit for bit. They do not agree on case 2. The aarch64 route
 keeps `fcvtzs`'s saturating answers (INT64_MAX, INT64_MIN, 0 for NaN). This ADR does not change seed/41. A
 program whose result depends on case 2 is therefore not portable between the routes, and on this route it stops
