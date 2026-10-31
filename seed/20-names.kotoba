@@ -939,8 +939,8 @@
 ;;     becomes (defn- G [this [:ref R] ..] body ..) in place of its owner form (after the defrecord), G a gensym; its list
 ;;     node carries NF-SYM = m. A `default` section of extend-protocol is specialized (cloned) for every record of the module
 ;;     that has no implementation of P [not yet: E2006, see below]. 21-check resolves (m x ..) on the static record type of x.
-;; Refused: E2006 a malformed form (and, for now, an extend-protocol `default` section: its per-record specialization does
-;; not fit the static profile's token table (MM-TOK-CAP) yet), E2007 a defmethod/extension of a multimethod, protocol or record this module does not
+;; Refused: E2006 a malformed form (and, for now, an extend-protocol `default` section: its per-record specialization was
+;; cut to fit the static token table before JUN-737 raised it; admitting it is separate work), E2007 a defmethod/extension of a multimethod, protocol or record this module does not
 ;; declare (no cross-module or runtime extension), E2001 a method name that is also defined (or declared twice).
 (defn- nm-dp-hash [M :vector-i64 n :i64] :i64 (if (= (nm-kind M n) ND-SYM) (nm-sf M (nm-sym-of M n) SF-HASH) 0))
 ;; 1 defmulti 2 defmethod 3 defprotocol 4 extend-type 5 extend-protocol 6 defrecord with implementations, else 0

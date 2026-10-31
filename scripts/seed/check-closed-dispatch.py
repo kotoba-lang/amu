@@ -17,9 +17,9 @@ lang/guest-grammar.edn, against the native checker as measured at amu 05668c77
   the implementation for its static record type (ADR 0204: no runtime type
   test). Another receiver type is E2180;
 * reify stays a permanent refusal (E2181). An extend-protocol `default`
-  section is refused E2006 for now: its per-record specialization did not fit
-  the x86 static profile's token table (MM-TOK-CAP 786432) next to the rest of
-  FULL-MANIFEST.
+  section is refused E2006 for now: its per-record specialization was cut to
+  fit the static profile's 786432-entry token table; JUN-737 raised the table
+  to 1048576, and admitting `default` is separate work.
 
 This gate, on Apple Silicon:
 

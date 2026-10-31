@@ -281,8 +281,8 @@
                        a defmulti and all its defmethods -> one (defn NAME [params] (case (DISPATCH p ..) KEY body ..
                        [default])); each implementation of method m for record R -> (defn- G [this [:ref R] ..] body ..),
                        G a gensym, NF-SYM of its list node = m, placed where its owner form was; an extend-protocol
-                       `default` section is refused E2006 for now (its per-record specialization does not fit the x86
-                       static profile's MM-TOK-CAP next to FULL-MANIFEST). 21-check binds a call's
+                       `default` section is refused E2006 for now (its per-record specialization was cut to fit the static
+                       token table before JUN-737 raised it; admitting it is separate work). 21-check binds a call's
                        receiver to a fresh local, (m x ..) -> (let [g x] (m g ..)), and calls the implementation of g's
                        static record type (E2180 otherwise). Non-receiver parameters of an implementation are typed as
                        written (an unannotated one is :i64). reify is refused E2181; definterface stays E2003"]
