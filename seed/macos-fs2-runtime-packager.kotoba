@@ -9,7 +9,9 @@
 (def SLICE-SETUP-START 1264)
 (def SCOPE-START 1768)
 (def SCOPE-LEAVE-START 1848)
-(def KI-START 3720)
+(def KG-START 3720)
+(def KG-MSG-START 4944)
+(def KG-MSG "seed: keyword table failed (Mac runtime)\n")
 (def REFUSE-START 1312)
 (def REFUSE-MSG-START 1360)
 (def REFUSE-MSG "seed: arena-scope failed (Mac runtime)\n")
@@ -192,39 +194,49 @@
    0xf9007268
    (adr8 (+ SLICE-SETUP-START 24) SCOPE-LEAVE-START)
    0xf9007668
-   (b-direct (+ SLICE-SETUP-START 32) KI-START)
+   (b-direct (+ SLICE-SETUP-START 32) KG-START)
    0xd503201f])
 
-;; JUN-707: the generated code calls context ABI slots 96 and 104, the private
+;; JUN-707 / JUN-710: the generated code calls context ABI slots 80/88 (the
+;; public keyword graph behind __r6-kgput / __r6-kgget) and 96/104 (the private
 ;; keyword intern rows behind keyword-from-string, document-keyword-value and
-;; every other prelude path through __r6-kwreg (seed/73-keyword-intern.kotoba
-;; is the Linux runtime). The wrapper installed neither, so those calls landed
-;; on address 0 (SIGSEGV, exit 139). The setup stub above now branches here to
-;; install both before returning. Put appends (entity, attribute, value) rows
-;; to a private 6 MiB anonymous mapping made on first use (base at ctx+1800,
-;; count at ctx+1808, the Linux G+776/G+784), outside every arena, so
-;; arena-scope rollback and public kgraph writes never change an interned
-;; name; at most 262144 rows, as on Linux. Get returns the newest matching
-;; value or INT64_MIN. A wrong context tag, a failed mapping or a full table
-;; writes one line to stderr and exits 70. The routines clobber only x8-x16,
-;; and x16 (the syscall number) is saved and restored around the mapping.
-;; The 91 words (setup tail, put, get, the refusal and its message, all
-;; PC-relative inside this block) were derived once with the system assembler
-;; and checked against it; no assembler is in the build. KI-START sits in the
-;; free span after the CLI helper (3716..4096) in every mode.
-(defn- ki-words [] :vector-i64
-  [0x100000c8 0xf9003268 0x10000628 0xf9003668 0xa8c17bfd 0xd65f03c0 0xf9400008 0xf1002d1f
-   0x540007a1 0xf9438409 0xb50003a9 0xaa0003ea 0xaa0103eb 0xaa0203ec 0xaa0303ed 0xaa0403ee
-   0xaa0503ef 0xf81f0ff0 0xd2800000 0xd2a00c01 0xd2800062 0xd2820043 0x92800004 0xd2800005
-   0xd28018b0 0xf2a40010 0xd4001001 0x9a9f37e8 0xaa0003e9 0xf84107f0 0xaa0a03e0 0xaa0b03e1
-   0xaa0c03e2 0xaa0d03e3 0xaa0e03e4 0xaa0f03e5 0xb5000428 0xb4000409 0xf9038409 0xf943880a
-   0xd2a0008b 0xeb0b015f 0x54000362 0x8b0a054c 0x8b0c0d2c 0xa9000981 0xf9000983 0x9100054a
-   0xf903880a 0xd2800020 0xd65f03c0 0xf9400008 0xf1002d1f 0x54000201 0xf9438409 0xf943880a
-   0xb400012a 0xd100054a 0x8b0a054c 0x8b0c0d2c 0xa940398d 0xeb0101bf 0xfa4201c0 0x54000080
-   0xb5ffff2a 0xd2f00000 0xd65f03c0 0xf9400980 0xd65f03c0 0xd2800040 0x10000141 0xd2800542
-   0xd2800090 0xf2a40010 0xd4001001 0xd28008c0 0xd2800030 0xf2a40010 0xd4001001 0xd4200000
-   0x64656573 0x656b203a 0x726f7779 0x6e692064 0x6e726574 0x69616620 0x2064656c 0x63614d28
-   0x6e757220 0x656d6974 0x00000a29])
+;; every other prelude path through __r6-kwreg); seed/77 and
+;; seed/73-keyword-intern.kotoba are the Linux runtimes. The wrapper installed
+;; none of them, so those calls landed on address 0 (SIGSEGV, exit 139). The
+;; setup stub above now branches here to install all four before returning.
+;; Both tables share one put and one get, parameterized by the table's context
+;; offset (x15: base at ctx+x15, count at ctx+x15+8) and row limit (x14): the
+;; graph is ctx+1760, 4096 rows; the intern rows ctx+1800, 262144 rows -- the
+;; Linux G+736/G+744 and G+776/G+784. Put appends (entity, attribute, value)
+;; rows to a private anonymous mapping of limit*24 bytes made on first use,
+;; outside every arena, so arena-scope rollback never changes either table and
+;; the two never share rows. Get returns the newest matching value or
+;; INT64_MIN. A wrong context tag, a failed mapping or a full table writes
+;; KG-MSG to stderr and exits 70. The routines clobber only x8-x16, and x16 (the
+;; syscall number) is saved and restored around the mapping.
+;; The 89 words were derived once with the system assembler and checked against
+;; it; no assembler is in the build. Everything is PC-relative inside this
+;; block except word 79, the refusal's adr of KG-MSG, which the layout below
+;; patches (adr-x1). KG-START sits in the free span after the CLI helper
+;; (3716..4096) and KG-MSG-START in the one before the vector runtime
+;; (4940..5000), in every mode.
+(defn- kg-words [] :vector-i64
+  [0x10000148 0xf9002a68 0x100001c8 0xf9002e68 0x10000128 0xf9003268 0x10000188 0xf9003668
+   0xa8c17bfd 0xd65f03c0 0xd280dc0f 0xd282000e 0x1400001a 0xd280e10f 0xd2a0008e 0x14000017
+   0xd280dc0f 0x14000002 0xd280e10f 0xf9400008 0xf1002d1f 0x54000721 0x8b0f000d 0xf94001a9
+   0xf94005aa 0xb400012a 0xd100054a 0x8b0a054c 0x8b0c0d2c 0xa9402d88 0xeb01011f 0xfa420160
+   0x54000080 0xb5ffff2a 0xd2f00000 0xd65f03c0 0xf9400980 0xd65f03c0 0xf9400008 0xf1002d1f
+   0x540004c1 0x8b0f000d 0xf94001a9 0xb5000309 0xa9bc07e0 0xa9010fe2 0xa90217e4 0xa90337f0
+   0x8b0e05c1 0xd37df021 0xd2800000 0xd2800062 0xd2820043 0x92800004 0xd2800005 0xd28018b0
+   0xf2a40010 0xd4001001 0x9a9f37e8 0xaa0003e9 0xa94337f0 0xa94217e4 0xa9410fe2 0xa8c407e0
+   0xb50001c8 0xb40001a9 0xf90001a9 0xf94005aa 0xeb0e015f 0x54000122 0x8b0a054c 0x8b0c0d2c
+   0xa9000981 0xf9000983 0x9100054a 0xf90005aa 0xd2800020 0xd65f03c0 0xd2800040 0x10ffffe1
+   0xd2800522 0xd2800090 0xf2a40010 0xd4001001 0xd28008c0 0xd2800030 0xf2a40010 0xd4001001
+   0xd4200000])
+
+;; adr x1, target (adr8's encoding with Rd = 1 instead of 8)
+(defn- adr-x1 [at :i64 target :i64] :i64
+  (bit-or (- (adr8 at target) 8) 1))
 
 ;; Enter (20 words) then leave (41 words), assembled once with the system
 ;; assembler against a failure target at REFUSE-START; no assembler is in the build.
@@ -927,7 +939,9 @@
       (words-at (+ at SLICE-SETUP-START) (slice-setup-words))
       (words-at (+ at REFUSE-START) (refuse-words))
       (words-at (+ at SCOPE-START) (scope-words))
-      (words-at (+ at KI-START) (ki-words))
+      (words-at (+ at KG-START)
+                (vector-assoc! (kg-words) 79 (adr-x1 (+ KG-START 316) KG-MSG-START)))
+      (text-at (+ at KG-MSG-START) KG-MSG)
       (text-at (+ at REFUSE-MSG-START) REFUSE-MSG)
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
