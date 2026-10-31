@@ -274,8 +274,9 @@ both compiled from SIR:
   - `start(fuel)`, which always writes the structured report.
 
   There are no seccomp filters, rlimits or signal handlers: the browser Worker
-  is the sandbox. `kotoba:host/cap` refuses every capability by name until the
-  consent broker lands (Phase 2).
+  is the sandbox. `kotoba:host/cap` refuses every capability by name unless the
+  trusted host page has bound the wire to a declared operation of the consent
+  broker (Phase 2, below).
 - `../runtime/wasm32-browser-static-host.js` is the dependency-free Worker host.
   `../runtime/wasm32-browser-static-run.html` is the static run page, whose CSP
   sets `connect-src 'none'`.
@@ -289,7 +290,7 @@ installed, it also runs the modules. The `ubuntu-24.04-arm` image has none, so
 in CI the `qualify-x86_64` job runs them in the image's Chrome. Each case must
 match its pinned result, trap and remaining fuel.
 
-The consent broker (`kotoba:host/cap`) is Phase 2 (JUN-353).
+The consent broker (`kotoba:host/cap`) is Phase 2, below.
 
 ### The entry ABI (Phase 3)
 
@@ -321,3 +322,65 @@ with the grants it echoes the file and returns its length; without them
 `:cli/args` is refused by name. `check-wasm32-browser.py --app MODULE.wasm
 [--allow ..] [--file MOUNT=DIR].. -- ARGS..` runs an application's module the
 same way (kumitate's fixture selftest, JUN-346).
+
+### The consent broker (Phase 2)
+
+A guest reaches an external service only through the shared consent broker,
+`kotoba-client-runtime.js` (`createClientOperationBroker`,
+`createClientConsentHost`; descriptor `kotoba.app.client-runtime.v1`). The
+copy in `../runtime/kotoba-client-runtime.js` is the KOTOBA-159 reviewed
+revision, byte for byte (kotoba-lang/kotoba
+`lib/kotoba.wasmWebcomponent/src/kotoba-client-runtime.js` @ `6f74fe21`,
+sha256 `4e6ef6ee...`; `../runtime/kotoba-client-runtime.pin.json`). Nothing in
+amu validates descriptors or asks for consent itself.
+
+- **Profile `restricted-wasm-v1` only.** Consent is enforceable only when the
+  guest cannot touch the page that holds the broker (KOTOBA-159 finding 1).
+  The trusted page (`../runtime/wasm32-browser-broker-run.html` and `.js`)
+  holds the broker and the consent host and refuses any other profile. The
+  guest runs in the restricted guest shell
+  (`../runtime/wasm32-browser-restricted-guest.html`), which
+  `mountRestrictedClientApp` mounts in a sandboxed iframe under
+  `connect-src 'none'` after `verifyClientArtifact` (pinned revision and
+  SHA-256), and in that shell's Worker.
+- **Binding.** The host binds a wire to one `{capability, service, operation}`
+  of its descriptor. The page grants the bound wire (`input(2, wire)`), so the
+  runtime admits it; an unbound wire is refused by name, as before. 35, 37, 38
+  and 39 cannot be bound.
+- **A call.** A bound wire's `:string` request (`METHOD TARGET`, then
+  optionally a newline and the body) goes to `kotoba:host/cap`. The Worker
+  suspends the guest (JSPI, `WebAssembly.Suspending`), the shell posts one
+  `kotoba.client.operation.v1` message, and the broker refuses an undeclared
+  operation or endpoint before any network activity, shows the operation, and
+  sends the request straight to the declared endpoint only after a trusted
+  approval of that one invocation. The guest gets `STATUS`, a newline and the
+  response text (`input(3, ..)` copies it into the string pool). Every
+  refusal, denial included, answers -1 and is refused by name
+  (`KEXE_CAP {:wire N :refused :wasm32-browser}`), so denial traps the guest
+  and sends nothing. Without JSPI a bound wire is refused.
+- **The wire.** The language catalogue has no service-operation wire, so a host
+  binds an existing catalogued `:string` wire that the browser runtime does
+  not serve itself; the probes use 45 (`:net/dial`). A dedicated wire would be
+  a change to the adopted core.
+
+`check-wasm32-browser.py --modules DIR` runs the broker's qualification when
+`DIR/probe-cap.wasm` is present (the pr tier compiles `probe-cap` and
+`probe-cap-twice`). The page is served from 127.0.0.1. Every https request is
+held at the request stage and recorded, and the declared fixture endpoint is
+answered by the harness, so nothing leaves the machine. Each consent dialog
+first gets a synthetic Allow click, which must leave it open and send nothing.
+The runs:
+
+| run | expected |
+|---|---|
+| `cap-unbound` | refused by name, no dialog, no request |
+| `cap-undeclared-operation` | the broker refuses, no dialog, no request |
+| `cap-undeclared-endpoint` | the broker refuses before consent, no dialog, no request |
+| `cap-denied` | one dialog, Deny, refused by name, no request |
+| `cap-approved` | one dialog, Allow, one GET to the declared endpoint, exit 0 with the answer |
+| `cap-approval-once` | Allow, then a second dialog for the second call, Deny: one request in all |
+
+Allow is pressed through DevTools `Input.dispatchMouseEvent`, which the
+browser marks `isTrusted`. That is automation: a person's click, and a real
+service endpoint, are not qualified here. Verification and what stays open:
+[`../docs/wasm32-browser-broker.md`](../docs/wasm32-browser-broker.md).

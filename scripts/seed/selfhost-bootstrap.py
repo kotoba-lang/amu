@@ -16,8 +16,9 @@ pr    1. F rebuilds itself: FULL-MANIFEST -> container, packed -> F' (= root,
          diagnostic with a source span is named (E2101), not a trap;
       4. the runtime boundary corpus, the runtime cases
          (seed/static-cases.json), hardening and capabilities, all with F;
-      5. the runtime cases and three probes as wasm32-browser modules (JUN-353),
-         run in headless Chromium (scripts/seed/check-wasm32-browser.py) when
+      5. the runtime cases and five probes as wasm32-browser modules (JUN-353;
+         two probes are the consent broker's, Phase 2), run in headless
+         Chromium (scripts/seed/check-wasm32-browser.py) when
          one is installed; the float cases are refused. Without a browser the
          modules are compiled and pinned, and the qualify-x86_64 job runs them.
 main  + G1, G2 through the aarch64 runner give G2, G3 (= G1); S3 packs G3 as
@@ -218,7 +219,7 @@ def main(out, tier, reuse=None, store=None):
                        "--target", "aarch64-linux", "--seccomp-if-available"], {})
         io_acceptance[name] = json.loads((out / name / f"{name}.json").read_text())
 
-    # 5. JUN-353: the same cases, and three probes, as wasm32-browser modules
+    # 5. JUN-353: the same cases, and five probes, as wasm32-browser modules
     wasm_dir = out / "wasm32"
     wasm_dir.mkdir()
     for case in json.loads((ROOT / CASES).read_text())["cases"]:
@@ -229,7 +230,15 @@ def main(out, tier, reuse=None, store=None):
                    # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
                    "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
                             "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
-                            "  (string-length s)))"}
+                            "  (string-length s)))",
+                   # the consent broker (Phase 2): a call of wire 45, which the broker page binds to a declared
+                   # operation; once and twice (one approval covers one invocation)
+                   "cap": "(defn main [] :i64 (let [r (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                          "  w (typed-cap-call :io/write :string :string r)]\n  (string-length r)))",
+                   "cap-twice": "(defn main [] :i64 (let [a (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                                "  w (typed-cap-call :io/write :string :string a)\n"
+                                "  b (typed-cap-call :net/dial :string :string \"GET /v1/items/abc\")\n"
+                                "  x (typed-cap-call :io/write :string :string b)]\n  (+ (string-length a) (string-length b))))"}
     for name, body in wasm_probes.items():
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
