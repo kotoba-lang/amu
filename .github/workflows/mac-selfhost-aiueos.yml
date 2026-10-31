@@ -25,6 +25,7 @@ on:
       - 'scripts/seed/check-aiueos-object-windows16.py'
       - 'scripts/seed/check-aiueos-object-windows4k.py'
       - 'scripts/seed/check-aiueos-object-fence.py'
+      - 'scripts/seed/check-aiueos-user-plc-native.py'
       - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
@@ -210,6 +211,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-fence.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-fence"
+      - name: AIUEOS user-plc-v1 -- cap-call against the declared set, PLC ELF layout (KOTOBA-175)
+        run: |
+          python3 scripts/seed/check-aiueos-user-plc-native.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-user-plc"
       - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
         run: |
           python3 scripts/seed/check-aiueos-object-cpu.py \

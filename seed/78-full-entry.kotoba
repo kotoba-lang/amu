@@ -17,7 +17,8 @@
       (= (full-target? "x86_64-aiueos-user-v2") 1)
       (= (full-target? "x86_64-aiueos-user-v3") 1)
       (= (full-target? "x86_64-aiueos-user-v4") 1)
-      (= (full-target? "x86_64-aiueos-user-v5") 1)))
+      (= (full-target? "x86_64-aiueos-user-v5") 1)
+      (= (full-target? "x86_64-aiueos-user-plc-v1") 1)))
 (defn- full-value-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
     (cond (full-native?)
@@ -25,6 +26,8 @@
               (string=? flag "--payload") (string=? flag "--fuel")
               (and (or (= (full-target? "x86_64-linux") 1) (= (full-target? "aarch64-linux") 1))
                    (string=? flag "--runtime-profile"))
+              ;; KOTOBA-175 (ADR 0402): the declared capability set of the PLC user target
+              (and (= (full-target? "x86_64-aiueos-user-plc-v1") 1) (string=? flag "--capabilities"))
               (and (or (= (full-target? "x86_64-aiueos-kernel-v1") 1)
                        (= (full-target? "x86_64-aiueos-kernel-v2") 1)
                        (= (full-target? "x86_64-aiueos-kernel-v3") 1))
@@ -137,6 +140,7 @@
         (= (full-target? "x86_64-aiueos-user-v3") 1) (xu-command)
         (= (full-target? "x86_64-aiueos-user-v4") 1) (xu-command)
         (= (full-target? "x86_64-aiueos-user-v5") 1) (xu-command)
+        (= (full-target? "x86_64-aiueos-user-plc-v1") 1) (xpl-command)
         (= (full-target? "aarch64-linux") 1) (xa-command)
         ;; JUN-353: guest and runtime in a browser Wasm module.
         (= (full-target? "wasm32-browser") 1) (xw-command)
