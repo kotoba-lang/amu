@@ -168,6 +168,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-cpu.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-cpu"
+      - name: AIUEOS kernel object route reads and writes listed MSRs and reads the PCI data port, literal-bounded (JUN-600)
+        run: |
+          python3 scripts/seed/check-aiueos-object-msr.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-msr"
       - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
         run: |
           python3 scripts/seed/check-aiueos-object-xstate.py \
