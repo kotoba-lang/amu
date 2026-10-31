@@ -159,6 +159,11 @@ jobs:
           python3 scripts/seed/check-aiueos-object-xstate.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
+      - name: AIUEOS kernel object route emits the fused f32 reductions (JUN-633 slice 6)
+        run: |
+          python3 scripts/seed/check-aiueos-object-fused-dot.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-object-fused-dot"
       - name: AIUEOS kernel object route emits the spin-wait hint (JUN-633 slice 5)
         run: |
           python3 scripts/seed/check-aiueos-object-pause.py \
