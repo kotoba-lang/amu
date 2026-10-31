@@ -9,6 +9,7 @@
 (def SLICE-SETUP-START 1264)
 (def SCOPE-START 1768)
 (def SCOPE-LEAVE-START 1848)
+(def KI-START 3720)
 (def REFUSE-START 1312)
 (def REFUSE-MSG-START 1360)
 (def REFUSE-MSG "seed: arena-scope failed (Mac runtime)\n")
@@ -191,7 +192,39 @@
    0xf9007268
    (adr8 (+ SLICE-SETUP-START 24) SCOPE-LEAVE-START)
    0xf9007668
-   0xa8c17bfd 0xd65f03c0])
+   (b-direct (+ SLICE-SETUP-START 32) KI-START)
+   0xd503201f])
+
+;; JUN-707: the generated code calls context ABI slots 96 and 104, the private
+;; keyword intern rows behind keyword-from-string, document-keyword-value and
+;; every other prelude path through __r6-kwreg (seed/73-keyword-intern.kotoba
+;; is the Linux runtime). The wrapper installed neither, so those calls landed
+;; on address 0 (SIGSEGV, exit 139). The setup stub above now branches here to
+;; install both before returning. Put appends (entity, attribute, value) rows
+;; to a private 6 MiB anonymous mapping made on first use (base at ctx+1800,
+;; count at ctx+1808, the Linux G+776/G+784), outside every arena, so
+;; arena-scope rollback and public kgraph writes never change an interned
+;; name; at most 262144 rows, as on Linux. Get returns the newest matching
+;; value or INT64_MIN. A wrong context tag, a failed mapping or a full table
+;; writes one line to stderr and exits 70. The routines clobber only x8-x16,
+;; and x16 (the syscall number) is saved and restored around the mapping.
+;; The 91 words (setup tail, put, get, the refusal and its message, all
+;; PC-relative inside this block) were derived once with the system assembler
+;; and checked against it; no assembler is in the build. KI-START sits in the
+;; free span after the CLI helper (3716..4096) in every mode.
+(defn- ki-words [] :vector-i64
+  [0x100000c8 0xf9003268 0x10000628 0xf9003668 0xa8c17bfd 0xd65f03c0 0xf9400008 0xf1002d1f
+   0x540007a1 0xf9438409 0xb50003a9 0xaa0003ea 0xaa0103eb 0xaa0203ec 0xaa0303ed 0xaa0403ee
+   0xaa0503ef 0xf81f0ff0 0xd2800000 0xd2a00c01 0xd2800062 0xd2820043 0x92800004 0xd2800005
+   0xd28018b0 0xf2a40010 0xd4001001 0x9a9f37e8 0xaa0003e9 0xf84107f0 0xaa0a03e0 0xaa0b03e1
+   0xaa0c03e2 0xaa0d03e3 0xaa0e03e4 0xaa0f03e5 0xb5000428 0xb4000409 0xf9038409 0xf943880a
+   0xd2a0008b 0xeb0b015f 0x54000362 0x8b0a054c 0x8b0c0d2c 0xa9000981 0xf9000983 0x9100054a
+   0xf903880a 0xd2800020 0xd65f03c0 0xf9400008 0xf1002d1f 0x54000201 0xf9438409 0xf943880a
+   0xb400012a 0xd100054a 0x8b0a054c 0x8b0c0d2c 0xa940398d 0xeb0101bf 0xfa4201c0 0x54000080
+   0xb5ffff2a 0xd2f00000 0xd65f03c0 0xf9400980 0xd65f03c0 0xd2800040 0x10000141 0xd2800542
+   0xd2800090 0xf2a40010 0xd4001001 0xd28008c0 0xd2800030 0xf2a40010 0xd4001001 0xd4200000
+   0x64656573 0x656b203a 0x726f7779 0x6e692064 0x6e726574 0x69616620 0x2064656c 0x63614d28
+   0x6e757220 0x656d6974 0x00000a29])
 
 ;; Enter (20 words) then leave (41 words), assembled once with the system
 ;; assembler against a failure target at REFUSE-START; no assembler is in the build.
@@ -894,6 +927,7 @@
       (words-at (+ at SLICE-SETUP-START) (slice-setup-words))
       (words-at (+ at REFUSE-START) (refuse-words))
       (words-at (+ at SCOPE-START) (scope-words))
+      (words-at (+ at KI-START) (ki-words))
       (text-at (+ at REFUSE-MSG-START) REFUSE-MSG)
       (words-at (+ at HELPER-START) (pair-helper-words))
       (words-at (+ at LEGACY-TYPED-START) (typed-helper-words))
