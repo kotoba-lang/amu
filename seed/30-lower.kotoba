@@ -470,7 +470,10 @@
       HD-RECORD-GET (lw-field M (lw-next M a) (lw-next M (lw-next M a)) t)
       HD-KWGET (lw-field M a h t)
       HD-ASSOC (if (= (lw-ct M (lw-nf M n NF-TYPE) CT-CTOR) TC-MAP) (lw-massoc M n a t) (lw-assoc M n t))
-      HD-GET (if (= (lw-count M a) 3) (lw-gget M h a t) (lw-field M a (lw-next M a) t))
+      HD-GET (cond (= (lw-count M a) 3) (lw-gget M h a t)
+                   (= (lw-ct M (lw-nf M a NF-TYPE) CT-CTOR) TC-MAP)   ; JUN-734: (get m k) on a map -> [:option V]
+                   (lw-mget M a (lw-nf M h NF-TYPE) (lw-md M (lw-nf M a NF-TYPE)) t)
+                   :else (lw-field M a (lw-next M a) t))
       HD-FN (lw-closure M n t)
       HD-FN-REF (-> M (lw-emit OP-FADDR t (lw-ridx (lw-nf M a NF-RES))) (lw-emit OP-CONST (inc t)) (lw-emit OP-RT RT-PAIR-NEW t 2))
       HD-CALLK (lw-callk M h t)

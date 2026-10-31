@@ -1793,6 +1793,7 @@
           (nm-failed M) (ck-touch M)
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
           (and (= k ND-LIST) (ck-dx-let? M n)) (ck-ds-walk (ck-dx M S n) S n)   ; JUN-729: destructuring
+          (ck-vassoc? M n) (ck-ds-walk (ck-vassoc M n) S n)   ; JUN-734: variadic assoc
           (ck-r6f-dinl? M n) (ck-ds-walk (ck-r6f-dinl M S n) S n)   ; R6F (before R6B's document folds)
           (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (pos? (ck-r6m-ods-code M n)) (ck-ds-walk (ck-r6m-ods M n) S n)   ; R6M: if-some when-some if-let when-let
@@ -1807,6 +1808,23 @@
           (= k ND-MAP) (let [M1 (ck-kwmap-sort M S n)] (ck-ds-kids M1 S (nm-first M1 n)))   ; JUN-728
           (= k ND-SET) (ck-ds-kids M S (nm-first M n))
           :else (ck-touch M))))
+;; JUN-734: (assoc m k1 v1 k2 v2 ..) -> (assoc (assoc m k1 v1) k2 v2 ..), clojure.core/assoc's variadic arity folded
+;; left; each step is then the record / typed-map / document assoc its type selects. The arguments keep their order. An
+;; odd number of keys and values stays E2103 (the 4-child check); a module defn named assoc is not the head.
+(defn- ck-vassoc? [M :vector-i64 n :i64] :bool
+  (and (= (nm-kind M n) ND-LIST) (= (nm-kind M (nm-first M n)) ND-SYM) (= (nm-head-of M (nm-first M n)) HD-ASSOC)
+       (zero? (nm-sf M (nm-sym-of M (nm-first M n)) SF-FN)) (>= (nm-count M n) 6) (zero? (bit-and (nm-count M n) 1))))
+(defn- ck-vassoc [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        m (nm-next M h)
+        v1 (nm-next M (nm-next M m))
+        k2 (nm-next M v1)
+        M1 (ck-n-copy M h)
+        h2 (ck-r M1)
+        M2 (ck-link (ck-link M1 h2 m) v1 0)
+        M3 (ck-n-list M2 (nm-nf M2 h NF-TOK) h2)
+        l (ck-r M3)]
+    (ck-link (ck-link M3 h l) l k2)))
 ;; JUN-728: the entries of a keyword-keyed map literal {:k e ..} (every key a keyword) are put in the printed-text order
 ;; of their keys, the order the reference gives the closed record it lowers to (lang/guest-grammar.edn :map-literal
 ;; :value-types :keyword-keys); the values are evaluated in that order, as record-new evaluates its fields. Any other
@@ -1856,6 +1874,9 @@
   (let [nx (nm-next M c)]
     (cond (= c 0) (ck-touch M)
           (nm-ne (nm-kind M c) ND-SYM) (ck-ds-params M nx tok)
+          ;; JUN-734: a defrecord's bare name is no type spelling (a type is a keyword or a type vector; [s S] would
+          ;; read S as a second parameter): E2105 there, the record type is [:ref :<ns>/S]
+          (pos? (nm-sf M (nm-sym-of M c) SF-REC)) (ck-err M E-CHECK-TYPENAME c 0)
           (= (ck-is-tform M nx) 1) (ck-ds-params M (nm-next M nx) tok)
           :else
           (let [M1 (ck-n-kw M tok KW-PINFER)   ; R6C: provisional :i64 (refinable, see ck-hint-*)
@@ -2879,7 +2900,20 @@
                     M4 (ck-chain3 M3 gh d dk)
                     M5 (nm-set-nf M4 n NF-FIRST gh)]
                 (ck-expr M5 n fx 0))))
+          (= (ck-tcon M1 (ck-ty M1)) TC-MAP) (ck-gget2 M1 n fx)   ; JUN-734
           :else (ck-get-rec M1 n fx))))
+;; JUN-734: (get m k) on a typed map -> [:option V] (lang/guest-grammar.edn :def :value :quoted-not-widened: lookup is
+;; get on the typed map, [:option V], or V with a default); lowered as typed-map-get (4 hidden slots)
+(defn- ck-gget2 [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M1 (ck-hide M h NF-TYPE 4 fx)
+        fx2 (ck-ty M1)
+        M2 (ck-expr M1 (nm-nth M1 n 1) fx2 0)
+        ty (ck-ty M2)
+        M3 (ck-want M2 (nm-nth M2 n 2) fx2 (ck-ta M2 ty) h)
+        M4 (if (nm-failed M3) M3 (ck-ct-intern M3 TC-OPTION (ck-tb M3 ty) 0))
+        ot (ck-r M4)]
+    (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n ot HD-GET))))
 (defn- ck-get-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         r (nm-next M h)
@@ -2921,9 +2955,22 @@
 (defn- ck-kwget [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [kw (nm-first M n)
         r (nm-next M kw)]
-    (if (= (nm-count M n) 2)
-      (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-KWGET)
-      (ck-err M E-CHECK-ARITY kw 1))))
+    (cond (= (nm-count M n) 2) (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-KWGET)
+          (= (nm-count M n) 3) (ck-kwget3 M n fx)   ; JUN-734
+          :else (ck-err M E-CHECK-ARITY kw 1))))
+;; JUN-734: (:k m d) on a typed map is (get m :k d) (clojure.core keyword invocation with a default). A record has no
+;; absent field, so a default there is refused (E2103 at :k, as before), and so is any other type
+(defn- ck-kwget3 [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [kw (nm-first M n)
+        r (nm-next M kw)
+        d (nm-next M r)
+        M1 (ck-expr M r fx 0)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (nm-ne (ck-tcon M1 (ck-ty M1)) TC-MAP) (ck-err M1 E-CHECK-ARITY kw 1)
+          :else (let [M2 (ck-n-head M1 (nm-nf M1 kw NF-TOK) HD-GET)
+                      gh (ck-r M2)
+                      M3 (ck-link (ck-link (ck-link (ck-link M2 gh r) r kw) kw d) d 0)]
+                  (ck-expr (nm-set-nf M3 n NF-FIRST gh) n fx 0)))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; pass A: signatures and def literals
@@ -6979,8 +7026,16 @@
 ;; reference NAME (not a local) is the call (NAME). A def of a SYMBOL ((def windows? false), an alias) is the same: the value is recomputed per use, which no program can tell from a constant
 ;; (the expressions are pure: a def body runs no capability -- an effectful one is refused as in any defn without the
 ;; capability declared). A reference from a def ABOVE it is E2126 (the result is not inferred yet), the reference's order rule.
+;; JUN-734: also a vector literal that is not R0's integer vector and a map literal that is not R6B's opaque constant
+;; data -- a vector / map of literals with f64 or boolean values, or of map literals (lang/guest-grammar.edn :def :value
+;; :literal); the value is typed as that literal is in a body
 (defn- ck-r6f-cdef-form? [M :vector-i64 c :i64] :bool
-  (and (= (nm-count M c) 3) (or (= (nm-kind M (nm-nth M c 2)) ND-LIST) (= (nm-kind M (nm-nth M c 2)) ND-SYM)) (= (nm-kind M (nm-nth M c 1)) ND-SYM)))
+  (and (= (nm-count M c) 3) (= (nm-kind M (nm-nth M c 1)) ND-SYM)
+       (let [v (nm-nth M c 2)
+             k (nm-kind M v)]
+         (or (= k ND-LIST) (= k ND-SYM)
+             (and (= k ND-VEC) (zero? (ck-def-vec M v)))
+             (and (= k ND-MAP) (not (ck-r6b-const? M v)))))))
 (defn- ck-r6f-cdef [M :vector-i64 c :i64] :vector-i64
   (let [h (nm-first M c)
         nmn (nm-next M h)
