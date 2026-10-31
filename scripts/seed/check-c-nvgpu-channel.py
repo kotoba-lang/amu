@@ -5,6 +5,7 @@ Run on the nvgpu host with the Amu-built aarch64 Linux static compiler. The
 Python ioctl path is an independent measurement oracle, never product code.
 """
 import argparse
+import datetime
 import hashlib
 import json
 import platform
@@ -14,6 +15,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROGRAM = "tools/c/92-nvgpu-channel.kotoba"
+VULKAN_SOURCE = "scripts/seed/c-nvgpu-vulkan-empty-oracle.c"
+VULKAN_SHADER = "scripts/seed/c-nvgpu-vulkan-empty.comp"
 NS = "(ns g (:export [main]))\n"
 ORACLE = r'''
 import ctypes, fcntl, mmap, os, struct, time
@@ -142,15 +145,39 @@ def main(compiler, output):
     assert negative.returncode == 127 and b"NVGPU_IOCTL_CHANNEL_SETUP_BIND failed" in negative.stderr
     assert b"semaphore " not in negative.stdout
 
+    shader = artifacts / "empty.spv"
+    spirv = subprocess.run(["glslangValidator", "-V", "-S", "comp", "-o", str(shader),
+                            str(ROOT / VULKAN_SHADER)], capture_output=True, timeout=60)
+    assert spirv.returncode == 0, spirv.stderr[-400:]
+    oracle_bin = artifacts / "vulkan-empty"
+    cc = subprocess.run(["gcc", "-O2", "-Wall", "-Wextra", str(ROOT / VULKAN_SOURCE),
+                         "-lvulkan", "-o", str(oracle_bin)], capture_output=True, timeout=60)
+    assert cc.returncode == 0 and not cc.stderr, (cc.returncode, cc.stderr[-400:])
+    vk = subprocess.run([str(oracle_bin), str(shader)], capture_output=True, timeout=45)
+    (output / "vulkan.stdout").write_bytes(vk.stdout)
+    (output / "vulkan.stderr").write_bytes(vk.stderr)
+    assert vk.returncode == 0 and not vk.stderr, (vk.returncode, vk.stderr[-400:])
+    vk_rows = [line.split(" ", 1) for line in vk.stdout.decode().splitlines()]
+    vk_ns = [int(v) for k, v in vk_rows if k == "rt_ns"]
+    assert len(vk_ns) == 16 and all(0 < x < 1_000_000_000 for x in vk_ns)
+    vk_info = dict(vk_rows)
+    assert "NVIDIA Tegra Xavier" in vk_info["device"]
+
     report = {"status": "PASS_C3_NVGPU_CHANNEL", "host": [platform.system(), platform.machine(), platform.release()],
+              "measured_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "compiler": pin(compiler), "image": pin(img), "unit": {f: pin(ROOT / f) for f in unit_files()},
+              "checker": pin(__file__), "vulkan_sources": {f: pin(ROOT / f) for f in (VULKAN_SOURCE, VULKAN_SHADER)},
               "native_ns": native_ns, "oracle_ns": oracle_ns,
               "native_median_ns": statistics.median(native_ns), "oracle_median_ns": statistics.median(oracle_ns),
+              "vulkan_device": vk_info["device"], "vulkan_ns": vk_ns,
+              "vulkan_median_ns": statistics.median(vk_ns),
               "negative": {"change": "C3-GPFIFO-ENTRIES 1024 -> 3", "exit": negative.returncode},
               "oracle": "independent Python fcntl.ioctl and mmap, measurement only; no vendor user-space product code",
-              "not_claimed": "Vulkan comparison or C4 compute launch"}
+              "vulkan_oracle": "glslangValidator SPIR-V and gcc/libvulkan measurement only; no Vulkan in route C product",
+              "not_claimed": "C4 compute launch"}
     (output / "c3.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(report["status"], report["native_median_ns"], report["oracle_median_ns"], flush=True)
+    print(report["status"], report["native_median_ns"], report["oracle_median_ns"],
+          report["vulkan_median_ns"], flush=True)
 
 
 if __name__ == "__main__":
