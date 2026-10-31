@@ -12,8 +12,9 @@ native Amu compiler and checks (Python stages and observes; it emits nothing):
   cvttss2si / cvttsd2si;
 * trap: f32-from-bits is this route's definition, an out-of-range pattern reaching ud2 rather than a vector access;
 * unchanged: the 512-byte width object keeps its pinned SHA-256 (an integer object's bytes do not move);
-* refused, nothing written: f32-min / f64-max and f32 / f64 -> i64 truncation (E7101), and an export whose parameter or
+* refused, nothing written: f32-min / f64-max and f64 -> i64 truncation (E7101), and an export whose parameter or
   result is a float (System V would pass it in an xmm register): E7102, or the shared check stage's E2104 before it.
+  f32 -> i64 truncation is admitted since slice 7 (ADR 0395); check-aiueos-object-f2i.py covers it.
 
 Not shown here: execution. docs/evidence/f32-sse-20261030/ runs fops under QEMU against the same operations in C.
 """
@@ -43,7 +44,6 @@ TRAP = """(ns t (:export [kotoba_aiueos_t]))
 REFUSALS = {
     "f32-min": ("(ns r (:export [f]))\n(defn f [x :i64] :i64 (f32-to-bits (f32-min (f32-from-bits x) (f32-from-bits x))))\n", "E7101"),
     "f64-max": ("(ns r (:export [f]))\n(defn f [x :i64] :i64 (f64-to-bits (f64-max (f64-from-bits x) (f64-from-bits x))))\n", "E7101"),
-    "f32-to-i64": ("(ns r (:export [f]))\n(defn f [x :i64] :i64 (f32-to-i64-truncating (f32-from-bits x)))\n", "E7101"),
     "f64-to-i64": ("(ns r (:export [f]))\n(defn f [x :i64] :i64 (f64-to-i64-truncating (f64-from-bits x)))\n", "E7101"),
     "export-f32-param": ("(ns r (:export [f]))\n(defn f [x :f32] :i64 (f32-to-bits x))\n", ("E7102", "E2104")),
     "export-f64-result": ("(ns r (:export [f]))\n(defn f [x :i64] :f64 (f64-from-bits x))\n", ("E7102", "E2104")),

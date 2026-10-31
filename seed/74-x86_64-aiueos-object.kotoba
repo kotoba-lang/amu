@@ -981,14 +981,15 @@
 (defn- xo-types [M :vector-i64 f :i64 i :i64 n :i64 float :bool] :bool
   (if (= i n) true (and (xo-type M (ck-pt M f i) float) (xo-types M f (inc i) n float))))
 ;; The float SIR the object artifact admits (seed/70 xg-fbin / xg-fcmp / xg-fun): f64 and f32 add sub mul div, the six
-;; compares, neg abs sqrt, i64 -> f64 / f32 and f64 <-> f32. min / max (SSE's minss / maxss answer the second operand
-;; for a NaN or two zeros, the aarch64 route's fmin / fmax do not) and float -> i64 truncation (cvttss2si answers
-;; 2^63 for a NaN or an overflow, fcvtzs saturates) stay refused (E7101).
+;; compares, neg abs sqrt, i64 -> f64 / f32, f64 <-> f32 and (ADR 0395) f32 -> i64 truncation, whose NaN and
+;; out-of-range operands reach ud2. min / max (SSE's minss / maxss answer the second operand for a NaN or two zeros, the
+;; aarch64 route's fmin / fmax do not) and f64 -> i64 truncation stay refused (E7101).
 (defn- xo-float-sir? [op :i64 a :i64] :bool
   (cond (= op OP-BIN) (or (and (>= a BOP-F64-ADD) (<= a BOP-F64-DIV)) (and (>= a BOP-F32-ADD) (<= a BOP-F32-DIV)))
         (= op OP-CMP) (or (and (>= a CC-F64-EQ) (<= a CC-F64-UN)) (and (>= a CC-F32-EQ) (<= a CC-F32-UN)))
         (= op OP-UN) (or (and (>= a UOP-F64-NEG) (<= a UOP-F64-SQRT)) (and (>= a UOP-F32-NEG) (<= a UOP-F32-SQRT))
-                         (= a UOP-I64-TO-F64) (= a UOP-F64-TO-F32) (= a UOP-F32-TO-F64) (= a UOP-I64-TO-F32))
+                         (= a UOP-I64-TO-F64) (= a UOP-F64-TO-F32) (= a UOP-F32-TO-F64) (= a UOP-I64-TO-F32)
+                         (= a UOP-F32-TO-I64))
         :else false))
 ;; seed/70's xg-check-sir with the float SIR above admitted; the object artifact's only SIR check.
 (defn- xo-check-sir [M :vector-i64 i :i64] :vector-i64

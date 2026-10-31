@@ -170,7 +170,8 @@
   (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
 ;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner,
 ;; 4 = --format launcher (the runtime ends with xs-rt-launch instead of the
-;; standard start; seed/76); 2 is --format packed (seed/80, aarch64)
+;; standard start; seed/76); 2 is --format packed (seed/80, aarch64). --format host-entry
+;; (xs-command 6, KOTOBA-174) builds with mode 0 and the host start of seed/76.
 (defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xb-scan S 1) (xs-check 1 0) (xb-check-api S 1 0))]
@@ -197,8 +198,10 @@
         h (string-concat g (xs-profile-note profile))]
     (string-concat h "}\n")))
 (defn- xs-write-profile [M :vector-i64 out :string profile :i64] :i64
+  (xs-write-named M out profile (xs-format-name (xg-get M 2))))
+(defn- xs-write-named [M :vector-i64 out :string profile :i64 format :string] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        w (io-out (xs-write-record ":x86_64-linux" (xs-format-name (xg-get M 2)) (xg-pos M) n profile))]
+        w (io-out (xs-write-record ":x86_64-linux" format (xg-pos M) n profile))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
 ;; Fixed build-time profiles, never selected by a guest or a failed run.
 ;; base is the exact end of the existing format/payload command.
@@ -212,13 +215,15 @@
   (string-concat "(def KXRT-VECTORS "
     (string-concat (mem-u2dec (if (= profile 1) 67108864 4194304)) ")\n")))
 (defn- xs-command [mode :i64] :i64
-  (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8)]
+  (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8) build (if (= mode 6) 0 mode)]
     (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
                       rt (string-concat (xs-rt-core-profile profile)
-                                        (cond (= mode 4) (xs-rt-launch) (= mode 5) (xs-rt-b2) :else (xs-rt-start)))
-                      s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) mode)]
+                                        (cond (= mode 4) (xs-rt-launch) (= mode 5) (xs-rt-b2)
+                                              (= mode 6) (xs-rt-host-start) :else (xs-rt-start)))
+                      s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) build)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
+                        (= mode 6) (xs-write-named m out profile ":host-entry")
                         :else (xs-write-profile m out profile))))))

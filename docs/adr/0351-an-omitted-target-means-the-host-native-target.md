@@ -1,12 +1,18 @@
 # ADR 0351 — An omitted `--target` means the host's native target
 
 - Date: 2026-09-24
-- Status: Superseded by ADR 0355 (2026-10-14)
+- Status: Superseded by ADR 0355 (2026-10-14), which was itself superseded by ADR 0396 (2026-10-31). Historical.
 - Deciders: owner (2026-09-24)
 - Related: superproject ADR-2609241300 (amu's native compiler is the first
   execution path; wasm is one build target), ADR 0237 (it did not make native
   the default — this ADR does, and 0237 now points here), ADR 0347 (the JVM
   route is removed), ADR 0286.
+
+> **Historical (2026-10-31, KOTOBA-174).** This ADR describes the retired Node/nbb launcher (`process.platform`,
+> `AMU_TARGET`, `nbb/wasm_cli.cljk`). That launcher is preserved as non-executable text under
+> `docs/retired/legacy-public-entry-20261023`. The current rule is in
+> [ADR 0396](0396-each-public-entry-names-its-own-host-target.md): each public native entry names its own fixed host,
+> the compiler roots refuse an omitted target with E2, and there is no `AMU_TARGET` and no Wasm or Kototama fallback.
 
 ## Context
 
