@@ -64,7 +64,8 @@
   ;;    schema has the type TY-REC-BASE + the keyword symbol (the identity of an inline/:schemas schema), so recursive schemas
   ;;    ([:kids [:list [:ref :kw]]]) and forward references type as the schema; a defrecord's block is in SF-REC before its
   ;;    fields are typed. A ref whose keyword no schema registers is E2179. A record field may have any type but a fn type
-  ;;    (records, lists of records, :bytes ..): the field holds the value's handle (records stay pair chains).
+  ;;    (records, lists of records, :bytes ..): the field holds the value's handle (records stay pair chains). JUN-728: an
+  ;;    :f64 field (its i64 word of bits) is admitted; an :f32 field stays E2128.
   ]
  ;; Type keywords in signatures: :i64 :bool :string :vector-i64 (R1 :keyword, records; R3 the vector forms [:option T]
  ;; [:result T E] [:list T] [:map K V] [:set T]). Anything else after a parameter -> E2105.
@@ -328,9 +329,19 @@
   [:c HD-SETLIT 129 "(no spelling) NF-RES of an ND-SET expression: #{x ..} -> [:set :keyword] (the reference's set literal
                      is keyword-only; typed-set-new builds the others), 1..32 items, all :keyword (E2104), not empty (E2133).
                      7 hidden slots: the first is in NF-SYM of the ND-SET node"]
-  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string
-                     (E2105: the reference reads a keyword-keyed literal as a pair list or a record), 1..31 entries (7 hidden
-                     slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1 meaning"]
+  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string,
+                     1..31 entries (7 hidden slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1
+                     meaning. JUN-728: a literal whose first key is a keyword is a closed RECORD (lang/guest-grammar.edn
+                     :map-literal :value-types :keyword-keys; docs/language-ladder.edn :literal-typing: wherever it is written,
+                     also when every value is :i64 -- the seed never had the keyword->i64 pair map). Every key a keyword (E2105
+                     at another kind), none repeated (E2128), 1..32 entries (E2128); the fields are typed by the checked values
+                     (a fn value, an :f32 or a value of no type: E2128 / E2133). 21-check desugaring puts the entries in the
+                     printed-text order of their keys (the values are evaluated in that order, as record-new's fields);
+                     literals with the same keys and field types share one anonymous record type (a gensym identity, SF-HASH
+                     0 and RB-ID itself). NF-RES = HD-RECORD-NEW, the key nodes' NF-RES = their field index; 30-lower builds the
+                     pair chain (lw-kwrec). (:k m), get and assoc of a present key are the record heads; assoc of an absent key
+                     is E2127. Not admitted: an anonymous record where a declared record type is expected (E2104), except the
+                     R6F declared-result tail and map->Name"]
   ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
   ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
   ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
@@ -402,8 +413,9 @@
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
  ;; "doseq" "range" "inc" "dec" "zero?" "pos?" "neg?" "not=" "assert" "true" "false" "vector-count" "record-new" "record"
  ;; "record-get" "defrecord" "get"; 72 73 74 have none; 75 "assoc". (map->Name {..}) and (->Name ..) are recognised by
- ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children)
- ;; and admitted ONLY as the argument of map->Name (exactly the record's keyword fields), E1105 anywhere else (scripts/seed/gen-names-tables.py generates 20-names' tables).
+ ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children):
+ ;; the argument of map->Name (exactly the record's keyword fields), else an R3 typed map or (JUN-728) a keyword-keyed
+ ;; record literal (HD-MAPLIT) (scripts/seed/gen-names-tables.py generates 20-names' tables).
  :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
              ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
              "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"

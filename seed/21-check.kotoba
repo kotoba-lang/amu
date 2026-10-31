@@ -176,7 +176,7 @@
           M1 (ck-tform M (nm-next M k))
           ty (ck-r M1)]
       (cond (= ty 0) (ck-err M1 E-CHECK-SCHEMA k 0)
-            (or (= ty TY-F64) (= ty ck-ty-f32)) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA k 0)
             :else (ck-sch-fields (ck-blk-put M1 blk i ks ty) nx blk (+ i 1))))))
 
@@ -315,7 +315,7 @@
       (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
             (nm-failed M1) (ck-touch M1)
             (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
-            (or (= ty TY-F64) (= ty ck-ty-f32)) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
             :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
 (defn- ck-rec-fields [M :vector-i64 S :string c :i64 blk :i64 i :i64] :vector-i64
@@ -1475,9 +1475,44 @@
           (ck-fn-form? M n) (ck-ds-list (ck-ds-fn M n) S n)
           (= k ND-LIST) (ck-ds-list (ck-ds-ctor M S n) S n)
           (= k ND-VEC) (ck-ds-kids M S (nm-first M n))
-          (= k ND-MAP) (ck-ds-kids M S (nm-first M n))
+          (= k ND-MAP) (let [M1 (ck-kwmap-sort M S n)] (ck-ds-kids M1 S (nm-first M1 n)))   ; JUN-728
           (= k ND-SET) (ck-ds-kids M S (nm-first M n))
           :else (ck-touch M))))
+;; JUN-728: the entries of a keyword-keyed map literal {:k e ..} (every key a keyword) are put in the printed-text order
+;; of their keys, the order the reference gives the closed record it lowers to (lang/guest-grammar.edn :map-literal
+;; :value-types :keyword-keys); the values are evaluated in that order, as record-new evaluates its fields. Any other
+;; map literal is unchanged. A repeated key stays (ck-kwrec refuses it, E2128).
+(defn- ck-kwmap-key< [M :vector-i64 S :string a :i64 b :i64] :bool
+  (let [sa (nm-sym-of M a)
+        sb (nm-sym-of M b)]
+    (neg? (string-compare (string-substring S (nm-sf M sa SF-START) (nm-sf M sa SF-END))
+                          (string-substring S (nm-sf M sb SF-START) (nm-sf M sb SF-END))))))
+(defn- ck-kwmap-sort [M :vector-i64 S :string n :i64] :vector-i64
+  (let [ks (loop [k (nm-first M n) acc (vector-i64)]
+             (cond (zero? k) acc
+                   (zero? (nm-next M k)) (vector-i64)
+                   (nm-ne (nm-kind M k) ND-KW) (vector-i64)
+                   :else (recur (nm-next M (nm-next M k)) (vector-conj acc k))))
+        m (vector-count ks)]
+    (if (< m 2)
+      (ck-touch M)
+      ;; insertion sort of the key nodes (stable: equal keys keep their order)
+      (let [sorted (loop [i 1 v ks]
+                     (if (>= i m)
+                       v
+                       (let [x (vector-at v i)
+                             v2 (loop [j i w v]
+                                  (if (and (pos? j) (ck-kwmap-key< M S x (vector-at w (dec j))))
+                                    (recur (dec j) (vector-assoc w j (vector-at w (dec j))))
+                                    (vector-assoc w j x)))]
+                         (recur (inc i) v2))))
+            M1 (loop [M2 M i 0]
+                 (if (>= i m)
+                   M2
+                   (let [k (vector-at sorted i)
+                         v (nm-next M2 k)]
+                     (recur (ck-link M2 v (if (< (inc i) m) (vector-at sorted (inc i)) 0)) (inc i)))))]
+        (nm-set-nf M1 n NF-FIRST (vector-at sorted 0))))))
 (defn- ck-ds-list [M :vector-i64 S :string n :i64] :vector-i64 (ck-ds-kids M S (nm-first M n)))
 (defn- ck-ds-kids [M :vector-i64 S :string c :i64] :vector-i64
   (if (= c 0)
@@ -3176,6 +3211,73 @@
 ;; {k v ..}: [:map K V] from the first entry, K :i64 or :string (the reference reads a keyword-keyed literal as a pair
 ;; list or a record), at most 31 entries (7 hidden slots: the first in NF-SYM of the node)
 (defn- ck-maplit [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (if (= (nm-kind M (nm-first M n)) ND-KW) (ck-kwrec M n fx) (ck-maplit2 M n fx)))   ; JUN-728
+;; JUN-728: a keyword-keyed literal {:k e ..} is a closed record (lang/guest-grammar.edn :map-literal :value-types
+;; :keyword-keys; docs/language-ladder.edn :literal-typing: wherever it is written, also when every value is :i64). Its
+;; fields are its keys (1..32, every key a keyword: E2105 at another key kind, E2128 at a repeated key), typed by the
+;; values' checked types (a fn value, an :f32 or a value without a type is refused: E2128 / E2133). Literals with the same
+;; keys and field types are one anonymous record type: a block whose identity is a gensym (SF-HASH 0, RB-ID = itself),
+;; found again by its key set. The key nodes' NF-RES = their field index; the node is marked HD-RECORD-NEW (30-lower
+;; lw-kwrec builds the pair chain, the values in field order). (:k m), get and assoc of a present key are the record heads.
+(defn- ck-kwrec [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [nc (nm-count M n)]
+    (cond (nm-ne (bit-and nc 1) 0) (ck-err M E-READ-MAP n 0)
+          (> nc 64) (ck-err M E-CHECK-SCHEMA n 0)
+          :else
+          (let [M1 (loop [M2 (ck-touch M) k (nm-first M n)]
+                     (cond (zero? k) M2
+                           (nm-failed M2) M2
+                           (nm-ne (nm-kind M2 k) ND-KW) (ck-err M2 E-CHECK-TYPENAME k 0)
+                           (ck-kwrec-dup? M2 n k) (ck-err M2 E-CHECK-SCHEMA k 0)
+                           :else
+                           (let [M3 (ck-expr M2 (nm-next M2 k) fx 0)
+                                 ty (ck-ty M3)]
+                             (cond (nm-failed M3) M3
+                                   (zero? ty) (ck-err M3 E-CHECK-ABORT-INFER n 0)
+                                   (or (= ty (ck-poison)) (= ty ck-ty-f32) (= (ck-tcon M3 ty) TC-FN)) (ck-err M3 E-CHECK-SCHEMA k 0)
+                                   :else (recur (nm-set-nf M3 k NF-TYPE ty) (nm-next M3 (nm-next M3 k)))))))]
+            (if (nm-failed M1) (ck-touch M1) (ck-kwrec-type M1 n))))))
+;; 1 when key node k repeats a key of literal n before it
+(defn- ck-kwrec-dup? [M :vector-i64 n :i64 k :i64] :bool
+  (loop [x (nm-first M n)]
+    (cond (= x k) false
+          (= (nm-sym-of M x) (nm-sym-of M k)) true
+          :else (recur (nm-next M (nm-next M x))))))
+;; 1 when block b has exactly the keys of literal n, each with the type its value checked to (NF-TYPE of the key node)
+(defn- ck-kwrec-same? [M :vector-i64 b :i64 n :i64] :bool
+  (and (= (ck-blk-n M b) (quot (nm-count M n) 2))
+       (loop [k (nm-first M n)]
+         (if (zero? k)
+           true
+           (let [j (ck-field M b (nm-sym-of M k))]
+             (if (and (>= j 0) (= (ck-blk-ty M b j) (nm-nf M k NF-TYPE)))
+               (recur (nm-next M (nm-next M k)))
+               false))))))
+;; the anonymous record block of literal n's shape, 0 when there is none yet
+(defn- ck-kwrec-find [M :vector-i64 n :i64] :i64
+  (loop [s 1]
+    (let [b (nm-sf M s SF-REC)]
+      (cond (>= s (vector-at M MM-SYM-N)) 0
+            (and (pos? b) (zero? (nm-sf M s SF-HASH)) (= (vector-at M (+ b RB-ID)) s) (ck-kwrec-same? M b n)) b
+            :else (recur (inc s))))))
+(defn- ck-kwrec-type [M :vector-i64 n :i64] :vector-i64
+  (let [old (ck-kwrec-find M n)
+        M1 (if (pos? old)
+             (nm-put M MM-R0 old)
+             (let [M2 (nm-gensym M 0 0)
+                   s (ck-r M2)
+                   M3 (ck-blk-new M2 (quot (nm-count M2 n) 2) s)
+                   b (ck-r M3)
+                   M4 (loop [M5 M3 k (nm-first M3 n) i 0]
+                        (if (zero? k) M5 (recur (ck-blk-put M5 b i (nm-sym-of M5 k) (nm-nf M5 k NF-TYPE)) (nm-next M5 (nm-next M5 k)) (inc i))))]
+               (if (nm-failed M4) M4 (nm-put (nm-set-sf M4 s SF-REC b) MM-R0 b))))
+        b (ck-r M1)]
+    (if (or (nm-failed M1) (zero? b))
+      (ck-touch M1)
+      (let [M2 (loop [M3 M1 k (nm-first M1 n)]
+                 (if (zero? k) M3 (recur (nm-set-nf M3 k NF-RES (ck-field M3 b (nm-sym-of M3 k))) (nm-next M3 (nm-next M3 k)))))]
+        (ck-mark M2 n (ck-blk-type M2 b) HD-RECORD-NEW)))))
+(defn- ck-maplit2 [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [c (nm-first M n)
         M1 (ck-hide M n NF-SYM 7 fx)
         fx2 (ck-ty M1)]

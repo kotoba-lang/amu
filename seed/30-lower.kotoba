@@ -570,6 +570,15 @@
   (let [h (vector-at M (+ MM-SYM-BASE (* s MM-SYM-W) SF-HASH))] (if (= h 0) s h)))
 ;; ==== END R6A ======================================================================================================
 
+;; JUN-728: a keyword-keyed map literal {:k e ..} as a record: the value of the key whose field index (NF-RES of the key
+;; node, 21-check ck-kwrec) is i goes to t+i, in field order; then CONST t+n 0 and the pairs from the last field (lw-recnew)
+(defn- lw-kwrec-val [M :vector-i64 c :i64 i :i64] :i64
+  (loop [k c] (cond (zero? k) 0 (= (lw-nf M k NF-RES) i) (lw-next M k) :else (recur (lw-next M (lw-next M k))))))
+(defn- lw-kwrec [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [c (lw-first M n)
+        nf (quot (lw-count M c) 2)
+        M1 (loop [M2 M i 0] (if (>= i nf) M2 (recur (lw-expr M2 (lw-kwrec-val M2 c i) (+ t i) 0) (inc i))))]
+    (-> M1 (lw-emit OP-CONST (+ t nf)) (lw-pairs t (dec nf)))))
 (defn- lw-expr [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
   (let [aux (lw-nf M n NF-AUX)
         kind (lw-nf M n NF-KIND)]
@@ -585,7 +594,9 @@
                  ;; R4B: 65..128 integer literals (21-check): the items as a constant table, copied into a fresh vector
                  (let [lit (vector-at M MM-LIT-N)] (-> M (lw-tabdata n m) (lw-emit OP-VECP t lit m)))
                  (-> M (lw-args a t) (lw-emit OP-VEC t m))))
-      (ND-SET ND-MAP) (lw-newcoll M (lw-first M n) (lw-nf M n NF-SYM) (lw-md M (lw-nf M n NF-TYPE)) t)
+      (ND-SET ND-MAP) (if (and (= kind ND-MAP) (= (lw-nf M n NF-RES) HD-RECORD-NEW))
+                        (lw-kwrec M n t)   ; JUN-728: a keyword-keyed literal is a record (21-check ck-kwrec)
+                        (lw-newcoll M (lw-first M n) (lw-nf M n NF-SYM) (lw-md M (lw-nf M n NF-TYPE)) t))
       (lw-fail M E-LOWER-NODE (if (zero? n) -1 (lw-pos M n)) kind))))
 
 ;; ------------------------------------------------------------------------------------------------------------

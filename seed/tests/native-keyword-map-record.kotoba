@@ -1,0 +1,80 @@
+;; JUN-728: a keyword-keyed map literal is a closed record (lang/guest-grammar.edn :map-literal :value-types
+;; :keyword-keys; docs/language-ladder.edn :literal-typing), and a record field may be :f64.
+;; main returns 0, or the number of the first failing case.
+(ns native-keyword-map-record (:export [main]))
+
+(defrecord V [x :f64 y :f64])
+(defrecord P [a :i64 b :i64])
+
+(defn- same-f64? [a :f64 b :f64] :bool (= (f64-to-bits a) (f64-to-bits b)))
+
+;; an unannotated result: the literal's record type
+(defn- point [x :i64] {:x x :tag :p})
+
+(defn- pick [c :bool] :i64
+  (let [m (if c {:x 1 :tag :t} {:tag :u :x 5})] (:x m)))
+
+;; the same keys from another site are the same type; a :document tail stays a document
+(defn- doc [] :document {:zz 1 :a "x"})
+
+(defn- sum-to [n :i64] :i64
+  (loop [m {:i 0 :s 0}]
+    (if (> (:i m) n) (:s m) (recur {:s (+ (:s m) (:i m)) :i (inc (:i m))}))))
+
+;; the values are evaluated in the printed-text order of the keys (:a before :b), as record-new evaluates its fields
+(defn- order [] :i64
+  (let [c (atom 1)
+        m {:b (swap! c + 1) :a (swap! c * 10)}]
+    (+ (* 100 (:a m)) (:b m))))
+
+(defn main [] :i64
+  (let [m1 {:a 1}
+        m2 {:b 2 :a 1}
+        m3 (assoc {:a 1 :b 2} :b 7)
+        m4 {:name "abc" :n 4 :ok true :k :key}
+        m5 {:in {:v 9 :w "w"} :k 1}
+        m6 {:x 1.5 :n 2}
+        v (->V 1.5 2.0)
+        w (assoc v :y 3.0)
+        r (record-new [:record :native-keyword-map-record/r [[:x :f64] [:n :i64]]] 2.5 3)
+        s1 {:a 1}
+        s2 {:a "s"}
+        big {:k00 0 :k01 1 :k02 2 :k03 3 :k04 4 :k05 5 :k06 6 :k07 7 :k08 8 :k09 9 :k10 10 :k11 11 :k12 12 :k13 13
+             :k14 14 :k15 15 :k16 16 :k17 17 :k18 18 :k19 19 :k20 20 :k21 21 :k22 22 :k23 23 :k24 24 :k25 25 :k26 26
+             :k27 27 :k28 28 :k29 29 :k30 30 :k31 31}
+        ns {:native-keyword-map-record/a 1 :b 2}
+        tm {2 20 1 10}
+        sm {"x" 3}
+        pm (map->P {:b 2 :a 1})]
+    (cond
+      (not= (:a m1) 1) 1
+      (not= (+ (* 10 (:a m2)) (get m2 :b)) 12) 2
+      (not= (:b m3) 7) 3
+      (not= (:a m3) 1) 4
+      (not (:ok m4)) 5
+      (not= (+ (:n m4) (string-length (:name m4))) 7) 6
+      (not= (:k m4) :key) 7
+      (not= (:v (:in m5)) 9) 8
+      (not (string=? (:w (:in m5)) "w")) 9
+      (not (same-f64? (:x m6) 1.5)) 10
+      (not= (:n m6) 2) 11
+      (not (same-f64? (:x w) 1.5)) 12
+      (not (same-f64? (:y w) 3.0)) 13
+      (not (same-f64? (:y v) 2.0)) 14
+      (not (same-f64? (:x r) 2.5)) 15
+      (not= (:n r) 3) 16
+      (not= (+ (:x (point 3)) (:x (point 5))) 8) 17
+      (not= (:tag (point 1)) :p) 18
+      (not= (+ (pick true) (pick false)) 6) 19
+      (not= (:a s1) 1) 20
+      (not (string=? (:a s2) "s")) 21
+      (not= (+ (:k00 big) (:k31 big) (:k17 big)) 48) 22
+      (not= (+ (:native-keyword-map-record/a ns) (:b ns)) 3) 23
+      (not= (get tm 2 0) 20) 24
+      (not= (get sm "x" 0) 3) 25
+      (not= (:b pm) 2) 26
+      (not (string=? (document-edn-print (doc)) "{:a \"x\" :zz 1}")) 27
+      (not= (sum-to 4) 10) 28
+      (not= (order) 1011) 29
+      (not (same-f64? (:x (assoc m6 :x 4.0)) 4.0)) 30
+      :else 0)))
