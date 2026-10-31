@@ -451,6 +451,32 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1751 (JUN-729: native destructuring is
+  reader sugar for the plain temp-bound form, a core change in
+  `seed/20-names` and `seed/21-check`, core pins `e98f6831…` /
+  `5cc9c135…`).
+  * x86_64: F1 = F2 = F3 = `2edbdee7…` (9,310,720 bytes), from the
+    3,868,947-byte unity `a49cedab…`. Its `--format host-entry` image is
+    `cd26cc93…` (9,310,720 bytes).
+  * aarch64 root: F1 = F2 = `2bb4f08d…` (3,887,616 bytes), container
+    `86ccbfaf…`, derived under qemu from the `7ff79dd0…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `4307e3b6…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `5cc9c135…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `5a17e623…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 224 kernel-object sources (the 22
+    `check-aiueos-object-*` gates, their evidence sources and every
+    `seed/tests/kernel-memory` case) compile identically to main's compiler.
+  * #1751's `seed/tests/native-destructuring.kotoba` (its gate is Mac-only)
+    builds and exits 0 on x86_64-linux with this compiler, and under
+    qemu-user with this aarch64 root.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
