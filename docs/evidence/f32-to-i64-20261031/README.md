@@ -47,7 +47,7 @@ The FNV hash covers every case's trap flag and answer. It is identical on the tw
 rounding modes.
 
 Exhaustive run, 2026-10-31: `TIMEOUT=9000 run.sh OUT F2 1 0`. It covers every one of the 2^32 patterns, plus the
-specials and the edge mantissas, in both MXCSR passes. Each CPU took about 64 minutes under TCG.
+specials and the edge mantissas, in both MXCSR passes. The two CPUs ran in parallel, each for about an hour under TCG.
 
 | run | cases | returned | trapped | diffs | indefinite answers | hash |
 |---|---|---|---|---|---|---|
