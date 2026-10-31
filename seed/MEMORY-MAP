@@ -130,15 +130,15 @@
 ;; The complete44 public static build also appends its native runtime. It
 ;; exceeds NODE589824 (E101 region4). Grow only the static NODE capacity;
 ;; the normal adopted18 source, widths and heap size remain unchanged.
-;; TOK growth (2026-11-01, ADR 0397 / JUN-706): adding seed/81-js-esm (the js-browser emitter) to the full
-;; compiler pushed the x86_64 static cross compile of seed/FULL-MANIFEST (which also appends the native runtime)
-;; over TOK 786432 (E101 region 1); main had about 3,000 tokens to spare (measured by padding). The static
-;; profile raises TOK by 131072 entries (917504); every later base, MM-HEAP-END and MM-WORDS shift by 524288
-;; words (MM-WORDS 31981568 < 2^25, heap size unchanged).
+;; TOK growth (2026-11-01, JUN-737, owner decision): FULL-MANIFEST plus a test harness (the kir-execution and definition-graph
+;; static builds) left 1,698 (aarch64) / 1,922 (x86) tokens of the 786432-entry table, below the ~4,200 the JUN-730 protocol
+;; forms need. The static profile raises TOK by 262144 entries (+1048576 words); every later base, MM-HEAP-END and MM-WORDS shift
+;; equally (heap size unchanged, MM-WORDS 32505856 < 2^25). 1310720 would need MM-WORDS = 2^25, which the vector bound refuses.
+;; scripts/seed/check-token-headroom-native.py reports the remaining token headroom of those builds and fails below its floor.
 ;; These seven rows are consumed by seed/gen-static-ns.kotoba. That native
 ;; generator derives every downstream base and checks the2^25 vector bound.
 ;; BEGIN STATIC OVERRIDES
-;; [:s MM-TOK-CAP 917504]
+;; [:s MM-TOK-CAP 1048576]
 ;; [:s MM-NODE-CAP 786432]
 ;; [:s MM-CODE-CAP 2097152]
 ;; [:s MM-FIX-CAP 262144]

@@ -1,0 +1,271 @@
+(ns sm70-regalloc (:export [sm70-regalloc]))
+
+;; Register and predicate allocation for the SM 7.0 / 7.2 machine IR
+;; (route C, JUN-739). The lowering (sm70_lower.kotoba) gives out virtual
+;; GPRs from 256 up (255 stays RZ) and virtual predicates from 8 up (7 stays
+;; PT); this pass maps them to R0..R254 and P0..P6, so the decode kernels
+;; fit the register file. It runs before the scheduler, which then sees
+;; physical registers only.
+;;
+;; Liveness is computed per instruction over the IR's control flow: an
+;; instruction falls through to the next one, a BRA also goes to its target
+;; (an unguarded one only there), an unguarded EXIT ends the thread. A
+;; guarded instruction may not run, so its write does not end the old
+;; value's life. A register pair (the address of LDG / STG, the result and
+;; addend of IMAD.WIDE) is one node of two registers on an even register;
+;; its low half is written first (MOV from the constant bank, then the high
+;; half), so an unguarded write of the low half ends the pair's old value
+;; and a write of the high half does not. Two nodes interfere when one is
+;; written while the other is live after that instruction; the result of a
+;; variable-latency instruction also interferes with its sources, which the
+;; instruction still reads after it issues. Nodes are coloured in order of
+;; their number (the lowering's order), each with the lowest free register
+;; (pair: the lowest free even pair). A node that finds none is refused.
+;;
+;; A unit that uses this file prepends its own ns line and drops this one,
+;; after sm70_encode.kotoba and sm70_sched.kotoba.
+
+(def RA-E-REGS 104)   ;; out of registers or predicates (the lowering's SL-E-REGS)
+(def RA-V0 256)       ;; the first virtual GPR
+(def RA-P0 8)         ;; the first virtual predicate
+
+(defn- qf [Q :vector-i64 k :i64 f :i64] :i64 (vector-at Q (+ 2 (* MI-W k) f)))
+(defn- qs [Q :vector-i64 k :i64 f :i64 v :i64] :i64 (let [z (vector-assoc! Q (+ 2 (* MI-W k) f) v)] v))
+(defn- ra-fail [Q :vector-i64] :i64 (let [z (if (= (vector-at Q 1) 0) (vector-assoc! Q 1 RA-E-REGS) Q)] -1))
+
+;; the GPR fields of an op as a mask over d (1), a (2), b (4), c (8)
+(defn- gpr-fields [op :i64] :i64
+  (cond (or (= op MI-S2R) (= op MI-MOVCB) (= op MI-MOVI)) 1
+        (or (= op MI-IMADI) (= op MI-IMADW)) 11
+        (or (= op MI-ISETP) (= op MI-STG) (= op MI-STS) (= op MI-FSETP)) 6
+        (= op MI-FSETPI) 2
+        (or (= op MI-LDG) (= op MI-MOV) (= op MI-LDS) (= op MI-SHR) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I)
+            (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI)) 3
+        (or (= op MI-FADD) (= op MI-FMUL) (= op MI-FADDN) (= op MI-SEL) (= op MI-SHLR) (= op MI-SHRR)
+            (= op MI-IMNMX) (= op MI-FMNMX)) 7
+        (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3) (= op MI-IMADWR)) 15
+        :else 0))
+
+;; does the op write its d field as a GPR?
+(defn- gpr-def? [op :i64] :bool
+  (and (not= (bit-and (gpr-fields op) 1) 0)
+       (not (or (= op MI-ISETP) (= op MI-STG) (= op MI-STS) (= op MI-FSETP) (= op MI-FSETPI)))))
+
+(defn- pred-def? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI)))
+
+;; the fields that hold a pair's low register: 1 d, 2 a, 8 c
+(defn- pair-fields [op :i64] :i64
+  (cond (= op MI-IMADW) 9 (= op MI-IMADWR) 9 (or (= op MI-LDG) (= op MI-STG)) 2 :else 0))
+
+(defn- fbit [m :i64 j :i64] :bool (not= (bit-and m (i64-shift-left 1 j)) 0))
+
+;; ---------------------------------------------------------------------
+;; Bit sets: a row of w words at R[base + ...].
+
+(defn- bget [R :vector-i64 base :i64 i :i64] :bool
+  (not= (bit-and (u64-shift-right (vector-at R (+ base (u64-shift-right i 6))) (bit-and i 63)) 1) 0))
+(defn- bset [R :vector-i64 base :i64 i :i64] :i64
+  (let [at (+ base (u64-shift-right i 6)) z (vector-assoc! R at (bit-or (vector-at R at) (i64-shift-left 1 (bit-and i 63))))] 0))
+
+;; ---------------------------------------------------------------------
+;; Nodes. N[v - 256] for a virtual GPR v: 1 a single register, 2 the low
+;; register of a pair, 3 the high register of a pair; the node of v is v,
+;; or v - 1 for a high register.
+
+(defn- node-of [N :vector-i64 v :i64] :i64
+  (if (< v RA-V0) -1 (if (= (vector-at N (- v RA-V0)) 3) (- (- v 1) RA-V0) (- v RA-V0))))
+
+(defn- max-virtual [Q :vector-i64] :vector-i64
+  (let [n (mi-count Q)]
+    (loop [k 0 mv RA-V0 mp RA-P0]
+      (if (>= k n) (-> (vector-alloc 2) (vector-assoc! 0 mv) (vector-assoc! 1 mp))
+        (let [op (qf Q k 0) m (gpr-fields op)
+              mv1 (loop [j 0 m1 mv] (if (>= j 4) m1 (recur (inc j) (if (fbit m j) (let [v (qf Q k (+ 2 j))] (if (>= (+ v 2) m1) (+ v 2) m1)) m1))))
+              g (u64-shift-right (qf Q k 1) 1)
+              p1 (if (>= (+ g 1) mp) (+ g 1) mp)
+              p2 (if (pred-def? op) (let [d (qf Q k 2)] (if (>= (+ d 1) p1) (+ d 1) p1)) p1)
+              p3 (if (= op MI-SEL) (let [x (qf Q k 6)] (if (>= (+ x 1) p2) (+ x 1) p2)) p2)]
+          (recur (inc k) mv1 p3))))))
+
+;; N: single registers, then the pairs named by pair fields
+(defn- node-kinds [Q :vector-i64 nv :i64] :vector-i64
+  (let [N (vector-alloc nv) n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) N
+        (let [op (qf Q k 0) m (gpr-fields op) pm (pair-fields op)
+              z (loop [j 0]
+                  (if (>= j 4) 0
+                    (let [v (qf Q k (+ 2 j))
+                          y (cond (or (not (fbit m j)) (< v RA-V0)) 0
+                                  (fbit pm j) (let [a (vector-assoc! N (- v RA-V0) 2) b (vector-assoc! N (+ (- v RA-V0) 1) 3)] 0)
+                                  (= (vector-at N (- v RA-V0)) 0) (let [a (vector-assoc! N (- v RA-V0) 1)] 0)
+                                  :else 0)]
+                      (recur (inc j)))))]
+          (recur (inc k)))))))
+
+;; ---------------------------------------------------------------------
+;; Liveness. For instruction k: its uses U and its killed definitions K
+;; (GPR nodes at U[k w ...], predicates at PU[k pw ...]), then the live-out
+;; sets by iteration to a fixed point.
+
+(defn- succ-count [Q :vector-i64 k :i64 n :i64] :i64
+  (let [op (qf Q k 0) unguarded (= (u64-shift-right (qf Q k 1) 1) 7)]
+    (cond (and (= op MI-EXIT) unguarded) 0
+          (and (= op MI-BRA) unguarded) 1
+          (= op MI-BRA) 2
+          (>= (+ k 1) n) 0
+          :else 1)))
+
+;; successor s (0 or 1) of k
+(defn- succ [Q :vector-i64 k :i64 s :i64] :i64
+  (let [op (qf Q k 0) unguarded (= (u64-shift-right (qf Q k 1) 1) 7) tgt (+ k 1 (qf Q k 6))]
+    (cond (and (= op MI-BRA) unguarded) tgt
+          (= op MI-BRA) (if (= s 0) (+ k 1) tgt)
+          :else (+ k 1))))
+
+;; the GPR uses and kills of each instruction
+(defn- gpr-sets [Q :vector-i64 N :vector-i64 w :i64 U :vector-i64 K :vector-i64] :i64
+  (let [n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) 0
+        (let [op (qf Q k 0) m (gpr-fields op) unguarded (= (u64-shift-right (qf Q k 1) 1) 7)
+              z (loop [j 0]
+                  (if (>= j 4) 0
+                    (let [v (qf Q k (+ 2 j)) nd (if (fbit m j) (node-of N v) -1)
+                          y (cond (< nd 0) 0
+                                  (and (= j 0) (gpr-def? op))
+                                  ;; a write of a pair's high register does not kill
+                                  (if (and unguarded (not= (vector-at N (- v RA-V0)) 3)) (bset K (* k w) nd) 0)
+                                  :else (bset U (* k w) nd))]
+                      (recur (inc j)))))]
+          (recur (inc k)))))))
+
+(defn- pred-sets [Q :vector-i64 pw :i64 U :vector-i64 K :vector-i64] :i64
+  (let [n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) 0
+        (let [op (qf Q k 0) g (u64-shift-right (qf Q k 1) 1) unguarded (= g 7)
+              a (if (>= g RA-P0) (bset U (* k pw) (- g RA-P0)) 0)
+              b (if (and (= op MI-SEL) (>= (qf Q k 6) RA-P0)) (bset U (* k pw) (- (qf Q k 6) RA-P0)) 0)
+              c (if (and (pred-def? op) unguarded (>= (qf Q k 2) RA-P0)) (bset K (* k pw) (- (qf Q k 2) RA-P0)) 0)]
+          (recur (inc k)))))))
+
+;; live-out O from uses U and kills K, w words per set: out(k) = union of
+;; in(s) over the successors, in(k) = U(k) | (out(k) & ~K(k)); iterate
+;; backwards until nothing changes
+(defn- in-word [U :vector-i64 K :vector-i64 O :vector-i64 at :i64] :i64
+  (bit-or (vector-at U at) (bit-and (vector-at O at) (bit-not (vector-at K at)))))
+
+(defn- liveness [Q :vector-i64 w :i64 U :vector-i64 K :vector-i64] :vector-i64
+  (let [n (mi-count Q) O (vector-alloc (* (+ n 1) w))]
+    (loop [round 0]
+      (let [changed
+            (loop [k (- n 1) ch 0]
+              (if (< k 0) ch
+                (let [ns (succ-count Q k n)
+                      c (loop [i 0 c0 0]
+                          (if (>= i w) c0
+                            (let [v (loop [s 0 acc 0]
+                                      (if (>= s ns) acc
+                                        (let [t (succ Q k s)]
+                                          (recur (inc s) (if (and (>= t 0) (< t n)) (bit-or acc (in-word U K O (+ (* t w) i))) acc)))))
+                                  old (vector-at O (+ (* k w) i))]
+                              (if (= v old) (recur (inc i) c0)
+                                (let [z (vector-assoc! O (+ (* k w) i) (bit-or v old))] (recur (inc i) 1))))))]
+                  (recur (dec k) (bit-or ch c)))))]
+        (if (and (= changed 0) (> round 0)) O (recur (inc round)))))))
+
+;; ---------------------------------------------------------------------
+;; Interference and colouring.
+
+(defn- interfere [I :vector-i64 w :i64 a :i64 b :i64] :i64
+  (if (= a b) 0 (let [x (bset I (* a w) b)] (bset I (* b w) a))))
+
+;; every node written at k interferes with every node live after k; the
+;; result of a variable-latency instruction also with its sources
+(defn- gpr-interference [Q :vector-i64 N :vector-i64 w :i64 nn :i64 O :vector-i64] :vector-i64
+  (let [I (vector-alloc (* nn w)) n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) I
+        (let [op (qf Q k 0) m (gpr-fields op) d (if (gpr-def? op) (node-of N (qf Q k 2)) -1)
+              a (if (< d 0) 0
+                  (loop [x 0] (if (>= x nn) 0 (let [y (if (bget O (* k w) x) (interfere I w d x) 0)] (recur (inc x))))))
+              b (if (or (< d 0) (not (or (= op MI-S2R) (= op MI-LDG) (= op MI-LDS) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I)))) 0
+                  (loop [j 1] (if (>= j 4) 0
+                                (let [s (if (fbit m j) (node-of N (qf Q k (+ 2 j))) -1) y (if (>= s 0) (interfere I w d s) 0)] (recur (inc j))))))]
+          (recur (inc k)))))))
+
+(defn- pred-interference [Q :vector-i64 pw :i64 np :i64 O :vector-i64] :vector-i64
+  (let [I (vector-alloc (* (+ np 1) pw)) n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) I
+        (let [op (qf Q k 0) d (if (and (pred-def? op) (>= (qf Q k 2) RA-P0)) (- (qf Q k 2) RA-P0) -1)
+              a (if (< d 0) 0
+                  (loop [x 0] (if (>= x np) 0 (let [y (if (bget O (* k pw) x) (interfere I pw d x) 0)] (recur (inc x))))))]
+          (recur (inc k)))))))
+
+;; colour node i with width wd (1 or 2) and limit hi (the last colour + 1):
+;; the lowest colour (even for a pair) not taken by a coloured neighbour
+(defn- colour [I :vector-i64 w :i64 nn :i64 C :vector-i64 N :vector-i64 i :i64 wd :i64 hi :i64] :i64
+  (let [T (vector-alloc 256)
+        z (loop [x 0]
+            (if (>= x nn) 0
+              (let [y (if (and (bget I (* i w) x) (>= (vector-at C x) 0))
+                        (let [c (vector-at C x) a (vector-assoc! T c 1)]
+                          (if (and (< x (vector-count N)) (= (vector-at N x) 2)) (let [b (vector-assoc! T (+ c 1) 1)] 0) 0))
+                        0)]
+                (recur (inc x)))))]
+    (loop [c 0]
+      (cond (> (+ c wd) hi) -1
+            (and (= (vector-at T c) 0) (or (= wd 1) (= (vector-at T (+ c 1)) 0))) c
+            :else (recur (+ c wd))))))
+
+;; ---------------------------------------------------------------------
+
+(defn- rewrite [Q :vector-i64 N :vector-i64 C :vector-i64 PC :vector-i64] :i64
+  (let [n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) 0
+        (let [op (qf Q k 0) m (gpr-fields op)
+              a (loop [j 0]
+                  (if (>= j 4) 0
+                    (let [v (qf Q k (+ 2 j))
+                          y (if (and (fbit m j) (>= v RA-V0))
+                              (let [nd (node-of N v)] (qs Q k (+ 2 j) (+ (vector-at C nd) (- v (+ nd RA-V0)))))
+                              0)]
+                      (recur (inc j)))))
+              gm (qf Q k 1) g (u64-shift-right gm 1)
+              b (if (>= g RA-P0) (qs Q k 1 (+ (* 2 (vector-at PC (- g RA-P0))) (bit-and gm 1))) 0)
+              c (if (and (pred-def? op) (>= (qf Q k 2) RA-P0)) (qs Q k 2 (vector-at PC (- (qf Q k 2) RA-P0))) 0)
+              e (if (and (= op MI-SEL) (>= (qf Q k 6) RA-P0)) (qs Q k 6 (vector-at PC (- (qf Q k 6) RA-P0))) 0)]
+          (recur (inc k)))))))
+
+;; allocate the registers of Q in place; answers Q (its error RA-E-REGS when
+;; a node finds no register)
+(defn sm70-regalloc [Q :vector-i64] :vector-i64
+  (if (not= (mi-error Q) 0) Q
+    (let [n (mi-count Q) MX (max-virtual Q)
+          nn (- (vector-at MX 0) RA-V0) np (- (vector-at MX 1) RA-P0)
+          w (+ 1 (u64-shift-right nn 6)) pw (+ 1 (u64-shift-right np 6))
+          N (node-kinds Q nn)
+          U (vector-alloc (* (+ n 1) w)) K (vector-alloc (* (+ n 1) w))
+          s1 (gpr-sets Q N w U K)
+          O (liveness Q w U K)
+          I (gpr-interference Q N w nn O)
+          PU (vector-alloc (* (+ n 1) pw)) PK (vector-alloc (* (+ n 1) pw))
+          s2 (pred-sets Q pw PU PK)
+          PO (liveness Q pw PU PK)
+          PI (pred-interference Q pw np PO)
+          C (loop [i 0 V (vector-alloc nn)] (if (>= i nn) V (recur (inc i) (vector-assoc! V i -1))))
+          PC (loop [i 0 V (vector-alloc (+ np 1))] (if (>= i np) V (recur (inc i) (vector-assoc! V i -1))))
+          ok (loop [i 0]
+               (cond (>= i nn) true
+                     (or (= (vector-at N i) 0) (= (vector-at N i) 3)) (recur (inc i))
+                     :else (let [c (colour I w nn C N i (if (= (vector-at N i) 2) 2 1) 255)]
+                             (if (< c 0) false (let [z (vector-assoc! C i c)] (recur (inc i)))))))
+          pok (loop [i 0]
+                (cond (>= i np) true
+                      :else (let [c (colour PI pw np PC (vector-alloc 0) i 1 7)]
+                              (if (< c 0) false (let [z (vector-assoc! PC i c)] (recur (inc i)))))))]
+      (if (not (and ok pok)) (let [z (ra-fail Q)] Q)
+        (let [z (rewrite Q N C PC)] Q)))))

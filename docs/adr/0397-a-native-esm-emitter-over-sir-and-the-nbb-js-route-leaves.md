@@ -207,6 +207,12 @@ Four things differ from the design above. They were measured, not assumed:
   the entry ABI's file read returned -1 and the runtime refused it. The host
   now decodes `.slice()` copies on both targets.
 
+The extra module needs about 3,000 more static tokens than main had to spare
+on the x86_64 static cross compile (E101 region 1, measured by padding). JUN-737
+(#1756) raised the static profile's token table to 1048576 on main, with a
+native headroom guard. This change rides on that table and does not move the
+static profile or the CDCI pins itself.
+
 `scripts/seed/check-js-browser.py` (Mac CI) compiles the 24 runtime cases and
 the probes to both targets, runs them in headless Chrome, and checks:
 

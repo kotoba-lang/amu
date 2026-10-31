@@ -167,6 +167,63 @@
         g2 (one (sm70-shr-imm (P) G C0 5 6 1 2) "refuse.shr.signed")]
     (+ a b c d e f h i j k l m n o p q r s t u v w x y z a2 b2 c2 d2 e2 f2 g2)))
 
+;; the decode kernels' operations (JUN-739)
+(defn- decode-ops [] :i64
+  (let [a (one (sm70-fadd-neg (P) G C0 4 5 6 0 1) "fadd.neg.b")
+        b (one (sm70-fadd-neg (P) G C2 4 5 255 1 1) "fadd.neg.ab.rz")
+        c (one (sm70-iadd3-neg (P) G C0 1 2 3 255 0 1 0) "iadd3.neg.b")
+        d (one (sm70-iadd3-neg (P) G C0 1 255 3 4 1 0 1) "iadd3.neg.ac")
+        e (one (sm70-fsetp (P) G C0 0 4 5 1 0) "fsetp.lt")
+        f (one (sm70-fsetp (P) (sm70-guard 2 1) C2 6 4 5 13 1) "fsetp.neu.ftz.np2")
+        h (one (sm70-fsetp-imm (P) G C0 3 9 0 13 0) "fsetp.imm.neu.zero")
+        i (one (sm70-fsetp-imm (P) G C0 1 9 0x41a00000 4 0) "fsetp.imm.gt")
+        j (one (sm70-fmnmx (P) G C0 4 5 6 0 0) "fmnmx.max")
+        k (one (sm70-fmnmx (P) G C2 4 5 6 1 1) "fmnmx.min.ftz")
+        l (one (sm70-imnmx (P) G C0 4 5 6 1 0) "imnmx.min.u32")
+        m (one (sm70-imnmx (P) G C0 4 5 6 0 1) "imnmx.max.s32")
+        n (one (sm70-sel (P) G C0 7 8 9 2 0) "sel.p2")
+        o (one (sm70-sel (P) G C2 7 8 255 5 1) "sel.np5.rz")
+        q (one (sm70-sel-imm (P) G C0 7 8 0x3f800000 0 0) "sel.imm")
+        r (one (sm70-mufu (P) G C1 10 11 0) "mufu.cos")
+        s (one (sm70-mufu (P) G C1 10 11 1) "mufu.sin")
+        u (one (sm70-mufu (P) G C1 10 11 2) "mufu.ex2")
+        v (one (sm70-mufu (P) G C1 10 11 3) "mufu.lg2")
+        w (one (sm70-mufu (P) G C1 10 11 4) "mufu.rcp")
+        x (one (sm70-mufu (P) G C2 10 11 5) "mufu.rsq")
+        y (one (sm70-mufu (P) G C0 10 11 8) "mufu.sqrt")
+        z (one (sm70-i2f (P) G C1 12 13 0 0) "i2f.u32")
+        a2 (one (sm70-i2f (P) G C2 12 13 1 3) "i2f.s32.rz")
+        b2 (one (sm70-f2i (P) G C1 12 13 0 3 0) "f2i.u32.trunc")
+        c2 (one (sm70-f2i (P) G C1 12 13 1 0 1) "f2i.s32.rn.ftz")
+        d2 (one (sm70-lop3 (P) G C0 4 5 6 7 0x80) "lop3.and3")
+        e2 (one (sm70-lop3 (P) G C0 4 5 6 255 0xfc) "lop3.or.rz")
+        f2 (one (sm70-lop3-imm (P) G C2 4 5 0xff 255 0xc0) "lop3.imm.and")
+        g2 (one (sm70-shf (P) G C0 4 5 6 255 2 1 0 0) "shf.l.w.s32")
+        h2 (one (sm70-shf (P) G C0 4 255 6 5 3 1 1 1) "shf.r.w.u32.hi")
+        i2 (one (sm70-shf-imm (P) G C0 4 5 3 255 2 1 0 0) "shf.l.imm")
+        j2 (one (sm70-shf-imm (P) G C2 4 255 24 5 2 1 1 1) "shf.r.s32.hi.imm")
+        k2 (one (sm70-imad-wide (P) G C0 6 2 3 255 0) "imad.wide.u32.rz")
+        l2 (one (sm70-imad-wide (P) G C0 6 2 3 8 1) "imad.wide.s32.pair")
+        m2 (one (sm70-sgxt-imm (P) G C0 4 5 8 1) "sgxt.s8")
+        n2 (one (sm70-sgxt-imm (P) G C0 4 5 4 0) "sgxt.u4")]
+    (+ a b c d e f h i j k l m n o q r s u v w x y z a2 b2 c2 d2 e2 f2 g2 h2 i2 j2 k2 l2 m2 n2)))
+
+(defn- decode-refusals [] :i64
+  (let [a (one (sm70-fadd-neg (P) G C0 4 5 6 2 0) "refuse.fadd.neg")
+        b (one (sm70-iadd3-neg (P) G C0 1 2 3 4 1 1 0) "refuse.iadd3.neg2")
+        c (one (sm70-fsetp (P) G C0 0 4 5 15 0) "refuse.fsetp.cmp")
+        d (one (sm70-fsetp (P) G C0 8 4 5 1 0) "refuse.fsetp.pd")
+        e (one (sm70-mufu (P) G C0 4 5 9) "refuse.mufu.tanh")
+        f (one (sm70-mufu (P) G C0 4 5 6) "refuse.mufu.rcp64h")
+        h (one (sm70-i2f (P) G C0 4 5 0 4) "refuse.i2f.rnd")
+        i (one (sm70-lop3 (P) G C0 4 5 6 7 256) "refuse.lop3.lut")
+        j (one (sm70-shf-imm (P) G C0 4 5 64 255 3 1 1 1) "refuse.shf.imm")
+        k (one (sm70-shf (P) G C0 4 5 6 7 4 1 0 0) "refuse.shf.type")
+        l (one (sm70-imad-wide (P) G C0 6 2 3 7 0) "refuse.wide.reg.odd")
+        m (one (sm70-sel (P) G C0 7 8 9 8 0) "refuse.sel.pred")
+        n (one (sm70-sgxt-imm (P) G C0 4 5 33 1) "refuse.sgxt.bits")]
+    (+ a b c d e f h i j k l m n)))
+
 ;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
 ;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.
 ;; It is not a correct kernel: the address arithmetic is 32-bit (IMAD.WIDE
@@ -192,4 +249,4 @@
           (recur (inc k) (+ t (show M k (string-concat "saxpy." (string-from-i64 k)))))))
       (say "X saxpy"))))
 
-(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (shared) (refusals) (saxpy)))
+(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (shared) (refusals) (decode-ops) (decode-refusals) (saxpy)))
