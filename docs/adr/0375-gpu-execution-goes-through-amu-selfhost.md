@@ -259,6 +259,19 @@ NVIDIA's `libvulkan.so.1.3.204` loads with no `ld.so` and no glibc and answers 1
 equal to the system loader's answer with the drivers hidden; the NVIDIA ICD's `dlopen` refuses by name. Receipt:
 `docs/evidence/b2-aarch64-libvulkan-20261031/`. Slices 2 and on are still to come on both targets.
 
+### Route C first on Xavier, with nvgpu (the owner, 2026-10-31, JUN-701)
+
+The owner's words: 「C には依存しないように。amu selfhost のみで」, then 「route C で」 after the comparison of the
+two routes on Xavier (route B would keep NVIDIA's 16 user-space libraries in the process; route C keeps none). So on
+Xavier route C goes first, ahead of the B, W, C order above, and its first vendor is nvgpu (open question 2 below is
+answered for Xavier; amdgpu stays a later C target). Route B's aarch64 work (the image format and loader above)
+stays: route C's programs use `--format b2` for its raw system calls. Route B's NVIDIA ICD slice is not pursued.
+
+Step C1 is done: a Kotoba image reads the GPU's characteristics from nvgpu itself (gv11b, SM 7.2, compute class
+0xc3c0), equal to the same ioctl from Python (`tools/c`, `scripts/seed/check-c-nvgpu.py`,
+`docs/evidence/c-nvgpu-characteristics-20261031/`). Next: memory and the GPU address space (C2), a channel and a
+GPFIFO submission (C3), a compute launch of a hand-encoded SM 7.2 kernel (C4), and Amu's SM 7.2 back end (C5).
+
 ## Consequences
 
 * **B depends on glibc and driver internals.** The GPU hosts pin their
