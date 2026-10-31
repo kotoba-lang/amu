@@ -538,6 +538,33 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1754 (JUN-730: native closed
+  defmulti/defmethod as static case dispatch, reify refused; a core change
+  in `seed/00-ns`, `seed/20-names`, `seed/21-check` and `seed/90-drv`, core
+  pins `f24fcca6…` / `99655c7f…`).
+  * x86_64: F1 = F2 = F3 = `378ea274…` (9,359,872 bytes), from the
+    3,896,414-byte unity `8e1cb135…`. Its `--format host-entry` image is
+    `d8cc6af3…` (9,363,968 bytes).
+  * aarch64 root: F1 = F2 = `70409d44…` (3,908,096 bytes), container
+    `e9a315ea…`, derived under qemu from the `af636dca…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `f8e92b3e…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `99655c7f…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `a4d89387…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 233 kernel-object sources and the 13
+    `check-aiueos-user-plc-native` cases compile identically to main's
+    compiler.
+  * #1754's `seed/tests/native-closed-dispatch.kotoba` (its gate is
+    Mac-only) builds and exits 0 on x86_64-linux with this compiler and
+    main's, and under qemu-user with this aarch64 root, to the same
+    container as main's root.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
