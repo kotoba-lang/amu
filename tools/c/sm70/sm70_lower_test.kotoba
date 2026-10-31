@@ -1,8 +1,8 @@
 (ns sm70-lower-test (:export [main]))
 
 ;; The lowering and the scheduler (JUN-723), on the host. The unit is this ns
-;; line, then tools/spirv_encode.kotoba, sm70_encode.kotoba, sm70_sched.kotoba
-;; and sm70_lower.kotoba without their ns lines, then the rest of this file
+;; line, then tools/spirv_encode.kotoba, sm70_encode.kotoba, sm70_sched.kotoba,
+;; sm70_regalloc.kotoba and sm70_lower.kotoba without their ns lines, then the rest of this file
 ;; (scripts/seed/check-sm70-lower.py). Arguments: the number of modules, then
 ;; per module its name and its words as one argument, decimal and separated
 ;; by commas (bin/amu passes about 60 arguments at most), as
@@ -61,7 +61,7 @@
 ;; be read); R3 = R2 + R2 (reads the load); R4 = R3 + R3 (a fixed-latency
 ;; read); [R0:R1 + 4] <- R4; EXIT
 (defn- war [] :i64
-  (let [Q (mi-new 8) G (sm70-guard 7 0)
+  (let [Q (mi-new 8) G (mi-g 7 0)
         a (mi-add Q MI-LDG G 2 0 0 0 0 0)
         b (mi-add Q MI-MOVI G 0 0 0 0 5 0)
         c (mi-add Q MI-FADD G 3 2 2 0 0 0)
@@ -75,7 +75,7 @@
 ;; to the first instruction (which rewrites the STS's source while it may
 ;; still be read); EXIT
 (defn- loopwar [] :i64
-  (let [Q (mi-new 4) G (sm70-guard 7 0)
+  (let [Q (mi-new 4) G (mi-g 7 0)
         a (mi-add Q MI-MOVI G 1 0 0 0 7 0)
         b (mi-add Q MI-STS G 0 255 1 0 0 0)
         c (mi-add Q MI-BRA G 0 0 0 0 -3 0)
@@ -83,8 +83,24 @@
         M (sm70-emit-mir (sm70-schedule Q))]
     (show "loopwar" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
 
+;; the allocator (JUN-739), in virtual registers: v256 = 5, v257 = 7; p8 =
+;; v256 < v257; p9 = v257 < v256; v258 = p8 ? v256 : v257; v259 = p9 ? v256
+;; : v257; v260 = v258 + v259; EXIT. p8 and p9 are live together.
+(defn- rapred [] :i64
+  (let [Q (mi-new 8) G (mi-g 7 0)
+        a (mi-add Q MI-MOVI G 256 0 0 0 5 0)
+        b (mi-add Q MI-MOVI G 257 0 0 0 7 0)
+        c (mi-add Q MI-ISETP G 8 256 257 0 1 0)
+        d (mi-add Q MI-ISETP G 9 257 256 0 1 0)
+        e (mi-add Q MI-SEL G 258 256 257 0 8 0)
+        f (mi-add Q MI-SEL G 259 256 257 0 9 0)
+        h (mi-add Q MI-IADD3 G 260 258 259 255 0 0)
+        i (mi-add Q MI-EXIT G 0 0 0 0 0 0)
+        M (sm70-emit-mir (sm70-schedule (sm70-regalloc Q)))]
+    (show "rapred" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
+
 (defn main [] :i64
   (let [nm (num (arg 0))
         t (loop [m 0 t 0]
             (if (>= m nm) t (recur (inc m) (+ t (one (arg (+ 1 (* 2 m))) (words (arg (+ 2 (* 2 m)))))))))]
-    (+ t (war) (loopwar))))
+    (+ t (war) (loopwar) (rapred))))

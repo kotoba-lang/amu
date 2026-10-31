@@ -11,14 +11,18 @@ launching these words on Xavier is JUN-714 (C4). The lowering of a KIR v2 kernel
 | `sm70_encode_test.kotoba` | the cases: one line per encoded word or refusal, and a 12-instruction kernel-shaped sequence |
 | `sm70_sched.kotoba` | a machine IR in program order and the scheduler that fills in each instruction's stall, yield, write/read barrier and wait mask, then encodes the IR (JUN-723) |
 | `sm70_lower.kotoba` | the lowering of a KIR v2 kernel's SPIR-V words to that IR (JUN-723) |
+| `sm70_regalloc.kotoba` | the register and predicate allocator that maps the lowering's virtual registers to R0..R254 and P0..P6 (JUN-739) |
 | `sm70_lower_modules.kotoba`, `sm70_lower_test.kotoba` | the two units of the lowering check: the KIR v2 modules, then their lowered words and two scheduler-only WAR cases |
 
 Layout: an instruction is two i64 halves, `lo` = bits 0..63 and `hi` = bits 64..127; the encoder writes fields by
 their 128-bit bit numbers, as the reference does. The control word occupies bits 105..125: stall 105..108, yield
 109, write barrier 110..112, read barrier 113..115 (7 = none), wait mask 116..121, reuse 122..125. Registers are
-R0..R254 and RZ = 255; predicates P0..P6 and PT = 7; convergence barriers B0..B15. Not covered yet: source modifiers
-(neg/abs), constant-bank operands other than MOV's, uniform operands, IADD3.X, FSETP and the other SETP forms, local
-memory, the other BAR forms (ARV, RED, a barrier number other than 0). The encoder's callers pass the control bits;
+R0..R254 and RZ = 255; predicates P0..P6 and PT = 7; convergence barriers B0..B15. The decode kernels (JUN-739)
+added FADD and IADD3 with negated sources, FSETP (register and immediate), FMNMX, IMNMX, SEL (register and
+immediate), MUFU (COS, SIN, EX2, LG2, RCP, RSQ, SQRT), I2F and F2I (32-bit), LOP3 (register and immediate), SHF
+(register and immediate shift, every type), IMAD.WIDE with a register multiplier and SGXT. Not covered yet: abs
+modifiers, constant-bank operands other than MOV's, uniform operands, IADD3.X, PLOP3 and the other SETP forms,
+SHFL, PRMT, local memory, the other BAR forms (ARV, RED, a barrier number other than 0). The encoder's callers pass the control bits;
 `sm70_sched.kotoba` chooses them for the lowering.
 
 BAR.SYNC follows NAK, which writes the opcode 0xb1d and nothing else. The recalled CUDA listing word for
@@ -31,11 +35,12 @@ BSSY/BSYNC), as NAK does. Whether bit 80 matters on gv11b is for the run on Xavi
 The kernels lowered are `kir2-ewise` from `tools/gpu_kernels_v2.kotoba` (z[i] = x[i] op y[i] for i < n, ADR 0372):
 add and mul at LocalSize 256 and 64; and `kir2-dot-rows` (o[row] = sum over k of w[row cols + k] x[k], one
 workgroup of 256 per row: a strided loop over k into a function variable, the partial sums in a shared array, a
-tree reduction with barriers, thread 0 stores) (JUN-725). Ewise sub (no FADD negate modifier yet) is refused by
-code. The pass reads the module's SPIR-V words, not the KIR builder's calls, so it lowers what the Vulkan route
+tree reduction with barriers, thread 0 stores) (JUN-725). Ewise sub lowers since JUN-739 (FADD with a negated
+source). The pass reads the module's SPIR-V words, not the KIR builder's calls, so it lowers what the Vulkan route
 would load.
 
-ewise add, LocalSize 256, is 22 instructions:
+ewise add, LocalSize 256, is 22 instructions (the register numbers below are from before the allocator of JUN-739,
+which packs them into R0..R13; `--receipt` has the current words):
 
 ```
 S2R R0, SR_CTAID.X          S2R R1, SR_TID.X           IMAD R2, R0, 256, R1        (i)
@@ -49,7 +54,7 @@ EXIT                         BRA self
 
 The launch interface is the lowering's assumption, for the launcher (JUN-714) to confirm or change: binding b's
 64-bit device address is at `c[0][0x160 + 8 b]`, where CUDA puts kernel parameters on Volta, and the grid's x
-dimension is ceil(n / LocalSize.x). Registers are not reused.
+dimension is ceil(n / LocalSize.x). Registers are allocated by `sm70_regalloc.kotoba` (JUN-739, below).
 
 dot_rows is 72 instructions. Its launch: bindings 0 Meta {rows, cols : u32}, 1 W, 2 X, 3 O (f32); LocalSize 256;
 grid.x = rows; 1024 bytes of shared memory (Workgroup arrays are laid out from byte 0 in declaration order). The
@@ -132,6 +137,77 @@ loads in flight across the back edge are later work.
 
 The interpreter times issue by the same model the scheduler uses. So the check shows that the control bits keep
 that model; it does not show that the model is Volta's. Execution on Xavier (JUN-714) is the independent test.
+
+## The decode kernels of qwen2.5-0.5b q8_0 (JUN-739)
+
+One decode token of Qwen2.5-0.5B-Instruct q8_0 (24 dense layers, hidden 896, 14 query and 2 KV heads of 64, FFN
+4864, vocabulary 151936) runs these kernels, in the unfused f32 form of inference's generator
+(`verify/native/gpu/gen_decode_tokens_guest.cljk` at kotoba-lang/inference `3e5da0d`: `emit-dense-layer!`,
+`emit-lm-head!` and the token loop; layout table "radv", the f32 kernels that also ran this model on Xavier in its
+tick 55). Every kernel is a KIR v2 module of `tools/gpu_kernels_v2.kotoba`:
+
+| step | kernel | KIR v2 module | SPIR-V it needs beyond the earlier subset | here |
+|---|---|---|---|---|
+| token row | `embed_q8` (embed_iq4xs.comp -DQ8) | `(kir2-embed 8)` | BitFieldSExtract, ConvertSToF, the half scale (UnpackHalf2x16), SGreaterThanEqual | not yet |
+| norms | `rmsnorm` | `(kir2-nex-op 1)` | InverseSqrt, FDiv, ConvertUToF, Select | **lowered, gated** |
+| q, k, v, o, gate, up, down | `kdot_f32_r8` (wide) and `kdot_f32_r1` (narrow), Q8_0 arm | `(kir2-kdot-f32-r8 8)`, `(kir2-kdot-f32-r1)` | every tensor type's arm: vectors, OpDot, BitFieldSExtract, UnpackHalf2x16, Function arrays | not yet |
+| q, k, v bias | `add_bias` | `(kir2-nex-op 11)` | UDiv by a register, ISub | **lowered, gated** |
+| rope | `rope_neox` | `(kir2-nex-op 15)` | Pow, Sin, Cos, a select of booleans, a branch inside an if (continue) | not yet |
+| KV cache write | `copy_at` | `(kir2-nex-op 8)` | FUnordNotEqual (the dynamic position) | **lowered, gated** |
+| attention: score, softmax, weighted sum | `attn_decode` | `(kir2-nex-op 16)` | Exp, FMax, FOrdLessThan, FNegate, seven barriers, five loops | not yet |
+| residual and norm | `add_rmsnorm` | `(kir2-nex-op 13)` | as rmsnorm | **lowered, gated** |
+| SwiGLU | `silu_mul` | `(kir2-nex-op 4)` | Exp, FNegate, FDiv | **lowered, gated** |
+| residual | `add` | `(kir2-nex-op 10)` | none | **lowered, gated** |
+| final norm | `rmsnorm` | `(kir2-nex-op 1)` | as above | **lowered, gated** |
+| lm head | `kdot_f32_r1` | `(kir2-kdot-f32-r1)` | as the matvecs | not yet |
+| argmax | `argmax_partial`, `argmax_final` | `(kir2-nex-op 18)`, `(kir2-nex-op 19)` | LogicalAnd / LogicalOr (PLOP3), Bitcast | not yet |
+| position | `pos_incr` | `(kir2-nex-op 14)` | none | **lowered, gated** |
+
+The fused decode forms of the generator (`attn_copy_dense`, the h2 / int8 kdots) are speed variants of the same
+arithmetic and are not needed for one token. nex_ops modules share their bindings: 0 Meta {n rows aux aux2 : u32,
+eps scale p0 p1 : f32}, 1 a, 2 b, 3 c, 4 o, 5 s (f32), 6 ids (u32); LocalSize 256; grid.x per op as the generator
+dispatches it (rows for the norms, ceil(n / 256) for the elementwise ops).
+
+How the new SPIR-V lowers, following NAK (`from_nir.rs`, `builder.rs` at the same revision): exp(x) is MUFU.EX2 of
+x log2 e; pow(x, y) is MUFU.EX2(MUFU.LG2(x) y); sin and cos are MUFU.SIN / COS of x / (2 pi); inversesqrt is
+MUFU.RSQ; a / b is a times MUFU.RCP(b); FNegate is FADD -RZ, -x and FSub FADD a, -b; ISub is IADD3 a, -b, RZ; float compares
+are FSETP (ordered or unordered as SPIR-V says); Select is SEL; FMax / FMin are FMNMX and UMin / UMax / SMin / SMax
+IMNMX; shifts are SHF (left: SHF.L.W.S32, right: SHF.R.W.HI.U32); bitwise ops are LOP3; integer-float conversions
+are I2F / F2I (toward zero). Unsigned division by a constant power of two is a shift; by a register it is
+nir_lower_idiv's sequence (I2F, MUFU.RCP, a scale, F2I, one Newton step with IMAD.WIDE high words, two fix-ups) with
+one deliberate change: the reciprocal is scaled by 2^32 - 2048 instead of nir's 2^32 - 512. nir's margin keeps the
+quotient exact only while MUFU.RCP overshoots by less than about one unit in the last place; with 2048 it is exact
+for a reciprocal up to three units off either way (checked over random and edge numerators and divisors with the
+reciprocal moved by -6..+6 units: exact for -6..+3).
+
+NAK counts MUFU, I2F and F2I as variable latency, so the scheduler gives them scoreboards like the loads; a SEL
+waits for its predicate as a guard does.
+
+**Register allocation** (`sm70_regalloc.kotoba`). The lowering gives out virtual GPRs from 256 and virtual
+predicates from 8; the allocator computes liveness over the IR's control flow (a BRA's target, the fall-through, an
+unguarded EXIT ends the thread; a guarded write does not end the old value), records interference where a node is
+written while another is live after it (and between a variable-latency instruction's result and its sources, which
+it still reads after issue), and colours nodes in order with the lowest free register; a register pair (LDG / STG
+address, IMAD.WIDE result and addend) is one node on an even register. ewise now uses R0..R13, dot_rows R0..R19,
+add_bias R0..R7 and the norms R0..R16. A module that needs more than R0..R254 or P0..P6 is refused (104). A
+hand-written case (`rapred` in `sm70_lower_test.kotoba`) holds two predicates live at once; none of the kernels
+lowered so far does.
+
+The check (`check-sm70-lower.py`) runs each decode kernel in the host interpreter, a workgroup at a time, and
+compares every word it may write with the f64 reference: exact for add, add_bias, copy_at and pos_incr (and the
+residual add_rmsnorm stores); relative error at most 1e-3 for silu_mul, rmsnorm and add_rmsnorm. Every other word
+of every buffer must keep its value. The interpreter models MUFU as the f64 function rounded to f32 and moved by a
+pseudo-random 0..2 units in the last place, so the gates do not depend on correct rounding, which hardware does
+not give. The cases use Qwen's widths (896, 128 the KV row) and odd ones (1, 7, 300, 1000, 1100).
+
+Negative controls added with the decode kernels, each detected: in the emitted words, MUFU.RSQ turned into RCP
+(rmsnorm), the division's fix-up compare inverted (add_bias) and the wait on a MUFU source dropped (silu_mul); built
+mutants of the lowering (nir's 2^32 - 512 division margin, the reciprocal of the numerator, exp without log2 e,
+inversesqrt as RCP, FNegate keeping the sign, ISub as IADD, unordered != as ==, ConvertUToF as F2I, Select's arms
+swapped), of the scheduler (MUFU as fixed latency, SEL not waiting for its predicate) and of the allocator (no
+interference, none between a variable-latency result and its sources, a guarded write ending a value, no back edge
+in liveness, no predicate interference). `check-sm70-encode.py` checks the thirteen new emitters (36 words and 13
+refusals) bit for bit against its NAK transcription, with thirteen more built mutants.
 
 ## Reference
 

@@ -42,8 +42,10 @@
 ;; stride for an element index, and the struct member offset in the LDG/STG
 ;; immediate.
 ;;
-;; Registers are given out in order and never reused (R0 up, pairs even);
-;; predicates likewise (P0 up). A module needing more is refused.
+;; Registers are given out in order as virtual registers (from 256, pairs
+;; even) and predicates as virtual predicates (from 8); sm70-regalloc
+;; (sm70_regalloc.kotoba) maps them to R0..R254 and P0..P6 at the end and
+;; refuses a module that needs more.
 ;;
 ;; A unit that uses this file prepends its own ns line and drops this one,
 ;; after sm70_encode.kotoba and sm70_sched.kotoba.
@@ -53,6 +55,10 @@
 (def SL-E-OP 102)      ;; an instruction outside the subset (sm70-lower-error-op names it)
 (def SL-E-SHAPE 103)   ;; a supported instruction in an unsupported form
 (def SL-E-REGS 104)    ;; out of registers or predicates
+;; the virtual registers (sm70_regalloc.kotoba maps them): GPRs from 256,
+;; predicates from 8
+(def SL-VMAX 16000)
+(def SL-PMAX 4000)
 
 ;; SPIR-V numbers used here
 (def SP-ENTRY 15)
@@ -76,6 +82,23 @@
 (def SP-ACCESS 65)
 (def SP-INBOUNDS 66)
 (def SP-EXTRACT 81)
+(def SP-EXTIMPORT 11)
+(def SP-EXTINST 12)
+(def SP-FTOU 109)
+(def SP-FTOS 110)
+(def SP-STOF 111)
+(def SP-UTOF 112)
+(def SP-BITCAST 124)
+(def SP-FNEG 127)
+(def SP-ISUB 130)
+(def SP-FSUB 131)
+(def SP-UDIV 134)
+(def SP-FDIV 136)
+(def SP-SELECT 169)
+(def SP-SHLL 196)
+(def SP-BOR 197)
+(def SP-BXOR 198)
+(def SP-BAND 199)
 (def SP-IADD 128)
 (def SP-FADD 129)
 (def SP-IMUL 132)
@@ -118,19 +141,20 @@
 ;; open if's merge label (0 none), 4 its then label, 5 its else label, 6 in
 ;; the else block, 7 LocalSize x, 8 the constant-bank base, 9 the refused
 ;; opcode, 10 the id bound, 11 the byte offset of the last address, 12 the
-;; last label, 13 the next convergence barrier, 14 the next shared byte
+;; last label, 13 the next convergence barrier, 14 the next shared byte,
+;; 15 the id of the GLSL.std.450 import
 (defn- lg [L :vector-i64 k :i64] :i64 (vector-at L k))
 (defn- ls [L :vector-i64 k :i64 v :i64] :i64 (let [z (vector-assoc! L k v)] v))
 
 (defn- fail [Q :vector-i64 code :i64] :i64 (let [z (if (= (vector-at Q 1) 0) (vector-assoc! Q 1 code) Q)] -1))
 
 (defn- gpr [Q :vector-i64 L :vector-i64] :i64
-  (let [r (lg L 0)] (if (> r 253) (fail Q SL-E-REGS) (let [z (ls L 0 (inc r))] r))))
+  (let [r (lg L 0)] (if (> r SL-VMAX) (fail Q SL-E-REGS) (let [z (ls L 0 (inc r))] r))))
 (defn- gpr-pair [Q :vector-i64 L :vector-i64] :i64
   (let [r0 (lg L 0) r (if (= (bit-and r0 1) 0) r0 (inc r0))]
-    (if (> r 252) (fail Q SL-E-REGS) (let [z (ls L 0 (+ r 2))] r))))
+    (if (> r SL-VMAX) (fail Q SL-E-REGS) (let [z (ls L 0 (+ r 2))] r))))
 (defn- pred [Q :vector-i64 L :vector-i64] :i64
-  (let [p (lg L 1)] (if (> p 6) (fail Q SL-E-REGS) (let [z (ls L 1 (inc p))] p))))
+  (let [p (lg L 1)] (if (> p SL-PMAX) (fail Q SL-E-REGS) (let [z (ls L 1 (inc p))] p))))
 
 (defn- add [Q :vector-i64 L :vector-i64 op :i64 d :i64 a :i64 b :i64 c :i64 x :i64 y :i64] :i64
   (mi-add Q op (lg L 2) d a b c x y))
@@ -157,6 +181,8 @@
 (defn- scan-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
   (let [n (lg L 10)]
     (cond (= op SP-EXECMODE) (if (= (w W (+ at 2)) 17) (ls L 7 (w W (+ at 3))) 0)
+          ;; the one extended set KIR v2 imports is GLSL.std.450
+          (= op SP-EXTIMPORT) (ls L 15 (w W (+ at 1)))
           (= op SP-DECORATE)
           (let [i (w W (+ at 1)) dec (w W (+ at 2)) v (if (> wc 3) (w W (+ at 3)) 0)]
             (cond (= dec 33) (dset D n 0 i v) (= dec 11) (dset D n 1 i v)
@@ -276,17 +302,125 @@
 (defn- int-cmp [op :i64] :i64
   (case op 170 2 171 5 172 4 173 12 174 6 175 14 176 1 177 9 178 3 179 11 -1))
 
+;; the float compare of a SPIR-V opcode as an sm70-fsetp compare, -1 when op
+;; is not one: OpFOrd* (180 ==, 182 !=, 184 <, 186 >, 188 <=, 190 >=) and
+;; OpFUnord* (181, 183, 185, 187, 189, 191)
+(defn- float-cmp [op :i64] :i64
+  (case op 180 2 181 10 182 5 183 13 184 1 185 9 186 4 187 12 188 3 189 11 190 6 191 14 -1))
+
+;; MUFU functions (sm70-mufu)
+(def SL-COS 0)
+(def SL-SIN 1)
+(def SL-EX2 2)
+(def SL-LG2 3)
+(def SL-RCP 4)
+(def SL-RSQ 5)
+;; f32 bit patterns: log2(e), 1 / (2 pi), 2^32 - 2048 (see udiv)
+(def SL-LOG2E 0x3fb8aa3b)
+(def SL-INV2PI 0x3e22f983)
+(def SL-RCP-SCALE 0x4f7ffff8)
+
+;; d = a shifted by b: a constant 0..31 by an immediate, else by a register
+;; (SHF wraps the count to 0..31; SPIR-V leaves larger ones undefined)
+(defn- shift [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 right :bool] :i64
+  (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) bid (w W (+ at 4))]
+    (cond (< a 0) (fail Q SL-E-SHAPE)
+          (= (tg T bid 0) 8)
+          (if (> (tg T bid 2) 31) (fail Q SL-E-SHAPE)
+            (let [r (gpr Q L) e (add Q L (if right MI-SHR MI-SHLI) r a 0 0 (tg T bid 2) 0)] (tset T id 11 r 0 0 0)))
+          :else
+          (let [b (opnd T Q L bid)]
+            (if (< b 0) (fail Q SL-E-SHAPE)
+              (let [r (gpr Q L) e (add Q L (if right MI-SHRR MI-SHLR) r a b 0 0 0)] (tset T id 11 r 0 0 0)))))))
+
+;; the log2 of a power of two, else -1
+(defn- log2-exact [v :i64] :i64
+  (if (or (<= v 0) (not= (bit-and v (- v 1)) 0)) -1
+    (loop [k 0] (if (= (i64-shift-left 1 k) v) k (recur (inc k))))))
+
+;; n / d, unsigned. A constant power of two is a shift. Else nir_lower_idiv's
+;; sequence, which NAK compiles udiv with: rcp = f2u(rcp(u2f(d)) * S); rcp
+;; += umul_high(rcp, rcp * -d); q = umul_high(n, rcp); r = n - q d; then
+;; twice: if (r >= d) { q += 1; r -= d }. nir's S is 2^32 - 512, about one
+;; unit in the last place below 2^32: the result is exact only while
+;; MUFU.RCP overshoots 1 / d by less than that. Here S = 2^32 - 2048 keeps the
+;; quotient exact for a reciprocal up to 3 units off either way
+;; (scripts/seed/check-sm70-lower.py jitters MUFU results by 2).
+(defn- udiv [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64] :i64
+  (let [id (w W (+ at 2)) nid (w W (+ at 3)) did (w W (+ at 4))
+        k (if (= (tg T did 0) 8) (log2-exact (tg T did 2)) -1)
+        n (opnd T Q L nid)]
+    (cond (< n 0) (fail Q SL-E-SHAPE)
+          (= k 0) (tset T id 11 n 0 0 0)
+          (> k 0) (let [r (gpr Q L) e (add Q L MI-SHR r n 0 0 k 0)] (tset T id 11 r 0 0 0))
+          :else
+          (let [d (opnd T Q L did)]
+            (if (< d 0) (fail Q SL-E-SHAPE)
+              (let [f (gpr Q L) a1 (add Q L MI-I2F f d 0 0 0 0)
+                    rc (gpr Q L) a2 (add Q L MI-MUFU rc f 0 0 SL-RCP 0)
+                    sc (gpr Q L) a3 (add Q L MI-FMULI sc rc 0 0 SL-RCP-SCALE 0)
+                    r0 (gpr Q L) a4 (add Q L MI-F2I r0 sc 0 0 0 0)
+                    nd (gpr Q L) a5 (add Q L MI-IADD3 nd 255 d 255 0 2)
+                    m (gpr Q L) a6 (add Q L MI-IMAD m r0 nd 255 0 0)
+                    h (gpr-pair Q L) a7 (add Q L MI-IMADWR h r0 m 255 0 0)
+                    r1 (gpr Q L) a8 (add Q L MI-IADD3 r1 r0 (+ h 1) 255 0 0)
+                    qp (gpr-pair Q L) a9 (add Q L MI-IMADWR qp n r1 255 0 0)
+                    qd (gpr Q L) b1 (add Q L MI-IMAD qd (+ qp 1) d 255 0 0)
+                    rm (gpr Q L) b2 (add Q L MI-IADD3 rm n qd 255 0 2)
+                    one (gpr Q L) b3 (add Q L MI-MOVI one 0 0 0 1 0)
+                    p1 (pred Q L) b4 (add Q L MI-ISETP p1 rm d 0 6 0)
+                    q1 (gpr Q L) b5 (add Q L MI-IADD3 q1 (+ qp 1) one 255 0 0)
+                    q2 (gpr Q L) b6 (add Q L MI-SEL q2 q1 (+ qp 1) 0 p1 0)
+                    rd (gpr Q L) b7 (add Q L MI-IADD3 rd rm d 255 0 2)
+                    r2 (gpr Q L) b8 (add Q L MI-SEL r2 rd rm 0 p1 0)
+                    p2 (pred Q L) b9 (add Q L MI-ISETP p2 r2 d 0 6 0)
+                    q3 (gpr Q L) c1 (add Q L MI-IADD3 q3 q2 one 255 0 0)
+                    q4 (gpr Q L) c2 (add Q L MI-SEL q4 q3 q2 0 p2 0)]
+                (tset T id 11 q4 0 0 0)))))))
+
+;; OpExtInst of GLSL.std.450 (the id saved in L[15]): Exp, InverseSqrt, Pow,
+;; Sin, Cos, FMin, FMax, UMin, UMax, SMin, SMax. As NAK: exp(x) = EX2(x
+;; log2 e); pow(x, y) = EX2(LG2(x) y); sin and cos take turns, x / (2 pi).
+;; Another instruction is refused as SL-E-OP with 100000 + its number.
+(defn- mufu1 [Q :vector-i64 L :vector-i64 func :i64 a :i64] :i64
+  (let [r (gpr Q L) e (add Q L MI-MUFU r a 0 0 func 0)] r))
+(defn- fmuli [Q :vector-i64 L :vector-i64 a :i64 imm :i64] :i64
+  (let [r (gpr Q L) e (add Q L MI-FMULI r a 0 0 imm 0)] r))
+
+(defn- ext-inst [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 wc :i64] :i64
+  (let [id (w W (+ at 2)) set (w W (+ at 3)) func (w W (+ at 4))
+        a (if (> wc 5) (opnd T Q L (w W (+ at 5))) -1)
+        b (if (> wc 6) (opnd T Q L (w W (+ at 6))) 0)]
+    (if (or (not= set (lg L 15)) (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+      (let [r (cond (= func 27) (mufu1 Q L SL-EX2 (fmuli Q L a SL-LOG2E))
+                    (= func 32) (mufu1 Q L SL-RSQ a)
+                    (= func 13) (mufu1 Q L SL-SIN (fmuli Q L a SL-INV2PI))
+                    (= func 14) (mufu1 Q L SL-COS (fmuli Q L a SL-INV2PI))
+                    (= func 26) (let [l (mufu1 Q L SL-LG2 a) m (gpr Q L) e (add Q L MI-FMUL m l b 0 0 0)] (mufu1 Q L SL-EX2 m))
+                    (or (= func 37) (= func 40)) (let [m (gpr Q L) e (add Q L MI-FMNMX m a b 0 (if (= func 37) 1 0) 0)] m)
+                    (or (= func 38) (= func 39) (= func 41) (= func 42))
+                    (let [m (gpr Q L) e (add Q L MI-IMNMX m a b 0 (if (< func 40) 1 0) (if (or (= func 39) (= func 42)) 1 0))] m)
+                    :else (let [z (ls L 9 (+ 100000 func))] (fail Q SL-E-OP)))]
+        (if (< r 0) -1 (tset T id 11 r 0 0 0))))))
+
 (defn- binop [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 mop :i64] :i64
   (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) b (opnd T Q L (w W (+ at 4)))]
     (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
       (let [r (gpr Q L)
             e (cond (= mop MI-IADD3) (add Q L MI-IADD3 r a b 255 0 0)
                     (= mop MI-IMAD) (add Q L MI-IMAD r a b 255 0 0)
+                    ;; a - b: IADD3 a, -b, RZ; a - b in f32: FADD a, -b
+                    (= mop SP-ISUB) (add Q L MI-IADD3 r a b 255 0 2)
+                    (= mop MI-FADDN) (add Q L MI-FADDN r a b 0 0 2)
+                    ;; LOP3 tables: a 0xf0, b 0xcc
+                    (= mop SP-BAND) (add Q L MI-LOP3 r a b 255 0xc0 0)
+                    (= mop SP-BOR) (add Q L MI-LOP3 r a b 255 0xfc 0)
+                    (= mop SP-BXOR) (add Q L MI-LOP3 r a b 255 0x3c 0)
                     :else (add Q L mop r a b 0 0 0))]
         (tset T id 11 r 0 0 0)))))
 
 (defn- body-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 Q :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
-  (let [n (lg L 10) cmp (int-cmp op)]
+  (let [n (lg L 10) cmp (int-cmp op) fcmp (float-cmp op)]
     (cond (and (= (lg L 6) 1) (not (or (= op SP-BRANCH) (= op SP-LABEL)))) (fail Q SL-E-SHAPE)
           (= op SP-LABEL)
           (let [lab (w W (+ at 1))
@@ -295,7 +429,7 @@
                 q (ls L 12 lab)
                 ;; a loop's merge: its threads reconverge here
                 y (if (>= merge-bar 0) (add Q L MI-BSYNC merge-bar 0 0 0 0 0) 0)]
-            (cond (= lab (lg L 3)) (let [a (ls L 2 (sm70-guard 7 0)) b (ls L 3 0) c (ls L 6 0)] 0)
+            (cond (= lab (lg L 3)) (let [a (ls L 2 (mi-g 7 0)) b (ls L 3 0) c (ls L 6 0)] 0)
                   (= lab (lg L 5)) (ls L 6 1)
                   :else 0))
           (= op SP-VARIABLE)
@@ -343,25 +477,25 @@
           ;; condition: a branch, inverted when the true edge falls through
           (= op SP-BRCOND)
           (let [c (w W (+ at 1)) tl (w W (+ at 2)) fl (w W (+ at 3)) nl (next-label W at wc)]
-            (cond (or (not= (tg T c 0) 12) (not= (lg L 2) (sm70-guard 7 0))) (fail Q SL-E-SHAPE)
+            (cond (or (not= (tg T c 0) 12) (not= (lg L 2) (mi-g 7 0))) (fail Q SL-E-SHAPE)
                   (not= (lg L 3) 0)
-                  (let [a (ls L 4 tl) b (ls L 5 (if (= fl (lg L 3)) -1 fl))] (ls L 2 (sm70-guard (tg T c 1) 0)))
-                  (= nl tl) (branch Q (sm70-guard (tg T c 1) 1) fl)
-                  (= nl fl) (branch Q (sm70-guard (tg T c 1) 0) tl)
-                  :else (let [a (branch Q (sm70-guard (tg T c 1) 0) tl)] (branch Q (sm70-guard 7 0) fl))))
+                  (let [a (ls L 4 tl) b (ls L 5 (if (= fl (lg L 3)) -1 fl))] (ls L 2 (mi-g (tg T c 1) 0)))
+                  (= nl tl) (branch Q (mi-g (tg T c 1) 1) fl)
+                  (= nl fl) (branch Q (mi-g (tg T c 1) 0) tl)
+                  :else (let [a (branch Q (mi-g (tg T c 1) 0) tl)] (branch Q (mi-g 7 0) fl))))
           (= op SP-BRANCH)
           (let [tl (w W (+ at 1))]
             (cond (not= (lg L 3) 0) (if (= tl (lg L 3)) 0 (fail Q SL-E-SHAPE))
-                  (not= (lg L 2) (sm70-guard 7 0)) (fail Q SL-E-SHAPE)
+                  (not= (lg L 2) (mi-g 7 0)) (fail Q SL-E-SHAPE)
                   (= tl (next-label W at wc)) 0
-                  :else (branch Q (sm70-guard 7 0) tl)))
+                  :else (branch Q (mi-g 7 0) tl)))
           ;; a loop: BSSY on the next convergence barrier before the header,
           ;; the header label moved past it, BSYNC at the merge label
           (= op SP-LOOPMERGE)
           (let [mg (w W (+ at 1)) b (lg L 13) hd (lg L 12)]
-            (if (or (not= (lg L 3) 0) (not= (lg L 2) (sm70-guard 7 0)) (> b 15) (not= (tg T hd 1) (mi-count Q)))
+            (if (or (not= (lg L 3) 0) (not= (lg L 2) (mi-g 7 0)) (> b 15) (not= (tg T hd 1) (mi-count Q)))
               (fail Q SL-E-SHAPE)
-              (let [z (ls L 13 (inc b)) e (mi-add Q MI-BSSY (sm70-guard 7 0) b 0 0 0 0 mg)
+              (let [z (ls L 13 (inc b)) e (mi-add Q MI-BSSY (mi-g 7 0) b 0 0 0 0 mg)
                     h (tset T hd 14 (mi-count Q) 0 0 0)]
                 (tset T mg 15 b 0 0 0))))
           ;; OpControlBarrier with Workgroup execution and memory scope:
@@ -369,14 +503,47 @@
           (= op SP-BARRIER)
           (let [ex (w W (+ at 1)) ms (w W (+ at 2))]
             (if (or (not= (tg T ex 0) 8) (not= (tg T ex 2) 2) (not= (tg T ms 0) 8) (not= (tg T ms 2) 2)
-                    (not= (lg L 3) 0) (not= (lg L 2) (sm70-guard 7 0)))
+                    (not= (lg L 3) 0) (not= (lg L 2) (mi-g 7 0)))
               (fail Q SL-E-SHAPE)
               (let [a (add Q L MI-BAR 0 0 0 0 0 0)] (add Q L MI-NOP 0 0 0 0 0 0))))
-          ;; a logical right shift by a constant 0..31
-          (= op SP-SHRL)
-          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) b (w W (+ at 4))]
-            (if (or (< a 0) (not= (tg T b 0) 8) (> (tg T b 2) 31)) (fail Q SL-E-SHAPE)
-              (let [r (gpr Q L) e (add Q L MI-SHR r a 0 0 (tg T b 2) 0)] (tset T id 11 r 0 0 0))))
+          (= op SP-SHRL) (shift W T Q L at true)
+          (= op SP-EXTINST) (ext-inst W T Q L at wc)
+          (= op SP-FNEG)
+          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3)))]
+            (if (< a 0) (fail Q SL-E-SHAPE)
+              (let [r (gpr Q L) e (add Q L MI-FADDN r 255 a 0 0 3)] (tset T id 11 r 0 0 0))))
+          (= op SP-FSUB) (binop W T Q L at MI-FADDN)
+          (= op SP-ISUB) (binop W T Q L at SP-ISUB)
+          (= op SP-FDIV)
+          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) b (opnd T Q L (w W (+ at 4)))]
+            (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+              (let [r (gpr Q L) c (add Q L MI-MUFU r b 0 0 SL-RCP 0) q (gpr Q L) e (add Q L MI-FMUL q a r 0 0 0)]
+                (tset T id 11 q 0 0 0))))
+          (= op SP-UDIV) (udiv W T Q L at)
+          (or (= op SP-UTOF) (= op SP-STOF) (= op SP-FTOU) (= op SP-FTOS))
+          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3)))]
+            (if (< a 0) (fail Q SL-E-SHAPE)
+              (let [r (gpr Q L)
+                    e (cond (= op SP-UTOF) (add Q L MI-I2F r a 0 0 0 0) (= op SP-STOF) (add Q L MI-I2F r a 0 0 1 0)
+                            (= op SP-FTOU) (add Q L MI-F2I r a 0 0 0 0) :else (add Q L MI-F2I r a 0 0 1 0))]
+                (tset T id 11 r 0 0 0))))
+          ;; a bit cast keeps the register
+          (= op SP-BITCAST)
+          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3)))]
+            (if (< a 0) (fail Q SL-E-SHAPE) (tset T id 11 a 0 0 0)))
+          ;; OpSelect of 32-bit values on a predicate (a select of booleans is refused)
+          (= op SP-SELECT)
+          (let [id (w W (+ at 2)) c (w W (+ at 3)) a (opnd T Q L (w W (+ at 4))) b (opnd T Q L (w W (+ at 5)))]
+            (if (or (not= (tg T c 0) 12) (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+              (let [r (gpr Q L) e (add Q L MI-SEL r a b 0 (tg T c 1) 0)] (tset T id 11 r 0 0 0))))
+          (>= fcmp 0)
+          (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) b (opnd T Q L (w W (+ at 4)))]
+            (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+              (let [p (pred Q L) e (add Q L MI-FSETP p a b 0 fcmp 0)] (tset T id 12 p 0 0 0))))
+          (= op SP-BAND) (binop W T Q L at SP-BAND)
+          (= op SP-BOR) (binop W T Q L at SP-BOR)
+          (= op SP-BXOR) (binop W T Q L at SP-BXOR)
+          (= op SP-SHLL) (shift W T Q L at false)
           (= op SP-RETURN) (add Q L MI-EXIT 0 0 0 0 0 0)
           :else (let [z (ls L 9 op)] (fail Q SL-E-OP)))))
 
@@ -396,7 +563,8 @@
             D (loop [i 0 V (vector-alloc (* 4 n))] (if (>= i (* 4 n)) V (recur (inc i) (vector-assoc! V i -1))))
             O (vector-alloc (* 16 n))
             L (vector-alloc 16)
-            l0 (ls L 2 (sm70-guard 7 0)) l1 (ls L 7 1) l2 (ls L 8 cbase) l3 (ls L 10 n)
+            l0 (ls L 2 (mi-g 7 0)) l1 (ls L 7 1) l2 (ls L 8 cbase) l3 (ls L 10 n)
+            l4 (ls L 0 256) l5 (ls L 1 8)
             ;; walk the instructions; the function body starts after OpFunction
             e (loop [at 5 in-fn false]
                 (if (or (>= at nw) (not= (mi-error Q) 0)) 0
@@ -407,7 +575,7 @@
                             in-fn (let [z (body-one W T D O Q L at op wc)] (recur (+ at wc) true))
                             :else (let [z (scan-one W T D O L at op wc)] (recur (+ at wc) false)))))))
             ;; the trailing self-branch, as every SM70 program ends
-            t (if (= (mi-error Q) 0) (mi-add Q MI-BRA (sm70-guard 7 0) 0 0 0 0 -1 0) 0)
+            t (if (= (mi-error Q) 0) (mi-add Q MI-BRA (mi-g 7 0) 0 0 0 0 -1 0) 0)
             ;; resolve the branch and BSSY targets: x = target - (k + 1)
             r (loop [k 0]
                 (if (or (>= k (mi-count Q)) (not= (mi-error Q) 0)) 0
@@ -417,4 +585,4 @@
                             0)]
                     (recur (inc k)))))
             k (vector-assoc! Q (- (vector-count Q) 1) (lg L 9))]
-        Q))))
+        (sm70-regalloc Q)))))

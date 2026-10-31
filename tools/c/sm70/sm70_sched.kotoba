@@ -1,4 +1,4 @@
-(ns sm70-sched (:export [mi-new mi-count mi-error mi-op mi-ctl mi-add sm70-schedule sm70-emit-mir]))
+(ns sm70-sched (:export [mi-new mi-count mi-error mi-op mi-ctl mi-add mi-g sm70-schedule sm70-emit-mir]))
 
 ;; A machine IR for SM 7.0 / 7.2 and the scheduler that chooses its control
 ;; bits (route C, JUN-723). The lowering (sm70_lower.kotoba) writes the
@@ -16,9 +16,11 @@
 ;; only execution on Xavier (JUN-714) can confirm them.
 ;;
 ;; The IR Q is a vector: Q[0] the number of instructions, Q[1] the first
-;; refusal (0 = none), instruction k at Q[2 + MI-W k ...]: op, guard (an
-;; sm70-guard value), d, a, b, c, x, y, ctl. Register fields name GPRs
-;; (255 = RZ); the operands by op:
+;; refusal (0 = none), instruction k at Q[2 + MI-W k ...]: op, guard (mi-g:
+;; 2 p + inv, p = 7 the true predicate PT), d, a, b, c, x, y, ctl. Register
+;; fields name GPRs (255 = RZ); predicates are P0..P6. Before register
+;; allocation (sm70_regalloc.kotoba) GPRs are virtual registers from 256 up
+;; and predicates virtual from 8 up. The operands by op:
 ;;   S2R    d = special register x
 ;;   MOVCB  d = c[y][x]
 ;;   MOVI   d = x
@@ -28,7 +30,7 @@
 ;;   LDG    d = [a:a+1 + x]                   (32-bit, .E, strong.GPU)
 ;;   STG    [a:a+1 + x] = b
 ;;   FADD / FMUL  d = a op b                  (RN, no ftz)
-;;   IADD3  d = a + b + c
+;;   IADD3  d = a + b + c, each source negated by its bit in y (1 a, 2 b, 4 c)
 ;;   IMAD   d = a * b + c                     (unsigned)
 ;;   EXIT
 ;;   BRA    to instruction k + 1 + x (x = -1: itself, the trailing loop)
@@ -40,6 +42,20 @@
 ;;   NOP
 ;;   BSSY   convergence barrier d, reconverging at instruction k + 1 + x
 ;;   BSYNC  wait on convergence barrier d
+;; and for the decode kernels (JUN-739):
+;;   FADDN  d = (y & 1 ? -a : a) + (y & 2 ? -b : b)
+;;   FSETP  predicate d = a <x> b, x an sm70-fsetp compare
+;;   FSETPI predicate d = a <x> y, y an f32 bit pattern
+;;   SEL    d = predicate x ? a : b (x inverted when y = 1)
+;;   MUFU   d = function x of a (sm70-mufu)
+;;   I2F    d = float(a) (x = 1 signed), RN
+;;   F2I    d = int(a) (x = 1 signed), toward zero
+;;   LOP3   d = lut x of a, b, c
+;;   SHLI   d = a << x;  SHLR d = a << b;  SHRR d = a >> b (u32, the shift wrapped to 0..31)
+;;   IMNMX  d = min (x = 1) or max of a and b (y = 1 signed);  FMNMX the same for f32
+;;   IMADWR d:d+1 = a * b + c:c+1 (unsigned; c = RZ: zero)
+;;   SGXT   d = the low x bits of a, extended (y = 1 signed)
+;;   FMULI  d = a * x, x an f32 bit pattern
 ;; A guarded BRA is a conditional branch. The lowering resolves its branch
 ;; targets before scheduling (y holds the label until then).
 ;;
@@ -68,11 +84,28 @@
 (def MI-NOP 20)
 (def MI-BSSY 21)
 (def MI-BSYNC 22)
+(def MI-FADDN 23)
+(def MI-FSETP 24)
+(def MI-FSETPI 25)
+(def MI-SEL 26)
+(def MI-MUFU 27)
+(def MI-I2F 28)
+(def MI-F2I 29)
+(def MI-LOP3 30)
+(def MI-SHLI 31)
+(def MI-SHLR 32)
+(def MI-SHRR 33)
+(def MI-IMNMX 34)
+(def MI-FMNMX 35)
+(def MI-IMADWR 36)
+(def MI-SGXT 37)
+(def MI-FMULI 38)
 
 ;; refusals of the scheduler (Q[1]); the lowering's are 101..
 (def MI-E-CAP 120)    ;; the IR is full
 (def MI-E-SB 121)     ;; more variable-latency results in flight than scoreboards
 (def MI-E-STALL 122)  ;; a gap longer than the 15-cycle stall field
+(def MI-E-OP 123)     ;; an opcode the encoder has no emitter for
 
 (def MI-W 9)
 ;; the latencies (NAK ShaderModel70, sm < 80, not fp64/fp16): GPR, predicate
@@ -87,6 +120,8 @@
 (defn mi-error [Q :vector-i64] :i64 (vector-at Q 1))
 (defn- mi-f [Q :vector-i64 k :i64 f :i64] :i64 (vector-at Q (+ 2 (* MI-W k) f)))
 (defn- mi-set [Q :vector-i64 k :i64 f :i64 v :i64] :i64 (let [z (vector-assoc! Q (+ 2 (* MI-W k) f) v)] v))
+;; the guard field: predicate p (7 = PT), inverted when inv = 1
+(defn mi-g [p :i64 inv :i64] :i64 (+ (* 2 p) inv))
 (defn mi-op [Q :vector-i64 k :i64] :i64 (mi-f Q k 0))
 (defn mi-ctl [Q :vector-i64 k :i64] :i64 (mi-f Q k 8))
 
@@ -112,28 +147,36 @@
   (let [op (mi-op Q k) a (mi-f Q k 3) b (mi-f Q k 4) c (mi-f Q k 5)]
     (live (cond (or (= op MI-IMADI)) (case j 0 a 1 c -1)
                 (= op MI-IMADW) (case j 0 a 1 c 2 (+ c 1) -1)
-                (or (= op MI-MOV) (= op MI-LDS) (= op MI-SHR)) (case j 0 a -1)
+                (= op MI-IMADWR) (case j 0 a 1 b 2 c 3 (if (= c 255) -1 (+ c 1)) -1)
+                (or (= op MI-MOV) (= op MI-LDS) (= op MI-SHR) (= op MI-FSETPI) (= op MI-MUFU) (= op MI-I2F)
+                    (= op MI-F2I) (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI)) (case j 0 a -1)
                 (= op MI-STS) (case j 0 a 1 b -1)
-                (or (= op MI-ISETP) (= op MI-FADD) (= op MI-FMUL)) (case j 0 a 1 b -1)
+                (or (= op MI-ISETP) (= op MI-FADD) (= op MI-FMUL) (= op MI-FADDN) (= op MI-FSETP) (= op MI-SEL)
+                    (= op MI-SHLR) (= op MI-SHRR) (= op MI-IMNMX) (= op MI-FMNMX)) (case j 0 a 1 b -1)
                 (= op MI-LDG) (case j 0 a 1 (+ a 1) -1)
                 (= op MI-STG) (case j 0 a 1 (+ a 1) 2 b -1)
-                (or (= op MI-IADD3) (= op MI-IMAD)) (case j 0 a 1 b 2 c -1)
+                (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3)) (case j 0 a 1 b 2 c -1)
                 :else -1))))
 
 (defn- mi-dst [Q :vector-i64 k :i64 j :i64] :i64
   (let [op (mi-op Q k) d (mi-f Q k 2)]
     (live (cond (or (= op MI-ISETP) (= op MI-STG) (= op MI-EXIT) (= op MI-BRA) (= op MI-STS) (= op MI-BAR)
-                    (= op MI-NOP) (= op MI-BSSY) (= op MI-BSYNC)) -1
-                (= op MI-IMADW) (case j 0 d 1 (+ d 1) -1)
+                    (= op MI-NOP) (= op MI-BSSY) (= op MI-BSYNC) (= op MI-FSETP) (= op MI-FSETPI)) -1
+                (or (= op MI-IMADW) (= op MI-IMADWR)) (case j 0 d 1 (+ d 1) -1)
                 :else (if (= j 0) d -1)))))
 
-(defn- mi-pdst [Q :vector-i64 k :i64] :i64 (if (= (mi-op Q k) MI-ISETP) (mi-f Q k 2) -1))
-(defn- mi-gpred [Q :vector-i64 k :i64] :i64 (let [p (bit-and (mi-f Q k 1) 7)] (if (= p 7) -1 p)))
-;; variable latency (NAK has_fixed_latency): S2R and the memory operations;
-;; BAR is not fixed either but has no register operand, so it takes no
-;; scoreboard
+(defn- mi-psets? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI)))
+(defn- mi-pdst [Q :vector-i64 k :i64] :i64 (if (mi-psets? (mi-op Q k)) (mi-f Q k 2) -1))
+(defn- mi-gpred [Q :vector-i64 k :i64] :i64 (let [p (u64-shift-right (mi-f Q k 1) 1)] (if (= p 7) -1 p)))
+;; the predicate a SEL reads (-1: none)
+(defn- mi-psrc [Q :vector-i64 k :i64] :i64
+  (if (and (= (mi-op Q k) MI-SEL) (not= (mi-f Q k 6) 7)) (mi-f Q k 6) -1))
+;; variable latency (NAK has_fixed_latency): S2R, the memory operations,
+;; MUFU and the conversions; BAR is not fixed either but has no register
+;; operand, so it takes no scoreboard
 (defn- mi-var? [op :i64] :bool
-  (or (= op MI-S2R) (= op MI-LDG) (= op MI-STG) (= op MI-LDS) (= op MI-STS)))
+  (or (= op MI-S2R) (= op MI-LDG) (= op MI-STG) (= op MI-LDS) (= op MI-STS) (= op MI-MUFU) (= op MI-I2F)
+      (= op MI-F2I)))
 
 ;; the target of a branch or BSSY at k
 (defn- mi-target [Q :vector-i64 k :i64] :i64 (+ k 1 (mi-f Q k 6)))
@@ -203,7 +246,8 @@
 
 ;; the earliest cycle at which k may issue, given its fixed-latency inputs
 (defn- ready-at [Q :vector-i64 S :vector-i64 k :i64 t0 :i64] :i64
-  (let [p (mi-gpred Q k) t1 (if (>= p 0) (imax t0 (sg S (+ 768 p))) t0)]
+  (let [p (mi-gpred Q k) t2 (if (>= p 0) (imax t0 (sg S (+ 768 p))) t0)
+        ps (mi-psrc Q k) t1 (if (>= ps 0) (imax t2 (sg S (+ 768 ps))) t2)]
     (loop [j 0 t t1]
       (if (>= j 4) t
         (let [s (mi-src Q k j)] (recur (inc j) (if (>= s 0) (imax t (sg S s)) t)))))))
@@ -295,7 +339,7 @@
 ;; Encoding the scheduled IR.
 
 (defn- emit-one [M :vector-i64 Q :vector-i64 k :i64] :vector-i64
-  (let [op (mi-op Q k) g (mi-f Q k 1) c (mi-ctl Q k)
+  (let [op (mi-op Q k) gm (mi-f Q k 1) g (sm70-guard (u64-shift-right gm 1) (bit-and gm 1)) c (mi-ctl Q k)
         d (mi-f Q k 2) a (mi-f Q k 3) b (mi-f Q k 4) cc (mi-f Q k 5) x (mi-f Q k 6) y (mi-f Q k 7)]
     (cond (= op MI-S2R) (sm70-s2r M g c d x)
           (= op MI-MOVCB) (sm70-mov-cb M g c d y x)
@@ -307,7 +351,8 @@
           (= op MI-STG) (sm70-stg M g c a x b 4 3 1 1)
           (= op MI-FADD) (sm70-fadd M g c d a b 0 0 0)
           (= op MI-FMUL) (sm70-fmul M g c d a b 0 0 0)
-          (= op MI-IADD3) (sm70-iadd3 M g c d a b cc)
+          (and (= op MI-IADD3) (= y 0)) (sm70-iadd3 M g c d a b cc)
+          (= op MI-IADD3) (sm70-iadd3-neg M g c d a b cc (bit-and y 1) (bit-and (u64-shift-right y 1) 1) (bit-and (u64-shift-right y 2) 1))
           (= op MI-IMAD) (sm70-imad M g c d a b cc 0)
           (= op MI-EXIT) (sm70-exit M g c)
           (= op MI-BRA) (sm70-bra M g c 7 0 x)
@@ -318,7 +363,24 @@
           (= op MI-BAR) (sm70-bar M g c)
           (= op MI-NOP) (sm70-nop M g c)
           (= op MI-BSSY) (sm70-bssy M g c d x)
-          :else (sm70-bsync M g c d))))
+          (= op MI-BSYNC) (sm70-bsync M g c d)
+          (= op MI-FADDN) (sm70-fadd-neg M g c d a b (bit-and y 1) (bit-and (u64-shift-right y 1) 1))
+          (= op MI-FSETP) (sm70-fsetp M g c d a b x 0)
+          (= op MI-FSETPI) (sm70-fsetp-imm M g c d a y x 0)
+          (= op MI-SEL) (sm70-sel M g c d a b x y)
+          (= op MI-MUFU) (sm70-mufu M g c d a x)
+          (= op MI-I2F) (sm70-i2f M g c d a x 0)
+          (= op MI-F2I) (sm70-f2i M g c d a x 3 0)
+          (= op MI-LOP3) (sm70-lop3 M g c d a b cc x)
+          (= op MI-SHLI) (sm70-shf-imm M g c d a x 255 2 1 0 0)
+          (= op MI-SHLR) (sm70-shf M g c d a b 255 2 1 0 0)
+          (= op MI-SHRR) (sm70-shf M g c d 255 b a 3 1 1 1)
+          (= op MI-IMNMX) (sm70-imnmx M g c d a b x y)
+          (= op MI-FMNMX) (sm70-fmnmx M g c d a b x 0)
+          (= op MI-IMADWR) (sm70-imad-wide M g c d a b cc 0)
+          (= op MI-SGXT) (sm70-sgxt-imm M g c d a x y)
+          (= op MI-FMULI) (sm70-fmul-imm M g c d a x 0 0 0)
+          :else (sm-fail M MI-E-OP))))
 
 ;; the encoder program of a scheduled IR (empty, error = the IR's, when the
 ;; IR was refused)
