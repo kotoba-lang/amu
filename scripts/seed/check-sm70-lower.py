@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""KIR v2 lowered to SM 7.0 / 7.2 (Xavier's gv11b) with scheduled control bits, checked on the host (JUN-723).
+"""KIR v2 lowered to SM 7.0 / 7.2 (Xavier's gv11b) with scheduled control bits, checked on the host (JUN-723, JUN-725).
 
 No GPU and no GPU driver: nothing here opens a device or submits work.
 
@@ -17,10 +17,9 @@ This script is the oracle; the words come from the Kotoba program. Checked:
 * every word decodes into the supported subset (DECODE below, read from Mesa
   NAK's sm70_encode.rs like scripts/seed/check-sm70-encode.py) and equals
   that script's NAK encoding of the decoded instruction, bit for bit;
-* the expected refusals: ewise sub (OpFSub, 131) and dot_rows (an OpVariable
-  in Function storage, 59, the first instruction outside the subset);
-* the scheduler's hand-written WAR case gets exactly the control bits of
-  WAR_CTL;
+* the expected refusal: ewise sub (OpFSub, 131);
+* the scheduler's hand-written WAR cases get exactly the control bits of
+  WAR_CTL and LOOPWAR_CTL;
 * the interpreter (run_kernel) runs ewise add (LocalSize 256 and 64) and mul
   on sample data, one thread at a time, and every output word equals the
   f64 reference rounded to f32 (exact for add and mul of these inputs), the
@@ -29,9 +28,15 @@ This script is the oracle; the words come from the Kotoba program. Checked:
   predicate read before its write is ready (RAW), a write that lands before
   an earlier variable-latency read of the same register (WAR) or before an
   earlier write (WAW) is a hazard and fails the run;
+* the interpreter runs dot_rows (DOT_CASES) a workgroup at a time, the
+  threads interleaved at each BAR, against an f64 reference (relative to
+  sum |w x|, DOT_TOL), with a shared-memory race check between barriers and
+  the BSSY/BSYNC pairing; check_control holds the static rules (BSSY targets,
+  BAR's stall, yield and NOP);
 * negative controls: control bits corrupted in the emitted words (a wait
-  mask, a stall, a write barrier) and one operand bit are detected; built
-  mutants of the lowering and of the scheduler (LOWER_MUTANTS,
+  mask, a stall, a write barrier), one operand bit, and in dot_rows a barrier
+  replaced by a NOP, a branch condition and a BSSY target are detected;
+  built mutants of the lowering and of the scheduler (LOWER_MUTANTS,
   SCHED_MUTANTS) compile, run and are detected.
 
 The timing model is NAK's Volta model (GPR 6 cycles, predicate 13, S2R and
@@ -69,11 +74,18 @@ spec.loader.exec_module(NAK)
 CB_BASE = 0x160
 LAT_GPR, LAT_PRED = 6, 13       # NAK ShaderModel70 (sm < 80)
 VAR_READ = 8                     # a variable-latency op reads its sources up to this many cycles after issue
-EXPECT_REFUSED = {"ewise-sub-wg256": (102, 131), "dot-rows": (102, 59)}   # SL-E-OP, the opcode
+EXPECT_REFUSED = {"ewise-sub-wg256": (102, 131)}   # SL-E-OP, the opcode (OpFSub)
 # the WAR case: (stall, yield, write barrier, read barrier, wait mask) per instruction
 WAR_CTL = [(1, 0, 0, 1, 0), (1, 0, 7, 7, 2), (6, 0, 7, 7, 1), (6, 0, 7, 7, 0), (1, 0, 7, 7, 0), (0, 1, 7, 7, 0)]
+# the loop WAR case: the STS's source is rewritten after the back edge, so
+# the STS takes a read barrier and the branch waits on it
+LOOPWAR_CTL = [(6, 0, 7, 7, 0), (1, 0, 7, 0, 0), (1, 0, 7, 7, 1), (0, 1, 7, 7, 0)]
 KERNELS = {"ewise-add-wg256": ("add", 256), "ewise-add-wg64": ("add", 64), "ewise-mul-wg256": ("mul", 256)}
 SIZES = [1000, 256, 1]
+# dot_rows: (rows, cols, signed inputs). 700 = 2 * 256 + 188: threads leave
+# the strided loop after 3 or 2 iterations; 100: threads 100.. never enter it
+DOT_CASES = [(3, 700, False), (2, 256, True), (1, 100, False), (2, 1, True), (1, 1300, True)]
+DOT_TOL = 1e-3   # |o - f64 reference| / sum |w x|
 
 # ---------------------------------------------------------------------------
 # Units
@@ -169,6 +181,28 @@ def decode(lo, hi):
         i.update(op="exit")
     elif op12 == 0x947:
         i.update(op="bra", rel=sx(f(34, 82), 48) // 4, cond=(f(87, 90), f(90, 91)))
+    elif op12 == 0x918:
+        i.update(op="nop")
+    elif op12 == 0xB1D:
+        i.update(op="bar")
+    elif op12 == 0x945:
+        i.update(op="bssy", bar=f(16, 20), rel=sx(f(34, 64), 30) // 4)
+    elif op12 == 0x941:
+        i.update(op="bsync", bar=f(16, 20))
+    elif op12 == 0x984:
+        if f(73, 76) != 4 or f(78, 80):
+            raise Unsupported("LDS not .32 / X1")
+        i.update(op="lds", d=f(16, 24), a=f(24, 32), off=sx(f(40, 64), 24))
+    elif op12 == 0x388:
+        if f(73, 76) != 4 or f(78, 80):
+            raise Unsupported("STS not .32 / X1")
+        i.update(op="sts", a=f(24, 32), v=f(32, 40), off=sx(f(40, 64), 24))
+    elif op9 == 0x019 and form == 4:
+        if f(24, 32) != 255 or f(73, 75) != 3:
+            raise Unsupported("SHF other than SHR.U32")
+        i.update(op="shr", d=f(16, 24), a=f(64, 72), imm=f(32, 64))
+    elif op9 == 0x002 and form == 1:
+        i.update(op="mov", d=f(16, 24), a=f(32, 40))
     elif op12 == 0x381:
         if f(73, 76) != 4 or f(72, 73) != 1:
             raise Unsupported("LDG not .E.32")
@@ -216,6 +250,22 @@ def reencode(i):
         return NAK.op_s2r(g, c, i["d"], i["sr"])
     if o == "exit":
         return NAK.op_exit(g, c)
+    if o == "nop":
+        return NAK.op_nop(g, c)
+    if o == "bar":
+        return NAK.op_bar(g, c)
+    if o == "bssy":
+        return NAK.op_bssy(g, c, i["bar"], i["rel"])
+    if o == "bsync":
+        return NAK.op_bsync(g, c, i["bar"])
+    if o == "lds":
+        return NAK.op_lds(g, c, i["d"], i["a"], i["off"], 4)
+    if o == "sts":
+        return NAK.op_sts(g, c, i["a"], i["off"], i["v"], 4)
+    if o == "shr":
+        return NAK.op_shr(g, c, i["d"], i["a"], i["imm"], False)
+    if o == "mov":
+        return NAK.op_mov(g, c, i["d"], r(i["a"]))
     if o == "bra":
         return NAK.op_bra(g, c, i["cond"][0], bool(i["cond"][1]), i["rel"])
     if o == "ldg":
@@ -291,22 +341,69 @@ class Memory:
 def latency(kind, seed):
     # variable latencies: fixed pseudo-random spreads, so a missing wait shows
     seed = (seed * 6364136223846793005 + 1442695040888963407) % 2**64
-    return {"s2r": 20, "ldg": 200}[kind] + (seed >> 33) % 400
+    return {"s2r": 20, "ldg": 200, "lds": 24}[kind] + (seed >> 33) % {"s2r": 400, "ldg": 400, "lds": 60}[kind]
 
 
-def run_thread(prog, cbank, mem, ctaid, tid, wg):
-    regs, preds = {}, {}  # reg -> list of (seq, ready, value); a var-latency read: (seq, read time)
-    pending_reads = {}
+SHARED_BYTES = 1024          # dot_rows' Workgroup array (the lowering lays it out from byte 0)
+SHARED_FILL = 0x7FC00BAD     # a NaN: a shared word read before any write shows in the output
+MAX_STEPS = 200000
+
+
+class Shared:
+    """the workgroup's shared memory, with a race check: between two barriers
+    (one phase) a word written by one thread is not read or written by
+    another, and a word read by one thread is not written by another"""
+
+    def __init__(self, nbytes):
+        self.words = [SHARED_FILL] * (nbytes // 4)
+        self.w, self.r = {}, {}  # word -> (phase, tid); word -> (phase, set of tids)
+
+    def index(self, addr):
+        if addr % 4 or not 0 <= addr < 4 * len(self.words):
+            raise Hazard(f"shared access at {addr:#x} outside the {4 * len(self.words)}-byte window")
+        return addr // 4
+
+    def load(self, addr, phase, tid):
+        k = self.index(addr)
+        wp = self.w.get(k)
+        if wp and wp[0] == phase and wp[1] != tid:
+            raise Hazard(f"shared word {k}: thread {tid} reads what thread {wp[1]} wrote in the same phase")
+        rp = self.r.get(k)
+        if rp and rp[0] == phase:
+            rp[1].add(tid)
+        else:
+            self.r[k] = (phase, {tid})
+        return self.words[k]
+
+    def store(self, addr, v, phase, tid):
+        k = self.index(addr)
+        wp = self.w.get(k)
+        if wp and wp[0] == phase and wp[1] != tid:
+            raise Hazard(f"shared word {k}: threads {wp[1]} and {tid} write it in the same phase")
+        rp = self.r.get(k)
+        if rp and rp[0] == phase and rp[1] - {tid}:
+            raise Hazard(f"shared word {k}: thread {tid} writes what thread {min(rp[1] - {tid})} read in the same phase")
+        self.w[k] = (phase, tid)
+        self.words[k] = v & 0xFFFFFFFF
+
+
+def run_thread(prog, cbank, mem, shared, ctaid, tid):
+    """one thread, a generator: it yields (pc, cycle) at each BAR and is sent
+    back the cycle at which the workgroup leaves the barrier; it returns at
+    EXIT. Hazards and malformed control flow raise."""
+    regs, preds = {}, {}  # reg -> (seq, ready, value)
+    pending_reads = {}    # reg -> [(seq, read until)] of variable-latency reads
     sb_done = [0] * 6
-    t = 0
+    bssy = {}
+    t, pc, steps, phase = 0, 0, 0, 0
 
     def read(r, at, seq):
         if r == 255:
             return 0
-        ws = regs.get(r, [])
-        if not ws:
+        w = regs.get(r)
+        if w is None:
             raise Hazard(f"R{r} read before any write (instr {seq})")
-        w_seq, ready, v = ws[-1]
+        w_seq, ready, v = w
         if ready > at:
             raise Hazard(f"instr {seq} reads R{r} at {at}, written by instr {w_seq} ready at {ready}")
         return v
@@ -314,10 +411,10 @@ def run_thread(prog, cbank, mem, ctaid, tid, wg):
     def rpred(p, at, seq):
         if p == 7:
             return True
-        ws = preds.get(p, [])
-        if not ws:
+        w = preds.get(p)
+        if w is None:
             raise Hazard(f"P{p} read before any write (instr {seq})")
-        w_seq, ready, v = ws[-1]
+        w_seq, ready, v = w
         if ready > at:
             raise Hazard(f"instr {seq} reads P{p} at {at}, written by instr {w_seq} ready at {ready}")
         return v
@@ -325,36 +422,66 @@ def run_thread(prog, cbank, mem, ctaid, tid, wg):
     def write(r, ready, v, seq, issue):
         if r == 255:
             return
-        ws = regs.setdefault(r, [])
-        if ws and ws[-1][1] > ready:
-            raise Hazard(f"instr {seq} writes R{r} ready {ready} before instr {ws[-1][0]}'s write at {ws[-1][1]}")
+        w = regs.get(r)
+        if w and w[1] > ready:
+            raise Hazard(f"instr {seq} writes R{r} ready {ready} before instr {w[0]}'s write at {w[1]}")
         for rs, rt in pending_reads.get(r, []):
             if issue + 1 <= rt:
                 raise Hazard(f"instr {seq} writes R{r} at {issue + 1} while instr {rs} reads it until {rt}")
-        ws.append((seq, ready, v & 0xFFFFFFFF))
+        regs[r] = (seq, ready, v & 0xFFFFFFFF)
 
-    for pc, i in enumerate(prog):
+    def var_read(regs_read, seq, rt, issue):
+        for r in regs_read:
+            lst = [e for e in pending_reads.get(r, []) if e[1] >= issue]
+            lst.append((seq, rt))
+            pending_reads[r] = lst
+
+    while True:
+        if not 0 <= pc < len(prog):
+            raise Hazard(f"control left the program at {pc}")
+        steps += 1
+        if steps > MAX_STEPS:
+            raise Hazard("the thread does not finish")
+        i = prog[pc]
         stall, _yld, wr, rd, wait, _reuse = i["ctl"]
         issue = max([t] + [sb_done[s] for s in range(6) if wait >> s & 1])
         p, inv = i["guard"]
         on = rpred(p, issue, pc) != bool(inv)
         o = i["op"]
-        var = o in ("s2r", "ldg", "stg")
+        var = o in ("s2r", "ldg", "stg", "lds", "sts")
         rt = issue + VAR_READ if var else issue
-        seed = (ctaid * 4096 + tid) * 64 + pc
+        seed = ((ctaid * 4096 + tid) * 4096 + pc) * 1000003 + steps
+        nxt = pc + 1
         if on:
             if o == "exit":
                 return
             if o == "bra":
-                raise Hazard("reached the trailing branch")
-            if o == "s2r":
+                if i["rel"] == -1:
+                    raise Hazard("reached the trailing branch")
+                nxt = pc + 1 + i["rel"]
+            elif o == "bssy":
+                if i["bar"] in bssy:
+                    raise Hazard(f"BSSY B{i['bar']} at {pc} re-armed before its BSYNC")
+                bssy[i["bar"]] = pc + 1 + i["rel"]
+            elif o == "bsync":
+                if bssy.pop(i["bar"], None) != pc:
+                    raise Hazard(f"BSYNC B{i['bar']} at {pc} without a BSSY to it")
+            elif o == "bar":
+                issue = max(issue, (yield pc, issue))
+                phase += 1
+            elif o == "nop":
+                pass
+            elif o == "s2r":
                 v = {0x21: tid, 0x25: ctaid}[i["sr"]]
-                ready = issue + latency("s2r", seed)
-                write(i["d"], ready, v, pc, issue)
+                write(i["d"], issue + latency("s2r", seed), v, pc, issue)
             elif o == "mov.cb":
                 write(i["d"], issue + LAT_GPR, cbank[(i["bank"], i["off"])], pc, issue)
             elif o == "mov.imm":
                 write(i["d"], issue + LAT_GPR, i["imm"], pc, issue)
+            elif o == "mov":
+                write(i["d"], issue + LAT_GPR, read(i["a"], rt, pc), pc, issue)
+            elif o == "shr":
+                write(i["d"], issue + LAT_GPR, read(i["a"], rt, pc) >> (i["imm"] & 31), pc, issue)
             elif o in ("imad.imm", "imad"):
                 b = i["imm"] if o == "imad.imm" else read(i["b"], rt, pc)
                 v = read(i["a"], rt, pc) * b + read(i["c"], rt, pc)
@@ -376,30 +503,57 @@ def run_thread(prog, cbank, mem, ctaid, tid, wg):
                 c = {1: a < b, 2: a == b, 3: a <= b, 4: a > b, 5: a != b, 6: a >= b}[i["cmp"]]
                 acc = rpred(i["accum"][0], rt, pc) != bool(i["accum"][1])
                 if i["pd"] != 7:
-                    preds.setdefault(i["pd"], []).append((pc, issue + LAT_PRED, c and acc))
+                    preds[i["pd"]] = (pc, issue + LAT_PRED, c and acc)
             elif o in ("fadd", "fmul"):
                 a, b = bits_f(read(i["a"], rt, pc)), bits_f(read(i["b"], rt, pc))
                 write(i["d"], issue + LAT_GPR, f_bits(f32(a + b if o == "fadd" else a * b)), pc, issue)
             elif o in ("ldg", "stg"):
                 addr = (read(i["a"], rt, pc) | read(i["a"] + 1, rt, pc) << 32) + i["off"]
-                for r in (i["a"], i["a"] + 1) + ((i["v"],) if o == "stg" else ()):
-                    pending_reads.setdefault(r, []).append((pc, rt))
+                var_read((i["a"], i["a"] + 1) + ((i["v"],) if o == "stg" else ()), pc, rt, issue)
                 if o == "ldg":
-                    ready = issue + latency("ldg", seed)
-                    write(i["d"], ready, mem.load(addr), pc, issue)
+                    write(i["d"], issue + latency("ldg", seed), mem.load(addr), pc, issue)
                 else:
                     mem.store(addr, read(i["v"], rt, pc))
+            elif o in ("lds", "sts"):
+                addr = (read(i["a"], rt, pc) + i["off"]) % 2**32
+                var_read((i["a"],) + ((i["v"],) if o == "sts" else ()), pc, rt, issue)
+                if o == "lds":
+                    write(i["d"], issue + latency("lds", seed), shared.load(addr, phase, tid), pc, issue)
+                else:
+                    shared.store(addr, read(i["v"], rt, pc), phase, tid)
             else:
                 raise Unsupported(o)
             if var and wr != 7:
-                ws = regs.get(i.get("d", 255), [])
-                sb_done[wr] = max(sb_done[wr], ws[-1][1] if (o != "stg" and ws) else issue + 1)
+                w = regs.get(i.get("d", 255))
+                sb_done[wr] = max(sb_done[wr], w[1] if (o not in ("stg", "sts") and w) else issue + 1)
         elif var and wr != 7:
             sb_done[wr] = max(sb_done[wr], issue + 1)
         if var and rd != 7:
             sb_done[rd] = max(sb_done[rd], rt)
         t = issue + stall
-    raise Hazard("ran off the end of the program")
+        pc = nxt
+
+
+def run_cta(prog, cbank, mem, ctaid, wg):
+    """the threads of one workgroup, each until it reaches BAR or EXIT; a
+    barrier releases when every thread that has not exited waits at the
+    same one, at the latest arrival"""
+    shared = Shared(SHARED_BYTES)
+    live = {tid: run_thread(prog, cbank, mem, shared, ctaid, tid) for tid in range(wg)}
+    send = {tid: None for tid in live}
+    while live:
+        at = {}
+        for tid in list(live):
+            try:
+                at[tid] = live[tid].send(send[tid])
+            except StopIteration:
+                del live[tid]
+        if not live:
+            return
+        if len({pc for pc, _ in at.values()}) != 1:
+            raise Hazard(f"workgroup {ctaid}: threads wait at different barriers {sorted({pc for pc, _ in at.values()})}")
+        leave = max(c for _, c in at.values())
+        send = {tid: leave for tid in live}
 
 
 def lcg_values(n, seed):
@@ -425,8 +579,7 @@ def run_kernel(prog, op, wg, n):
         cbank[(0, CB_BASE + 8 * b + 4)] = base >> 32
     try:
         for ctaid in range((n + wg - 1) // wg):
-            for tid in range(wg):
-                run_thread(prog, cbank, mem, ctaid, tid, wg)
+            run_cta(prog, cbank, mem, ctaid, wg)
     except (Hazard, Unsupported, KeyError) as e:
         return f"{type(e).__name__}: {e}"
     z = struct.unpack(f"<{n + canary}I", data[2])
@@ -441,10 +594,76 @@ def run_kernel(prog, op, wg, n):
     return None
 
 
+def unit_values(n, seed, signed):
+    out = []
+    for _ in range(n):
+        seed = (seed * 1103515245 + 12345) % 2**31
+        u = (seed >> 7) / 2**24  # [0, 1)
+        out.append(f32(2 * u - 1 if signed else 0.25 + u))
+    return out
+
+
+def run_dot(prog, rows, cols, signed):
+    """dot_rows over rows + 1 workgroups (the last one is past the rows and
+    must leave at once); answers (None or the first failure, the largest
+    relative error)"""
+    w = unit_values(rows * cols, 11 + rows * 7919 + cols, signed)
+    x = unit_values(cols, 23 + cols, signed)
+    canary = 8
+    bases = [0x0_7FFF_FFF8, 0x1_FFFF_FF00, 0x2_FFFF_FFC0, 0x4_0000_0040]  # Meta and X cross a 4 GiB line
+    data = [bytearray(struct.pack("<2I", rows, cols)), bytearray(struct.pack(f"<{rows * cols}f", *w)),
+            bytearray(struct.pack(f"<{cols}f", *x)), bytearray(struct.pack("<I", 0xDEADBEEF) * (rows + canary))]
+    keep = [bytes(d) for d in data[:3]]
+    mem = Memory()
+    cbank = {}
+    for b, (base, d) in enumerate(zip(bases, data)):
+        mem.add(base, d)
+        cbank[(0, CB_BASE + 8 * b)] = base & 0xFFFFFFFF
+        cbank[(0, CB_BASE + 8 * b + 4)] = base >> 32
+    try:
+        for ctaid in range(rows + 1):
+            run_cta(prog, cbank, mem, ctaid, 256)
+    except (Hazard, Unsupported, KeyError) as e:
+        return f"{type(e).__name__}: {e}", None
+    o = struct.unpack(f"<{rows + canary}I", data[3])
+    worst = 0.0
+    for r in range(rows):
+        ref = sum(float(w[r * cols + k]) * float(x[k]) for k in range(cols))   # f64
+        scale = sum(abs(float(w[r * cols + k]) * float(x[k])) for k in range(cols))
+        got = bits_f(o[r])
+        err = abs(got - ref) / scale if scale else abs(got - ref)
+        worst = max(worst, err)
+        if not err <= DOT_TOL:
+            return f"o[{r}] = {got!r}, f64 reference {ref!r} (relative error {err:.3g})", worst
+    if any(v != 0xDEADBEEF for v in o[rows:]):
+        return "a word past the rows was written", worst
+    if [bytes(d) for d in data[:3]] != keep:
+        return "an input buffer was written", worst
+    return None, worst
+
+
+def check_control(prog):
+    """the static rules the interpreter does not time: every BSSY reconverges
+    at a BSYNC on its barrier; BAR is followed by NOP, BAR stalls 5 cycles
+    (NAK exec_latency) and the NOP 2; BAR and BSYNC yield (NAK needs_yield)"""
+    for k, i in enumerate(prog):
+        o, (stall, yld, *_rest) = i["op"], i["ctl"]
+        if o == "bssy":
+            t = k + 1 + i["rel"]
+            if not (0 <= t < len(prog) and prog[t]["op"] == "bsync" and prog[t]["bar"] == i["bar"]):
+                return f"BSSY at {k} reconverges at {t}, not at a BSYNC B{i['bar']}"
+        if o == "bar" and (stall < 5 or not yld or k + 1 >= len(prog) or prog[k + 1]["op"] != "nop"
+                           or prog[k + 1]["ctl"][0] < 2):
+            return f"BAR at {k}: stall {stall}, yield {yld}, not followed by a NOP of 2"
+        if o == "bsync" and not yld:
+            return f"BSYNC at {k} does not yield"
+    return None
+
+
 # ---------------------------------------------------------------------------
 
 
-def judge(progs):
+def judge(progs, dot_cases=None):
     """the failures of a lowering run against every expectation"""
     bad = []
     for name, (err, op) in EXPECT_REFUSED.items():
@@ -452,7 +671,7 @@ def judge(progs):
         if not p or (p["error"], p["op"], p["count"]) != (err, op, 0):
             bad.append(f"{name}: not refused as {err}/{op}: {p and (p['error'], p['op'], p['count'])}")
     decoded = {}
-    for name in list(KERNELS) + ["war"]:
+    for name in list(KERNELS) + ["dot-rows", "war", "loopwar"]:
         p = progs.get(name)
         if not p or p["error"] != 0:
             bad.append(f"{name}: refused {p and p['error']}")
@@ -466,16 +685,28 @@ def judge(progs):
             bad.append(f"{name}: {e}")
             continue
         decoded[name] = d
-    if "war" in decoded:
-        got = [i["ctl"][:5] for i in decoded["war"]]
-        if got != [tuple(c) for c in WAR_CTL]:
-            bad.append(f"war: control bits {got}")
+    for name, want in (("war", WAR_CTL), ("loopwar", LOOPWAR_CTL)):
+        if name in decoded:
+            got = [i["ctl"][:5] for i in decoded[name]]
+            if got != [tuple(c) for c in want]:
+                bad.append(f"{name}: control bits {got}")
     for name, (op, wg) in KERNELS.items():
         if name in decoded:
             for n in SIZES:
                 r = run_kernel(decoded[name], op, wg, n)
                 if r:
                     bad.append(f"{name} n={n}: {r}")
+    errors = {}
+    if "dot-rows" in decoded:
+        c = check_control(decoded["dot-rows"])
+        if c:
+            bad.append(f"dot-rows: {c}")
+        for rows, cols, signed in (DOT_CASES if dot_cases is None else dot_cases):
+            r, e = run_dot(decoded["dot-rows"], rows, cols, signed)
+            errors[f"{rows}x{cols}{' signed' if signed else ''}"] = e
+            if r:
+                bad.append(f"dot-rows {rows}x{cols}: {r}")
+    judge.errors = errors
     return bad, decoded
 
 
@@ -497,6 +728,14 @@ LOWER_MUTANTS = [
     ("fadd-as-fmul", LOWER, "(= op SP-FADD) (binop W T Q L at MI-FADD)", "(= op SP-FADD) (binop W T Q L at MI-FMUL)"),
     ("gid-without-ctaid", LOWER, "(add Q L MI-IMADI r c 0 t (lg L 7) 0)", "(add Q L MI-IMADI r c 0 t 0 0)"),
     ("member-offset", LOWER, "o (ls L 11 (tg T p 2))", "o (ls L 11 (+ 4 (tg T p 2)))"),
+    ("loop-exit-not-inverted", LOWER, "(= nl tl) (branch Q (sm70-guard (tg T c 1) 1) fl)", "(= nl tl) (branch Q (sm70-guard (tg T c 1) 0) fl)"),
+    ("barrier-as-nop", LOWER, "(let [a (add Q L MI-BAR 0 0 0 0 0 0)]", "(let [a (add Q L MI-NOP 0 0 0 0 0 0)]"),
+    ("shared-stride", LOWER, "(add Q L MI-IMADI r (vreg T ix) 0 255 4 0)", "(add Q L MI-IMADI r (vreg T ix) 0 255 8 0)"),
+    ("shared-const-offset", LOWER, "(tset T id 17 (+ off (* 4 (tg T ix 2))) -1 0 0)", "(tset T id 17 (+ 4 off (* 4 (tg T ix 2))) -1 0 0)"),
+    ("header-not-moved", LOWER, "h (tset T hd 14 (mi-count Q) 0 0 0)", "h 0"),
+    ("no-bsync", LOWER, "y (if (>= merge-bar 0) (add Q L MI-BSYNC merge-bar 0 0 0 0 0) 0)", "y 0"),
+    ("var-store-lost", LOWER, "(cond (>= v 0) (add Q L MI-MOV (tg T p 3) v 0 0 0 0)", "(cond (>= v 0) (add Q L MI-MOV 255 v 0 0 0 0)"),
+    ("shift-amount", LOWER, "(add Q L MI-SHR r a 0 0 (tg T b 2) 0)", "(add Q L MI-SHR r a 0 0 (+ 1 (tg T b 2)) 0)"),
 ]
 SCHED_MUTANTS = [
     ("no-wait-mask", SCHED, "(mi-set Q k 8 (bit-or (i64-shift-left m 16)", "(mi-set Q k 8 (bit-or (i64-shift-left 0 16)"),
@@ -504,6 +743,10 @@ SCHED_MUTANTS = [
     ("no-read-barrier", SCHED, "(and (mi-var? op) (src-rewritten? Q k))", "(and (mi-var? op) false)"),
     ("gpr-latency-5", SCHED, "(def MI-LAT-GPR 6)", "(def MI-LAT-GPR 5)"),
     ("pred-latency-6", SCHED, "(def MI-LAT-PRED 13)", "(def MI-LAT-PRED 6)"),
+    ("no-branch-drain", SCHED, "(or (and (= op MI-BRA) (not= (mi-target Q k) k)) (= op MI-EXIT))", "(= op MI-EXIT)"),
+    ("no-back-edge-read-barrier", SCHED, "(and (= (mi-op Q j) MI-BRA) (<= (mi-target Q j) k)", "(and false (<= (mi-target Q j) k)"),
+    ("bar-exec-latency-1", SCHED, "(cond (= op MI-BAR) 5", "(cond (= op MI-BAR) 1"),
+    ("no-bar-yield", SCHED, "(or (= op MI-EXIT) (= op MI-BAR) (= op MI-BSYNC))", "(or (= op MI-EXIT) (= op MI-BSYNC))"),
 ]
 
 
@@ -542,8 +785,13 @@ def main():
         report.update(unit=uh, output=hashlib.sha256(out1.encode()).hexdigest(), failures=bad,
                       programs={k: [f"{lo:016x}{hi:016x}" for lo, hi in p["words"]] for k, p in progs.items()})
         for k, d in decoded.items():
-            if k != "war":
+            if k not in ("war", "loopwar"):
                 print(f"  {k}: " + " ".join(i["op"] for i in d))
+        errs = getattr(judge, "errors", {})
+        print(f"dot-rows: largest relative error per case (tolerance {DOT_TOL}): "
+              + ", ".join(f"{k} {v:.2e}" if v is not None else f"{k} none" for k, v in errs.items()))
+        report["dot_rows_errors"] = errs
+        report["dot_cases"] = DOT_CASES
 
         # control: corrupted control bits and one operand bit in the emitted words
         base = progs["ewise-add-wg256"]["words"]
@@ -555,12 +803,33 @@ def main():
             ("ldg-no-write-barrier", ldg_x, lambda w: set_ctl(w, "wr", 7)),
             ("mov-cb-offset-bit", ops.index("mov.cb", isetp), lambda w: (w[0] ^ (1 << 41), w[1])),
         ]
+        dbase = progs["dot-rows"]["words"]
+        dops = [i["op"] for i in decoded["dot-rows"]]
+        bars = [k for k, o in enumerate(dops) if o == "bar"]
+        bras = [k for k, o in enumerate(dops) if o == "bra"]
+        ldss = [k for k, o in enumerate(dops) if o == "lds"]
+        nop_word = NAK.op_nop((7, False), (0, 0, 7, 7, 0, 0))
+        dcontrols = [
+            ("dot-first-bar-as-nop", bars[0], lambda w: nop_word),
+            ("dot-tree-bar-as-nop", bars[1], lambda w: nop_word),
+            ("dot-loop-exit-not-inverted", bras[0], lambda w: (w[0] ^ (1 << 15), w[1])),
+            # the loop variable's MOV before the back edge: R0 is read again at the header
+            ("dot-back-edge-stall-1", bras[1] - 1, lambda w: set_ctl(w, "stall", 1)),
+            ("dot-lds-no-write-barrier", ldss[0], lambda w: set_ctl(w, "wr", 7)),
+            ("dot-bssy-target", dops.index("bssy"), lambda w: (w[0] ^ (1 << 36), w[1])),
+        ]
         ctl_report = []
-        for cname, k, fn in controls:
-            words = list(base)
+        for cname, k, fn in controls + dcontrols:
+            words = list(dbase if cname.startswith("dot-") else base)
             words[k] = fn(words[k])
             try:
-                r = run_kernel([decode(lo, hi) for lo, hi in words], "add", 256, 1000)
+                prog = [decode(lo, hi) for lo, hi in words]
+                if cname.startswith("dot-"):
+                    r = check_control(prog)
+                    for rows, cols, signed in DOT_CASES[:2]:
+                        r = r or run_dot(prog, rows, cols, signed)[0]
+                else:
+                    r = run_kernel(prog, "add", 256, 1000)
             except Unsupported as e:
                 r = f"Unsupported: {e}"
             ctl_report.append({"control": cname, "instr": k, "detected": r})
