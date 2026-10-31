@@ -3,8 +3,8 @@
 
 Python stages fixed sources/fixtures and observes native processes. Checking,
 CID/SCC production, object encoding/store validation, emission and relinking
-execute in Amu native images. This is outside FULL-MANIFEST: it is not a whole
-Seed compiler cache, a trusted image-binding host, or a CI speedup claim.
+execute in Amu native images. Its modules (04-09) are in FULL-MANIFEST since JUN-584, but
+this harness is not a whole Seed compiler cache, a trusted image-binding host, or a CI speedup claim.
 """
 import argparse
 import hashlib
@@ -46,7 +46,8 @@ def main(compiler, out, *, mutations=True):
     paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()
              if p and not p.startswith("#")]
     assert paths[-1] == "seed/78-full-entry.kotoba"
-    paths = paths[:-1] + EXTRA
+    # JUN-584: 04-09 are in FULL-MANIFEST now; add only the test fixtures it does not already carry.
+    paths = paths[:-1] + [p for p in EXTRA if p not in paths]
     source = b"\n".join((ROOT / p).read_bytes() for p in paths).decode()
     env = dict(PATH="/nonexistent", KEXE_ALLOW="35,37,38,39", KEXE_CAP_RESOURCES_35=str(out),
                KEXE_STACK_BYTES="8388608", KEXE_FUEL="10000000000")

@@ -9,8 +9,8 @@
 ;; (fn [p ..] body), all parameters :i64; a captured outer local is spelled with the OUTER binder's name, and a
 ;; call of a let-bound closure is spelled with that binder. Closures in loops, loops/recur inside a closure,
 ;; closures through interfaces and closures in operator position are refused. State, schemas, type refinements and
-;; unregistered capabilities still refuse atomically. They must be bridged before the whole
-;; compiler can use this entry. The source fuel/arena proof is a separate build
+;; unregistered capabilities refuse the module atomically on the legacy rows (format 0, dsb-source-format); the
+;; `definition-cids` report (05-definition-report, JUN-584) refuses them per definition instead. The source fuel/arena proof is a separate build
 ;; context; KIR identity alone does not qualify source-route object reuse.
 ;; Seed represents boolean defs as computed-def thunks. Only their literal
 ;; values cross this bridge; generated thunk names never acquire DefCIDs.
@@ -311,8 +311,12 @@
         (string-concat types (string-concat "] :result " (string-concat result
           (string-concat " :effects " (string-concat (dsb-effect-text (ck-f2 M f FN2-FX))
             (string-concat " :body " (string-concat body "}"))))))))))))))
+;; The hygienic-name salt, shared by both KIR paths.
+(defn- dsb-hygiene [M :vector-i64 S :string C :vector-i64] :vector-i64 (vector-assoc! C 2 (dsb-salt M S)))
+;; Seed computed-def thunks (one site for both KIR paths).
+(defn- dsb-cdef? [M :vector-i64 f :i64] :bool (ck-r6f-cdef-fn? M f))
 (defn- dsb-kir [M :vector-i64 S :string C :vector-i64] :string
-  (let [salt (vector-assoc! C 2 (dsb-salt M S))
+  (let [salt (dsb-hygiene M S C)
         guard (loop [f 1]
           (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
             (let [kind (nm-ff M f FF-KIND)
@@ -324,7 +328,7 @@
             (let [kind (nm-ff M f FF-KIND) sym (nm-ff M f FF-SYM)]
               (cond (= kind FK-DEF) (recur (inc f) out count)
                 (or (= kind FK-LAMBDA) (= kind FK-ADAPTER)) (recur (inc f) out count)
-                (ck-r6f-cdef-fn? M f)
+                (dsb-cdef? M f)
                   (if (dsb-literal? M (dsb-thunk-value M f)) (recur (inc f) out count)
                     (dsb-bad C 3 f))
                 (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))

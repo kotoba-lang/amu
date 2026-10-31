@@ -77,7 +77,7 @@ def main(candidate, output, isa):
     if pin(ROOT / "seed/x86_64-kx64-runner.kotoba") != record["runnerSource"]:
         raise ValueError("runner source changed since Mac generation")
     full_bytes, full_pin = source_unity(FULL, record["fullSource"])
-    if record["fullSource"]["modules"] != 49:
+    if record["fullSource"]["modules"] != 59:
         raise ValueError("unexpected complete manifest")
     output.mkdir(parents=True, exist_ok=False, mode=0o700)
     full = output / "full-unity.kotoba"
