@@ -390,6 +390,21 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1745 (JUN-600, ADR 0400: literal output
+  ports on the object route, `seed/74`).
+  * x86_64: F1 = F2 = F3 = `4df21bb5…` (9,249,280 bytes), from the
+    3,834,378-byte unity `be92d527…`. Its `--format host-entry` image is
+    `21ac201f…` (9,253,376 bytes).
+  * aarch64 root: F1 = F2 = `c8925690…` (3,863,040 bytes), container
+    `2e7b2d00…`, derived under qemu from the `30bcee14…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * Unchanged: the CDCI images, the 19 x86_64 payloads, the 19 aarch64
+    containers built with `--no-crypto-hw`, and all 178 kernel-object
+    sources (20 gates, their evidence sources and the kernel-memory dot
+    cases), identical to main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
