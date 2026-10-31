@@ -248,6 +248,17 @@ TPOFF/DTPMOD/DTPOFF), the C++ runtime's initialization and GNU_UNIQUE symbols, f
 a dependency from disk, and threads (E3: a context and a fuel word per thread). Everything that is not there refuses
 by name.
 
+### Slice 1 on aarch64-linux (2026-10-31, JUN-701)
+
+The owner put aarch64 first (2026-10-31): amu's B2 format and loader now build for aarch64-linux as well. Seed/80
+emits `--format b2` for aarch64 (kxrt-ccall with x0..x7 and stack words, E2, AAPCS64 entry thunks and the same export
+table) and seed/77 its runtime. `tools/b2` keeps what differs per target in `01-arch-*.kotoba` (system calls,
+`R_AARCH64_*`, TPIDR_EL0 and the instruction cache through a helper page, refusing stubs, `va_list`, the fault
+context, glibc's base version `GLIBC_2.17`), and the loader now applies text relocations (`DT_TEXTREL`). On Xavier,
+NVIDIA's `libvulkan.so.1.3.204` loads with no `ld.so` and no glibc and answers 1.3.204 with two instance extensions,
+equal to the system loader's answer with the drivers hidden; the NVIDIA ICD's `dlopen` refuses by name. Receipt:
+`docs/evidence/b2-aarch64-libvulkan-20261031/`. Slices 2 and on are still to come on both targets.
+
 ## Consequences
 
 * **B depends on glibc and driver internals.** The GPU hosts pin their

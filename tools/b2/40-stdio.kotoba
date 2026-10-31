@@ -65,7 +65,7 @@
 ;; readdir returns the glibc struct dirent (d_ino, d_off, d_reclen, d_type, d_name) as the kernel wrote it.
 (def DIR-BUF 32768)
 (defn- cx-opendir-GLIBC_2.2.5 [path :i64] :i64
-  (let [fd (sys4 SYS-OPENAT AT-FDCWD path 722944 0)]
+  (let [fd (sys4 SYS-OPENAT AT-FDCWD path O-OPENDIR 0)]
     (if (< fd 0) 0
       (let [d (malloc-alloc 32) buf (malloc-alloc DIR-BUF)]
         (if (or (= d 0) (= buf 0)) (let [z (sys1 SYS-CLOSE fd)] 0)
@@ -82,9 +82,9 @@
 
 ;; ---- files by name, the environment ----------------------------------------------------------------------------
 (defn- cx-access-GLIBC_2.2.5 [path :i64 mode :i64] :i64
-  (if (< (sys2 SYS-ACCESS path (i32 mode)) 0) -1 0))
+  (if (< (sys-access path (i32 mode)) 0) -1 0))
 (defn- cx-readlink-GLIBC_2.2.5 [path :i64 buf :i64 size :i64] :i64
-  (let [r (sys3 SYS-READLINK path buf size)] (if (< r 0) -1 r)))
+  (let [r (sys-readlink path buf size)] (if (< r 0) -1 r)))
 ;; the value of NAME in the environment vector, or 0
 (defn- env-find [name :i64] :i64
   (let [n (c-strlen name)]
@@ -134,6 +134,31 @@
 (defn- cx-pthread_mutex_unlock-GLIBC_2.2.5 [m :i64] :i64 (let [z (s32 m 0)] 0))
 
 ;; ---- process ----------------------------------------------------------------------------------------------------------
+(defn- cx-getuid-GLIBC_2.2.5 [] :i64 (sys0 SYS-GETUID))
+(defn- cx-geteuid-GLIBC_2.2.5 [] :i64 (sys0 SYS-GETEUID))
+(defn- cx-getgid-GLIBC_2.2.5 [] :i64 (sys0 SYS-GETGID))
+(defn- cx-getegid-GLIBC_2.2.5 [] :i64 (sys0 SYS-GETEGID))
+;; time(t): the seconds of CLOCK_REALTIME, also stored at t when it is not NULL
+(defn- cx-time-GLIBC_2.2.5 [t :i64] :i64
+  (let [ts (+ (kxrt-b-state) 12416) r (sys2 SYS-CLOCK-GETTIME 0 ts) v (if (< r 0) -1 (l64 ts))
+        z (if (= t 0) 0 (s64 t v))]
+    v))
+;; dirname modifies path in place, as glibc's: NULL or no slash gives ".", the root stays "/", trailing slashes and
+;; the last component go
+(defn- cx-dirname-GLIBC_2.2.5 [path :i64] :i64
+  (let [dot (+ (kxrt-b-state) 12432) z (s16 dot 46)]
+    (if (or (= path 0) (= (l8 path) 0)) dot
+      (let [n (c-strlen path)
+            e (loop [i (dec n)] (if (and (> i 0) (= (l8 (+ path i)) 47)) (recur (dec i)) i))
+            s (loop [i e] (cond (< i 0) -1 (= (l8 (+ path i)) 47) i :else (recur (dec i))))]
+        (if (< s 0) dot
+          (let [k (loop [i s] (if (and (> i 0) (= (l8 (+ path i)) 47)) (recur (dec i)) i))
+                w (s8 (+ path (inc k)) 0)]
+            path))))))
+(defn- cx-__assert_fail-GLIBC_2.2.5 [expr :i64 file :i64 line :i64 fn :i64] :i64
+  (let [w (warn (string-concat "b2: assertion failed in the loaded library: " (string-concat (c-str expr)
+                (string-concat " (" (string-concat (c-str file) (string-concat ":" (string-concat (dec-str (u32 line)) ")")))))))]
+    (sys1 SYS-EXIT-GROUP 134)))
 (defn- cx-abort-GLIBC_2.2.5 [] :i64
   (let [w (warn "b2: abort() called by the loaded library")] (sys1 SYS-EXIT-GROUP 134)))
 (defn- cx-__stack_chk_fail-GLIBC_2.4 [] :i64

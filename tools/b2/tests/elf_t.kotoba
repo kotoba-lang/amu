@@ -1,7 +1,8 @@
 ;; tools/b2/tests/elf_t.kotoba -- the ELF loader (tools/b2/50-elf.kotoba) on a shared object that scripts/seed/b2_fixture.py
 ;; writes by hand: segments, bss, relocations of four kinds, versioned imports, the GNU hash, init functions, dlopen/dlsym.
 ;; Argument 1 is the fixture's path, argument 2 an optional mode: a variant name (the loader must refuse it by name and
-;; exit 127), call-missing (calls the import nothing implements) or relro-write (writes into the RELRO page).
+;; exit 127), call-missing (calls the import nothing implements), relro-write (writes into the RELRO page) or textrel (the
+;; textrel fixture loads: every check, then its RELATIVE relocation into the text).
 ;; Run by scripts/seed/check-b2-libc.py with tools/b2/00..70 before it.
 
 (defn- expect [name :string got :i64 want :i64] :i64
@@ -43,5 +44,10 @@
         lib (elf-open "fixture" path)]
     (cond (and (not= mode 0) (c-eq? mode "call-missing")) (call0 (sym lib "fx_missing"))
           (and (not= mode 0) (c-eq? mode "relro-write")) (s64 (l64 (+ lib ELF-RELRO)) 1)
+          (and (not= mode 0) (c-eq? mode "textrel"))
+            (let [c (checks lib path) p (call0 (sym lib "fx_textcell"))
+                  t (expect "a RELATIVE relocation in the read-execute segment (DT_TEXTREL)"
+                            (if (and (not= p 0) (c-eq? p "hello from fixture")) 1 0) 1)]
+              (if (= (+ c t) 0) 0 1))
           (not= mode 0) 0
           :else (if (= (checks lib path) 0) 0 1))))
