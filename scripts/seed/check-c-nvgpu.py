@@ -2,7 +2,7 @@
 """Route C on Tegra's nvgpu, step 1 (ADR 0375 route C, JUN-701 C1): a Kotoba program reads the GPU's characteristics
 from the kernel driver itself. Xavier (or another nvgpu host) only.
 
-The unit tools/c/MANIFEST (route B2's base and arch file, then tools/c) is compiled with --compiler as a --format b2
+The unit tools/c/MANIFEST (route B2's base and arch file, then tools/c) and tools/c/90-nvgpu-probe.kotoba is compiled with --compiler as a --format b2
 image for this host and run. It opens /dev/nvgpu/igpu0/ctrl and issues NVGPU_GPU_IOCTL_GET_CHARACTERISTICS with raw
 system calls; no vendor user-space code, no C and no libc is in the process. Checked, with the receipt in
 --output/c-nvgpu.json:
@@ -25,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 NS = "(ns g (:export [main]))\n"
 CTRL = "/dev/nvgpu/igpu0/ctrl"
+PROGRAM = "tools/c/90-nvgpu-probe.kotoba"
 ORACLE = r'''
 import fcntl, os, struct, ctypes
 fd = os.open("/dev/nvgpu/igpu0/ctrl", os.O_RDWR | os.O_CLOEXEC)
@@ -47,7 +48,7 @@ def pin(path):
 
 
 def unit_files(arch):
-    return [l.replace("@ARCH@", arch) for l in (ROOT / "tools/c/MANIFEST").read_text().splitlines() if l and not l.startswith("#")]
+    return [l.replace("@ARCH@", arch) for l in (ROOT / "tools/c/MANIFEST").read_text().splitlines() if l and not l.startswith("#")] + [PROGRAM]
 
 
 def main(compiler, output):
