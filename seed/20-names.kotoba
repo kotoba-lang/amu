@@ -928,9 +928,168 @@
             :else (recur M1 (nm-next M1 n) n)))))
 ;; ==== END R6B top-level shapes ====
 
+;; ==== JUN-730: closed multimethods (lang/guest-grammar.edn :closed-multimethod). Reader sugar, expanded here before any
+;; name is registered: (defmulti NAME [doc] DISPATCH) and every (defmethod NAME KEY [params] body ..) of the module ->
+;; (defn NAME [params] (case (DISPATCH p ..) KEY body .. [the :default body])), in place of the defmulti. DISPATCH is an
+;; unqualified symbol or a keyword; KEY an integer or keyword literal; all parameter vectors identical and plain (symbols,
+;; each optionally typed); several body forms are one (do ..). No hierarchy, prefer or runtime extension.
+;; Refused: E2006 a malformed form, E2007 a defmethod of a multimethod this module does not declare (no cross-module
+;; extension), E2001 a defmulti of a name defined before. defprotocol / extend-type / extend-protocol stay E2003 (the
+;; protocol half of JUN-730 does not fit the static profile's token table, MM-TOK-CAP, yet).
+(defn- nm-dp-hash [M :vector-i64 n :i64] :i64 (if (= (nm-kind M n) ND-SYM) (nm-sf M (nm-sym-of M n) SF-HASH) 0))
+;; 1 defmulti 2 defmethod, else 0 (FNV-1a of the head spelling)
+(defn- nm-dp-kind [M :vector-i64 n :i64] :i64
+  (let [h (nm-dp-hash M (nm-first M n))]
+    (cond (nm-ne (nm-kind M n) ND-LIST) 0
+          (= h 7861214348977533273) 1
+          (= h 3326915533004130693) 2
+          :else 0)))
+(defn- nm-dp-root [M :vector-i64] :i64 (nm-first M (vector-at M MM-ROOT)))
+(defn- nm-dp-any? [M :vector-i64] :bool
+  (loop [c (nm-dp-root M)] (cond (zero? c) false (pos? (nm-dp-kind M c)) true :else (recur (nm-next M c)))))
+;; FNV-1a of :default
+(defn- nm-dp-default-kw? [M :vector-i64 k :i64] :bool (= (nm-sf M (nm-sym-of M k) SF-HASH) -3101751874453212538))
+
+;; a new node (the fields not set stay zero: no node past MM-NODE-N was written); R0 = its index
+(defn- nm-dp-new [M :vector-i64 kind :i64 tok :i64 sym :i64 f0 :i64] :vector-i64
+  (let [n (vector-at M MM-NODE-N)]
+    (if (< n MM-NODE-CAP)
+      (-> M (nm-set-nf n NF-KIND kind) (nm-set-nf n NF-FIRST f0) (nm-set-nf n NF-TOK tok) (nm-set-nf n NF-SYM sym)
+          (nm-put MM-NODE-N (+ n 1)) (nm-put MM-R0 n))
+      (nm-put (nm-err M E-HEAP-REGION 0 4) MM-R0 0))))
+;; a node of kind kind whose symbol is a fresh gensym with SF-HEAD = code (a head code, a KW-* code, or 0 for a fresh name)
+(defn- nm-dp-gnode [M :vector-i64 kind :i64 tok :i64 code :i64] :vector-i64
+  (let [M1 (nm-gensym M (nm-tf M tok TF-START) code)]
+    (nm-dp-new M1 kind tok (vector-at M1 MM-R0) 0)))
+
+;; a type form: a keyword or a vector that starts with a keyword
+(defn- nm-dp-tform? [M :vector-i64 t :i64] :bool
+  (or (= (nm-kind M t) ND-KW) (and (= (nm-kind M t) ND-VEC) (= (nm-kind M (nm-first M t)) ND-KW))))
+;; a plain parameter vector: one or more symbols (not &), each optionally followed by one type form
+(defn- nm-dp-plain? [M :vector-i64 v :i64] :bool
+  (and (= (nm-kind M v) ND-VEC) (= (nm-kind M (nm-first M v)) ND-SYM)
+       (loop [c (nm-first M v) after-sym false]
+         (cond (zero? c) true
+               (and (= (nm-kind M c) ND-SYM) (nm-ne (nm-head-of M c) HD-AMP)) (recur (nm-next M c) true)
+               (and after-sym (nm-dp-tform? M c)) (recur (nm-next M c) false)
+               :else false))))
+;; structural equality of two trees (kinds, symbols, integer values)
+(defn- nm-dp-same? [M :vector-i64 a :i64 b :i64] :bool
+  (cond (nm-ne (nm-kind M a) (nm-kind M b)) false
+        (nm-ne (nm-sym-of M a) (nm-sym-of M b)) false
+        (and (= (nm-kind M a) ND-INT) (nm-ne (nm-nf M a NF-AUX) (nm-nf M b NF-AUX))) false
+        (= (nm-kind M a) ND-STR) false
+        :else (loop [x (nm-first M a) y (nm-first M b)]
+                (cond (and (zero? x) (zero? y)) true
+                      (or (zero? x) (zero? y)) false
+                      (nm-dp-same? M x y) (recur (nm-next M x) (nm-next M y))
+                      :else false))))
+
+;; ---- multimethods ----
+;; the method body from b: b itself when it is the only form, else (do b ..); R0 = that node
+(defn- nm-dp-body [M :vector-i64 b :i64 tok :i64] :vector-i64
+  (if (zero? (nm-next M b))
+    (nm-put M MM-R0 b)
+    (let [M1 (nm-dp-gnode M ND-SYM tok HD-DO)
+          h (vector-at M1 MM-R0)]
+      (nm-dp-new (nm-set-nf M1 h NF-NEXT b) ND-LIST tok 0 h))))
+;; copies of the parameter symbols of vector pv, chained; R0 = the first
+(defn- nm-dp-args [M :vector-i64 pv :i64] :vector-i64
+  (loop [M1 M c (nm-first M pv) a0 0 al 0]
+    (cond (or (zero? c) (nm-failed M1)) (nm-put M1 MM-R0 a0)
+          (= (nm-kind M1 c) ND-SYM)
+          (let [M2 (nm-dp-new M1 ND-SYM (nm-nf M1 c NF-TOK) (nm-sym-of M1 c) 0)
+                x (vector-at M2 MM-R0)
+                M3 (if (zero? al) M2 (nm-set-nf M2 al NF-NEXT x))]
+            (recur M3 (nm-next M3 c) (if (zero? a0) x a0) x))
+          :else (recur M1 (nm-next M1 c) a0 al))))
+;; the defmulti form d becomes (defn NAME pv0 (case (disp p ..) clauses .. [dflt])); cl0 = the first clause key, prev = the
+;; last clause body (0 when there is none), dflt = the :default body or 0
+(defn- nm-dp-multi-end [M :vector-i64 d :i64 nmn :i64 disp :i64 tok :i64 pv0 :i64 cl0 :i64 prev :i64 dflt :i64] :vector-i64
+  (if (zero? pv0)
+    (nm-err-node M E-NAMES-DISPATCH nmn 0)
+    (let [M1 (if (zero? prev) M (nm-set-nf M prev NF-NEXT dflt))
+          M2 (nm-dp-args M1 pv0)
+          M3 (nm-set-nf M2 disp NF-NEXT (vector-at M2 MM-R0))
+          M4 (nm-dp-new M3 ND-LIST tok 0 disp)
+          dc (vector-at M4 MM-R0)
+          M5 (nm-set-nf M4 dc NF-NEXT (if (zero? cl0) dflt cl0))
+          M6 (nm-dp-gnode M5 ND-SYM tok HD-CASE)
+          hc (vector-at M6 MM-R0)
+          M7 (nm-dp-new (nm-set-nf M6 hc NF-NEXT dc) ND-LIST tok 0 hc)
+          cs (vector-at M7 MM-R0)
+          M8 (nm-dp-gnode M7 ND-SYM tok HD-DEFN)
+          hd (vector-at M8 MM-R0)]
+      (-> M8 (nm-set-nf hd NF-NEXT nmn) (nm-set-nf nmn NF-NEXT pv0) (nm-set-nf pv0 NF-NEXT cs) (nm-set-nf d NF-FIRST hd)))))
+;; gather the defmethods of the defmulti d (symbol s) in source order; a consumed defmethod gets NF-SYM -1
+(defn- nm-dp-multi2 [M :vector-i64 d :i64 nmn :i64 disp :i64 tok :i64] :vector-i64
+  (let [s (nm-sym-of M nmn)]
+    (loop [M1 M c (nm-dp-root M) pv0 0 cl0 0 prev 0 dflt 0]
+      (cond (nm-failed M1) M1
+            (zero? c) (nm-dp-multi-end M1 d nmn disp tok pv0 cl0 prev dflt)
+            (and (= (nm-dp-kind M1 c) 2) (= (nm-sym-of M1 (nm-nth M1 c 1)) s) (nm-ne (nm-nf M1 c NF-SYM) -1))
+            (let [k (nm-nth M1 c 2)
+                  pv (nm-nth M1 c 3)
+                  b (nm-next M1 pv)
+                  nx (nm-next M1 c)]
+              (cond (zero? b) (nm-err-node M1 E-NAMES-DISPATCH (nm-nth M1 c 1) 0)
+                    (not (or (= (nm-kind M1 k) ND-INT) (= (nm-kind M1 k) ND-KW))) (nm-err-node M1 E-NAMES-DISPATCH k 0)
+                    (not (nm-dp-plain? M1 pv)) (nm-err-node M1 E-NAMES-DISPATCH pv 0)
+                    (and (pos? pv0) (not (nm-dp-same? M1 pv pv0))) (nm-err-node M1 E-NAMES-DISPATCH pv 0)
+                    (and (nm-dp-default-kw? M1 k) (pos? dflt)) (nm-err-node M1 E-NAMES-DISPATCH k 0)
+                    :else
+                    (let [M2 (nm-set-nf (nm-dp-body M1 b tok) c NF-SYM -1)
+                          bn (vector-at M2 MM-R0)
+                          pvk (if (zero? pv0) pv pv0)]
+                      (if (nm-dp-default-kw? M2 k)
+                        (recur M2 nx pvk cl0 prev bn)
+                        (let [M3 (nm-set-nf M2 k NF-NEXT bn)
+                              M4 (if (zero? prev) M3 (nm-set-nf M3 prev NF-NEXT k))]
+                          (recur M4 nx pvk (if (zero? cl0) k cl0) bn dflt))))))
+            :else (recur M1 (nm-next M1 c) pv0 cl0 prev dflt)))))
+;; (defmulti NAME [doc] DISPATCH)
+(defn- nm-dp-multi [M :vector-i64 d :i64] :vector-i64
+  (let [nmn (nm-nth M d 1)
+        x (nm-nth M d 2)
+        disp (if (and (= (nm-kind M x) ND-STR) (pos? (nm-next M x))) (nm-next M x) x)]
+    (cond (nm-ne (nm-kind M nmn) ND-SYM) (nm-err-node M E-NAMES-DISPATCH (nm-first M d) 0)
+          (pos? (nm-dp-find M (nm-sym-of M nmn) d)) (nm-err-node M E-NAMES-DUP nmn 0)   ; an earlier definition
+          (or (zero? disp) (pos? (nm-next M disp))
+              (not (or (= (nm-kind M disp) ND-KW) (and (= (nm-kind M disp) ND-SYM) (nm-ne (nm-head-of M disp) HD-AMP)))))
+          (nm-err-node M E-NAMES-DISPATCH nmn 0)
+          :else (nm-dp-multi2 M d nmn disp (nm-nf M (nm-first M d) NF-TOK)))))
+
+;; the first top-level def / defn / defn- / defmulti before stop named by symbol s, 0 when there is none
+(defn- nm-dp-find [M :vector-i64 s :i64 stop :i64] :i64
+  (loop [c (nm-dp-root M)]
+    (cond (or (zero? c) (= c stop)) 0
+          (and (= (nm-sym-of M (nm-nth M c 1)) s) (or (= (nm-dp-kind M c) 1) (pos? (nm-form-kind (nm-form-head M c))))) c
+          :else (recur (nm-next M c)))))
+;; ---- the pass ----
+(defn- nm-dp-each [M :vector-i64 k :i64] :vector-i64
+  (loop [M1 M c (nm-dp-root M)]
+    (let [x (nm-dp-kind M1 c)]
+      (cond (or (zero? c) (nm-failed M1)) M1
+            (and (= k 2) (= x 2) (nm-ne (nm-nf M1 c NF-SYM) -1)) (nm-err-node M1 E-NAMES-OPEN (nm-nth M1 c 1) 0)
+            (and (= k 1) (= x 1)) (recur (nm-dp-multi M1 c) (nm-next M1 c))
+            :else (recur M1 (nm-next M1 c))))))
+;; drop the consumed defmethods from the top level
+(defn- nm-dp-relink [M :vector-i64] :vector-i64
+  (loop [M1 M c (nm-dp-root M) l 0]
+    (cond (zero? c) (let [M2 (if (zero? l) (nm-set-nf M1 (vector-at M1 MM-ROOT) NF-FIRST 0) (nm-set-nf M1 l NF-NEXT 0))]
+                      (nm-set-nf M2 (vector-at M2 MM-ROOT) NF-AUX (nm-count M2 (vector-at M2 MM-ROOT))))
+          (= (nm-dp-kind M1 c) 2) (recur M1 (nm-next M1 c) l)
+          :else (recur (if (zero? l) (nm-set-nf M1 (vector-at M1 MM-ROOT) NF-FIRST c) (nm-set-nf M1 l NF-NEXT c)) (nm-next M1 c) c))))
+(defn- nm-dp-norm [M :vector-i64] :vector-i64
+  (if (or (nm-failed M) (not (nm-dp-any? M)))
+    (nm-touch M)
+    (let [M1 (-> M (nm-dp-each 1) (nm-dp-each 2))]
+      (if (nm-failed M1) M1 (nm-dp-relink M1)))))
+;; ==== END JUN-730 ====
+
 ;; the whole pass
 (defn- nm-run [M :vector-i64 S :string] :vector-i64
-  (nm-run-defs (nm-r6b-norm (nm-intern-nodes M S 1))))   ; R6B: + nm-r6b-norm
+  (nm-run-defs (nm-dp-norm (nm-r6b-norm (nm-intern-nodes M S 1)))))   ; R6B: + nm-r6b-norm; JUN-730: + nm-dp-norm
 
 (defn- nm-run-defs [M :vector-i64] :vector-i64
   (let [ns (nm-first M (vector-at M MM-ROOT))]

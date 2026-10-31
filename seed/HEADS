@@ -273,7 +273,13 @@
                         RT RT-PAIR-FIRST t 1. The field keyword's NF-RES = the field index (21-check)"]
   [:c HD-DEFRECORD 70 "(defrecord Name [f :T g ..]) top level; unannotated fields are :i64; 1..32 unique fields.
                        Identity: the keyword :<ns>/Name when the file spells it (then inline schemas of that name must
-                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR)"]
+                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR).
+                       JUN-730: the top-level defmulti / defmethod forms (no head codes: recognized by spelling) are
+                       reader sugar that 20-names (nm-dp-norm) expands before any name is registered
+                       (lang/guest-grammar.edn :closed-multimethod): a defmulti and all its defmethods -> one
+                       (defn NAME [params] (case (DISPATCH p ..) KEY body .. [default])) in place of the defmulti.
+                       defprotocol / extend-type / extend-protocol and inline implementations stay E2003 (they do not fit
+                       the x86/aarch64 static profile's MM-TOK-CAP yet); reify is refused E2181; definterface stays E2003"]
   [:c HD-GET 71 "(get r :f) on a record -> field f. JUN-734: (get m k) on a typed map [:map K V] -> [:option V] (k:K;
                  lowered as typed-map-get, 4 hidden slots: lang/guest-grammar.edn lookup is get, [:option V] or V with
                  a default); (get m k d) stays V (R3)"]
@@ -554,6 +560,10 @@
   [:c E-NAMES-TOP 2003 "unsupported top-level form '{name}'"]
   [:c E-NAMES-NS 2004 "the file must start with (ns NAME (:export [...]))"]
   [:c E-NAMES-EXPORT 2005 "export of undefined function '{name}'"]
+  ;; JUN-730 (closed multimethods, 20-names nm-dp-norm): a malformed defmulti / defmethod; a defmethod of a multimethod
+  ;; the module does not declare
+  [:c E-NAMES-DISPATCH 2006 "malformed closed dispatch form '{name}'"]
+  [:c E-NAMES-OPEN 2007 "closed dispatch: '{name}' is not declared in this module (no cross-module or runtime extension)"]
   [:c E-CHECK-HEAD 2101 "unknown or unsupported form '{name}'"]
   [:c E-CHECK-SYM 2102 "unknown symbol '{name}'"]
   [:c E-CHECK-ARITY 2103 "wrong number of arguments to '{name}': expected {n}"]
@@ -597,6 +607,8 @@
   ;; -- R4B (E2140-E2177 are reserved for R5) --
   [:c E-CHECK-PARAMS16 2178 "more than 16 parameters in '{name}'"]
   [:c E-CHECK-REF 2179 "type references an undeclared record schema '{name}'"]
+  ;; JUN-730: reify is a permanent refusal (closed static dispatch has no anonymous implementations, ADR 0204)
+  [:c E-CHECK-REIFY 2181 "reify is not admitted (closed static dispatch; implement the protocol on a record): '{name}'"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
