@@ -95,7 +95,7 @@ actual guest receipts; full scheduling and shared Browser remain separate.
 - The complete candidate uses `seed/FULL-MANIFEST` (48 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
+  also uses LitB1MiB and TOK786432 and NODE786432 and SIR589824 and MM-WORDS31,457,280 (<2^25). Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
@@ -336,6 +336,25 @@ malformed and duplicate profile declarations refuse. This is implementation
 approval only: both ISA gates, rebuilt root/public/roles and new executed
 boundary/mutation controls remain required before adoption or measurement.
 
+
+## Plain-emitter inline vectors and register cache (2026-10-28)
+
+The x86_64 (seed/70-71) and aarch64-linux (seed/80) runtime-profile emitters
+inline vector-at, vector-assoc! and count from v11 context words 312/320/328
+and store fresh VEC/VECP items directly; contract text in
+seed/X86_64-LINUX-ABI. Keep the helpers' check order and refusal (ud2 /
+udf #0), never cache a descriptor across operations, and keep every item
+write inside a described view (the zero-highwater rule above). M[190..191]
+is the rax/x9 cache: any emitted byte and any LABEL clear it, and only the
+runtime profile uses it, so profiles 0 and 2 keep their bytes. pair-first,
+pair-second/string-length (words 288/296) are inlined the same way, and
+string-code-point-at reads a code-relative ASCII byte in line under the R4
+rule (as 41-a64gen gn-rt-cpa), calling the helper for every other case. The
+runtime's string helpers (seed/76 = seed/77 text: kxrt-pair, kxrt-span,
+kxrt-code-point-at) read their globals through one G; keep their checks and
+order. A change to these paths must keep scripts/seed/check-inline-vectors.py
+(exact helper-call observations, vector, pair and string cases) passing on
+both ISAs. Evidence: docs/evidence/plain-emitter-inline-20261028.
 
 ## Closed native benchmark measurement host candidate (KOTOBA-145)
 

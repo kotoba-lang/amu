@@ -9,8 +9,12 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-MARK = "r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))"
-WITHOUT = "r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) w (kxrt-gs 48 (inc u))"
+# kxrt-vnew reads and writes its globals through one G (seed/76, seed/77), so
+# (kxrt-gl k) reads as (kxrt-load64 (+ g k)) and (kxrt-gs k v) as (kxrt-store64 (+ g k) v).
+MARK = "r (kxrt-store64 (+ (kxrt-load64 (+ g 688)) (* u 8)) 0) high (if (> (+ off n) (kxrt-load64 (+ g 760))) (kxrt-store64 (+ g 760) (+ off n)) 0) w (kxrt-store64 (+ g 48) (inc u))"
+WITHOUT = "r (kxrt-store64 (+ (kxrt-load64 (+ g 688)) (* u 8)) 0) w (kxrt-store64 (+ g 48) (inc u))"
+ABSOLUTE = "(kxrt-store64 (+ g 760) (+ off n))"
+RELATIVE = "(kxrt-store64 (+ g 760) n)"
 END_BOUND = "byte-end (+ base (* 8 count))"
 SHORT_BOUND = "byte-end (+ base (* 8 (if (> count 0) (dec count) 0)))"
 
@@ -25,7 +29,7 @@ def main(compiler, out):
     out.mkdir(parents=True, exist_ok=False)
     paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines() if p and not p.startswith("#")]
     original = b"".join((ROOT / p).read_bytes() + b"\n" for p in paths).decode()
-    assert original.count(MARK) == 2 and original.count(END_BOUND) == 2
+    assert original.count(MARK) == 2 and original.count(END_BOUND) == 2 and original.count(ABSOLUTE) == 2
     fixture = ROOT / "seed/tests/native-zero-watermark.kotoba"
     source = out / "oracle.kotoba"
     source.write_bytes(fixture.read_bytes())
@@ -64,7 +68,7 @@ def main(compiler, out):
     run("fresh-reused-partial-and-nested-scopes", [image], execution=True)
     report["image"] = pin(image)
     for name, changed in (("missing-marker", original.replace(MARK, WITHOUT)),
-                           ("relative-marker", original.replace("(kxrt-gs 760 (+ off n))", "(kxrt-gs 760 n)")),
+                           ("relative-marker", original.replace(ABSOLUTE, RELATIVE)),
                            ("last-word", original.replace(END_BOUND, SHORT_BOUND))):
         src = out / ("mutant-" + name + ".kotoba")
         src.write_text(changed)
