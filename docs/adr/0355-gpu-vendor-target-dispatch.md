@@ -5975,3 +5975,43 @@ the cross-day tail-movement row (not queued) -- NO queued row
 remains. Evidence:
 docs/evidence/gpu/anv-b3bisect10-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 131, JUN-59 -- ELEVENTH CUT PRE-REGISTRATION,
+the s130 carry-forward (a)'s design half: the MULTI-BLOCK STABILITY
+REQUIREMENT CUT -- the tenth cut's "named here, not specified here"
+multi-block stability requirement is now SPECIFIED and frozen):
+protocol.txt (freeze stamp 2026-10-31T13:50:45Z) confronts the L9
+block-run-instability the tenth cut confirmed at mid (248,973)
+n=254,882 and hi (1213,4753) n=255,208 (C3 (c)/W1 (c),
+publication-s129.txt) at 8 blocks of 3 (k=24 per point, 54 fresh
+processes with c2/c8 controls -- double the tenth cut's block
+count, confronting L10's named coarseness; ZERO new knob triples,
+4/4 pinned binaries, both B=3 pins rebuilt byte-identical at
+s129). A point PASSES (8-block form) iff all 8 block classes AND
+the pooled-24 class are equal under the frozen method -- the
+direct extension of the frozen unanimity criterion, NO new
+threshold; the narrowing channel re-opens at a point ONLY via a
+NEW pre-registered cut and ONLY if that point passed here (W1
+letters (a) both pass / (b) one passes / (c) neither / (d)
+INVALID). lo is NOT re-measured (its tenth-cut STABLE-INTERMEDIATE
+stands). ACCEPTED DESIGN ONLY -- every eleventh-cut quantity is
+UNMEASURED until a future measurement-half session runs (NOT
+queued). knob-search-s131.py twice byte-identical (6,896 bytes,
+self-validates against committed runs s123 AND s126; boundary-
+crossing counts computed from the tenth cut's committed
+trajectories: lo 1/12, mid 2/12, hi 5/12 at min >= 1,000 --
+descriptive). Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 ==
+both s88 pins (scratch runner deleted after run 2); (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s132: the eleventh cut's measurement half (its own
+session, NOT queued), any further counted-day slot (next slot is a
+NEW UTC day, its own freeze) and the cross-day tail-movement row
+(not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect11prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
