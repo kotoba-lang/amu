@@ -1,0 +1,283 @@
+(ns sm70-lower (:export [sm70-lower sm70-lower-error-op]))
+
+;; KIR v2 to SM 7.0 / 7.2 (route C, JUN-723). A KIR v2 kernel
+;; (tools/gpu_kernels_v2.kotoba, ADR 0372) is a SPIR-V module; this pass
+;; reads the module's words and writes the machine IR of sm70_sched.kotoba,
+;; which sm70-schedule and sm70-emit-mir turn into instruction words.
+;;
+;; The subset is that of kir2-ewise: storage buffers of 32-bit scalars or
+;; runtime arrays of them, the x component of GlobalInvocationId /
+;; WorkgroupId / LocalInvocationId, OpLoad / OpStore through OpAccessChain,
+;; f32 add and mul, u32 add and mul, the integer compares, one level of
+;; if without an else body (the then-block is predicated), and OpReturn.
+;; Anything else is refused with a code; nothing is guessed. Loops, shared
+;; memory and barriers (kir2-dot-rows) are not in the subset.
+;;
+;; The launch interface is an assumption of this pass, to be fixed by the
+;; launcher (JUN-714): the 64-bit device address of descriptor binding b is
+;; at c[0][base + 8 b] (low word first), base = 0x160 as the CUDA ABI puts
+;; kernel parameters on Volta. Every load and store builds its address from
+;; there: MOV the pair from the constant bank, IMAD.WIDE.U32 by the element
+;; stride for an element index, and the struct member offset in the LDG/STG
+;; immediate.
+;;
+;; Registers are given out in order and never reused (R0 up, pairs even);
+;; predicates likewise (P0 up). A module needing more is refused.
+;;
+;; A unit that uses this file prepends its own ns line and drops this one,
+;; after sm70_encode.kotoba and sm70_sched.kotoba.
+
+;; refusals (the IR's error)
+(def SL-E-HEADER 101)  ;; not a SPIR-V module this pass reads
+(def SL-E-OP 102)      ;; an instruction outside the subset (sm70-lower-error-op names it)
+(def SL-E-SHAPE 103)   ;; a supported instruction in an unsupported form
+(def SL-E-REGS 104)    ;; out of registers or predicates
+
+;; SPIR-V numbers used here
+(def SP-ENTRY 15)
+(def SP-EXECMODE 16)
+(def SP-DECORATE 71)
+(def SP-MEMBERDEC 72)
+(def SP-TYPEBOOL 20)
+(def SP-TYPEINT 21)
+(def SP-TYPEFLOAT 22)
+(def SP-TYPEVEC 23)
+(def SP-TYPERTA 29)
+(def SP-TYPESTRUCT 30)
+(def SP-TYPEPTR 32)
+(def SP-CONST 43)
+(def SP-FUNCTION 54)
+(def SP-FUNCEND 56)
+(def SP-VARIABLE 59)
+(def SP-LOAD 61)
+(def SP-STORE 62)
+(def SP-ACCESS 65)
+(def SP-INBOUNDS 66)
+(def SP-EXTRACT 81)
+(def SP-IADD 128)
+(def SP-FADD 129)
+(def SP-IMUL 132)
+(def SP-FMUL 133)
+(def SP-LOOPMERGE 246)
+(def SP-SELMERGE 247)
+(def SP-LABEL 248)
+(def SP-BRANCH 249)
+(def SP-BRCOND 250)
+(def SP-RETURN 253)
+
+;; ---------------------------------------------------------------------
+;; The id table: id i has six slots at T[6 i]: kind, a, b, c, d, e.
+;; kinds: 1 int (a width, b signed), 2 float (a width), 3 bool, 4 pointer (a
+;; storage class, b pointee), 5 struct (a members, b the first member type),
+;; 6 runtime array (a element), 7 vector, 8 constant (a type, b value), 9
+;; variable (a pointer type, b storage class), 10 a loaded built-in vector
+;; (a the built-in), 11 a GPR value (a register), 12 a predicate value (a
+;; predicate), 13 an access chain (a variable, b byte offset, c the index id
+;; or -1, d the element stride), 14 a label.
+;; Decorations per id: binding at D[i], built-in at D[n + i], array stride at
+;; D[2n + i], descriptor set at D[3n + i] (-1 none). Struct member m of
+;; struct s: offset at O[2 (8 s' + m)], type at O[... + 1], kept for the first
+;; 8 members of up to the id bound.
+
+(defn- tg [T :vector-i64 i :i64 f :i64] :i64 (vector-at T (+ (* 6 i) f)))
+(defn- ts [T :vector-i64 i :i64 f :i64 v :i64] :i64 (let [z (vector-assoc! T (+ (* 6 i) f) v)] v))
+(defn- tset [T :vector-i64 i :i64 kind :i64 a :i64 b :i64 c :i64 d :i64] :i64
+  (let [x0 (ts T i 0 kind) x1 (ts T i 1 a) x2 (ts T i 2 b) x3 (ts T i 3 c) x4 (ts T i 4 d)] i))
+
+(defn- w [W :vector-i64 k :i64] :i64 (spv-word W k))
+
+;; L: the pass's state. 0 next GPR, 1 next predicate, 2 the guard, 3 the
+;; open if's merge label (0 none), 4 its then label, 5 its else label, 6 in
+;; the else block, 7 LocalSize x, 8 the constant-bank base, 9 the refused
+;; opcode, 10 the id bound
+(defn- lg [L :vector-i64 k :i64] :i64 (vector-at L k))
+(defn- ls [L :vector-i64 k :i64 v :i64] :i64 (let [z (vector-assoc! L k v)] v))
+
+(defn- fail [Q :vector-i64 code :i64] :i64 (let [z (if (= (vector-at Q 1) 0) (vector-assoc! Q 1 code) Q)] -1))
+
+(defn- gpr [Q :vector-i64 L :vector-i64] :i64
+  (let [r (lg L 0)] (if (> r 253) (fail Q SL-E-REGS) (let [z (ls L 0 (inc r))] r))))
+(defn- gpr-pair [Q :vector-i64 L :vector-i64] :i64
+  (let [r0 (lg L 0) r (if (= (bit-and r0 1) 0) r0 (inc r0))]
+    (if (> r 252) (fail Q SL-E-REGS) (let [z (ls L 0 (+ r 2))] r))))
+(defn- pred [Q :vector-i64 L :vector-i64] :i64
+  (let [p (lg L 1)] (if (> p 6) (fail Q SL-E-REGS) (let [z (ls L 1 (inc p))] p))))
+
+(defn- add [Q :vector-i64 L :vector-i64 op :i64 d :i64 a :i64 b :i64 c :i64 x :i64 y :i64] :i64
+  (mi-add Q op (lg L 2) d a b c x y))
+
+;; ---------------------------------------------------------------------
+;; Pass 1: the module-level instructions.
+
+(defn- dget [D :vector-i64 n :i64 slot :i64 i :i64] :i64 (vector-at D (+ (* slot n) i)))
+(defn- dset [D :vector-i64 n :i64 slot :i64 i :i64 v :i64] :i64 (let [z (vector-assoc! D (+ (* slot n) i) v)] v))
+(defn- oat [s :i64 m :i64] :i64 (* 2 (+ (* 8 s) m)))
+
+(defn- scan-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
+  (let [n (lg L 10)]
+    (cond (= op SP-EXECMODE) (if (= (w W (+ at 2)) 17) (ls L 7 (w W (+ at 3))) 0)
+          (= op SP-DECORATE)
+          (let [i (w W (+ at 1)) dec (w W (+ at 2)) v (if (> wc 3) (w W (+ at 3)) 0)]
+            (cond (= dec 33) (dset D n 0 i v) (= dec 11) (dset D n 1 i v)
+                  (= dec 6) (dset D n 2 i v) (= dec 34) (dset D n 3 i v) :else 0))
+          (= op SP-MEMBERDEC)
+          (let [s (w W (+ at 1)) m (w W (+ at 2))]
+            (if (and (= (w W (+ at 3)) 35) (< m 8)) (let [z (vector-assoc! O (oat s m) (w W (+ at 4)))] 0) 0))
+          (= op SP-TYPEBOOL) (tset T (w W (+ at 1)) 3 0 0 0 0)
+          (= op SP-TYPEINT) (tset T (w W (+ at 1)) 1 (w W (+ at 2)) (w W (+ at 3)) 0 0)
+          (= op SP-TYPEFLOAT) (tset T (w W (+ at 1)) 2 (w W (+ at 2)) 0 0 0)
+          (= op SP-TYPEVEC) (tset T (w W (+ at 1)) 7 (w W (+ at 2)) (w W (+ at 3)) 0 0)
+          (= op SP-TYPERTA) (tset T (w W (+ at 1)) 6 (w W (+ at 2)) 0 0 0)
+          (= op SP-TYPESTRUCT)
+          (let [s (w W (+ at 1)) nm (- wc 2)]
+            (loop [m 0]
+              (if (or (>= m nm) (>= m 8)) (tset T s 5 nm (w W (+ at 2)) 0 0)
+                (let [z (vector-assoc! O (+ (oat s m) 1) (w W (+ at 2 m)))] (recur (inc m))))))
+          (= op SP-TYPEPTR) (tset T (w W (+ at 1)) 4 (w W (+ at 2)) (w W (+ at 3)) 0 0)
+          (= op SP-CONST) (tset T (w W (+ at 2)) 8 (w W (+ at 1)) (w W (+ at 3)) 0 0)
+          (= op SP-VARIABLE) (tset T (w W (+ at 2)) 9 (w W (+ at 1)) (w W (+ at 3)) 0 0)
+          :else 0)))
+
+;; ---------------------------------------------------------------------
+;; Pass 2: the function body.
+
+;; the register of value id v (a GPR value), or -1
+(defn- vreg [T :vector-i64 v :i64] :i64 (if (= (tg T v 0) 11) (tg T v 1) -1))
+
+;; the byte size of a scalar type id (only 32-bit ones are in the subset)
+(defn- scalar32? [T :vector-i64 t :i64] :bool
+  (and (or (= (tg T t 0) 1) (= (tg T t 0) 2)) (= (tg T t 1) 32)))
+
+;; OpAccessChain into a storage buffer: base variable, a member index
+;; (constant), then an element index when the member is a runtime array
+(defn- access [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 Q :vector-i64 L :vector-i64 at :i64 wc :i64] :i64
+  (let [n (lg L 10) id (w W (+ at 2)) base (w W (+ at 3)) ni (- wc 4)
+        pt (if (= (tg T base 0) 9) (tg T base 1) 0) st (if (= (tg T pt 0) 4) (tg T pt 2) 0)
+        m-id (if (> ni 0) (w W (+ at 4)) 0)
+        mv (tg T m-id 2)
+        m (if (and (= (tg T m-id 0) 8) (>= mv 0) (< mv 8)) mv 0)
+        mt (vector-at O (+ (oat st m) 1))
+        off (vector-at O (oat st m))
+        stride (dget D n 2 mt)]
+    (cond (not (and (= (tg T base 0) 9) (= (tg T base 2) 12) (= (tg T st 0) 5))) (fail Q SL-E-SHAPE)
+          (not (and (> ni 0) (= (tg T m-id 0) 8) (= m mv) (< m (tg T st 1)))) (fail Q SL-E-SHAPE)
+          (or (< (dget D n 0 base) 0) (> (dget D n 3 base) 0)) (fail Q SL-E-SHAPE)
+          (= (tg T mt 0) 6)
+          (let [ix (if (= ni 2) (w W (+ at 5)) -1)]
+            (cond (not (and (= ni 2) (= stride 4) (scalar32? T (tg T mt 1)))) (fail Q SL-E-SHAPE)
+                  (= (tg T ix 0) 8) (tset T id 13 base (+ off (* 4 (tg T ix 2))) -1 4)
+                  (>= (vreg T ix) 0) (tset T id 13 base off ix 4)
+                  :else (fail Q SL-E-SHAPE)))
+          (and (= ni 1) (scalar32? T mt)) (tset T id 13 base off -1 0)
+          :else (fail Q SL-E-SHAPE))))
+
+;; the address of an access chain: a register pair, the byte offset left in
+;; L[11] for the LDG/STG immediate
+(defn- address [T :vector-i64 D :vector-i64 Q :vector-i64 L :vector-i64 p :i64] :i64
+  (let [n (lg L 10) var (tg T p 1) cb (+ (lg L 8) (* 8 (dget D n 0 var))) r (gpr-pair Q L)
+        a (add Q L MI-MOVCB r 0 0 0 cb 0)
+        b (add Q L MI-MOVCB (+ r 1) 0 0 0 (+ cb 4) 0)
+        ix (tg T p 3)
+        c (if (>= ix 0) (add Q L MI-IMADW r (vreg T ix) 0 r (tg T p 4) 0) 0)
+        o (ls L 11 (tg T p 2))]
+    r))
+
+;; a built-in's x component into a GPR: 28 GlobalInvocationId = ctaid.x *
+;; LocalSize.x + tid.x, 26 WorkgroupId = ctaid.x, 27 LocalInvocationId = tid.x
+(defn- builtin-x [Q :vector-i64 L :vector-i64 bi :i64] :i64
+  (cond (= bi 26) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 0x25 0)] r)
+        (= bi 27) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 0x21 0)] r)
+        (= bi 28) (let [c (gpr Q L) t (gpr Q L) r (gpr Q L)
+                        a (add Q L MI-S2R c 0 0 0 0x25 0)
+                        b (add Q L MI-S2R t 0 0 0 0x21 0)
+                        e (add Q L MI-IMADI r c 0 t (lg L 7) 0)]
+                    r)
+        :else (fail Q SL-E-SHAPE)))
+
+;; the integer compare of a SPIR-V opcode as (sm70-isetp cmp) + 8 * signed,
+;; -1 when op is not one
+(defn- int-cmp [op :i64] :i64
+  (case op 170 2 171 5 172 4 173 12 174 6 175 14 176 1 177 9 178 3 179 11 -1))
+
+(defn- binop [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 mop :i64] :i64
+  (let [id (w W (+ at 2)) a (vreg T (w W (+ at 3))) b (vreg T (w W (+ at 4)))]
+    (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+      (let [r (gpr Q L)
+            e (cond (= mop MI-IADD3) (add Q L MI-IADD3 r a b 255 0 0)
+                    (= mop MI-IMAD) (add Q L MI-IMAD r a b 255 0 0)
+                    :else (add Q L mop r a b 0 0 0))]
+        (tset T id 11 r 0 0 0)))))
+
+(defn- body-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 Q :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
+  (let [n (lg L 10) cmp (int-cmp op)]
+    (cond (and (= (lg L 6) 1) (not (or (= op SP-BRANCH) (= op SP-LABEL)))) (fail Q SL-E-SHAPE)
+          (= op SP-LABEL)
+          (let [lab (w W (+ at 1))]
+            (cond (= lab (lg L 3)) (let [a (ls L 2 (sm70-guard 7 0)) b (ls L 3 0) c (ls L 6 0)] 0)
+                  (= lab (lg L 5)) (ls L 6 1)
+                  :else 0))
+          (= op SP-LOAD)
+          (let [t (w W (+ at 1)) id (w W (+ at 2)) p (w W (+ at 3))]
+            (cond (and (= (tg T p 0) 9) (= (tg T p 2) 1) (>= (dget D n 1 p) 0)) (tset T id 10 (dget D n 1 p) 0 0 0)
+                  (and (= (tg T p 0) 13) (scalar32? T t))
+                  (let [a (address T D Q L p) r (gpr Q L) e (add Q L MI-LDG r a 0 0 (lg L 11) 0)] (tset T id 11 r 0 0 0))
+                  :else (fail Q SL-E-SHAPE)))
+          (= op SP-STORE)
+          (let [p (w W (+ at 1)) v (vreg T (w W (+ at 2)))]
+            (if (or (not= (tg T p 0) 13) (< v 0)) (fail Q SL-E-SHAPE)
+              (let [a (address T D Q L p)] (add Q L MI-STG 0 a v 0 (lg L 11) 0))))
+          (= op SP-EXTRACT)
+          (let [id (w W (+ at 2)) c (w W (+ at 3))]
+            (if (or (not= (tg T c 0) 10) (not= wc 5) (not= (w W (+ at 4)) 0)) (fail Q SL-E-SHAPE)
+              (tset T id 11 (builtin-x Q L (tg T c 1)) 0 0 0)))
+          (or (= op SP-ACCESS) (= op SP-INBOUNDS)) (access W T D O Q L at wc)
+          (= op SP-FADD) (binop W T Q L at MI-FADD)
+          (= op SP-FMUL) (binop W T Q L at MI-FMUL)
+          (= op SP-IADD) (binop W T Q L at MI-IADD3)
+          (= op SP-IMUL) (binop W T Q L at MI-IMAD)
+          (>= cmp 0)
+          (let [id (w W (+ at 2)) a (vreg T (w W (+ at 3))) b (vreg T (w W (+ at 4)))]
+            (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
+              (let [p (pred Q L) e (add Q L MI-ISETP p a b 0 (bit-and cmp 7) (u64-shift-right cmp 3))]
+                (tset T id 12 p 0 0 0))))
+          (= op SP-SELMERGE)
+          (if (not= (lg L 3) 0) (fail Q SL-E-SHAPE) (ls L 3 (w W (+ at 1))))
+          (= op SP-BRCOND)
+          (let [c (w W (+ at 1)) tl (w W (+ at 2)) fl (w W (+ at 3))]
+            (if (or (= (lg L 3) 0) (not= (tg T c 0) 12) (not= (lg L 2) (sm70-guard 7 0))) (fail Q SL-E-SHAPE)
+              (let [a (ls L 4 tl) b (ls L 5 (if (= fl (lg L 3)) -1 fl))] (ls L 2 (sm70-guard (tg T c 1) 0)))))
+          (= op SP-BRANCH)
+          (if (or (= (lg L 3) 0) (= (w W (+ at 1)) (lg L 3))) 0 (fail Q SL-E-SHAPE))
+          (= op SP-RETURN) (add Q L MI-EXIT 0 0 0 0 0 0)
+          :else (let [z (ls L 9 op)] (fail Q SL-E-OP)))))
+
+;; ---------------------------------------------------------------------
+
+;; the opcode of the last SL-E-OP refusal (sm70-lower keeps it in Q's slot)
+(defn sm70-lower-error-op [Q :vector-i64] :i64 (vector-at Q (- (vector-count Q) 1)))
+
+;; the machine IR of module W (a spv vector), with the constant-bank base of
+;; the binding addresses; capacity cap instructions
+(defn sm70-lower [W :vector-i64 cbase :i64 cap :i64] :vector-i64
+  (let [Q (mi-new (+ cap 1))
+        nw (spv-count W)
+        n (if (>= nw 5) (w W 3) 0)]
+    (if (or (< nw 5) (not= (w W 0) 0x07230203) (> n 65536)) (let [z (fail Q SL-E-HEADER)] Q)
+      (let [T (vector-alloc (* 6 n))
+            D (loop [i 0 V (vector-alloc (* 4 n))] (if (>= i (* 4 n)) V (recur (inc i) (vector-assoc! V i -1))))
+            O (vector-alloc (* 16 n))
+            L (vector-alloc 12)
+            l0 (ls L 2 (sm70-guard 7 0)) l1 (ls L 7 1) l2 (ls L 8 cbase) l3 (ls L 10 n)
+            ;; walk the instructions; the function body starts after OpFunction
+            e (loop [at 5 in-fn false]
+                (if (or (>= at nw) (not= (mi-error Q) 0)) 0
+                  (let [h (w W at) op (bit-and h 65535) wc (u64-shift-right h 16)]
+                    (if (= wc 0) (fail Q SL-E-HEADER)
+                      (cond (= op SP-FUNCTION) (recur (+ at wc) true)
+                            (= op SP-FUNCEND) 0
+                            in-fn (let [z (body-one W T D O Q L at op wc)] (recur (+ at wc) true))
+                            :else (let [z (scan-one W T D O L at op wc)] (recur (+ at wc) false)))))))
+            ;; the trailing self-branch, as every SM70 program ends
+            t (if (= (mi-error Q) 0) (mi-add Q MI-BRA (sm70-guard 7 0) 0 0 0 0 0 0) 0)
+            k (vector-assoc! Q (- (vector-count Q) 1) (lg L 9))]
+        Q))))
