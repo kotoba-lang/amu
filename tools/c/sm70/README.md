@@ -7,14 +7,14 @@ launching these words on Xavier is JUN-714 (C4), and lowering KIR v2 to them is 
 
 | File | What it holds |
 |---|---|
-| `sm70_encode.kotoba` | the encoder: a program vector, the guard predicate, the control bits, and emitters for NOP, EXIT, BRA, MOV (register, immediate), S2R, IADD3, IMAD, FADD, FMUL, FFMA (register and immediate forms), LDG and STG (global, `.E`), each refusing out-of-range operands by code |
+| `sm70_encode.kotoba` | the encoder: a program vector, the guard predicate, the control bits, and emitters for NOP, EXIT, BRA, MOV (register, immediate, constant bank), S2R, IADD3, IMAD, IMAD.WIDE (immediate), ISETP (registers), FADD, FMUL, FFMA (register and immediate forms), LDG and STG (global, `.E`), each refusing out-of-range operands by code |
 | `sm70_encode_test.kotoba` | the cases: one line per encoded word or refusal, and a 12-instruction kernel-shaped sequence |
 
 Layout: an instruction is two i64 halves, `lo` = bits 0..63 and `hi` = bits 64..127; the encoder writes fields by
 their 128-bit bit numbers, as the reference does. The control word occupies bits 105..125: stall 105..108, yield
 109, write barrier 110..112, read barrier 113..115 (7 = none), wait mask 116..121, reuse 122..125. Registers are
 R0..R254 and RZ = 255; predicates P0..P6 and PT = 7. Not covered yet: source modifiers (neg/abs), constant-bank
-and uniform operands, 64-bit IMAD.WIDE / IADD3.X, compares and SETP, shared/local memory, barriers and
+operands other than MOV's, uniform operands, IADD3.X, FSETP and the other SETP forms, shared/local memory, barriers and
 convergence (BSSY/BSYNC). A scheduler that chooses the control bits is a later step; callers pass them.
 
 ## Reference
