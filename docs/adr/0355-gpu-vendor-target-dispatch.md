@@ -5932,3 +5932,46 @@ counted-day slot (next slot is a NEW UTC day, its own freeze) and
 the cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect10prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 130, JUN-59 -- TENTH CUT MEASUREMENT HALF
+LANDING; completing the interrupted s129 landing tail with named
+provenance, the s92/s100/s101/s120/s122/s128 precedent): the
+tenth cut is MEASURED at its pre-registered letters and LANDED --
+C1 (a) True (c2 FLOOR 31 in band 31..32; c8 32,948 vs committed
+32,915 +0.10%); C2 (a) STABLE-INTERMEDIATE at lo (405,1591)
+n=254,557 (blocks 1,138/1,138/1,155/1,146, pooled-12 1,141,
+18-cell minima 985..998; the s125 CAPTURED reading is named tail
+content); C3 (c) BLOCK-UNSTABLE at mid (248,973) n=254,882
+(blocks 1/2/3 INTERMEDIATE/MIXED, block4 CAPTURED min 1,023;
+pooled-12 INTERMEDIATE/MIXED 1,139); W1 (c) BLOCK-UNSTABLE at hi
+(1213,4753) n=255,208 (block1 INTERMEDIATE/MIXED min 988, blocks
+2-4 CAPTURED; pooled-12 CAPTURED 1,154). CUT VERDICT: the
+stability precondition DOES NOT HOLD; L9 BINDS at mid AND hi --
+the class label is block-run-unstable at the frozen 1,000-tick
+threshold at two of the three committed points including the
+bracket's upper anchor; the RESUMABILITY RULE's re-open condition
+(C2 in {(a),(b)} AND C3 in {(a),(b)} AND W1 == (a)) did NOT fire.
+NO bracket movement under any outcome: the committed bracket
+stays exactly (254,557, 255,208]. WHY is UNMEASURED; NO causal
+mechanism is claimed. 42 fresh processes at the three committed
+bisect points (x12 each) plus c2/c8 (x3 each) at byte-identical
+pinned binaries (build pins 5/5, ZERO new knob triples), run on
+aiueos-6600hs under the frozen protocol (freeze stamp
+2026-10-31T07:35:39Z), analysis-s129.py publication sha256
+87a02b47... reproduced a third time at s130. Standing gates all
+== pins: (a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted after run 2); (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s131: any eleventh cut ONLY
+through a NEW pre-registered cut session confronting the L9
+block-run-instability content (NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued) -- NO queued row
+remains. Evidence:
+docs/evidence/gpu/anv-b3bisect10-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
