@@ -1,0 +1,232 @@
+JUN-59 -- THE W7 MEASUREMENT (the s85-frozen W7 window at the settle-bar's
+2026-10-31 UTC day slot) AND ITS DERIVATION CHAIN -- RECORD
+
+Record identity: the record's identity session is s113 (THE MEASURING
+SESSION; tools adopted as *-s113.py, the ledger line's session= field
+reads s113). The measuring session died at runtime-budget cutoff before
+persisting its custody captures; sessions 114 (map-only continuation),
+115 (custody recovery) and 116 (this landing) continued the chain, each
+named in state-s114.txt / state-s115.txt / state-s116.txt and each
+keeping its own capture names (the s106 precedent). This record lands
+at s116 with the derivation chain COMPLETE and the standing gate set
+verified. The settle-bar-ledger.txt APPEND is NOT made this tick (the
+s105/s106 split: the append is the s117 tick's row). STARTED AT S113,
+FINISHED AT S116 EXCEPT THE APPEND TAIL (named in carry-forward).
+
+1. THE ROW AND ITS FREEZE. The s85 pre-registration freeze
+   (protocol.txt in this directory, freeze stamp 2026-10-29T06:39:16Z,
+   written once and never rewritten; freeze-record-s85.txt): W7 = the
+   window whose 78 fresh processes run in the first measurement session
+   starting at or after 00:00:00Z of the first UTC day STRICTLY AFTER
+   the UTC day named on W6's committed ledger line. W6's line (read
+   live at s113 from docs/evidence/gpu/settle-bar-ledger.txt):
+   day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133
+   min=993 flag=none -> strict-next-day 2026-10-31, slot opens
+   2026-10-31T00:00:00Z. Session s113 started 2026-10-31T00:02:31Z
+   (state-s113.txt, python3 datetime arithmetic), 151 s AFTER the slot
+   -> the s113 session QUALIFIES as the W7 session. Contingencies (i)
+   (ii) (iii) of protocol section 0 do not fire (W6 ran on its day, W6's
+   line is unflagged and present). W6's line consumed the 2026-10-30
+   slot as a counted reading, so a qualifying W7 line is the bar's
+   FOURTH counted reading.
+
+2. THE MEASUREMENT (session 113, host aiueos-6600hs / aiueos-6600hs-1
+   (tailscale), user murakumo-ci; workdir ~/anv-b3w7daybar-20261031).
+   s57 route UNCHANGED: workdir probed NO-WORKDIR 00:16:30Z; staged
+   00:19:23Z-00:19:38Z (cp -a of exactly the 16 corpus files; instrument
+   + cases-s113-a.txt + expected-corpus.sha256 scp'd); host-verify
+   local-vs-host MATCH 3/3 (instrument a5e539f0ad1c5d73... /
+   cases-s113-a.txt 92b4c5ca671f138a... / expected-corpus eefba52e7be052d6...),
+   corpus 16/16 corpus_rc=0, local corpus half 8+8 OK (host-verify-s113.txt);
+   GO stamp 2026-10-31T00:20:08Z printed first in the build invocation,
+   preceding the four pinned compiles and ALL runs (the frozen FLAGGED
+   criterion "the custody GO is missing/after the builds" does NOT
+   fire); four pinned compiles 4/4 rc=0, build stderr 0 bytes,
+   BYTE-IDENTICAL to the s51-frozen build pins (c2 e5ed903e..., hi
+   a6c31b6c..., tw bb901eb5..., c8 480925e5...) -- build-census-s113.txt;
+   the 78 frozen-order runs (c2 r1-3, hi/tw blocks k=1..12 interleaved,
+   c8 r1-3) 78/78 rc=0 stderr_bytes=0 samples=450 verifies=24 cells=24,
+   host window 2026-10-31T00:24:19Z..00:24:35Z (run-window.txt, rebuilt
+   by run-window-s113.py --rebuild under a session-written W7 header;
+   per-run host-date/rc in live-fields.txt, 78 lines all rc=0); run logs
+   preserved verbatim as run-<tag>-r<R>.txt / .stderr.txt (156 files)
+   and still present on the host.
+   NAMED, NOT HIDDEN (attempt1): the FIRST 78-process burst
+   (00:20:50Z-00:20:53Z) failed 78/78 rc=1 -- 'FATAL: cannot open
+   subgroup-reduce-w128-sum.emitted.spv' (the instrument opens
+   manifest-relative bare spv names; cwd must be shaders/; the burst ran
+   cwd=workdir root). Preserved as w7-attempt1-live-fields.txt +
+   w7-attempt1-c2-r1.txt/.stderr.txt (the named FATAL example); attempt1
+   produced no samples and no reading. The successful burst is the W7
+   window.
+
+3. CUSTODY CAPTURE PROVENANCE (named, not hidden): host-verify-s113.txt
+   and build-census-s113.txt are RECONSTRUCTIONS written at s115
+   (2026-10-31) quoting VERBATIM the s113 transcript's tool outputs of
+   00:16-00:20Z (session link + message ids 55017/55034/55036/55037-
+   55041, recovered by session scroll; the s113 session died at cutoff
+   before persisting them). The GO stamp EXISTS in the transcript
+   (message 55041). The records were written to custody-s113.py's
+   parser grammar and are verified BY the tool's own run this tick
+   (section 8 below) -- if a row had mismatched it would have been
+   FLAGGED or REFUSED-RECORD-INCONSISTENT fail-closed; none did.
+
+4. ADOPTION (the s102/s110 adoption contract): adoption-check-prego.py
+   --check docs/evidence/gpu/anv-b3ledgersupersede-20261030/
+   adoption-manifest-v2.txt . run from the worktree root BEFORE any
+   copy: VERDICT CONSISTENT (matched 27, mismatched 0) twice
+   BYTE-IDENTICAL (6,050 bytes, .err 0; adoption-check-s116-run{1,2}.txt
+   -- equals the s110 execution's byte count; the fail-closed gate
+   opened). Seven tools adopted as *-s113.py into this directory:
+   reading-s113.py, derivation-census-s113.py (compat-only, not run --
+   the fresh duty is fresh-census's, s100/s101 named), run-window-s113.py
+   (SESSION-CHOSEN name), custody-s113.py, ledger-s113.py,
+   reconcile-s113.py, fresh-census-s113.py. Six copies verified digest-
+   equal to their manifest pins after copy (acec9f15... reading source /
+   b5a447b6... / b999a4b2... / f2a1dc2b... / db1cb000... / fc359fcb... /
+   0d9ffc37...); reading-s113.py carries the ONE sanctioned edit (the
+   s94-named W7_DIR repoint, line 95 W6_DIR "anv-b3w6daybar-20261030" ->
+   "anv-b3w7daybar-20261031") -- the repoint diff is exactly ONE line
+   (reading-s113-repoint-s116.txt, `diff` 95c95) and every other byte is
+   the frozen source's (the pre-repoint copy matched the manifest pin
+   byte-for-byte).
+
+5. RUN-WINDOW. run-window-s113.py --rebuild --window-dir
+   anv-b3w7daybar-20261031 --live live-fields.txt produced the 78-line
+   per-run table + 3 trailer lines (81 lines, .err 0); run-window.txt =
+   session-written W7 prose header (honest prose: s85 freeze stamp
+   2026-10-29T06:39:16Z, GO stamp 2026-10-31T00:20:08Z, the attempt1
+   naming of section 2) + that body verbatim.
+
+6. THE READING (reading-s113.py twice BYTE-IDENTICAL, 4,004 bytes,
+   .err 0 both runs; publication-s113.txt sha256
+   2d0534e7ef643f29aedc08fa28589b3036b8a52d7d3f26a1cb8ef8f31021d341,
+   produced ONLY by the adopted tool over the committed run logs):
+   s113 (NEW) median 1137 min..max 986..1459; class INTERMEDIATE/MIXED;
+   in-band vs the bar's frozen refs 1,129/1,132/1,131 (within +/-5% of
+   EACH): True. INTEGRITY all six windows runs 78 vmis 0 counts/knobs/
+   s8/cmap True; named cell (max,128,S=default) present as ok-map cell 5
+   (raw idx 7). C1 RE-DERIVED: c2 class FLOOR (committed floor band
+   31..32); c8 (sum,128,S=16) pooled median 32804 vs committed 32915
+   (0.34% delta; +/-5% required) -> C1 branch (a) both controls
+   replicate -> the reading QUALIFIES. The five prior windows reproduce
+   EXACTLY (5/5: s36 1142/991..1438, s38 1132/992..1443, s39
+   1146/986..1432, s51 1137/988..1430, s73 1131/998..1442 -- priors
+   PARSED from committed publication-s73.txt bytes, never transcribed).
+   Run day: run-window host-dates 78 parsed, 1 distinct: 2026-10-31;
+   ledger line day = 2026-10-31. NAMED, NOT HIDDEN: the frozen reading
+   tool's HEADER prose still reads "THIRD COUNTED-DAY", "the W6 window",
+   "anv-b3w6daybar-20261030", "computes NO W6 quantity" -- FROZEN W6
+   PROSE, not edited (the s105 section-9(a) precedent; the one
+   sanctioned edit is the W6_DIR repoint). The ROWS above are the W7
+   quantities, not edited.
+
+7. FRESH CENSUS (fresh-census-s113.py --w6, twice BYTE-IDENTICAL,
+   9,223 bytes, .err 0): VERDICT CONSISTENT -- 66 claim rows 0
+   mismatched, 125 body digit runs 0 UNCLAIMED, 530 pooled-median +
+   min/max dual computations 0 mismatched. NAMED, NOT HIDDEN: the FIRST
+   two invocations this tick passed the window dir as a full path and
+   failed closed rc=1 (FileNotFoundError on a doubled
+   '.../docs/evidence/gpu/docs/evidence/gpu/...' path -- my own argv
+   error, not a tool defect; the tool joins the GPU root to its dirname
+   argument); the corrected argv (bare 'anv-b3w7daybar-20261031') ran
+   clean. The failed captures were overwritten in place by the
+   corrected runs (the s106 badargv preservation precedent NOT followed
+   at capture time -- named here honestly rather than reconstructed).
+
+8. CUSTODY CHECK (custody-s113.py --check anv-b3w7daybar-20261031 s113
+   cases-s113-a.txt, twice BYTE-IDENTICAL, 2,968 bytes, .err 0): every
+   row OK -> flag=none, ledger-pin=ok, ledger-go=ok ("criteria rows:
+   verify-mismatch=clean pin=clean go=clean"). The reconstructed custody
+   records of section 3 VERIFIED by the tool's own parser (a mismatch
+   would have been FLAGGED or REFUSED-RECORD-INCONSISTENT fail-closed).
+
+9. THE LEDGER LINE (ledger-s113.py --emit anv-b3w7daybar-20261031 ok ok,
+   the pin/go tokens quoted VERBATIM from section 8; twice
+   BYTE-IDENTICAL, 83 bytes, .err 0; the emit path never appends):
+     day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED median=1137 min=986 flag=none
+   NOT APPENDED this tick. settle-bar-ledger.txt == HEAD at this commit
+   (gate (f) below; git diff --exit-code rc=0). The emitted line is
+   byte-pinned and consumes the 2026-10-31 day slot ONLY when appended
+   at the s117 tick after the standing gate set verifies (it has --
+   section 10); the evaluator stays the ONLY verdict source.
+
+10. STANDING GATES (byte-compared to the s88 committed pins in
+    docs/evidence/gpu/anv-b3w6tailrep-20261030/; captures gate-s116-* /
+    bar-s116-* in this directory):
+    (a) gpu_regime_classify.py --self-test rc 0, 17,925 bytes ==
+        gate-s88-classify.txt (cmp exit 0), .err 0.
+    (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+        the eight GPU-owned test namespaces, created/run/deleted, never
+        committed): GREEN 'Ran 123 tests containing 12162 assertions.
+        0 failures, 0 errors.' run 1 AND run 2 == each other == both
+        s88 pins (919 bytes, cmp exit 0 x3), .err 0.
+    (c) FULL run-tests.cljk RUN LIVE exit 1 RED AT BASE kotoba.form
+        ('Could not find namespace: kotoba.form', ADR-0362, outside
+        this diff -- this diff touches NO .cljk namespace), .err 879
+        bytes == gate-s88-full.err (cmp exit 0), stdout 0 bytes == pin
+        -- NO green full suite claimed.
+    (d) settle-bar evaluator --self-test rc 0, TOTAL 38 assertions
+        passed 0 failed, 3,590 bytes == bar-s88-selftest.txt (cmp exit
+        0); ledger eval pair twice BYTE-IDENTICAL (907 bytes) ==
+        the s106 post-append pins (anv-b3w6ledgerappend-20261030/
+        bar-s106-eval-post-run1.txt, cmp exit 0) -> VERDICT: PENDING 3/4
+        (counted day=2026-10-28 session=s31; counted day=2026-10-29
+        session=s73; counted day=2026-10-30 session=s105) -- the
+        pre-append state, expected; the 2026-10-31 line is not counted
+        until the append.
+    (e) find docs/evidence/gpu -name '*.sh' -> 0 entries.
+    (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-ledger.txt
+        rc 0 (== HEAD; the emit path never ran).
+
+11. THE BAR. Measurement + derivation session, NO append -> NO ledger
+    line in the ledger, and the 2026-10-31 day slot is NOT yet consumed
+    (it is consumed by the s117 append of the section-9 line, counted
+    iff the evaluator's first-qualifying-reading rule holds -- no other
+    qualifying reading of 2026-10-31 exists in ledger order). The bar
+    stays PENDING 3/4 and settles nothing this tick. RULE 4 unchanged:
+    NOTHING MOVES -- the accelerator-targets workgroup rows stay exactly
+    as ADR-0358 left them (:measured? true scoped to each row's one
+    named measured device for :nvidia/:apple/:intel/:amd; :arm and
+    :unknown remain provisional, :measured? false). NO vendor
+    optimization exists for Intel (or for any vendor); this record is
+    the anchor-class settling bar's measurement machinery on the ANV
+    host, not a workgroup-default measurement.
+
+12. NAMED, NOT HIDDEN (in addition to sections 2, 3, 6, 7): the kbb
+    engine's standing '2 dep(s) are not :local/root' warning reaches no
+    capture (.err 0 wherever the pins are 0); untracked scratch/ and
+    deps.edn are not this row's and are not committed; the s113/s114
+    sessions' earlier state captures (state-s113.txt, state-s114.txt,
+    state-s115.txt) are committed unedited as written at their cutoffs;
+    derivation-census-s113.py is adopted but --compat-only (no w6 mode,
+    s100 named) and was not run (the fresh duty is fresh-census-s113's,
+    s101 named).
+
+13. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+    checked at tick start (2026-10-31T01:46Z via gh pr list --json
+    headRefName) and again immediately before this push; chain PRs =
+    exactly ONE (#1665 bot/amu-gpu-chain-20261028-4 -- the one this
+    commit pushes to).
+
+Carry-forward to s117: (a) THE APPEND TAIL (the s105/s106 split): the
+append of the byte-pinned section-9 line to settle-bar-ledger.txt
+(gated on the standing gate set -- verified at section 10), the
+post-append evaluator pair twice byte-identical (expected PENDING 4/4
+by the first-qualifying-reading rule -- evaluator-only verdict, do not
+assert it before the evaluator prints it), reconcile-s113.py --line on
+the fresh pair, and the v2 --compat GREEN post-append re-run in the
+record (adoption-check-prego.py --check adoption-manifest-v2.txt .
+fail-closed before any adoption copy per the s110/s115 adoption
+contract; the s109 interim must not be cited as governing); (b) any
+further counted-day slot (its own pre-registration freeze) and a
+cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/ (this record +
+protocol.txt/freeze-record-s85.txt + the adopted seven tools +
+cases-s113-a.txt + host-verify-s113.txt + build-census-s113.txt +
+run-window.txt + 156 run logs + live-fields.txt + publication-s113.txt
++ fresh-census-s113.txt + the s116 adoption/gate/wiring captures +
+w7-attempt1-* + state-s113.txt/state-s114.txt/state-s115.txt/
+state-s116.txt) + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)

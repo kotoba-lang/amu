@@ -5691,3 +5691,43 @@ be cited as governing), any further counted-day slot (its own
 freeze) and a cross-day tail-movement row (not queued).
 Evidence: docs/evidence/gpu/anv-b3w7preslotstanddown-20261030/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (sessions 113-116, JUN-59 -- THE W7 MEASUREMENT (the s85-
+frozen W7 window, the settle-bar's FOURTH counted-day reading) AND ITS
+DERIVATION CHAIN -- the record's identity session is s113 the measuring
+session, started 2026-10-31T00:02:31Z, 151 s after the slot opens;
+s114/s115/s116 continuations after budget cutoffs; the ledger APPEND is
+NOT made -- it is the s117 tick's row): 78/78 rc=0 frozen-order runs
+(host window 00:24:19Z..00:24:35Z on aiueos-6600hs; the first burst
+failed 78/78 rc=1 on a cwd error, preserved as w7-attempt1-*, named),
+GO stamp 00:20:08Z precedes builds and all runs, build pins 4/4
+BYTE-IDENTICAL; adoption-manifest-v2 CONSISTENT 27/0 twice byte-
+identical before any copy, seven tools adopted as *-s113.py (six
+digest-equal, reading one-line W6_DIR repoint 95c95); reading pair
+twice byte-identical (publication-s113.txt sha256 2d0534e7...): s113
+median 1137 min..max 986..1459 class INTERMEDIATE/MIXED, in-band True
+vs frozen refs 1,129/1,132/1,131; C1 branch (a) both controls
+replicate (c2 FLOOR 31..32; c8 pooled median 32804 vs committed 32915
+= 0.34% delta); five prior windows reproduce EXACTLY; day=2026-10-31;
+fresh census VERDICT CONSISTENT (66 claim rows / 125 digit runs / 530
+dual computations, 0 mismatched 0 UNCLAIMED) twice byte-identical;
+custody check all rows OK -> flag=none ledger-pin=ok ledger-go=ok
+(host-verify-s113.txt/build-census-s113.txt are s115 transcript
+reconstructions with named provenance, verified by the checker);
+ledger line emitted twice byte-identical (83 bytes) -- day=2026-10-31
+session=s113 class=INTERMEDIATE/MIXED median=1137 min=986 flag=none --
+NOT appended, day slot not yet consumed. Standing gates all == pins:
+(a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0
+twice == the s88 pins; (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO green
+full suite claimed; (d) evaluator self-test 38/0 == pin + eval pair ==
+the s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' -> 0;
+(f) settle-bar-ledger.txt == HEAD.  RULE 4 unchanged: NOTHING MOVES;
+NO vendor optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them.  Carry-forward s117: the
+append tail (the s105/s106 split -- the byte-pinned line's append, the
+post-append evaluator pair evaluator-only verdict, reconcile-s113.py
+--line, the v2 --compat GREEN post-append re-run behind the fail-closed
+adoption check), any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)

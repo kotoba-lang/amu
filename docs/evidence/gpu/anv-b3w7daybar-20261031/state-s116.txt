@@ -1,0 +1,49 @@
+2026-10-31T01:5x:00Z
+== session 116 W7 DERIVATION-LANDING state capture ==
+This session executed state-s115.txt NEXT TICK duties (1)-(8)
+COMPLETE; duty (9) (the append tail) moves to s117. The W7
+measurement record (record.txt in this directory) lands with
+this commit.
+
+DUTIES DONE THIS TICK (all verified by real tool output; capture
+bytes named in record.txt sections 4-10):
+(1) adoption-check-prego.py --check adoption-manifest-v2.txt .
+    VERDICT CONSISTENT (27/0) twice byte-identical (6,050 bytes)
+    BEFORE any copy; seven tools adopted as *-s113.py, six digest-
+    equal to pins, reading-s113.py one-line repoint (95c95) verified.
+(2) run-window-s113.py --rebuild (81 lines, .err 0) + session-
+    written W7 header -> run-window.txt (108 lines, 78 host-dates).
+(3) reading-s113.py twice BYTE-IDENTICAL -> publication-s113.txt
+    sha256 2d0534e7ef643f29aedc08fa28589b3036b8a52d7d3f26a1cb8ef8f31021d341:
+    s113 median 1137 min..max 986..1459 INTERMEDIATE/MIXED, in-band
+    True vs refs 1,129/1,132/1,131; C1 branch (a) (c2 FLOOR 31..32,
+    c8 pooled median 32804 vs 32915 = 0.34% delta); priors EXACT 5/5;
+    day=2026-10-31.
+(4) fresh-census-s113.py --w6 twice BYTE-IDENTICAL (9,223 bytes):
+    VERDICT CONSISTENT (66 claim rows / 125 digit runs / 530 dual
+    computations, 0 mismatched, 0 UNCLAIMED). NAMED: my own first
+    argv passed a full path (doubled the GPU root) and failed closed
+    twice; corrected argv ran clean; the failed captures were
+    overwritten in place (record.txt section 7 names it).
+(5) custody-s113.py --check twice BYTE-IDENTICAL (2,968 bytes):
+    all rows OK -> flag=none ledger-pin=ok ledger-go=ok.
+(6) ledger-s113.py --emit ok ok twice BYTE-IDENTICAL (83 bytes):
+    day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED median=1137
+    min=986 flag=none -- EMITTED, NOT APPENDED.
+(7) standing gates (a)-(f) all == the s88/s106 pins (record.txt
+    section 10); full suite RED AT BASE kotoba.form (ADR-0362,
+    outside this diff); evaluator PENDING 3/4 (pre-append); scratch
+    scoped runner created/run/deleted.
+(8) record.txt + the ADR-0355 dated note + this commit (blocker-
+    first re-checked before push) + the Linear comment on JUN-499.
+
+NEXT TICK (s117) -- the append tail (record.txt carry-forward (a)):
+the append of the byte-pinned line, the post-append evaluator pair
+(evaluator-only verdict), reconcile-s113.py --line, the v2 --compat
+GREEN post-append re-run (adoption-check-prego.py --check
+adoption-manifest-v2.txt . fail-closed first).
+
+BLOCKER-FIRST at this tick's start (2026-10-31T01:46Z): 0 open
+kotoba-lang/amu PRs with a hermes/ head; chain PRs = exactly ONE
+(#1665 bot/amu-gpu-chain-20261028-4). Re-check before the push.
+Untracked scratch/ and deps.edn are not this row's, not committed.
