@@ -43,6 +43,10 @@ on:
       - 'bin/amu'
       - 'bin/kotoba'
       - 'bin/kotoba-compiler'
+      - 'bin/amu-linux-x86_64'
+      - 'bin/x86_64-linux/**'
+      - 'native-product.json'
+      - 'scripts/seed/check-host-default-target.py'
       - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
@@ -77,6 +81,10 @@ jobs:
         run: >-
           python3 scripts/seed/check-public-macos-product.py
           --output "$RUNNER_TEMP/public-macos-product"
+      - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
+        run: >-
+          python3 scripts/seed/check-host-default-target.py --isa macos
+          --output "$RUNNER_TEMP/host-default-mac"
       - name: Rebuild Amu root and AIUEOS user target
         run: |
           python3 scripts/seed/native_build_queue.py \
@@ -263,6 +271,7 @@ jobs:
             ${{ runner.temp }}/mac-root-admission.json
             ${{ runner.temp }}/public-macos-product/
             ${{ runner.temp }}/mac-cli-host/
+            ${{ runner.temp }}/host-default-mac/host-default-target.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
@@ -330,11 +339,17 @@ jobs:
           --candidate "$RUNNER_TEMP/mac-cross"
           --output "$RUNNER_TEMP/cross-arm"
           --isa aarch64
+      - name: The Linux ARM64 root refuses an omitted target with E2 (KOTOBA-174)
+        run: >-
+          python3 scripts/seed/check-host-default-target.py --isa aarch64
+          --output "$RUNNER_TEMP/host-default-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: mac-cross-native-arm64
-          path: ${{ runner.temp }}/cross-arm/native-fixed-point.json
+          path: |
+            ${{ runner.temp }}/cross-arm/native-fixed-point.json
+            ${{ runner.temp }}/host-default-arm/host-default-target.json
           if-no-files-found: warn
   native-cross-x86_64:
     needs: mac-root
@@ -354,9 +369,15 @@ jobs:
           --candidate "$RUNNER_TEMP/mac-cross"
           --output "$RUNNER_TEMP/cross-x86"
           --isa x86_64
+      - name: The Linux x86_64 host entry names x86_64-linux; the compiler refuses an omitted target (KOTOBA-174)
+        run: >-
+          python3 scripts/seed/check-host-default-target.py --isa x86_64 --reproduce
+          --output "$RUNNER_TEMP/host-default-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: mac-cross-native-x86_64
-          path: ${{ runner.temp }}/cross-x86/native-fixed-point.json
+          path: |
+            ${{ runner.temp }}/cross-x86/native-fixed-point.json
+            ${{ runner.temp }}/host-default-x86/host-default-target.json
           if-no-files-found: warn
