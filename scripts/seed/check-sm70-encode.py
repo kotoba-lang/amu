@@ -194,6 +194,52 @@ def op_imad(guard, deps, d, a, b, c, signed):
     return finish(e, guard, deps)
 
 
+def cb(e, bank, off):
+    # encode_alu_cb: set_src_cb(32..59, 91, cb), abs 62, neg 63
+    e.set_field(32 + 6, 32 + 22, off)
+    e.set_field(32 + 22, 32 + 27, bank)
+    e.set_bit(91, False)
+    e.set_bit(62, False)
+    e.set_bit(63, False)
+
+
+def op_mov_cb(guard, deps, d, bank, off):
+    e = Instr()
+    e.set_field(16, 24, d)
+    cb(e, bank, off)
+    e.set_field(0, 9, 0x002)
+    e.set_field(9, 12, 5)
+    e.set_field(72, 76, 0xF)
+    return finish(e, guard, deps)
+
+
+def op_imad_wide(guard, deps, d, a, b, c, signed):
+    e = Instr()
+    alu(e, 0x025, d, a, b, c)
+    e.set_field(81, 84, 7)
+    e.set_bit(73, signed)
+    return finish(e, guard, deps)
+
+
+INT_CMP = {"lt": 1, "eq": 2, "le": 3, "gt": 4, "ne": 5, "ge": 6}
+
+
+def op_isetp(guard, deps, pd, a, b, cmp, signed):
+    e = Instr()
+    alu(e, 0x00C, None, a, b, None)
+    e.set_field(68, 71, 7)  # low_cmp: PT
+    e.set_bit(71, False)
+    e.set_field(87, 90, 7)  # accum: PT
+    e.set_bit(90, False)
+    e.set_bit(72, False)
+    e.set_field(73, 74, 1 if signed else 0)
+    e.set_field(74, 76, 0)  # AND
+    e.set_field(76, 79, INT_CMP[cmp])
+    e.set_field(81, 84, pd)
+    e.set_field(84, 87, 7)
+    return finish(e, guard, deps)
+
+
 def fmods(e, rnd, ftz, sat):
     e.set_bit(77, sat)
     e.set_field(78, 80, rnd)
@@ -267,7 +313,7 @@ def op_stg(guard, deps, a, off, data, mtype, order, evict, a64):
 # ---------------------------------------------------------------------------
 # The cases: the same names and operands as the Kotoba test.
 
-E_REG, E_PRED, E_CTL, E_IMM, E_OFF, E_BRA, E_ENUM, E_CAP = range(1, 9)
+E_REG, E_PRED, E_CTL, E_IMM, E_OFF, E_BRA, E_ENUM, E_CAP, E_CB = range(1, 10)
 SR_LANEID, SR_TID_X, SR_CTAID_X, SR_CTAID_Y = 0x00, 0x21, 0x25, 0x26
 
 
@@ -307,6 +353,14 @@ def cases():
     c["ffma"] = op_ffma(G, C0, 12, r(13), r(14), r(15), 0, False, False)
     c["ffma.rm.ctl"] = op_ffma(G, C2, 12, r(13), r(14), r(15), 1, False, False)
     c["ffma.imm.ftz"] = op_ffma(G, C0, 12, r(13), i(0xBF000000), r(15), 0, True, False)
+    c["mov.cb"] = op_mov_cb(G, C0, 6, 0, 0x160)
+    c["mov.cb.listing"] = op_mov_cb(G, ctl(5, 0, 7, 7, 0, 0), 1, 0, 0x28)
+    c["mov.cb.bank3.max"] = op_mov_cb((2, True), C0, 7, 3, 0xFFFC)
+    c["imad.wide.u32"] = op_imad_wide(G, C0, 6, r(0), i(4), r(6), False)
+    c["imad.wide.s32.neg"] = op_imad_wide(G, C2, 2, r(9), i(-8), r(250), True)
+    c["isetp.lt.u32"] = op_isetp(G, C0, 0, r(0), r(4), "lt", False)
+    c["isetp.ge.s32.p6"] = op_isetp(G, C0, 6, r(9), r(RZ), "ge", True)
+    c["isetp.eq.u32.gp1"] = op_isetp((1, False), C2, 3, r(2), r(7), "eq", False)
     c["ldg.e.32.strong.gpu"] = op_ldg(G, C1, 4, 2, 0, 4, 3, 1, True)
     c["ldg.e.64.weak.off"] = op_ldg(G, C1, 4, 2, 16, 5, 1, 1, True)
     c["ldg.e.128.constant.neg"] = op_ldg(G, C1, 8, 2, -4, 6, 0, 4, True)
@@ -322,7 +376,8 @@ def cases():
         "refuse.off.high": E_OFF, "refuse.off.low": E_OFF, "refuse.bra.far": E_BRA,
         "refuse.enum.mtype": E_ENUM, "refuse.enum.order": E_ENUM, "refuse.enum.evict": E_ENUM,
         "refuse.enum.rnd": E_ENUM, "refuse.enum.signed": E_ENUM, "refuse.enum.sr": E_ENUM,
-        "refuse.cap": E_CAP,
+        "refuse.cap": E_CAP, "refuse.cb.align": E_CB, "refuse.cb.bank": E_CB, "refuse.cb.off": E_CB,
+        "refuse.wide.odd": E_REG, "refuse.wide.rz": E_REG, "refuse.enum.cmp": E_ENUM,
     }
     c.update({k: ("R", v) for k, v in refusals.items()})
     saxpy = [
@@ -354,6 +409,8 @@ LISTING = {
     "exit": (0x000000000000794D, 0x000FEA0003800000),
     "bra.self": (0xFFFFFFF000007947, 0x000FC0000383FFFF),
     "s2r.tid.x.listing": (0x0000000000007919, 0x000E220000002100),
+    # MOV R1, c[0x0][0x28]: the stack-pointer load at the top of CUDA kernels
+    "mov.cb.listing": (0x00000A0000017A02, 0x000FCA0000000F00),
 }
 
 # Built mutants: (name, old text, new text, cases that must then differ).
@@ -367,6 +424,9 @@ MUTANTS = [
     ("off-bound", "(in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)\n        (not (mem? mtype order evict a64)) (sm-fail M SM70-E-ENUM)\n        :else (sm-emit M g ctl\n                (-> 0 (lf 0 12 0x381)",
      "(in? off -8388608 8388608)) (sm-fail M SM70-E-OFF)\n        (not (mem? mtype order evict a64)) (sm-fail M SM70-E-ENUM)\n        :else (sm-emit M g ctl\n                (-> 0 (lf 0 12 0x381)", ["refuse.off.high"]),
     ("guard-field", "(lf lo 12 4 g)", "(lf lo 12 3 g)", ["exit.np0"]),
+    ("cb-offset-field", "(lf 38 16 off)", "(lf 36 16 off)", ["mov.cb"]),
+    ("isetp-cmp-field", "(hf 76 3 cmp)", "(hf 75 3 cmp)", ["isetp.lt.u32"]),
+    ("wide-opcode", "(alu-lo 0x025 4 d a)", "(alu-lo 0x024 4 d a)", ["imad.wide.u32"]),
 ]
 
 # ---------------------------------------------------------------------------
