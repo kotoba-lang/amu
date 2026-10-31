@@ -212,6 +212,8 @@ def main(compiler, out):
     # A module the frontend rejects has no identity at all: exit 66, empty stdout, a named DSB: diagnostic.
     cids("refuse-unbound", [fn("f", ["x"], "(missing x)")], code=66)
     cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
+    # No definition at all is no identity (reference: `:entries :unavailable`), not an empty report.
+    cids("refuse-no-definitions", ["(def k 5)"], code=66)
     cids("refuse-closure-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x missing))] (g n))")], code=66)
     cids("refuse-closure-callback", ["(defn ap [g [:fn [:i64] :i64] x :i64] :i64 (g x))",
                                      fn("f", ["n"], "(ap (fn [x] (+ x 1)) n)")], code=66)

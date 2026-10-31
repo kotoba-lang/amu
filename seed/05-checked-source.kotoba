@@ -493,6 +493,9 @@
     (cond (not (dip-valid? resource)) (let [out (io-err "DSB:PROFILE\n")] 1)
           (not= (vector-at M MM-ERR) 0)
             (let [out (io-err (string-concat "DSB:SOURCE:" (string-concat (mem-u2dec (vector-at M MM-ERR)) "\n")))] 1)
+          ;; No definition at all is no identity (the reference: `:entries :unavailable`, exit 66), not `SCANNED 0/0`.
+          (not (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false (dsb-row? M f) true :else (recur (inc f)))))
+            (let [out (io-err "DSB:IDENTITY:1\n")] 1)
           :else
           (let [marked (dsb-mark-effects M Q)
                 carried (loop [f 1 mask 0]
