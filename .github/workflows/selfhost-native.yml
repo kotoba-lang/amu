@@ -41,7 +41,8 @@ on:
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
       - "tools/b2/**"
-      - "runtime/wasm32-browser-static-*"
+      - "runtime/wasm32-browser-*"
+      - "runtime/kotoba-client-runtime*"
       - ".github/workflows/selfhost-native.yml"
   pull_request:
     branches: [main]
@@ -60,7 +61,8 @@ on:
       - "tools/spirv_*.kotoba"
       - "tools/static_launcher*.kotoba"
       - "tools/b2/**"
-      - "runtime/wasm32-browser-static-*"
+      - "runtime/wasm32-browser-*"
+      - "runtime/kotoba-client-runtime*"
       - ".github/workflows/selfhost-native.yml"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -518,7 +520,9 @@ jobs:
             ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
             ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
-      # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node)
+      # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node),
+      # and the consent broker's runs (Phase 2, restricted-wasm-v1: the vendored
+      # kotoba-client-runtime.js on a 127.0.0.1 page; no request leaves the machine)
       - name: wasm32-browser cases in headless Chrome
         run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/boot/wasm32" --output "$RUNNER_TEMP/x86/wasm32-browser" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,0 +1,59 @@
+<!-- wasm32-browser restricted guest shell (JUN-353 Phase 2, profile restricted-wasm-v1).
+     A builder fills the two placeholders and the trusted host page verifies the
+     result (verifyClientArtifact: pinned revision and SHA-256) before
+     mountRestrictedClientApp (kotoba-client-runtime.js) mounts it in a sandboxed
+     iframe (allow-scripts only: an opaque origin, no access to the host page)
+     under connect-src 'none'. Nothing here can reach the network or the
+     consent dialog:
+       KOTOBA_RUN  {wasm: base64, fuel, allow?, args?, files?, bind?}
+                   bind maps a wire (decimal string) to one operation selector
+                   {capability, service, operation} of the host's descriptor;
+       KOTOBA_HOST the text of wasm32-browser-static-host.js.
+     The module runs in a Worker started from that text. A bound wire's call
+     ({cap} from the Worker) becomes one kotoba.client.operation.v1 message on
+     the port the host transferred; the broker on the host page validates it
+     against the descriptor, asks the user, sends it, and the answer goes back
+     to the Worker ({capReply}). The run's result goes to the host page as
+     {protocol: "kotoba.wasm32-browser.result.v1", result}. -->
+<script>
+"use strict";
+(() => {
+  const KOTOBA_RUN = /*KOTOBA_RUN*/null;
+  const KOTOBA_HOST = /*KOTOBA_HOST*/null;
+  let mounted = false;
+  addEventListener("message", (event) => {
+    const port = event.ports && event.ports[0];
+    if (mounted || event.source !== parent || !event.data || event.data.protocol !== "kotoba.client.host.v1" || !port) return;
+    mounted = true;
+    const report = (result) => parent.postMessage({ protocol: "kotoba.wasm32-browser.result.v1", result }, "*");
+    if (!KOTOBA_RUN || typeof KOTOBA_HOST !== "string") { report({ exit: null, hostError: "unfilled guest shell" }); return; }
+    const bind = KOTOBA_RUN.bind || {};
+    const waiting = new Map();
+    let next = 0;
+    const worker = new Worker(URL.createObjectURL(new Blob([KOTOBA_HOST], { type: "text/javascript" })));
+    port.onmessage = ({ data }) => {
+      const id = data && data.id;
+      if (!waiting.has(id)) return;
+      const capId = waiting.get(id);
+      waiting.delete(id);
+      worker.postMessage({ capReply: { id: capId, ok: data.ok === true, status: data.status, content: data.content, error: data.error } });
+    };
+    worker.onmessage = ({ data }) => {
+      if (data && data.cap) {
+        const selector = Object.hasOwn(bind, String(data.cap.wire)) ? bind[String(data.cap.wire)] : null;
+        if (!selector) { worker.postMessage({ capReply: { id: data.cap.id, ok: false, error: "wire not bound" } }); return; }
+        const id = "op-" + (++next);
+        waiting.set(id, data.cap.id);
+        port.postMessage({ protocol: "kotoba.client.operation.v1", id, selector, payload: data.cap.payload });
+        return;
+      }
+      worker.terminate();
+      report(data);
+    };
+    worker.onerror = (e) => { worker.terminate(); report({ exit: null, hostError: String(e.message) }); };
+    const bytes = Uint8Array.from(atob(KOTOBA_RUN.wasm), (c) => c.charCodeAt(0));
+    worker.postMessage({ bytes, fuel: KOTOBA_RUN.fuel, allow: KOTOBA_RUN.allow, args: KOTOBA_RUN.args,
+                         files: KOTOBA_RUN.files, bind: Object.keys(bind).map(Number) });
+  });
+})();
+</script>

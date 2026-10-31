@@ -13,6 +13,10 @@ Standalone: check-wasm32-browser.py --modules DIR --output OUT [--browser PATH]
 checks DIR/case-NAME.wasm against seed/static-cases.json (result, trap and
 remaining fuel, as the native cases are checked) and DIR/probe-spin.wasm,
 DIR/probe-deep.wasm and DIR/probe-entry.wasm when present (see PROBES).
+When DIR/probe-cap.wasm is present it also runs the consent broker's
+qualification (Phase 2, profile restricted-wasm-v1; see BROKER_RUNS): the
+trusted page runtime/wasm32-browser-broker-run.html holds the vendored
+kotoba-client-runtime.js, and the guests run in its restricted guest shell.
 
 run_modules is also the harness of applications' own browser checks (for
 example kumitate's fixture selftest): each run may carry the entry ABI's
@@ -78,6 +82,7 @@ class Pipe:
         os.close(to_r)
         os.close(from_w)
         self.buf, self.next_id = b"", 0
+        self.events = []  # protocol events (messages without an id), in arrival order
 
     def call(self, method, params=None, session=None, timeout=60):
         self.next_id += 1
@@ -90,6 +95,9 @@ class Pipe:
             while b"\0" in self.buf:
                 raw, self.buf = self.buf.split(b"\0", 1)
                 reply = json.loads(raw)
+                if "id" not in reply:
+                    self.events.append(reply)
+                    continue
                 if reply.get("id") == self.next_id:
                     if "error" in reply:
                         raise RuntimeError((method, reply["error"]))
@@ -101,6 +109,14 @@ class Pipe:
                 raise RuntimeError(("browser closed the pipe", self.stderr_tail()))
             self.buf += chunk
         raise TimeoutError((method, self.stderr_tail()))
+
+    def send(self, method, params=None, session=None):
+        """A command whose reply is not waited for (it is dropped when it arrives)."""
+        self.next_id += 1
+        msg = dict(id=self.next_id, method=method, params=params or {})
+        if session:
+            msg["sessionId"] = session
+        os.write(self.to_w, json.dumps(msg).encode() + b"\0")
 
     def stderr_tail(self):
         self.log.flush()
@@ -211,6 +227,240 @@ def check_cases(browser, out, modules, cases=None):
     return dict(browser=version, seconds=seconds, fuel=FUEL, cases=results, probes=probe_results)
 
 
+# ---- the consent broker (Phase 2, profile restricted-wasm-v1) ----
+# A guest's kotoba:host/cap call of a wire the trusted host page has bound to a
+# declared operation goes to the shared broker (runtime/kotoba-client-runtime.js,
+# vendored byte-for-byte; runtime/kotoba-client-runtime.pin.json). The page is
+# served from 127.0.0.1 (module scripts do not load from file://), and the
+# guest runs in the restricted guest shell (a sandboxed iframe, connect-src
+# 'none') and its Worker. Every https request of the page and of its attached
+# frames and workers is held at the request stage (DevTools Fetch domain) and
+# recorded; the declared fixture endpoint is answered by this harness, so no
+# request ever leaves the machine, and anything else is failed. Each consent
+# dialog first gets a synthetic Allow click (isTrusted false), which must not
+# approve or send; then the run's plan: "deny" (a click on Deny) or "allow" (a
+# press and release dispatched through DevTools Input, which the browser marks
+# isTrusted; automation, not a person's click).
+BROKER_PAGE = ROOT / "runtime/wasm32-browser-broker-run.html"
+BROKER_JS = ROOT / "runtime/wasm32-browser-broker-run.js"
+BROKER_RUNTIME = ROOT / "runtime/kotoba-client-runtime.js"
+BROKER_PIN = ROOT / "runtime/kotoba-client-runtime.pin.json"
+GUEST_SHELL = ROOT / "runtime/wasm32-browser-restricted-guest.html"
+SERVICE = "https://service.invalid"
+FIXTURE_BODY = '{"id":"abc","fixture":true}\n'
+CAP_WIRE = 45  # the probes' wire (:net/dial): any catalogued wire the runtime does not serve itself can be bound
+READ_OP = {"capability": "test/fixture-read", "service": "fixture-service", "operation": "read", "consent": "each-operation",
+           "data-categories": ["fixture-item-id"], "endpoint": {"origin": SERVICE, "method": "GET", "path": "/v1/items/:id"}}
+
+
+def selector(op):
+    return {k: op[k] for k in ("capability", "service", "operation")}
+
+
+def descriptor(ops):
+    return {"schema": "kotoba.app.client-runtime.v1", "target": "browser", "profile": "restricted-wasm-v1",
+            "entry": "index.html", "local-state": {"adapter": "indexeddb", "schema": "kotoba.wasm32-browser.fixture.v1", "version": 1},
+            "operations": ops}
+
+
+OTHER_PATH_OP = dict(READ_OP, endpoint=dict(READ_OP["endpoint"], path="/v1/other/:id"))
+# name: (probe module, operations declared, bound selector or None, consent plan, expected)
+BROKER_RUNS = {
+    "cap-unbound": ("cap", [READ_OP], None, [], dict(exit=120, dialogs=0, requests=0, cap=[])),
+    "cap-undeclared-operation": ("cap", [READ_OP], dict(selector(READ_OP), operation="write"), [],
+                                 dict(exit=120, dialogs=0, requests=0, cap=["client operation is not eligible and supported"])),
+    "cap-undeclared-endpoint": ("cap", [OTHER_PATH_OP], selector(READ_OP), [],
+                                dict(exit=120, dialogs=0, requests=0, cap=["request does not match declared service method/path/query"])),
+    "cap-denied": ("cap", [READ_OP], selector(READ_OP), ["deny"],
+                   dict(exit=120, dialogs=1, requests=0, cap=["client operation was not approved"])),
+    "cap-approved": ("cap", [READ_OP], selector(READ_OP), ["allow"],
+                     dict(exit=0, dialogs=1, requests=1, cap=["answered"])),
+    "cap-approval-once": ("cap-twice", [READ_OP], selector(READ_OP), ["allow", "deny"],
+                          dict(exit=120, dialogs=2, requests=1, cap=["answered", "client operation was not approved"])),
+}
+
+
+def pin_matches(data, pin_):
+    sri = "sha256-" + base64.b64encode(hashlib.sha256(data).digest()).decode()
+    return len(data) == pin_["bytes"] and hashlib.sha256(data).hexdigest() == pin_["sha256"] and sri == pin_["sri"]
+
+
+def check_broker_pin():
+    pin_ = json.loads(BROKER_PIN.read_text())
+    data = BROKER_RUNTIME.read_bytes()
+    assert pin_matches(data, pin_), ("runtime/kotoba-client-runtime.js is not the pinned reviewed revision", pin_["source"])
+    # negative control: one changed byte is not the pin
+    assert not pin_matches(bytes([data[0] ^ 1]) + data[1:], pin_)
+    assert f'"./kotoba-client-runtime.js": "{pin_["sri"]}"' in BROKER_PAGE.read_text(), "the broker page's import map integrity is not the pin"
+    return pin_
+
+
+def guest_shell(module, bind, revision):
+    run = dict(wasm=base64.b64encode(Path(module).read_bytes()).decode(), fuel=FUEL, allow=[37], bind=bind)
+    js = lambda v: json.dumps(v).replace("<", "\\u003c")
+    html = GUEST_SHELL.read_text()
+    assert html.count("/*KOTOBA_RUN*/null") == 1 and html.count("/*KOTOBA_HOST*/null") == 1
+    html = html.replace("/*KOTOBA_RUN*/null", js(run)).replace("/*KOTOBA_HOST*/null", js(HOST.read_text()))
+    data = html.encode()
+    return dict(guest=base64.b64encode(data).decode(), sha256=hashlib.sha256(data).hexdigest(), revision=revision)
+
+
+def source_revision():
+    r = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True, text=True)
+    rev = r.stdout.strip()
+    assert r.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", rev), "the guest shell's revision is this checkout's commit"
+    return rev
+
+
+class _Quiet(__import__("http.server").server.SimpleHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+
+def check_broker(browser, out, modules, timeout=300):
+    """Run BROKER_RUNS with probe-cap.wasm and probe-cap-twice.wasm from `modules`; returns the report."""
+    import functools
+    import http.server
+    import threading
+    pin_ = check_broker_pin()
+    page_dir = out / "broker-page"
+    page_dir.mkdir(parents=True, exist_ok=True)
+    for f in (BROKER_PAGE, BROKER_JS, BROKER_RUNTIME):
+        shutil.copy(f, page_dir / f.name)
+    revision = source_revision()
+    runs = []
+    for name, (probe, ops, bound, plan, expected) in BROKER_RUNS.items():
+        bind = {str(CAP_WIRE): bound} if bound else {}
+        runs.append(dict(name=name, runtime=descriptor(ops), requestedCapabilities=sorted({o["capability"] for o in ops}),
+                         hostSupportedOperations=[[o["capability"], o["service"], o["operation"]] for o in ops],
+                         **guest_shell(modules / f"probe-{probe}.wasm", bind, revision)))
+    (page_dir / "broker-runs.js").write_text("window.KOTOBA_BROKER_RUNS = " + json.dumps(runs) + ";\n")
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Quiet, directory=str(page_dir)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}/{BROKER_PAGE.name}"
+    requests, network, consents, sessions = [], [], [], set()
+    t0 = time.time()
+    with tempfile.TemporaryDirectory(prefix="kotoba-broker-") as profile:
+        pipe = Pipe(browser, profile)
+        try:
+            version = pipe.call("Browser.getVersion")
+            target = pipe.call("Target.createTarget", dict(url="about:blank"))["targetId"]
+            session = pipe.call("Target.attachToTarget", dict(targetId=target, flatten=True))["sessionId"]
+
+            # The host page must take all three. An attached frame or worker is asked without waiting: it
+            # takes what its target type has (a worker has no Fetch domain) and may already be gone. Their
+            # own network barrier is the guest shell's connect-src 'none'; what is recorded for them is
+            # observation, not the barrier.
+            def instrument(s, kind="page"):
+                sessions.add(s)
+                for method, params in (("Network.enable", {}),
+                                       ("Fetch.enable", dict(patterns=[dict(urlPattern="https://*", requestStage="Request")])),
+                                       ("Target.setAutoAttach", dict(autoAttach=True, waitForDebuggerOnStart=False, flatten=True))):
+                    (pipe.call if s == session else pipe.send)(method, params, s)
+                attached.append(dict(run=state["run"], type=kind))
+            state = dict(run=None)
+            attached = []
+            instrument(session)
+
+            def pump():
+                while pipe.events:
+                    ev = pipe.events.pop(0)
+                    m, p, s = ev.get("method"), ev.get("params", {}), ev.get("sessionId")
+                    if m == "Target.attachedToTarget" and p.get("sessionId") not in sessions:
+                        instrument(p["sessionId"], p.get("targetInfo", {}).get("type"))
+                    elif m == "Network.requestWillBeSent":
+                        network.append(dict(run=state["run"], url=p["request"]["url"], type=p.get("type")))
+                    elif m == "Fetch.requestPaused":
+                        rq = p["request"]
+                        rec = dict(run=state["run"], url=rq["url"], method=rq["method"],
+                                   headers=sorted(k.lower() for k in rq.get("headers", {})),
+                                   fromHostPage=s == session)
+                        requests.append(rec)
+                        plan = BROKER_RUNS.get(state["run"], (None, None, None, []))[3]
+                        if rec["fromHostPage"] and rq["url"] == SERVICE + "/v1/items/abc" and rq["method"] == "GET" and "allow" in plan:
+                            pipe.send("Fetch.fulfillRequest", dict(
+                                requestId=p["requestId"], responseCode=200, body=base64.b64encode(FIXTURE_BODY.encode()).decode(),
+                                responseHeaders=[dict(name="Content-Type", value="text/plain; charset=utf-8"),
+                                                 dict(name="Access-Control-Allow-Origin", value="*")]), s)
+                        else:
+                            pipe.send("Fetch.failRequest", dict(requestId=p["requestId"], errorReason="BlockedByClient"), s)
+
+            def evaluate(expr):
+                r = pipe.call("Runtime.evaluate", dict(expression=expr, returnByValue=True), session)
+                pump()
+                return r.get("result", {}).get("value")
+            pipe.call("Page.navigate", dict(url=url), session)
+            handled, end, text = 0, time.time() + timeout, None
+            while time.time() < end:
+                st = evaluate("window.kotobaBrokerState ? window.kotobaBrokerState() : null")
+                if st:
+                    state["run"] = st["run"]
+                    if st["done"]:
+                        text = evaluate("document.getElementById('results').textContent")
+                        break
+                    if st["open"] and st["dialogs"] > handled:
+                        handled = st["dialogs"]
+                        run, k = st["run"], len([c for c in consents if c["run"] == st["run"]])
+                        plan = BROKER_RUNS[run][3]
+                        action = plan[k] if k < len(plan) else "deny"
+                        while evaluate("window.kotobaBrokerState().allowDisabled") and time.time() < end:
+                            time.sleep(0.05)
+                        sent = len(requests)
+                        evaluate("document.querySelector('dialog.kotoba-client-consent button:last-child').click()")
+                        time.sleep(0.4)
+                        after = evaluate("window.kotobaBrokerState()")
+                        synthetic = dict(stillOpen=after["open"], requestsSent=len(requests) - sent)
+                        if action == "allow":
+                            box = evaluate("(() => { const r = document.querySelector('dialog.kotoba-client-consent button:last-child')"
+                                           ".getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+                            for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
+                                pipe.call("Input.dispatchMouseEvent", dict(type=kind, x=box[0], y=box[1], button="left",
+                                                                           buttons=1 if kind == "mousePressed" else 0,
+                                                                           clickCount=0 if kind == "mouseMoved" else 1), session)
+                        else:
+                            evaluate("document.querySelector('dialog.kotoba-client-consent button').click()")
+                        consents.append(dict(run=run, action=action, scope=st["scope"], syntheticAllowClick=synthetic))
+                time.sleep(0.1)
+            if text is None:
+                raise TimeoutError(("the broker page did not finish", pipe.stderr_tail()))
+        finally:
+            pipe.close()
+            server.shutdown()
+    lines = {l["name"]: l for l in (json.loads(x) for x in text.splitlines() if x.strip())}
+    report = []
+    for name, (probe, ops, bound, plan, exp) in BROKER_RUNS.items():
+        line = lines.get(name)
+        assert line is not None and "hostError" not in line, ("broker run", name, line)
+        o = observe(line)
+        sent = [r for r in requests if r["run"] == name]
+        cap = [c["outcome"] if c["outcome"] == "answered" else c.get("error") for c in line.get("capLog") or []]
+        shown = [c for c in consents if c["run"] == name]
+        answer = "200\n" + FIXTURE_BODY
+        ok = (o["exit"] == exp["exit"] and line.get("dialogs") == exp["dialogs"] == len(shown)
+              and len(sent) == exp["requests"] and cap == exp["cap"]
+              and all(c["syntheticAllowClick"] == dict(stillOpen=True, requestsSent=0) for c in shown)
+              and all(f"Endpoint: {SERVICE}" in c["scope"] and "Action: GET /v1/items/abc" in c["scope"] for c in shown)
+              and all(r["fromHostPage"] and r["url"] == SERVICE + "/v1/items/abc" and r["method"] == "GET"
+                      and not {"cookie", "authorization"} & set(r["headers"]) for r in sent))
+        if exp["exit"] == 0:
+            ok = ok and o["status"] == "ok" and o["result"] == len(answer.encode()) and line.get("output") == answer
+        elif exp["dialogs"] < 2:
+            ok = ok and o["status"] == "trap" and f":wire {CAP_WIRE} :refused" in (line.get("stderr") or "")
+        else:
+            ok = ok and o["status"] == "trap" and (line.get("output") or "").startswith(answer)
+        assert ok, (name, o, exp, cap, sent, shown, line)
+        report.append(dict(name=name, probe=probe, bound=bound, plan=plan, consentDialogs=shown, httpsRequests=sent,
+                           capLog=line.get("capLog"), **o))
+    leaked = [r for r in requests if not r["fromHostPage"] or r["run"] not in BROKER_RUNS]
+    assert not leaked, ("an https request outside the host page's broker", leaked)
+    return dict(browser=dict(product=version.get("product"), protocol=version.get("protocolVersion")),
+                seconds=round(time.time() - t0, 3), profile="restricted-wasm-v1", broker=pin_["source"] | dict(sha256=pin_["sha256"]),
+                runs=report, networkRequests=network, attachedTargets=attached,
+                notQualified=("a person's click: approvals here are DevTools-dispatched input (isTrusted true, automation); "
+                              "a real service endpoint: the declared fixture endpoint is answered at the request stage, "
+                              "so nothing leaves the machine"))
+
+
 def run_app(browser, out, module, allow, mounts, args):
     """One application module with the entry ABI's inputs; see the module doc."""
     files = {}
@@ -259,6 +509,11 @@ if __name__ == "__main__":
         print(r["status"], r["browser"]["product"], r["report"], r["seconds"], "s")
         sys.exit(0 if r["status"] == "PASS_WASM32_BROWSER_APP" else 1)
     report = dict(status="PASS_WASM32_BROWSER_STATIC_CASES", **check_cases(browser, a.output.resolve(), a.modules.resolve()))
+    if (a.modules / "probe-cap.wasm").exists():
+        report["broker"] = dict(status="PASS_WASM32_BROWSER_BROKER", **check_broker(browser, a.output.resolve(), a.modules.resolve()))
     (a.output / "wasm32-browser.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], report["browser"]["product"], len(report["cases"]), "cases", len(report["probes"]), "probes",
           report["seconds"], "s")
+    if "broker" in report:
+        b = report["broker"]
+        print(b["status"], b["profile"], len(b["runs"]), "runs:", " ".join(r["name"] for r in b["runs"]), b["seconds"], "s")
