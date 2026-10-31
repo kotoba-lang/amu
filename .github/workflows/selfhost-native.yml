@@ -7,10 +7,7 @@ name: selfhost-native
 # Tiers (scripts/seed/selfhost-bootstrap.py --tier; every check runs in one):
 #   pull_request -> pr:   the root F rebuilds itself, F's targets, F's core route
 #                         (the adoption image), boundary corpus, cases,
-#                         hardening, capabilities, the cases as wasm32-browser
-#                         modules; x86_64: X2, cases, hardening, and the
-#                         wasm32-browser modules in headless Chrome (JUN-353:
-#                         the arm64 image has no Chrome or Chromium).
+#                         hardening, capabilities; x86_64: X2, cases, hardening.
 #                         On both kernels in every tier: the static runtimes'
 #                         stdin (wire 41), durable files and sleep (35, 7) and
 #                         spawn (20) checks, with their refusal and seccomp
@@ -20,6 +17,14 @@ name: selfhost-native
 #                         KX64V1 runner, the scalar and aiueos suites.
 #   schedule, workflow_dispatch -> full: + the deep provenance from source
 #                         (C0 -> the adoption image; C0 -> Kw -> Pw -> F).
+#
+# The wasm32-browser target (KOTOBA-174, owner decision 2026-10-31) is not part
+# of the native qualification: native selfhost is the foundation and Wasm is one
+# build target. It has its own jobs in every tier, both mandatory, which no
+# native job depends on: wasm32-browser-compile (arm64: the bootstrap's F
+# compiles the cases and probes, the float cases are refused) and
+# wasm32-browser-chrome (x86_64: the modules in headless Chrome, JUN-353; the
+# arm64 image has no Chrome or Chromium).
 on:
   workflow_dispatch:
   schedule:
@@ -221,7 +226,6 @@ jobs:
             ${{ runner.temp }}/boot/S-x86_64.elf
             ${{ runner.temp }}/boot/R-x86_64.elf
             ${{ runner.temp }}/boot/selfhost-unity.kotoba
-            ${{ runner.temp }}/boot/wasm32/*.wasm
           if-no-files-found: error
       # a separate artifact: another path in the one above would move its root
       # (the qualify job expects boot/ at the top)
@@ -519,12 +523,6 @@ jobs:
             ${{ runner.temp }}/user-context-x86/*/calls.json
             ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
             ${{ runner.temp }}/desktop-regions-x86/*/calls.json
-      # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
-      # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node),
-      # and the consent broker's runs (Phase 2, restricted-wasm-v1: the vendored
-      # kotoba-client-runtime.js on a 127.0.0.1 page; no request leaves the machine)
-      - name: wasm32-browser cases in headless Chrome
-        run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/boot/wasm32" --output "$RUNNER_TEMP/x86/wasm32-browser" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -599,7 +597,6 @@ jobs:
             ${{ runner.temp }}/native-cdci/raw
             ${{ runner.temp }}/native-cdci/positive/cdci.receipt
             ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
-            ${{ runner.temp }}/x86/wasm32-browser/wasm32-browser.json
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -609,6 +606,58 @@ jobs:
             ${{ runner.temp }}/pg-x86
             ${{ runner.temp }}/x86-shard-plan.json
             ${{ runner.temp }}/x86-shard-plan.coverage.json
+          if-no-files-found: warn
+
+  # KOTOBA-174: the wasm32-browser target, mandatory but outside the native
+  # qualification. No native job needs these jobs, and the native tiers do not
+  # compile wasm32-browser.
+  wasm32-browser-compile:
+    name: wasm32-browser target (compile, arm64)
+    needs: bootstrap-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - name: F's wasm32-browser modules of the runtime cases and probes, float refusals (JUN-353)
+        run: python3 scripts/seed/selfhost-bootstrap.py --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm32-browser-modules
+          path: |
+            ${{ runner.temp }}/wasm32-target/wasm32-browser-target.json
+            ${{ runner.temp }}/wasm32-target/calls.json
+            ${{ runner.temp }}/wasm32-target/wasm32/*.wasm
+          if-no-files-found: error
+  wasm32-browser-chrome:
+    name: wasm32-browser target (headless Chrome, x86_64)
+    needs: wasm32-browser-compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm32-browser-modules
+          path: ${{ runner.temp }}/wasm32-target
+      # JUN-353: F's wasm32-browser modules of the runtime cases, in the image's
+      # Chrome (static page, Worker host, DevTools protocol on a pipe; no Node),
+      # and the consent broker's runs (Phase 2, restricted-wasm-v1: the vendored
+      # kotoba-client-runtime.js on a 127.0.0.1 page; no request leaves the machine)
+      - name: wasm32-browser cases in headless Chrome
+        run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/wasm32-target/wasm32" --output "$RUNNER_TEMP/wasm32-browser" --browser google-chrome
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: wasm32-browser-receipt
+          path: ${{ runner.temp }}/wasm32-browser/wasm32-browser.json
           if-no-files-found: warn
 
   qualify-x86_64:
