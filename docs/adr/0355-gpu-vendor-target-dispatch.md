@@ -6015,3 +6015,36 @@ NEW UTC day, its own freeze) and the cross-day tail-movement row
 (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect11prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 132, JUN-59 -- ELEVENTH CUT MEASUREMENT HALF
+LANDING: the MULTI-BLOCK STABILITY REQUIREMENT CUT measured, 54
+fresh processes on aiueos-6600hs under the frozen protocol, GO
+2026-10-31T14:22:08Z; builds 4/4 pins BYTE-IDENTICAL, ZERO NEW
+KNOB TRIPLES; runs 54/54 rc=0 stderr 0, VERIFY mismatch 0; 108
+logs byte-identical host==local (aggregate ff8cffd3...).
+publication-s132.txt (analysis-s132.py twice byte-identical,
+sha256 9937ba53...): C1 (a) (c2 FLOOR 32; c8 32,850 -0.20%);
+C2 (a) STABLE-INTERMEDIATE at mid n=254,882 -- all 8 blocks +
+pooled-24 INTERMEDIATE/MIXED (pooled-24 1,133) -- PASSES the
+multi-block stability requirement (the tenth cut's block4 CAPTURED
+is named tail content); C3 (c) BLOCK-UNSTABLE at hi n=255,208 (5x
+INTERMEDIATE/MIXED + 3x CAPTURED blocks, pooled-24 CAPTURED
+1,150) -- FAILS; W1 (b) EXACTLY ONE PASSES: the narrowing channel
+re-opens at mid ONLY (a NEW pre-registered cut, NOT queued) and
+L9 CONTINUES to bind at hi at 8-block granularity. NO bracket
+movement: (254,557, 255,208] stands. WHY UNMEASURED (L2).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins
+(scratch runner deleted); (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s133: a twelfth cut at mid only
+through a NEW pre-registered cut (NOT queued), any further
+counted-day slot (next is a NEW UTC day, its own freeze) and the
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect11-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
