@@ -34,6 +34,8 @@ on:
       - 'seed/tests/native-keyword-map-record.kotoba'
       - 'scripts/seed/check-destructuring.py'
       - 'seed/tests/native-destructuring.kotoba'
+      - 'scripts/seed/check-def-assoc-get.py'
+      - 'seed/tests/native-def-assoc-get.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
@@ -172,6 +174,11 @@ jobs:
           python3 scripts/seed/check-destructuring.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-destructuring"
+      - name: def vector/map literals, variadic assoc and typed-map get (JUN-734)
+        run: |
+          python3 scripts/seed/check-def-assoc-get.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-def-assoc-get"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \

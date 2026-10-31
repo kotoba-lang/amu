@@ -178,7 +178,14 @@
                  result :i64 or :bool"]
   [:c HD-DEFN-PRIV 4 "(defn- NAME [p :T ...] :R body) -- private, same shape"]
   [:c HD-DEF 5 "(def NAME literal) -- literal is an integer, a string or a vector literal of integer
-                literals; the type is the literal's. A reference evaluates the literal again (no storage)"]
+                literals; the type is the literal's. A reference evaluates the literal again (no storage).
+                JUN-734 (lang/guest-grammar.edn :def :value :literal): a vector literal that is not such an integer
+                vector, and a map literal that is not R6B's opaque constant data (keywords / strings / integers), take
+                R6F's computed-def route -- a private nullary defn whose body is the literal, typed as in a body: f64 and
+                boolean values ({:a 0.5 :b true} is a closed record, JUN-728), vectors of map literals, [0.5 1.5],
+                [true false], [:a :b], [[1 2] [3 4]]. A loop / fn literal inside stays E2124 at the name; an ill-typed
+                literal is refused at the def (E2116 for [1 :a], E2102 ..) even when nothing reads it. Not changed:
+                (def x (->D 0.5)) was already admitted by R6F (the reference's :unspellable refuses a nominal record)"]
   [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body.
                 JUN-729: a binder may be a destructuring pattern (lang/guest-grammar.edn :nested-destructuring), reader
                 sugar that 21-check expands before typing into plain pairs: [a b & r :as v] e -> g e a (nth g 0)
@@ -186,7 +193,8 @@
                 y (get g :k) v g; g a fresh gensym, nested patterns each take one, `_` inside a pattern binds nothing.
                 Refused E2111: a keyword other than :as in a vector pattern, anything but :as after & r, :strs :syms
                 and other keyword keys, a non-keyword lookup key, a :keys item that is not a symbol or whose keyword is
-                never written in the module, :as / :or of the wrong shape. The lookups are typed as written (E2104)"]
+                never written in the module, :as / :or of the wrong shape. The lookups are typed as written (E2104);
+                JUN-734: a :keys name over a typed map without :or is (get g :k), an [:option V]"]
   [:c HD-LOOP 7 "(loop [n1 e1 ...] body) -- 1..10 bindings (R4B: 1..20) of type i64/bool/string; a value (may be non-tail);
                  type = body. JUN-729: with a pattern binder it is clojure.core/loop's expansion
                  (let [g e p g x e2 ..] (loop [g g x x ..] (let [p g x x ..] body)))"]
@@ -266,11 +274,17 @@
   [:c HD-DEFRECORD 70 "(defrecord Name [f :T g ..]) top level; unannotated fields are :i64; 1..32 unique fields.
                        Identity: the keyword :<ns>/Name when the file spells it (then inline schemas of that name must
                        have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR)"]
-  [:c HD-GET 71 "(get r :f) on a record -> field f"]
+  [:c HD-GET 71 "(get r :f) on a record -> field f. JUN-734: (get m k) on a typed map [:map K V] -> [:option V] (k:K;
+                 lowered as typed-map-get, 4 hidden slots: lang/guest-grammar.edn lookup is get, [:option V] or V with
+                 a default); (get m k d) stays V (R3)"]
   [:c HD-TRAP 72 "(no spelling) synthetic: brk, type bottom (OP-TRAP 0)"]
-  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list)"]
+  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list). JUN-734: (:k m d) on a typed map
+                    is (get m :k d) -> V; on a record (declared or a keyword map literal) or any other type the default is
+                    refused E2103 at :k -- a record field is never absent, so a default has no meaning there"]
   [:c HD-RECORD-CTOR 74 "(no spelling) (->Name e ..) (NF-RES of the list); args start at the 2nd child"]
-  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). 21-check gives it a
+  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). JUN-734: the
+                   variadic (assoc r k1 v1 k2 v2 ..) is reader sugar for (assoc (assoc r k1 v1) k2 v2 ..) (21-check, before
+                   typing; records, typed maps and documents alike); an odd key/value count is E2103. 21-check gives it a
                    hidden frame slot (NF-TYPE of the head symbol node) that holds r while the fields are copied"]
   ;; -- R3 (rung 3, 2026-10-03): values. Every R3 head is typed by 21-check; the type argument T/R/L/S/Mt is a type form
   ;;    ([:option T] ...) that must name the matching constructor (E2105 / E2104 otherwise). Heads that need frame slots
@@ -544,7 +558,9 @@
   [:c E-CHECK-SYM 2102 "unknown symbol '{name}'"]
   [:c E-CHECK-ARITY 2103 "wrong number of arguments to '{name}': expected {n}"]
   [:c E-CHECK-TYPE 2104 "type mismatch in '{name}': expected {t}"]
-  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]
+  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]   ; JUN-734: also a defrecord's bare name in a defn parameter
+                                                           ; vector ([s S]): a type is a keyword or a type vector, the
+                                                           ; record type is [:ref :<ns>/S]; S is not read as a parameter
   [:c E-CHECK-RECUR-TAIL 2106 "recur is not in tail position"]
   [:c E-CHECK-RECUR-ARITY 2107 "recur expects {n} arguments"]
   [:c E-CHECK-PARAMS 2108 "too many parameters (an export takes 8, a variadic clause 5) in '{name}'"]

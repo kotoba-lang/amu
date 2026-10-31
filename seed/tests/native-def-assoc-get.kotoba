@@ -1,0 +1,59 @@
+;; JUN-734: small native admissions in seed/21-check (lang/guest-grammar.edn):
+;;   D5  a def of a vector / map literal with f64 / boolean values or map literal items (:def :value :literal);
+;;   D6  the variadic (assoc r k1 v1 k2 v2 ..), reader sugar for nested assoc, on records and typed maps;
+;;   D10 (get m k) on a typed map -> [:option V]; (:k m d) on a typed map is (get m :k d).
+;; main returns 0, or the number of the first failing case.
+(ns native-def-assoc-get (:export [main]))
+
+(defrecord S [a :i64 b :i64 c :i64])
+
+;; D5
+(def cfg {:scale 0.5 :on true :n 3})
+(def rows [{:id 1 :ok true} {:id 2 :ok false} {:id 3 :ok true}])
+(def weights [0.5 1.5 2.5])
+(def flags [true false true])
+(def names [:alpha :beta])
+(def grid [[1 2] [3 4]])
+(def nested {:inner cfg :xs [5 6]})
+(def bools (typed-map-new [:map :keyword :bool] :x true :y false))
+
+(defn- ok-count [] :i64
+  (loop [i 0 n 0]
+    (if (>= i (count rows)) n (recur (+ i 1) (if (:ok (nth rows i)) (+ n 1) n)))))
+
+;; D6 on a record parameter and inside a threading form
+(defn- bump [s [:ref :native-def-assoc-get/S]] [:ref :native-def-assoc-get/S]
+  (assoc s :a (+ (:a s) 1) :b (+ (:b s) 2) :c (+ (:c s) 3)))
+(defn- thread [s [:ref :native-def-assoc-get/S]] :i64
+  (let [t (-> s (assoc :a 100 :c 300))] (+ (:a t) (+ (:b t) (:c t)))))
+
+;; D10
+(defn- tm [] [:map :keyword :i64] (typed-map-new [:map :keyword :i64] :p 7 :q 8))
+
+(defn main [] :i64
+  (let [m (tm)
+        r (->S 1 2 3)
+        kw {:x 1 :y true :z 0.5}]
+    (cond (not= (f64-to-bits (:scale cfg)) 4602678819172646912) 1
+          (not (:on cfg)) 2
+          (not= (:n cfg) 3) 3
+          (not= (ok-count) 2) 4
+          (not= (:id (nth rows 2)) 3) 5
+          (not= (count weights) 3) 6
+          (not= (f64-to-bits (nth weights 1)) 4609434218613702656) 7
+          (nth flags 1) 8
+          (not= (nth names 1) :beta) 9
+          (not= (nth (nth grid 1) 0) 3) 10
+          (not= (+ (:n (:inner nested)) (nth (:xs nested) 1)) 9) 11
+          (not (get bools :x false)) 12
+          (not= (:a (bump r)) 2) 13
+          (not= (+ (:b (bump r)) (:c (bump r))) 10) 14
+          (not= (thread r) 402) 15
+          (not= (let [n (assoc kw :x 9 :y false :z 1.5)] (if (:y n) 0 (:x n))) 9) 16
+          (not= (let [n (assoc m :p 1 :q 2 :r 3)] (+ (get n :p 0) (+ (get n :q 0) (get n :r 0)))) 6) 17
+          (not= (option-or (get m :p) 0) 7) 18
+          (some? (get m :absent)) 19
+          (not= (+ (:q m 0) (:absent m 40)) 48) 20
+          (not= (let [sm (typed-map-new [:map :string :i64] "k" 5)] (option-or (get sm "k") 0)) 5) 21
+          (not= (+ (get r :b) (:c r)) 5) 22
+          :else 0)))
