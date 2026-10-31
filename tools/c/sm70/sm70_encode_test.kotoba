@@ -231,8 +231,11 @@
   (let [a (one (sm70-plop3 (P) G C0 2 0 0 1 0 7 0 0xc0) "plop3.and")
         b (one (sm70-plop3 (P) G C2 3 0 0 1 0 7 0 0xfc) "plop3.or")
         c (one (sm70-plop3 (P) (sm70-guard 4 0) C0 5 0 0 1 1 2 0 0xe4) "plop3.select")
-        d (one (sm70-plop3 (P) G C0 6 7 1 4 0 7 0 0xf0) "plop3.not.a")]
-    (+ a b c d)))
+        d (one (sm70-plop3 (P) G C0 6 7 1 4 0 7 0 0xf0) "plop3.not.a")
+        e (one (sm70-f2f-f16 (P) G C1 4 5 0 0) "f2f.f32.f16.h0")
+        f (one (sm70-f2f-f16 (P) G C2 4 5 1 1) "f2f.f32.f16.h1.ftz")
+        h (one (sm70-f2f-f16 (P) G C0 4 5 2 0) "refuse.f2f.half")]
+    (+ a b c d e f h)))
 
 ;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
 ;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.

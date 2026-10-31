@@ -5,7 +5,7 @@
                           sm70-ldg sm70-stg sm70-lds sm70-sts sm70-bar sm70-bssy sm70-bsync sm70-shr-imm
                           sm70-fadd-neg sm70-iadd3-neg sm70-fsetp sm70-fsetp-imm sm70-fmnmx sm70-imnmx
                           sm70-sel sm70-sel-imm sm70-mufu sm70-i2f sm70-f2i sm70-lop3 sm70-lop3-imm
-                          sm70-shf sm70-shf-imm sm70-imad-wide sm70-sgxt-imm sm70-plop3]))
+                          sm70-shf sm70-shf-imm sm70-imad-wide sm70-sgxt-imm sm70-plop3 sm70-f2f-f16]))
 
 ;; NVIDIA Volta instruction encoder, SM 7.0 / 7.2 (route C, JUN-713). Xavier's
 ;; iGPU (gv11b) is SM 7.2. Each instruction is 128 bits, held as two i64
@@ -550,3 +550,13 @@
         :else (sm-emit M g ctl (-> 0 (lf 0 12 0x81c) (lf 16 8 0))
                 (-> 0 (hf 64 3 (bit-and lut 7)) (hf 67 1 0) (hf 68 3 c) (hf 71 1 nc) (hf 72 5 (u64-shift-right lut 3))
                       (hf 77 3 b) (hf 80 1 nb) (hf 81 3 pd) (hf 84 3 7) (hf 87 3 a) (hf 90 1 na)))))
+
+;; F2F.F32.F16 (OpF2F, src F16, dst F32): d = the half h (0 low, 1 high) of
+;; a as an f32. ALU opcode 0x104 with src1 only (32..39) and its F16 swizzle
+;; at 60..61 (NAK set_swizzle: Xx 0, Yy 1), destination size 75..76 = 2,
+;; rounding 78..79 = 0 (exact anyway), ftz 80, source size 84..85 = 1.
+(defn sm70-f2f-f16 [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 h :i64 ftz :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? h) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x104) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a) (lf 60 2 h))
+                (-> 0 (hf 75 2 2) (hf 78 2 0) (hf 80 1 ftz) (hf 84 2 1)))))
