@@ -152,8 +152,8 @@ REFUSALS = [
     ("method-named-like-a-head", "(defprotocol C (count [this]))\n(defn main [] :i64 0)",
      "E2006 malformed closed dispatch form 'count'"),
     ("multi-arity-signature", "(defprotocol C (m [this] [this x]))\n(defn main [] :i64 0)", "E2006"),
-    ("method-in-two-protocols", "(defprotocol A (m [this]))\n(defprotocol B (m [this]))\n(defn main [] :i64 0)",
-     "E2001 duplicate definition 'm'"),
+    ("signature-docstring", "(defprotocol C (m [this] \"doc\"))\n(defn main [] :i64 0)",
+     "E2006 malformed closed dispatch form 'm'"),
     ("extend-protocol-default", P + "(extend-protocol Area default (area [this] 1) (scale [this k] this))\n"
                                     "(defn main [] :i64 0)", "E2006 malformed closed dispatch form 'default'"),
     ("receiver-not-a-record", P + IMPL + "(defn main [] :i64 (area 5))",

@@ -1830,10 +1830,10 @@
   (let [h (nm-first M n)
         s (nm-sym-of M h)]
     (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (zero? (nm-sf M s SF-FN)) (zero? (nm-sf M s SF-HEAD))
-         (nm-ne (nm-sf M s SF-HASH) 0) (pos? (ck-pr-impl M s 0)))))
+         (pos? (ck-pr-impl M s 0)))))
 ;; a call whose receiver is not yet a gensym local
 (defn- ck-pr-wrap? [M :vector-i64 n :i64] :bool
-  (and (= (nm-kind M n) ND-LIST) (pos? (vector-at M (+ MM-STAT-BASE 21))) (ck-pr-head? M n)
+  (and (ck-pr-head? M n)
        (let [a (nm-next M (nm-first M n))]
          (and (pos? a) (not (and (= (nm-kind M a) ND-SYM) (zero? (nm-sf M (nm-sym-of M a) SF-HASH))))))))
 ;; (m x a ..) -> (let [g x] (m g a ..))

@@ -1044,7 +1044,7 @@
                   pv (nm-nth M1 c 3)
                   b (nm-next M1 pv)
                   nx (nm-next M1 c)]
-              (cond (or (zero? k) (zero? pv) (zero? b)) (nm-err-node M1 E-NAMES-DISPATCH (nm-nth M1 c 1) 0)
+              (cond (zero? b) (nm-err-node M1 E-NAMES-DISPATCH (nm-nth M1 c 1) 0)
                     (not (or (= (nm-kind M1 k) ND-INT) (= (nm-kind M1 k) ND-KW))) (nm-err-node M1 E-NAMES-DISPATCH k 0)
                     (not (nm-dp-plain? M1 pv)) (nm-err-node M1 E-NAMES-DISPATCH pv 0)
                     (and (pos? pv0) (not (nm-dp-same? M1 pv pv0))) (nm-err-node M1 E-NAMES-DISPATCH pv 0)
@@ -1093,31 +1093,22 @@
     (cond (zero? c) 0
           (= (nm-sym-of M (nm-first M c)) m) c
           :else (recur (nm-next M c)))))
-;; the name node of a top-level definition named m, or of another signature naming m (not sig itself), else 0
-(defn- nm-dp-taken [M :vector-i64 m :i64 sig :i64] :i64
-  (loop [c (nm-dp-root M)]
-    (let [x (if (= (nm-dp-kind M c) 3) (nm-dp-sig M c m) 0)]
-      (cond (zero? c) (nm-nth M (nm-dp-find M 8 m 0) 1)
-            (and (pos? x) (nm-ne x sig)) (nm-first M x)
-            :else (recur (nm-next M c))))))
-;; (defprotocol P [doc] (m [this ..] [doc]) ..): every signature has a name that is no head and no other definition, and
-;; one parameter vector of plain symbols (the receiver first)
+;; (defprotocol P [doc] (m [this ..]) ..): every signature has a name that is no head and no top-level definition, and one
+;; parameter vector of plain symbols (the receiver first). Two protocols may share a method name: dispatch is on the record
 (defn- nm-dp-protocol [M :vector-i64 d :i64] :vector-i64
   (let [p (nm-nth M d 1)]
     (cond (nm-ne (nm-kind M p) ND-SYM) (nm-err-node M E-NAMES-DISPATCH (nm-first M d) 0)
           (nm-ne (nm-dp-find M 3 (nm-sym-of M p) 0) d) (nm-err-node M E-NAMES-DUP p 0)
-          (zero? (nm-dp-sig0 M d)) (nm-err-node M E-NAMES-DISPATCH p 0)
           :else
           (loop [c (nm-dp-sig0 M d)]
             (let [m (nm-first M c)
                   pv (nm-next M m)
-                  x (nm-next M pv)]
+                  f (nm-dp-find M 8 (nm-sym-of M m) 0)]
               (cond (zero? c) (nm-touch M)
                     (or (nm-ne (nm-kind M c) ND-LIST) (nm-ne (nm-kind M m) ND-SYM) (pos? (nm-head-of M m))
-                        (not (nm-dp-plain? M pv)) (nm-ne (nm-count-syms M pv) (nm-count M pv))
-                        (and (pos? x) (or (nm-ne (nm-kind M x) ND-STR) (pos? (nm-next M x)))))
+                        (not (nm-dp-plain? M pv)) (nm-ne (nm-count-syms M pv) (nm-count M pv)) (pos? (nm-next M pv)))
                     (nm-err-node M E-NAMES-DISPATCH (if (zero? m) c m) 0)
-                    (pos? (nm-dp-taken M (nm-sym-of M m) c)) (nm-err-node M E-NAMES-DUP (nm-dp-taken M (nm-sym-of M m) c) 0)
+                    (pos? f) (nm-err-node M E-NAMES-DUP (nm-nth M f 1) 0)
                     :else (recur (nm-next M c))))))))
 
 ;; 1 when some owner form of the module has a rewritten implementation of method m for record r: (defn- G [this [:ref r] ..] ..)
@@ -1172,8 +1163,7 @@
 (defn- nm-dp-owner [M :vector-i64 o :i64 k :i64] :vector-i64
   (let [nm1 (nm-nth M o 1)
         c0 (nm-nth M o (if (= k 6) 3 2))]
-    (cond (nm-ne (nm-kind M nm1) ND-SYM) (nm-err-node M E-NAMES-DISPATCH (nm-first M o) 0)
-          (zero? (nm-dp-find M (if (= k 5) 3 7) (nm-sym-of M nm1) 0)) (nm-err-node M E-NAMES-OPEN nm1 0)
+    (cond (zero? (nm-dp-find M (if (= k 5) 3 7) (nm-sym-of M nm1) 0)) (nm-err-node M E-NAMES-OPEN nm1 0)
           :else
           (loop [M1 M c c0]
             (let [p (if (= k 5) nm1 c)
