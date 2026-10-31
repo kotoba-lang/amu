@@ -9,7 +9,8 @@
 ;; sm70_lower_modules.kotoba prints them. Output per program:
 ;;   K <name> <count> <error> <opcode>   count words follow; error 0 = lowered
 ;;   I <name>.<k> <lo> <hi>              instruction k, 16 hex digits per half
-;; then the same for "war", a hand-written IR that only the scheduler sees.
+;; then the same for "war" and "loopwar", hand-written IRs that only the
+;; scheduler sees.
 ;; main answers the number of lines printed.
 
 (defn- say [s :string] :i64
@@ -70,8 +71,20 @@
         M (sm70-emit-mir (sm70-schedule Q))]
     (show "war" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
 
+;; R1 = 7 (a branch target); [RZ + 0] <- R1 in shared memory; branch back
+;; to the first instruction (which rewrites the STS's source while it may
+;; still be read); EXIT
+(defn- loopwar [] :i64
+  (let [Q (mi-new 4) G (sm70-guard 7 0)
+        a (mi-add Q MI-MOVI G 1 0 0 0 7 0)
+        b (mi-add Q MI-STS G 0 255 1 0 0 0)
+        c (mi-add Q MI-BRA G 0 0 0 0 -3 0)
+        d (mi-add Q MI-EXIT G 0 0 0 0 0 0)
+        M (sm70-emit-mir (sm70-schedule Q))]
+    (show "loopwar" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
+
 (defn main [] :i64
   (let [nm (num (arg 0))
         t (loop [m 0 t 0]
             (if (>= m nm) t (recur (inc m) (+ t (one (arg (+ 1 (* 2 m))) (words (arg (+ 2 (* 2 m)))))))))]
-    (+ t (war))))
+    (+ t (war) (loopwar))))

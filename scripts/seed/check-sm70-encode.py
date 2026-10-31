@@ -310,10 +310,74 @@ def op_stg(guard, deps, a, off, data, mtype, order, evict, a64):
     return finish(e, guard, deps)
 
 
+# OpLd / OpSt, MemSpace::Shared, sm < 73 (JUN-725): stride X1 (78..80 = 0);
+# NAK asserts strong.CTA / normal eviction and writes no order or eviction
+def op_lds(guard, deps, d, a, off, mtype):
+    e = Instr()
+    e.set_field(0, 12, 0x984)
+    e.set_field(24, 32, a)
+    e.set_field(73, 76, mtype)
+    e.set_field(78, 80, 0)
+    e.set_bit(87, False)
+    e.set_field(16, 24, d)
+    e.set_field(40, 64, off)
+    e.set_bit(91, False)
+    return finish(e, guard, deps)
+
+
+def op_sts(guard, deps, a, off, data, mtype):
+    e = Instr()
+    e.set_field(0, 12, 0x388)
+    e.set_field(24, 32, a)
+    e.set_field(73, 76, mtype)
+    e.set_field(78, 80, 0)
+    e.set_field(32, 40, data)
+    e.set_field(40, 64, off)
+    e.set_bit(91, False)
+    return finish(e, guard, deps)
+
+
+def op_bar(guard, deps):
+    e = Instr()
+    e.set_field(0, 12, 0xB1D)
+    return finish(e, guard, deps)
+
+
+def op_bssy(guard, deps, bar, rel):
+    e = Instr()
+    e.set_field(0, 12, 0x945)
+    e.set_field(16, 20, bar)
+    ip = 1000 * 4
+    e.set_field(34, 64, ip + 4 + 4 * rel - ip - 4)
+    e.set_field(87, 90, 7)
+    e.set_bit(90, False)
+    return finish(e, guard, deps)
+
+
+def op_bsync(guard, deps, bar):
+    e = Instr()
+    e.set_field(0, 12, 0x941)
+    e.set_field(16, 20, bar)
+    e.set_field(87, 90, 7)
+    e.set_bit(90, False)
+    return finish(e, guard, deps)
+
+
+def op_shr(guard, deps, d, a, shift, signed):
+    # builder shr (sm >= 70): OpShf {low 0, high a, shift, right, wrap, dst_high}
+    e = Instr()
+    alu(e, 0x019, d, r(RZ), i(shift & 31), r(a))
+    e.set_field(73, 75, 2 if signed else 3)
+    e.set_bit(75, True)
+    e.set_bit(76, True)
+    e.set_bit(80, True)
+    return finish(e, guard, deps)
+
+
 # ---------------------------------------------------------------------------
 # The cases: the same names and operands as the Kotoba test.
 
-E_REG, E_PRED, E_CTL, E_IMM, E_OFF, E_BRA, E_ENUM, E_CAP, E_CB = range(1, 10)
+E_REG, E_PRED, E_CTL, E_IMM, E_OFF, E_BRA, E_ENUM, E_CAP, E_CB, E_BAR = range(1, 11)
 SR_LANEID, SR_TID_X, SR_CTAID_X, SR_CTAID_Y = 0x00, 0x21, 0x25, 0x26
 
 
@@ -369,6 +433,20 @@ def cases():
     c["stg.e.32.strong.gpu"] = op_stg(G, C0, 2, 0, 6, 4, 3, 1, True)
     c["stg.e.64.weak.min"] = op_stg(G, C0, 2, -8388608, 6, 5, 1, 2, True)
     c["stg.s16.sys.np0"] = op_stg((0, True), C0, 10, 12, 6, 3, 4, 3, False)
+    c["lds.32"] = op_lds(G, C1, 4, 2, 0, 4)
+    c["lds.rz.off.p1"] = op_lds((1, False), C1, 9, RZ, 0x3FC, 4)
+    c["lds.64.min"] = op_lds(G, C2, 4, 2, -8388608, 5)
+    c["sts.32"] = op_sts(G, C0, 2, 0, 6, 4)
+    c["sts.u8.max.np0"] = op_sts((0, True), C2, RZ, 8388607, 6, 0)
+    c["bar.sync"] = op_bar(G, ctl(5, 1, 7, 7, 0, 0))
+    c["bssy.b0.fwd"] = op_bssy(G, C0, 0, 12)
+    c["bssy.b15.back"] = op_bssy(G, C2, 15, -3)
+    c["bssy.max"] = op_bssy(G, C0, 1, 134217727)
+    c["bsync.b0"] = op_bsync(G, ctl(1, 1, 7, 7, 0, 0), 0)
+    c["bsync.b9.p2"] = op_bsync((2, False), C0, 9)
+    c["shr.u32.1"] = op_shr(G, C0, 5, 6, 1, False)
+    c["shr.s32.31"] = op_shr(G, C2, 5, 6, 31, True)
+    c["shr.rz.0.np3"] = op_shr((3, True), C0, 254, RZ, 0, False)
     refusals = {
         "refuse.reg.256": E_REG, "refuse.reg.neg": E_REG, "refuse.pred.8": E_PRED,
         "refuse.pred.not": E_PRED, "refuse.guard": E_PRED, "refuse.ctl.delay": E_CTL,
@@ -378,6 +456,8 @@ def cases():
         "refuse.enum.rnd": E_ENUM, "refuse.enum.signed": E_ENUM, "refuse.enum.sr": E_ENUM,
         "refuse.cap": E_CAP, "refuse.cb.align": E_CB, "refuse.cb.bank": E_CB, "refuse.cb.off": E_CB,
         "refuse.wide.odd": E_REG, "refuse.wide.rz": E_REG, "refuse.enum.cmp": E_ENUM,
+        "refuse.lds.off": E_OFF, "refuse.sts.mtype": E_ENUM, "refuse.bssy.bar": E_BAR,
+        "refuse.bssy.far": E_BRA, "refuse.bsync.bar": E_BAR, "refuse.shr.imm": E_IMM, "refuse.shr.signed": E_ENUM,
     }
     c.update({k: ("R", v) for k, v in refusals.items()})
     saxpy = [
@@ -427,6 +507,12 @@ MUTANTS = [
     ("cb-offset-field", "(lf 38 16 off)", "(lf 36 16 off)", ["mov.cb"]),
     ("isetp-cmp-field", "(hf 76 3 cmp)", "(hf 75 3 cmp)", ["isetp.lt.u32"]),
     ("wide-opcode", "(alu-lo 0x025 4 d a)", "(alu-lo 0x024 4 d a)", ["imad.wide.u32"]),
+    ("lds-opcode", "(lf 0 12 0x984)", "(lf 0 12 0x384)", ["lds.32"]),
+    ("sts-data-field", "(lf 0 12 0x388) (lf 24 8 a) (lf 32 8 v)", "(lf 0 12 0x388) (lf 24 8 a) (lf 33 8 v)", ["sts.32"]),
+    ("bssy-target-field", "(lf 34 30 w)) (-> 0 (hf 87 3", "(lf 32 30 w)) (-> 0 (hf 87 3", ["bssy.b0.fwd"]),
+    ("bsync-bar-field", "(lf 0 12 0x941) (lf 16 4 b)", "(lf 0 12 0x941) (lf 17 4 b)", ["bsync.b9.p2"]),
+    ("shr-type", "(hf 73 2 (- 3 sgn))", "(hf 73 2 (- 2 sgn))", ["shr.u32.1"]),
+    ("shr-high", "(hf 76 1 1) (hf 80 1 1)", "(hf 76 1 1) (hf 80 1 0)", ["shr.u32.1"]),
 ]
 
 # ---------------------------------------------------------------------------

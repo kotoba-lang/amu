@@ -2,7 +2,7 @@
                           sm70-nop sm70-exit sm70-bra sm70-mov sm70-mov-imm sm70-mov-cb sm70-s2r
                           sm70-iadd3 sm70-iadd3-imm sm70-imad sm70-imad-imm sm70-imad-wide-imm sm70-isetp
                           sm70-fadd sm70-fadd-imm sm70-fmul sm70-fmul-imm sm70-ffma sm70-ffma-imm
-                          sm70-ldg sm70-stg]))
+                          sm70-ldg sm70-stg sm70-lds sm70-sts sm70-bar sm70-bssy sm70-bsync sm70-shr-imm]))
 
 ;; NVIDIA Volta instruction encoder, SM 7.0 / 7.2 (route C, JUN-713). Xavier's
 ;; iGPU (gv11b) is SM 7.2. Each instruction is 128 bits, held as two i64
@@ -36,6 +36,7 @@
 (def SM70-E-ENUM 7)   ;; a modifier code outside its table (type, order, eviction, rounding, flag)
 (def SM70-E-CAP 8)    ;; the program is full
 (def SM70-E-CB 9)     ;; a constant-bank operand outside its field (bank 0..31, offset 0..0xfffc, aligned to 4)
+(def SM70-E-BAR 10)   ;; a convergence barrier outside B0..B15
 
 ;; ---------------------------------------------------------------------
 ;; The program.
@@ -137,6 +138,27 @@
             (-> 0 (lf 0 12 0x947) (lf 32 1 0) (lf 34 30 w))
             (-> 0 (hf 64 18 (i64-shift-right w 30)) (hf 87 3 cp) (hf 90 1 cnot))))))
 
+;; BSSY (OpBSSy): opcode 0x945, the convergence barrier B0..B15 at 16..19,
+;; the reconvergence point at 34..63 (target_ip - ip - 4 in 32-bit words, as
+;; for BRA: 4 * rel, rel from the next instruction), condition 87..89 = PT
+;; and its not bit 90 = 0. BSYNC (OpBSync): opcode 0x941, the barrier at
+;; 16..19, condition PT. A warp that diverged after BSSY B waits at BSYNC B
+;; until its threads arrive.
+(defn sm70-bssy [M :vector-i64 g :i64 ctl :i64 b :i64 rel :i64] :vector-i64
+  (let [w (* 4 rel)]
+    (cond (not (in? b 0 15)) (sm-fail M SM70-E-BAR)
+          (not (in? w -536870912 536870911)) (sm-fail M SM70-E-BRA)
+          :else (sm-emit M g ctl (-> 0 (lf 0 12 0x945) (lf 16 4 b) (lf 34 30 w)) (-> 0 (hf 87 3 SM70-PT) (hf 90 1 0))))))
+
+(defn sm70-bsync [M :vector-i64 g :i64 ctl :i64 b :i64] :vector-i64
+  (if (not (in? b 0 15)) (sm-fail M SM70-E-BAR)
+    (sm-emit M g ctl (-> 0 (lf 0 12 0x941) (lf 16 4 b)) (-> 0 (hf 87 3 SM70-PT) (hf 90 1 0)))))
+
+;; BAR.SYNC 0 (OpBar): NAK writes the opcode 0xb1d and nothing else
+;; (barrier 0, every thread of the workgroup)
+(defn sm70-bar [M :vector-i64 g :i64 ctl :i64] :vector-i64
+  (sm-emit M g ctl (lf 0 0 12 0xb1d) 0))
+
 ;; MOV (OpMov): ALU opcode 0x002 with src1 only; quad lanes 72..75 = 0xf
 (defn sm70-mov [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64] :vector-i64
   (if (not (and (reg? d) (reg? a))) (sm-fail M SM70-E-REG)
@@ -231,6 +253,18 @@
                 (-> 0 (hf 68 3 7) (hf 71 1 0) (hf 72 1 0) (hf 73 1 sgn) (hf 74 2 0) (hf 76 3 cmp)
                       (hf 81 3 pd) (hf 84 3 7) (hf 87 3 7) (hf 90 1 0)))))
 
+;; a >> imm, 32-bit (NAK builder shr on sm >= 70: OpShf with low = RZ, high =
+;; a, right, wrap, dst_high): ALU opcode 0x019 in form 4, src0 RZ, the shift
+;; at 32..63, src2 a at 64..71, data type 73..74 (S32 2, U32 3), .W 75, .R
+;; 76, .HI 80. NAK wraps an immediate shift to 0..31; here one outside is
+;; refused.
+(defn sm70-shr-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (in? imm 0 31)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x019 4 d SM70-RZ) 32 32 imm)
+                (-> 0 (hf 64 8 a) (hf 73 2 (- 3 sgn)) (hf 75 1 1) (hf 76 1 1) (hf 80 1 1)))))
+
 ;; ---------------------------------------------------------------------
 ;; f32 arithmetic. rnd: 0 RN, 1 RM, 2 RP, 3 RZ (78..79); ftz 80; sat 77.
 
@@ -316,3 +350,27 @@
         :else (sm-emit M g ctl
                 (-> 0 (lf 0 12 0x386) (lf 24 8 a) (lf 32 8 v) (lf 40 24 off))
                 (mem-hi 0 mtype order evict a64))))
+
+;; ---------------------------------------------------------------------
+;; Shared memory (NAK OpLd / OpSt, MemSpace::Shared, sm < 73). LDS is opcode
+;; 0x984 (NAK writes it for every SM), STS 0x388 below has_ugpr. The address
+;; register 24..31 holds a byte offset into the workgroup's shared window,
+;; the signed offset is at 40..63, mtype at 73..75 and the stride 78..79 is
+;; X1 (0); LDS has its destination at 16..23 and .ZD 87 = 0, STS its data at
+;; 32..39. NAK requires strong.CTA and normal eviction and writes neither.
+
+(defn sm70-lds [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 off :i64 mtype :i64] :vector-i64
+  (cond (not (and (reg? d) (reg? a))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (in? mtype 0 6)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x984) (lf 16 8 d) (lf 24 8 a) (lf 40 24 off))
+                (-> 0 (hf 73 3 mtype) (hf 78 2 0) (hf 87 1 0) (hf 91 1 0)))))
+
+(defn sm70-sts [M :vector-i64 g :i64 ctl :i64 a :i64 off :i64 v :i64 mtype :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? v))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (in? mtype 0 6)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x388) (lf 24 8 a) (lf 32 8 v) (lf 40 24 off))
+                (-> 0 (hf 73 3 mtype) (hf 78 2 0) (hf 91 1 0)))))

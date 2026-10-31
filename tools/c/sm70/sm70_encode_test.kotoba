@@ -112,6 +112,25 @@
         i (one (sm70-stg (P) (sm70-guard 0 1) C0 10 12 6 3 4 3 0) "stg.s16.sys.np0")]
     (+ a b c d e f h i)))
 
+;; the operations of the dot_rows lowering (JUN-725): shared memory, the
+;; workgroup barrier, convergence barriers and a 32-bit right shift
+(defn- shared [] :i64
+  (let [a (one (sm70-lds (P) G C1 4 2 0 4) "lds.32")
+        b (one (sm70-lds (P) (sm70-guard 1 0) C1 9 255 0x3fc 4) "lds.rz.off.p1")
+        c (one (sm70-lds (P) G C2 4 2 -8388608 5) "lds.64.min")
+        d (one (sm70-sts (P) G C0 2 0 6 4) "sts.32")
+        e (one (sm70-sts (P) (sm70-guard 0 1) C2 255 8388607 6 0) "sts.u8.max.np0")
+        f (one (sm70-bar (P) G (sm70-ctl 5 1 7 7 0 0)) "bar.sync")
+        h (one (sm70-bssy (P) G C0 0 12) "bssy.b0.fwd")
+        i (one (sm70-bssy (P) G C2 15 -3) "bssy.b15.back")
+        j (one (sm70-bssy (P) G C0 1 134217727) "bssy.max")
+        k (one (sm70-bsync (P) G (sm70-ctl 1 1 7 7 0 0)  0) "bsync.b0")
+        l (one (sm70-bsync (P) (sm70-guard 2 0) C0 9) "bsync.b9.p2")
+        m (one (sm70-shr-imm (P) G C0 5 6 1 0) "shr.u32.1")
+        n (one (sm70-shr-imm (P) G C2 5 6 31 1) "shr.s32.31")
+        o (one (sm70-shr-imm (P) (sm70-guard 3 1) C0 254 255 0 0) "shr.rz.0.np3")]
+    (+ a b c d e f h i j k l m n o)))
+
 ;; every refusal leaves the program empty and names its code
 (defn- refusals [] :i64
   (let [a (one (sm70-iadd3 (P) G C0 256 2 3 4) "refuse.reg.256")
@@ -138,8 +157,15 @@
         w (one (sm70-mov-cb (P) G C0 1 0 65536) "refuse.cb.off")
         x (one (sm70-imad-wide-imm (P) G C0 7 0 4 6 0) "refuse.wide.odd")
         y (one (sm70-imad-wide-imm (P) G C0 254 0 4 6 0) "refuse.wide.rz")
-        z (one (sm70-isetp (P) G C0 0 0 4 7 0) "refuse.enum.cmp")]
-    (+ a b c d e f h i j k l m n o p q r s t u v w x y z)))
+        z (one (sm70-isetp (P) G C0 0 0 4 7 0) "refuse.enum.cmp")
+        a2 (one (sm70-lds (P) G C0 4 2 8388608 4) "refuse.lds.off")
+        b2 (one (sm70-sts (P) G C0 2 0 6 7) "refuse.sts.mtype")
+        c2 (one (sm70-bssy (P) G C0 16 0) "refuse.bssy.bar")
+        d2 (one (sm70-bssy (P) G C0 0 134217728) "refuse.bssy.far")
+        e2 (one (sm70-bsync (P) G C0 -1) "refuse.bsync.bar")
+        f2 (one (sm70-shr-imm (P) G C0 5 6 32 0) "refuse.shr.imm")
+        g2 (one (sm70-shr-imm (P) G C0 5 6 1 2) "refuse.shr.signed")]
+    (+ a b c d e f h i j k l m n o p q r s t u v w x y z a2 b2 c2 d2 e2 f2 g2)))
 
 ;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
 ;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.
@@ -166,4 +192,4 @@
           (recur (inc k) (+ t (show M k (string-concat "saxpy." (string-from-i64 k)))))))
       (say "X saxpy"))))
 
-(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (refusals) (saxpy)))
+(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (shared) (refusals) (saxpy)))
