@@ -1,0 +1,150 @@
+(ns sm70-encode-test (:export [main]))
+
+;; Cases for tools/c/sm70/sm70_encode.kotoba (JUN-713). No GPU:
+;; scripts/seed/check-sm70-encode.py builds the unit (this ns line, the
+;; encoder without its ns line, then the rest of this file), runs it with
+;; bin/amu on the host and compares every printed word bit for bit with its
+;; own encoding of the same case, derived from Mesa NAK's sm70_encode.rs.
+;;
+;; Output, one line per case:
+;;   I <name> <lo> <hi>   an encoded instruction, 16 hex digits per half
+;;   R <name> <code>      a refused emit: the refusal code, nothing emitted
+;;   X <name>             a program that does not hold what the case expects
+;; main answers the number of lines printed.
+
+(defn- say [s :string] :i64
+  (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 1))
+
+(defn- hexd [d :i64] :string
+  (cond (= d 0) "0" (= d 1) "1" (= d 2) "2" (= d 3) "3" (= d 4) "4" (= d 5) "5" (= d 6) "6" (= d 7) "7"
+        (= d 8) "8" (= d 9) "9" (= d 10) "a" (= d 11) "b" (= d 12) "c" (= d 13) "d" (= d 14) "e" :else "f"))
+
+(defn- hex16 [w :i64] :string
+  (loop [k 15 s ""]
+    (if (< k 0) s (recur (dec k) (string-concat s (hexd (bit-and (u64-shift-right w (* 4 k)) 15)))))))
+
+;; print instruction k of M as case name
+(defn- show [M :vector-i64 k :i64 name :string] :i64
+  (say (string-concat "I " (string-concat name (string-concat " " (string-concat (hex16 (sm70-lo M k))
+    (string-concat " " (hex16 (sm70-hi M k)))))))))
+
+;; a program that should hold n instructions: one prints its last; a refused
+;; emit prints its code, and must have left the program at n
+(defn- one-n [M :vector-i64 n :i64 name :string] :i64
+  (cond (not (= (sm70-count M) n)) (say (string-concat "X " name))
+        (= (sm70-error M) 0) (show M (- n 1) name)
+        :else (say (string-concat "R " (string-concat name (string-concat " " (string-from-i64 (sm70-error M))))))))
+
+(defn- one [M :vector-i64 name :string] :i64
+  (if (= (sm70-error M) 0) (one-n M 1 name) (one-n M 0 name)))
+
+(defn- P [] :vector-i64 (sm70-new 1))
+
+;; guard PT, and the control bits NAK leaves when it has no dependencies to
+;; track: stall 0, no yield, no barriers (7/7), no wait, no reuse
+(def G (sm70-guard 7 0))
+(def C0 (sm70-ctl 0 0 7 7 0 0))
+;; stall 5, yield, write barrier 0 (a load), wait on barrier 0
+(def C1 (sm70-ctl 5 1 0 7 0 0))
+(def C2 (sm70-ctl 15 0 7 3 33 9))
+
+(defn- singles [] :i64
+  (let [a (one (sm70-nop (P) G C0) "nop")
+        b (one (sm70-exit (P) G (sm70-ctl 5 1 7 7 0 0)) "exit")
+        c (one (sm70-exit (P) (sm70-guard 0 1) C0) "exit.np0")
+        d (one (sm70-bra (P) G C0 7 0 -1) "bra.self")
+        e (one (sm70-bra (P) G C0 7 0 0) "bra.next")
+        f (one (sm70-bra (P) G C0 2 1 37) "bra.np2.fwd")
+        h (one (sm70-bra (P) (sm70-guard 3 0) C0 7 0 -1000000) "bra.gp3.back")
+        h2 (one (sm70-bra (P) G C0 7 0 300000000) "bra.far.fwd")
+        h3 (one (sm70-bra (P) G C0 7 0 35184372088831) "bra.max")
+        h4 (one (sm70-bra (P) G C0 7 0 -35184372088832) "bra.min")
+        i (one (sm70-mov (P) G C0 4 9) "mov.r")
+        j (one (sm70-mov-imm (P) G C0 1 0x3f800000) "mov.imm")
+        k (one (sm70-mov-imm (P) G C0 254 -1) "mov.imm.neg")
+        l (one (sm70-s2r (P) G C1 0 SM70-SR-TID-X) "s2r.tid.x")
+        m (one (sm70-s2r (P) G C1 3 SM70-SR-CTAID-Y) "s2r.ctaid.y")
+        n (one (sm70-s2r (P) G C0 200 SM70-SR-LANEID) "s2r.laneid")
+        o (one (sm70-s2r (P) G (sm70-ctl 1 1 0 7 0 0) 0 SM70-SR-TID-X) "s2r.tid.x.listing")]
+    (+ a b c d e f h h2 h3 h4 i j k l m n o)))
+
+(defn- arith [] :i64
+  (let [a (one (sm70-iadd3 (P) G C0 1 2 3 4) "iadd3")
+        b (one (sm70-iadd3 (P) G C2 1 2 255 255) "iadd3.rz")
+        c (one (sm70-iadd3-imm (P) G C0 5 6 0x400 255) "iadd3.imm")
+        d (one (sm70-iadd3-imm (P) G C0 5 6 -16 7) "iadd3.imm.neg")
+        e (one (sm70-imad (P) G C0 8 9 10 11 1) "imad.s32")
+        f (one (sm70-imad (P) G C0 8 9 10 11 0) "imad.u32")
+        h (one (sm70-imad-imm (P) G C0 2 0 4 255 0) "imad.imm.u32")
+        i (one (sm70-imad-imm (P) (sm70-guard 1 0) C0 2 0 -4 3 1) "imad.imm.s32.p1")
+        j (one (sm70-fadd (P) G C0 4 5 6 0 0 0) "fadd")
+        k (one (sm70-fadd (P) G C0 4 5 6 3 1 1) "fadd.rz.ftz.sat")
+        l (one (sm70-fadd-imm (P) G C0 4 5 0x3f800000 0 0 0) "fadd.imm")
+        m (one (sm70-fmul (P) G C0 7 8 9 0 0 0) "fmul")
+        n (one (sm70-fmul (P) G C0 7 8 9 2 0 1) "fmul.rp.sat")
+        o (one (sm70-fmul-imm (P) G C0 7 8 0x40000000 1 1 0) "fmul.imm.rm.ftz")
+        p (one (sm70-ffma (P) G C0 12 13 14 15 0 0 0) "ffma")
+        q (one (sm70-ffma (P) G C2 12 13 14 15 1 0 0) "ffma.rm.ctl")
+        r (one (sm70-ffma-imm (P) G C0 12 13 0xbf000000 15 0 1 0) "ffma.imm.ftz")]
+    (+ a b c d e f h i j k l m n o p q r)))
+
+(defn- memory [] :i64
+  (let [a (one (sm70-ldg (P) G C1 4 2 0 4 3 1 1) "ldg.e.32.strong.gpu")
+        b (one (sm70-ldg (P) G C1 4 2 16 5 1 1 1) "ldg.e.64.weak.off")
+        c (one (sm70-ldg (P) G C1 8 2 -4 6 0 4 1) "ldg.e.128.constant.neg")
+        d (one (sm70-ldg (P) G C1 4 255 256 4 4 0 0) "ldg.rz.32.sys.ef")
+        e (one (sm70-ldg (P) G C1 4 2 8388607 1 2 5 1) "ldg.s8.cta.na.max")
+        f (one (sm70-stg (P) G C0 2 0 6 4 3 1 1) "stg.e.32.strong.gpu")
+        h (one (sm70-stg (P) G C0 2 -8388608 6 5 1 2 1) "stg.e.64.weak.min")
+        i (one (sm70-stg (P) (sm70-guard 0 1) C0 10 12 6 3 4 3 0) "stg.s16.sys.np0")]
+    (+ a b c d e f h i)))
+
+;; every refusal leaves the program empty and names its code
+(defn- refusals [] :i64
+  (let [a (one (sm70-iadd3 (P) G C0 256 2 3 4) "refuse.reg.256")
+        b (one (sm70-mov (P) G C0 1 -1) "refuse.reg.neg")
+        c (one (sm70-bra (P) G C0 8 0 0) "refuse.pred.8")
+        d (one (sm70-bra (P) G C0 7 2 0) "refuse.pred.not")
+        e (one (sm70-nop (P) (sm70-guard 8 0) C0) "refuse.guard")
+        f (one (sm70-nop (P) G (sm70-ctl 16 0 7 7 0 0)) "refuse.ctl.delay")
+        h (one (sm70-nop (P) G (sm70-ctl 0 0 7 7 64 0)) "refuse.ctl.wait")
+        i (one (sm70-mov-imm (P) G C0 1 4294967296) "refuse.imm.wide")
+        j (one (sm70-mov-imm (P) G C0 1 -2147483649) "refuse.imm.low")
+        k (one (sm70-ldg (P) G C0 4 2 8388608 4 3 1 1) "refuse.off.high")
+        l (one (sm70-stg (P) G C0 2 -8388609 6 4 3 1 1) "refuse.off.low")
+        m (one (sm70-bra (P) G C0 7 0 35184372088832) "refuse.bra.far")
+        n (one (sm70-ldg (P) G C0 4 2 0 7 3 1 1) "refuse.enum.mtype")
+        o (one (sm70-ldg (P) G C0 4 2 0 4 5 1 1) "refuse.enum.order")
+        p (one (sm70-stg (P) G C0 2 0 6 4 3 6 1) "refuse.enum.evict")
+        q (one (sm70-fadd (P) G C0 4 5 6 4 0 0) "refuse.enum.rnd")
+        r (one (sm70-imad (P) G C0 8 9 10 11 2) "refuse.enum.signed")
+        s (one (sm70-s2r (P) G C0 0 256) "refuse.enum.sr")
+        t (one-n (sm70-nop (sm70-nop (P) G C0) G C0) 1 "refuse.cap")]
+    (+ a b c d e f h i j k l m n o p q r s t)))
+
+;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
+;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.
+;; It is not a correct kernel: the address arithmetic is 32-bit (IMAD.WIDE
+;; and constant-bank operands are not in this starter set) and the inputs
+;; are never loaded. It checks that consecutive emits land in order.
+(defn- saxpy [] :i64
+  (let [M (-> (sm70-new 12)
+              (sm70-s2r G C1 0 SM70-SR-TID-X)
+              (sm70-s2r G (sm70-ctl 1 1 1 7 0 0) 6 SM70-SR-CTAID-X)
+              (sm70-imad-imm G (sm70-ctl 4 1 7 7 3 0) 0 6 128 0 0)
+              (sm70-imad-imm G C0 8 0 4 2 0)
+              (sm70-imad-imm G C0 10 0 4 4 0)
+              (sm70-ldg G (sm70-ctl 1 1 2 7 0 0) 12 8 0 4 3 1 1)
+              (sm70-ldg G (sm70-ctl 1 1 3 7 0 0) 13 10 0 4 3 1 1)
+              (sm70-ffma G (sm70-ctl 4 1 7 7 12 0) 13 12 1 13 0 0 0)
+              (sm70-stg G (sm70-ctl 1 1 7 7 0 0) 10 0 13 4 3 1 1)
+              (sm70-exit G (sm70-ctl 5 1 7 7 0 0))
+              (sm70-bra G C0 7 0 -1)
+              (sm70-nop G C0))]
+    (if (= (sm70-error M) 0)
+      (loop [k 0 t 0]
+        (if (>= k (sm70-count M)) t
+          (recur (inc k) (+ t (show M k (string-concat "saxpy." (string-from-i64 k)))))))
+      (say "X saxpy"))))
+
+(defn main [] :i64 (+ (singles) (arith) (memory) (refusals) (saxpy)))
