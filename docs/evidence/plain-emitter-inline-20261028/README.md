@@ -477,6 +477,32 @@ build closure and does not qualify anything.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product`, `check-host-default-target --isa x86_64
     --reproduce` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1753 (JUN-734: native def vector/map
+  literals, variadic assoc and typed-map get, a core change in
+  `seed/21-check` and `seed/30-lower`, core pins `76332b85…` /
+  `5efc48b3…`).
+  * x86_64: F1 = F2 = F3 = `eaa022eb…` (9,314,816 bytes), from the
+    3,872,564-byte unity `16ba3260…`. Its `--format host-entry` image is
+    `5c641278…` (9,318,912 bytes).
+  * aarch64 root: F1 = F2 = `134aa062…` (3,887,616 bytes), container
+    `2a69dab1…`, derived under qemu from the `2bb4f08d…` root. The x86_64
+    compiler and host entry it emits are byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `318fe039…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `5efc48b3…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `a3b20c6c…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 224 kernel-object sources compile
+    identically to main's compiler.
+  * #1753's `seed/tests/native-def-assoc-get.kotoba` (its gate is
+    Mac-only) builds and exits 0 under qemu-user with this aarch64 root, to
+    the same container as main's root; on x86_64-linux both compilers
+    refuse it identically (E7102).
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, `check-host-default-target --isa x86_64
+    --reproduce` and the x86 inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
