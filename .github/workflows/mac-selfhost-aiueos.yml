@@ -28,6 +28,7 @@ on:
       - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
+      - 'scripts/seed/check-document-edn-read.py'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
@@ -151,6 +152,11 @@ jobs:
         run: |
           python3 scripts/seed/check-macos-keyword-intern.py \
             --output "$RUNNER_TEMP/mac-keyword-intern"
+      - name: document-edn-read treats comma, newline, tab, comments and edge whitespace as EDN delimiters (JUN-650)
+        run: |
+          python3 scripts/seed/check-document-edn-read.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-document-edn-read"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \

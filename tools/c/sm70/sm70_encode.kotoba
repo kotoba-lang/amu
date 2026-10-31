@@ -1,6 +1,6 @@
 (ns sm70-encode (:export [sm70-new sm70-count sm70-error sm70-lo sm70-hi sm70-ctl sm70-guard
-                          sm70-nop sm70-exit sm70-bra sm70-mov sm70-mov-imm sm70-s2r
-                          sm70-iadd3 sm70-iadd3-imm sm70-imad sm70-imad-imm
+                          sm70-nop sm70-exit sm70-bra sm70-mov sm70-mov-imm sm70-mov-cb sm70-s2r
+                          sm70-iadd3 sm70-iadd3-imm sm70-imad sm70-imad-imm sm70-imad-wide-imm sm70-isetp
                           sm70-fadd sm70-fadd-imm sm70-fmul sm70-fmul-imm sm70-ffma sm70-ffma-imm
                           sm70-ldg sm70-stg]))
 
@@ -35,6 +35,7 @@
 (def SM70-E-BRA 6)    ;; a branch target outside the signed 48-bit word offset
 (def SM70-E-ENUM 7)   ;; a modifier code outside its table (type, order, eviction, rounding, flag)
 (def SM70-E-CAP 8)    ;; the program is full
+(def SM70-E-CB 9)     ;; a constant-bank operand outside its field (bank 0..31, offset 0..0xfffc, aligned to 4)
 
 ;; ---------------------------------------------------------------------
 ;; The program.
@@ -146,6 +147,17 @@
         (not (imm? imm)) (sm-fail M SM70-E-IMM)
         :else (sm-emit M g ctl (-> 0 (lf 0 9 0x002) (lf 9 3 4) (lf 16 8 d) (lf 32 32 imm)) (hf 0 72 4 15))))
 
+;; MOV from the constant bank (form 5, NAK encode_alu_cb, set_src_cb at
+;; 32..58): the byte offset at 38..53, the bank at 54..58, bit 91 (cx: a
+;; bindless bank) 0, abs/neg 62/63 0
+(defn- cb? [bank :i64 off :i64] :bool (and (in? bank 0 31) (in? off 0 65532) (= (bit-and off 3) 0)))
+
+(defn sm70-mov-cb [M :vector-i64 g :i64 ctl :i64 d :i64 bank :i64 off :i64] :vector-i64
+  (cond (not (reg? d)) (sm-fail M SM70-E-REG)
+        (not (cb? bank off)) (sm-fail M SM70-E-CB)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x002) (lf 9 3 5) (lf 16 8 d) (lf 38 16 off) (lf 54 5 bank))
+                (-> 0 (hf 72 4 15) (hf 91 1 0)))))
+
 ;; S2R (OpS2R): opcode 0x919, dst 16..23, special register 72..79
 ;; (NAK nak_private.h: SR_TID_X 0x21, SR_TID_Y 0x22, SR_TID_Z 0x23,
 ;; SR_CTAID_X 0x25, SR_CTAID_Y 0x26, SR_CTAID_Z 0x27, SR_LANEID 0x00)
@@ -194,6 +206,30 @@
         (not (imm? imm)) (sm-fail M SM70-E-IMM)
         (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
         :else (sm-emit M g ctl (lf (alu-lo 0x024 4 d a) 32 32 imm) (imad-hi c sgn))))
+
+;; IMAD.WIDE (OpIMad64): the register pair d:d+1 = a * imm + the pair
+;; c:c+1. ALU opcode 0x025 in form 4, carry-out 81..83 = PT, .SIGNED bit 73.
+;; d and c name the low register of a pair, so they are even and below 254.
+(defn- pair? [r :i64] :bool (and (in? r 0 252) (= (bit-and r 1) 0)))
+
+(defn sm70-imad-wide-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64 sgn :i64] :vector-i64
+  (cond (not (and (pair? d) (pair? c) (reg? a))) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x025 4 d a) 32 32 imm) (imad-hi c sgn))))
+
+;; ISETP (OpISetP): the predicate pd = (a cmp b) AND PT. ALU opcode 0x00c,
+;; no register destination; low_cmp 68..70 = PT (not 71 = 0), .EX 72 = 0,
+;; .S32 73 (sgn), set op 74..75 = AND (0), cmp 76..78, pd 81..83, the second
+;; destination 84..86 = PT, the accumulator 87..89 = PT (not 90 = 0).
+;; cmp (NAK set_int_cmp_op): 1 LT, 2 EQ, 3 LE, 4 GT, 5 NE, 6 GE.
+(defn sm70-isetp [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 b :i64 cmp :i64 sgn :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? b))) (sm-fail M SM70-E-REG)
+        (not (pred? pd)) (sm-fail M SM70-E-PRED)
+        (not (and (in? cmp 1 6) (flag? sgn))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x00c) (lf 9 3 1) (lf 24 8 a) (lf 32 8 b))
+                (-> 0 (hf 68 3 7) (hf 71 1 0) (hf 72 1 0) (hf 73 1 sgn) (hf 74 2 0) (hf 76 3 cmp)
+                      (hf 81 3 pd) (hf 84 3 7) (hf 87 3 7) (hf 90 1 0)))))
 
 ;; ---------------------------------------------------------------------
 ;; f32 arithmetic. rnd: 0 RN, 1 RM, 2 RP, 3 RZ (78..79); ftz 80; sat 77.

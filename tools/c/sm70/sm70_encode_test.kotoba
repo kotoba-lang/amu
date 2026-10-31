@@ -88,6 +88,19 @@
         r (one (sm70-ffma-imm (P) G C0 12 13 0xbf000000 15 0 1 0) "ffma.imm.ftz")]
     (+ a b c d e f h i j k l m n o p q r)))
 
+;; the operations the lowering adds (JUN-723): a constant-bank MOV, IMAD.WIDE
+;; with an immediate, and ISETP between registers
+(defn- wide [] :i64
+  (let [a (one (sm70-mov-cb (P) G C0 6 0 0x160) "mov.cb")
+        b (one (sm70-mov-cb (P) G (sm70-ctl 5 0 7 7 0 0) 1 0 0x28) "mov.cb.listing")
+        c (one (sm70-mov-cb (P) (sm70-guard 2 1) C0 7 3 0xfffc) "mov.cb.bank3.max")
+        d (one (sm70-imad-wide-imm (P) G C0 6 0 4 6 0) "imad.wide.u32")
+        e (one (sm70-imad-wide-imm (P) G C2 2 9 -8 250 1) "imad.wide.s32.neg")
+        f (one (sm70-isetp (P) G C0 0 0 4 1 0) "isetp.lt.u32")
+        h (one (sm70-isetp (P) G C0 6 9 255 6 1) "isetp.ge.s32.p6")
+        i (one (sm70-isetp (P) (sm70-guard 1 0) C2 3 2 7 2 0) "isetp.eq.u32.gp1")]
+    (+ a b c d e f h i)))
+
 (defn- memory [] :i64
   (let [a (one (sm70-ldg (P) G C1 4 2 0 4 3 1 1) "ldg.e.32.strong.gpu")
         b (one (sm70-ldg (P) G C1 4 2 16 5 1 1 1) "ldg.e.64.weak.off")
@@ -119,8 +132,14 @@
         q (one (sm70-fadd (P) G C0 4 5 6 4 0 0) "refuse.enum.rnd")
         r (one (sm70-imad (P) G C0 8 9 10 11 2) "refuse.enum.signed")
         s (one (sm70-s2r (P) G C0 0 256) "refuse.enum.sr")
-        t (one-n (sm70-nop (sm70-nop (P) G C0) G C0) 1 "refuse.cap")]
-    (+ a b c d e f h i j k l m n o p q r s t)))
+        t (one-n (sm70-nop (sm70-nop (P) G C0) G C0) 1 "refuse.cap")
+        u (one (sm70-mov-cb (P) G C0 1 0 0x162) "refuse.cb.align")
+        v (one (sm70-mov-cb (P) G C0 1 32 0) "refuse.cb.bank")
+        w (one (sm70-mov-cb (P) G C0 1 0 65536) "refuse.cb.off")
+        x (one (sm70-imad-wide-imm (P) G C0 7 0 4 6 0) "refuse.wide.odd")
+        y (one (sm70-imad-wide-imm (P) G C0 254 0 4 6 0) "refuse.wide.rz")
+        z (one (sm70-isetp (P) G C0 0 0 4 7 0) "refuse.enum.cmp")]
+    (+ a b c d e f h i j k l m n o p q r s t u v w x y z)))
 
 ;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
 ;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.
@@ -147,4 +166,4 @@
           (recur (inc k) (+ t (show M k (string-concat "saxpy." (string-from-i64 k)))))))
       (say "X saxpy"))))
 
-(defn main [] :i64 (+ (singles) (arith) (memory) (refusals) (saxpy)))
+(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (refusals) (saxpy)))

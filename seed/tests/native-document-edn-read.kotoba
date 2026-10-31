@@ -1,0 +1,54 @@
+;; JUN-650: native document-edn-read treats EDN delimiters as the spec does. Comma, space, tab,
+;; LF, VT, FF and CR separate items, ; starts a comment, and leading/trailing whitespace is ignored.
+;; main returns 0, or the number of the first failing case.
+(ns native-document-edn-read (:export [main]))
+
+(defn- at [d :document k :string] :document
+  (option-value-of [:option :document] (document-get d (document-edn-read k)) (document-null)))
+
+(defn- int-at [d :document k :string] :i64
+  (option-value-of [:option :i64] (document-i64-value (at d k)) -1))
+
+(defn- printed? [text :string want :string] :bool
+  (string=? (document-edn-print (document-edn-read text)) want))
+
+(defn- spaced-map [n :i64] :string
+  (loop [i 0 acc "{"]
+    (if (>= i n)
+      (string-concat acc "}")
+      (recur (+ i 1) (string-concat acc (string-concat ":k" (string-concat (string-from-i64 i)
+                       (string-concat "   \n\t " (string-concat (string-from-i64 (* i 3)) " ,  \n")))))))))
+
+(defn main [] :i64
+  (let [commas (document-edn-read "{:x false, :y 2}")
+        ints (document-edn-read "{:x 5, :y 2}")
+        nested (document-edn-read "{:y [1 2], :x false}")
+        big (document-edn-read (spaced-map 79))
+        items (document-edn-read "[{:a 1,\n :b 2}\n {:a 3}]")]
+    (cond
+      (not= (document-kind (at commas ":x")) :bool) 1
+      (not= (int-at ints ":x") 5) 2
+      (not= (int-at ints ":y") 2) 3
+      (not= (document-kind (at nested ":x")) :bool) 4
+      (not= (document-count (document-edn-read "[\n(def x 1)]")) 1) 5
+      (not= (document-count (document-edn-read " {:a 1}")) 1) 6
+      (not= (int-at (document-edn-read " {:a 1}") ":a") 1) 7
+      (not= (int-at (document-edn-read "{:a\t1,\r\n:b\t\t2}") ":b") 2) 8
+      (not= (document-count (document-edn-read "[1 ; one, two\n 2]")) 2) 9
+      (not= (int-at (document-edn-read "; head\n{:a 1} ; tail") ":a") 1) 10
+      (not= (document-count big) 79) 11
+      (not= (int-at big ":k0") 0) 12
+      (not= (int-at big ":k78") 234) 13
+      (not= (option-value-of [:option :string] (document-string-value (at (document-edn-read "{:s \"a, b ;c\"}") ":s")) "") "a, b ;c") 14
+      (not (printed? "{:a 1 :b [1 2 #{3}] :c \"x y\"}" "{:a 1 :b [1 2 #{3}] :c \"x y\"}")) 15
+      (not (printed? " [ 1 ,2\n,\t3 ] " "[1 2 3]")) 16
+      (not (printed? "[1[2]\"s\"]" "[1 [2] \"s\"]")) 17
+      (not= (document-count (document-edn-read "#{1, 2}")) 2) 18
+      (not= (document-count (document-edn-read "[\"—, x\" 2]")) 2) 19
+      (not= (document-count (document-edn-read "[\\, 1]")) 2) 20
+      (not= (int-at (document-edn-read "{:a 1}\n") ":a") 1) 21
+      (not= (document-count (document-edn-read "\n\n[1 2]")) 2) 22
+      (not= (document-count (document-edn-read "[ ]")) 0) 23
+      (not= (document-count (document-edn-read "{ }")) 0) 24
+      (not= (int-at (option-value-of [:option :document] (document-vector-at items 1) (document-null)) ":a") 3) 25
+      :else 0)))
