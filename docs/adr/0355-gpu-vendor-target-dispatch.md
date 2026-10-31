@@ -6093,3 +6093,39 @@ counted-day slot (next slot is a NEW UTC day, its own freeze) and
 the cross-day tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect12prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 136, JUN-59 -- TWELFTH CUT MEASUREMENT HALF,
+the s135 carry-forward (a)): the MID-ONLY NARROWING CUT is
+MEASURED at its pre-registered letters (publication-s136.txt,
+analysis-s136.py twice byte-identical): C1 (a) True (c2 FLOOR 32;
+c8 32,771 vs 32,915 -0.44%); C2 (c) BLOCK-UNSTABLE at the NEW
+grid point bis (3,316,1239) n=255,045 (7x CAPTURED + 1x
+INTERMEDIATE/MIXED blocks, pooled-24 CAPTURED 1,147) -- the
+channel does NOT re-open at 255,045, L9 binds there; C3 (c)
+BLOCK-UNSTABLE at mid (248,973) n=254,882 (3x CAPTURED + 5x
+INTERMEDIATE/MIXED blocks, pooled-24 CAPTURED 1,148) -- the
+eleventh cut's STABLE-INTERMEDIATE does NOT replicate in-window
+at the byte-identical pinned binary cabff942...; W1 (c)
+SUSPENDED (named, not claimed). NO bracket movement: the
+committed bracket stays EXACTLY (254,557, 255,208]. 54 fresh
+processes on aiueos-6600hs (GO 2026-10-31T16:09:32Z), builds
+3/3 pins byte-identical + bis NEW triple
+440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440
+(first measured digest, future pin), 108 logs byte-identical
+(aggregate 56936e87...), VERIFY mismatch 0. WHY is UNMEASURED
+(L2 binds); X1 host_ns excursions named (mid 856%, bis 274%).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins
+(scratch runner deleted); (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err 879 == pin
+-- NO green full suite claimed; (d) evaluator self-test 38/0 ==
+pin + eval pair twice == the s117 post-append pin, VERDICT:
+SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0;
+(f) ledger == HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them. Carry-forward s137:
+any thirteenth cut ONLY through a NEW pre-registered cut session
+confronting this cut's 8-block instability content (NOT queued),
+any further counted-day slot (next slot is a NEW UTC day, its own
+freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect12-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
