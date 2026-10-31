@@ -292,6 +292,31 @@ build closure and does not qualify anything.
     main's compiler.
   * The local `check-complete-x86`, the full `check-native-cdci`,
     `check-public-native-product` and the x86 inline-access corpus pass.
+* Re-derived again after main's #1711 (KOTOBA-173, capability declaration
+  names: a core change in `seed/60-proj` and `seed/90-drv`, core pins
+  `ec6b3422…` / `62fe99b8…`), #1728 (JUN-584: the native definition-identity
+  layer, `seed/04`-`09` and `05-definition-report`, joins FULL-MANIFEST, now
+  59 modules), #1729 and #1731 (wasm32-browser) and #1730 (JUN-633 slice 6:
+  fused f32 reductions on the object route, `seed/74`).
+  * x86_64: F1 = F2 = F3 = `1efce79b…` (9,220,608 bytes), from the
+    3,811,672-byte unity `89fd4fe0…`.
+  * aarch64 root: F1 = F2 = `702760f7…` (3,846,656 bytes), container
+    `f4b6cd0b…`, derived under qemu from the `25d9b0e5…` root. The x86_64
+    compiler it emits is byte-identical.
+  * CDCI:
+    * The amu-selfhost gate rebuilt from the merged core is `1b34f224…`; the
+      previous and the new compiler build it identically, and it rebuilds
+      `seed/MANIFEST` to main's `62fe99b8…`.
+    * The kotoba-native gate is unchanged (`06ddfe88…`).
+    * The controller image is `44fe9af0…`.
+  * Unchanged: the 19 x86_64 payloads and the 19 aarch64 containers built
+    with `--no-crypto-hw`. All 133 kernel-object sources (the 17
+    `check-aiueos-object-*` gates including fused-dot, its evidence sources
+    and the 12 `seed/tests/kernel-memory` dot cases) compile identically to
+    main's compiler.
+  * The local `check-complete-x86`, the full `check-native-cdci`,
+    `check-public-native-product`, the identity-resource gate and the x86
+    inline-access corpus pass.
 * Native x86_64 rehearsal of the CI tail (the arm64 proof was a local
   stand-in): `check-complete-x86` F1=F2=F3, `check-native-cdci`
   PASS_NATIVE_KOTOBA_CDCI (24 cases, 18 refusals, parent-death cleanup),
