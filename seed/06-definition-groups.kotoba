@@ -344,7 +344,7 @@
 ;; 1 = ADR 0300 `name<TAB>cid` rows + `SCANNED<TAB>n/n`; 2 = format 1 plus `<TAB>group<TAB>index`.
 ;; Any unresolved definition refuses the whole module before output, so SCANNED is always n/n here.
 ;; The `definition-cids` report no longer uses formats 1/2 of this printer: it takes dcs-rows (per-definition
-;; refusal) through 05-checked-source's dsb-source-report.
+;; refusal) through 05-definition-report's dsr-source-report.
 (defn- dcs-produce-format [M :vector-i64 S :string doc :i64 resource :i64 format :i64] :i64
   (let [A (dcs-plan-resource M S doc resource) count (vector-at A 3)
         R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]

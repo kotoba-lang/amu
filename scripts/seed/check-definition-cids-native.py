@@ -113,7 +113,7 @@ def main(compiler, out):
     assert keep_text != text
     mutant_keep = build("mutant-fn-unbound", keep_text)
     # JUN-584 per-definition refusal mutants.
-    close_text = text.replace("        closed (if refused (dsb-close M C Q) 0)]", "        closed 0]", 1)
+    close_text = text.replace("        closed (if refused (dsr-close M C Q) 0)]", "        closed 0]", 1)
     assert close_text != text
     mutant_close = build("mutant-no-close", close_text)
     blocked_text = text.replace("code (cond (dcs-blocked? A X C) 2 (> n 8) 1 :else 0)]",

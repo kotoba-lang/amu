@@ -62,7 +62,7 @@ def main(compiler, out):
     (out / 'observer.py').write_bytes(Path(__file__).read_bytes())
     # The profile fixture builds the whole compiler plus the identity fixtures in one unity, which is
     # at the SIR table capacity. The local code cache (JUN-371) is not used by this profile, so it is
-    # left out; the production closure is unchanged and the 58-module compiler itself fits.
+    # left out; the production closure is unchanged and the 59-module compiler itself fits.
     paths = [p for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines()
              if p and not p.startswith('#') and p != 'seed/85-kototama-i64-cache.kotoba'][:-1]
     # JUN-584: 04-09 are in FULL-MANIFEST now; add only what it does not already carry.

@@ -103,7 +103,7 @@
 ;; and nothing is granted: a CID is identity, never authority. Exit 0 = report, 66 = no identity could be computed
 ;; (stdout empty, a DSB:* line on stderr), 2 = usage. Identity: payload-v2, profile 6 / desugar 2.
 (defn- full-definition-cids [format :i64] :i64
-  (if (= (dsb-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
+  (if (= (dsr-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
         (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)

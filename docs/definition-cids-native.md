@@ -34,7 +34,7 @@ lines are refused), `66` no identity could be computed at all, `2` usage.
 Per-definition refusal follows the reference `definitions` loop (`src/kotoba/compiler/definition_identity.cljk`,
 `format-lines`, `scanned-line`):
 - a definition the native bridge cannot express (closure in a loop, loop in a closure, closure in operator position,
-  a type the bridge does not carry, ...) is `REFUSED:unbridged-source` (05-checked-source `dsb-source-report`);
+  a type the bridge does not carry, ...) is `REFUSED:unbridged-source` (`05-definition-report`, `dsr-source-report`);
 - a definition whose effect row names an unregistered wire is `REFUSED:unbridged-effect`;
 - a recursive group above the scc-v1 bound (8) is `REFUSED:recursive-group-too-large` for every member (06 `dcs-rows`);
 - a definition that calls a refused one is `REFUSED:dependency-unavailable`, transitively, also through a loop helper
@@ -96,8 +96,10 @@ closure parameter whose checked type is not `:i64` (the source syntax has no ann
 others), nesting deeper than 7 closures. Mutants (closure head spelling, unbound parameter) are detected by the gate.
 
 ## 2. Manifest decision (ADR 0370)
-JUN-584 (2026-10-31): 04, 05-definition-graph, 05-checked-definition, 06, 05-checked-source, 05-source-loops, 07, 08
-and 09 are in `FULL-MANIFEST` (58 modules), right after `90-drv`; `78-full-entry` dispatches `definition-cids`.
+JUN-584 (2026-10-31): 04, 05-definition-graph, 05-checked-definition, 06, 05-checked-source, 05-source-loops, the new
+05-definition-report (the per-definition report), 07, 08 and 09 are in `FULL-MANIFEST` (59 modules), right after
+`90-drv`; `78-full-entry` dispatches `definition-cids`. The report is its own module so that
+`check-source-namespace-native.py` still builds the bridge against its frozen loop planner.
 `seed/MANIFEST` and `seed/compiler-core.json` (the adopted 18-module core) are **unchanged**: none of the promoted
 modules is a core module, so there is no new core identity and no new adoption receipt. The core round's checks were
 run against the grown compiler instead (Mac G1=G2=G3 of the unchanged 18 core reproduces the current receipt; CDCI
