@@ -262,21 +262,48 @@
                 (let [slot (dcp-put A f 2 (inc (vector-count out)))
                       metadata (-> A (dcp-put f 12 group-slot) (dcp-put f 13 index))]
                   (recur (inc i) (typed-list-conj [:list :string] out (dcp-saved-cid A))))))))))))))
+(defn- dcs-resolve-component [M :vector-i64 S :string A :vector-i64 C :vector-i64 R [:list :string]] [:list :string]
+  (let [n (vector-count C) f (vector-at C 0)
+        recursive (or (> n 1) (dgg-has? A f f))
+        next (if recursive (dcs-resolve-group M S A C R)
+          (if (arena-scope (dcp-keep-cid A (dcp-function-payload M S A f R)))
+            (let [slot (dcp-put A f 2 (inc (vector-count R)))]
+              (typed-list-conj [:list :string] R (dcp-saved-cid A))) R))
+        clear (loop [i 0 state A] (if (= i n) state
+          (recur (inc i) (dcp-put state (vector-at C i) 3 0))))]
+    next))
 (defn- dcs-resolve [M :vector-i64 S :string A :vector-i64] [:list :string]
   (let [phase (vector-assoc! A 5 1)]
     (loop [component 1 R (typed-list-new [:list :string])]
       (if (or (> component (vector-at A 9)) (not= (vector-at A 0) 0)) R
         (let [C (dcs-members M S A component) n (vector-count C)]
           (if (> n 8) (let [bad (dcp-fail A 6)] R)
-            (let [f (vector-at C 0)
-                  recursive (or (> n 1) (dgg-has? A f f))
-                  next (if recursive (dcs-resolve-group M S A C R)
-                    (if (arena-scope (dcp-keep-cid A (dcp-function-payload M S A f R)))
-                      (let [slot (dcp-put A f 2 (inc (vector-count R)))]
-                        (typed-list-conj [:list :string] R (dcp-saved-cid A))) R))
-                  clear (loop [i 0 state A] (if (= i n) state
-                    (recur (inc i) (dcp-put state (vector-at C i) 3 0))))]
-              (recur (inc component) next))))))))
+            (recur (inc component) (dcs-resolve-component M S A C R))))))))
+;; Per-definition refusal (ADR 0300 report, JUN-584), the reference's `definitions` loop: X[f] = 1 when f's
+;; component is above the scc-v1 bound (recursive-group-too-large), 2 when f calls a refused definition
+;; (dependency-unavailable). Components arrive dependencies-first, so every callee outside C is already resolved or
+;; refused; a blocked component is never hashed, and nothing is hashed for a hole. Every other component is
+;; identified by exactly the dcs-resolve path. Any other failure is still a whole-module refusal (A[0]).
+(defn- dcs-refusal-name [code :i64] :string
+  (case code 1 "recursive-group-too-large" 2 "dependency-unavailable" ""))
+(defn- dcs-blocked? [A :vector-i64 X :vector-i64 C :vector-i64] :bool
+  (loop [i 0]
+    (if (= i (vector-count C)) false
+      (or (loop [edge (dgg-f A (vector-at C i) 14)]
+            (cond (= edge 0) false
+                  (> (vector-at X (dgg-edge A edge 0)) 0) true
+                  :else (recur (dgg-edge A edge 1))))
+          (recur (inc i))))))
+(defn- dcs-resolve-each [M :vector-i64 S :string A :vector-i64 X :vector-i64] [:list :string]
+  (let [phase (vector-assoc! A 5 1)]
+    (loop [component 1 R (typed-list-new [:list :string])]
+      (if (or (> component (vector-at A 9)) (not= (vector-at A 0) 0)) R
+        (let [C (dcs-members M S A component) n (vector-count C)
+              code (cond (dcs-blocked? A X C) 2 (> n 8) 1 :else 0)]
+          (if (= code 0) (recur (inc component) (dcs-resolve-component M S A C R))
+            (let [marked (loop [i 0] (if (= i n) 0
+                           (let [save (vector-assoc! X (vector-at C i) code)] (recur (inc i)))))]
+              (recur (inc component) R))))))))
 (defn- dcs-native-checked? [S :string] :bool
   (arena-scope
     (let [text (string-concat S (kr-prelude))
@@ -316,6 +343,8 @@
 ;; Row format: 0 = legacy `DCP1 6 2` header + `name cid group index` rows (the qualified test gates);
 ;; 1 = ADR 0300 `name<TAB>cid` rows + `SCANNED<TAB>n/n`; 2 = format 1 plus `<TAB>group<TAB>index`.
 ;; Any unresolved definition refuses the whole module before output, so SCANNED is always n/n here.
+;; The `definition-cids` report no longer uses formats 1/2 of this printer: it takes dcs-rows (per-definition
+;; refusal) through 05-checked-source's dsb-source-report.
 (defn- dcs-produce-format [M :vector-i64 S :string doc :i64 resource :i64 format :i64] :i64
   (let [A (dcs-plan-resource M S doc resource) count (vector-at A 3)
         R (if (= (vector-at A 0) 0) (dcs-resolve M S A) (typed-list-new [:list :string]))]
@@ -338,6 +367,40 @@
                               (string-concat group (string-concat sep (string-concat index "\n")))))))
                       write (io-out row)]
                   (recur (inc f)))))))))
+;; ADR 0300 rows (format 1, or 2 with `<TAB>group<TAB>index`) for the report, nothing printed. A refused definition
+;; is a row `name<TAB>REFUSED:<marker>` (format 2 adds `<TAB>-<TAB>-1`). Z[0] = whole-module status (0 = rows),
+;; Z[1] = identified rows. A whole-module refusal returns no rows.
+(defn- dcs-rows [M :vector-i64 S :string doc :i64 resource :i64 format :i64 Z :vector-i64] [:list :string]
+  (let [A (dcs-plan-resource M S doc resource) count (vector-at A 3)
+        X (vector-alloc (if (> count 0) count 1))
+        R (if (= (vector-at A 0) 0) (dcs-resolve-each M S A X) (typed-list-new [:list :string]))]
+    (cond (not= (vector-at A 0) 0) (let [save (vector-assoc! Z 0 (vector-at A 0))] (typed-list-new [:list :string]))
+      (loop [f 0] (if (= f count) false
+                    (or (and (= (dcp-f A f 2) 0) (= (vector-at X f) 0)) (recur (inc f)))))
+        (let [save (vector-assoc! Z 0 3)] (typed-list-new [:list :string]))
+      :else
+      (loop [f 0 out (typed-list-new [:list :string])]
+        (if (= f count) out
+          (let [name (dcp-text M S (dcp-f A f 1)) refused (vector-at X f)
+                row (if (> refused 0)
+                      (string-concat name (string-concat "\tREFUSED:" (string-concat (dcs-refusal-name refused)
+                        (if (= format 2) "\t-\t-1" ""))))
+                      (let [cid (typed-list-nth [:list :string] R (dec (dcp-f A f 2)))
+                            group (if (> (dcp-f A f 12) 0)
+                                    (typed-list-nth [:list :string] R (dec (dcp-f A f 12))) "-")
+                            index (mem-u2dec (if (> (dcp-f A f 12) 0) (dcp-f A f 13) -1))]
+                        (if (= format 2)
+                          (string-concat name (string-concat "\t" (string-concat cid (string-concat "\t"
+                            (string-concat group (string-concat "\t" index))))))
+                          (string-concat name (string-concat "\t" cid)))))
+                counted (if (= refused 0) (vector-assoc! Z 1 (inc (vector-at Z 1))) Z)]
+            (recur (inc f) (typed-list-conj [:list :string] out row))))))))
+(defn- dcs-rows-text [K :string resource :i64 format :i64 Z :vector-i64] [:list :string]
+  (let [M (rd-run (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length K)) K) K)
+        root (vector-at M MM-ROOT)]
+    (if (or (not= (vector-at M MM-ERR) 0) (not= (kr-count M root) 1))
+      (let [save (vector-assoc! Z 0 1)] (typed-list-new [:list :string]))
+      (dcs-rows M K (kr-first M root) resource format Z))))
 (defn- dcs-produce-resource [M :vector-i64 S :string doc :i64 resource :i64] :i64
   (dcs-produce-format M S doc resource 0))
 (defn- dcs-produce [M :vector-i64 S :string doc :i64] :i64 (dcs-produce-resource M S doc 0))

@@ -1,7 +1,8 @@
 # Native `definition-cids` (JUN-582 / JUN-583 / JUN-584)
 
-Status 2026-10-29: **candidate**, qualified on aarch64-linux, x86_64-linux (CI) and aarch64-macos (JUN-586, §3). Not in `MANIFEST`, `FULL-MANIFEST` or
-`seed/compiler-core.json`.
+Status 2026-10-31 (JUN-584): **in `FULL-MANIFEST`**. The full compiler answers `definition-cids` itself, with
+per-definition refusal. Not in `MANIFEST` or `seed/compiler-core.json`: the adopted 18-module core is unchanged (§2).
+Earlier status (2026-10-29): candidate, qualified on aarch64-linux, x86_64-linux (CI) and aarch64-macos (JUN-586, §3).
 
 Goal (JUN-579): cljk/edn reader sugar must mint the same Definition CID as pure `.kotoba`. Checking that natively
 needs a `definition-cids` command in every Amu host. Semantics: ADR 0300; payload-version 2, dag-cbor, sha2-256.
@@ -18,23 +19,44 @@ Measured against the source, that is only true of 04 itself. The pipeline *exist
 | KIR -> normalized DAG: de Bruijn binder renaming (`k0..`), effect row as keyword set, direct deps, SCC (<=8) + group members | `05-checked-definition`, `05-definition-graph`, `06-definition-groups` | prototype, CI gate `native-checked-definition` |
 | DAG-CBOR + SHA-256 + CID | `04-definition-cid` | prototype, frozen-vector gate `native-definition-cid` |
 | per-definition objects / incremental build | `07`-`09` | prototype, out of scope here |
-| **user-facing command** | - | **missing** (this change) |
+| **user-facing command** | `78-full-entry` (`full-definition-cids`), `99-definition-cids-entry` (harness) | in the full compiler since JUN-584 |
 
 So the missing piece was the entry, not the producer. The previous test entries (`dsb-source` in checked-source
 gate) were test-only.
 
-### Output and exit codes (ADR 0300, aligned 2026-10-29)
-`definition-cids <file.kotoba> [--groups]` prints, in declaration order, one `name<TAB>CID` line per definition and then
-`SCANNED<TAB>n/n`. `--groups` appends `<TAB>group-CID-or-"-"<TAB>member-index` (index `-1` outside a recursive group);
-the CIDs are identical with or without it. Exit codes: `0` report, `66` no identity could be computed, `2` usage.
+### Output and exit codes (ADR 0300, per-definition refusal since JUN-584)
+`definition-cids <file.kotoba> [--groups]` prints, in declaration order, one line per definition and then
+`SCANNED<TAB><identified>/<total>`. A line is `name<TAB>CID`, or `name<TAB>REFUSED:<marker>` for a definition with no
+identity. `--groups` appends `<TAB>group-CID-or-"-"<TAB>member-index` (index `-1` outside a recursive group, and
+`-<TAB>-1` on a refused line); the CIDs are identical with or without it. Exit codes: `0` report (also when some or all
+lines are refused), `66` no identity could be computed at all, `2` usage.
 
-Differences from the nbb report that remain:
-- The native producer refuses the **whole module** before printing (any unresolved/unsupported definition), so there is
-  no per-definition `REFUSED:<marker>` line, `SCANNED` is always `n/n`, and a refusal prints nothing on stdout, a `DSB:*`
-  diagnostic on stderr, and exits 66. The nbb route lists refused definitions and exits 0; reproducing that needs a
-  per-definition refusal in 05/06 (not done).
-- No `UNAVAILABLE` line, no `:order`/`:entries` map; the text lines are the contract.
-- The legacy `DCP1 6 2` + `name cid group index` rows (format 0) still exist in 06 for the older test gates only.
+Per-definition refusal follows the reference `definitions` loop (`src/kotoba/compiler/definition_identity.cljk`,
+`format-lines`, `scanned-line`):
+- a definition the native bridge cannot express (closure in a loop, loop in a closure, closure in operator position,
+  a type the bridge does not carry, ...) is `REFUSED:unbridged-source` (05-checked-source `dsb-source-report`);
+- a definition whose effect row names an unregistered wire is `REFUSED:unbridged-effect`;
+- a recursive group above the scc-v1 bound (8) is `REFUSED:recursive-group-too-large` for every member (06 `dcs-rows`);
+- a definition that calls a refused one is `REFUSED:dependency-unavailable`, transitively, also through a loop helper
+  or an inlined def;
+- every other definition is identified exactly as in the whole module: a refused definition, its text, loop helpers
+  and closures never reach the KIR, and a definition is kept only when nothing it calls is refused. The gate checks
+  that the kept CIDs equal those of the same definitions in a module without the refused ones.
+
+Still whole-module (exit 66, empty stdout, a `DSB:*` line on stderr), as on the reference route where the frontend or
+the identity layer cannot answer at all: lexer/reader/name/check errors (`DSB:SOURCE`), computed defs that are not
+literals, templates/specializations and unexpected FN kinds (`DSB:BRIDGE`), an unregistered wire no definition carries
+(`DSB:EFFECT`), and producer failures (`DSB:IDENTITY`: the fresh KIR check, the canonical codec, internal invariants).
+
+Differences from the reference report that remain:
+- `unbridged-source` is a native-only marker: the reference lambda-lifts closures and has no such bridge, so those
+  definitions have a CID there (§ local closures). No CID parity is claimed for them.
+- A module the frontend rejects exits 66 here; the reference reports the check failure itself.
+- No `UNAVAILABLE` line, no `:order`/`:entries` map; the text lines are the contract. Nothing is printed on stderr for a
+  refused line.
+- The reference route was not executed for this change (no JVM/nbb run); parity is with its source.
+- The legacy `DCP1 6 2` + `name cid group index` rows (format 0) still refuse the whole module; they exist in 06 for the
+  older test gates only.
 
 ### Which identity this is (for JUN-587)
 Native CIDs are payload-version 2, dag-cbor, sha2-256, **profile-version 6 / desugar-contract-version 2**, with
@@ -74,14 +96,18 @@ closure parameter whose checked type is not `:i64` (the source syntax has no ann
 others), nesting deeper than 7 closures. Mutants (closure head spelling, unbound parameter) are detected by the gate.
 
 ## 2. Manifest decision (ADR 0370)
-`seed/compiler-core.json` (18 modules) and `MANIFEST`/`FULL-MANIFEST` are **unchanged**. A successor core needs
-self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded in. Instead:
+JUN-584 (2026-10-31): 04, 05-definition-graph, 05-checked-definition, 06, 05-checked-source, 05-source-loops, 07, 08
+and 09 are in `FULL-MANIFEST` (58 modules), right after `90-drv`; `78-full-entry` dispatches `definition-cids`.
+`seed/MANIFEST` and `seed/compiler-core.json` (the adopted 18-module core) are **unchanged**: none of the promoted
+modules is a core module, so there is no new core identity and no new adoption receipt. The core round's checks were
+run against the grown compiler instead (Mac G1=G2=G3 of the unchanged 18 core reproduces the current receipt; CDCI
+pins recomputed; see the PR).
 
-- `seed/DEFINITION-CIDS-MANIFEST` = `CORE-STATIC-MANIFEST` minus `99-entry` + 04, 05-definition-graph,
-  05-checked-definition, 06, 05-checked-source, 05-source-loops + `99-definition-cids-entry`.
-- `99-definition-cids-entry` dispatches `definition-cids <file>` and otherwise calls the unchanged `drv-main`.
-- Promotion to FULL-MANIFEST is blocked until: a self-rebuild fixed point of the grown closure, and the output-format
-  decision above. (Mac `arena-scope`, JUN-546, landed in #1675; the candidate now runs on the Mac, §3.)
+- Self-rebuild fixed point of the grown closure: Mac arm64 F1 = F2 = F3 (`check-aiueos-user-macos-native.py`, run by
+  `repin-derived-pins.py`).
+- `seed/DEFINITION-CIDS-MANIFEST` (`CORE-STATIC-MANIFEST` minus `99-entry` + the definition layer +
+  `99-definition-cids-entry`) stays as the gate's smaller harness for mutants; the gate requires the full compiler and
+  the harness to print the same bytes.
 
 ## 3. Evidence (what was actually run)
 - aarch64-linux, **native** in podman (`python:3.12-slim`, arm64 host), compiler
@@ -114,6 +140,7 @@ self-rebuild evidence; none exists for 04-06 (+ bridge), so they are not folded 
 
 ## 4. Remaining (JUN-583/584/585/586)
 - Mac: done for this gate (JUN-586); the Mac root stays `diagnostic-candidate`, not a release qualification.
-- aarch64-linux in the shipped root: the candidate image builds with the root, but the production closure is unchanged.
-- per-definition refusal markers (nbb parity); surface-equivalence corpus
+- aarch64-linux / x86_64-linux / Mac: the shipped full compilers carry `definition-cids` since JUN-584.
+- per-definition refusal: done natively (JUN-584, §1); the reference route was not executed against it.
+- surface-equivalence corpus
   (`lang/surface-equivalence-corpus.edn` is not present in the local kotoba-lang checkout) and the parity gate (JUN-587).

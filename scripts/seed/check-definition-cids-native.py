@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Build the native `definition-cids` candidate image and observe it (JUN-583/JUN-584).
+"""Observe native `definition-cids` in the full compiler and its candidate harness (JUN-583/JUN-584).
 
 Every parse, check, alpha normalization, SCC search, DAG-CBOR encoding and hash runs in
 Amu native images. Python only stages bytes, launches processes and compares observations.
 The expected CIDs come from an independently hand-authored oracle image
 (seed/tests/native-checked-definition-oracle.kotoba, through seed/04's codec), never from
-the producer. A mutant that changes a seed/05 canonical payload field must be refused. This
-gate qualifies the candidate closure only; it changes no manifest and grants nothing.
+the producer. A mutant that changes a seed/05 canonical payload field must be refused.
+
+Since JUN-584 the definition layer (04-09) is in FULL-MANIFEST, so the compiler under test
+(--compiler, the shipped full compiler) answers `definition-cids` itself. Every report case
+runs on both the compiler and the smaller DEFINITION-CIDS-MANIFEST harness image, and the
+two must agree byte for byte; mutants are built from the harness. Per-definition refusal
+(ADR 0300 / the reference `definitions` loop): a definition that cannot be identified is a
+`name<TAB>REFUSED:<marker>` row, its callers are `dependency-unavailable`, kept CIDs are the
+CIDs of the same definitions in a module without the refused ones, and `SCANNED` is
+`<identified>/<total>`. The gate grants nothing.
 """
 import argparse
 import hashlib
@@ -58,7 +66,7 @@ def main(compiler, out):
                   host=[platform.system(), platform.machine()], compiler=pin(compiler), target=target,
                   modules={p: pin(ROOT / p) for p in paths}, calls=[],
                   scope="pure checked-source bridge, payload-v2 profile6/desugar2, SCC<=8; no admission",
-                  macosQualified=darwin, x86CliAlreadyHasCommand="unknown", productionCompilerClosureChanged=False)
+                  macosQualified=darwin, compilerHasCommand=True, productionCompilerClosureChanged=True)
 
     def save():
         (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -104,21 +112,39 @@ def main(compiler, out):
     keep_text = text.replace(':string (dcp-bind M A n))\n(defn- dcp-fn [', ':string (dcp-sym "k0"))\n(defn- dcp-fn [', 1)
     assert keep_text != text
     mutant_keep = build("mutant-fn-unbound", keep_text)
+    # JUN-584 per-definition refusal mutants.
+    close_text = text.replace("        closed (if refused (dsb-close M C Q) 0)]", "        closed 0]", 1)
+    assert close_text != text
+    mutant_close = build("mutant-no-close", close_text)
+    blocked_text = text.replace("code (cond (dcs-blocked? A X C) 2 (> n 8) 1 :else 0)]",
+                                "code (cond false 2 (> n 8) 1 :else 0)]", 1)
+    assert blocked_text != text
+    mutant_blocked = build("mutant-no-blocked", blocked_text)
 
     def cids(name, source, image=cli, code=0, groups=False):
         p = out / (name + ".kotoba")
         p.write_text("\n".join(source) + "\n")
         argv = [image, "definition-cids", p] + (["--groups"] if groups else [])
         stdout, stderr = run("cids-" + name + ("-groups" if groups else ""), argv, code)
+        if image is cli:
+            # The shipped full compiler answers the same question with the same bytes (JUN-584).
+            full_out, full_err = run("full-cids-" + name + ("-groups" if groups else ""),
+                                     [compiler] + argv[1:], code)
+            assert (full_out, full_err) == (stdout, stderr), (name, full_out, full_err, stdout, stderr)
         if code:
             assert stdout == "" and stderr.startswith("DSB:"), (name, stdout, stderr)
             return {}
+        assert stderr == "", (name, stderr)
         lines = stdout.splitlines()
-        # ADR 0300: `name<TAB>CID` per definition in declaration order, then SCANNED<TAB>n/n.
-        assert lines[-1] == f"SCANNED\t{len(lines) - 1}/{len(lines) - 1}", lines[-1]
         rows = [r.split("\t") for r in lines[:-1]]
+        # ADR 0300: one row per definition in declaration order, `name<TAB>CID` or `name<TAB>REFUSED:<marker>`,
+        # then SCANNED<TAB><identified>/<total>.
+        identified = sum(1 for r in rows if not r[1].startswith("REFUSED:"))
+        assert lines[-1] == f"SCANNED\t{identified}/{len(rows)}", lines[-1]
         assert all(len(r) == (4 if groups else 2) for r in rows) and len({r[0] for r in rows}) == len(rows)
         assert all(r[0] != "DCP1" for r in rows)
+        assert all(r[2:] == ["-", "-1"] for r in rows if groups and r[1].startswith("REFUSED:"))
+        assert all(r[1].startswith("bafyrei") and len(r[1]) == 59 for r in rows if not r[1].startswith("REFUSED:"))
         return {r[0]: r[1:] for r in rows}
 
     def golden(name):
@@ -130,6 +156,7 @@ def main(compiler, out):
     order.write_text(fn("zeta", ["x"], "(+ x 1)") + "\n" + fn("alpha", ["x"], "(+ x 2)") + "\n")
     stdout, _ = run("order", [cli, "definition-cids", order])
     assert [l.split("\t")[0] for l in stdout.splitlines()] == ["zeta", "alpha", "SCANNED"], stdout
+    assert run("full-order", [compiler, "definition-cids", order])[0] == stdout
     const = cids("const", [fn("main", [], "42")])
     assert const["main"][0] == golden("const")
     leaf = cids("leaf", [fn("f", ["x"], "(+ x 1)")])
@@ -182,15 +209,50 @@ def main(compiler, out):
     assert cids("closure-two", [fn("f", ["n"], "(let [a 1 b 2 g (fn [x] (+ x (+ a b)))] (g n))")])["f"][0] \
         == golden("closure-two")
     # Negative controls: the gate must refuse / detect, not merely pass.
+    # A module the frontend rejects has no identity at all: exit 66, empty stdout, a named DSB: diagnostic.
     cids("refuse-unbound", [fn("f", ["x"], "(missing x)")], code=66)
     cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
-    # Closure refusals stay fail-closed (exit 66, empty stdout, a named DSB: diagnostic), never a wrong CID.
     cids("refuse-closure-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x missing))] (g n))")], code=66)
-    cids("refuse-closure-in-loop", [fn("f", ["n"], "(loop [i 0] (if (< i n) (let [g (fn [x] (+ x i))] (recur (+ i (g 1)))) i))")], code=66)
-    cids("refuse-loop-in-closure", [fn("f", ["n"], "(let [g (fn [x] (loop [i 0] (if (< i x) (recur (+ i 1)) i)))] (g n))")], code=66)
-    cids("refuse-closure-operator", [fn("f", ["n"], "((fn [x] (+ x 1)) n)")], code=66)
     cids("refuse-closure-callback", ["(defn ap [g [:fn [:i64] :i64] x :i64] :i64 (g x))",
                                      fn("f", ["n"], "(ap (fn [x] (+ x 1)) n)")], code=66)
+    # A checked definition the bridge cannot express is refused PER DEFINITION (JUN-584), never a wrong CID:
+    # exit 0, a REFUSED:unbridged-source row, SCANNED 0/1.
+    for name, body in [("closure-in-loop", "(loop [i 0] (if (< i n) (let [g (fn [x] (+ x i))] (recur (+ i (g 1)))) i))"),
+                       ("loop-in-closure", "(let [g (fn [x] (loop [i 0] (if (< i x) (recur (+ i 1)) i)))] (g n))"),
+                       ("closure-operator", "((fn [x] (+ x 1)) n)")]:
+        assert cids("refuse-" + name, [fn("f", ["n"], body)]) == {"f": ["REFUSED:unbridged-source"]}
+    # Per-definition refusal parity with the reference shape: the refused row keeps its place in declaration
+    # order, its callers are dependency-unavailable (also through a loop helper), everything else keeps the CID
+    # it has in a module without the refused definitions.
+    mixed_src = [fn("bad", ["n"], "((fn [x] (+ x 1)) n)"), fn("f", ["x"], "(+ x 1)"),
+                 fn("main", ["x"], "(bad x)"), fn("caller", ["x"], "(f x)"),
+                 fn("s", ["n"], "(loop [i 0 a 0] (if (< i n) (recur (+ i 1) (+ a (bad i))) a))"),
+                 fn("t", ["n"], "(loop [i 0 a 0] (if (< i n) (recur (+ i 1) (+ a i)) a))")]
+    mixed = cids("mixed", mixed_src, groups=True)
+    assert list(mixed) == ["bad", "f", "main", "caller", "s", "t", "__kotoba_loop_2"], list(mixed)
+    assert mixed["bad"][0] == "REFUSED:unbridged-source"
+    assert mixed["main"][0] == mixed["s"][0] == "REFUSED:dependency-unavailable"
+    assert mixed["f"][0] == golden("leaf") and mixed["caller"][0] == golden("caller")
+    kept = cids("mixed-kept", [mixed_src[1], mixed_src[3], mixed_src[5]], groups=True)
+    assert list(kept) == ["f", "caller", "t", "__kotoba_loop_1"], list(kept)
+    assert [kept[k] for k in ("f", "caller", "t")] == [mixed[k] for k in ("f", "caller", "t")]
+    assert kept["__kotoba_loop_1"] == mixed["__kotoba_loop_2"]
+    # A recursive group above the scc-v1 bound (8) is refused member by member, never hashed by name; its caller
+    # is dependency-unavailable, an independent definition is identified.
+    nine = cids("cycle9", cycle(9) + [fn("main", ["x"], "(a x)"), fn("z", ["x"], "(+ x 1)")], groups=True)
+    assert all(nine[chr(97 + i)][0] == "REFUSED:recursive-group-too-large" for i in range(9))
+    assert nine["main"][0] == "REFUSED:dependency-unavailable" and nine["z"][0] == golden("leaf")
+    # Every row refused is still a report (exit 0, SCANNED 0/n), not "no identity" (66).
+    assert set(v[0] for v in cids("cycle9-only", cycle(9)).values()) == {"REFUSED:recursive-group-too-large"}
+    report["observations"]["perDefinitionRefusal"] = dict(
+        markers=["unbridged-source", "dependency-unavailable", "recursive-group-too-large", "unbridged-effect"],
+        nativeOnlyMarkers=["unbridged-source"], referenceShape="src/kotoba/compiler/definition_identity.cljk",
+        referenceRouteExecuted=False)
+    # Mutants of the per-definition layer must not reproduce the report: dropping the dependency closure leaves a
+    # caller of a refused definition in the KIR (the fresh check refuses the module), dropping the blocked-
+    # component test makes the producer meet a hole (refused whole). Neither may print a CID for main.
+    cids("mutant-no-close", mixed_src, image=mutant_close, code=66)
+    cids("mutant-no-blocked", cycle(9) + [fn("main", ["x"], "(a x)")], image=mutant_blocked, code=66)
     # A producer with a changed payload field is refused by its own canonical validator (04) -- no CID leaks.
     cids("mutant-encoder", [fn("f", ["x"], "(+ x 1)")], image=mutant, code=66)
     # The closure encoder mutants must not reproduce the oracle CID (head spelling), and the one that never binds
@@ -200,8 +262,9 @@ def main(compiler, out):
     assert cids("mutant-fn-head-plain", [fn("f", ["x"], "(+ x 1)")], image=mutant_head)["f"][0] == golden("leaf")
     cids("mutant-fn-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x 1))] (g n))")], image=mutant_keep, code=66)
     # Usage errors are not "no identity": distinct exit code.
-    run("usage-extra-arg", [cli, "definition-cids", order, "--nope"], 2)
-    run("usage-missing-file-arg", [cli, "definition-cids"], 2)
+    for image, tag in ((cli, ""), (compiler, "full-")):
+        run(tag + "usage-extra-arg", [image, "definition-cids", order, "--nope"], 2)
+        run(tag + "usage-missing-file-arg", [image, "definition-cids"], 2)
     # The unchanged core driver still answers its own commands through this entry.
     ok = out / "ok.kotoba"
     ok.write_text(fn("f", ["x"], "(+ x 1)") + "\n")

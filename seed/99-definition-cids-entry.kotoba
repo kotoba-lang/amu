@@ -4,11 +4,13 @@
 ;; (SCC member index, -1 outside a recursive group). Identity comes from the checked-source bridge
 ;; (05-checked-source -> 06 producer, payload-v2, profile 6 / desugar 2, resource profile 0).
 ;; No admission runs and nothing is granted: a CID is identity, never authority.
-;; Exit 0 = report; 66 = no identity could be computed (the producer refuses the whole module, stdout is empty and
-;; stderr carries the DSB:* diagnostic); 2 = usage. Every other command is the unchanged core driver.
-;; Not part of MANIFEST/FULL-MANIFEST: the adopted 18-module core (seed/compiler-core.json) is not grown.
+;; A definition that cannot be identified is a row `name<TAB>REFUSED:<marker>` (its callers: dependency-unavailable)
+;; and SCANNED is `<identified>/<total>`, as on the reference route. Exit 0 = report (also when rows are refused);
+;; 66 = no identity could be computed at all (stdout is empty and stderr carries the DSB:* diagnostic); 2 = usage.
+;; Every other command is the unchanged core driver. The same command is in the full compiler (78-full-entry);
+;; this smaller closure (seed/DEFINITION-CIDS-MANIFEST) remains the gate's mutant harness.
 (defn- dci-run [format :i64] :i64
-  (if (= (dsb-source-format (io-fs2-text 65 (io-arg 1) "") false 0 format) 0) 0 66))
+  (if (= (dsb-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
 (defn- seed-main [] :i64
   (cond (not (and (>= (io-argc) 1) (string=? (io-arg 0) "definition-cids"))) (drv-main)
         (= (io-argc) 2) (dci-run 1)
