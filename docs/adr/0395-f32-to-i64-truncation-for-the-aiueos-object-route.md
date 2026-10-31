@@ -75,7 +75,7 @@ the f64 pattern 0xc3e0000000000000. It is left for a slice with its own evidence
 
 ## Relation to the aarch64 route
 
-> **Amended 2026-10-31 (ADR 0397, owner decision on JUN-633: "Yes, align aarch64").** seed/41 now emits code 37
+> **Amended 2026-10-31 (ADR 0398, owner decision on JUN-633: "Yes, align aarch64").** seed/41 now emits code 37
 > with a guarded `fcvtzs` that traps with `brk #0` on exactly the operands this route traps on. The answers are
 > bit-identical, and the cross-ISA differential hash matches. The paragraph below describes the state before
 > that amendment.

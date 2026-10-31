@@ -1,4 +1,4 @@
-# ADR-0397 -- aarch64 f32 -> i64 truncation traps as on x86 (JUN-633)
+# ADR-0398 -- aarch64 f32 -> i64 truncation traps as on x86 (JUN-633)
 
 - Status: **implemented** (seed/41 `gn-fl-f32-to-i64`, `scripts/seed/check-a64-f2i.py`).
 - Date: 2026-10-31

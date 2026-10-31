@@ -2104,7 +2104,7 @@
 (defn- gn-fl-un-ok? [uop :i64] :bool
   (or (and (>= uop UOP-F64-NEG) (<= uop UOP-F64-SQRT)) (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT))
       (and (>= uop UOP-F64-TO-I64) (<= uop UOP-F32-TO-I64))))
-;; f32 -> i64 (UOP-F32-TO-I64, JUN-633, ADR 0397): ADR 0395's semantics, as on the x86 object route. In range
+;; f32 -> i64 (UOP-F32-TO-I64, JUN-633, ADR 0398): ADR 0395's semantics, as on the x86 object route. In range
 ;; (-2^63 <= x < 2^63) fcvtzs truncates toward zero; NaN, +-Inf and every other |x| >= 2^63 reach brk #0 (the SIR trap
 ;; convention) instead of fcvtzs's saturated answer. d is the scratch for the bound: x is consumed by the first fmov.
 ;;   fmov s0,wX ; movz xD,#0xdf00,lsl #16 ; fmov s1,wD (-2^63) ; fcmp s0,s1 ; b.lt trap (below, or unordered) ;

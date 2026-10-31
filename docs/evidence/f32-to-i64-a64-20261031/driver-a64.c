@@ -1,4 +1,4 @@
-/* f32 -> i64 truncation on amu's aarch64 route (seed/41, JUN-633, ADR 0397) against ../f32-to-i64-20261031/ref.c, the
+/* f32 -> i64 truncation on amu's aarch64 route (seed/41, JUN-633, ADR 0398) against ../f32-to-i64-20261031/ref.c, the
    integer-only C reference that the x86 object run (ADR 0395) uses. The payload is f2i.kotoba compiled with
    --target aarch64-macos and cut out with extract-native; it runs natively, called with x7 = a context whose fuel
    ([x7,#8]) is reset before each call and whose code_base ([x7,#384]) is the mapped payload.

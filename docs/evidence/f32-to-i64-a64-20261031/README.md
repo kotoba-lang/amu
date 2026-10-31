@@ -1,4 +1,4 @@
-# f32-to-i64-truncating on aarch64 hardware against the x86 run's reference (JUN-633, ADR 0397)
+# f32-to-i64-truncating on aarch64 hardware against the x86 run's reference (JUN-633, ADR 0398)
 
 `run-a64.sh OUT COMPILER [STRIDE NRAND THREADS]` does the following:
 - compiles `../f32-to-i64-20261031/f2i.kotoba`, the x86 run's source, with a native Amu compiler for
@@ -10,7 +10,7 @@
 
   The podman machine is an Apple Hypervisor (applehv) VM, so this is not emulation.
 
-The payload carries seed/41's guarded sequence (ADR 0397):
+The payload carries seed/41's guarded sequence (ADR 0398):
 
 ```
 fmov s0,wX ; movz xD,#0xdf00,lsl #16 ; fmov s1,wD ; fcmp s0,s1 ; b.lt trap ; fneg s1,s1 ; fcmp s1,s0 ; b.gt ok ;
@@ -77,4 +77,4 @@ number of trapping cases.
   same answer, 0.
 - The harness calls one extracted function directly. A whole-program trap is covered by `check-a64-f2i.py`: packaged,
   signed Mac programs die by SIGTRAP.
-- `f64-to-i64-truncating` (code 32) is not covered. It still saturates on aarch64 (ADR 0397).
+- `f64-to-i64-truncating` (code 32) is not covered. It still saturates on aarch64 (ADR 0398).

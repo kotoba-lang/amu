@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""f32 -> i64 truncation on the aarch64 route (seed/41, JUN-633, ADR 0397).
+"""f32 -> i64 truncation on the aarch64 route (seed/41, JUN-633, ADR 0398).
 
 seed/41's gn-fl-un emits `f32-to-i64-truncating` (SIR UOP 37) with ADR 0395's semantics, as the x86 object route
 does: truncation toward zero; a NaN, +-Inf or any operand outside [-2^63, 2^63) reaches brk #0 instead of fcvtzs's
