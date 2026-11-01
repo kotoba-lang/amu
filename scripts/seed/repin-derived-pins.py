@@ -101,7 +101,7 @@ def main():
         "--compiler-sha256", sha(compiler), "--packager-image", packager,
         "--packager-sha256", sha(packager), "--output", out / "mac-root-src")
     run(sys.executable, SEED / "write-bootstrap-descriptors.py", "--mac-build", out / "mac-root-src",
-        "--phase", "source", "--write")
+        "--phase", "source", "--install", "--write")
     # Phase final: the new root reproduces itself and the Linux candidates.
     run(sys.executable, SEED / "check-aiueos-user-macos-native.py", "--output", out / "mac-root")
     run(sys.executable, SEED / "check-macos-cross-linux-candidates.py", "--mac-build", out / "mac-root",

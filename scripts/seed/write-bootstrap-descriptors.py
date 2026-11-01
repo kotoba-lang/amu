@@ -258,7 +258,7 @@ def main(argv):
     ap.add_argument("--phase", choices=("source", "final"), default="final")
     ap.add_argument("--repo", type=Path, default=ROOT, help="repository whose descriptors are read")
     ap.add_argument("--install", action="store_true",
-                    help="with --write in the final phase, copy the verified artifacts to the paths the descriptors name")
+                    help="with --write in either phase, copy the verified artifacts to the paths the descriptors name")
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="report differences (default)")
     mode.add_argument("--write", action="store_true", help="rewrite the descriptors")
