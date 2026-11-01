@@ -1,0 +1,30 @@
+(ns kotoba.compiler.coverage
+  "Canonical Kotoba validators for coverage manifest identity fields."
+  {:kotoba/export [sha256? month?]})
+
+(defn- ascii-digit? [byte :i64] :bool
+  (and (>= byte 48) (<= byte 57)))
+
+(defn- ascii-lower-hex? [byte :i64] :bool
+  (or (ascii-digit? byte) (and (>= byte 97) (<= byte 102))))
+
+(defn sha256? [value :string] :bool
+  (if (not (= (string-byte-length value) 64)) false
+    (let [bytes (string-to-utf8 value)]
+      (loop [index 0]
+        (if (= index 64) true
+          (if (ascii-lower-hex? (bytes-at bytes index))
+            (recur (+ index 1)) false))))))
+
+(defn month? [value :string] :bool
+  (if (not (= (string-byte-length value) 7)) false
+    (let [bytes (string-to-utf8 value)
+          month-tens (bytes-at bytes 5)
+          month-ones (bytes-at bytes 6)]
+      (and (ascii-digit? (bytes-at bytes 0))
+           (ascii-digit? (bytes-at bytes 1))
+           (ascii-digit? (bytes-at bytes 2))
+           (ascii-digit? (bytes-at bytes 3))
+           (= (bytes-at bytes 4) 45)
+           (or (and (= month-tens 48) (>= month-ones 49) (<= month-ones 57))
+               (and (= month-tens 49) (>= month-ones 48) (<= month-ones 50)))))))
