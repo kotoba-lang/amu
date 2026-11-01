@@ -7,8 +7,9 @@ typed capability-call emitter and host grant enforcement.
 
 The complete replacement module
 `seed/experimental/98-x86_64-project-fs-cli.kotoba` proposes extending the
-production `seed/98-x86_64-project.kotoba` to admit **only** wires
-35 (`:fs/app-data`) and 38 (`:cli/args`). A module that calls them must declare
+production `seed/98-x86_64-project.kotoba` to admit explicitly declared wires
+37 (`:io/write`), 39 (`:io/write-error`), 7 (`:clock/now`), 35
+(`:fs/app-data`), and 38 (`:cli/args`). A module that calls them must declare
 `:capabilities`; a missing declaration or a declared set that excludes a used
 wire refuses E2176. All other wires remain E7101, including unused functions
 that call them. The existing namespace, type, export, source-lock, opcode and
@@ -17,10 +18,11 @@ namespace declaration. Emission creates no runtime grant.
 
 The existing native runner independently requires `KEXE_ALLOW` and a scoped
 filesystem grant. The exact importing fixture performs a locked write, file
-fsync, rename, directory fsync, read and unlock. Native negative controls
-exercise missing/empty declarations, unsupported wire, ungranted FS/CLI,
-out-of-scope paths and symlink escape. The original multi-module project
-corpus and its pin/unused-declaration refusals are also retained.
+fsync, rename, directory fsync, read and unlock; separate branches exercise
+stdout and stderr. Native negative controls cover missing/empty declarations,
+unsupported wire, ungranted stdout/stderr/clock/FS/CLI, out-of-scope paths and
+symlink escape. The original multi-module project corpus and its
+pin/unused-declaration refusals are also retained.
 
 ```text
 python3 scripts/seed/check-x86-project-fs-native.py \
@@ -53,3 +55,21 @@ point and the bounded FS/CLI probes do not complete that adoption or qualify
 other effectful project profiles. The Awai store can be tested against this
 explicitly derived and pinned candidate; its ordinary pure authority gate
 also continues to use the existing compiler.
+
+## 2026-11-02 Itonami clock + filesystem follow-up
+
+The Amu candidate source and focused fixture additionally admit declared
+wall-clock wire 7 for Itonami's cron-store route and output wires 37/39 for
+Kotoba CLI responses. The allowlist is limited to 7, 35, 37, 38, and 39; source
+still must declare each capability, and the runtime separately requires
+`KEXE_ALLOW`. Positive controls check returned wall time and exact stdout /
+stderr markers. No-grant controls verify named refusal for output and clock
+before any filesystem effect, and undeclared capabilities must fail compile
+admission. Existing FS35/CLI38, scope, symlink, and unsupported-wire controls
+remain.
+
+This is a follow-up to the completed AWAI-97 FS35/CLI38 candidate, not public
+compiler adoption. It is intended to unblock the standalone Itonami cron-store
+gate. The updated 60-module selfhost derivation and exact native run must pass
+before the Itonami gate is repinned; public compiler/root adoption remains a
+separate qualification.

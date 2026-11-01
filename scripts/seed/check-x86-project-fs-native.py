@@ -11,6 +11,7 @@ import os
 import platform
 import re
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,13 +36,19 @@ def main():
     env = dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608')
     original = {p.name: p.read_bytes() for p in (ROOT / 'seed/tests/x86-project-fs').glob('*.kotoba')}
 
-    def call(label, argv, custom=env, expected=0, diagnostic=None, timeout=120):
+    def call(label, argv, custom=env, expected=0, diagnostic=None, timeout=120,
+             expected_stdout=None, expected_stderr=None):
         result = subprocess.run(list(map(str, argv)), env=custom, cwd=out, capture_output=True, timeout=timeout)
         (out / (label + '.stdout')).write_bytes(result.stdout)
         (out / (label + '.stderr')).write_bytes(result.stderr)
         assert result.returncode == expected, (label, result.returncode, result.stderr[-500:])
         if diagnostic:
             assert diagnostic in result.stderr and b'KEXE_TRAP' not in result.stderr, (label, result.stderr)
+        elif expected_stdout is not None or expected_stderr is not None:
+            if expected_stdout is not None:
+                assert expected_stdout in result.stdout, (label, result.stdout)
+            if expected_stderr is not None:
+                assert expected_stderr in result.stderr, (label, result.stderr)
         elif expected == 0:
             assert not result.stderr, (label, result.stderr)
         observations.append(dict(name=label, exit=result.returncode,
@@ -106,31 +113,58 @@ def main():
     image = build('declared', original)
     base = out / 'scope'
     base.mkdir()
-    def execute(label, target, allow, expected=0):
+    def execute(label, target, allow, expected=0, resource_scope=None, extra_args=(),
+                expected_stdout=None, expected_stderr=None):
+        scope = base if resource_scope is None else resource_scope
         custom = dict(env, KEXE_ALLOW=allow, KEXE_STRUCTURED_REPORT='1', KEXE_FUEL='10000000',
-                      KEXE_CAP_RESOURCES_35=str(base))
-        return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target], custom, expected)
-    passed = execute('roundtrip', base, '35,38')
-    assert re.search(rb':result 42\b', passed.stdout)
-    missing = execute('ungranted-fs', base, '38', 120)
+                      KEXE_CAP_RESOURCES_35=str(scope))
+        return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target, *extra_args],
+                    custom, expected, expected_stdout=expected_stdout,
+                    expected_stderr=expected_stderr)
+    passed = execute('roundtrip-clock-fs', base, '7,35,38')
+    match = re.search(rb':result ([0-9]+)\b', passed.stdout)
+    assert match, passed.stdout
+    clock_ms = int(match[1])
+    assert abs(clock_ms - int(time.time() * 1000)) <= 10000, clock_ms
+    clock_refusal_scope = out / 'clock-refusal-scope'
+    clock_refusal_scope.mkdir()
+    missing_clock = execute('ungranted-clock', clock_refusal_scope, '35,38', 120,
+                            resource_scope=clock_refusal_scope)
+    assert b'KEXE_CAP {:wire 7 :refused :not-granted}' in missing_clock.stderr
+    assert not list(clock_refusal_scope.iterdir()), 'clock refusal reached filesystem effects'
+    missing = execute('ungranted-fs', base, '7,38', 120)
     assert b'KEXE_CAP {:wire 35 :refused :not-granted}' in missing.stderr
-    missing_cli = execute('ungranted-cli', base, '35', 120)
+    missing_cli = execute('ungranted-cli', base, '7,35', 120)
     assert b'KEXE_CAP {:wire 38 :refused :not-granted}' in missing_cli.stderr
     outside = out / 'outside'
     outside.mkdir()
-    refused = execute('outside-scope', outside, '35,38')
-    assert re.search(rb':result 91\b', refused.stdout) and not list(outside.iterdir())
+    refused = execute('outside-scope', outside, '7,35,38')
+    assert re.search(rb':result 0\b', refused.stdout) and not list(outside.iterdir())
     os.symlink(outside, base / 'escape', target_is_directory=True)
-    refused = execute('symlink-escape', base / 'escape', '35,38')
-    assert re.search(rb':result 91\b', refused.stdout) and not list(outside.iterdir())
-    for label, old, new, diagnostic in [
-        ('missing-declaration', b'(:capabilities [:fs/app-data])', b'', b'E2176'),
-        ('empty-declaration', b'(:capabilities [:fs/app-data])', b'(:capabilities [])', b'E2176'),
-        ('unsupported-wire', b':fs/app-data', b':io/write', b'E7101')]:
+    refused = execute('symlink-escape', base / 'escape', '7,35,38')
+    assert re.search(rb':result 0\b', refused.stdout) and not list(outside.iterdir())
+    execute('declared-stdout', base, '37,38', extra_args=('stdout',),
+            expected_stdout=b'kotoba-stdout-marker')
+    execute('declared-stderr', base, '39,38', extra_args=('stderr',),
+            expected_stderr=b'kotoba-stderr-marker')
+    missing_stdout = execute('ungranted-stdout', base, '39,38', 120,
+                             extra_args=('stdout',))
+    assert b'KEXE_CAP {:wire 37 :refused :not-granted}' in missing_stdout.stderr
+    missing_stderr = execute('ungranted-stderr', base, '37,38', 120,
+                             extra_args=('stderr',))
+    assert b'KEXE_CAP {:wire 39 :refused :not-granted}' in missing_stderr.stderr
+    for label, filename, old, new, diagnostic in [
+        ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'', b'E2176'),
+        ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'(:capabilities [])', b'E2176'),
+        ('unsupported-wire', 'entry.kotoba', b':clock/now', b':llm/generate', b'E7101')]:
         files = dict(original)
-        files['io.kotoba'] = files['io.kotoba'].replace(old, new)
+        files[filename] = files[filename].replace(old, new)
         build(label, files, diagnostic)
-    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_FS35_CLI38',
+    files = dict(original)
+    files['entry.kotoba'] = files['entry.kotoba'].replace(
+        b'(:capabilities [:clock/now :cli/args])', b'(:capabilities [:cli/args])')
+    build('missing-clock-declaration', files, b'E2176')
+    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT37_STDERR39_CLOCK7_FS35_CLI38',
                   compilerSHA256=sha(compiler.read_bytes()), runnerSHA256=sha(runner.read_bytes()),
                   sources={name: sha(data) for name, data in original.items()}, derivation=derivation,
                   observations=observations, publicProductAdopted=False)
