@@ -150,8 +150,14 @@ def main(boot, out):
     amu_gate = out / "cdci-amu-selfhost.elf"
     run("build-amu-selfhost-gate", [F, "compile", out / "core-static.kotoba", "--target", "x86_64-linux", "--output", amu_gate, "--format", "static"], env)
     policy = json.loads((ROOT / "seed/cdci/policy.json").read_text())
-    assert pin(amu_gate)["sha256"] == policy["amuSelfhostGateSHA256"]
-    cdci_images["amu-selfhost"] = pin(amu_gate)
+    actual_amu_gate = pin(amu_gate)
+    expected_amu_gate_sha256 = policy["amuSelfhostGateSHA256"]
+    assert actual_amu_gate["sha256"] == expected_amu_gate_sha256, (
+        "Amu selfhost gate image differs from the pinned policy: "
+        f"expected sha256={expected_amu_gate_sha256}, "
+        f"got sha256={actual_amu_gate['sha256']} bytes={actual_amu_gate['bytes']}"
+    )
+    cdci_images["amu-selfhost"] = actual_amu_gate
     for role, source in (("controller", "controller.kotoba"), ("kotoba-native", "kotoba-gate.kotoba")):
         dst = out / ("cdci-" + role + ".elf")
         run("cdci-build-" + role, [F, "cdci-build", role, out / "cdci-entry.kotoba", out / "cdci-runtime.kotoba", out / ("cdci-" + source), dst], env)

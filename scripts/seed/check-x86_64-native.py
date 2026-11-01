@@ -91,8 +91,45 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
         assert x2 == x3, "x86_64 static fixed point"
     X = out / "X2.elf"
 
+    # The x86 packed ABI consumes a KSEED container. Produce the payload code
+    # with Amu's native x86 KX64 route, then add only the KSEED export header in
+    # this orchestration script; no host compiler or code generator is used.
+    # KX64's standalone `main` must be nullary, so exercise packed arity
+    # refusal by varying the KSEED descriptor rather than the source function.
+    def packed_payload(name, arity):
+        src = out / f"{name}.kotoba"
+        src.write_text(f"(ns {name} (:export [main]))\n(defn main [] :i64 42)\n")
+        kx64 = out / f"{name}.kx64"
+        run(f"{name}-kx64", [X, "compile", src, "--target", "x86_64-linux",
+                              "--output", kx64, "--format", "kx64-v1"], scope)
+        header, code = kx64.read_bytes().split(b"\n\n", 1)
+        match = re.fullmatch(rb"KX64V1 x86_64-linux sysv-ctx-v11 ([0-9]+) 0", header)
+        assert match and int(match[1]) == len(code) and code[:1] == b"\xe9", name
+        kseed = out / f"{name}.kseed"
+        kseed.write_bytes(f"KSEED1 {len(code)} 1\nmain 0 {arity}\n\n".encode() + code)
+        return kseed
+
+    packed_kseed = packed_payload("packed-main", 0)
+    bad_packed_kseed = packed_payload("packed-main-arity1", 1)
+    packed_output = out / "packed-main.elf"
+    runner = out / "x86_64-kx64-runner.kotoba"
+    shutil.copy2(ROOT / "seed/x86_64-kx64-runner.kotoba", runner)
+    packed_refusal = run("packed-main-arity-refusal",
+                         [X, "compile", runner, "--target", "x86_64-linux", "--output", out / "packed-arity1.elf",
+                          "--format", "packed", "--payload", bad_packed_kseed], scope, ok=False)
+    assert packed_refusal.returncode == 1 and b"E7105" in packed_refusal.stderr and not (out / "packed-arity1.elf").exists(), \
+        (packed_refusal.returncode, packed_refusal.stderr[-400:])
+    run("packed-main-compile",
+        [X, "compile", runner, "--target", "x86_64-linux", "--output", packed_output,
+         "--format", "packed", "--payload", packed_kseed], scope)
+    packed_output.chmod(0o755)
+    packed_run = run("packed-main-run", [packed_output],
+                     {"KEXE_STRUCTURED_REPORT": "1", "KEXE_ALLOW": "-", "KEXE_FUEL": "1000000"})
+    assert b":status :ok" in packed_run.stdout and b":result 42" in packed_run.stdout, packed_run.stdout[-300:]
+
     run("runtime-boundary", [sys.executable, ROOT / "scripts/seed/check-runtime-boundary.py",
-                             "--compiler", X, "--output", out / "runtime-boundary"], {})
+                             "--compiler", X, "--output", out / "runtime-boundary",
+                             "--payload", packed_kseed], {})
     runtime_boundary = json.loads((out / "runtime-boundary/runtime-boundary.json").read_text())
 
     # 2. runtime cases

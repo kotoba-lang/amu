@@ -170,20 +170,32 @@
   (if (= k 256) M (xs-clear (mem-set M k 0) (inc k))))
 ;; mode (context word 408): 0 = --format static, 1 = --format kx64-runner,
 ;; 4 = --format launcher (the runtime ends with xs-rt-launch instead of the
-;; standard start; seed/76); 2 is --format packed (seed/80, aarch64). --format host-entry
+;; standard start; seed/76); 2 = --format packed (an embedded KSEED main).
+;; --format host-entry
 ;; (xs-command 6, KOTOBA-174) builds with mode 0 and the host start of seed/76.
-(defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
+(defn- xs-page [M :vector-i64] :vector-i64
+  (loop [g M] (if (or (= (bit-and (xg-pos g) 4095) 0) (not= (vector-at g MM-ERR) 0)) g
+    (recur (xg-byte g 0x90)))))
+(defn- xs-payload [M :vector-i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
+  (let [g (xs-page M) at (xg-pos g)
+        h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h
+          (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
+    (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
+(defn- xs-build-payload [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
               (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xb-scan S 1) (xs-check 1 0) (xb-check-api S 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
-          :else (let [g (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
+          :else (let [g0 (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
                             (xs-entry) (xg-code 1) (xb-emit S) (xr-pool 1))
+                      g (if (= mode 2) (xs-payload g0 V cs cl off) g0)
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xs-elf (xg-fix (xg-set g 3 data) 1)))))))
-(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 4 ":launcher" 5 ":b2" ":static"))
+(defn- xs-build [M :vector-i64 S :string rt :i64 mode :i64] :vector-i64
+  (xs-build-payload M S rt mode (vector-alloc 1) 0 0 0))
+(defn- xs-format-name [mode :i64] :string (case mode 1 ":kx64-runner" 2 ":packed" 4 ":launcher" 5 ":b2" ":static"))
 (defn- xs-write [M :vector-i64 out :string] :i64 (xs-write-profile M out -1))
 (defn- xs-profile-note [profile :i64] :string
   (if (< profile 0) ""
@@ -211,19 +223,37 @@
           (cond (string=? (io-arg (inc base)) "standard-v1") 0
                 (string=? (io-arg (inc base)) "large-vectors-v1") 1 :else -1)
         :else -1))
+(defn- xs-packed [src :string out :string kseed :string profile :i64] :i64
+  (let [V (io-read-bytes kseed) H (out-load-hdr (mem-new) V (out-v-len V) "main") e (vector-at H MM-ERR)]
+    (cond (= e 5002) (drv-fail0 E-NOSYM)
+          (> e 0) (drv-fail0 e)
+          (not= (vector-at H MM-R3) 0)
+            (let [w (io-err "seed-x86_64-linux: E7105 the packed payload's main must take no arguments\n")] 1)
+          :else
+            (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
+                  rt (string-concat (xs-rt-core-profile profile) (xs-rt-start))
+                  s (string-concat guest rt)
+                  m (xs-build-payload (xg-front s) s (string-length guest) 2 V
+                                      (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0))]
+              (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xs-write-profile m out profile))))))
 (defn- xs-profile-prelude [profile :i64] :string
   (string-concat "(def KXRT-VECTORS "
     (string-concat (mem-u2dec (if (= profile 1) 67108864 4194304)) ")\n")))
 (defn- xs-command [mode :i64] :i64
-  (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8) build (if (= mode 6) 0 mode)]
-    (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+  (let [src (io-arg 1) out (io-arg 5) packed (= mode 2) base (if packed 10 8)
+        profile (xs-runtime-profile base) build (if (= mode 6) 0 mode)]
+    (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1)
+              (and packed (not (string=? (io-arg 8) "--payload"))))
             (drv-fail0 E-USAGE)
+          (and packed (= (io-exists (io-arg 9)) 0)) (drv-fail0 E-READ)
           (= (io-exists src) 0) (drv-fail0 E-READ)
+          packed (xs-packed src out (io-arg 9) profile)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
                       rt (string-concat (xs-rt-core-profile profile)
                                         (cond (= mode 4) (xs-rt-launch) (= mode 5) (xs-rt-b2)
                                               (= mode 6) (xs-rt-host-start) :else (xs-rt-start)))
-                      s (string-concat guest rt) m (xs-build (xg-front s) s (string-length guest) build)]
+                      s (string-concat guest rt)
+                      m (xs-build (xg-front s) s (string-length guest) build)]
                   (cond (not= (vector-at m MM-ERR) 0) (xg-report m src out)
                         (= mode 6) (xs-write-named m out profile ":host-entry")
                         :else (xs-write-profile m out profile))))))
