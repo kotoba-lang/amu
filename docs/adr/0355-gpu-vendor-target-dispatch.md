@@ -6496,3 +6496,50 @@ NEW UTC day and its own freeze) and the cross-day tail-
 movement row (not queued) -- NO queued row remains.
 Evidence: docs/evidence/gpu/anv-b3bisect15-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 164-168, JUN-59 -- THE SIXTEENTH CUT
+PRE-REGISTRATION, the s163..s167 carry-forwards): the cut is now
+FROZEN PRE-REGISTRATION as THE CLEAN-BISECTION CUT AT THE FLOOR
+MIDPOINT (345, 1354) n=254,801 -- ACCEPTED DESIGN ONLY, NOT
+MEASURED, NO sixteenth-cut quantity exists. The census (s165,
+knob-search-s164.py run TWICE BYTE-IDENTICAL sha256 49892344...):
+254,801 has 31 in-box knob pairs, smallest (345, 1354), 7 in-box
+same-ratio doubles NONE measured, gcd(254,801, 1,000,003) = 1,
+and ZERO committed content (VIRGIN -- never measured) vs mid
+254,882 (248, 973) with 35 pairs and the full dual-class +
+14th-cut TOLERANCE-UNRESOLVED record (that verdict line "(c)
+TOLERANCE-UNRESOLVED ... FAILS" STANDS as confrontation content);
+s27 census anchor MATCH. The decisions (s166, D1-D5): D1 the
+symmetric-narrowing criterion (both stable-class outcomes narrow
+by bisection at the virgin point; a CAPTURED outcome at mid
+cannot narrow -- lo dual-class), mid NOT re-measured, the 14th
+cut's content confronted FIRST in arm (a) with NO supersession,
+arm (d) tracking the MID-ONLY NARROWING CLAIM (W1 (a) REFUTES it
+by implication -- F <= 254,801 < 254,882 -- else SUSPENDED);
+D2/D3 the deep-pooling CI statistic + R = 6,400 ADOPTED UNCHANGED
+(NOT re-derived; the point's MADs UNMEASURED); D4 the arm table
+c2/fm/c8 = 54 fresh processes (self-check 3+48+3), ONE NEW KNOB
+TRIPLE fm (B=3, WM=345, NDIV=1,354) (the s131 ZERO-NEW-TRIPLES
+precedent does NOT hold -- NAMED; L8 APPLIES); D5 C2/W1/W3 letter
+shapes frozen (W3 re-scoped: virgin point -- cross-binary AND
+cross-point). FREEZE: protocol.txt write-once BEFORE any run log
+of this cut (freeze stamp 2026-11-01T08:05:17Z; 17,002 bytes
+sha256 a2da5d62...), freeze verification twice byte-identical
+(sha256 b34fd9d0..., 25/25 ok: wants). The landing tail: s167
+standing gates (a)-(f) all == pins (scoped GPU gate GREEN
+123/12162/0/0; FULL run-tests.cljk RED AT BASE kotoba.form
+ADR-0362 OUTSIDE this diff -- NO green full suite claimed); s168
+record.txt + record-verify-s168.py twice byte-identical (sha256
+86ea91da..., 43 ok / 0 failed; NAMED: its draft-1 repeated the
+s165 comma-free bracket regex defect family, kept visible, no
+evidence value). BAR NON-INTERFERENCE held s164-s168 (no
+hardware, no builds, no compiles, no GO, no day slot, no ledger
+line). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor). Carry-forward s169: the
+sixteenth cut MEASUREMENT half ONLY through its own session under
+the frozen protocol -- NOT queued (every sixteenth-cut quantity
+UNMEASURED until then); any further counted-day slot (the
+2026-11-01 UTC slot needs its own freeze) and the cross-day
+tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect16prereg-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
