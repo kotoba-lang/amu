@@ -133,6 +133,8 @@
                  (not= (pj-ff M (+ f 1) FF-SYM) (pj-ff M f FF-SYM))))))))
 (defn- mc-lock [digest :string] :string
   (string-concat "KSL1\nentry /source.kotoba\nfile " (string-concat digest " /source.kotoba\n")))
+(defn- mc-packager-profile [profile :string] :string
+  (if (string=? profile "amu-command-fs35") "fs2-cli-stdio-general" profile))
 (defn- mc-log [path :string] :i64
   (let [r (hc-read path)] (if (hc-ok? r) (hc-out (hc-text (mc-read-data r))) 0)))
 (defn- mc-decimal-at [v :vector-i64 start :i64] :i64
@@ -181,7 +183,7 @@
         (if (or (not= (mc-exit extracted) 0) (< offset 0)) (mc-error "EHOST native extraction failed" 70)
           (let [packed (hc-spawn 1 dir "" packager 6
             (string-concat (mc-argv "amu-packager") (string-concat (mc-argv "program.macho")
-            (string-concat (mc-argv "program.raw") (string-concat (mc-argv profile)
+            (string-concat (mc-argv "program.raw") (string-concat (mc-argv (mc-packager-profile profile))
             (string-concat (mc-argv (hc-dec offset)) (mc-argv "/source.kotoba")))))))]
             (if (not= (mc-exit packed) 0) (mc-error "EHOST native packaging failed" 70)
               (mc-sign dir (mc-join dir "program.macho")))))))))
@@ -357,7 +359,7 @@
                     (let [image (mc-join dir "program.macho")
                           packed (hc-spawn 1 dir (mc-join dir "package.log") packager 6
                             (string-concat (mc-argv "amu-packager") (string-concat (mc-argv "program.macho")
-                            (string-concat (mc-argv "program.raw") (string-concat (mc-argv profile)
+                            (string-concat (mc-argv "program.raw") (string-concat (mc-argv (mc-packager-profile profile))
                             (string-concat (mc-argv (hc-dec offset)) (mc-argv "/source.bundle")))))))]
                       (if (not= (mc-exit packed) 0)
                         (let [logged (mc-log-error (mc-join dir "package.log"))]
@@ -475,9 +477,10 @@
   (or (string=? command "measure-runtime") (string=? command "package-ios")
       (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-command-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
 (defn- mc-program-profile? [profile :string] :bool
-  (or (string=? profile "amu-program") (string=? profile "amu-program-fs35")))
+  (or (string=? profile "amu-program") (string=? profile "amu-program-fs35")
+      (string=? profile "amu-command-fs35")))
 (defn- seed-main [] :i64
   (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
         project-check? (and (string=? command "check") (= n 4) (string=? (hc-arg 2) "--source-lock"))
@@ -522,7 +525,7 @@
                      output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
       (and (or project-check? project-compile? project-run?) (mc-path? source) (mc-path? (hc-arg 3))
            (or (not project-compile?) (mc-path? output)))
         (let [info (hc-call 0 [])]

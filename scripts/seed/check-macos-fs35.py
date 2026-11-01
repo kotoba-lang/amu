@@ -198,6 +198,38 @@ def main(out):
     observe("public-cli-fs35-profile-roundtrip", public_explicit,
             ["amu-program", "roundtrip"], "public-cli-fs35", expect=0,
             expected_stdout=b"0\n")
+    # The command profile keeps native CLI semantics: application stdout is
+    # preserved and main's signed result is the process status. This matters
+    # for Itonami's launcher, which consumes ordinary command exit codes.
+    command_project = out / "locked-fs35-command-project"
+    command_project.mkdir(mode=0o700)
+    command_entry = command_project / "fs35-command.kotoba"
+    command_source = (build / "fs35-program.kotoba").read_text()
+    command_source = command_source.replace(
+        "(:capabilities [:fs/app-data :cli/args])",
+        "(:capabilities [:fs/app-data :cli/args :io/write])")
+    command_source = command_source.replace(
+        ":else 99)))",
+        ':else 99)\n    (let [written (typed-cap-call :io/write :string :string "artifact-output\\n")] 7)))')
+    command_entry.write_text(command_source)
+    command_lock = command_project / "project.ksl"
+    command_digest = pin(command_entry)["sha256"]
+    command_lock.write_text(f"KSL2\nentry {command_entry}\nmodule seed.tests.macos-fs35 {command_entry}\n"
+                           f"file {command_digest} {command_entry}\n")
+    command_image = command_project / "command.macho"
+    command_build = subprocess.run(
+        [str(cli), "compile", str(command_entry), "--source-lock", str(command_lock),
+         "--runtime-profile", "amu-command-fs35", "-o", str(command_image)],
+        cwd=command_project, capture_output=True, timeout=180)
+    assert command_build.returncode == 0, command_build.stderr[-800:]
+    mac.verify_macho(command_image)
+    observe("public-cli-command-fs35-positive", command_image,
+            ["amu-program", "roundtrip"], "public-cli-command-positive", expect=7,
+            expected_stdout=b"artifact-output\n")
+    command_refusal = observe("public-cli-command-fs35-refusal", command_image,
+                              ["amu-program", "trap-read-missing"],
+                              "public-cli-command-refusal", trap=True,
+                              expected_stdout=b"")
     default_scope = observe("public-cli-default-no-wire35", public_default,
                             ["amu-program", "roundtrip"], "public-cli-default", trap=True)
     assert not (default_scope / "d" / "a").exists(), "default public CLI profile performed an ungranted write"
@@ -205,6 +237,9 @@ def main(out):
     report["publicCliSourceLock"] = pin(lock)
     report["publicCliFs35Artifact"] = pin(public_explicit)
     report["publicCliDefaultArtifact"] = pin(public_default)
+    report["publicCliCommandFs35Artifact"] = pin(command_image)
+    report["publicCliCommandFs35SourceLock"] = pin(command_lock)
+    report["publicCliCommandRefusal"] = command_refusal.name
     report["unknownRuntimeProfileRefused"] = refused_build.returncode == 2
 
     report["status"] = "PASS_MACOS_FS35"
