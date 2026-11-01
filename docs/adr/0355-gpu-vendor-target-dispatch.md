@@ -6438,3 +6438,61 @@ a NEW UTC day and its own freeze) and the cross-day tail-
 movement row (not queued) -- NO queued row remains.
 Evidence: docs/evidence/gpu/anv-b3bisect15prereg-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 157-163, JUN-59 -- THE FIFTEENTH CUT, THE
+DEEP-POOLING CI CUT AT BIS, MEASURED AND ANALYZED; the
+s156..s162 carry-forwards): the pre-registered cut is now
+MEASURED (s157-s160: 54 fresh processes c2/bis/c8 k=3/48/3 on
+aiueos-6600hs under the frozen protocol, freeze stamp
+2026-11-01T01:27:58Z; GO 2026-11-01T03:15:22Z; rc=0 54/54,
+115,200 SAMPLE lines = 18 ok cells x R=6,400 every run,
+VERIFY mismatch total 0; 108 logs byte-identical host==local
+97bd3d33...; FIRST-MEASURED BINARY PINS -- the ROUNDS6400
+variant c2704aaa..., NEW binaries, no committed pins to match:
+c2 b791b71a... bis 52fb68b6... c8 2f25d678...) AND ANALYZED
+(s161 wrote analysis-s158.py at a runtime-budget cutoff,
+committed UNRUN with named defects; s162 repaired the named
+four + two new run-time defects and ran it TWICE BYTE-
+IDENTICAL -> publication-s158.txt 56,588 bytes sha256
+45538ad7...). THE FROZEN LETTERS: C1 (a) True (c2 31 FLOOR in
+band 31..32; c8 32,952 vs 32,915 +0.11%); C2 (b)
+STABLE-CAPTURED at bis (3,316,1239) n=255,045 -- ALL 16 block
+classes AND the pooled-48 arm CAPTURED under THE PRE-
+REGISTERED DEEP-POOLING CI CLASS STATISTIC (R = 6,400; block
+binding min(m-h) 1005.8..1008.8, pooled-48 binding 1009.69),
+the 16-block class-stability requirement PASSES at bis under
+the deep-pooling statistic; W1 (a) THE BRACKET NARROWS TO
+(254,557, 255,045] ("THE B=3 CLASS FLIP LIES AT OR BELOW
+n=255,045"; upper endpoint 255,208 -> 255,045, lower endpoint
+carried on lo's content) and the MID-ONLY NARROWING CLAIM
+stays SUSPENDED (named, not claimed), NO claim at hi/lo, no
+boundary between grid points (L5); the 14th cut's
+TOLERANCE-UNRESOLVED mid content stands (arm (a)), NO letter
+of this cut touched lo or mid; W2 (descriptive) crossings
+48/48 at >= 1,000, in-band 48/48; W3 (descriptive) the NEW
+first-measured binary confronts the committed bis windows at
+440604ef... (block-level class mix disagrees with s139's;
+NAMED CROSS-BINARY HAZARD, cause UNMEASURED, L2 binds); X1
+(descriptive) bis host_ns spread 63.0% -- named, cause
+UNMEASURED (L3). The landing tail (s163): standing gates
+(a)-(f) run live, all == pins ((a) 2649/0 17,925 bytes; (b)
+scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88
+pins, scratch runner deleted; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff) .err 879
+== pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD).
+BAR NON-INTERFERENCE held (bisect content: no ledger append,
+no day-slot, no bar/Rule-4/:measured? movement); RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay as ADR-0358
+left them. Carry-forward s164: a sixteenth cut ONLY through a
+NEW pre-registered cut session (its own freeze; the
+confrontation spec's four arms apply, this cut's content
+confronted first) -- NOT queued; any further counted-day slot
+(the 2026-10-31 slot is consumed at s117; the next slot is a
+NEW UTC day and its own freeze) and the cross-day tail-
+movement row (not queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect15-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
