@@ -129,10 +129,10 @@ def main():
     assert b'KEXE_CAP {:wire 38 :refused :not-granted}' in missing_cli.stderr
     outside = out / 'outside'
     outside.mkdir()
-    refused = execute('outside-scope', outside, '35,38')
+    refused = execute('outside-scope', outside, '7,35,38')
     assert re.search(rb':result 91\b', refused.stdout) and not list(outside.iterdir())
     os.symlink(outside, base / 'escape', target_is_directory=True)
-    refused = execute('symlink-escape', base / 'escape', '35,38')
+    refused = execute('symlink-escape', base / 'escape', '7,35,38')
     assert re.search(rb':result 91\b', refused.stdout) and not list(outside.iterdir())
     for label, old, new, diagnostic in [
         ('missing-declaration', b'(:capabilities [:fs/app-data])', b'', b'E2176'),
