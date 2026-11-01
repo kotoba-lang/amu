@@ -94,11 +94,11 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     # The x86 packed ABI consumes a KSEED container. Produce the payload code
     # with Amu's native x86 KX64 route, then add only the KSEED export header in
     # this orchestration script; no host compiler or code generator is used.
+    # KX64's standalone `main` must be nullary, so exercise packed arity
+    # refusal by varying the KSEED descriptor rather than the source function.
     def packed_payload(name, arity):
         src = out / f"{name}.kotoba"
-        params = "[]" if arity == 0 else "[x :i64]"
-        body = "42" if arity == 0 else "x"
-        src.write_text(f"(ns {name} (:export [main]))\n(defn main {params} :i64 {body})\n")
+        src.write_text(f"(ns {name} (:export [main]))\n(defn main [] :i64 42)\n")
         kx64 = out / f"{name}.kx64"
         run(f"{name}-kx64", [X, "compile", src, "--target", "x86_64-linux",
                               "--output", kx64, "--format", "kx64-v1"], scope)
