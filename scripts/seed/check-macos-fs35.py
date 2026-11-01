@@ -230,6 +230,26 @@ def main(out):
                               ["amu-program", "trap-read-missing"],
                               "public-cli-command-refusal", trap=True,
                               expected_stdout=b"")
+    # A command profile without FS35 is available for Kotoba programs whose
+    # declared capabilities are limited to CLI arguments and stdio.
+    plain_project = out / "locked-command-project"
+    plain_project.mkdir(mode=0o700)
+    plain_entry = plain_project / "command.kotoba"
+    plain_entry.write_text('(ns command-gate (:export [main]) (:capabilities [:cli/args :io/write]))\n'
+                           '(defn main [] :i64 (let [written (typed-cap-call :io/write :string :string "command-output\\n")] 7))\n')
+    plain_lock = plain_project / "project.ksl"
+    plain_digest = pin(plain_entry)["sha256"]
+    plain_lock.write_text(f"KSL2\nentry {plain_entry}\nmodule command-gate {plain_entry}\n"
+                          f"file {plain_digest} {plain_entry}\n")
+    plain_image = plain_project / "command.macho"
+    plain_build = subprocess.run(
+        [str(cli), "compile", str(plain_entry), "--source-lock", str(plain_lock),
+         "--runtime-profile", "amu-command", "-o", str(plain_image)],
+        cwd=plain_project, capture_output=True, timeout=180)
+    assert plain_build.returncode == 0, plain_build.stderr[-800:]
+    mac.verify_macho(plain_image)
+    observe("public-cli-command-no-fs35", plain_image, [], "public-cli-command-no-fs35",
+            expect=7, expected_stdout=b"command-output\n")
     default_scope = observe("public-cli-default-no-wire35", public_default,
                             ["amu-program", "roundtrip"], "public-cli-default", trap=True)
     assert not (default_scope / "d" / "a").exists(), "default public CLI profile performed an ungranted write"
@@ -240,6 +260,7 @@ def main(out):
     report["publicCliCommandFs35Artifact"] = pin(command_image)
     report["publicCliCommandFs35SourceLock"] = pin(command_lock)
     report["publicCliCommandRefusal"] = command_refusal.name
+    report["publicCliCommandNoFs35Artifact"] = pin(plain_image)
     report["unknownRuntimeProfileRefused"] = refused_build.returncode == 2
 
     report["status"] = "PASS_MACOS_FS35"
