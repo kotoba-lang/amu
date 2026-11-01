@@ -143,16 +143,16 @@ def main():
     os.symlink(outside, base / 'escape', target_is_directory=True)
     refused = execute('symlink-escape', base / 'escape', '7,35,38')
     assert re.search(rb':result 0\b', refused.stdout) and not list(outside.iterdir())
-    execute('declared-stdout', base, '3,38', extra_args=('stdout',),
+    execute('declared-stdout', base, '37,38', extra_args=('stdout',),
             expected_stdout=b'kotoba-stdout-marker')
-    execute('declared-stderr', base, '4,38', extra_args=('stderr',),
+    execute('declared-stderr', base, '39,38', extra_args=('stderr',),
             expected_stderr=b'kotoba-stderr-marker')
-    missing_stdout = execute('ungranted-stdout', base, '4,38', 120,
+    missing_stdout = execute('ungranted-stdout', base, '39,38', 120,
                              extra_args=('stdout',))
-    assert b'KEXE_CAP {:wire 3 :refused :not-granted}' in missing_stdout.stderr
-    missing_stderr = execute('ungranted-stderr', base, '3,38', 120,
+    assert b'KEXE_CAP {:wire 37 :refused :not-granted}' in missing_stdout.stderr
+    missing_stderr = execute('ungranted-stderr', base, '37,38', 120,
                              extra_args=('stderr',))
-    assert b'KEXE_CAP {:wire 4 :refused :not-granted}' in missing_stderr.stderr
+    assert b'KEXE_CAP {:wire 39 :refused :not-granted}' in missing_stderr.stderr
     for label, filename, old, new, diagnostic in [
         ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'', b'E2176'),
         ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'(:capabilities [])', b'E2176'),
@@ -164,7 +164,7 @@ def main():
     files['entry.kotoba'] = files['entry.kotoba'].replace(
         b'(:capabilities [:clock/now :cli/args])', b'(:capabilities [:cli/args])')
     build('missing-clock-declaration', files, b'E2176')
-    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT3_STDERR4_CLOCK7_FS35_CLI38',
+    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT37_STDERR39_CLOCK7_FS35_CLI38',
                   compilerSHA256=sha(compiler.read_bytes()), runnerSHA256=sha(runner.read_bytes()),
                   sources={name: sha(data) for name, data in original.items()}, derivation=derivation,
                   observations=observations, publicProductAdopted=False)

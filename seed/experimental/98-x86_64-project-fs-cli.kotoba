@@ -2,7 +2,7 @@
 ;; checker, typed interfaces and exact source-lock reader remain authoritative.
 ;; This emits KX64V1 for the existing C-free native runner, not an AIUEOS image.
 ;; Every declaration is admitted. This profile supports explicitly declared
-;; stdout (3), stderr (4), wall clock (7), native fs/app-data (35), and
+;; stdout (37), stderr (39), wall clock (7), native fs/app-data (35), and
 ;; cli/args (38) calls; the runner must separately grant each wire and its
 ;; filesystem resource root. Other wires and unsupported value operations
 ;; refuse. A zero-argument i64 main is the only payload entry.
@@ -50,7 +50,7 @@
                     (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))
         entry (xg-get admitted 1)]
     (cond (not (pj-ok admitted)) admitted
-          (not= (bit-and (vector-at admitted MM-CAPS) (bit-not 309237645464)) 0)
+          (not= (bit-and (vector-at admitted MM-CAPS) (bit-not 996432412800)) 0)
             (xg-err admitted 7101 OP-CAP)
           (and (not= (vector-at admitted MM-CAPS) 0) (= (pj-mf L module pj-mf-caps) 0))
             (xg-err admitted E-CAP-UNDECLARED OP-CAP)

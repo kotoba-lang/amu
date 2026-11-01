@@ -8,7 +8,7 @@ typed capability-call emitter and host grant enforcement.
 The complete replacement module
 `seed/experimental/98-x86_64-project-fs-cli.kotoba` proposes extending the
 production `seed/98-x86_64-project.kotoba` to admit explicitly declared wires
-3 (`:io/write`), 4 (`:io/write-error`), 7 (`:clock/now`), 35
+37 (`:io/write`), 39 (`:io/write-error`), 7 (`:clock/now`), 35
 (`:fs/app-data`), and 38 (`:cli/args`). A module that calls them must declare
 `:capabilities`; a missing declaration or a declared set that excludes a used
 wire refuses E2176. All other wires remain E7101, including unused functions
@@ -59,8 +59,8 @@ also continues to use the existing compiler.
 ## 2026-11-02 Itonami clock + filesystem follow-up
 
 The Amu candidate source and focused fixture additionally admit declared
-wall-clock wire 7 for Itonami's cron-store route and output wires 3/4 for
-Kotoba CLI responses. The allowlist is limited to 3, 4, 7, 35, and 38; source
+wall-clock wire 7 for Itonami's cron-store route and output wires 37/39 for
+Kotoba CLI responses. The allowlist is limited to 7, 35, 37, 38, and 39; source
 still must declare each capability, and the runtime separately requires
 `KEXE_ALLOW`. Positive controls check returned wall time and exact stdout /
 stderr markers. No-grant controls verify named refusal for output and clock
