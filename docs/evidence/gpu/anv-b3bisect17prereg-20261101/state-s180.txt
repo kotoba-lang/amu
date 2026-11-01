@@ -1,0 +1,76 @@
+amu-gpu s180 (2026-11-02 JST, cron) -- SEVENTEENTH CUT PRE-
+REGISTRATION: the s179 design-verify slice -- STARTED, NOT
+FINISHED (runtime-budget cutoff after the canonical read-back +
+the design-verify parse-target pinning, BEFORE the
+design-verify-s179.py write and before any verify run; the
+s119/s133/s141/s143/s148/s150/s151/s152/s157/s164/s169/s172/
+s176/s177/s178/s179 interrupted-tick precedent).
+
+FINDING (verified by tool output, this session): the s179
+design-verify's quote targets are PINNED to committed byte
+locations this tick, fail-closed ready for the s181 write --
+every quote the s179 draft asserts was tool-read at its exact
+committed line:
+  publication-s169.txt (56,352 bytes, sha256 c9aab750... pin):
+    L608 "class FLOOR (committed floor band 31..32 at B=2):
+    False"; L611 "VERDICT: branch (b) replication discrepancy
+    (W1 (d) INVALID"; L617 "the point is VIRGIN -- this cut's
+    content is the FIRST content at it"; L645/L743 "NOTHING
+    MOVES"; L742 "5. VERDICT SUMMARY: C1 (b); C2 (c) at fm
+    (254,801); W1 (d)."; L743 "CUT VERDICT: INVALID; NOTHING
+    MOVES."; the W3 deviation pair L707 "binding min(m-h)
+    1,006.8..1,008.8 / pooled 1,009.7" vs L710 "prose lower
+    bound 1,006.8 matches NO committed byte (the parsed bytes
+    govern)".
+  publication-s158.txt: bis block binding min(m-h)=1005.8172
+    (L287) .. 1008.7909 (L407/L467), pooled 1009.6912 (L587);
+    the 5 dual-class rows L712-716 (1156 I/M s121 / 1143 C
+    s125 / 1129 I/M s125 / 1133 I/M s132 / 1148 C s136) + L717
+    lo pooled-12 1141 I/M; mid pooled-48 1140 C + L718-722 the
+    cabff942... cross-window disagreement (s132 1133 I/M vs
+    s136 1148 C vs s139 1140 C vs s147 1148) + L705 s139 16
+    block medians pooled-48 1148 CAPTURED; bracket "(254,557,
+    255,045]" (L668/L672/L743/L746); the 15th cut's bis pin
+    52fb68b6... (L135).
+  knob-search-s177-run1.txt (== run2.txt, sha256 b3fdb1f2...,
+    6,823 bytes): L24 the 10x CAPTURED + 3x I/M + 3x IN-BAND-
+    UNDECIDED re-count; L25 fm binding 997.0538..1006.7909 (16
+    values) pooled-48 1002.7437; L26 block m 1145..1134
+    pooled-48 1138; L34 the s147 16x IN-BAND-UNDECIDED +
+    TOLERANCE-UNRESOLVED parse; L40 the 16/16 in-band 981..1015
+    computation; L43 (254557+255045)//2 = 254801; L44/L48 the
+    q=1 (313, 1229) 8-double and q=3 (246, 965) virgin census
+    rows; L10 "(254557, 255045] n-units, width 488".
+  confrontation-spec.txt: L100-101 "More blocks of the same
+    mixed shape do [not confront anything; they re-read it]";
+    L123 "A statistic chosen after the runs are read is never a
+    confrontation."; L59/L116 wander band block-unit
+    981..1,015 / per-run 974..1,023; L128-129 "The MID-ONLY
+    NARROWING CLAIM stays SUSPENDED until a claim passes (a)-(c)
+    at mid and confronts (d)".
+  state-s176.txt: L34-36 the c2/c8 binaries reproduced the
+    s158 digests BYTE-IDENTICALLY, "so the discrepancy is NOT
+    binary-driven".
+NAMED, NOT HIDDEN: design-verify-s179.py is NOT written and
+NOT run this tick -- no run capture, no byte-identity pair
+exists; every one of the above is a session tool-read location
+pin, NOT a fail-closed verification. Three-state: unchanged --
+the 17th-cut design is ACCEPTED-DESIGN-IN-DRAFT ONLY (NOT
+frozen, NOT implemented, NOT a measurement); every 17th-cut
+quantity UNMEASURED. RULE 4 unchanged: NOTHING MOVES; bracket
+stays EXACTLY (254,557, 255,045]; MID-ONLY NARROWING CLAIM
+SUSPENDED; NO vendor optimization exists for Intel (or any
+vendor). BAR non-interference held: no hardware, no builds, no
+ledger line, no day slot. Diff touches NO committed .cljk
+namespace (this .txt only). Local commit only -- NOT pushed
+(slice unfinished). Linear 未記録.
+
+NOT DONE (s181 carries exactly this list): the s179 design-
+verify (design-verify-s179.py, fail-closed quote + arithmetic
+re-derivation vs the committed bytes pinned above) run TWICE
+byte-identical, then protocol.txt FROZEN + freeze-record at its
+own slice; standing, not queued: any further counted-day slot
+(each needs its own freeze) and the cross-day tail-movement
+row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)
