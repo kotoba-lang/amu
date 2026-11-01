@@ -1,4 +1,9 @@
-// wasm32-browser-static/v1 Worker host (JUN-353). Static and dependency-free:
+// wasm32-browser-static/v1 Worker host (JUN-353), and js-browser-static/v1 (ADR 0397): a message
+// carrying js (the ES module text `amu compile SRC --target js-browser` produced) instead of bytes or
+// module is imported from a Blob URL and run through instantiate(host) -> {memory, start} with the
+// same five host functions; a JS module has no JSPI, so its cap is always the refusing one. Its
+// memory.buffer is a resizable ArrayBuffer, which TextDecoder refuses to read in Chrome, so the host
+// decodes copies of guest bytes (.slice()) on both targets. Static and dependency-free:
 // no fetch, no network, no imports. It instantiates one module produced by
 // `amu compile SRC --target wasm32-browser` (seed/81 + seed/82: the guest and
 // the Kotoba runtime in one module), calls its export start(fuel) and returns
@@ -95,7 +100,7 @@ function kotobaWasm32BrowserStaticHost() {
     const local = [35, 37, 38, 39];
     const allow = new Set((msg.allow || []).map(Number).filter((w) => local.includes(w)));
     const bound = new Set((msg.bind || []).map(Number).filter((w) => Number.isInteger(w) && w >= 0 && w < 64 && !local.includes(w)));
-    const jspi = bound.size > 0 && typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function";
+    const jspi = msg.js === undefined && bound.size > 0 && typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function";
     const capLog = [];
     let capAnswer = undefined;
     const stdout = [], stderr = [];
@@ -120,7 +125,7 @@ function kotobaWasm32BrowserStaticHost() {
           const w = Number(wire);
           let request;
           try {
-            request = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, Number(ptr), Number(len)));
+            request = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, Number(ptr), Number(len)).slice());
           } catch (e) { capLog.push({ wire: w, outcome: "refused", error: "request is not UTF-8" }); return -1n; }
           const nl = request.indexOf("\n");
           const line = nl < 0 ? request : request.slice(0, nl);
@@ -152,7 +157,7 @@ function kotobaWasm32BrowserStaticHost() {
           if (kind !== 1n) return -1n;
           let path;
           try {
-            path = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, Number(ptr), Number(len)));
+            path = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(memory.buffer, Number(ptr), Number(len)).slice());
           } catch (e) { return -1n; }
           const p = normal(path);
           return p === null ? -1n : answer(fs.get(p), dst, cap);
@@ -161,6 +166,15 @@ function kotobaWasm32BrowserStaticHost() {
     };
     let exit = null, wasmTrap = null;
     try {
+      if (msg.js !== undefined) {
+        const url = URL.createObjectURL(new Blob([msg.js], { type: "text/javascript" }));
+        let instance;
+        try { instance = (await import(url)).instantiate(imports["kotoba:host"]); }
+        finally { URL.revokeObjectURL(url); }
+        memory = instance.memory;
+        instance.start(BigInt(fuel));
+        throw new Error("start returned without exit");
+      }
       const instance = msg.module
         ? await WebAssembly.instantiate(msg.module, imports)
         : (await WebAssembly.instantiate(msg.bytes, imports)).instance;

@@ -22,7 +22,8 @@ added FADD and IADD3 with negated sources, FSETP (register and immediate), FMNMX
 immediate), MUFU (COS, SIN, EX2, LG2, RCP, RSQ, SQRT), I2F and F2I (32-bit), LOP3 (register and immediate), SHF
 (register and immediate shift, every type), IMAD.WIDE with a register multiplier and SGXT. Not covered yet: abs
 modifiers, constant-bank operands other than MOV's, uniform operands, IADD3.X, PLOP3 and the other SETP forms,
-SHFL, PRMT, local memory, the other BAR forms (ARV, RED, a barrier number other than 0). The encoder's callers pass the control bits;
+SHFL, PRMT, local memory, the other BAR forms (ARV, RED, a barrier number other than 0). Part 2 of JUN-739 added
+PLOP3 (the warp form, one destination). The encoder's callers pass the control bits;
 `sm70_sched.kotoba` chooses them for the lowering.
 
 BAR.SYNC follows NAK, which writes the opcode 0xb1d and nothing else. The recalled CUDA listing word for
@@ -152,15 +153,15 @@ tick 55). Every kernel is a KIR v2 module of `tools/gpu_kernels_v2.kotoba`:
 | norms | `rmsnorm` | `(kir2-nex-op 1)` | InverseSqrt, FDiv, ConvertUToF, Select | **lowered, gated** |
 | q, k, v, o, gate, up, down | `kdot_f32_r8` (wide) and `kdot_f32_r1` (narrow), Q8_0 arm | `(kir2-kdot-f32-r8 8)`, `(kir2-kdot-f32-r1)` | every tensor type's arm: vectors, OpDot, BitFieldSExtract, UnpackHalf2x16, Function arrays | not yet |
 | q, k, v bias | `add_bias` | `(kir2-nex-op 11)` | UDiv by a register, ISub | **lowered, gated** |
-| rope | `rope_neox` | `(kir2-nex-op 15)` | Pow, Sin, Cos, a select of booleans, a branch inside an if (continue) | not yet |
+| rope | `rope_neox` | `(kir2-nex-op 15)` | Pow, Sin, Cos, a select of booleans, a branch inside an if (continue) | **lowered, gated** |
 | KV cache write | `copy_at` | `(kir2-nex-op 8)` | FUnordNotEqual (the dynamic position) | **lowered, gated** |
-| attention: score, softmax, weighted sum | `attn_decode` | `(kir2-nex-op 16)` | Exp, FMax, FOrdLessThan, FNegate, seven barriers, five loops | not yet |
+| attention: score, softmax, weighted sum | `attn_decode` | `(kir2-nex-op 16)` | Exp, FMax, FOrdLessThan, FNegate, seven barriers, five loops, a loop inside an if, an if with an else, WorkgroupId.y | **lowered, gated** |
 | residual and norm | `add_rmsnorm` | `(kir2-nex-op 13)` | as rmsnorm | **lowered, gated** |
 | SwiGLU | `silu_mul` | `(kir2-nex-op 4)` | Exp, FNegate, FDiv | **lowered, gated** |
 | residual | `add` | `(kir2-nex-op 10)` | none | **lowered, gated** |
 | final norm | `rmsnorm` | `(kir2-nex-op 1)` | as above | **lowered, gated** |
 | lm head | `kdot_f32_r1` | `(kir2-kdot-f32-r1)` | as the matvecs | not yet |
-| argmax | `argmax_partial`, `argmax_final` | `(kir2-nex-op 18)`, `(kir2-nex-op 19)` | LogicalAnd / LogicalOr (PLOP3), Bitcast | not yet |
+| argmax | `argmax_partial`, `argmax_final` | `(kir2-nex-op 18)`, `(kir2-nex-op 19)` | LogicalAnd / LogicalOr (PLOP3), Bitcast, nested ifs, UMin | **lowered, gated** |
 | position | `pos_incr` | `(kir2-nex-op 14)` | none | **lowered, gated** |
 
 The fused decode forms of the generator (`attn_copy_dense`, the h2 / int8 kdots) are speed variants of the same
@@ -208,6 +209,35 @@ swapped), of the scheduler (MUFU as fixed latency, SEL not waiting for its predi
 interference, none between a variable-latency result and its sources, a guarded write ending a value, no back edge
 in liveness, no predicate interference). `check-sm70-encode.py` checks the thirteen new emitters (36 words and 13
 refusals) bit for bit against its NAK transcription, with thirteen more built mutants.
+
+**Part 2 (rope_neox, attn_decode, argmax_partial, argmax_final).** Control flow beyond leaf ifs: an if whose
+body holds a loop, a barrier or another if is *branched*: `BSSY Bk, merge`, `@!c BRA else-or-merge`, the then block,
+`BRA merge` when there is an else block, and `BSYNC Bk` at the merge label, as for a loop; a leaf if stays
+predicated, its else block under `!c`, and an OpBranch inside it (rope's continue) is a BRA under the same guard. So
+a predicate is never read where it was not written. LogicalAnd / Or / Not and a select of booleans are PLOP3;
+WorkgroupId and LocalInvocationId take their y and z components (S2R CTAID.Y and so on).
+
+When all six scoreboards are in use, the scheduler now waits on the one taken earliest and reuses it (NAK does
+the same) instead of refusing; rope and attention need more variable-latency results in flight than six.
+
+The gates: argmax (both stages) exact, the value and the smallest index among equal maxima, with ties placed
+across workgroups and lanes, and the dynamic token write of argmax_final (on and off by its position test); rope
+relative to the norm of the rotated pair (a rotation keeps it; an element alone can come out near zero), for
+Qwen's NeoX pairs at positions 0 and 37 with base 1e6, a tail past the rotated dimensions, and the NORM pairs with
+frequency divisors; attention relative to the sum over positions of p |v| (the weighted sum can cancel), at head
+dimension 64 with 14-to-2 style grouped heads (4 query heads on 2 KV heads), T = 1, 7 (dynamic), 200, and the
+output gate. argmax uses two shared arrays, so its interpreter window is 2048 bytes.
+
+Part 2's negative controls, each detected: in the emitted words, argmax's tie OR made an AND and attention's
+skip branch taken on the wrong side; built mutants of the lowering (LogicalOr as AND, a select of booleans with its
+arms swapped, every if predicated, the branched if's skip not inverted, the else guard not inverted, the continue
+branch unguarded, WorkgroupId.y read as x) and of the scheduler (a scoreboard reused without the wait). That last
+one does not show in the kernels, whose reused scoreboard always guards a late source read long finished, so a
+scheduler-only case (`sbfull`: seven loads in flight) expects the seventh load to wait on and reuse the first's
+scoreboard. The whole check takes about 11 minutes on the Mac.
+
+bin/amu refuses a program argument longer than about 4 KiB (exit 70, no message), so the lowering unit now takes a
+module's words in pieces of at most 3900 bytes.
 
 ## Reference
 
