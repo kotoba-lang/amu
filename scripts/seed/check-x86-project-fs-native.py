@@ -79,7 +79,7 @@ def main():
         baseline = dict(sha256=sha(compiler.read_bytes()), bytes=compiler.stat().st_size)
         paths = [line for line in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines()
                  if line and not line.startswith('#')]
-        assert len(paths) == 59 and 'seed/98-x86_64-project.kotoba' in paths
+        assert len(paths) == 60 and 'seed/98-x86_64-project.kotoba' in paths
         replacement = 'seed/experimental/98-x86_64-project-fs-cli.kotoba'
         selected = [(name, replacement if name == 'seed/98-x86_64-project.kotoba' else name) for name in paths]
         full = out / 'full-candidate.kotoba'
