@@ -228,8 +228,8 @@ S147_REC_IM = sum(1 for r in S147_MID_BLOCKS if r[4] == "INTERMEDIATE/MIXED")
 S147_TOL_ALL_IBU = (all(r[5] == "IN-BAND-UNDECIDED" for r in S147_MID_BLOCKS)
                     and S147_MID_POOLED[5] == "IN-BAND-UNDECIDED")
 S147_TOL_VERDICT = parse1(
-    pub147, r"\(c\) TOLERANCE-UNRESOLVED: any in-band minimum or mixed classes "
-            r"-- FAILS; L9 binds at mid at 16 blocks under the tolerance rule too\.",
+    pub147, r"(\(c\) TOLERANCE-UNRESOLVED: any in-band minimum or mixed classes "
+            r"-- FAILS; L9 binds at mid at 16 blocks under the tolerance rule too\.)",
     "pub147 tolerance verdict")
 
 # the W2 row-table dual-class content at the claim points (protocol arm
@@ -301,9 +301,10 @@ m = re.search(r"VERDICT SUMMARY: C1 \((\w)\); C2 \((\w)\) at bis \(255,045\); "
               r"W1 \((\w)\)\.", flat(pub158))
 assert m is not None, "WANT SOURCE NOT PARSED: pub158 verdict summary"
 S158_C1, S158_C2, S158_W1 = m.group(1), m.group(2), m.group(3)
-m = re.search(r"Bracket state: NARROWED -- \((\d+), (\d+)\]", flat(pub158))
+m = re.search(r"Bracket state: NARROWED -- \(([\d,]+), ([\d,]+)\]", flat(pub158))
 assert m is not None, "WANT SOURCE NOT PARSED: pub158 bracket state"
-S158_BRACKET = (int(m.group(1)), int(m.group(2)))
+S158_BRACKET = (int(m.group(1).replace(",", "")),
+                int(m.group(2).replace(",", "")))
 assert S158_BRACKET == KS_BRACKET, (
     f"bracket parse disagreement pub158 {S158_BRACKET} vs ks164 {KS_BRACKET}")
 assert KS_MIDPOINT == (BRACKET_LO, BRACKET_HI, FM_N), (
