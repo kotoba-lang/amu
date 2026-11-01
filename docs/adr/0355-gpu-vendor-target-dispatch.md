@@ -6649,3 +6649,57 @@ half (its own pre-registered session), any further counted-day
 slot (its own freeze) and the cross-day tail-movement row.
 Evidence: docs/evidence/gpu/anv-b3bisect17prereg-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 185-189, landing s190, JUN-59 -- THE
+SEVENTEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the
+MEASUREMENT half at s185-s188 on aiueos-6600hs under the frozen
+anv-b3bisect17prereg-20261101/protocol.txt, the ANALYSIS half at
+s189, the landing gates + record at s190): THE QUARTER-POINT CUT
+AT THE VIRGIN POINT (313, 1,229) n=254,679 MEASURED -- CUT
+VERDICT: NOTHING MOVES. Measurement (s185-s188): 54 fresh
+processes (c2/q1/c8 = 3/48/3) in frozen order, ALL 54 runs clean
+(samples 115,200 = 18 pipeline-ok cells x frozen R = 6,400 every
+run, VERIFY mismatch total 0); GO 2026-11-01T17:25:48Z; 3/3
+builds; FIRST-MEASURED binary pins q1 f22502bd... (NEW, the one
+new knob triple of this cut, L8) with c2/c8 reproducing the s169
+digests byte-identically (capture observation); 108/108 run logs
+host==local byte-identical at the canonical raw aggregate
+acad342c... (construction pinned THREE independent ways before
+use), committed under the gzip -n form with the 54 raw digests
+recorded; pull-verify-s185.py twice byte-identical at s188 and
+re-run byte-identical at s190. Analysis (s189): analysis-s185.py
+(sha256 d2e856b4...) run TWICE BYTE-IDENTICAL ->
+publication-s185.txt (59,777 bytes sha256 c62c01e1...). FROZEN
+LETTERS: C1 (a) -- c2 pooled median m 31 FLOOR in the committed
+floor band 31..32 (True), c8 32,775 within +/-5% of committed
+32,915 (True, -0.43%); D2 SUPERSESSION: this cut's C1 (a)
+SUPERSEDES the 16th cut's C1 (b) AS THE CURRENT CONTROL STATE
+(the 16th's (b) remains committed history; the discrepancy cause
+UNMEASURED). C2 (c) CLASS-UNRESOLVED at q1 (313, 1,229)
+n=254,679 (VIRGIN point) under the pre-registered deep-pooling CI
+class statistic (R = 6,400): 12x CAPTURED + 4x IN-BAND-UNDECIDED
+blocks, pooled-48 CAPTURED (arm differs); block binding min(m-h)
+999.0012..1002.9224, pooled 1,001.7437; L9 binds at n=254,679
+(D3 (ii)). W1 (c) -> NOTHING MOVES -- the committed bracket stays
+EXACTLY (254,557, 255,045]; the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed). W2 (descriptive) 44/48 runs at
+per-run 18-cell min >= 1,000, 48/48 in 981..1,015; W3 names the
+cross-binary hazard (NEW first-measured binaries; cause
+UNMEASURED) and L8 (8 in-box same-ratio doubles, NONE measured);
+X1 (descriptive) q1 host_ns spread 0.7% of min (k=48). Landing
+(s190): standing gates (a)-(f) all == the s88/s117 pins (scoped
+GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk RED AT
+BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green full
+suite claimed); record.txt + this note. BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay exactly as
+ADR-0358 left them -- the seventeenth-cut letters are bisect
+machinery measurements on ONE host, NOT workgroup-default
+measurements. Carry-forward s191: standing, not queued: any
+further counted-day slot (its own freeze), the cross-day
+tail-movement row, and any eighteenth cut ONLY through a NEW
+pre-registered cut session (NOT queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect17-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
