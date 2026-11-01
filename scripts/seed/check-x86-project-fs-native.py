@@ -161,10 +161,17 @@ def main():
     for label, filename, old, new, diagnostic in [
         ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error :entropy/draw])', b'', b'E2176'),
         ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error :entropy/draw])', b'(:capabilities [])', b'E2176'),
-        ('unsupported-wire', 'entry.kotoba', b':clock/now', b':llm/generate', b'E7101')]:
+        ]:
         files = dict(original)
         files[filename] = files[filename].replace(old, new)
         build(label, files, diagnostic)
+    files = dict(original)
+    files['entry.kotoba'] = files['entry.kotoba'].replace(
+        b'[:clock/now :cli/args :entropy/draw]',
+        b'[:clock/now :cli/args :entropy/draw :process/spawn]').replace(
+        b'(typed-cap-call :clock/now :string :string "wall")',
+        b'(typed-cap-call :process/spawn :string :string "wall")')
+    build('unsupported-wire', files, b'E7101')
     files = dict(original)
     files['entry.kotoba'] = files['entry.kotoba'].replace(
         b'(:capabilities [:clock/now :cli/args :entropy/draw])',
