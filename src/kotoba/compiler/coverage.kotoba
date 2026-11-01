@@ -279,21 +279,15 @@
           (recur (+ index 1) total))))))
 
 (defn- release-platform-set [support :document] :document
-  ;; Kotoba currently exposes set membership but no set append operation.
-  ;; Serialize only validated keyword values, then parse them as a native
-  ;; document set; no host reader or legacy runtime is involved.
-  (document-edn-read
-    (loop [index 0 encoded "#{"]
-      (if (>= index (document-count support))
-        (string-concat encoded "}")
-        (let [entry (vector-item support index)
-              status (option-value-of [:option :keyword]
-                                      (document-keyword-value (field entry :status)) :invalid)]
+  (loop [index 0 platforms (document-set)]
+    (if (>= index (document-count support)) platforms
+      (let [entry (vector-item support index)
+            status (option-value-of [:option :keyword]
+                                    (document-keyword-value (field entry :status)) :invalid)]
+        (recur (+ index 1)
           (if (= status :release)
-            (recur (+ index 1)
-                   (string-concat encoded
-                     (string-concat (document-edn-print (field entry :platform)) " ")))
-            (recur (+ index 1) encoded)))))))
+            (document-set-conj platforms (field entry :platform))
+            platforms))))))
 
 (defn- report-document [manifest :document] :document
   (let [observations (field manifest :observations)
