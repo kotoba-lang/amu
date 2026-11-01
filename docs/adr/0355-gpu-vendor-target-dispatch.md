@@ -6543,3 +6543,63 @@ UNMEASURED until then); any further counted-day slot (the
 tail-movement row (not queued). Evidence:
 docs/evidence/gpu/anv-b3bisect16prereg-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 169-174, JUN-59 -- THE SIXTEENTH CUT
+MEASUREMENT + ANALYSIS + LANDING, the s168 carry-forward (a) and
+the s173 landing tail): THE CLEAN-BISECTION CUT AT THE FLOOR
+MIDPOINT (345, 1354) n=254,801 RAN UNDER THE FROZEN
+anv-b3bisect16prereg-20261101/protocol.txt AND LANDED -- CUT
+VERDICT: INVALID; NOTHING MOVES. Measurement (s169-s171,
+aiueos-6600hs, INSTRUMENT channel): GO 2026-11-01T09:31:52Z,
+3/3 builds rc=0 at NEW first-measured binary pins (fm 8c568de5...
+is the ONE NEW KNOB TRIPLE, the s166 NAMED L8 combination-risk
+class), the frozen-order 54-run window c2/fm/c8 = 3/48/3 all
+clean (115,200 samples = 18 cells x R = 6,400 every run), the
+108 run logs closed host==local 108/108 at the canonical
+aggregate f8c08e16... (construction pinned by two known-answer
+tests + one negative control), committed as the gzip -n form
+(54 raw digests recorded, fidelity checked=54 mismatch=0).
+Analysis (s172-s173): analysis-s169.py run TWICE BYTE-IDENTICAL
+-> publication-s169.txt (56,352 bytes, sha256 c9aab750...). THE
+FROZEN LETTERS: C1 (b) CONTROL REPLICATION DISCREPANCY (c2
+pooled median m 30 vs the committed floor band 31..32; c8 32,820
+within +/-5% of committed 32,915 = -0.29%; controls
+VERIFY-mismatch-free; cause UNMEASURED); C2 (c) CLASS-UNRESOLVED
+at fm (345, 1,354) n=254,801 (16 blocks: 10x CAPTURED + 3x
+INTERMEDIATE/MIXED + 3x IN-BAND-UNDECIDED, pooled-48 class
+CAPTURED; block binding min(m-h) 997.0538..1006.7909, pooled
+1,002.7437); W1 (d) INVALID (fired by C1 (b)) -> CUT VERDICT:
+INVALID; NOTHING MOVES -- the committed bracket stays EXACTLY
+(254,557, 255,045]; the MID-ONLY NARROWING CLAIM stays SUSPENDED
+(W1 (a) did not fire; named, not claimed). W2 (descriptive):
+34/48 fm runs at per-run 18-cell min >= 1,000, 48/48 in
+981..1,015. W3 (descriptive): every comparison cross-binary AND
+cross-point (the point is VIRGIN; NAMED CROSS-BINARY HAZARD --
+this cut's binaries are NEW first-measured digests, cause
+UNMEASURED (L2 binds); the frozen prose "binding min(m-h)
+1,006.8..1,008.8" matches NO committed byte -- the parsed
+publication-s158.txt bytes 1005.8172..1008.7909 govern; W3
+reaches no class and no letter). X1 (descriptive): fm host_ns
+per-run median spread 62.9% of min (k=48), NAMED, not a C
+criterion. Landing (s174-s175): standing gates (a)-(f) all ==
+the s88/s117 pins (scoped GPU gate GREEN 123/12162/0/0 twice;
+FULL run-tests.cljk RED AT BASE kotoba.form ADR-0362 OUTSIDE
+this diff -- NO green full suite claimed); record.txt +
+record-verify-s175.py run twice byte-identical (run identity in
+record.txt) + this note. BAR NON-INTERFERENCE held: NO
+settle-bar-ledger line, NO day-slot consumption (the 2026-11-01
+UTC slot needs its own freeze; the bar verdict stays over the
+FIRST four counted readings), the bar's SETTLED
+INTERMEDIATE/MIXED verdict unmoved. RULE 4 unchanged: NOTHING
+MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay exactly as ADR-0358 left them
+(:measured? true scoped to each row's one named measured device
+for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+provisional, :measured? false) -- the sixteenth-cut letters are
+bisect machinery measurements on ONE host, NOT workgroup-default
+measurements. Carry-forward s176: standing, not queued: any
+further counted-day slot (its own freeze) and the cross-day
+tail-movement row; any seventeenth cut ONLY through a NEW
+pre-registered cut session (NOT queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect16-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
