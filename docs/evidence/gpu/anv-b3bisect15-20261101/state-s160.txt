@@ -1,0 +1,90 @@
+amu-gpu s160 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut
+MEASUREMENT HALF -- PULL + BYTE-IDENTITY COMPLETE (the s158
+carry-forward (b) completed exactly: the 108 run logs pulled,
+host==local byte-identity verified against 97bd3d33..., the gzip -n
+commit form executed with raw digests recorded, the derivation/build
+censuses written, this state update).
+
+ROW TAKEN THIS TICK (one row: the (b) pull + custody half; the
+analysis half (c) is the next session's row, its own session(s)).
+
+VERIFIED THIS TICK (real tool output):
+- Pull: scp murakumo-ci@100.98.24.37:~/anv-b3bisect15-20261101/
+  shaders/run-* -- 108/108 files, 741M raw, 2m11s. 54 stdout logs
+  = 776,787,638 bytes total; 54 stderr logs 0 bytes (all).
+- Aggregate construction PINNED two independent ways before use
+  (host-digests-s158.txt): (1) known-answer test -- the same
+  construction over the 108 committed s147 logs reproduces the
+  committed s147 local aggregate 8c8ef864... exactly (a
+  sha256sum-line construction does NOT); (2) the s158 host
+  driver's own command (s158-driver.sh line 35, host-only) is the
+  same construction (cat in sorted name order | sha256sum).
+- Host re-verify post-window: binary digest census 3/3
+  BYTE-IDENTICAL to the s158 first-measured pins (b791b71a... c2,
+  52fb68b6... bis, 2f25d678... c8); name existence re-check
+  missing=0 over the host-side s158-names.txt (108 lines); host
+  canonical aggregate re-derived FRESH 97bd3d33... == the s159
+  driver-tail capture.
+- Local side: name set == host s158-names.txt (sorted equality
+  108/108); local canonical raw aggregate
+  97bd3d33db2f49346a370bfd5269d8fd17da8d223d3915fc32fc7e9025116c8e
+  == host -> MATCH (108/108 logs byte-identical) -- the (b)
+  byte-identity target met.
+- gzip -n commit form executed (the s157 capture-form deviation):
+  54 stdout logs committed as run-<tag>-r<NN>.txt.gz (92,509,174
+  bytes total), raw copies removed; 54 stderr logs stay plain
+  0-byte. Raw digests recorded in raw-digests-s158.txt (54 lines).
+  gzip fidelity re-verified: 54/54 gunzip -c outputs SHA-256-equal
+  to the recorded raw digests (0 mismatching files); canonical
+  aggregate re-derived THROUGH THE COMMITTED FORM == 97bd3d33...
+  -> the committed form preserves the raw byte content exactly.
+- Custody re-verified fresh (derivation-census-s158.txt): the
+  rounds6400 variant c2704aaa... == the s153/s154 pin (one-line
+  diff vs the a5e539f0... base EXACTLY line 81, diff rc=1);
+  expected-corpus.sha256 eefba52e... == pin; cases-s157-a.txt
+  54e91d50... == the host pin; 24 cell lines block 873025d6... ==
+  the s25/s27 pin; knob arithmetic (1,000,003*316)//1239 =
+  255,045 == n, gcd 1.
+- build-census-s158.txt + derivation-census-s158.txt written this
+  tick (this state file accompanies them).
+
+NAMED, NOT HIDDEN:
+- One LOCAL verification-script defect, reaching no evidence value:
+  the first local verification run built its key list from raw+gz
+  names together (each stdout key entered twice), so its aggregate
+  cf66dd99... and its 'per-file match 50/54' figure are INVALID
+  and NEVER used; the corrected run over unique keys showed 0
+  mismatching files and reproduced 97bd3d33... (both named in
+  host-digests-s158.txt).
+- The host-side name list s158-names.txt is host-only (not
+  committed); the name set is derivable from the frozen arm table
+  and the sorted 108/108 equality is verified here. The s147
+  /dev/stdin driver-capture defect did NOT recur.
+- The raw pulled logs are NOT kept in the tree (committed form is
+  .txt.gz; raw digests recorded). The analysis half (c) must read
+  the logs through the gzip form (gunzip/gzip module) -- named for
+  (c).
+- NO fifteenth-cut class/verdict/claim exists -- NO unit class,
+  NO C2, NO W1/W2/W3/X1 computed or claimed, every such quantity
+  UNMEASURED (analysis half is (c), its own session(s)); the ONLY
+  new recorded values this tick are the pull census, the byte-
+  identity records and the gz commit-form census. MID-ONLY
+  NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY
+  (254,557, 255,208]. RULE 4 unchanged: NOTHING MOVES; NO vendor
+  optimization exists for Intel (or for any vendor).
+- Diff touches NO committed .cljk namespace (evidence .txt/.gz
+  only); no gate re-run needed for this diff (standing gate (b)
+  last green at s155 with its pins).
+- BAR: instrument channel -- NO settle-bar-ledger line, NO
+  day-slot consumed by this row (protocol section 5).
+
+NOT DONE (s161 carries the s158 list minus (a)(b)):
+(c) the analysis half at its own session(s) (analysis-s158.py
+    twice byte-identical -> publication, frozen letters, standing
+    gates (a)-(f), record.txt, ADR-0355 note, landing tail +
+    JUN-499 Linear comment) -- reading the committed .txt.gz run
+    logs;
+(d) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; next slot a NEW UTC day + its own
+    freeze) and the cross-day tail-movement row.
+(JUN-55, JUN-59; Linear tracking JUN-499)

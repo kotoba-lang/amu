@@ -1,0 +1,52 @@
+== JUN-59 session 158/160 derivation census (THE B=3 PER-DISPATCH- ==
+== WORK THRESHOLD BISECT, FIFTEENTH CUT -- THE DEEP-POOLING CI CUT ==
+== AT BIS (3,316,1239) n=255,045; ZERO derivation edits at the    ==
+== s154 freeze; ZERO NEW KNOB TRIPLES (frozen protocol arm table) ==
+every value below is COMPUTED here (sha256) or PARSED from committed
+bytes (host-stage-s158.txt / host-build-s158.txt /
+host-runs-s158.txt / the frozen anv-b3bisect15prereg-20261031/
+protocol.txt). Nothing is transcribed.
+
+RUN-COUNT SELF-CHECK (frozen arm table): 3+48+3 = 54 -> ok
+KNOB ARITHMETIC SELF-CHECK: (1,000,003*316)//1239 = 255,045 == n,
+gcd(316,1239) = 1 -> ok (the s153 pre-registered derivation; R =
+6,400 fixed at the s154 freeze)
+
+ZERO-DERIVATION CUSTODY (computed here, local files, s160 fresh):
+  instrument gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt sha256:
+    c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8386e84e0
+    == parsed pin (s153 variant, s154 freeze): c2704aaad6bfeeae... -> MATCH
+  one-line diff vs the committed base
+    anv-b3bisect14-20261031/gpu-subgroup-reduce-anv-ndiv.c.txt
+    (a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556):
+    EXACTLY line 81 '#define ROUNDS 25' -> '#define ROUNDS 6400',
+    diff rc=1, one hunk -> MATCH (the s153 one-line rule)
+  expected-corpus.sha256 sha256:
+    eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+    == parsed pin (byte-copy of s26's): eefba52e7be052d6... -> MATCH
+  cases-s157-a.txt sha256:
+    54e91d507f0b7c43ad5f3d72dabeb403600af2bc498629bb35fc1ddc3b2fd75f
+    == host pin (host-stage-s158.txt verbatim): 54e91d507f0b7c43... -> MATCH
+  the 24 cell lines' block sha256 (computed here, non-'#' lines
+    over cases-s157-a.txt): 873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+    == s25/s27 pin (parsed from derivation-census-s25.txt, via the
+    s147 census): 873025d650afae23... -> MATCH
+    (cell lines byte-equal to sessions 9-27's a-set; 24 non-# lines)
+
+HOST-SIDE DIGESTS (verbatim in host-stage-s158.txt / host-digests-s158.txt):
+  host instrument sha256 c2704aaad6bfeeae... == local -> MATCH
+  host expected-corpus.sha256 sha256 eefba52e7be052d6... == local -> MATCH
+  manifest cases-s157-a.txt host==local sha256 54e91d507f0b7c43... -> MATCH
+  corpus: 16/16 sha256sum -c OK on host (shaders/ copied as
+  exactly the 16 expected-corpus names from the s147 verified
+  corpus), corpus_rc=0
+
+BUILD REPLICATION PINS: see build-census-s158.txt (3/3 builds rc 0;
+this cut's binaries are NEW first-measured pins -- no committed pin
+to match; post-window re-run census BYTE-IDENTICAL 3/3).
+
+RUN-LOG CUSTODY: host==local byte-identity 108/108 at the canonical
+raw aggregate 97bd3d33db2f49346a370bfd5269d8fd17da8d223d3915fc32fc7e9025116c8e
+(host-digests-s158.txt), committed as the gzip -n form with the 54
+raw stdout digests recorded in raw-digests-s158.txt.
+(JUN-55, JUN-59; Linear tracking JUN-499)
