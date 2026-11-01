@@ -30,6 +30,7 @@ PINS = [
     "seed/bootstrap/aarch64-linux-static-root.json",
     "seed/bootstrap/aarch64-macos/amu-cli.macho",
     "seed/bootstrap/aarch64-macos/amu-full-root.macho",
+    "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
     "seed/bootstrap/aarch64-macos/cli.json",
     "seed/bootstrap/aarch64-macos/root.json",
 ]
@@ -66,8 +67,8 @@ def repin_cli(out):
     cli_path = ROOT / "seed/bootstrap/aarch64-macos/cli.json"
     cli = json.loads(cli_path.read_text())
     root = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
-    if build["sources"] != cli["sources"]:
-        sys.exit("CLI source list changed; update cli.json sources first")
+    if set(build["sources"]) != set(cli["sources"]):
+        sys.exit("CLI source set changed; update cli.json source paths first")
     old = cli["image"]["sha256"]
     image = ROOT / cli["image"]["path"]
     shutil.copyfile(out / "cli/amu-cli.macho", image)
@@ -75,6 +76,7 @@ def repin_cli(out):
     cli["image"].update(pin(image))
     cli["unsigned"] = pin(out / "cli/amu-cli-unsigned.macho")
     cli["compiler"], cli["packager"], cli["unity"] = root["compiler"], root["packager"], build["unity"]
+    cli["sources"] = build["sources"]
     cli_path.write_text(json.dumps(cli, indent=2) + "\n")
     md = ROOT / "examples/foundation-starter/MACOS-ARM64.md"
     text = md.read_text()
@@ -101,7 +103,7 @@ def main():
         "--compiler-sha256", sha(compiler), "--packager-image", packager,
         "--packager-sha256", sha(packager), "--output", out / "mac-root-src")
     run(sys.executable, SEED / "write-bootstrap-descriptors.py", "--mac-build", out / "mac-root-src",
-        "--phase", "source", "--write")
+        "--phase", "source", "--install", "--write")
     # Phase final: the new root reproduces itself and the Linux candidates.
     run(sys.executable, SEED / "check-aiueos-user-macos-native.py", "--output", out / "mac-root")
     run(sys.executable, SEED / "check-macos-cross-linux-candidates.py", "--mac-build", out / "mac-root",

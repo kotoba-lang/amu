@@ -40,6 +40,11 @@
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
 
+(defn- amu-program-mode? [mode :string] :bool
+  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35")))
+(defn- amu-program-fs35? [mode :string] :bool
+  (string=? mode "amu-program-fs35"))
+
 ;; Only the public host CLI receives this service. Bootstrap/guest modes do not.
 (defn- mh-extra-start [raw-bytes :i64] :i64
   (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4))
@@ -154,7 +159,7 @@
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
-   (if (string=? mode "amu-program") (b-direct 1212 (mh-extra-start raw-bytes))
+   (if (amu-program-mode? mode) (b-direct 1212 (mh-extra-start raw-bytes))
      (if cli-image 0xd2800030 0xf100a81f))
    (if cli-image 0xf2a40010 (b-ne 48 56))
    ;; Earlier string fixtures require a pair; vector fixtures instead prove
@@ -803,7 +808,8 @@
       (vector-assoc! 292 (b-direct (+ start 1168) da-start))))
 
 ;; JUN-593: legacy wire-35 text requests (the Linux kxrt-fs grammar) for the
-;; fs2-cli-stdio-general runtime: read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
+;; fs2-cli-stdio-general runtime and the explicit amu-program-fs35 profile:
+;; read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
 ;; UNLOCK beneath FD 3 (O_NOFOLLOW_ANY|O_RESOLVE_BENEATH, renameatx_np with
 ;; RENAME_NOFOLLOW_ANY); every other request falls through unchanged to the FS2
 ;; chain. One-time derivation: docs/evidence/mac-fs35-20261029/fs35.derivation.s.
@@ -888,14 +894,16 @@
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
-        fs35 (string=? mode "fs2-cli-stdio-general")
+        fs35 (or (string=? mode "fs2-cli-stdio-general") (amu-program-fs35? mode))
         extra (mh-extra-start raw-bytes)
+        fs35-start (if (amu-program-fs35? mode)
+          (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))) extra)
         result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
       ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (string=? mode "amu-program") 10 9))
-      (u32-at (+ at 20) (if (string=? mode "amu-program") 512 472)) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (amu-program-mode? mode) 10 9))
+      (u32-at (+ at 20) (if (amu-program-mode? mode) 512 472)) (u32-at (+ at 24) 2097157)
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -952,7 +960,7 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 extra
+                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 fs35-start
                                            :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
@@ -985,14 +993,19 @@
           (words-at (+ at extra) (mh-startup-words extra))
           (words-at (+ at extra 64)
             (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
-      (if (string=? mode "amu-program")
+      (if (amu-program-mode? mode)
         (let [start (+ extra 512)]
-          (-> result
-              (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
-              (text-at (+ at 512) "AMU-SOURCE-V1")
-              (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
-              (words-at (+ at extra) (mh-result-words extra))
-              (generated-at (+ at start) source)))
+          (let [program (-> result
+                       (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
+                       (text-at (+ at 512) "AMU-SOURCE-V1")
+                       (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
+                       (words-at (+ at extra) (mh-result-words extra))
+                       (generated-at (+ at start) source))]
+            (if fs35
+              (words-at program (+ at fs35-start)
+                (fs35-helper-words fs35-start
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+              program)))
         (if fs35
           (words-at result (+ at extra)
             (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
@@ -1013,7 +1026,9 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
+        general (or (string=? mode "fs2-cli-stdio-general")
+                    (string=? mode "fs2-cli-stdio-general-command")
+                    (string=? mode "amu-cli-host") (amu-program-mode? mode))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -1034,13 +1049,15 @@
         entry-offset (if general selected-entry
                        (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
                          MAC-PACKAGER-ENTRY-OFFSET 0))
-        source (if (string=? mode "amu-program")
+        source (if (amu-program-mode? mode)
           (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes
             (string-concat fs2-prefix (string-concat "A" (string-concat
               (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
           [0 70 83 50 0])
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
-          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
+          (if (amu-program-mode? mode)
+            (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
+              (if (amu-program-fs35? mode) FS35-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
@@ -1048,7 +1065,7 @@
             (and (string=? mode "amu-cli-host")
               (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
                 (or (= words 0) (> (+ 64 (* words 4)) 8192))))
-            (and (string=? mode "amu-program")
+            (and (amu-program-mode? mode)
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
             (if general
@@ -1069,7 +1086,7 @@
                  (not= raw-bytes 172)))
             (> (+ offset total-bytes) MAX-FS2-VALUE)
             (> (+ total-bytes 5) MAX-FS2-VALUE)
-            (and (string=? mode "amu-program")
+            (and (amu-program-mode? mode)
               (or (< (vector-count source) 6) (> (vector-count source) 1048581)
                   (not= (vector-at source 0) 0) (not= (vector-at source 1) 70)
                   (not= (vector-at source 2) 83) (not= (vector-at source 3) 50) (not= (vector-at source 4) 0)))
