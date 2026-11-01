@@ -33,9 +33,32 @@ unknown share and a 10000-bps total; and support status/path/evidence rules,
 including support-platform membership in observations.
 
 Command: `bin/amu check src/kotoba/compiler/coverage.kotoba` — output `ok`.
-This proves source admission only. The validator is not exported or wired into
-`trust_cli`; the single-file checker rejected the attempted public
-`:document`-argument export with E2104, so the callable module boundary still
-needs a qualified multi-module route. Report calculation, verified-evidence
-matching, dataset file IO/hash, native execution parity and runtime
-qualification remain open. No tests or legacy oracle were run for this slice.
+At this point in the work, this proved source admission only. The validator
+was not yet exported or wired into `trust_cli`; the single-file checker had
+rejected the attempted public `:document`-argument export with E2104, so the
+callable module boundary still needed a qualified multi-module route. Report
+calculation, verified-evidence matching, dataset file IO/hash, native execution
+parity and runtime qualification remain open. No tests or legacy oracle were
+run for this slice.
+
+## Locked public validator admission — 2026-11-01
+
+Made `manifest-valid?` a declared public function. A two-module KSL2 project
+lock imports it from a Kotoba caller. The check passed with the open Amu
+KOTOBA-13 candidate at commit
+`d673111b66f43a8569e545c772a70e51737e1707` (local native bootstrap CLI SHA-256
+`ae94dc99ffe489ef77cb5eb0044bea1d2500a4273d45c55bcf57b887994f390a`). The
+locked source set was exactly `coverage.kotoba` SHA-256
+`f7cf8b400a1cbca7cb11d05f35a5a333aa44f53487bbb60778d5336839a2bf90` and the
+small Kotoba caller SHA-256
+`cf2900407f6ffb621f0455790e7dbf7265f9aed2a52d6877810756d14b20a59d`; KSL2
+lock SHA-256
+`7a78de350ed6b588db5a637438eff872c8f2f454e269ce3e083f2d4cc4a03914`.
+
+Command: candidate `bin/amu check <entry.kotoba> --source-lock <project.ksl>`
+— output `ok`. This confirms locked project source admission and public
+signature resolution only. It does not execute the validator or establish
+manifest semantic parity. The Amu candidate is open/unmerged; production Amu
+main and `trust_cli` remain unqualified. Report calculation, verified-evidence
+matching, dataset file IO/hash, and runtime migration remain open. No test suite
+or legacy oracle was run.

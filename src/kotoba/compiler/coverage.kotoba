@@ -1,6 +1,6 @@
 (ns kotoba.compiler.coverage
-  "Canonical Kotoba validators for coverage manifest identity fields."
-  {:kotoba/export [sha256? month?]})
+  "Canonical Kotoba validators for coverage manifest identity fields and schema."
+  {:kotoba/export [sha256? month? manifest-valid?]})
 
 (defn- ascii-digit? [byte :i64] :bool
   (and (>= byte 48) (<= byte 57)))
@@ -134,7 +134,7 @@
            (and (> (document-count paths) 0) (> (document-count evidence) 0))
            (= (document-count evidence) 0)))))
 
-(defn- manifest-valid? [manifest :document] :bool
+(defn manifest-valid? [manifest :document] :bool
   (let [dataset (field manifest :dataset)
         period (field manifest :period)
         observations (field manifest :observations)
