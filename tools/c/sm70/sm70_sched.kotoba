@@ -56,6 +56,7 @@
 ;;   IMADWR d:d+1 = a * b + c:c+1 (unsigned; c = RZ: zero)
 ;;   SGXT   d = the low x bits of a, extended (y = 1 signed)
 ;;   FMULI  d = a * x, x an f32 bit pattern
+;;   PLOP3  predicate d = lut x of predicates a, b, c (each inverted by its bit in y: 1 a, 2 b, 4 c)
 ;; A guarded BRA is a conditional branch. The lowering resolves its branch
 ;; targets before scheduling (y holds the label until then).
 ;;
@@ -100,6 +101,7 @@
 (def MI-IMADWR 36)
 (def MI-SGXT 37)
 (def MI-FMULI 38)
+(def MI-PLOP3 39)
 
 ;; refusals of the scheduler (Q[1]); the lowering's are 101..
 (def MI-E-CAP 120)    ;; the IR is full
@@ -161,16 +163,21 @@
 (defn- mi-dst [Q :vector-i64 k :i64 j :i64] :i64
   (let [op (mi-op Q k) d (mi-f Q k 2)]
     (live (cond (or (= op MI-ISETP) (= op MI-STG) (= op MI-EXIT) (= op MI-BRA) (= op MI-STS) (= op MI-BAR)
-                    (= op MI-NOP) (= op MI-BSSY) (= op MI-BSYNC) (= op MI-FSETP) (= op MI-FSETPI)) -1
+                    (= op MI-NOP) (= op MI-BSSY) (= op MI-BSYNC) (= op MI-FSETP) (= op MI-FSETPI) (= op MI-PLOP3)) -1
                 (or (= op MI-IMADW) (= op MI-IMADWR)) (case j 0 d 1 (+ d 1) -1)
                 :else (if (= j 0) d -1)))))
 
-(defn- mi-psets? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI)))
+(defn- mi-psets? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI) (= op MI-PLOP3)))
 (defn- mi-pdst [Q :vector-i64 k :i64] :i64 (if (mi-psets? (mi-op Q k)) (mi-f Q k 2) -1))
 (defn- mi-gpred [Q :vector-i64 k :i64] :i64 (let [p (u64-shift-right (mi-f Q k 1) 1)] (if (= p 7) -1 p)))
-;; the predicate a SEL reads (-1: none)
-(defn- mi-psrc [Q :vector-i64 k :i64] :i64
-  (if (and (= (mi-op Q k) MI-SEL) (not= (mi-f Q k 6) 7)) (mi-f Q k 6) -1))
+;; predicate source j (0..2) of instruction k besides its guard (-1: none):
+;; a SEL's condition, a PLOP3's three sources
+(defn- mi-psrc [Q :vector-i64 k :i64 j :i64] :i64
+  (let [op (mi-op Q k)
+        p (cond (= op MI-SEL) (if (= j 0) (mi-f Q k 6) 7)
+                (= op MI-PLOP3) (mi-f Q k (+ 3 j))
+                :else 7)]
+    (if (= p 7) -1 p)))
 ;; variable latency (NAK has_fixed_latency): S2R, the memory operations,
 ;; MUFU and the conversions; BAR is not fixed either but has no register
 ;; operand, so it takes no scoreboard
@@ -209,7 +216,7 @@
 (defn- imax [a :i64 b :i64] :i64 (if (> a b) a b))
 
 (defn- sched-state [] :vector-i64
-  (loop [r 0 S (vector-alloc 782)]
+  (loop [r 0 S (vector-alloc 790)]
     (if (>= r 256) S (recur (inc r) (vector-assoc! (vector-assoc! S (+ 256 r) -1) (+ 512 r) -1)))))
 
 ;; the wait mask instruction k needs: every scoreboard on which a source or
@@ -237,17 +244,34 @@
                         (recur (inc r)))))))]
         (recur (inc s))))))
 
-;; the lowest free scoreboard, now in use (-1: none)
-(defn- take-sb [S :vector-i64] :i64
+;; the lowest free scoreboard, now in use since instruction k (S[782 + s])
+;; (-1: none)
+(defn- take-sb [S :vector-i64 k :i64] :i64
   (loop [s 0]
     (cond (>= s MI-NSB) -1
-          (= (sg S (+ 776 s)) 0) (let [z (ss S (+ 776 s) 1)] s)
+          (= (sg S (+ 776 s)) 0) (let [z (ss S (+ 776 s) 1) y (ss S (+ 782 s) k)] s)
           :else (recur (inc s)))))
+
+(defn- free-sbs [S :vector-i64] :i64
+  (loop [s 0 n 0] (if (>= s MI-NSB) n (recur (inc s) (if (= (sg S (+ 776 s)) 0) (inc n) n)))))
+
+;; the scoreboard in use that was taken first
+(defn- oldest-sb [S :vector-i64] :i64
+  (loop [s 0 best -1]
+    (if (>= s MI-NSB) best
+      (recur (inc s) (if (and (= (sg S (+ 776 s)) 1) (or (< best 0) (< (sg S (+ 782 s)) (sg S (+ 782 best))))) s best)))))
+
+;; with fewer than n scoreboards free, wait for the oldest ones in use too
+;; (as NAK does when it runs out): answers the wait mask m and the freed ones
+(defn- make-room [S :vector-i64 m :i64 n :i64] :i64
+  (loop [m1 m]
+    (if (>= (free-sbs S) n) m1
+      (let [s (oldest-sb S) b (i64-shift-left 1 s) r (release S b)] (recur (bit-or m1 b))))))
 
 ;; the earliest cycle at which k may issue, given its fixed-latency inputs
 (defn- ready-at [Q :vector-i64 S :vector-i64 k :i64 t0 :i64] :i64
   (let [p (mi-gpred Q k) t2 (if (>= p 0) (imax t0 (sg S (+ 768 p))) t0)
-        ps (mi-psrc Q k) t1 (if (>= ps 0) (imax t2 (sg S (+ 768 ps))) t2)]
+        t1 (loop [j 0 tt t2] (if (>= j 3) tt (let [ps (mi-psrc Q k j)] (recur (inc j) (if (>= ps 0) (imax tt (sg S (+ 768 ps))) tt)))))]
     (loop [j 0 t t1]
       (if (>= j 4) t
         (let [s (mi-src Q k j)] (recur (inc j) (if (>= s 0) (imax t (sg S s)) t)))))))
@@ -301,13 +325,16 @@
 ;; before it; answers the cycle at which k issues (-1 on a refusal)
 (defn- sched-one [Q :vector-i64 S :vector-i64 k :i64 tprev :i64] :i64
   (let [dr (drain? Q k)
-        m (if dr (bit-or (need-wait Q S k) (in-use S)) (need-wait Q S k))
-        r (release S m)
+        op0 (mi-op Q k)
+        nsb (+ (if (and (mi-var? op0) (>= (mi-dst Q k 0) 0)) 1 0) (if (and (mi-var? op0) (src-rewritten? Q k)) 1 0))
+        m0 (if dr (bit-or (need-wait Q S k) (in-use S)) (need-wait Q S k))
+        r0 (release S m0)
+        m (make-room S m0 nsb)
         t0 (ready-at Q S k (if (= k 0) 0 (+ tprev (exec-lat (mi-op Q (- k 1))))))
         t (if dr (imax t0 (all-ready S)) t0)
         op (mi-op Q k)
-        wr (if (and (mi-var? op) (>= (mi-dst Q k 0) 0)) (take-sb S) 7)
-        rd (if (and (mi-var? op) (src-rewritten? Q k)) (take-sb S) 7)]
+        wr (if (and (mi-var? op) (>= (mi-dst Q k 0) 0)) (take-sb S k) 7)
+        rd (if (and (mi-var? op) (src-rewritten? Q k)) (take-sb S k) 7)]
     (cond (or (< wr 0) (< rd 0)) (mi-fail Q MI-E-SB)
           (and (> k 0) (> (- t tprev) 15)) (mi-fail Q MI-E-STALL)
           :else
@@ -380,6 +407,7 @@
           (= op MI-IMADWR) (sm70-imad-wide M g c d a b cc 0)
           (= op MI-SGXT) (sm70-sgxt-imm M g c d a x y)
           (= op MI-FMULI) (sm70-fmul-imm M g c d a x 0 0 0)
+          (= op MI-PLOP3) (sm70-plop3 M g c d a (bit-and y 1) b (bit-and (u64-shift-right y 1) 1) cc (bit-and (u64-shift-right y 2) 1) x)
           :else (sm-fail M MI-E-OP))))
 
 ;; the encoder program of a scheduled IR (empty, error = the IR's, when the

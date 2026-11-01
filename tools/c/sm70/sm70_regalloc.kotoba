@@ -51,7 +51,11 @@
   (and (not= (bit-and (gpr-fields op) 1) 0)
        (not (or (= op MI-ISETP) (= op MI-STG) (= op MI-STS) (= op MI-FSETP) (= op MI-FSETPI)))))
 
-(defn- pred-def? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI)))
+;; predicates: written in d by the SETPs and PLOP3; read as a SEL's x and a
+;; PLOP3's a, b, c
+(defn- pred-def? [op :i64] :bool (or (= op MI-ISETP) (= op MI-FSETP) (= op MI-FSETPI) (= op MI-PLOP3)))
+(defn- pred-src-field [op :i64 j :i64] :i64
+  (cond (= op MI-SEL) (if (= j 0) 6 -1) (= op MI-PLOP3) (+ 3 j) :else -1))
 
 ;; the fields that hold a pair's low register: 1 d, 2 a, 8 c
 (defn- pair-fields [op :i64] :i64
@@ -84,7 +88,8 @@
               g (u64-shift-right (qf Q k 1) 1)
               p1 (if (>= (+ g 1) mp) (+ g 1) mp)
               p2 (if (pred-def? op) (let [d (qf Q k 2)] (if (>= (+ d 1) p1) (+ d 1) p1)) p1)
-              p3 (if (= op MI-SEL) (let [x (qf Q k 6)] (if (>= (+ x 1) p2) (+ x 1) p2)) p2)]
+              p3 (loop [j 0 pm p2] (if (>= j 3) pm
+                                     (let [f (pred-src-field op j)] (recur (inc j) (if (< f 0) pm (let [x (qf Q k f)] (if (>= (+ x 1) pm) (+ x 1) pm)))))))]
           (recur (inc k) mv1 p3))))))
 
 ;; N: single registers, then the pairs named by pair fields
@@ -146,7 +151,10 @@
       (if (>= k n) 0
         (let [op (qf Q k 0) g (u64-shift-right (qf Q k 1) 1) unguarded (= g 7)
               a (if (>= g RA-P0) (bset U (* k pw) (- g RA-P0)) 0)
-              b (if (and (= op MI-SEL) (>= (qf Q k 6) RA-P0)) (bset U (* k pw) (- (qf Q k 6) RA-P0)) 0)
+              b (loop [j 0] (if (>= j 3) 0
+                              (let [f (pred-src-field op j)
+                                    y (if (and (>= f 0) (>= (qf Q k f) RA-P0)) (bset U (* k pw) (- (qf Q k f) RA-P0)) 0)]
+                                (recur (inc j)))))
               c (if (and (pred-def? op) unguarded (>= (qf Q k 2) RA-P0)) (bset K (* k pw) (- (qf Q k 2) RA-P0)) 0)]
           (recur (inc k)))))))
 
@@ -237,7 +245,10 @@
               gm (qf Q k 1) g (u64-shift-right gm 1)
               b (if (>= g RA-P0) (qs Q k 1 (+ (* 2 (vector-at PC (- g RA-P0))) (bit-and gm 1))) 0)
               c (if (and (pred-def? op) (>= (qf Q k 2) RA-P0)) (qs Q k 2 (vector-at PC (- (qf Q k 2) RA-P0))) 0)
-              e (if (and (= op MI-SEL) (>= (qf Q k 6) RA-P0)) (qs Q k 6 (vector-at PC (- (qf Q k 6) RA-P0))) 0)]
+              e (loop [j 0] (if (>= j 3) 0
+                              (let [f (pred-src-field op j)
+                                    y (if (and (>= f 0) (>= (qf Q k f) RA-P0)) (qs Q k f (vector-at PC (- (qf Q k f) RA-P0))) 0)]
+                                (recur (inc j)))))]
           (recur (inc k)))))))
 
 ;; allocate the registers of Q in place; answers Q (its error RA-E-REGS when
