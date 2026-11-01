@@ -24,7 +24,7 @@
     (let [c (string-code-point-at value index)]
       (and (or (and (>= c 48) (<= c 57))
                (and (>= c 97) (<= c 102)))
-           (hex? value (inc index)))))
+           (hex? value (inc index))))))
 (defn entropy-valid [] :bool
   (let [bytes (typed-cap-call :entropy/draw :string :string "32")]
     (and (= (string-length bytes) 64) (hex? bytes 0))))
