@@ -6362,3 +6362,79 @@ and the cross-day tail-movement row (not queued) -- NO queued
 row remains.
 Evidence: docs/evidence/gpu/anv-b3bisect14-20261031/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 152-156, JUN-59 -- THE FIFTEENTH CUT
+PRE-REGISTRATION, THE DEEP-POOLING CI CUT AT BIS, AND ITS
+LANDING, the s151..s155 carry-forwards): the second pre-
+registration written under the confrontation spec's four arms
+(ACCEPTED DESIGN ONLY -- a cut pre-registration, not a
+measurement and not implemented compiler code; freeze stamp
+2026-11-01T01:27:58Z, write-once; NO run log of the cut existed
+at freeze): the cut's point bis (3,316,1239) n=255,045 (mid NOT
+re-measured; interior: both C2 outcomes narrow; largest committed
+pooled margin), the deep-pooling instrument variant. (a) CONTENT
+CONFRONTATION: FIRST the 14th cut's TOLERANCE-UNRESOLVED mid
+content (C2 (c) at mid (248,973) n=254,882 at cabff942...; all
+16 block minima and the pooled-48 min 1,005 IN-BAND-UNDECIDED
+under the wander-band tolerance rule) with the frozen statement
+that NO letter of this cut supersedes it; THEN the committed bis
+content at 440604ef... (s136 8-block 7x C + 1x I/M pooled-24
+1,147 C; s139 16-block 7x C + 9x I/M, pooled-48 1,148 C, min
+published 1,006 = exact half-integer 1,005.5); (b) BLOCK-
+GRANULARITY FLOOR: 16 disjoint blocks of 3 + pooled-48 at this
+cut's NEW first-measured binary (the ROUNDS6400 variant, build
+digests recorded by the measuring session, never transcribed);
+(c) STATISTIC CONFRONTATION option (i) THE DEEP-POOLING CI CLASS
+STATISTIC: h_c = 3.6420 * MAD_c / sqrt(N) (3.6420 = 1.96 * 1.2533
+* 1.4826), N = 3R = 19,200 per block / 48R = 307,200 per
+pooled-48, unit classes at the FROZEN 1,000-tick threshold
+(CAPTURED iff all m_c - h_c >= 1,000 / FLOOR iff all m_c + h_c
+<= 100 / I/M iff some m_c + h_c < 1,000 and some m_c - h_c > 100
+/ IN-BAND-UNDECIDED otherwise), R = 6,400 fixed by the pre-
+registered derivation BEFORE the freeze (ladder max-h R=3,200
+2.6949 fails / R=6,400 1.9056 passes; binding idx 22 MAD 72.5;
+s147-mid cross-check R* = 6,400; NAMED: the 2.0-tick target first
+met only at the ladder top; chosen with committed margins
+visible, the new binaries' margins UNMEASURED); the instrument
+variant gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt at source
+pin c2704aaa... (one line '#define ROUNDS 25' -> '#define ROUNDS
+6400', shader corpus BYTE-IDENTICAL); (d) CLAIM-FORM
+CONFRONTATION: the dual-class content (lo 254,557 2 rows / mid
+254,882 3 rows + pooled 1,141 I/M / 1,140 C) + the cross-window
+disagreement at cabff942... (s132 1,133 I/M / s136 1,148 C /
+s139 1,140 C / s147 1,148 FOURTH window); NO letter touches
+lo/mid (cause UNMEASURED, L2). W1: (a) C2 (b) -> bracket narrows
+to (254,557, 255,045]; (b) C2 (a) -> (255,045, 255,208] (implies
+F > 254,882); (c) NOTHING MOVES; (d) INVALID (frozen
+INVALIDATION criterion: > 0 VERIFY mismatches -> arm INVALID).
+ARM TABLE c2 k=3 / bis k=48 / c8 k=3 = 54 processes, ZERO NEW
+KNOB TRIPLES ((1,000,003*316)//1239 = 255,045, gcd 1), frozen
+order c2-r01..03, bis-r01..48, c8-r01..03, block partition 16
+blocks of 3 + pooled-48. Quote-only census (pre-reg-census-
+s152.py, fail-closed, run twice byte-identical, 6,111 bytes
+each); s152 D5's "block minima 1,002..990" corrected against
+committed rows (max block6 1,011). MEASUREMENT HALF NOT RUN: 54
+fresh processes are frozen for a future session (NOT queued);
+every fifteenth-cut quantity is UNMEASURED and the MID-ONLY
+NARROWING CLAIM stays SUSPENDED (named, not claimed); the
+bracket stays EXACTLY (254,557, 255,208]. The landing tail
+(s155 gates + s156 this record): standing gates (a)-(f) run
+live, all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate
+GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins, scratch
+runner deleted; (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair twice byte-identical == the s117 post-append pin,
+VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh'
+-> 0; (f) ledger == HEAD). BAR NON-INTERFERENCE held (sessions
+152-156 ran NO hardware, NO builds, NO compiles, NO GO stamp, NO
+day-slot, NO ledger line); RULE 4 unchanged: NOTHING MOVES; NO
+vendor optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them. Carry-forward s157:
+the fifteenth cut MEASUREMENT half ONLY through its own session
+under the frozen protocol (NOT queued); any further counted-day
+slot (the 2026-10-31 slot is consumed at s117; the next slot is
+a NEW UTC day and its own freeze) and the cross-day tail-
+movement row (not queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect15prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)

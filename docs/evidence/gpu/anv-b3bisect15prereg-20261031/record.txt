@@ -1,0 +1,157 @@
+2026-11-01 (sessions 152-156, JUN-59 -- THE FIFTEENTH CUT
+PRE-REGISTRATION AND ITS LANDING, the s151/s152/s153/s154/s155
+carry-forwards)
+== THE DEEP-POOLING CI CUT AT BIS (3,316,1239) n=255,045,
+FROZEN BEFORE ANY RUN ==
+
+ROW: the fifteenth cut PRE-REGISTRATION, written across four
+sessions and landed here: (s152) the design decisions D1-D5
+captured at a runtime-budget cutoff (state-s152.txt, nothing
+frozen then); (s153) the committed quote-only census run twice
+byte-identical + the pre-registered D3 derivation fixing
+R = 6,400 + the instrument variant source with its pin;
+(s154) protocol.txt FROZEN + freeze-record-s152.txt (named for
+the decision session, the s143 precedent); (s155) the standing
+gate set (a)-(f) run LIVE with s155 captures; (s156, this
+landing) this record, the ADR-0355 dated note and the landing
+tail. The pre-registration is ACCEPTED DESIGN ONLY -- not
+implemented compiler code, not a measurement.
+
+1. WHAT IS FROZEN (s154, verified again this landing):
+   docs/evidence/gpu/anv-b3bisect15prereg-20261031/protocol.txt
+   -- 14,101 bytes, sha256
+   455025f5b4dc438ce633ba9b4d24439677b0f89707863d0cfbc814333e6fa662
+   (wc -c + shasum -a 256 re-run at this landing; matches the
+   s154 pin), freeze stamp 2026-11-01T01:27:58Z, write-once,
+   written BEFORE any run log of this cut existed (run-log count
+   in this directory at freeze 0 -- freeze-record-s152.txt).
+   The cut: THE DEEP-POOLING CI CUT AT BIS (3,316,1239) n=255,045
+   -- mid (248,973) is NOT re-measured; the point is interior
+   (both C2 outcomes narrow there) with the largest committed
+   pooled margin (D1). The confrontation spec's four arms are
+   satisfied: (a) CONTENT CONFRONTATION first of the 14th cut's
+   TOLERANCE-UNRESOLVED mid content (C2 (c) at mid at
+   cabff942...; all 16 block minima and the pooled-48 min 1,005
+   IN-BAND-UNDECIDED under the wander-band tolerance rule) with
+   the frozen statement that NO letter of this cut supersedes it,
+   then the committed bis content at 440604ef... (s136 8-block
+   7x C + 1x I/M pooled-24 1,147 C; s139 16-block 7x C + 9x I/M,
+   pooled-48 1,148 C, min published 1,006 = exact half-integer
+   1,005.5 -- verified again this landing in the census output);
+   (b) BLOCK-GRANULARITY FLOOR: 16 disjoint blocks of 3 + the
+   pooled-48 arm at this cut's NEW first-measured binary (the
+   ROUNDS6400 variant; build digests recorded by the measuring
+   session, never transcribed); (c) STATISTIC CONFRONTATION
+   option (i) THE DEEP-POOLING CI CLASS STATISTIC: h_c = 3.6420 *
+   MAD_c / sqrt(N) (3.6420 = 1.96 * 1.2533 * 1.4826), N = 3R =
+   19,200 per block / 48R = 307,200 per pooled-48, unit classes at
+   the FROZEN 1,000-tick threshold (CAPTURED iff all m_c - h_c >=
+   1,000 / FLOOR iff all m_c + h_c <= 100 / I/M iff some m_c +
+   h_c < 1,000 and some m_c - h_c > 100 / IN-BAND-UNDECIDED
+   otherwise); (d) CLAIM-FORM CONFRONTATION: the dual-class
+   content (lo 254,557 2 rows / mid 254,882 3 rows + pooled 1,141
+   I/M / 1,140 C) + the cross-window disagreement at cabff942...
+   (s132 1,133 I/M / s136 1,148 C / s139 1,140 C / s147 1,148
+   FOURTH window) quoted; NO letter touches lo/mid; cause
+   UNMEASURED (L2).
+
+2. THE CENSUS + D3 DERIVATION (s153, re-verified at this
+   landing): pre-reg-census-s152.py (20,922 bytes, pure stdlib,
+   fail-closed, quote-only over committed bytes) ran TWICE
+   BYTE-IDENTICAL -> 6,111 bytes each (cmp exit 0 re-run at this
+   landing, .err 0 bytes both). Every s150 (1)-(3) / s151 (1)-(2)
+   value re-derived with 0 mismatches (parse reproduction match
+   True EXACTLY; pooled-48 minima 1,005/1,001; slow-family label
+   CORRECTED against committed CELL lines: idx 13/17/21 = wg=256
+   forced=16 probe_size=16 probe_nsub=16 -- named, not hidden).
+   D3 RULE (pre-registered BEFORE the freeze): R = the smallest
+   ladder value {25..6400} with max 18-cell block half-width
+   3.6420*MAD/sqrt(3R) <= 2.0 ticks from the committed bis
+   round-level MADs (s139 48 bis runs x 25 rounds = 1,200
+   samples/cell): ladder h_max 30.4893 / 21.5592 / 15.2446 /
+   10.7796 / 7.6223 / 5.3898 / 3.8112 / 2.6949 (R=3,200 FAILS) /
+   1.9056 (R=6,400 PASSES) -> R = 6,400, binding cell idx 22
+   (MAD 72.5); the s147-mid cross-check reproduces R* = 6,400
+   (binding idx 22, MAD 69.0). NAMED, NOT HIDDEN: the 2.0-tick
+   target (0.2% of the frozen 1,000 threshold) is first met only
+   at the ladder top; had the top failed the rule would have fixed
+   NO R; and R was chosen with committed margins visible (the new
+   binaries' margins UNMEASURED). INSTRUMENT VARIANT:
+   gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt (29,535 bytes,
+   sha256 c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc
+   8386e84e0, shasum re-run at this landing) -- ONE line changed
+   ('#define ROUNDS 25' -> '#define ROUNDS 6400'), shader corpus
+   untouched. Build digests UNMEASURED (the measurement half is
+   NOT queued).
+
+3. ARM TABLE + LETTERS (frozen at s154): c2 k=3 / bis k=48 / c8
+   k=3 = 54 fresh processes (self-check 3+48+3 = 54; knob
+   arithmetic (1,000,003*316)//1239 = 255,045, gcd(316,1239) = 1;
+   (1,000,003*248)//973 = 254,882), ZERO NEW KNOB TRIPLES, frozen
+   run order c2-r01..03, bis-r01..48, c8-r01..03, frozen block
+   partition 16 blocks of 3 + pooled-48. W1 (cut verdict):
+   (a) C2 (b) -> bracket narrows to (254,557, 255,045]; (b) C2
+   (a) -> (255,045, 255,208] (implies F > 254,882); (c) NOTHING
+   MOVES; (d) INVALID (frozen INVALIDATION criterion: > 0 VERIFY
+   mismatches in any run -> DEFECTIVE/arm INVALID).
+
+4. STANDING GATES (a)-(f) RUN LIVE at s155 (captures gate-s155-*,
+   re-compared at the s155 commit): (a) classify --self-test rc 0,
+   17,925 bytes == the s88 pin, .err 0; (b) scoped GPU gate GREEN
+   'Ran 123 tests containing 12162 assertions. 0 failures,
+   0 errors.' run 1 == run 2 == both s88 919-byte pins, rc 0 both,
+   .err 0 both (scratch runner created/run twice/DELETED, never
+   committed); (c) FULL run-tests.cljk exit 1 RED AT BASE
+   kotoba.form (ADR-0362, outside this diff -- touches NO
+   committed .cljk namespace), .out 0 bytes == pin, .err 879
+   bytes == pin -- NO green full suite claimed; (d) settle-bar
+   evaluator --self-test rc 0, 3,590 bytes == the s88 pin + ledger
+   eval pair twice BYTE-IDENTICAL (1,006 bytes) == the s117
+   post-append pin -> VERDICT: SETTLED INTERMEDIATE/MIXED
+   (unchanged); (e) find docs/evidence/gpu -name '*.sh' -> 0
+   lines; (f) git diff --exit-code -- settle-bar-ledger.txt rc 0
+   (no append this row).
+
+5. NAMED, NOT HIDDEN:
+   - The s152 D5 shorthand "block minima 1,002..990" is corrected
+     against the committed rows (max of the 16 s139 bis block
+     minima is block6's 1,011, range 990..1,011) -- naming-only,
+     frozen in freeze-record-s152.txt.
+   - The s139 bis pooled-48 18-cell min is an exact half-integer
+     1,005.5 (idx 17) published as 1,006 -- both asserted.
+   - W3 carries a NAMED CROSS-BINARY HAZARD: this cut's binaries
+     are NEW (the ROUNDS6400 variant, first measurement at its
+     build) -- any class disagreement with the committed bis
+     windows at 440604ef... may be BINARY-driven (cause
+     UNMEASURED, L2).
+   - Untracked deps.edn and scratch/ are not this row's and are
+     NOT staged or committed.
+
+6. NOTHING ELSE MOVED: NO fifteenth-cut quantity exists -- no cut
+   queued/run, NO unit class, NO C2/W1/W2/W3/X1 letter, NO
+   class/verdict/claim; every fifteenth-cut quantity is UNMEASURED
+   (the measurement half is NOT queued) and no measurement value
+   appears in this record; MID-ONLY NARROWING CLAIM stays SUSPENDED
+   (named, not claimed); the committed bracket stays EXACTLY
+   (254,557, 255,208]. Sessions 152-156 ran NO hardware, NO builds,
+   NO compiles, NO GO stamp, NO day-slot consumption, NO ledger
+   line -- BAR NON-INTERFERENCE held (pre-registration DESIGN
+   content only). RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358 left
+   them (:measured? true scoped to each row's one named measured
+   device for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists for
+   Intel (or for any vendor); this is bisect measurement-machinery
+   design on ONE host (aiueos-6600hs), not a workgroup-default
+   measurement.
+
+7. Carry-forward to s157 (the s152 list minus (c)/(d)/(e)):
+   (f) standing, not queued: the fifteenth cut MEASUREMENT half (54
+   fresh processes under this frozen protocol on aiueos-6600hs --
+   NOT queued; every fifteenth-cut quantity remains UNMEASURED until
+   then), any further counted-day slot (the 2026-10-31 UTC slot is
+   consumed at s117; the next slot is a NEW UTC day and its own
+   freeze) and the cross-day tail-movement row (not queued) -- NO
+   queued row remains; s157 takes a row only if one is queued or
+   frozen to run, else stands down.
+(JUN-55, JUN-59; Linear tracking JUN-499)
