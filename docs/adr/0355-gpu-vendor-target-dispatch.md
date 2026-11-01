@@ -6603,3 +6603,49 @@ tail-movement row; any seventeenth cut ONLY through a NEW
 pre-registered cut session (NOT queued) -- NO queued row remains.
 Evidence: docs/evidence/gpu/anv-b3bisect16-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 176-183, JUN-59 -- THE SEVENTEENTH CUT
+PRE-REGISTRATION: ROW + RECONNAISSANCE + CENSUS + DESIGN
+DECISIONS + DESIGN-VERIFY + PROTOCOL FREEZE + LANDING, the s175
+carry-forward chain): THE CLEAN-BISECTION CUT AT THE VIRGIN
+QUARTER POINT (313, 1229) n=254,679 PRE-REGISTERED AND FROZEN
+-- NOT MEASURED. Census (s177-s178): knob-search-s177.py run
+TWICE BYTE-IDENTICAL; q1 n=254,679 ((1,000,003*313)//1,229,
+gcd 1) VIRGIN; q2 = 254,801 is the 16th cut's fm point (the
+arm-(b) re-read hazard binds literally there); the disputed
+record uncontested between its sources. Design (s179) D1-D5
+frozen (s182, protocol.txt 19,974 bytes sha256 ad8ace96...,
+freeze stamp 2026-11-01T16:20:57Z, before any run log): arm
+(a) NO letter supersedes the 16th cut's 254,801 content, C1
+(b) confronted at arm (a) AND named as a limitation; arm (b)
+16 blocks of 3 + pooled-48 at NEW first-measured binaries
+(ROUNDS6400 pin c2704aaa... re-hashed at freeze, MATCH); arm
+(c) option (i) the deep-pooling CI class statistic, R=6,400;
+arm (d) the MID-ONLY NARROWING CLAIM tracked by implication
+(W1 (a) REFUTES by implication F <= 254,679 < 254,882; else
+SUSPENDED); ARM TABLE c2/q1/c8 = 54 processes (3+48+3);
+ONE NEW KNOB TRIPLE q1 (313, 1229), L8 APPLIES. Design-verify
+(s181): design-verify-s179.py run TWICE BYTE-IDENTICAL
+(70 ok / 0 failed). Landing (s183): standing gates (a)-(f)
+all == the s88/s117 pins (scoped GPU gate GREEN 123/12162/0/0
+twice; FULL run-tests.cljk RED AT BASE kotoba.form ADR-0362
+OUTSIDE this diff -- NO green full suite claimed); record.txt
++ this note; NAMED: an environment incident at s183 (23 git-
+dep mirrors absent in ~/.gitlibs AND their upstream GitHub
+repos unreachable -- repaired from local sibling checkouts,
+user cache only; details and the kept fail captures in
+record.txt section 4; cause of the mirror loss UNMEASURED).
+BAR NON-INTERFERENCE held: NO settle-bar-ledger line, NO day-
+slot consumption, the bar's SETTLED INTERMEDIATE/MIXED verdict
+unmoved. RULE 4 unchanged: NOTHING MOVES -- the committed
+bracket stays EXACTLY (254,557, 255,045]; the MID-ONLY
+NARROWING CLAIM stays SUSPENDED; NO vendor optimization exists
+for Intel (or for any vendor); the workgroup rows stay exactly
+as ADR-0358 left them -- every seventeenth-cut quantity is
+UNMEASURED until a future measuring session runs 54 fresh
+processes under the frozen protocol (NOT queued). Carry-
+forward s184: standing, not queued: the 17th cut MEASUREMENT
+half (its own pre-registered session), any further counted-day
+slot (its own freeze) and the cross-day tail-movement row.
+Evidence: docs/evidence/gpu/anv-b3bisect17prereg-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)

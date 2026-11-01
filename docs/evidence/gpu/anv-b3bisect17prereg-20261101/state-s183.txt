@@ -1,0 +1,66 @@
+amu-gpu s183 (2026-11-02 JST, cron) -- SEVENTEENTH CUT
+PRE-REGISTRATION: the post-freeze LANDING slice -- COMPLETE at
+local-commit level (the s182 carry-forward (a) completed: the
+standing gates (a)-(f) run live with s183 captures, record.txt
+for sessions 176-182, the ADR-0355 dated note appended); the
+landing TAIL (blocker-first re-check + push + JUN-499 comment)
+is the ONLY remaining step and runs the first tick after this
+one (or immediately if budget allows) -- see NOT DONE.
+
+FINDING (verified by tool output, docs/evidence/gpu/
+anv-b3bisect17prereg-20261101/): the 17th-cut pre-registration
+is now LANDED as documentation (record.txt 11,924 bytes +
+the ADR-0355 dated note) with every standing gate re-run live
+and byte-identical to its pin: (a) gpu_regime_classify.py
+--self-test 17,925 bytes == the s88 pin (cmp exit 0); (b) the
+scoped GPU gate GREEN 'Ran 123 tests containing 12162
+assertions. 0 failures, 0 errors.' run1 == run2 == both s88
+pins (919 bytes, cmp exit 0 x3), scratch runner created/run
+twice/DELETED, never committed; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff) .out
+0 bytes == pin .err 879 bytes == pin -- NO green full suite
+claimed; (d) settle-bar --self-test 3,590 bytes == pin + the
+LEDGER EVAL pair twice byte-identical (1,006 bytes) == the
+s117 post-append pin -> SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find docs/evidence/gpu -name '*.sh' -> 0; (f) settle-bar-
+ledger.txt == HEAD. protocol.txt re-hashed at landing: 19,974
+bytes sha256 ad8ace96... == the freeze pin (MATCH).
+NAMED, NOT HIDDEN: an ENVIRONMENT INCIDENT preceded the gate
+runs -- `kbb -Spath -M:test` could not resolve 23 git deps
+(kept captures gate-s183-envfail-run{1,2}: .err 877 bytes
+'Could not find namespace: kotoba.hir', rc 1, .txt 0 bytes):
+the ~/.gitlibs mirrors for those 23 repos were absent AND
+their upstream GitHub URLs return 'Repository not found'
+(HTTPS and SSH; gh lists 640 kotoba-lang repos, none of the
+names; no rename found). REPAIR = the missing mirrors re-
+created from the local sibling checkouts (git clone --mirror,
+user cache ~/.gitlibs only; every pinned sha present in the
+siblings, verified). Cause of the mirror loss UNMEASURED. The
+gates above ran AFTER the repair and match the pins exactly.
+Three-state unchanged: 17th-cut pre-registration = ACCEPTED
+DESIGN ONLY (frozen protocol + record + ADR note) -- NOT
+implemented compiler code, NOT a measurement; every 17th-cut
+quantity UNMEASURED. RULE 4 unchanged: NOTHING MOVES; bracket
+stays EXACTLY (254,557, 255,045]; MID-ONLY NARROWING CLAIM
+SUSPENDED; NO vendor optimization exists for Intel (or for any
+vendor); workgroup rows stay as ADR-0358 left them
+(:measured? false rows remain provisional -- NOT optimization
+evidence). BAR NON-INTERFERENCE held: NO ledger line, NO day-
+slot consumption, NO hardware, NO builds, NO compile, NO GO
+stamp (the cache repair touches nothing the ledger reads).
+Diff touches NO committed .cljk namespace (evidence .txt/.err/
+.out + the ADR .md only). Untracked scratch/, deps.edn,
+.DS_Store NOT staged.
+
+NOT DONE (s184 carries exactly this list): (a) the landing
+TAIL: blocker-first re-check (prlist-s183-prepush.json) + push
+to bot/amu-gpu-chain-20261028-4 (chain PR #1665) + the JUN-499
+landing comment -- this state file and the record/ADR note
+ride in that push (if no hermes/-headed blocker PR is open);
+(b) standing, not queued: the 17th cut MEASUREMENT half (54
+fresh processes under the frozen protocol -- NOT queued), any
+further counted-day slot (its own freeze) and the cross-day
+tail-movement row; (c) optional: post-hoc record-verify over
+the committed captures (record.txt section 5).
+
+(JUN-55, JUN-59; Linear tracking JUN-499)
