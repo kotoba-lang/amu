@@ -107,18 +107,22 @@ def main():
     image = build('declared', original)
     base = out / 'scope'
     base.mkdir()
-    def execute(label, target, allow, expected=0):
+    def execute(label, target, allow, expected=0, resource_scope=None):
+        scope = base if resource_scope is None else resource_scope
         custom = dict(env, KEXE_ALLOW=allow, KEXE_STRUCTURED_REPORT='1', KEXE_FUEL='10000000',
-                      KEXE_CAP_RESOURCES_35=str(base))
+                      KEXE_CAP_RESOURCES_35=str(scope))
         return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target], custom, expected)
     passed = execute('roundtrip-clock-fs', base, '7,35,38')
     match = re.search(rb':result ([0-9]+)\b', passed.stdout)
     assert match, passed.stdout
     clock_ms = int(match[1])
     assert abs(clock_ms - int(time.time() * 1000)) <= 10000, clock_ms
-    missing_clock = execute('ungranted-clock', base, '35,38', 120)
+    clock_refusal_scope = out / 'clock-refusal-scope'
+    clock_refusal_scope.mkdir()
+    missing_clock = execute('ungranted-clock', clock_refusal_scope, '35,38', 120,
+                            resource_scope=clock_refusal_scope)
     assert b'KEXE_CAP {:wire 7 :refused :not-granted}' in missing_clock.stderr
-    assert not (base / 'final').exists(), 'clock refusal reached filesystem effects'
+    assert not list(clock_refusal_scope.iterdir()), 'clock refusal reached filesystem effects'
     missing = execute('ungranted-fs', base, '7,38', 120)
     assert b'KEXE_CAP {:wire 35 :refused :not-granted}' in missing.stderr
     missing_cli = execute('ungranted-cli', base, '7,35', 120)
