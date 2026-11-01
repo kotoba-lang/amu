@@ -22,3 +22,20 @@ suite or legacy oracle was run for this port.
 This does not yet port manifest schema validation, report calculation,
 dataset file/digest verification, or `trust_cli` wiring. No old runtime path
 has been removed or qualified by this module alone.
+
+## Manifest schema validation source slice — 2026-11-01
+
+`coverage.kotoba` now also contains an internal `manifest-valid?` over Amu's
+native `:document` values. It checks exact map keys and types; dataset identity
+lengths, timestamp and SHA-256; interactive-web population; ordered month
+range; threshold bounds; observation count, platform uniqueness, exactly one
+unknown share and a 10000-bps total; and support status/path/evidence rules,
+including support-platform membership in observations.
+
+Command: `bin/amu check src/kotoba/compiler/coverage.kotoba` — output `ok`.
+This proves source admission only. The validator is not exported or wired into
+`trust_cli`; the single-file checker rejected the attempted public
+`:document`-argument export with E2104, so the callable module boundary still
+needs a qualified multi-module route. Report calculation, verified-evidence
+matching, dataset file IO/hash, native execution parity and runtime
+qualification remain open. No tests or legacy oracle were run for this slice.

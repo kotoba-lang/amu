@@ -28,3 +28,164 @@
            (= (bytes-at bytes 4) 45)
            (or (and (= month-tens 48) (>= month-ones 49) (<= month-ones 57))
                (and (= month-tens 49) (>= month-ones 48) (<= month-ones 50)))))))
+
+(defn- field [value :document key :keyword] :document
+  (option-value-of [:option :document]
+                   (document-get value (document-keyword key))
+                   (document-null)))
+
+(defn- has-keys? [value :document count :i64 keys :document] :bool
+  (and (= (document-kind value) :map)
+       (= (document-count value) count)
+       (loop [index 0]
+         (if (= index count) true
+           (let [key (option-value-of [:option :keyword]
+                                      (document-keyword-value (vector-item keys index)) :invalid)]
+             (and (document-contains value (document-keyword key))
+                  (recur (+ index 1))))))))
+
+(defn- string-length-in? [value :document min :i64 max :i64] :bool
+  (if (not (= (document-kind value) :string)) false
+    (let [string (option-value-of [:option :string]
+                                  (document-string-value value) "")
+          size (string-byte-length string)]
+      (and (>= size min) (<= size max)))))
+
+(defn- positive-integer? [value :document] :bool
+  (and (= (document-kind value) :i64)
+       (> (option-value-of [:option :i64] (document-i64-value value) 0) 0)))
+
+(defn- bounded-integer? [value :document min :i64 max :i64] :bool
+  (if (not (= (document-kind value) :i64)) false
+    (let [number (option-value-of [:option :i64]
+                                  (document-i64-value value) -1)]
+      (and (>= number min) (<= number max)))))
+
+(defn- month-at [period :document key :keyword] :string
+  (option-value-of [:option :string]
+                   (document-string-value (field period key)) ""))
+
+(defn- month-before-or-equal? [left :string right :string] :bool
+  (let [a (string-to-utf8 left) b (string-to-utf8 right)]
+    (loop [index 0]
+      (if (= index 7) true
+        (let [x (bytes-at a index) y (bytes-at b index)]
+          (if (< x y) true
+            (if (> x y) false (recur (+ index 1)))))))))
+
+(defn- platform [value :document] :keyword
+  (option-value-of [:option :keyword]
+                   (document-keyword-value (field value :platform)) :invalid))
+
+(defn- vector-item [value :document index :i64] :document
+  (option-value-of [:option :document]
+                   (document-vector-at value index) (document-null)))
+
+(defn- unique-platforms? [values :document] :bool
+  (loop [index 0]
+    (if (>= index (document-count values)) true
+      (let [current (platform (vector-item values index))]
+        (if (= current :invalid) false
+          (let [duplicate?
+                (loop [prior 0]
+                  (if (>= prior index) false
+                    (if (= current (platform (vector-item values prior))) true
+                      (recur (+ prior 1)))))]
+            (and (not duplicate?) (recur (+ index 1)))))))))
+
+(defn- observation-shares-total? [observations :document] :bool
+  (= 10000
+     (loop [index 0 total 0]
+       (if (>= index (document-count observations)) total
+         (let [share (option-value-of
+                      [:option :i64]
+                      (document-i64-value
+                       (field (vector-item observations index) :share-bps)) 0)]
+           (recur (+ index 1) (+ total share)))))))
+
+(defn- observation-valid? [value :document] :bool
+  (and (has-keys? value 2 (document-vector (document-keyword :platform) (document-keyword :share-bps)))
+       (= (document-kind (field value :platform)) :keyword)
+       (bounded-integer? (field value :share-bps) 0 10000)))
+
+(defn- support-valid? [value :document] :bool
+  (let [paths (field value :paths) evidence (field value :evidence)
+        status (option-value-of [:option :keyword]
+                                (document-keyword-value (field value :status)) :invalid)]
+    (and (has-keys? value 4 (document-vector (document-keyword :platform) (document-keyword :status) (document-keyword :paths) (document-keyword :evidence)))
+         (= (document-kind (field value :platform)) :keyword)
+         (or (= status :unsupported) (= status :experimental)
+             (= status :preview) (= status :release))
+         (= (document-kind paths) :set)
+         (<= (document-count paths) 2)
+         (= (document-count paths)
+            (+ (if (document-set-contains? paths (document-keyword :wasm)) 1 0)
+               (if (document-set-contains? paths (document-keyword :native)) 1 0)))
+         (= (document-kind evidence) :vector)
+         (<= (document-count evidence) 256)
+         (loop [index 0]
+           (if (>= index (document-count evidence)) true
+             (and (string-length-in? (vector-item evidence index) 64 64)
+                  (sha256? (option-value-of
+                            [:option :string]
+                            (document-string-value (vector-item evidence index)) ""))
+                  (recur (+ index 1)))))
+         (if (= status :release)
+           (and (> (document-count paths) 0) (> (document-count evidence) 0))
+           (= (document-count evidence) 0)))))
+
+(defn- manifest-valid? [manifest :document] :bool
+  (let [dataset (field manifest :dataset)
+        period (field manifest :period)
+        observations (field manifest :observations)
+        support (field manifest :support)
+        population (option-value-of [:option :keyword]
+                                    (document-keyword-value (field manifest :population)) :invalid)
+        format (option-value-of [:option :keyword]
+                                (document-keyword-value (field manifest :format)) :invalid)
+        from (month-at period :from) to (month-at period :to)]
+    (and (has-keys? manifest 7
+                    (document-vector (document-keyword :format) (document-keyword :dataset)
+                                     (document-keyword :population) (document-keyword :period)
+                                     (document-keyword :observations) (document-keyword :support)
+                                     (document-keyword :threshold-bps)))
+         (= format :kotoba.coverage-manifest/v1)
+         (has-keys? dataset 4 (document-vector (document-keyword :name) (document-keyword :url) (document-keyword :retrieved-at) (document-keyword :sha256)))
+         (string-length-in? (field dataset :name) 1 256)
+         (string-length-in? (field dataset :url) 1 2048)
+         (positive-integer? (field dataset :retrieved-at))
+         (string-length-in? (field dataset :sha256) 64 64)
+         (sha256? (option-value-of [:option :string]
+                                   (document-string-value (field dataset :sha256)) ""))
+         (= population :interactive-web)
+         (has-keys? period 2 (document-vector (document-keyword :from) (document-keyword :to)))
+         (month? from) (month? to) (month-before-or-equal? from to)
+         (bounded-integer? (field manifest :threshold-bps) 1 10000)
+         (= (document-kind observations) :vector)
+         (<= 1 (document-count observations)) (<= (document-count observations) 256)
+         (loop [index 0]
+           (if (>= index (document-count observations)) true
+             (and (observation-valid? (vector-item observations index))
+                  (recur (+ index 1)))))
+         (unique-platforms? observations)
+         (observation-shares-total? observations)
+         (= 1 (loop [index 0 total 0]
+                (if (>= index (document-count observations)) total
+                  (if (= (platform (vector-item observations index)) :unknown)
+                    (recur (+ index 1) (+ total 1))
+                    (recur (+ index 1) total)))))
+         (= (document-kind support) :vector)
+         (<= (document-count support) 256)
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (and (support-valid? (vector-item support index))
+                  (recur (+ index 1)))))
+         (unique-platforms? support)
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (let [current (platform (vector-item support index))]
+               (and (loop [observation 0 found? false]
+                      (if (or found? (>= observation (document-count observations))) found?
+                        (recur (+ observation 1)
+                               (= current (platform (vector-item observations observation))))))
+                    (recur (+ index 1)))))))))
