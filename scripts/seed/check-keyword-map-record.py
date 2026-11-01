@@ -49,9 +49,11 @@ REFUSALS = [
     ("f32-field", "(defrecord W [x :f32])\n(defn main [] :i64 0)", "E2128"),
     ("33-fields", "(defn main [] :i64 (let [m {" + " ".join(f":k{i} {i}" for i in range(33)) + "}] 0))", "E2128"),
     ("empty", "(defn main [] :i64 (let [m {}] 0))", "E2133"),
-    ("declared-record-parameter",
+    # JUN-733: a literal of the declared record's shape is that record (check-record-identity-option.py); one of
+    # another shape is still refused
+    ("declared-record-parameter-other-shape",
      "(defn g [m [:record :kotoba.map-literal/a+b [[:a :i64] [:b :string]]]] :i64 (:a m))\n"
-     "(defn main [] :i64 (g {:a 4 :b \"x\"}))", "E2104"),
+     "(defn main [] :i64 (g {:a 4 :b 5}))", "E2104"),
 ]
 
 

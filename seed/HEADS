@@ -374,8 +374,20 @@
                      literals with the same keys and field types share one anonymous record type (a gensym identity, SF-HASH
                      0 and RB-ID itself). NF-RES = HD-RECORD-NEW, the key nodes' NF-RES = their field index; 30-lower builds the
                      pair chain (lw-kwrec). (:k m), get and assoc of a present key are the record heads; assoc of an absent key
-                     is E2127. Not admitted: an anonymous record where a declared record type is expected (E2104), except the
-                     R6F declared-result tail and map->Name"]
+                     is E2127. JUN-733 (owner decision 2026-11-01; docs/language-ladder.edn :row-unification :literal-typing
+                     :absence :absent-field-from-assoc): STRUCTURAL IDENTITY -- a literal whose keys and value types fit exactly
+                     one declared record (defrecord, :schemas, inline [:record ..]) is that record; a literal written where a
+                     record R (or [:option R]) is expected -- a call argument, a record-new / constructor / assoc / literal
+                     field, a typed slot (ck-expr-to) -- with exactly R's keys is R, its values checked against R's field types
+                     (so two declared records of one shape are each reached by their own slot; a let-bound literal of such a
+                     shape stays anonymous, E2104 at the slot). A literal that is a declared record builds it in the record's
+                     field order (its constructor's evaluation order). NIL -- nil at a keyword key (map literal entry, assoc
+                     pair, record-new / constructor argument) is the none of an [:option T] field: T is the declared field's,
+                     else the one type the module spells at that key (ck-kopt-scan, before pass B: integer / string / keyword /
+                     boolean literals, (->R ..), calls of defns with a declared result, declared [:option T] fields of that key);
+                     a non-nil value T at such a key, or into an [:option T] field, is its some (30-lower lw-some: pair(x, 0)).
+                     nil with no T: E2182; two Ts: E2128; nil into a field that is not an option: E2104; nil anywhere else
+                     stays E2102"]
   ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
   ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
   ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
@@ -617,6 +629,9 @@
   ;; runtime type guessing, ADR 0204); reify is a permanent refusal (no anonymous implementations under closed dispatch)
   [:c E-CHECK-DISPATCH 2180 "no static implementation of protocol method '{name}' for this receiver's type"]
   [:c E-CHECK-REIFY 2181 "reify is not admitted (closed static dispatch; implement the protocol on a record): '{name}'"]
+  ;; JUN-733: nil at a keyword key of a map literal is the none of an [:option T] field; refused when no declared record
+  ;; takes the literal and the module spells no T at that key (lang/guest-grammar.edn :keyword-keys :refused-by-name :nil)
+  [:c E-CHECK-NILKEY 2182 "nil at key '{name}' has no field type: no declared record takes this literal and no other value at that key says T"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
