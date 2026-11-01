@@ -10,7 +10,12 @@
           (if (or (< digit 0) (> digit 9)) -1
             (recur (inc i) (+ (* result 10) digit))))))))
 (defn main [] :i64
-  (let [now (epoch-ms (typed-cap-call :clock/now :string :string "wall"))]
-    (if (<= now 0) -1
-      (let [base (typed-cap-call :cli/args :string :string "0")]
-        (if (io/roundtrip base) now 0)))))
+  (let [base (typed-cap-call :cli/args :string :string "0")
+        mode (typed-cap-call :cli/args :string :string "1")]
+    (cond
+      (= mode "stdout") (if (io/emit-stdout) 0 -1)
+      (= mode "stderr") (if (io/emit-stderr) 0 -1)
+      :else
+        (let [now (epoch-ms (typed-cap-call :clock/now :string :string "wall"))]
+          (if (<= now 0) -1
+            (if (io/roundtrip base) now 0))))))

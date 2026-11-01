@@ -36,13 +36,19 @@ def main():
     env = dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608')
     original = {p.name: p.read_bytes() for p in (ROOT / 'seed/tests/x86-project-fs').glob('*.kotoba')}
 
-    def call(label, argv, custom=env, expected=0, diagnostic=None, timeout=120):
+    def call(label, argv, custom=env, expected=0, diagnostic=None, timeout=120,
+             expected_stdout=None, expected_stderr=None):
         result = subprocess.run(list(map(str, argv)), env=custom, cwd=out, capture_output=True, timeout=timeout)
         (out / (label + '.stdout')).write_bytes(result.stdout)
         (out / (label + '.stderr')).write_bytes(result.stderr)
         assert result.returncode == expected, (label, result.returncode, result.stderr[-500:])
         if diagnostic:
             assert diagnostic in result.stderr and b'KEXE_TRAP' not in result.stderr, (label, result.stderr)
+        elif expected_stdout is not None or expected_stderr is not None:
+            if expected_stdout is not None:
+                assert expected_stdout in result.stdout, (label, result.stdout)
+            if expected_stderr is not None:
+                assert expected_stderr in result.stderr, (label, result.stderr)
         elif expected == 0:
             assert not result.stderr, (label, result.stderr)
         observations.append(dict(name=label, exit=result.returncode,
@@ -107,11 +113,14 @@ def main():
     image = build('declared', original)
     base = out / 'scope'
     base.mkdir()
-    def execute(label, target, allow, expected=0, resource_scope=None):
+    def execute(label, target, allow, expected=0, resource_scope=None, extra_args=(),
+                expected_stdout=None, expected_stderr=None):
         scope = base if resource_scope is None else resource_scope
         custom = dict(env, KEXE_ALLOW=allow, KEXE_STRUCTURED_REPORT='1', KEXE_FUEL='10000000',
                       KEXE_CAP_RESOURCES_35=str(scope))
-        return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target], custom, expected)
+        return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target, *extra_args],
+                    custom, expected, expected_stdout=expected_stdout,
+                    expected_stderr=expected_stderr)
     passed = execute('roundtrip-clock-fs', base, '7,35,38')
     match = re.search(rb':result ([0-9]+)\b', passed.stdout)
     assert match, passed.stdout
@@ -134,18 +143,28 @@ def main():
     os.symlink(outside, base / 'escape', target_is_directory=True)
     refused = execute('symlink-escape', base / 'escape', '7,35,38')
     assert re.search(rb':result 0\b', refused.stdout) and not list(outside.iterdir())
-    for label, old, new, diagnostic in [
-        ('missing-declaration', b'(:capabilities [:fs/app-data])', b'', b'E2176'),
-        ('empty-declaration', b'(:capabilities [:fs/app-data])', b'(:capabilities [])', b'E2176'),
-        ('unsupported-wire', b':fs/app-data', b':io/write', b'E7101')]:
+    execute('declared-stdout', base, '3,38', extra_args=('stdout',),
+            expected_stdout=b'kotoba-stdout-marker')
+    execute('declared-stderr', base, '4,38', extra_args=('stderr',),
+            expected_stderr=b'kotoba-stderr-marker')
+    missing_stdout = execute('ungranted-stdout', base, '4,38', 120,
+                             extra_args=('stdout',))
+    assert b'KEXE_CAP {:wire 3 :refused :not-granted}' in missing_stdout.stderr
+    missing_stderr = execute('ungranted-stderr', base, '3,38', 120,
+                             extra_args=('stderr',))
+    assert b'KEXE_CAP {:wire 4 :refused :not-granted}' in missing_stderr.stderr
+    for label, filename, old, new, diagnostic in [
+        ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'', b'E2176'),
+        ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'(:capabilities [])', b'E2176'),
+        ('unsupported-wire', 'entry.kotoba', b':clock/now', b':llm/generate', b'E7101')]:
         files = dict(original)
-        files['io.kotoba'] = files['io.kotoba'].replace(old, new)
+        files[filename] = files[filename].replace(old, new)
         build(label, files, diagnostic)
     files = dict(original)
     files['entry.kotoba'] = files['entry.kotoba'].replace(
         b'(:capabilities [:clock/now :cli/args])', b'(:capabilities [:cli/args])')
     build('missing-clock-declaration', files, b'E2176')
-    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_CLOCK7_FS35_CLI38',
+    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT3_STDERR4_CLOCK7_FS35_CLI38',
                   compilerSHA256=sha(compiler.read_bytes()), runnerSHA256=sha(runner.read_bytes()),
                   sources={name: sha(data) for name, data in original.items()}, derivation=derivation,
                   observations=observations, publicProductAdopted=False)
