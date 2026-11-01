@@ -1,7 +1,16 @@
 (ns x86-project-fs.entry
   (:export [main])
-  (:capabilities [:cli/args])
+  (:capabilities [:clock/now :cli/args])
   (:require [x86-project-fs.io :as io]))
+(defn- epoch-ms [value :string] :i64
+  (if (not= (string-length value) 13) -1
+    (loop [i 0 result 0]
+      (if (= i 13) result
+        (let [digit (- (string-code-point-at value i) 48)]
+          (if (or (< digit 0) (> digit 9)) -1
+            (recur (inc i) (+ (* result 10) digit))))))))
 (defn main [] :i64
-  (let [base (typed-cap-call :cli/args :string :string "0")]
-    (if (io/roundtrip base) 42 91)))
+  (let [now (epoch-ms (typed-cap-call :clock/now :string :string "wall"))]
+    (if (<= now 0) -1
+      (let [base (typed-cap-call :cli/args :string :string "0")]
+        (if (io/roundtrip base) now 0)))))

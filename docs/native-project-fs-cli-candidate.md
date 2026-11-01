@@ -53,3 +53,20 @@ point and the bounded FS/CLI probes do not complete that adoption or qualify
 other effectful project profiles. The Awai store can be tested against this
 explicitly derived and pinned candidate; its ordinary pure authority gate
 also continues to use the existing compiler.
+
+## 2026-11-02 Itonami clock + filesystem follow-up
+
+The Amu candidate source and focused fixture now additionally admit declared
+wall-clock wire 7 for the Itonami cron-store route. Wire 7 is added to the
+existing allowlist only; source still must declare the capability, and the
+runtime separately requires `KEXE_ALLOW`. The positive control checks the
+returned wall time against the Linux host clock before FS35 effects. A
+no-clock-grant control verifies named refusal before any filesystem effect,
+and an undeclared clock call must fail compile admission. Existing FS35/CLI38,
+scope, symlink, and unsupported-wire controls remain.
+
+This is a follow-up to the completed AWAI-97 FS35/CLI38 candidate, not public
+compiler adoption. It is intended to unblock the standalone Itonami cron-store
+gate. The updated 60-module selfhost derivation and exact native run must pass
+before the Itonami gate is repinned; public compiler/root adoption remains a
+separate qualification.

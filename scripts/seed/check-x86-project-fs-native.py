@@ -11,6 +11,7 @@ import os
 import platform
 import re
 import subprocess
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -110,11 +111,17 @@ def main():
         custom = dict(env, KEXE_ALLOW=allow, KEXE_STRUCTURED_REPORT='1', KEXE_FUEL='10000000',
                       KEXE_CAP_RESOURCES_35=str(base))
         return call(label, [runner, image, 0, 0, 'x86_64', allow, '--', target], custom, expected)
-    passed = execute('roundtrip', base, '35,38')
-    assert re.search(rb':result 42\b', passed.stdout)
-    missing = execute('ungranted-fs', base, '38', 120)
+    passed = execute('roundtrip-clock-fs', base, '7,35,38')
+    match = re.search(rb':result ([0-9]+)\b', passed.stdout)
+    assert match, passed.stdout
+    clock_ms = int(match[1])
+    assert abs(clock_ms - int(time.time() * 1000)) <= 10000, clock_ms
+    missing_clock = execute('ungranted-clock', base, '35,38', 120)
+    assert b'KEXE_CAP {:wire 7 :refused :not-granted}' in missing_clock.stderr
+    assert not (base / 'final').exists(), 'clock refusal reached filesystem effects'
+    missing = execute('ungranted-fs', base, '7,38', 120)
     assert b'KEXE_CAP {:wire 35 :refused :not-granted}' in missing.stderr
-    missing_cli = execute('ungranted-cli', base, '35', 120)
+    missing_cli = execute('ungranted-cli', base, '7,35', 120)
     assert b'KEXE_CAP {:wire 38 :refused :not-granted}' in missing_cli.stderr
     outside = out / 'outside'
     outside.mkdir()
@@ -130,7 +137,11 @@ def main():
         files = dict(original)
         files['io.kotoba'] = files['io.kotoba'].replace(old, new)
         build(label, files, diagnostic)
-    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_FS35_CLI38',
+    files = dict(original)
+    files['entry.kotoba'] = files['entry.kotoba'].replace(
+        b'(:capabilities [:clock/now :cli/args])', b'(:capabilities [:cli/args])')
+    build('missing-clock-declaration', files, b'E2176')
+    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_CLOCK7_FS35_CLI38',
                   compilerSHA256=sha(compiler.read_bytes()), runnerSHA256=sha(runner.read_bytes()),
                   sources={name: sha(data) for name, data in original.items()}, derivation=derivation,
                   observations=observations, publicProductAdopted=False)
