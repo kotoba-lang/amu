@@ -6081,7 +6081,7 @@
 (defn- ck-r6b-t-doc19 [] :string
   (string-concat "(defn- document-map [] :document (__r6-dd \"{}\"))\n"
   (string-concat "(defn- __r6-dvs [v :document x :document] :document (__r6-dd (__kr_dvadd (__r6-ds v) (__r6-ds x))))\n"
-  (string-concat "(defn- __r6-dss [s :document x :document] :document (__r6-dd (__kr_dsetput (__r6-ds s) (__r6-ds x))))\n"
+  (string-concat "(defn- __r6-dss [s :document x :document] :document (if (__kr_dsetc (__r6-ds s) (__r6-ds x)) s (__r6-dd (__kr_dsetput (__r6-ds s) (__r6-ds x)))))\n"
   (string-concat "(defn- __r6-dms [m :document k :document v :document] :document (__r6-dd (__kr_dmapputu (__r6-ds m) (__r6-ds k) (__r6-ds v))))\n"
   (string-concat "(defn- __r6-dbd [d :document] :document (__r6-dd (__kr_dbounded (__r6-ds d))))\n"
   "(defn- document-count [d :document] :i64 (__kr_dcount (__r6-ds d)))\n"))))))
@@ -6089,9 +6089,11 @@
   (string-concat "(defn- document-kind [d :document] :keyword (__r6-as :keyword (__r6-kwh (__kr_dkind (__r6-ds d)))))\n"
   (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__r6-ds a) (__r6-ds b)))\n"
   (string-concat "(defn- document-set-contains? [s :document x :document] :bool (__kr_dsetc (__r6-ds s) (__r6-ds x)))\n"
+  (string-concat "(defn- document-set-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dnth (__kr_dreq (__r6-ds d) 9 9) i)))\n"
+  (string-concat "(defn- document-set-conj [s :document x :document] :document (__r6-dss s x))\n"
   (string-concat "(defn- document-contains [m :document k :document] :bool (__kr_dcontains (__r6-ds m) (__r6-ds k)))\n"
   (string-concat "(defn- document-get [m :document k :document] [:option :document] (__r6-dopt (__kr_dget (__r6-ds m) (__r6-ds k))))\n"
-  "(defn- document-vector-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dvat (__r6-ds d) i)))\n"))))))
+  "(defn- document-vector-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dvat (__r6-ds d) i)))\n"))))))))
 (defn- ck-r6b-t-doc21 [] :string
   (string-concat "(defn- document-list-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dlat (__r6-ds d) i)))\n"
   (string-concat "(defn- document-map-entry-at [d :document i :i64] [:option :document] (__r6-dopt (__kr_dentry (__r6-ds d) i)))\n"
