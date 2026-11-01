@@ -59,6 +59,32 @@ Command: candidate `bin/amu check <entry.kotoba> --source-lock <project.ksl>`
 — output `ok`. This confirms locked project source admission and public
 signature resolution only. It does not execute the validator or establish
 manifest semantic parity. The Amu candidate is open/unmerged; production Amu
-main and `trust_cli` remain unqualified. Report calculation, verified-evidence
-matching, dataset file IO/hash, and runtime migration remain open. No test suite
-or legacy oracle was run.
+main and `trust_cli` remain unqualified. Report calculation, verification of
+the evidence-matching predicate, dataset file IO/hash, and runtime migration
+remain open. No test suite or legacy oracle was run.
+
+## Verified release evidence matching source admission — 2026-11-01
+
+Added the public pure `release-evidence-valid?` predicate. It validates the
+verified-evidence vector shape, finds each release digest by digest key,
+requires the verified platform to match, and checks that verified paths cover
+the release paths. Duplicate verified digests keep the final matching entry,
+matching the CLJK report's digest-index behavior. Support paths are already
+restricted by `manifest-valid?` to `:wasm` and `:native`; the check tests those
+members explicitly because the current Amu project candidate refuses
+`document-set-at`.
+
+A locked two-module Kotoba caller importing `release-evidence-valid?` passed
+candidate Amu `check` at `d673111b66f43a8569e545c772a70e51737e1707` (CLI image
+SHA-256 `ae94dc99ffe489ef77cb5eb0044bea1d2500a4273d45c55bcf57b887994f390a`).
+Exact source SHA-256:
+`86f70173e58a5cc21652f0c810f8d6c5a6cf42240b8f11969cc5d541fb7137b8`; caller
+SHA-256:
+`2fcaefa4803b13f526fc63ada0156af99054d35666ba00daea4a53095307759a`; KSL2
+lock SHA-256:
+`7e35f4e77319be5b69f1b09cfa4855a4e565d6af31fc5ee9d54bd6e1345f8747`.
+
+This is locked source admission and signature resolution only. It does not
+execute this predicate or establish CLJK semantic parity. Report calculation,
+dataset file IO/hash, `trust_cli` wiring, and production Amu qualification
+remain open. No test suite or legacy oracle was run.

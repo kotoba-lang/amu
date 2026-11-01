@@ -1,6 +1,6 @@
 (ns kotoba.compiler.coverage
   "Canonical Kotoba validators for coverage manifest identity fields and schema."
-  {:kotoba/export [sha256? month? manifest-valid?]})
+  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid?]})
 
 (defn- ascii-digit? [byte :i64] :bool
   (and (>= byte 48) (<= byte 57)))
@@ -188,4 +188,69 @@
                       (if (or found? (>= observation (document-count observations))) found?
                         (recur (+ observation 1)
                                (= current (platform (vector-item observations observation))))))
+                    (recur (+ index 1)))))))))
+
+(defn- support-paths-covered? [required :document available :document] :bool
+  (and (= (document-kind required) :set)
+       (= (document-kind available) :set)
+       (if (document-set-contains? required (document-keyword :wasm))
+         (document-set-contains? available (document-keyword :wasm)) true)
+       (if (document-set-contains? required (document-keyword :native))
+         (document-set-contains? available (document-keyword :native)) true)))
+
+(defn- evidence-entry-valid? [entry :document] :bool
+  (and (= (document-kind entry) :map)
+       (string-length-in? (field entry :digest) 64 64)
+       (sha256? (option-value-of [:option :string]
+                                 (document-string-value (field entry :digest)) ""))
+       (= (document-kind (field entry :platform)) :keyword)
+       (= (document-kind (field entry :paths)) :set)))
+
+(defn- verified-evidence-valid? [evidence :document] :bool
+  (and (= (document-kind evidence) :vector)
+       (loop [index 0]
+         (if (>= index (document-count evidence)) true
+           (and (evidence-entry-valid? (vector-item evidence index))
+                (recur (+ index 1)))))))
+
+(defn- evidence-digest [entry :document] :string
+  (option-value-of [:option :string]
+                   (document-string-value (field entry :digest)) ""))
+
+(defn- matching-evidence? [digest :string expected-platform :keyword
+                           required-paths :document verified :document] :bool
+  (let [matched
+        (loop [index 0 found (document-null)]
+          (if (>= index (document-count verified)) found
+            (let [entry (vector-item verified index)]
+              (if (= digest (evidence-digest entry))
+                (recur (+ index 1) entry)
+                (recur (+ index 1) found)))))]
+    (and (= (document-kind matched) :map)
+         (= expected-platform (platform matched))
+         (support-paths-covered? required-paths (field matched :paths)))))
+
+(defn- release-entry-evidence-valid? [support :document verified :document] :bool
+  (let [platform-name (platform support)
+        required-paths (field support :paths)
+        evidence (field support :evidence)]
+    (loop [index 0]
+      (if (>= index (document-count evidence)) true
+        (let [digest (option-value-of [:option :string]
+                                      (document-string-value (vector-item evidence index)) "")]
+          (and (matching-evidence? digest platform-name required-paths verified)
+               (recur (+ index 1))))))))
+
+(defn release-evidence-valid? [manifest :document verified :document] :bool
+  (and (manifest-valid? manifest)
+       (verified-evidence-valid? verified)
+       (let [support (field manifest :support)]
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (let [entry (vector-item support index)
+                   status (option-value-of [:option :keyword]
+                                           (document-keyword-value (field entry :status)) :invalid)]
+               (and (if (= status :release)
+                      (release-entry-evidence-valid? entry verified)
+                      true)
                     (recur (+ index 1)))))))))
