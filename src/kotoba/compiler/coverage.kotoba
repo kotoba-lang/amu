@@ -1,0 +1,361 @@
+(ns kotoba.compiler.coverage
+  "Canonical Kotoba validators for coverage manifest identity fields and schema."
+  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report verify-dataset]}
+  (:require [kotoba.compiler.io :as io]
+            [kotoba.compiler.io-buffer :as buffer]
+            [multiformats.sha256 :as sha256]))
+
+(defn- ascii-digit? [byte :i64] :bool
+  (and (>= byte 48) (<= byte 57)))
+
+(defn- ascii-lower-hex? [byte :i64] :bool
+  (or (ascii-digit? byte) (and (>= byte 97) (<= byte 102))))
+
+(defn sha256? [value :string] :bool
+  (if (not (= (string-byte-length value) 64)) false
+    (let [bytes (string-to-utf8 value)]
+      (loop [index 0]
+        (if (= index 64) true
+          (if (ascii-lower-hex? (bytes-at bytes index))
+            (recur (+ index 1)) false))))))
+
+(defn month? [value :string] :bool
+  (if (not (= (string-byte-length value) 7)) false
+    (let [bytes (string-to-utf8 value)
+          month-tens (bytes-at bytes 5)
+          month-ones (bytes-at bytes 6)]
+      (and (ascii-digit? (bytes-at bytes 0))
+           (ascii-digit? (bytes-at bytes 1))
+           (ascii-digit? (bytes-at bytes 2))
+           (ascii-digit? (bytes-at bytes 3))
+           (= (bytes-at bytes 4) 45)
+           (or (and (= month-tens 48) (>= month-ones 49) (<= month-ones 57))
+               (and (= month-tens 49) (>= month-ones 48) (<= month-ones 50)))))))
+
+(defn- field [value :document key :keyword] :document
+  (option-value-of [:option :document]
+                   (document-get value (document-keyword key))
+                   (document-null)))
+
+(defn- has-keys? [value :document count :i64 keys :document] :bool
+  (and (= (document-kind value) :map)
+       (= (document-count value) count)
+       (loop [index 0]
+         (if (= index count) true
+           (let [key (option-value-of [:option :keyword]
+                                      (document-keyword-value (vector-item keys index)) :invalid)]
+             (and (document-contains value (document-keyword key))
+                  (recur (+ index 1))))))))
+
+(defn- string-length-in? [value :document min :i64 max :i64] :bool
+  (if (not (= (document-kind value) :string)) false
+    (let [string (option-value-of [:option :string]
+                                  (document-string-value value) "")
+          size (string-byte-length string)]
+      (and (>= size min) (<= size max)))))
+
+(defn- positive-integer? [value :document] :bool
+  (and (= (document-kind value) :i64)
+       (> (option-value-of [:option :i64] (document-i64-value value) 0) 0)))
+
+(defn- bounded-integer? [value :document min :i64 max :i64] :bool
+  (if (not (= (document-kind value) :i64)) false
+    (let [number (option-value-of [:option :i64]
+                                  (document-i64-value value) -1)]
+      (and (>= number min) (<= number max)))))
+
+(defn- month-at [period :document key :keyword] :string
+  (option-value-of [:option :string]
+                   (document-string-value (field period key)) ""))
+
+(defn- month-before-or-equal? [left :string right :string] :bool
+  (let [a (string-to-utf8 left) b (string-to-utf8 right)]
+    (loop [index 0]
+      (if (= index 7) true
+        (let [x (bytes-at a index) y (bytes-at b index)]
+          (if (< x y) true
+            (if (> x y) false (recur (+ index 1)))))))))
+
+(defn- platform [value :document] :keyword
+  (option-value-of [:option :keyword]
+                   (document-keyword-value (field value :platform)) :invalid))
+
+(defn- vector-item [value :document index :i64] :document
+  (option-value-of [:option :document]
+                   (document-vector-at value index) (document-null)))
+
+(defn- unique-platforms? [values :document] :bool
+  (loop [index 0]
+    (if (>= index (document-count values)) true
+      (let [current (platform (vector-item values index))]
+        (if (= current :invalid) false
+          (let [duplicate?
+                (loop [prior 0]
+                  (if (>= prior index) false
+                    (if (= current (platform (vector-item values prior))) true
+                      (recur (+ prior 1)))))]
+            (and (not duplicate?) (recur (+ index 1)))))))))
+
+(defn- observation-shares-total? [observations :document] :bool
+  (= 10000
+     (loop [index 0 total 0]
+       (if (>= index (document-count observations)) total
+         (let [share (option-value-of
+                      [:option :i64]
+                      (document-i64-value
+                       (field (vector-item observations index) :share-bps)) 0)]
+           (recur (+ index 1) (+ total share)))))))
+
+(defn- observation-valid? [value :document] :bool
+  (and (has-keys? value 2 (document-vector (document-keyword :platform) (document-keyword :share-bps)))
+       (= (document-kind (field value :platform)) :keyword)
+       (bounded-integer? (field value :share-bps) 0 10000)))
+
+(defn- support-valid? [value :document] :bool
+  (let [paths (field value :paths) evidence (field value :evidence)
+        status (option-value-of [:option :keyword]
+                                (document-keyword-value (field value :status)) :invalid)]
+    (and (has-keys? value 4 (document-vector (document-keyword :platform) (document-keyword :status) (document-keyword :paths) (document-keyword :evidence)))
+         (= (document-kind (field value :platform)) :keyword)
+         (or (= status :unsupported) (= status :experimental)
+             (= status :preview) (= status :release))
+         (= (document-kind paths) :set)
+         (<= (document-count paths) 2)
+         (= (document-count paths)
+            (+ (if (document-set-contains? paths (document-keyword :wasm)) 1 0)
+               (if (document-set-contains? paths (document-keyword :native)) 1 0)))
+         (= (document-kind evidence) :vector)
+         (<= (document-count evidence) 256)
+         (loop [index 0]
+           (if (>= index (document-count evidence)) true
+             (and (string-length-in? (vector-item evidence index) 64 64)
+                  (sha256? (option-value-of
+                            [:option :string]
+                            (document-string-value (vector-item evidence index)) ""))
+                  (recur (+ index 1)))))
+         (if (= status :release)
+           (and (> (document-count paths) 0) (> (document-count evidence) 0))
+           (= (document-count evidence) 0)))))
+
+(defn manifest-valid? [manifest :document] :bool
+  (let [dataset (field manifest :dataset)
+        period (field manifest :period)
+        observations (field manifest :observations)
+        support (field manifest :support)
+        population (option-value-of [:option :keyword]
+                                    (document-keyword-value (field manifest :population)) :invalid)
+        format (option-value-of [:option :keyword]
+                                (document-keyword-value (field manifest :format)) :invalid)
+        from (month-at period :from) to (month-at period :to)]
+    (and (has-keys? manifest 7
+                    (document-vector (document-keyword :format) (document-keyword :dataset)
+                                     (document-keyword :population) (document-keyword :period)
+                                     (document-keyword :observations) (document-keyword :support)
+                                     (document-keyword :threshold-bps)))
+         (= format :kotoba.coverage-manifest/v1)
+         (has-keys? dataset 4 (document-vector (document-keyword :name) (document-keyword :url) (document-keyword :retrieved-at) (document-keyword :sha256)))
+         (string-length-in? (field dataset :name) 1 256)
+         (string-length-in? (field dataset :url) 1 2048)
+         (positive-integer? (field dataset :retrieved-at))
+         (string-length-in? (field dataset :sha256) 64 64)
+         (sha256? (option-value-of [:option :string]
+                                   (document-string-value (field dataset :sha256)) ""))
+         (= population :interactive-web)
+         (has-keys? period 2 (document-vector (document-keyword :from) (document-keyword :to)))
+         (month? from) (month? to) (month-before-or-equal? from to)
+         (bounded-integer? (field manifest :threshold-bps) 1 10000)
+         (= (document-kind observations) :vector)
+         (<= 1 (document-count observations)) (<= (document-count observations) 256)
+         (loop [index 0]
+           (if (>= index (document-count observations)) true
+             (and (observation-valid? (vector-item observations index))
+                  (recur (+ index 1)))))
+         (unique-platforms? observations)
+         (observation-shares-total? observations)
+         (= 1 (loop [index 0 total 0]
+                (if (>= index (document-count observations)) total
+                  (if (= (platform (vector-item observations index)) :unknown)
+                    (recur (+ index 1) (+ total 1))
+                    (recur (+ index 1) total)))))
+         (= (document-kind support) :vector)
+         (<= (document-count support) 256)
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (and (support-valid? (vector-item support index))
+                  (recur (+ index 1)))))
+         (unique-platforms? support)
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (let [current (platform (vector-item support index))]
+               (and (loop [observation 0 found? false]
+                      (if (or found? (>= observation (document-count observations))) found?
+                        (recur (+ observation 1)
+                               (= current (platform (vector-item observations observation))))))
+                    (recur (+ index 1)))))))))
+
+(defn- support-paths-covered? [required :document available :document] :bool
+  (and (= (document-kind required) :set)
+       (= (document-kind available) :set)
+       (if (document-set-contains? required (document-keyword :wasm))
+         (document-set-contains? available (document-keyword :wasm)) true)
+       (if (document-set-contains? required (document-keyword :native))
+         (document-set-contains? available (document-keyword :native)) true)))
+
+(defn- evidence-entry-valid? [entry :document] :bool
+  (and (= (document-kind entry) :map)
+       (string-length-in? (field entry :digest) 64 64)
+       (sha256? (option-value-of [:option :string]
+                                 (document-string-value (field entry :digest)) ""))
+       (= (document-kind (field entry :platform)) :keyword)
+       (= (document-kind (field entry :paths)) :set)))
+
+(defn- verified-evidence-valid? [evidence :document] :bool
+  (and (= (document-kind evidence) :vector)
+       (loop [index 0]
+         (if (>= index (document-count evidence)) true
+           (and (evidence-entry-valid? (vector-item evidence index))
+                (recur (+ index 1)))))))
+
+(defn- evidence-digest [entry :document] :string
+  (option-value-of [:option :string]
+                   (document-string-value (field entry :digest)) ""))
+
+(defn- matching-evidence? [digest :string expected-platform :keyword
+                           required-paths :document verified :document] :bool
+  (let [matched
+        (loop [index 0 found (document-null)]
+          (if (>= index (document-count verified)) found
+            (let [entry (vector-item verified index)]
+              (if (= digest (evidence-digest entry))
+                (recur (+ index 1) entry)
+                (recur (+ index 1) found)))))]
+    (and (= (document-kind matched) :map)
+         (= expected-platform (platform matched))
+         (support-paths-covered? required-paths (field matched :paths)))))
+
+(defn- release-entry-evidence-valid? [support :document verified :document] :bool
+  (let [platform-name (platform support)
+        required-paths (field support :paths)
+        evidence (field support :evidence)]
+    (loop [index 0]
+      (if (>= index (document-count evidence)) true
+        (let [digest (option-value-of [:option :string]
+                                      (document-string-value (vector-item evidence index)) "")]
+          (and (matching-evidence? digest platform-name required-paths verified)
+               (recur (+ index 1))))))))
+
+(defn release-evidence-valid? [manifest :document verified :document] :bool
+  (and (manifest-valid? manifest)
+       (verified-evidence-valid? verified)
+       (let [support (field manifest :support)]
+         (loop [index 0]
+           (if (>= index (document-count support)) true
+             (let [entry (vector-item support index)
+                   status (option-value-of [:option :keyword]
+                                           (document-keyword-value (field entry :status)) :invalid)]
+               (and (if (= status :release)
+                      (release-entry-evidence-valid? entry verified)
+                      true)
+                    (recur (+ index 1)))))))))
+
+(defn- observation-share [observations :document wanted :keyword] :i64
+  (loop [index 0 total 0]
+    (if (>= index (document-count observations)) total
+      (let [entry (vector-item observations index)]
+        (if (= (platform entry) wanted)
+          (recur (+ index 1)
+                 (+ total (option-value-of [:option :i64]
+                           (document-i64-value (field entry :share-bps)) 0)))
+          (recur (+ index 1) total))))))
+
+(defn- released-share [observations :document support :document] :i64
+  (loop [index 0 total 0]
+    (if (>= index (document-count support)) total
+      (let [entry (vector-item support index)
+            status (option-value-of [:option :keyword]
+                                    (document-keyword-value (field entry :status)) :invalid)]
+        (if (= status :release)
+          (recur (+ index 1) (+ total (observation-share observations (platform entry))))
+          (recur (+ index 1) total))))))
+
+(defn- release-platform-set [support :document] :document
+  (loop [index 0 platforms (document-set)]
+    (if (>= index (document-count support)) platforms
+      (let [entry (vector-item support index)
+            status (option-value-of [:option :keyword]
+                                    (document-keyword-value (field entry :status)) :invalid)]
+        (recur (+ index 1)
+          (if (= status :release)
+            (document-set-conj platforms (field entry :platform))
+            platforms))))))
+
+(defn- report-document [manifest :document] :document
+  (let [observations (field manifest :observations)
+        support (field manifest :support)
+        unknown (observation-share observations :unknown)
+        identifiable (- 10000 unknown)
+        supported (released-share observations support)
+        coverage (if (= identifiable 0) 0 (quot (* supported 10000) identifiable))
+        threshold (option-value-of [:option :i64]
+                                   (document-i64-value (field manifest :threshold-bps)) 0)]
+    (document-map
+      (document-keyword :format) (document-keyword :kotoba.coverage-report/v1)
+      (document-keyword :population) (field manifest :population)
+      (document-keyword :period) (field manifest :period)
+      (document-keyword :dataset-sha256) (field (field manifest :dataset) :sha256)
+      (document-keyword :unknown-bps) (document-i64 unknown)
+      (document-keyword :identifiable-bps) (document-i64 identifiable)
+      (document-keyword :supported-bps) (document-i64 supported)
+      (document-keyword :coverage-bps) (document-i64 coverage)
+      (document-keyword :threshold-bps) (document-i64 threshold)
+      (document-keyword :goal-met?) (document-bool (>= coverage threshold))
+      (document-keyword :release-platforms) (release-platform-set support))))
+
+(defn- coverage-error [message :string] :document
+  (document-map (document-keyword :phase) (document-keyword :coverage)
+                (document-keyword :message) (document-string message)))
+
+(defn report [manifest :document verified :document] [:result :document :document]
+  (if (not (manifest-valid? manifest))
+    (result-err-of [:result :document :document]
+                   (coverage-error "coverage manifest schema rejected"))
+    (if (not (verified-evidence-valid? verified))
+      (result-err-of [:result :document :document]
+                     (coverage-error "verified coverage evidence rejected"))
+      (if (not (release-evidence-valid? manifest verified))
+        (result-err-of [:result :document :document]
+                       (coverage-error "release coverage evidence is missing or mismatched"))
+        (result-ok-of [:result :document :document]
+                      (report-document manifest))))))
+
+(defn- append-chunk-bytes [chunk :bytes out :vector-i64] :vector-i64
+  (loop [byte-index 0 current out]
+    (if (>= byte-index (bytes-count chunk)) current
+      (recur (+ byte-index 1)
+             (vector-conj current (bytes-at chunk byte-index))))))
+
+(defn- buffer-bytes [value [:ref :io.buffer/value]] :vector-i64
+  (loop [chunk-index 0 out (vector-alloc 0)]
+    (if (>= chunk-index (buffer/chunk-count value)) out
+      (let [chunk-option (buffer/chunk-at value chunk-index)
+            chunk (option-value-of [:option :bytes] chunk-option (bytes-empty))]
+        (recur (+ chunk-index 1) (append-chunk-bytes chunk out))))))
+
+(defn verify-dataset [manifest :document path :string] [:result :bool :document]
+  (if (not (manifest-valid? manifest))
+    (result-err-of [:result :bool :document]
+                   (coverage-error "coverage manifest schema rejected"))
+    (let [loaded (io/read-bounded-bytes-file path 8388608)]
+      (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] loaded))
+        (result-err-of [:result :bool :document]
+          (result-error-of [:result [:ref :io.buffer/value] :document] loaded
+                           (coverage-error "coverage dataset could not be read")))
+        (let [value (result-value-of [:result [:ref :io.buffer/value] :document] loaded
+                                     (buffer/empty-buffer))
+              actual (sha256/digest-hex (buffer-bytes value))
+              expected (option-value-of [:option :string]
+                         (document-string-value (field (field manifest :dataset) :sha256)) "")]
+          (if (= actual expected)
+            (result-ok-of [:result :bool :document] true)
+            (result-err-of [:result :bool :document]
+                           (coverage-error "coverage dataset digest mismatch"))))))))
