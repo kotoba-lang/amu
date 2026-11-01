@@ -1,0 +1,53 @@
+== JUN-59 session 169/171 build census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, SIXTEENTH CUT -- THE CLEAN-BISECTION CUT AT  ==
+== THE FLOOR MIDPOINT (345,1354) n=254,801, the MEASUREMENT half ==
+== of the s166 pre-registration; frozen protocol                 ==
+== anv-b3bisect16prereg-20261101/protocol.txt)                   ==
+Build window (host timeline): builds ran at the GO stamp and
+before the first run (host-build-s169.txt / host-runs-s169.txt;
+GO 2026-11-01T09:31:52Z, builds 09:31:52Z..09:31:52Z, run window
+09:33:39Z..10:28:42Z -- all 54 run stamps strictly after GO).
+== host ==
+aiueos-6600hs (murakumo-ci-6600hs, tailscale 100.98.24.37), user
+murakumo-ci (groups include render). Workdir
+~/anv-b3bisect16-20261101, runs
+cwd=shaders/ (manifest passed as ../cases-s169-a.txt; binaries
+../anv-bb-<tag>). Toolchain gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1)
+13.3.0 (the host-verify-s158.txt live capture; same host/toolchain
+as session 2's committed compile-toolchain.txt; s169 ran no new
+toolchain capture -- named).
+(glslangValidator NOT used -- ZERO derivation; the corpus spv are
+the archived byte-verified artifacts and the instrument is the
+frozen s153 ROUNDS6400 source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> ==
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) build_rc=0 @2026-11-01T09:31:52Z
+build fm (-DBATCH=3 -DWORK_MUL=345 -DNDIV=1354) build_rc=0 @2026-11-01T09:31:52Z
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) build_rc=0 @2026-11-01T09:31:52Z
+== build stderr byte counts (host-side wc -c, verbatim) ==
+0 build-c2.err
+0 build-fm.err
+0 build-c8.err
+0 total
+== binary sha256 (host-side sha256sum, verbatim; re-run post-window ==
+== at s170 AND s171 BYTE-IDENTICAL to these first-measured pins) ==
+b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48  anv-bb-c2
+8c568de523418f0042b30023eb01d6a083c9e1819f0c1dfa7f7edde15479c1a8  anv-bb-fm
+2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831  anv-bb-c8
+== PIN COMPARISON ==
+NO committed pins exist for these three binaries: this cut builds
+the FROZEN ROUNDS6400 VARIANT (source pin c2704aaa...), so the
+three digests above are FIRST-MEASURED PINS (the s136 440604ef...
+precedent; the s147 byte-identity-to-committed-pin rule does NOT
+apply -- frozen protocol arm (b), named hazard in W3: any class
+disagreement with the committed windows may be BINARY-driven,
+cause UNMEASURED, L2). They are parsed from host-build-s169.txt
+and were never transcribed. c2/c8 reproduce the s158 digests
+BYTE-IDENTICALLY on the same source bytes (a capture observation,
+not a claim); fm (345,1354) is NEW (the s166 NAMED L8
+combination-risk triple, first measured at this cut). The s170
+post-window re-run census and the s171 host-digests re-census are
+BYTE-IDENTICAL 3/3, linking every one of the 54 runs to these
+binaries.
+build_rcs=['0', '0', '0'] (3/3 rc 0); stderr-zero files: ['c2',
+'fm', 'c8'] (3/3)
+(JUN-55, JUN-59; Linear tracking JUN-499)
