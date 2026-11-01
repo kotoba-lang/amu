@@ -83,7 +83,9 @@ REFUSALS = [
     ("def-mixed-vector", "(def x [1 :a])\n(defn main [] :i64 0)", "E2116"),
     ("def-unknown-symbol", "(def x {:a 0.5 :b nope})\n(defn main [] :i64 0)", "E2102"),
     ("assoc-odd", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :b))))", "E2103"),
-    ("assoc-absent-field", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :z 2))))", "E2127"),
+    # JUN-733: assoc of a key the record does not have extends the row (check-row-operations.py); reading a field
+    # the record does not have is still refused
+    ("assoc-absent-field", "(defn main [] :i64 (let [s (->S 1 2)] (:z (assoc s :a 1 :b 2))))", "E2127"),
     ("assoc-field-type", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :b \"x\"))))", "E2104"),
     ("assoc-map-value-type",
      "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (get (assoc m :a 1 :b true) :a 0)))", "E2104"),

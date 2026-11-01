@@ -40,6 +40,8 @@ on:
       - 'seed/tests/native-closed-dispatch.kotoba'
       - 'scripts/seed/check-record-identity-option.py'
       - 'seed/tests/native-record-identity-option.kotoba'
+      - 'scripts/seed/check-row-operations.py'
+      - 'seed/tests/native-row-operations.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.py'
       - 'scripts/seed/check-definition-cids-native.py'
@@ -193,6 +195,11 @@ jobs:
           python3 scripts/seed/check-record-identity-option.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-record-identity-option"
+      - name: row operations -- assoc extends, dissoc / select-keys shrink, merge, update, {} (JUN-733)
+        run: |
+          python3 scripts/seed/check-row-operations.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-row-operations"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
