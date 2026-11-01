@@ -297,6 +297,8 @@ jobs:
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - name: Native scoped directory browse, wire 34 (arm64, JUN-752)
+        run: python3 scripts/seed/check-fs-browse.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs-browse-arm"
       - name: Native typed live ABI and user-context admission (arm64)
         run: |
           python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
@@ -321,6 +323,12 @@ jobs:
         with:
           name: native-fs2-arm-evidence
           path: ${{ runner.temp }}/fs2-arm
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: native-fs-browse-arm-evidence
+          path: ${{ runner.temp }}/fs-browse-arm
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -510,6 +518,9 @@ jobs:
         run: |
           python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
           python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
+      - name: Native scoped directory browse, wire 34 (x86_64, JUN-752)
+        if: matrix.shard == 'core'
+        run: python3 scripts/seed/check-fs-browse.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/fs-browse-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.shard == 'core'
         with:
@@ -554,6 +565,9 @@ jobs:
             ${{ runner.temp }}/fs2-x86/native-fs2.json
             ${{ runner.temp }}/fs2-x86/calls.json
             ${{ runner.temp }}/fs2-x86/*/receipt.json
+            ${{ runner.temp }}/fs-browse-x86/native-fs-browse.json
+            ${{ runner.temp }}/fs-browse-x86/*.stdout
+            ${{ runner.temp }}/fs-browse-x86/*.stderr
             ${{ runner.temp }}/complete/F1.elf
             ${{ runner.temp }}/complete/F2.elf
             ${{ runner.temp }}/complete/F3.elf

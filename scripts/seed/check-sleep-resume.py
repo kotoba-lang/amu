@@ -23,9 +23,9 @@ if a.compiler:
  # Keep clock_nanosleep allowed; remove only restart_syscall in both runtimes.
  # The control must start sleeping before STOP/CONT exposes the missing rule.
  for clock,restart in [(115,128),(230,219)]:
-  old=f'(kxrt-allow-nr p (kxrt-allow-nr p i7 {clock}) {restart})'
+  old=f'(kxrt-allow-nr p (kxrt-allow-nr p i8 {clock}) {restart})'
   assert text.count(old)==1,('restart control anchor',clock,restart,text.count(old))
-  text=text.replace(old,f'(kxrt-allow-nr p i7 {clock})')
+  text=text.replace(old,f'(kxrt-allow-nr p i8 {clock})')
  control_source=art/'no-restart-compiler.kotoba';control_source.write_text(text)
  source=art/'probe.kotoba';source.write_bytes((root/'seed/tests/clock-sleep-resume/probe.kotoba').read_bytes())
  calls=[]

@@ -48,7 +48,7 @@ NET = "37,43,44,45,46,47"
 WIRES = [(43, "LISTEN"), (44, "ACCEPT"), (45, "DIAL"), (46, "READ"), (47, "WRITE")]
 # Controls, in both runtimes: no net rules in the filter; socket asked in a
 # form the filter does not admit (no SOCK_NONBLOCK|SOCK_CLOEXEC).
-NO_NET_RULES = ("(if (kxrt-net-any?) (kxrt-allow-net p i3) i3)", "i3", 2)
+NO_NET_RULES = ("(if (kxrt-net-any?) (kxrt-allow-net p i4) i4)", "i4", 2)
 OTHER_SOCKET = [("(kxrt-syscall 198 2 526337 0 0 0 0)", "(kxrt-syscall 198 2 1 0 0 0 0)"),
                 ("(kxrt-syscall 41 2 526337 0 0 0 0)", "(kxrt-syscall 41 2 1 0 0 0 0)")]
 
