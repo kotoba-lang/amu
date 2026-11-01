@@ -178,7 +178,9 @@
   [:c SF-REC 6 "R1: HEAP address of the record schema block of a record name (defrecord symbol or the keyword of an
                   inline [:record :ns/name ..] schema), else 0 (21-check). Block: RB-* below"]
   [:c SF-ABORT 7 "R3 (21-check): 0 = the defn does not abort; -1 = it aborts, error type not known yet; else the error
-                  type E of the defn (its interface is [:result T E], seed/HEADS HD-THROW)"]
+                  type E of the defn (its interface is [:result T E], seed/HEADS HD-THROW). JUN-733: of a KEYWORD symbol (never a
+                  defn name): the module's option type of that key (21-check ck-kopt-scan): 0 = no nil written at the key,
+                  -2 = a nil but no T spelled, -1 = two Ts, else T"]
 
   ;; HASH: open addressing, linear probing, MM-HASH-CAP slots (a power of two). Slot = symbol index, 0 = empty.
 

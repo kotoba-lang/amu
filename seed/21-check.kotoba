@@ -2865,7 +2865,7 @@
     :else
     (let [want (ck-blk-ty M blk k)
           nx (nm-next M c)
-          M1 (ck-expr M c fx 0)
+          M1 (if (and (ck-nil? M c) (= (ck-tcon M want) TC-OPTION)) (ck-mark M c want (* RES-CONST RES-SCALE)) (ck-expr-to M c fx want))   ; JUN-733
           ty (ck-ty M1)]
       (if (= ty want)
         (ck-rec-args M1 nx blk (+ k 1) fx)
@@ -3005,11 +3005,8 @@
                 fty (ck-access-ty M1 r kw)
                 M2 (ck-use-slot M1 (ck-fx-f fx) slot)
                 M3 (nm-set-nf M2 h NF-TYPE slot)
-                M4 (ck-expr M3 v (+ fx 1) 0)
-                tv (ck-ty M4)]
-            (cond (nm-failed M4) (ck-touch M4)
-                  (nm-ne tv fty) (ck-err M4 E-CHECK-TYPE v fty)
-                  :else (ck-mark M4 n ty HD-ASSOC))))))
+                M4 (ck-fval M3 v (+ fx 1) fty)]   ; JUN-733: nil / some into an [:option T] field, an expected record
+            (if (nm-failed M4) (ck-touch M4) (ck-mark M4 n ty HD-ASSOC))))))
 
 ;; (:f r) on a record
 (defn- ck-kwget [M :vector-i64 n :i64 fx :i64] :vector-i64
@@ -3249,7 +3246,7 @@
         M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
         M1b (if (nm-failed M1) M1 (ck-refs-check (ck-inline-scan M1)))
         M2 (ck-desugar M1b S)
-        M3 (ck-hints-apply (ck-sigs M2 1))   ; R6C
+        M3 (ck-kopt-scan (ck-hints-apply (ck-sigs M2 1)))   ; R6C; JUN-733: ck-kopt-scan
         M4 (ck-last-clear (ck-bodies (ck-probe-first (ck-r5b-pass (ck-ab-pre (ck-r3-init2 M3)) S)) 1))   ; R6C: ck-last-clear, ck-probe-first
         M5 (if (nm-failed M4) M4 (ck-ab-final M4))]
     (ck-run-end (ck-exports M5 1))))
@@ -3377,7 +3374,7 @@
 (defn- ck-order-head? [hd :i64] :bool (or (= hd HD-SET-NTH) (= hd HD-MAP-KEYS) (= hd HD-MAP-VALS)))
 ;; check expression c; when want > 0 its type must be want (a bottom passes), else E2104 at hn. R0 = its type.
 (defn- ck-want [M :vector-i64 c :i64 fx :i64 want :i64 hn :i64] :vector-i64
-  (let [M1 (ck-expr M c fx 0)
+  (let [M1 (ck-expr-to M c fx want)   ; JUN-733: a keyword map literal takes an expected record
         ty (ck-ty M1)]
     (cond (nm-failed M1) (ck-touch M1)
           (zero? want) M1
@@ -3659,6 +3656,14 @@
 ;; keys and field types are one anonymous record type: a block whose identity is a gensym (SF-HASH 0, RB-ID = itself),
 ;; found again by its key set. The key nodes' NF-RES = their field index; the node is marked HD-RECORD-NEW (30-lower
 ;; lw-kwrec builds the pair chain, the values in field order). (:k m), get and assoc of a present key are the record heads.
+;; JUN-733 (owner decision 2026-11-01, docs/language-ladder.edn :absence :absent-field-from-assoc :row-unification):
+;;   - structural identity: a literal whose keys and value types fit exactly one DECLARED record (defrecord, :schemas or an
+;;     inline [:record ..] schema) is that record; a literal checked where a record is expected (a call argument, a record
+;;     field, an assoc value, a typed slot: ck-expr-to) with exactly that record's keys is that record, its values checked
+;;     against the field types. Such a literal builds the record in the record's field order (its constructor's order);
+;;   - nil as a value is the none of an [:option T] field: T is the declared field's, else the one type the module spells
+;;     at that key (ck-kopt-scan); a non-nil value T at such a key is its some. A nil with no T is E2182, two Ts E2128.
+;;   The key node's NF-TYPE is the FIELD type, the value node's its own: 30-lower wraps a value whose type differs (pair(x, 0)).
 (defn- ck-kwrec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [nc (nm-count M n)]
     (cond (nm-ne (bit-and nc 1) 0) (ck-err M E-READ-MAP n 0)
@@ -3669,13 +3674,14 @@
                            (nm-failed M2) M2
                            (nm-ne (nm-kind M2 k) ND-KW) (ck-err M2 E-CHECK-TYPENAME k 0)
                            (ck-kwrec-dup? M2 n k) (ck-err M2 E-CHECK-SCHEMA k 0)
+                           (ck-nil? M2 (nm-next M2 k)) (recur (ck-kopt-nil M2 k) (nm-next M2 (nm-next M2 k)))   ; JUN-733
                            :else
                            (let [M3 (ck-expr M2 (nm-next M2 k) fx 0)
                                  ty (ck-ty M3)]
                              (cond (nm-failed M3) M3
                                    (zero? ty) (ck-err M3 E-CHECK-ABORT-INFER n 0)
                                    (or (= ty (ck-poison)) (= ty ck-ty-f32) (= (ck-tcon M3 ty) TC-FN)) (ck-err M3 E-CHECK-SCHEMA k 0)
-                                   :else (recur (nm-set-nf M3 k NF-TYPE ty) (nm-next M3 (nm-next M3 k)))))))]
+                                   :else (recur (ck-kopt-val M3 k ty) (nm-next M3 (nm-next M3 k)))))))]
             (if (nm-failed M1) (ck-touch M1) (ck-kwrec-type M1 n))))))
 ;; 1 when key node k repeats a key of literal n before it
 (defn- ck-kwrec-dup? [M :vector-i64 n :i64 k :i64] :bool
@@ -3698,25 +3704,177 @@
   (loop [s 1]
     (let [b (nm-sf M s SF-REC)]
       (cond (>= s (vector-at M MM-SYM-N)) 0
-            (and (pos? b) (zero? (nm-sf M s SF-HASH)) (= (vector-at M (+ b RB-ID)) s) (ck-kwrec-same? M b n)) b
+            (and (pos? b) (ck-anon? M s b) (ck-kwrec-same? M b n)) b
             :else (recur (inc s))))))
+(defn- ck-anon? [M :vector-i64 s :i64 b :i64] :bool (and (zero? (nm-sf M s SF-HASH)) (= (vector-at M (+ b RB-ID)) s)))
 (defn- ck-kwrec-type [M :vector-i64 n :i64] :vector-i64
-  (let [old (ck-kwrec-find M n)
-        M1 (if (pos? old)
-             (nm-put M MM-R0 old)
-             (let [M2 (nm-gensym M 0 0)
-                   s (ck-r M2)
-                   M3 (ck-blk-new M2 (quot (nm-count M2 n) 2) s)
-                   b (ck-r M3)
-                   M4 (loop [M5 M3 k (nm-first M3 n) i 0]
-                        (if (zero? k) M5 (recur (ck-blk-put M5 b i (nm-sym-of M5 k) (nm-nf M5 k NF-TYPE)) (nm-next M5 (nm-next M5 k)) (inc i))))]
-               (if (nm-failed M4) M4 (nm-put (nm-set-sf M4 s SF-REC b) MM-R0 b))))
+  (let [d (ck-kwrec-decl M n)
+        p (ck-kwrec-pending M n)
+        old (if (or (pos? d) (pos? p)) 0 (ck-kwrec-find M n))
+        M1 (cond (pos? d) (nm-put M MM-R0 d)   ; JUN-733: the one declared record of this shape
+                 (pos? p) (ck-err M E-CHECK-NILKEY p 0)   ; JUN-733: a nil that nothing types
+                 (pos? old) (nm-put M MM-R0 old)
+                 :else
+                 (let [M2 (nm-gensym M 0 0)
+                       s (ck-r M2)
+                       M3 (ck-blk-new M2 (quot (nm-count M2 n) 2) s)
+                       b (ck-r M3)
+                       M4 (loop [M5 M3 k (nm-first M3 n) i 0]
+                            (if (zero? k) M5 (recur (ck-blk-put M5 b i (nm-sym-of M5 k) (nm-nf M5 k NF-TYPE)) (nm-next M5 (nm-next M5 k)) (inc i))))]
+                   (if (nm-failed M4) M4 (nm-put (nm-set-sf M4 s SF-REC b) MM-R0 b))))
         b (ck-r M1)]
     (if (or (nm-failed M1) (zero? b))
       (ck-touch M1)
-      (let [M2 (loop [M3 M1 k (nm-first M1 n)]
-                 (if (zero? k) M3 (recur (nm-set-nf M3 k NF-RES (ck-field M3 b (nm-sym-of M3 k))) (nm-next M3 (nm-next M3 k)))))]
-        (ck-mark M2 n (ck-blk-type M2 b) HD-RECORD-NEW)))))
+      (ck-kwrec-at M1 n b))))
+;; literal n is a record of block b: each key's NF-RES = its field index, NF-TYPE = the field type; a nil value is that
+;; field's none
+(defn- ck-kwrec-at [M :vector-i64 n :i64 b :i64] :vector-i64
+  (let [M1 (loop [M2 M k (nm-first M n)]
+             (if (zero? k)
+               M2
+               (let [j (ck-field M2 b (nm-sym-of M2 k))
+                     f (ck-blk-ty M2 b j)
+                     v (nm-next M2 k)
+                     M3 (if (ck-nil? M2 v) (ck-mark M2 v f (* RES-CONST RES-SCALE)) M2)]
+                 (recur (nm-set-nf (nm-set-nf M3 k NF-RES j) k NF-TYPE f) (nm-next M3 v)))))]
+    (ck-mark M1 n (ck-blk-type M1 b) HD-RECORD-NEW)))
+;; JUN-733: the key node of literal n whose nil value has no type yet (NF-TYPE -1), else 0
+(defn- ck-kwrec-pending [M :vector-i64 n :i64] :i64
+  (loop [k (nm-first M n)] (cond (zero? k) 0 (= (nm-nf M k NF-TYPE) -1) k :else (recur (nm-next M (nm-next M k))))))
+;; JUN-733: true when record block b takes literal n's entries: the same key count, each key a field, and per value: nil
+;; into an [:option T] field (of the module's T when it has one), a value of the field's type, or (no module T) a value T
+;; into an [:option T] field
+(defn- ck-kwrec-fits? [M :vector-i64 b :i64 n :i64] :bool
+  (and (= (ck-blk-n M b) (quot (nm-count M n) 2))
+       (loop [k (nm-first M n)]
+         (if (zero? k)
+           true
+           (let [j (ck-field M b (nm-sym-of M k))
+                 f (if (neg? j) 0 (ck-blk-ty M b j))
+                 kt (nm-nf M k NF-TYPE)
+                 v (nm-next M k)
+                 vt (nm-nf M v NF-TYPE)
+                 opt (= (ck-tcon M f) TC-OPTION)]
+             (if (cond (neg? j) false
+                       (ck-nil? M v) (and opt (or (= kt -1) (= kt f)))
+                       :else (or (= f kt) (and (= kt vt) opt (= (ck-ta M f) vt))))
+               (recur (nm-next M v))
+               false))))))
+;; JUN-733: the one declared record block that takes literal n, else 0 (none, or two that both would)
+(defn- ck-kwrec-decl [M :vector-i64 n :i64] :i64
+  (loop [s 1 found 0]
+    (let [b (nm-sf M s SF-REC)]
+      (cond (>= s (vector-at M MM-SYM-N)) found
+            (and (pos? b) (nm-ne b found) (not (ck-anon? M s b)) (ck-kwrec-fits? M b n)) (if (zero? found) (recur (inc s) b) 0)
+            :else (recur (inc s) found)))))
+;; JUN-733: true when node v is the symbol nil (not a local)
+(defn- ck-nil? [M :vector-i64 v :i64] :bool (and (nm-r6b-nil? M v) (neg? (nm-local-slot M (nm-sym-of M v)))))
+;; JUN-733: the module's option type of keyword symbol ks (SF-ABORT of a keyword symbol, ck-kopt-scan): 0 = no nil at that key,
+;; -2 = a nil but no T spelled, -1 = two Ts, else T
+(defn- ck-kopt [M :vector-i64 ks :i64] :i64 (nm-sf M ks SF-ABORT))
+;; a nil value at key node k (no expected record yet): [:option T] with the module's T, else pending (NF-TYPE -1)
+(defn- ck-kopt-nil [M :vector-i64 k :i64] :vector-i64
+  (let [t (ck-kopt M (nm-sym-of M k))]
+    (cond (= t -1) (ck-err M E-CHECK-SCHEMA k 0)
+          (pos? t) (let [M1 (ck-ct-intern M TC-OPTION t 0)
+                         ot (ck-r M1)]
+                     (nm-set-nf (ck-mark M1 (nm-next M1 k) ot (* RES-CONST RES-SCALE)) k NF-TYPE ot))
+          :else (nm-set-nf M k NF-TYPE -1))))
+;; a non-nil value of type ty at key node k: at a key the module writes nil at (with one T), the field is [:option T] and a
+;; value T is its some; else the field type is ty
+(defn- ck-kopt-val [M :vector-i64 k :i64 ty :i64] :vector-i64
+  (let [t (ck-kopt M (nm-sym-of M k))]
+    (cond (<= t 0) (nm-set-nf M k NF-TYPE ty)
+          (= ty t) (let [M1 (ck-ct-intern M TC-OPTION t 0)] (nm-set-nf M1 k NF-TYPE (ck-r M1)))
+          (and (= (ck-tcon M ty) TC-OPTION) (= (ck-ta M ty) t)) (nm-set-nf M k NF-TYPE ty)
+          :else (ck-err M E-CHECK-TYPE (nm-next M k) t))))
+;; ---- JUN-733: the module's option keys, before pass B. A keyword key written nil in a keyword map literal or an assoc pair
+;; takes the one type T the module spells at it: a non-nil value there that is an integer, string, keyword or boolean
+;; literal, a constructor (->R ..) or a call of a defn with a declared result, or a declared record field [:option T] of that
+;; key. Values whose type only checking knows contribute nothing (the nil is then typed by a declared record, or refused). ----
+(defn- ck-kopt-scan [M :vector-i64] :vector-i64
+  (if (nm-failed M)
+    M
+    (let [M1 (loop [M2 M n 1] (if (>= n (vector-at M2 MM-NODE-N)) M2 (recur (ck-kopt-node M2 n 0) (inc n))))
+          M3 (loop [M2 M1 n 1] (if (>= n (vector-at M2 MM-NODE-N)) M2 (recur (ck-kopt-node M2 n 1) (inc n))))]
+      (loop [M2 M3 s 1]
+        (let [b (nm-sf M2 s SF-REC)]
+          (cond (>= s (vector-at M2 MM-SYM-N)) M2
+                (and (pos? b) (not (ck-anon? M2 s b)))
+                (recur (loop [M4 M2 i 0]
+                         (if (>= i (ck-blk-n M4 b))
+                           M4
+                           (let [f (ck-blk-ty M4 b i)
+                                 ks (ck-blk-key M4 b i)]
+                             (recur (if (and (= (ck-tcon M4 f) TC-OPTION) (nm-ne (ck-kopt M4 ks) 0)) (ck-kopt-add M4 ks (ck-ta M4 f)) M4) (inc i)))))
+                       (inc s))
+                :else (recur M2 (inc s))))))))
+;; the (key, value) pairs of node n: a keyword map literal's entries, or (assoc x :k v)
+(defn- ck-kopt-node [M :vector-i64 n :i64 ph :i64] :vector-i64
+  (cond (and (= (nm-kind M n) ND-MAP) (= (nm-kind M (nm-first M n)) ND-KW))
+        (loop [M1 M k (nm-first M n)]
+          (if (or (zero? k) (zero? (nm-next M1 k))) M1 (recur (ck-kopt-kv M1 k (nm-next M1 k) ph) (nm-next M1 (nm-next M1 k)))))
+        (and (= (nm-kind M n) ND-LIST) (= (nm-count M n) 4) (= (nm-head-of M (nm-first M n)) HD-ASSOC) (= (nm-kind M (nm-nth M n 2)) ND-KW))
+        (ck-kopt-kv M (nm-nth M n 2) (nm-nth M n 3) ph)
+        :else M))
+(defn- ck-kopt-kv [M :vector-i64 k :i64 v :i64 ph :i64] :vector-i64
+  (let [ks (nm-sym-of M k)
+        nv (ck-nil? M v)]
+    (cond (and (zero? ph) nv (zero? (ck-kopt M ks))) (nm-set-sf M ks SF-ABORT -2)
+          (or (zero? ph) nv (zero? (ck-kopt M ks))) M
+          :else (ck-kopt-add M ks (ck-kopt-spell M v)))))
+(defn- ck-kopt-add [M :vector-i64 ks :i64 t :i64] :vector-i64
+  (let [c (ck-kopt M ks)]
+    (cond (<= t 0) M
+          (= c -2) (nm-set-sf M ks SF-ABORT t)
+          (or (= c t) (= c -1)) M
+          :else (nm-set-sf M ks SF-ABORT -1))))
+;; the type value node v spells by itself, 0 when only checking would know it
+(defn- ck-kopt-spell [M :vector-i64 v :i64] :i64
+  (let [k (nm-kind M v)
+        h (nm-first M v)
+        hs (nm-sym-of M h)
+        fi (nm-sf M hs SF-FN)]
+    (cond (= k ND-INT) TY-I64
+          (= k ND-STR) TY-STR
+          (= k ND-KW) TY-KW
+          (and (= k ND-SYM) (or (= (nm-head-of M v) HD-TRUE) (= (nm-head-of M v) HD-FALSE))) TY-BOOL
+          (or (nm-ne k ND-LIST) (nm-ne (nm-kind M h) ND-SYM)) 0
+          (= (nm-head-of M h) HD-RECORD-CTOR) (ck-blk-type M (nm-sf M hs SF-REC))
+          (and (pos? fi) (or (= (nm-ff M fi FF-KIND) FK-DEFN) (= (nm-ff M fi FF-KIND) FK-PRIV)) (pos? (nm-ff M fi FF-RTYPE))) (nm-ff M fi FF-RTYPE)
+          :else 0)))
+;; JUN-733: expression c where a value of type want is expected: a keyword map literal with exactly the keys of want's
+;; record (or of the record an [:option R] holds) is that record (ck-kwrec-in); anything else is checked as it is
+(defn- ck-expr-to [M :vector-i64 c :i64 fx :i64 want :i64] :vector-i64
+  (let [b (ck-blk M (if (= (ck-tcon M want) TC-OPTION) (ck-ta M want) want))]
+    (if (and (pos? b) (= (nm-kind M c) ND-MAP) (= (nm-kind M (nm-first M c)) ND-KW) (ck-kwrec-keys? M b c))
+      (ck-kwrec-in M c fx b)
+      (ck-expr M c fx 0))))
+;; true when literal n has exactly the keys of block b (each once)
+(defn- ck-kwrec-keys? [M :vector-i64 b :i64 n :i64] :bool
+  (and (zero? (bit-and (nm-count M n) 1)) (= (ck-blk-n M b) (quot (nm-count M n) 2))
+       (loop [k (nm-first M n)]
+         (cond (zero? k) true
+               (or (nm-ne (nm-kind M k) ND-KW) (neg? (ck-field M b (nm-sym-of M k))) (ck-kwrec-dup? M n k)) false
+               :else (recur (nm-next M (nm-next M k)))))))
+;; literal n as a record of block b: every value checked against its field type (ck-fval)
+(defn- ck-kwrec-in [M :vector-i64 n :i64 fx :i64 b :i64] :vector-i64
+  (let [M1 (loop [M2 (ck-touch M) k (nm-first M n)]
+             (if (or (zero? k) (nm-failed M2))
+               M2
+               (recur (ck-fval M2 (nm-next M2 k) fx (ck-blk-ty M2 b (ck-field M2 b (nm-sym-of M2 k)))) (nm-next M2 (nm-next M2 k)))))]
+    (if (nm-failed M1) (ck-touch M1) (ck-kwrec-at M1 n b))))
+;; JUN-733: value v into a field of type f: nil is an [:option T] field's none, a value T its some (30-lower wraps it), any
+;; other value must have type f (E2104 at v). R0 = v's own type
+(defn- ck-fval [M :vector-i64 v :i64 fx :i64 f :i64] :vector-i64
+  (if (ck-nil? M v)
+    (if (= (ck-tcon M f) TC-OPTION) (ck-mark M v f (* RES-CONST RES-SCALE)) (ck-err M E-CHECK-TYPE v f))
+    (let [M1 (ck-expr-to M v fx f)
+          ty (ck-ty M1)]
+      (cond (nm-failed M1) (ck-touch M1)
+            (or (zero? ty) (= ty f)) M1
+            (and (= (ck-tcon M1 f) TC-OPTION) (= (ck-ta M1 f) ty)) M1
+            :else (ck-err M1 E-CHECK-TYPE v f)))))
 (defn- ck-maplit2 [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [c (nm-first M n)
         M1 (ck-hide M n NF-SYM 7 fx)
@@ -4435,7 +4593,7 @@
 ;; an argument c in a slot of type want: a fn literal there takes want's parameter types (the reference's contract-typed
 ;; parameters, lang/guest-grammar.edn :callable-type)
 (defn- ck-arg [M :vector-i64 c :i64 fx :i64 want :i64] :vector-i64
-  (if (and (ck-fn-form? M c) (pos? want) (= (ck-tcon M want) TC-FN)) (ck-fnlit M c fx want) (ck-expr M c fx 0)))
+  (if (and (ck-fn-form? M c) (pos? want) (= (ck-tcon M want) TC-FN)) (ck-fnlit M c fx want) (ck-expr-to M c fx want)))   ; JUN-733
 (defn- ck-want-arg [M :vector-i64 c :i64 fx :i64 want :i64 hn :i64] :vector-i64
   (let [M1 (ck-arg M c fx want)
         ty (ck-ty M1)]
