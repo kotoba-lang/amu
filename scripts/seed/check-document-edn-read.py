@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native document-edn-read treats EDN delimiters as the spec does (JUN-650).
+"""Native EDN document operations preserve delimiter and set semantics (JUN-650/JUN-754).
 
 The document library that seed/21-check appends to a program keeps a document
 as its EDN text, and every reader in it (count, get, nth, kind, ...) assumes
@@ -14,6 +14,9 @@ This gate, on Apple Silicon:
 * negative control: builds a mutant full compiler from this tree's FULL-MANIFEST
   with document-edn-read put back to the identity it was before JUN-650, builds
   the same corpus with it and runs it: it must fail at case 1 (exit 1);
+* invalid document-set-at index type is refused at check time with E2104;
+* a vector passed as the set receiver traps at runtime (SIGTRAP), while the
+  corpus checks deterministic iteration, duplicate elimination and membership;
 * runs the corpus through the public CLI (bin/amu run), which must print 0.
 
 Python stages sources and observes processes; every compiler and program is a
@@ -32,6 +35,20 @@ CORPUS = ROOT / "seed/tests/native-document-edn-read.kotoba"
 CHECK = "seed/21-check.kotoba"
 FIXED = '(defn- document-edn-read [s :string] :document (__r6-dd (__kr_dnorm s)))'
 UNFIXED = '(defn- document-edn-read [s :string] :document (__r6-dd s))'
+BAD_INDEX_TYPE = """(ns native-document-set-bad-index-type (:export [main]))
+(defn- invalid-index-at [] [:option :document]
+  (document-set-at (document-set) (document-keyword :zero)))
+(defn main [] :i64
+  (document-count (option-value-of [:option :document]
+                    (invalid-index-at) (document-null))))
+"""
+BAD_RECEIVER = """(ns native-document-set-bad-receiver (:export [main]))
+(defn main [] :i64
+  (document-count
+    (option-value-of [:option :document]
+      (document-set-at (document-vector (document-i64 1)) 0)
+      (document-null))))
+"""
 
 
 def load(name, path):
@@ -78,6 +95,19 @@ def main(compiler, output):
     gate.native_run(image, mutant, expected=1)
     print("identity document-edn-read (mutant compiler): corpus exit 1", flush=True)
 
+    # The set operation's operand type and runtime-kind boundaries are separate.
+    refusals = output / "refusals"; refusals.mkdir(mode=0o700)
+    (refusals / "bad-index-type.kotoba").write_text(BAD_INDEX_TYPE)
+    typed = gate.native_run(compiler, refusals, "check", "bad-index-type.kotoba", expected=1)
+    if b"E2104" not in typed.stderr:
+        raise ValueError("non-integer document-set-at index did not produce E2104")
+    print("document-set-at bad index type: E2104", flush=True)
+
+    bad_receiver = refusals / "bad-receiver"; bad_receiver.mkdir(mode=0o700)
+    image = scope.build(gate, compiler, packager, bad_receiver, "bad-receiver", BAD_RECEIVER)
+    gate.native_run(image, bad_receiver, expected=-5)
+    print("document-set-at non-set receiver: SIGTRAP", flush=True)
+
     # The public CLI built from this tree runs the same corpus.
     public = output / "public"; public.mkdir(mode=0o700)
     (public / "corpus.kotoba").write_bytes(CORPUS.read_bytes())
@@ -88,7 +118,7 @@ def main(compiler, output):
         raise ValueError(f"bin/amu run: exit {result.returncode}, stdout {result.stdout!r}, "
                          f"stderr {result.stderr[-400:]!r}")
     print("bin/amu run corpus: 0", flush=True)
-    print("PASS_NATIVE_DOCUMENT_EDN_READ_WITH_NEGATIVE_CONTROL", flush=True)
+    print("PASS_NATIVE_DOCUMENT_EDN_SET_OPERATIONS_WITH_REFUSALS", flush=True)
 
 
 if __name__ == "__main__":
