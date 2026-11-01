@@ -128,10 +128,22 @@ def run_unit(amu, text, work, tag, args=()):
     return p.stdout, hashlib.sha256(text.encode()).hexdigest()
 
 
+ARG_MAX = 3900   # bin/amu refuses a program argument of more than about 4 KiB (exit 70)
+
+
 def module_args(modules):
+    """the number of modules, then per module its name, the number of pieces
+    and the pieces of its comma-separated words, each at most ARG_MAX bytes"""
     args = [str(len(modules))]
     for name, words in modules.items():
-        args += [name, ",".join(str(w) for w in words)]
+        pieces, cur = [], []
+        for w in map(str, words):
+            if cur and len(",".join(cur + [w])) > ARG_MAX:
+                pieces.append(",".join(cur))
+                cur = []
+            cur.append(w)
+        pieces.append(",".join(cur))
+        args += [name, str(len(pieces)), *pieces]
     return args
 
 
@@ -262,6 +274,11 @@ def decode(lo, hi):
                  imm=f(32, 64) if form == 4 else None, c=f(64, 72), lut=f(72, 80))
     elif op9 == 0x025 and form == 1:
         i.update(op="imad.wide", d=f(16, 24), a=f(24, 32), b=f(32, 40), c=f(64, 72), signed=f(73, 74))
+    elif op12 == 0x81C:
+        if f(67, 68) or f(16, 24) or f(84, 87) != 7:
+            raise Unsupported("PLOP3 with a second destination or a uniform source")
+        i.update(op="plop3", pd=f(81, 84), srcs=((f(87, 90), f(90, 91)), (f(77, 80), f(80, 81)), (f(68, 71), f(71, 72))),
+                 lut=f(64, 67) | f(72, 77) << 3)
     elif op9 == 0x01A and form == 4:
         i.update(op="sgxt", d=f(16, 24), a=f(24, 32), bits=f(32, 64), signed=f(73, 74))
     else:
@@ -353,6 +370,9 @@ def reencode(i):
                           SHF_TYPE[i["ty"]], bool(i["wrap"]), bool(i["right"]), bool(i["high"]))
     if o == "imad.wide":
         return NAK.op_imad_wide(g, c, i["d"], r(i["a"]), r(i["b"]), r(i["c"]), bool(i["signed"]))
+    if o == "plop3":
+        (a, na), (b, nb), (c2, nc) = i["srcs"]
+        return NAK.op_plop3(g, c, i["pd"], a, bool(na), b, bool(nb), c2, bool(nc), i["lut"])
     if o == "sgxt":
         return NAK.op_sgxt(g, c, i["d"], i["a"], i["bits"], bool(i["signed"]))
     if o == "fmul":
@@ -441,6 +461,8 @@ def mufu(fn, x, seed):
              8: lambda: math.sqrt(x) if x >= 0 else math.nan}[fn]()
     except OverflowError:
         v = math.inf
+    except ValueError:      # sin / cos of an infinity
+        v = math.nan
     try:
         v = f32(v)
     except OverflowError:
@@ -522,7 +544,7 @@ class Shared:
         self.words[k] = v & 0xFFFFFFFF
 
 
-def run_thread(prog, cbank, mem, shared, ctaid, tid):
+def run_thread(prog, cbank, mem, shared, ctaid, tid, ctaid_y=0):
     """one thread, a generator: it yields (pc, cycle) at each BAR and is sent
     back the cycle at which the workgroup leaves the barrier; it returns at
     EXIT. Hazards and malformed control flow raise."""
@@ -607,7 +629,7 @@ def run_thread(prog, cbank, mem, shared, ctaid, tid):
             elif o == "nop":
                 pass
             elif o == "s2r":
-                v = {0x21: tid, 0x25: ctaid}[i["sr"]]
+                v = {0x21: tid, 0x22: 0, 0x23: 0, 0x25: ctaid, 0x26: ctaid_y, 0x27: 0}[i["sr"]]
                 write(i["d"], issue + latency("s2r", seed), v, pc, issue)
             elif o == "mov.cb":
                 write(i["d"], issue + LAT_GPR, cbank[(i["bank"], i["off"])], pc, issue)
@@ -695,6 +717,10 @@ def run_thread(prog, cbank, mem, shared, ctaid, tid):
                 v = (read(i["a"], rt, pc) * read(i["b"], rt, pc) + c) % 2**64
                 write(i["d"], issue + LAT_GPR, v, pc, issue)
                 write(i["d"] + 1, issue + LAT_GPR, v >> 32, pc, issue)
+            elif o == "plop3":
+                v = [rpred(p, rt, pc) != bool(n) for p, n in i["srcs"]]
+                if i["pd"] != 7:
+                    preds[i["pd"]] = (pc, issue + LAT_PRED, bool(i["lut"] >> (v[0] << 2 | v[1] << 1 | v[2]) & 1))
             elif o == "sgxt":
                 a, bits = read(i["a"], rt, pc), i["bits"]
                 v = a if bits >= 32 else 0 if bits == 0 else (sx(a % 2**bits, bits) if i["signed"] else a % 2**bits)
@@ -726,12 +752,12 @@ def run_thread(prog, cbank, mem, shared, ctaid, tid):
         pc = nxt
 
 
-def run_cta(prog, cbank, mem, ctaid, wg):
+def run_cta(prog, cbank, mem, ctaid, wg, ctaid_y=0, shared_bytes=SHARED_BYTES):
     """the threads of one workgroup, each until it reaches BAR or EXIT; a
     barrier releases when every thread that has not exited waits at the
     same one, at the latest arrival"""
-    shared = Shared(SHARED_BYTES)
-    live = {tid: run_thread(prog, cbank, mem, shared, ctaid, tid) for tid in range(wg)}
+    shared = Shared(shared_bytes)
+    live = {tid: run_thread(prog, cbank, mem, shared, ctaid, tid, ctaid_y) for tid in range(wg)}
     send = {tid: None for tid in live}
     while live:
         at = {}
@@ -772,7 +798,7 @@ def run_kernel(prog, op, wg, n):
     try:
         for ctaid in range((n + wg - 1) // wg):
             run_cta(prog, cbank, mem, ctaid, wg)
-    except (Hazard, Unsupported, KeyError) as e:
+    except (Hazard, Unsupported, KeyError, ArithmeticError, ValueError) as e:
         return f"{type(e).__name__}: {e}"
     z = struct.unpack(f"<{n + canary}I", data[2])
     for k in range(n):
@@ -815,7 +841,7 @@ def run_dot(prog, rows, cols, signed):
     try:
         for ctaid in range(rows + 1):
             run_cta(prog, cbank, mem, ctaid, 256)
-    except (Hazard, Unsupported, KeyError) as e:
+    except (Hazard, Unsupported, KeyError, ArithmeticError, ValueError) as e:
         return f"{type(e).__name__}: {e}", None
     o = struct.unpack(f"<{rows + canary}I", data[3])
     worst = 0.0
@@ -877,9 +903,10 @@ def run_nex_case(prog, gate, case):
         cbank[(0, CB_BASE + 8 * b)] = base & 0xFFFFFFFF
         cbank[(0, CB_BASE + 8 * b + 4)] = base >> 32
     try:
-        for ctaid in range(case["grid"]):
-            run_cta(prog, cbank, mem, ctaid, 256)
-    except (Hazard, Unsupported, KeyError) as e:
+        for cy in range(case.get("grid_y", 1)):
+            for ctaid in range(case["grid"]):
+                run_cta(prog, cbank, mem, ctaid, 256, cy, gate.get("shared", SHARED_BYTES))
+    except (Hazard, Unsupported, KeyError, ArithmeticError, ValueError) as e:
         return f"{type(e).__name__}: {e}", None
     want = case["want"]   # binding -> {index: (value, exact)}
     worst = 0.0
@@ -894,6 +921,8 @@ def run_nex_case(prog, gate, case):
                     return f"binding {b} word {k} written ({old[k]:#x} -> {words[k]:#x})", worst
                 continue
             ref, exact = w
+            scale = None if isinstance(exact, bool) else exact
+            exact = exact is True
             if b == 6:
                 if words[k] != ref % 2**32:
                     return f"ids[{k}] = {words[k]}, reference {ref}", worst
@@ -903,7 +932,7 @@ def run_nex_case(prog, gate, case):
                 if words[k] != f_bits(f32(ref)):
                     return f"binding {b}[{k}] = {got!r}, reference {f32(ref)!r} (exact)", worst
                 continue
-            err = abs(got - ref) / abs(ref) if ref else abs(got)
+            err = abs(got - ref) / (scale if scale is not None else abs(ref)) if (scale or ref) else abs(got)
             worst = max(worst, err)
             if not err <= NEX_TOL:
                 return f"binding {b}[{k}] = {got!r}, f64 reference {ref!r} (relative error {err:.3g})", worst
@@ -974,6 +1003,105 @@ def case_add_rmsnorm(n, rows, eps):
             "bufs": {1: a, 2: b, 3: c, 4: [0.0] * (rows * n), 5: [0.0] * (rows * n)}, "want": {4: want_o, 5: want_s}}
 
 
+def case_rope(n, nrot, heads, rows, base, norm, divisors, pos, dyn):
+    """rope_neox, decode: grid = heads; pos from ids[0] (dyn) or P.aux2.
+    Error relative to the norm of the rotated pair (a rotation keeps it)"""
+    a = nex_vals(heads * n, 41 + n + heads, -2, 2)
+    hlf = nrot // 2
+    b = nex_vals(nrot, 43, 0.5, 4.0) if divisors else []
+    want = {}
+    for h in range(heads):
+        tok = h // rows if rows else 0
+        for i in range(n):
+            x = a[h * n + i]
+            if i >= nrot:
+                want[h * n + i] = (x, True)
+                continue
+            pair = i >> 1 if norm else (i - hlf if i >= hlf else i)
+            th = float(pos + tok) * base ** (-2.0 * pair / nrot)
+            if divisors:
+                th /= b[pair]
+            i0, i1 = (2 * pair, 2 * pair + 1) if norm else (pair, pair + hlf)
+            x0, x1 = a[h * n + i0], a[h * n + i1]
+            second = (i & 1) == 1 if norm else i >= hlf
+            ref = x0 * math.sin(th) + x1 * math.cos(th) if second else x0 * math.cos(th) - x1 * math.sin(th)
+            want[h * n + i] = (ref, math.hypot(x0, x1))
+    return {"label": f"n={n} nrot={nrot} heads={heads} {'norm' if norm else 'neox'} pos={pos}",
+            "meta": nex_meta(n, rows, nrot, 0 if dyn else pos, 1.0 if divisors else 0.0, base, 1.0 if norm else 0.0,
+                             1.0 if dyn else 0.0),
+            "grid": heads, "bufs": {1: a, 2: b or [0.0], 4: [0.0] * (heads * n), 6: [pos if dyn else 999, 3]},
+            "want": {4: want}}
+
+
+def argmax_ref(vals, idx):
+    """the largest value, the smallest index among its ties (initial -1e30, 0)"""
+    bv, bi = f32(-1e30), 0
+    for v, i in zip(vals, idx):
+        if v > bv or (v == bv and i < bi):
+            bv, bi = v, i
+    return bv, bi
+
+
+def case_argmax_partial(n, ties):
+    """argmax_partial: workgroup w scans a[4096 w ..], s[w] and ids[w] get its pick"""
+    a = nex_vals(n, 47 + n, -20, 20)
+    if ties:   # the maximum twice, the second time first in a later workgroup's range and in a lower lane
+        m = max(a) + 1.0
+        for k in (n // 3, n - 1, n // 3 + 513, 5):
+            a[min(k, n - 1)] = f32(m)
+    parts = (n + 4095) // 4096
+    want_s, want_i = {}, {}
+    for w in range(parts):
+        lo, hi = 4096 * w, min(4096 * w + 4096, n)
+        bv, bi = argmax_ref(a[lo:hi], range(lo, hi))
+        want_s[w], want_i[w] = (bv, True), (bi, True)
+    return {"label": f"n={n}{' ties' if ties else ''}", "meta": nex_meta(n), "grid": parts,
+            "bufs": {1: a, 5: [0.0] * parts, 6: [0] * parts}, "want": {5: want_s, 6: want_i}}
+
+
+def case_argmax_final(parts, dyn, pos, aux2):
+    """argmax_final: the pick over the partials into ids[parts] and o[0]; with
+    P.p1 != 0 also b[pos + 1] = its bits once pos + 1 >= aux2 (pos = the bits of c[0])"""
+    s = nex_vals(parts, 53 + parts, -30, 30)
+    ids = [4096 * k + (k * 37) % 4096 for k in range(parts)]
+    if parts > 3:   # a tie between two partials: the smaller index wins
+        s[parts - 2] = s[1] = f32(max(s) + 2.0)
+    bv, bi = argmax_ref(s, ids)
+    want = {6: {parts: (bi, True)}, 4: {0: (bv, True)}}
+    tok = [0.0] * (pos + 4)
+    if dyn and pos + 1 >= aux2:
+        want[2] = {pos + 1: (bits_f(bi), True)}
+    return {"label": f"parts={parts}{f' dyn pos={pos} aux2={aux2}' if dyn else ''}",
+            "meta": nex_meta(0, 0, parts, aux2, 0.0, 0.0, 0.0, 1.0 if dyn else 0.0), "grid": 1,
+            "bufs": {2: tok, 3: [bits_f(pos)], 4: [0.0], 5: s, 6: ids + [0]}, "want": want}
+
+
+def case_attn(d, heads, kvh, T, scale, nogate, dyn):
+    """attn_decode: head h of the query row, over T cached positions of KV head
+    h / (heads / kvh); error relative to sum over t of p_t |v_t,i| (the gate
+    case: times the gate)"""
+    q = nex_vals(heads * d, 59 + d + T, -1, 1)
+    kc = nex_vals(T * kvh * d, 61 + T, -1, 1)
+    vc = nex_vals(T * kvh * d, 67 + T, -1, 1)
+    s = nex_vals(2 * heads * d, 71, -3, 3)
+    want = {}
+    for h in range(heads):
+        hk = h // (heads // kvh)
+        sc = [sum(float(q[h * d + i]) * float(kc[(t * kvh + hk) * d + i]) for i in range(d)) * scale for t in range(T)]
+        m = max(sc)
+        e = [math.exp(x - m) for x in sc]
+        z = sum(e)
+        p = [x / z for x in e]
+        for i in range(d):
+            acc = sum(p[t] * float(vc[(t * kvh + hk) * d + i]) for t in range(T))
+            mag = sum(p[t] * abs(float(vc[(t * kvh + hk) * d + i])) for t in range(T))
+            g = 1.0 if nogate else 1.0 / (1.0 + math.exp(-float(s[h * d + i])))
+            want[h * d + i] = (acc * g, mag * g)
+    return {"label": f"d={d} heads={heads}/{kvh} T={T}{' gate' if not nogate else ''}{' dyn' if dyn else ''}",
+            "meta": nex_meta(d, heads, 0 if dyn else T, kvh, 0.0, scale, 1.0 if nogate else 0.0, 1.0 if dyn else 0.0),
+            "grid": heads, "bufs": {1: q, 2: kc, 3: vc, 4: [0.0] * (heads * d), 5: s, 6: [T - 1, 9]}, "want": {4: want}}
+
+
 # Qwen2.5-0.5B's widths: hidden 896, KV row 128 (2 heads of 64), FFN 4864
 NEX_GATES = {
     "nex-add": {"cases": [case_add(896), case_add(256), case_add(1)]},
@@ -985,6 +1113,20 @@ NEX_GATES = {
     "nex-pos-incr": {"cases": [case_pos_incr(0), case_pos_incr(41)]},
     "nex-rmsnorm": {"cases": [case_rmsnorm(896, 2, 0, 1e-6), case_rmsnorm(64, 3, 128, 1e-6), case_rmsnorm(300, 1, 0, 1e-5)]},
     "nex-add-rmsnorm": {"cases": [case_add_rmsnorm(896, 1, 1e-6), case_add_rmsnorm(200, 2, 1e-6)]},
+    # Qwen2: NeoX pairs, 64 rotated dims, base 1e6, no frequency divisors; then
+    # a tail past nrot and the NORM pairs with divisors for the other arms
+    "nex-rope-neox": {"cases": [case_rope(64, 64, 3, 0, 1e6, False, False, 0, True),
+                                case_rope(64, 64, 2, 0, 1e6, False, False, 37, True),
+                                case_rope(96, 64, 2, 2, 1e4, False, False, 5, False),
+                                case_rope(64, 64, 2, 0, 1e4, True, True, 11, True)]},
+    # two shared arrays (values and indices): 2048 bytes
+    "nex-argmax-partial": {"shared": 2048, "cases": [case_argmax_partial(10000, False), case_argmax_partial(4096 * 2 + 3, True),
+                                     case_argmax_partial(300, True)]},
+    "nex-argmax-final": {"shared": 2048, "cases": [case_argmax_final(38, False, 0, 0), case_argmax_final(38, True, 9, 5),
+                                   case_argmax_final(3, True, 2, 7), case_argmax_final(61, False, 0, 0)]},
+    # Qwen2: head dim 64, 14 query heads on 2 KV heads, scale 1/8, no gate
+    "nex-attn-decode": {"cases": [case_attn(64, 4, 2, 1, 0.125, True, False), case_attn(64, 4, 2, 7, 0.125, True, True),
+                                  case_attn(64, 2, 1, 200, 0.125, True, False), case_attn(32, 2, 2, 5, 0.25, False, False)]},
 }
 
 
@@ -1032,7 +1174,7 @@ def judge(progs, dot_cases=None):
         if not p or (p["error"], p["op"], p["count"]) != (err, op, 0):
             bad.append(f"{name}: not refused as {err}/{op}: {p and (p['error'], p['op'], p['count'])}")
     decoded = {}
-    for name in list(KERNELS) + ["dot-rows", "war", "loopwar", "rapred"] + list(NEX_GATES):
+    for name in list(KERNELS) + ["dot-rows", "war", "loopwar", "rapred", "sbfull"] + list(NEX_GATES):
         p = progs.get(name)
         if not p or p["error"] != 0:
             bad.append(f"{name}: refused {p and p['error']}")
@@ -1051,6 +1193,11 @@ def judge(progs, dot_cases=None):
             got = [i["ctl"][:5] for i in decoded[name]]
             if got != [tuple(c) for c in want]:
                 bad.append(f"{name}: control bits {got}")
+    if "sbfull" in decoded:
+        d = decoded["sbfull"]
+        w0, (_, _, w6, _, wait6, _) = d[0]["ctl"][2], d[6]["ctl"]
+        if w6 != w0 or not wait6 >> w0 & 1 or d[7]["ctl"][4] != 1 << w0:
+            bad.append(f"sbfull: the seventh load does not wait for and reuse the first's scoreboard: {[i['ctl'] for i in d]}")
     if "rapred" in decoded:
         r = check_rapred(decoded["rapred"])
         if r:
@@ -1125,6 +1272,14 @@ LOWER_MUTANTS = [
     ("funord-ne-as-eq", LOWER, "182 5 183 13", "182 5 183 2"),
     ("u2f-as-f2u", LOWER, "(cond (= op SP-UTOF) (add Q L MI-I2F r a 0 0 0 0)", "(cond (= op SP-UTOF) (add Q L MI-F2I r a 0 0 0 0)"),
     ("select-arms-swapped", LOWER, "(add Q L MI-SEL r a b 0 (tg T c 1) 0)", "(add Q L MI-SEL r b a 0 (tg T c 1) 0)"),
+    # JUN-739 part 2
+    ("lor-as-land", LOWER, "(cond (= op SP-LOR) 0xfc", "(cond (= op SP-LOR) 0xc0"),
+    ("bool-select-arms-swapped", LOWER, "(tg T b 1) 0xca 0)", "(tg T b 1) 0xac 0)"),
+    ("every-if-predicated", LOWER, "branched (if-complex? W at m)", "branched false"),
+    ("branched-if-not-inverted", LOWER, "(branch Q (mi-g cp 1) (if (>= el 0) el m))", "(branch Q (mi-g cp 0) (if (>= el 0) el m))"),
+    ("else-guard-not-inverted", LOWER, "(ls L 2 (mi-g (if-slot L 2) 1))", "(ls L 2 (mi-g (if-slot L 2) 0))"),
+    ("continue-unguarded", LOWER, ":else (branch Q (lg L 2) tl)", ":else (branch Q (mi-g 7 0) tl)"),
+    ("workgroup-y-as-x", LOWER, "(add Q L MI-S2R r 0 0 0 (+ 0x25 k) 0)] r)\n        (= bi 27)", "(add Q L MI-S2R r 0 0 0 0x25 0)] r)\n        (= bi 27)"),
 ]
 REGALLOC = "tools/c/sm70/sm70_regalloc.kotoba"
 REGALLOC_MUTANTS = [
@@ -1140,7 +1295,7 @@ REGALLOC_MUTANTS = [
 ]
 SCHED_MUTANTS = [
     ("no-wait-mask", SCHED, "(mi-set Q k 8 (bit-or (i64-shift-left m 16)", "(mi-set Q k 8 (bit-or (i64-shift-left 0 16)"),
-    ("no-write-barrier", SCHED, "wr (if (and (mi-var? op) (>= (mi-dst Q k 0) 0)) (take-sb S) 7)", "wr 7"),
+    ("no-write-barrier", SCHED, "wr (if (and (mi-var? op) (>= (mi-dst Q k 0) 0)) (take-sb S k) 7)", "wr 7"),
     ("no-read-barrier", SCHED, "(and (mi-var? op) (src-rewritten? Q k))", "(and (mi-var? op) false)"),
     ("gpr-latency-5", SCHED, "(def MI-LAT-GPR 6)", "(def MI-LAT-GPR 5)"),
     ("pred-latency-6", SCHED, "(def MI-LAT-PRED 13)", "(def MI-LAT-PRED 6)"),
@@ -1150,7 +1305,8 @@ SCHED_MUTANTS = [
     ("no-bar-yield", SCHED, "(or (= op MI-EXIT) (= op MI-BAR) (= op MI-BSYNC))", "(or (= op MI-EXIT) (= op MI-BSYNC))"),
     # JUN-739
     ("mufu-fixed-latency", SCHED, "(= op MI-STS) (= op MI-MUFU) (= op MI-I2F)", "(= op MI-STS) (= op MI-I2F)"),
-    ("sel-predicate-not-waited", SCHED, "ps (mi-psrc Q k) t1", "ps -1 t1"),
+    ("predicate-source-not-waited", SCHED, "(let [ps (mi-psrc Q k j)]", "(let [ps -1]"),
+    ("scoreboard-reused-without-wait", SCHED, "(recur (bit-or m1 b))", "(recur m1)"),
 ]
 
 
@@ -1227,7 +1383,9 @@ def main():
             ("dot-lds-no-write-barrier", ldss[0], lambda w: set_ctl(w, "wr", 7)),
             ("dot-bssy-target", dops.index("bssy"), lambda w: (w[0] ^ (1 << 36), w[1])),
         ]
-        nops = {n: [i["op"] for i in decoded[n]] for n in ("nex-rmsnorm", "nex-add-bias", "nex-silu-mul")}
+        nops = {n: [i["op"] for i in decoded[n]] for n in ("nex-rmsnorm", "nex-add-bias", "nex-silu-mul", "nex-argmax-partial",
+                                                          "nex-attn-decode")}
+        attn_bra = next(k for k, i in enumerate(decoded["nex-attn-decode"]) if i["op"] == "bra" and i["guard"] != (7, 0))
         ncontrols = [
             # MUFU.RSQ -> MUFU.RCP (function field 74..79: 5 -> 4)
             ("nex-rmsnorm:rsq-as-rcp", nops["nex-rmsnorm"].index("mufu"), lambda w: (w[0], w[1] ^ (1 << (74 - 64)))),
@@ -1235,6 +1393,10 @@ def main():
             ("nex-add-bias:udiv-fixup-cmp", nops["nex-add-bias"].index("isetp", 8), lambda w: (w[0], w[1] ^ (7 << (76 - 64)))),
             # the MUFU.EX2 result read without waiting for its scoreboard
             ("nex-silu-mul:ex2-no-wait", nops["nex-silu-mul"].index("mufu") + 1, lambda w: set_ctl(w, "wait", 0)),
+            # the tie rule's OR as AND: PLOP3 table 0xfc -> 0xc0 (bits 3..7 at 72..76: 0x1f -> 0x18)
+            ("nex-argmax-partial:or-as-and", nops["nex-argmax-partial"].index("plop3", nops["nex-argmax-partial"].index("plop3") + 1), lambda w: (w[0], w[1] ^ (0x07 << (72 - 64)))),
+            # the branched if's skip branch taken on the wrong side
+            ("nex-attn-decode:skip-not-inverted", attn_bra, lambda w: (w[0] ^ (1 << 15), w[1])),
         ]
         ctl_report = []
         for cname, k, fn in ncontrols:

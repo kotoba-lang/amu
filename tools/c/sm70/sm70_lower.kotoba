@@ -58,6 +58,7 @@
 ;; the virtual registers (sm70_regalloc.kotoba maps them): GPRs from 256,
 ;; predicates from 8
 (def SL-VMAX 16000)
+(def SL-IFMAX 16)
 (def SL-PMAX 4000)
 
 ;; SPIR-V numbers used here
@@ -99,6 +100,9 @@
 (def SP-BOR 197)
 (def SP-BXOR 198)
 (def SP-BAND 199)
+(def SP-LOR 166)
+(def SP-LAND 167)
+(def SP-LNOT 168)
 (def SP-IADD 128)
 (def SP-FADD 129)
 (def SP-IMUL 132)
@@ -138,11 +142,13 @@
 (defn- w [W :vector-i64 k :i64] :i64 (spv-word W k))
 
 ;; L: the pass's state. 0 next GPR, 1 next predicate, 2 the guard, 3 the
-;; open if's merge label (0 none), 4 its then label, 5 its else label, 6 in
-;; the else block, 7 LocalSize x, 8 the constant-bank base, 9 the refused
+;; merge label of an OpSelectionMerge whose branch is next (0 none), 6 the if
+;; depth, 7 LocalSize x, 8 the constant-bank base, 9 the refused
 ;; opcode, 10 the id bound, 11 the byte offset of the last address, 12 the
 ;; last label, 13 the next convergence barrier, 14 the next shared byte,
-;; 15 the id of the GLSL.std.450 import
+;; 15 the id of the GLSL.std.450 import, 16 and 17 LocalSize y and z; from 20, 4 slots per open if (the
+;; innermost last): its merge label, its else label (-1 none), its condition
+;; predicate, 1 when branched (0 predicated)
 (defn- lg [L :vector-i64 k :i64] :i64 (vector-at L k))
 (defn- ls [L :vector-i64 k :i64 v :i64] :i64 (let [z (vector-assoc! L k v)] v))
 
@@ -180,7 +186,8 @@
 
 (defn- scan-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
   (let [n (lg L 10)]
-    (cond (= op SP-EXECMODE) (if (= (w W (+ at 2)) 17) (ls L 7 (w W (+ at 3))) 0)
+    (cond (= op SP-EXECMODE)
+          (if (= (w W (+ at 2)) 17) (let [y (ls L 16 (w W (+ at 4))) z (ls L 17 (w W (+ at 5)))] (ls L 7 (w W (+ at 3)))) 0)
           ;; the one extended set KIR v2 imports is GLSL.std.450
           (= op SP-EXTIMPORT) (ls L 15 (w W (+ at 1)))
           (= op SP-DECORATE)
@@ -285,12 +292,14 @@
         o (ls L 11 (tg T p 2))]
     r))
 
-;; a built-in's x component into a GPR: 28 GlobalInvocationId = ctaid.x *
-;; LocalSize.x + tid.x, 26 WorkgroupId = ctaid.x, 27 LocalInvocationId = tid.x
-(defn- builtin-x [Q :vector-i64 L :vector-i64 bi :i64] :i64
-  (cond (= bi 26) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 0x25 0)] r)
-        (= bi 27) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 0x21 0)] r)
-        (= bi 28) (let [c (gpr Q L) t (gpr Q L) r (gpr Q L)
+;; component k (0 x, 1 y, 2 z) of a built-in into a GPR: 26 WorkgroupId =
+;; ctaid, 27 LocalInvocationId = tid, 28 GlobalInvocationId = ctaid.x *
+;; LocalSize.x + tid.x (its y and z only where LocalSize has 1 there: ctaid)
+(defn- builtin-x [Q :vector-i64 L :vector-i64 bi :i64 k :i64] :i64
+  (cond (= bi 26) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 (+ 0x25 k) 0)] r)
+        (= bi 27) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 (+ 0x21 k) 0)] r)
+        (and (= bi 28) (> k 0) (= (lg L (+ 15 k)) 1)) (let [r (gpr Q L) a (add Q L MI-S2R r 0 0 0 (+ 0x25 k) 0)] r)
+        (and (= bi 28) (= k 0)) (let [c (gpr Q L) t (gpr Q L) r (gpr Q L)
                         a (add Q L MI-S2R c 0 0 0 0x25 0)
                         b (add Q L MI-S2R t 0 0 0 0x21 0)
                         e (add Q L MI-IMADI r c 0 t (lg L 7) 0)]
@@ -403,6 +412,39 @@
                     :else (let [z (ls L 9 (+ 100000 func))] (fail Q SL-E-OP)))]
         (if (< r 0) -1 (tset T id 11 r 0 0 0))))))
 
+;; slot k of the innermost open if
+(defn- if-slot [L :vector-i64 k :i64] :i64 (lg L (+ 20 (* 4 (dec (lg L 6))) k)))
+
+;; does the if whose branch is at at hold a loop, a barrier or another if
+;; before its merge label m?
+(defn- if-complex? [W :vector-i64 at :i64 m :i64] :bool
+  (loop [k at]
+    (if (>= k (spv-count W)) false
+      (let [h (w W k) op (bit-and h 65535) wc (u64-shift-right h 16)]
+        (cond (= wc 0) false
+              (and (= op SP-LABEL) (= (w W (+ k 1)) m)) false
+              (or (= op SP-LOOPMERGE) (= op SP-BARRIER) (= op SP-SELMERGE)) true
+              :else (recur (+ k wc)))))))
+
+;; an if: OpSelectionMerge m, then OpBranchConditional c tl fl. A leaf if
+;; (no loop, barrier or if inside) is predicated: its then block runs under
+;; c, an else block under !c. Any other if is branched: BSSY Bk, m (its
+;; threads reconverge at BSYNC Bk on the merge label, as for a loop); @!c
+;; BRA to the else block or the merge; the then block ends with BRA m when
+;; there is an else block.
+(defn- open-if [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 wc :i64 c :i64 tl :i64 fl :i64] :i64
+  (let [m (lg L 3) d (lg L 6) el (if (= fl m) -1 fl) cp (tg T c 1)
+        branched (if-complex? W at m) b (lg L 13)
+        z (ls L 3 0)]
+    (cond (or (>= d SL-IFMAX) (not= tl (next-label W at wc)) (and branched (> b 15))) (fail Q SL-E-SHAPE)
+          :else
+          (let [s0 (ls L (+ 20 (* 4 d)) m) s1 (ls L (+ 21 (* 4 d)) el) s2 (ls L (+ 22 (* 4 d)) cp)
+                s3 (ls L (+ 23 (* 4 d)) (if branched 1 0)) s4 (ls L 6 (inc d))]
+            (if branched
+              (let [x (ls L 13 (inc b)) e (mi-add Q MI-BSSY (mi-g 7 0) b 0 0 0 0 m) y (tset T m 15 b 0 0 0)]
+                (branch Q (mi-g cp 1) (if (>= el 0) el m)))
+              (ls L 2 (mi-g cp 0)))))))
+
 (defn- binop [W :vector-i64 T :vector-i64 Q :vector-i64 L :vector-i64 at :i64 mop :i64] :i64
   (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3))) b (opnd T Q L (w W (+ at 4)))]
     (if (or (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
@@ -421,16 +463,16 @@
 
 (defn- body-one [W :vector-i64 T :vector-i64 D :vector-i64 O :vector-i64 Q :vector-i64 L :vector-i64 at :i64 op :i64 wc :i64] :i64
   (let [n (lg L 10) cmp (int-cmp op) fcmp (float-cmp op)]
-    (cond (and (= (lg L 6) 1) (not (or (= op SP-BRANCH) (= op SP-LABEL)))) (fail Q SL-E-SHAPE)
-          (= op SP-LABEL)
+    (cond (= op SP-LABEL)
           (let [lab (w W (+ at 1))
                 merge-bar (if (= (tg T lab 0) 15) (tg T lab 1) -1)
                 p (tset T lab 14 (mi-count Q) 0 0 0)
                 q (ls L 12 lab)
                 ;; a loop's merge: its threads reconverge here
                 y (if (>= merge-bar 0) (add Q L MI-BSYNC merge-bar 0 0 0 0 0) 0)]
-            (cond (= lab (lg L 3)) (let [a (ls L 2 (mi-g 7 0)) b (ls L 3 0) c (ls L 6 0)] 0)
-                  (= lab (lg L 5)) (ls L 6 1)
+            (cond (and (> (lg L 6) 0) (= lab (if-slot L 0))) (let [a (ls L 6 (dec (lg L 6)))] (ls L 2 (mi-g 7 0)))
+                  ;; a predicated else block runs where the condition is false
+                  (and (> (lg L 6) 0) (= lab (if-slot L 1)) (= (if-slot L 3) 0)) (ls L 2 (mi-g (if-slot L 2) 1))
                   :else 0))
           (= op SP-VARIABLE)
           (let [pt (w W (+ at 1)) id (w W (+ at 2))]
@@ -459,8 +501,8 @@
                   :else (let [a (address T D Q L p)] (add Q L MI-STG 0 a v 0 (lg L 11) 0))))
           (= op SP-EXTRACT)
           (let [id (w W (+ at 2)) c (w W (+ at 3))]
-            (if (or (not= (tg T c 0) 10) (not= wc 5) (not= (w W (+ at 4)) 0)) (fail Q SL-E-SHAPE)
-              (tset T id 11 (builtin-x Q L (tg T c 1)) 0 0 0)))
+            (if (or (not= (tg T c 0) 10) (not= wc 5) (> (w W (+ at 4)) 2)) (fail Q SL-E-SHAPE)
+              (tset T id 11 (builtin-x Q L (tg T c 1) (w W (+ at 4))) 0 0 0)))
           (or (= op SP-ACCESS) (= op SP-INBOUNDS)) (access W T D O Q L at wc)
           (= op SP-FADD) (binop W T Q L at MI-FADD)
           (= op SP-FMUL) (binop W T Q L at MI-FMUL)
@@ -473,27 +515,36 @@
                 (tset T id 12 p 0 0 0))))
           (= op SP-SELMERGE)
           (if (not= (lg L 3) 0) (fail Q SL-E-SHAPE) (ls L 3 (w W (+ at 1))))
-          ;; after OpSelectionMerge: an if, predicated; else a loop's
-          ;; condition: a branch, inverted when the true edge falls through
+          ;; after OpSelectionMerge: an if; else a loop's condition: a
+          ;; branch, inverted when the true edge falls through
           (= op SP-BRCOND)
           (let [c (w W (+ at 1)) tl (w W (+ at 2)) fl (w W (+ at 3)) nl (next-label W at wc)]
             (cond (or (not= (tg T c 0) 12) (not= (lg L 2) (mi-g 7 0))) (fail Q SL-E-SHAPE)
-                  (not= (lg L 3) 0)
-                  (let [a (ls L 4 tl) b (ls L 5 (if (= fl (lg L 3)) -1 fl))] (ls L 2 (mi-g (tg T c 1) 0)))
+                  (not= (lg L 3) 0) (open-if W T Q L at wc c tl fl)
                   (= nl tl) (branch Q (mi-g (tg T c 1) 1) fl)
                   (= nl fl) (branch Q (mi-g (tg T c 1) 0) tl)
                   :else (let [a (branch Q (mi-g (tg T c 1) 0) tl)] (branch Q (mi-g 7 0) fl))))
+          ;; an OpBranch: to the merge of the open if (nothing, or past a
+          ;; branched if's else block), to the next block (nothing), else a
+          ;; BRA under the current guard (a continue inside a predicated if)
           (= op SP-BRANCH)
-          (let [tl (w W (+ at 1))]
-            (cond (not= (lg L 3) 0) (if (= tl (lg L 3)) 0 (fail Q SL-E-SHAPE))
-                  (not= (lg L 2) (mi-g 7 0)) (fail Q SL-E-SHAPE)
+          (let [tl (w W (+ at 1)) open (> (lg L 6) 0)]
+            (cond (and open (= tl (if-slot L 0)) (= (if-slot L 3) 0)) 0
+                  (and open (= tl (if-slot L 0)) (>= (if-slot L 1) 0) (not= (next-label W at wc) tl)) (branch Q (mi-g 7 0) tl)
                   (= tl (next-label W at wc)) 0
-                  :else (branch Q (mi-g 7 0) tl)))
+                  :else (branch Q (lg L 2) tl)))
+          ;; LogicalOr / LogicalAnd / LogicalNot of predicates: PLOP3 (a 0xf0, b 0xcc)
+          (or (= op SP-LOR) (= op SP-LAND) (= op SP-LNOT))
+          (let [id (w W (+ at 2)) a (w W (+ at 3)) b (if (= op SP-LNOT) a (w W (+ at 4)))]
+            (if (or (not= (tg T a 0) 12) (not= (tg T b 0) 12)) (fail Q SL-E-SHAPE)
+              (let [p (pred Q L)
+                    e (add Q L MI-PLOP3 p (tg T a 1) (tg T b 1) 7 (cond (= op SP-LOR) 0xfc (= op SP-LAND) 0xc0 :else 0x0f) 0)]
+                (tset T id 12 p 0 0 0))))
           ;; a loop: BSSY on the next convergence barrier before the header,
           ;; the header label moved past it, BSYNC at the merge label
           (= op SP-LOOPMERGE)
           (let [mg (w W (+ at 1)) b (lg L 13) hd (lg L 12)]
-            (if (or (not= (lg L 3) 0) (not= (lg L 2) (mi-g 7 0)) (> b 15) (not= (tg T hd 1) (mi-count Q)))
+            (if (or (not= (lg L 2) (mi-g 7 0)) (> b 15) (not= (tg T hd 1) (mi-count Q)))
               (fail Q SL-E-SHAPE)
               (let [z (ls L 13 (inc b)) e (mi-add Q MI-BSSY (mi-g 7 0) b 0 0 0 0 mg)
                     h (tset T hd 14 (mi-count Q) 0 0 0)]
@@ -503,7 +554,7 @@
           (= op SP-BARRIER)
           (let [ex (w W (+ at 1)) ms (w W (+ at 2))]
             (if (or (not= (tg T ex 0) 8) (not= (tg T ex 2) 2) (not= (tg T ms 0) 8) (not= (tg T ms 2) 2)
-                    (not= (lg L 3) 0) (not= (lg L 2) (mi-g 7 0)))
+                    (not= (lg L 2) (mi-g 7 0)))
               (fail Q SL-E-SHAPE)
               (let [a (add Q L MI-BAR 0 0 0 0 0 0)] (add Q L MI-NOP 0 0 0 0 0 0))))
           (= op SP-SHRL) (shift W T Q L at true)
@@ -531,7 +582,12 @@
           (= op SP-BITCAST)
           (let [id (w W (+ at 2)) a (opnd T Q L (w W (+ at 3)))]
             (if (< a 0) (fail Q SL-E-SHAPE) (tset T id 11 a 0 0 0)))
-          ;; OpSelect of 32-bit values on a predicate (a select of booleans is refused)
+          ;; OpSelect on a predicate: of 32-bit values SEL, of booleans PLOP3
+          ;; (c ? a : b, c 0xf0, a 0xcc, b 0xaa: 0xca)
+          (and (= op SP-SELECT) (= (tg T (w W (+ at 4)) 0) 12))
+          (let [id (w W (+ at 2)) c (w W (+ at 3)) a (w W (+ at 4)) b (w W (+ at 5))]
+            (if (or (not= (tg T c 0) 12) (not= (tg T b 0) 12)) (fail Q SL-E-SHAPE)
+              (let [p (pred Q L) e (add Q L MI-PLOP3 p (tg T c 1) (tg T a 1) (tg T b 1) 0xca 0)] (tset T id 12 p 0 0 0))))
           (= op SP-SELECT)
           (let [id (w W (+ at 2)) c (w W (+ at 3)) a (opnd T Q L (w W (+ at 4))) b (opnd T Q L (w W (+ at 5)))]
             (if (or (not= (tg T c 0) 12) (< a 0) (< b 0)) (fail Q SL-E-SHAPE)
@@ -562,7 +618,7 @@
       (let [T (vector-alloc (* 6 n))
             D (loop [i 0 V (vector-alloc (* 4 n))] (if (>= i (* 4 n)) V (recur (inc i) (vector-assoc! V i -1))))
             O (vector-alloc (* 16 n))
-            L (vector-alloc 16)
+            L (vector-alloc (+ 20 (* 4 SL-IFMAX)))
             l0 (ls L 2 (mi-g 7 0)) l1 (ls L 7 1) l2 (ls L 8 cbase) l3 (ls L 10 n)
             l4 (ls L 0 256) l5 (ls L 1 8)
             ;; walk the instructions; the function body starts after OpFunction

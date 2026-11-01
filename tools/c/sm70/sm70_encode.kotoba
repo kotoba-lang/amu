@@ -5,7 +5,7 @@
                           sm70-ldg sm70-stg sm70-lds sm70-sts sm70-bar sm70-bssy sm70-bsync sm70-shr-imm
                           sm70-fadd-neg sm70-iadd3-neg sm70-fsetp sm70-fsetp-imm sm70-fmnmx sm70-imnmx
                           sm70-sel sm70-sel-imm sm70-mufu sm70-i2f sm70-f2i sm70-lop3 sm70-lop3-imm
-                          sm70-shf sm70-shf-imm sm70-imad-wide sm70-sgxt-imm]))
+                          sm70-shf sm70-shf-imm sm70-imad-wide sm70-sgxt-imm sm70-plop3]))
 
 ;; NVIDIA Volta instruction encoder, SM 7.0 / 7.2 (route C, JUN-713). Xavier's
 ;; iGPU (gv11b) is SM 7.2. Each instruction is 128 bits, held as two i64
@@ -537,3 +537,16 @@
         (not (in? bits 0 32)) (sm-fail M SM70-E-IMM)
         (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
         :else (sm-emit M g ctl (lf (alu-lo 0x01a 4 d a) 32 32 bits) (-> 0 (hf 73 1 sgn) (hf 75 1 0)))))
+
+;; PLOP3 (OpPLop3, the warp form): pd = lut(a, b, c) over predicates, each
+;; source inverted by its not flag. Opcode 0x81c; src0 a at 87..89 (not 90),
+;; src1 b at 77..79 (not 80), src2 c at 68..70 (not 71); the table of pd is
+;; split, bits 0..2 at 64..66 and 3..7 at 72..76; the second destination
+;; 84..86 = PT with the table 16..23 = 0 (NAK: a constant false); bit 67 (a
+;; uniform src2) 0. lut as for LOP3 (a 0xf0, b 0xcc, c 0xaa).
+(defn sm70-plop3 [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 na :i64 b :i64 nb :i64 c :i64 nc :i64 lut :i64] :vector-i64
+  (cond (not (and (pred? pd) (pred? a) (pred? b) (pred? c) (flag? na) (flag? nb) (flag? nc))) (sm-fail M SM70-E-PRED)
+        (not (in? lut 0 255)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 12 0x81c) (lf 16 8 0))
+                (-> 0 (hf 64 3 (bit-and lut 7)) (hf 67 1 0) (hf 68 3 c) (hf 71 1 nc) (hf 72 5 (u64-shift-right lut 3))
+                      (hf 77 3 b) (hf 80 1 nb) (hf 81 3 pd) (hf 84 3 7) (hf 87 3 a) (hf 90 1 na)))))

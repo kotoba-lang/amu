@@ -221,8 +221,18 @@
         k (one (sm70-shf (P) G C0 4 5 6 7 4 1 0 0) "refuse.shf.type")
         l (one (sm70-imad-wide (P) G C0 6 2 3 7 0) "refuse.wide.reg.odd")
         m (one (sm70-sel (P) G C0 7 8 9 8 0) "refuse.sel.pred")
-        n (one (sm70-sgxt-imm (P) G C0 4 5 33 1) "refuse.sgxt.bits")]
-    (+ a b c d e f h i j k l m n)))
+        n (one (sm70-sgxt-imm (P) G C0 4 5 33 1) "refuse.sgxt.bits")
+        o (one (sm70-plop3 (P) G C0 8 0 0 1 0 7 0 0x80) "refuse.plop3.pred")
+        q (one (sm70-plop3 (P) G C0 0 0 0 1 0 7 0 256) "refuse.plop3.lut")]
+    (+ a b c d e f h i j k l m n o q)))
+
+;; PLOP3 (part 2 of JUN-739)
+(defn- plop3-ops [] :i64
+  (let [a (one (sm70-plop3 (P) G C0 2 0 0 1 0 7 0 0xc0) "plop3.and")
+        b (one (sm70-plop3 (P) G C2 3 0 0 1 0 7 0 0xfc) "plop3.or")
+        c (one (sm70-plop3 (P) (sm70-guard 4 0) C0 5 0 0 1 1 2 0 0xe4) "plop3.select")
+        d (one (sm70-plop3 (P) G C0 6 7 1 4 0 7 0 0xf0) "plop3.not.a")]
+    (+ a b c d)))
 
 ;; a kernel-shaped sequence (y[i] = R1 * x[i] + y[i], i = ctaid.x * 128 +
 ;; tid.x, x at R2, y at R4) with the control bits a scheduler would give it.
@@ -249,4 +259,4 @@
           (recur (inc k) (+ t (show M k (string-concat "saxpy." (string-from-i64 k)))))))
       (say "X saxpy"))))
 
-(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (shared) (refusals) (decode-ops) (decode-refusals) (saxpy)))
+(defn main [] :i64 (+ (singles) (arith) (wide) (memory) (shared) (refusals) (decode-ops) (decode-refusals) (plop3-ops) (saxpy)))
