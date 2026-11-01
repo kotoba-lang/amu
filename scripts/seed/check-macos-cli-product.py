@@ -74,6 +74,13 @@ def check(cli, out):
     mac.verify_macho(project_program)
     run('locked-project-native-execute', expected=0, stdout=b'42\n', image=project_program)
     run('locked-project-run', 'run', app, '--source-lock', lock, stdout=b'42\n')
+    run('locked-project-run-artifact', 'run', project_program, stdout=b'42\n')
+    damaged_project_program = out / 'damaged-locked-project-program'
+    damaged_bytes = bytearray(project_program.read_bytes())
+    damaged_bytes[-1] ^= 1
+    damaged_project_program.write_bytes(damaged_bytes)
+    run('locked-project-run-damaged-artifact', 'run', damaged_project_program,
+        expected=1, diagnostic=b'EARTIFACT supplied project differs')
     project_program_bytes = project_program.read_bytes()
     run('locked-project-output-collision', 'compile', app, '--source-lock', lock, '-o', project_program.name,
         expected=1, diagnostic=b'EOUTPUT')
