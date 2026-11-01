@@ -112,7 +112,8 @@ def main(boot, out, tier="main", reuse_dir=None, store_dir=None):
     packed_kseed = packed_payload("packed-main", 0)
     bad_packed_kseed = packed_payload("packed-main-arity1", 1)
     packed_output = out / "packed-main.elf"
-    runner = ROOT / "seed/x86_64-kx64-runner.kotoba"
+    runner = out / "x86_64-kx64-runner.kotoba"
+    shutil.copy2(ROOT / "seed/x86_64-kx64-runner.kotoba", runner)
     packed_refusal = run("packed-main-arity-refusal",
                          [X, "compile", runner, "--target", "x86_64-linux", "--output", out / "packed-arity1.elf",
                           "--format", "packed", "--payload", bad_packed_kseed], scope, ok=False)
