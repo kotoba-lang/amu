@@ -1,6 +1,6 @@
 (ns kotoba.compiler.coverage
   "Canonical Kotoba validators for coverage manifest identity fields and schema."
-  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report verify-dataset]}
+  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report verify-dataset report-from-edn]}
   (:require [kotoba.compiler.io :as io]
             [kotoba.compiler.io-buffer :as buffer]
             [multiformats.sha256 :as sha256]))
@@ -359,3 +359,20 @@
             (result-ok-of [:result :bool :document] true)
             (result-err-of [:result :bool :document]
                            (coverage-error "coverage dataset digest mismatch"))))))))
+
+(defn report-from-edn
+  "Read a bounded EDN manifest through Kotoba's native document reader, verify
+  its dataset bytes, and calculate the report from already-verified evidence.
+  Callers must obtain manifest text through the bounded native IO surface."
+  [manifest-text :string dataset-path :string verified :document]
+  [:result :document :document]
+  (if (> (string-byte-length manifest-text) 1048576)
+    (result-err-of [:result :document :document]
+                   (coverage-error "coverage manifest exceeds byte limit"))
+    (let [manifest (document-edn-read manifest-text)
+          dataset (verify-dataset manifest dataset-path)]
+      (if (not (result-ok?-of [:result :bool :document] dataset))
+        (result-err-of [:result :document :document]
+          (result-error-of [:result :bool :document] dataset
+                           (coverage-error "coverage dataset verification failed")))
+        (report manifest verified)))))
