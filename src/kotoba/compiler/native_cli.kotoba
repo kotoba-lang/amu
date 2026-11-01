@@ -3,8 +3,11 @@
 (ns kotoba.compiler.native-cli
   {:kotoba/export [main]}
   (:require [kotoba.compiler.native-frontend :as frontend]
-            [kotoba.compiler.native-project-files :as project-files])
-  (:capabilities #{:cli/args :io/write :io/write-error})
+            [kotoba.compiler.native-project-files :as project-files]
+            [kotoba.compiler.coverage :as coverage]
+            [kotoba.compiler.io :as io]
+            [kotoba.compiler.io-buffer :as buffer])
+  (:capabilities #{:cli/args :io/write :io/write-error :fs/app-data})
   (:schemas {:native.cli/options
              [:record :native.cli/options
               [[:roots :string] [:lock :string] [:blocks :string]
@@ -209,6 +212,51 @@
                                            (string-concat (string-from-i64 count) "\n")))
             (write-project-module-names modules 0 count)))))))
 
+(defn- coverage-file-text [path :string] [:result :string :document]
+  (let [loaded (io/read-text-file path)]
+    (if (not (result-ok?-of [:result [:ref :io.buffer/text] :document] loaded))
+      (result-err-of [:result :string :document]
+        (result-error-of [:result [:ref :io.buffer/text] :document] loaded (document-null)))
+      (result-ok-of [:result :string :document]
+        (buffer/text-string
+          (result-value-of [:result [:ref :io.buffer/text] :document] loaded
+                           (buffer/empty-text)))))))
+
+(defn- coverage-error-output [error :document] :i64
+  (do
+    (typed-cap-call :io/write-error :string :string
+      (string-concat (document-edn-print error) "\n"))
+    65))
+
+(defn- coverage-command [argc :i64] :i64
+  (let [manifest-path (cli-arg 1)
+        dataset-option (cli-arg 2)
+        dataset-path (cli-arg 3)]
+    (if (or (not= argc 4) (not (string=? dataset-option "--dataset"))
+            (= manifest-path "") (= dataset-path ""))
+      (do
+        (typed-cap-call :io/write-error :string :string
+          "usage: amu-native coverage <manifest.edn> --dataset <dataset-file>\n")
+        64)
+      (let [loaded (coverage-file-text manifest-path)]
+        (if (not (result-ok?-of [:result :string :document] loaded))
+          (coverage-error-output
+            (result-error-of [:result :string :document] loaded (document-null)))
+          (let [generated
+                (coverage/report-from-edn
+                  (result-value-of [:result :string :document] loaded "")
+                  dataset-path (document-vector))]
+            (if (not (result-ok?-of [:result :document :document] generated))
+              (coverage-error-output
+                (result-error-of [:result :document :document] generated (document-null)))
+              (do
+                (typed-cap-call :io/write :string :string
+                  (string-concat
+                    (document-edn-print
+                      (result-value-of [:result :document :document] generated (document-null)))
+                    "\n"))
+                0)))))))
+
 (defn main [] :i64
   (let [command (typed-cap-call :cli/args :string :string "0")
         first-argument (typed-cap-call :cli/args :string :string "1")
@@ -231,6 +279,8 @@
                            (option-some?-of [:option :i64] argc-result)
                            (or (not (string=? lock "")) (not (string=? path "")))
                            (or (string=? path "") (suffix? path ".kotoba")))]
+    (if (string=? command "coverage")
+      (coverage-command argc)
     (cond
       (not single-valid?)
       (do
@@ -269,4 +319,4 @@
       (list-project-modules path roots lock blocks)
 
       :else
-      (check-project-mode path roots lock blocks false))))
+      (check-project-mode path roots lock blocks false)))))

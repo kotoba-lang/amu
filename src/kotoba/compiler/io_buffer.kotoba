@@ -1,7 +1,7 @@
 ;; Segmented logical values. No aggregate string/bytes flattening or host IO.
 (ns kotoba.compiler.io-buffer
   {:kotoba/export [empty-buffer from-bytes from-string from-chunks append-chunk concat-buffers
-                   byte-count chunk-count chunk-at start-cursor next-byte as-text text-buffer
+                   byte-count chunk-count chunk-at start-cursor next-byte as-text text-buffer text-string empty-text
                    start-text-cursor next-code-point drop-prefix validated-buffer]}
   (:schemas
    {:io.buffer/value [:record :io.buffer/value [[:chunks [:list :bytes]] [:size :i64]]]
@@ -189,5 +189,16 @@
                            (record-new [:ref :io.buffer/code-point] 0 cursor)) :next))))))))))
 (defn text-buffer [value [:ref :io.buffer/text]] [:ref :io.buffer/value]
   (record-get [:ref :io.buffer/text] value :value))
+(defn empty-text [] [:ref :io.buffer/text]
+  (record-new [:ref :io.buffer/text] (empty-buffer)))
+(defn text-string [value [:ref :io.buffer/text]] :string
+  (let [raw (text-buffer value)]
+    (loop [index 0 bytes (bytes-empty)]
+      (if (= index (chunk-count raw))
+        (string-from-utf8 bytes)
+        (let [chunk (chunk-at raw index)]
+          (recur (+ index 1)
+            (bytes-concat bytes
+              (option-value-of [:option :bytes] chunk (bytes-empty))))))))
 (defn start-text-cursor [value [:ref :io.buffer/text]] [:result [:ref :io.buffer/cursor] :document]
   (start-cursor (text-buffer value)))
