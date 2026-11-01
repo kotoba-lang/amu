@@ -1,7 +1,7 @@
 # ADR 0397 — A native ES-module emitter over SIR; the nbb js route leaves
 
 - Date: 2026-10-31
-- Status: Proposed (design; nothing below is implemented yet)
+- Status: Accepted; §1 implemented (Phase 1, 2026-11-01). §2-§4 open.
 - Tracking: Linear JUN-706 (related: JUN-353, JUN-702, JUN-703)
 
 ## Context
@@ -180,3 +180,51 @@ In dependency order, as ADR 0348 did for the JVM:
   new parser.
 - **Whether `instantiateKotoba`'s typed ABI** needs a native producer at all
   once the app entry exists. This is answered by the §4.4 inventory.
+
+## Implementation record, 2026-11-01 (§1, Phase 1)
+
+`seed/81-js-esm.kotoba` (`xj-*`) is in FULL-MANIFEST after seed/82, and
+`seed/78-full-entry` dispatches `compile SRC --target js-browser --output NEW`.
+Four things differ from the design above. They were measured, not assumed:
+
+- **No separate runtime module.** The emitter reuses seed/82's `xw-rt-src`
+  unchanged. Its JS-specific names are the five `kxrt-host-*` imports and
+  `kxrt-wasm-grow/size`, which the JS emitter recognizes by the same names as
+  seed/81. This means the wasm and JS runtimes cannot drift. There is no
+  `82-js-esm-rt`.
+- **The export is `instantiate(host)`, returning `{memory, start}`,** rather
+  than `start(fuel, host)`. This is the shape of a wasm instance's exports, so
+  `runtime/wasm32-browser-static-host.js` serves both targets: a message that
+  carries `js` (the module text) is imported from a Blob URL.
+- **Tail calls are trampolined.** JS has no proper tail calls. The first run
+  failed `mutual-tail` with "Maximum call stack size exceeded". Where seed/81
+  emits `return_call`, the JS emitter now returns `new TC(f,[args])`, and
+  every other call site runs `R(..)`, which resumes deferred calls. Recursion
+  that is not in tail position still ends in the engine's stack overflow
+  (probe `deep`, exit 120), as it does on wasm.
+- **The host decodes copies of guest bytes.** The JS module's memory is a
+  resizable ArrayBuffer, and Chrome's `TextDecoder` refuses views over one, so
+  the entry ABI's file read returned -1 and the runtime refused it. The host
+  now decodes `.slice()` copies on both targets.
+
+The extra module needs about 3,000 more static tokens than main had to spare
+on the x86_64 static cross compile (E101 region 1, measured by padding). JUN-737
+(#1756) raised the static profile's token table to 1048576 on main, with a
+native headroom guard. This change rides on that table and does not move the
+static profile or the CDCI pins itself.
+
+`scripts/seed/check-js-browser.py` (Mac CI) compiles the 24 runtime cases and
+the probes to both targets, runs them in headless Chrome, and checks:
+
+- every js case returns the static case's result, trap and remaining fuel;
+- every js case's stdout, report included, equals the wasm module's byte for
+  byte (24 of 24);
+- the probes behave: spin traps with no fuel left, deep exits 120 from an
+  engine trap, and entry echoes the file only with the page's grants;
+- no module names a forbidden global or loader, and a mutated module that
+  calls `fetch` is refused (negative control);
+- all 11 float cases are refused with E7101 and no artifact is written.
+
+Still open: §2 (`:document` in the browser profile and
+`kotoba.app-entry/v1`), the Linux CI wiring of the js target beside
+selfhost-bootstrap's wasm32-browser job, and §4, removing the nbb route.
