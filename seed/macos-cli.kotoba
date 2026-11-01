@@ -163,7 +163,7 @@
           (string-concat (mc-argv "-") (string-concat (mc-argv "--identifier")
           (string-concat (mc-argv "org.kotoba.amu.program.v1") (string-concat (mc-argv "--timestamp=none")
           (string-concat (mc-argv "--digest-algorithm=sha256") (string-concat (mc-argv "--") (mc-argv image)))))))))))))))
-(defn- mc-compile [dir :string compiler :string packager :string lock-hash :string] :i64
+(defn- mc-compile [dir :string compiler :string packager :string lock-hash :string profile :string] :i64
   (let [compiled (hc-spawn 1 dir (mc-join dir "compile.log") compiler 11
           (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "compile")
           (string-concat (mc-argv "/source.kotoba") (string-concat (mc-argv "--target")
@@ -181,7 +181,7 @@
         (if (or (not= (mc-exit extracted) 0) (< offset 0)) (mc-error "EHOST native extraction failed" 70)
           (let [packed (hc-spawn 1 dir "" packager 6
             (string-concat (mc-argv "amu-packager") (string-concat (mc-argv "program.macho")
-            (string-concat (mc-argv "program.raw") (string-concat (mc-argv "amu-program")
+            (string-concat (mc-argv "program.raw") (string-concat (mc-argv profile)
             (string-concat (mc-argv (hc-dec offset)) (mc-argv "/source.kotoba")))))))]
             (if (not= (mc-exit packed) 0) (mc-error "EHOST native packaging failed" 70)
               (mc-sign dir (mc-join dir "program.macho")))))))))
@@ -202,7 +202,7 @@
                (string-concat ",\"exit\":" (string-concat (hc-dec status) "}\n"))))))))))))))]
     (if (hc-ok? (hc-write path (hc-bytes body))) 0
       (mc-error "ERECEIPT cannot create receipt (existing files are preserved)" 1))))
-(defn- mc-operation [command :string source :vector-i64 input :vector-i64 artifact :bool dir :string compiler :string packager :string output :string guest-start :i64] :i64
+(defn- mc-operation [command :string source :vector-i64 input :vector-i64 artifact :bool dir :string compiler :string packager :string profile :string output :string guest-start :i64] :i64
   (let [lock (hc-bytes (mc-lock (sh-bytes source)))
         wrote (hc-write (mc-join dir "source.kotoba") source)
         locked (if (hc-ok? wrote) (hc-write (mc-join dir "source.ksl") lock) [1 22 0])]
@@ -215,7 +215,7 @@
           (mc-argv (sh-bytes lock)))))))))]
           (if (= (mc-exit r) 0) (hc-out "ok\n") (mc-exit r)))
       (not (mc-main-abi? (hc-text source))) (mc-error "EABI expected one exported main [] :i64 in a single canonical Kotoba source" 1)
-      :else (let [status (mc-compile dir compiler packager (sh-bytes lock))
+      :else (let [status (mc-compile dir compiler packager (sh-bytes lock) profile)
                   image (mc-join dir "program.macho")]
         (cond (not= status 0) status
           (string=? command "compile")
@@ -310,7 +310,7 @@
               (not (hc-ok? saved)) (> (+ total size) 8388608))
         (vector-i64 1 at total)
         (mc-project-unpack-files bundle text dir (+ i 1) count finish (+ total size))))))
-(defn- mc-project-compile [dir :string compiler :string packager :string text :string output :string guest-start :i64 run? :bool staged? :bool expected-image :vector-i64] :i64
+(defn- mc-project-compile [dir :string compiler :string packager :string text :string profile :string output :string guest-start :i64 run? :bool staged? :bool expected-image :vector-i64] :i64
   (let [count (ksl-file-count text)
         entry-index (mc-lock-file-index text (ksl-entry text))
         rewritten (mc-project-lock text)
@@ -357,7 +357,7 @@
                     (let [image (mc-join dir "program.macho")
                           packed (hc-spawn 1 dir (mc-join dir "package.log") packager 6
                             (string-concat (mc-argv "amu-packager") (string-concat (mc-argv "program.macho")
-                            (string-concat (mc-argv "program.raw") (string-concat (mc-argv "amu-program")
+                            (string-concat (mc-argv "program.raw") (string-concat (mc-argv profile)
                             (string-concat (mc-argv (hc-dec offset)) (mc-argv "/source.bundle")))))))]
                       (if (not= (mc-exit packed) 0)
                         (let [logged (mc-log-error (mc-join dir "package.log"))]
@@ -382,7 +382,7 @@
                                        (hc-ok? (hc-path-call 6 output)))
                                 (hc-out (string-concat "compiled " (string-concat output "\n")))
                                 (mc-error "EOUTPUT cannot create output (existing files are preserved)" 1))))))))))))))))
-(defn- mc-project-work [entry :string lock-path :string output :string mode :string guest-start :i64 info :vector-i64] :i64
+(defn- mc-project-work [entry :string lock-path :string output :string mode :string profile :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info))
         compiler (mc-join root "amu-full-root.macho")
         packager (mc-join root "kotoba-packager-root.macho")
@@ -414,10 +414,10 @@
                                 (mc-error "EHOST cannot create private work directory" 70)
                               :else (let [status (if (string=? mode "check")
                                                   (mc-project-check dir compiler text)
-                                                  (mc-project-compile dir compiler packager text output guest-start
+                                                  (mc-project-compile dir compiler packager text profile output guest-start
                                                     (string=? mode "run") false []))
                                           clean (mc-clean dir)] status))))))))
-(defn- mc-project-run-artifact [dir :string compiler :string packager :string bundle :vector-i64 artifact :vector-i64 guest-start :i64] :i64
+(defn- mc-project-run-artifact [dir :string compiler :string packager :string bundle :vector-i64 artifact :vector-i64 profile :string guest-start :i64] :i64
   (let [magic-size (string-length MC-PROJECT-BUNDLE-MAGIC)
         lock-line-end (mc-decimal-line-end bundle magic-size)
         lock-size (mc-decimal-at bundle magic-size)
@@ -449,8 +449,8 @@
               (if (or (not= (vector-at unpacked 0) 0)
                       (not= (vector-at unpacked 1) (vector-count bundle)))
                 (mc-error "EARTIFACT embedded project sources do not match their lock" 1)
-                (mc-project-compile dir compiler packager text "" guest-start true true artifact))))))
-(defn- mc-work [command :string source-path :string output :string guest-start :i64 info :vector-i64] :i64
+                (mc-project-compile dir compiler packager text profile "" guest-start true true artifact))))))
+(defn- mc-work [command :string source-path :string output :string profile :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info)) compiler (mc-join root "amu-full-root.macho")
         packager (mc-join root "kotoba-packager-root.macho")
         input-reply (hc-read (mc-absolute (hc-info-cwd info) source-path))
@@ -466,37 +466,63 @@
                 (mc-error "EINPUT expected bounded Kotoba source or a locked Amu project artifact" 1)
           (not (hc-ok? (hc-path-call 3 dir))) (mc-error "EHOST cannot create private work directory" 70)
           :else (let [status (if project-artifact?
-                              (mc-project-run-artifact dir compiler packager source input guest-start)
+                              (mc-project-run-artifact dir compiler packager source input "amu-program" guest-start)
                               (mc-operation command source input artifact dir compiler packager
-                                (if (string=? output "") "" (mc-absolute (hc-info-cwd info) output)) guest-start))
+                                profile (if (string=? output "") "" (mc-absolute (hc-info-cwd info) output)) guest-start))
                       clean (mc-clean dir)] status))))))
 ;; commands the C-loader removal (amu#1460) took away: refused by name, not as a typo (JUN-282)
 (defn- mc-removed? [command :string] :bool
   (or (string=? command "measure-runtime") (string=? command "package-ios")
       (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | compile FILE.kotoba [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
+(defn- mc-program-profile? [profile :string] :bool
+  (or (string=? profile "amu-program") (string=? profile "amu-program-fs35")))
 (defn- seed-main [] :i64
   (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
         project-check? (and (string=? command "check") (= n 4) (string=? (hc-arg 2) "--source-lock"))
         project-compile? (and (string=? command "compile")
           (or (and (= n 4) (string=? (hc-arg 2) "--source-lock"))
               (and (= n 6) (string=? (hc-arg 2) "--source-lock")
-                   (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))))
-        project-compile-output? (and project-compile? (= n 6))
+                   (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))
+              (and (= n 6) (string=? (hc-arg 2) "--source-lock")
+                   (string=? (hc-arg 4) "--runtime-profile")
+                   (mc-program-profile? (hc-arg 5)))
+              (and (= n 8) (string=? (hc-arg 2) "--source-lock")
+                   (string=? (hc-arg 4) "--runtime-profile")
+                   (mc-program-profile? (hc-arg 5))
+                   (or (string=? (hc-arg 6) "-o") (string=? (hc-arg 6) "--output")))))
+        project-compile-output? (and project-compile?
+          (or (and (= n 6) (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))
+              (and (= n 8) (or (string=? (hc-arg 6) "-o") (string=? (hc-arg 6) "--output")))))
         project-run? (and (string=? command "run") (< n 64) (>= n 4)
           (string=? (hc-arg 2) "--source-lock") (mc-path? (hc-arg 3))
           (or (= n 4) (and (>= n 5) (string=? (hc-arg 4) "--"))))
         project-run-start (if (= n 4) 4 5)
         output-flag (and (= n 4) (or (string=? (hc-arg 2) "-o") (string=? (hc-arg 2) "--output")))
-        project-output-flag (and (= n 6) (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))
+        simple-profile? (and (string=? command "compile")
+          (or (= n 4) (= n 6))
+          (string=? (hc-arg 2) "--runtime-profile")
+          (mc-program-profile? (hc-arg 3))
+          (or (= n 4) (and (= n 6)
+                           (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))))
+        simple-profile-output? (and simple-profile? (= n 6)
+          (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))
+        project-profile? (and project-compile? (>= n 6)
+          (string=? (hc-arg 4) "--runtime-profile"))
+        profile (cond simple-profile? (hc-arg 3)
+                      project-profile? (hc-arg 5)
+                      :else "amu-program")
         receipt-flag (and (string=? command "run") (>= n 4) (string=? (hc-arg 2) "--receipt"))
         output (cond receipt-flag (hc-arg 3) (string=? command "run") ""
-                     project-compile-output? (hc-arg 5) project-compile? (mc-default-output source)
-                     project-output-flag (hc-arg 5) output-flag (hc-arg 3) :else (mc-default-output source))
+                     (and project-compile-output? (= n 8)) (hc-arg 7)
+                     (and project-compile-output? (= n 6)) (hc-arg 5)
+                     project-compile? (mc-default-output source)
+                     (and simple-profile-output? (= n 6)) (hc-arg 5)
+                     output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
       (and (or project-check? project-compile? project-run?) (mc-path? source) (mc-path? (hc-arg 3))
            (or (not project-compile?) (mc-path? output)))
         (let [info (hc-call 0 [])]
@@ -504,17 +530,17 @@
             (mc-project-work source (hc-arg 3)
               (if project-compile? (mc-absolute (hc-info-cwd info) output) "")
               (cond project-check? "check" project-compile? "compile" :else "run")
-              (if project-run? project-run-start 0) info)
+              profile (if project-run? project-run-start 0) info)
             (mc-error "EHOST cannot resolve native host context" 70)))
       (not (mc-path? source)) (mc-usage)
       (or (and (string=? command "check") (= n 2) (mc-ends? source ".kotoba"))
-          (and (string=? command "compile") (or (= n 2) output-flag)
+          (and (string=? command "compile") (or (= n 2) output-flag simple-profile? simple-profile-output?)
                (mc-ends? source ".kotoba") (mc-path? output))
           (and (string=? command "run") (< n 64)
                (or (= n 2) (and (>= n 3) (string=? (hc-arg 2) "--"))
                    (and receipt-flag (mc-path? output) (or (= n 4) (and (>= n 5) (string=? (hc-arg 4) "--")))))))
         (let [info (hc-call 0 [])]
-          (if (hc-ok? info) (mc-work command source output guest-start info) (mc-error "EHOST cannot resolve native host context" 70)))
+          (if (hc-ok? info) (mc-work command source output profile guest-start info) (mc-error "EHOST cannot resolve native host context" 70)))
       (mc-removed? command)
         (mc-error (string-concat "EREMOVED " (string-concat command " was removed with the C loader (docs/c-loader-removal.md)")) 2)
       :else (mc-usage))))

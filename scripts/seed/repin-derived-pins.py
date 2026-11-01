@@ -66,8 +66,8 @@ def repin_cli(out):
     cli_path = ROOT / "seed/bootstrap/aarch64-macos/cli.json"
     cli = json.loads(cli_path.read_text())
     root = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
-    if build["sources"] != cli["sources"]:
-        sys.exit("CLI source list changed; update cli.json sources first")
+    if set(build["sources"]) != set(cli["sources"]):
+        sys.exit("CLI source set changed; update cli.json source paths first")
     old = cli["image"]["sha256"]
     image = ROOT / cli["image"]["path"]
     shutil.copyfile(out / "cli/amu-cli.macho", image)
@@ -75,6 +75,7 @@ def repin_cli(out):
     cli["image"].update(pin(image))
     cli["unsigned"] = pin(out / "cli/amu-cli-unsigned.macho")
     cli["compiler"], cli["packager"], cli["unity"] = root["compiler"], root["packager"], build["unity"]
+    cli["sources"] = build["sources"]
     cli_path.write_text(json.dumps(cli, indent=2) + "\n")
     md = ROOT / "examples/foundation-starter/MACOS-ARM64.md"
     text = md.read_text()

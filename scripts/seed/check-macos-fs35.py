@@ -57,6 +57,9 @@ def launch(image, s, args):
 
 def main(out):
     assert macos.available(), "Apple Silicon host required"
+    cli_spec = importlib.util.spec_from_file_location("macos_cli_builder", ROOT / "scripts/seed/build-macos-cli.py")
+    cli_builder = importlib.util.module_from_spec(cli_spec)
+    cli_spec.loader.exec_module(cli_builder)
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     compiler, bootstrap = macos.root_images()
     build = out / "build"
@@ -155,6 +158,55 @@ def main(out):
     observe("control-without-fs35", control, ["roundtrip"], "control", trap=True)
     observe("amu-program-fs35-profile-without-helper", program_control,
             ["amu-program", "roundtrip"], "amu-program-control", trap=True)
+
+    # Exercise the public Amu CLI path that Itonami's locked project builder
+    # will use. The explicit profile must package the scoped wire-35 helper;
+    # the default profile must keep refusing the same request.
+    cli_dir = out / "public-cli"
+    cli_builder.build(cli_dir)
+    (cli_dir / "amu-full-root.macho").write_bytes(compiler.read_bytes())
+    (cli_dir / "kotoba-packager-root.macho").write_bytes(bootstrap.read_bytes())
+    (cli_dir / "amu-full-root.macho").chmod(0o755)
+    (cli_dir / "kotoba-packager-root.macho").chmod(0o755)
+    project = out / "locked-fs35-project"
+    project.mkdir(mode=0o700)
+    entry = project / "fs35-program.kotoba"
+    entry.write_text((build / "fs35-program.kotoba").read_text())
+    entry_digest = pin(entry)["sha256"]
+    lock = project / "project.ksl"
+    lock.write_text(f"KSL2\nentry {entry}\nmodule seed.tests.macos-fs35 {entry}\n"
+                    f"file {entry_digest} {entry}\n")
+    public_explicit = project / "explicit.macho"
+    public_default = project / "default.macho"
+    cli = cli_dir / "amu-cli.macho"
+    explicit_build = subprocess.run(
+        [str(cli), "compile", str(entry), "--source-lock", str(lock),
+         "--runtime-profile", "amu-program-fs35", "-o", str(public_explicit)],
+        cwd=project, capture_output=True, timeout=180)
+    assert explicit_build.returncode == 0, explicit_build.stderr[-800:]
+    default_build = subprocess.run(
+        [str(cli), "compile", str(entry), "--source-lock", str(lock), "-o", str(public_default)],
+        cwd=project, capture_output=True, timeout=180)
+    assert default_build.returncode == 0, default_build.stderr[-800:]
+    refused_build = subprocess.run(
+        [str(cli), "compile", str(entry), "--source-lock", str(lock),
+         "--runtime-profile", "unknown-profile", "-o", str(project / "refused.macho")],
+        cwd=project, capture_output=True, timeout=30)
+    assert refused_build.returncode == 2 and b"usage:" in refused_build.stderr
+    mac.verify_macho(public_explicit)
+    mac.verify_macho(public_default)
+    observe("public-cli-fs35-profile-roundtrip", public_explicit,
+            ["amu-program", "roundtrip"], "public-cli-fs35", expect=0,
+            expected_stdout=b"0\n")
+    default_scope = observe("public-cli-default-no-wire35", public_default,
+                            ["amu-program", "roundtrip"], "public-cli-default", trap=True)
+    assert not (default_scope / "d" / "a").exists(), "default public CLI profile performed an ungranted write"
+    report["publicCli"] = pin(cli)
+    report["publicCliSourceLock"] = pin(lock)
+    report["publicCliFs35Artifact"] = pin(public_explicit)
+    report["publicCliDefaultArtifact"] = pin(public_default)
+    report["unknownRuntimeProfileRefused"] = refused_build.returncode == 2
+
     report["status"] = "PASS_MACOS_FS35"
     (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], flush=True)
