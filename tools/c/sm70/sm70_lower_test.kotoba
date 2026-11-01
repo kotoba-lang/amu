@@ -4,8 +4,9 @@
 ;; line, then tools/spirv_encode.kotoba, sm70_encode.kotoba, sm70_sched.kotoba,
 ;; sm70_regalloc.kotoba and sm70_lower.kotoba without their ns lines, then the rest of this file
 ;; (scripts/seed/check-sm70-lower.py). Arguments: the number of modules, then
-;; per module its name and its words as one argument, decimal and separated
-;; by commas (bin/amu passes about 60 arguments at most), as
+;; per module its name, the number of pieces its words come in and the
+;; pieces, decimal words separated by commas (bin/amu passes an argument of
+;; at most about 4 KiB, so a module's words are split), as
 ;; sm70_lower_modules.kotoba prints them. Output per program:
 ;;   K <name> <count> <error> <opcode>   count words follow; error 0 = lowered
 ;;   I <name>.<k> <lo> <hi>              instruction k, 16 hex digits per half
@@ -52,7 +53,7 @@
 
 ;; lower, schedule and encode one module; the error is the IR's, else the encoder's
 (defn- one [name :string W :vector-i64] :i64
-  (let [Q (sm70-schedule (sm70-lower W 0x160 256))
+  (let [Q (sm70-schedule (sm70-lower W 0x160 4096))
         M (sm70-emit-mir Q)
         err (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M))]
     (show name M err (sm70-lower-error-op Q))))
@@ -99,8 +100,25 @@
         M (sm70-emit-mir (sm70-schedule (sm70-regalloc Q)))]
     (show "rapred" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
 
+;; the pieces k0 .. k0 + n - 1 joined by commas
+(defn- joined [k0 :i64 n :i64] :string
+  (loop [i 1 s (arg k0)] (if (>= i n) s (recur (inc i) (string-concat s (string-concat "," (arg (+ k0 i))))))))
+
+;; seven loads in flight (JUN-739): LDG R2..R8 <- [R0:R1 + 4 k], then
+;; R9 = R2 + R8; EXIT. Six scoreboards: the seventh load must wait on the
+;; first one's and reuse it.
+(defn- sbfull [] :i64
+  (let [Q (mi-new 10) G (mi-g 7 0)
+        a (loop [k 0] (if (>= k 7) 0 (let [z (mi-add Q MI-LDG G (+ 2 k) 0 0 0 (* 4 k) 0)] (recur (inc k)))))
+        b (mi-add Q MI-FADD G 9 2 8 0 0 0)
+        c (mi-add Q MI-EXIT G 0 0 0 0 0 0)
+        M (sm70-emit-mir (sm70-schedule Q))]
+    (show "sbfull" M (if (not= (mi-error Q) 0) (mi-error Q) (sm70-error M)) 0)))
+
 (defn main [] :i64
   (let [nm (num (arg 0))
-        t (loop [m 0 t 0]
-            (if (>= m nm) t (recur (inc m) (+ t (one (arg (+ 1 (* 2 m))) (words (arg (+ 2 (* 2 m)))))))))]
-    (+ t (war) (loopwar) (rapred))))
+        t (loop [m 0 k 1 t 0]
+            (if (>= m nm) t
+              (let [np (num (arg (+ k 1)))]
+                (recur (inc m) (+ k 2 np) (+ t (one (arg k) (words (joined (+ k 2) np))))))))]
+    (+ t (war) (loopwar) (rapred) (sbfull))))
