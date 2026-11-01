@@ -60,6 +60,10 @@
             (let [split (ksl-space text (+ index 7) end)] (string-substring text (+ index 7) split))
             (recur (+ end 1) (+ seen 1)))
           (recur (+ end 1) seen))))))
+(defn- mc-project-kotoba-paths? [text :string i :i64 count :i64] :bool
+  (if (= i count) true
+    (and (mc-ends? (mc-lock-file-path-at text i) ".kotoba")
+         (mc-project-kotoba-paths? text (+ i 1) count))))
 (defn- mc-project-module-rows [text :string i :i64 count :i64] :string
   (if (= i count) ""
     (let [name (mc-project-module-name-at text i)
@@ -262,17 +266,24 @@
     (cond (not (hc-ok? lock-reply)) (mc-error "EINPUT expected a bounded regular source lock (symlinks are refused)" 1)
           (not (mc-pinned? compiler MC-COMPILER-SHA256)) (mc-error "EPROVENANCE full compiler digest mismatch" 70)
           :else
-            (let [bytes (mc-read-data lock-reply)
-                  text (hc-text bytes)
-                  dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
-              (cond (or (> (vector-count bytes) 1048576) (not (ksl-valid? text)) (not (ksl-mapped? text)))
+            (let [bytes (mc-read-data lock-reply)]
+              (cond (> (vector-count bytes) 1048576)
                       (mc-error "ELOCK expected a valid bounded KSL2 source lock" 1)
-                    (not (string=? (mc-absolute (hc-info-cwd info) entry) (ksl-entry text)))
-                      (mc-error "ELOCK entry does not match the locked project" 1)
-                    (not (hc-ok? (hc-path-call 3 dir)))
-                      (mc-error "EHOST cannot create private work directory" 70)
-                    :else (let [status (mc-project-check dir compiler text)
-                                clean (mc-clean dir)] status))))))
+                    (not (ksl-utf8? bytes))
+                      (mc-error "ELOCK source lock must be valid UTF-8" 1)
+                    :else
+                      (let [text (hc-text bytes)
+                            dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
+                        (cond (or (not (ksl-valid? text)) (not (ksl-mapped? text)))
+                                (mc-error "ELOCK expected a valid bounded KSL2 source lock" 1)
+                              (not (mc-project-kotoba-paths? text 0 (ksl-file-count text)))
+                                (mc-error "ELOCK project files must use canonical .kotoba paths" 1)
+                              (not (string=? (mc-absolute (hc-info-cwd info) entry) (ksl-entry text)))
+                                (mc-error "ELOCK entry does not match the locked project" 1)
+                              (not (hc-ok? (hc-path-call 3 dir)))
+                                (mc-error "EHOST cannot create private work directory" 70)
+                              :else (let [status (mc-project-check dir compiler text)
+                                          clean (mc-clean dir)] status))))))))
 (defn- mc-work [command :string source-path :string output :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info)) compiler (mc-join root "amu-full-root.macho")
         packager (mc-join root "kotoba-packager-root.macho")

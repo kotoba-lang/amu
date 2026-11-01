@@ -70,6 +70,16 @@ def check(cli, out):
     run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
     run('locked-project-wrong-entry', 'check', util, '--source-lock', lock,
         expected=1, diagnostic=b'ELOCK entry does not match')
+    bad_utf8_lock = project / 'invalid-utf8.ksl'
+    bad_utf8_lock.write_bytes(b'KSL2\n\xff\n')
+    run('locked-project-invalid-utf8-lock', 'check', app, '--source-lock', bad_utf8_lock,
+        expected=1, diagnostic=b'ELOCK source lock must be valid UTF-8')
+    legacy = project / 'legacy.cljk'
+    legacy.write_text(app.read_text())
+    legacy_lock = project / 'legacy.ksl'
+    legacy_lock.write_text(project_lock(legacy, [('app', legacy), ('util', util)], [legacy, util]))
+    run('locked-project-non-kotoba-path', 'check', legacy, '--source-lock', legacy_lock,
+        expected=1, diagnostic=b'ELOCK project files must use canonical .kotoba paths')
     util.write_text(util.read_text() + '\n')
     run('locked-project-changed-source', 'check', app, '--source-lock', lock,
         expected=1, diagnostic=b'EINPUT a locked project source')
