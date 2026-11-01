@@ -1,6 +1,6 @@
 (ns x86-project-fs.io
-  (:export [roundtrip emit-stdout emit-stderr])
-  (:capabilities [:fs/app-data :io/write :io/write-error]))
+  (:export [roundtrip emit-stdout emit-stderr entropy-valid])
+  (:capabilities [:fs/app-data :io/write :io/write-error :entropy/draw]))
 (defn- fs [request :string] :string
   (typed-cap-call :fs/app-data :string :string request))
 (defn roundtrip [base :string] :bool
@@ -19,3 +19,12 @@
 (defn emit-stderr [] :bool
   (= (typed-cap-call :io/write-error :string :string "kotoba-stderr-marker")
      "kotoba-stderr-marker"))
+(defn- hex? [value :string index :i64] :bool
+  (if (= index (string-length value)) true
+    (let [c (string-code-point-at value index)]
+      (and (or (and (>= c 48) (<= c 57))
+               (and (>= c 97) (<= c 102)))
+           (hex? value (inc index))))))
+(defn entropy-valid [] :bool
+  (let [bytes (typed-cap-call :entropy/draw :string :string "32")]
+    (and (= (string-length bytes) 64) (hex? bytes 0))))

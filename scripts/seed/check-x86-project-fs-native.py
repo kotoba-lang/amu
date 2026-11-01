@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Observe explicitly declared FS35/CLI38 project calls and native refusals.
+"""Observe explicitly declared FS35/CLI38/entropy23 project calls and native refusals.
 
 An experimental compiler test, not public product/root adoption. Source and
 native runtime own admission and filesystem results; Python stages/observes.
@@ -153,18 +153,35 @@ def main():
     missing_stderr = execute('ungranted-stderr', base, '37,38', 120,
                              extra_args=('stderr',))
     assert b'KEXE_CAP {:wire 39 :refused :not-granted}' in missing_stderr.stderr
+    entropy = execute('declared-entropy', base, '23,38', extra_args=('entropy',))
+    assert re.search(rb':result 1\b', entropy.stdout), entropy.stdout
+    missing_entropy = execute('ungranted-entropy', base, '38', 120,
+                              extra_args=('entropy',))
+    assert b'KEXE_CAP {:wire 23 :refused :not-granted}' in missing_entropy.stderr
     for label, filename, old, new, diagnostic in [
-        ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'', b'E2176'),
-        ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error])', b'(:capabilities [])', b'E2176'),
-        ('unsupported-wire', 'entry.kotoba', b':clock/now', b':llm/generate', b'E7101')]:
+        ('missing-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error :entropy/draw])', b'', b'E2176'),
+        ('empty-declaration', 'io.kotoba', b'(:capabilities [:fs/app-data :io/write :io/write-error :entropy/draw])', b'(:capabilities [])', b'E2176'),
+        ]:
         files = dict(original)
         files[filename] = files[filename].replace(old, new)
         build(label, files, diagnostic)
     files = dict(original)
     files['entry.kotoba'] = files['entry.kotoba'].replace(
-        b'(:capabilities [:clock/now :cli/args])', b'(:capabilities [:cli/args])')
+        b'[:clock/now :cli/args :entropy/draw]',
+        b'[:clock/now :cli/args :entropy/draw :process/spawn]').replace(
+        b'(typed-cap-call :clock/now :string :string "wall")',
+        b'(typed-cap-call :process/spawn :string :string "wall")')
+    build('unsupported-wire', files, b'E7101')
+    files = dict(original)
+    files['entry.kotoba'] = files['entry.kotoba'].replace(
+        b'(:capabilities [:clock/now :cli/args :entropy/draw])',
+        b'(:capabilities [:cli/args :entropy/draw])')
     build('missing-clock-declaration', files, b'E2176')
-    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT37_STDERR39_CLOCK7_FS35_CLI38',
+    files = dict(original)
+    files['io.kotoba'] = files['io.kotoba'].replace(
+        b':io/write-error :entropy/draw', b':io/write-error')
+    build('missing-entropy-declaration', files, b'E2176')
+    report = dict(status='PASS_EXPERIMENTAL_NATIVE_PROJECT_STDOUT37_STDERR39_CLOCK7_FS35_CLI38_ENTROPY23',
                   compilerSHA256=sha(compiler.read_bytes()), runnerSHA256=sha(runner.read_bytes()),
                   sources={name: sha(data) for name, data in original.items()}, derivation=derivation,
                   observations=observations, publicProductAdopted=False)
