@@ -283,7 +283,7 @@ PINS = {}
 for mm in re.finditer(r"([0-9a-f]{64})  anv-bb-(c2|bis|c8)\n", bc158):
     assert mm.group(2) not in PINS, f"duplicate pin line {mm.group(2)}"
     PINS[mm.group(2)] = mm.group(1)
-assert sorted(PINS) == ["c2", "bis", "c8"], f"pin set {sorted(PINS)}"
+assert set(PINS) == {"c2", "bis", "c8"}, f"pin set {sorted(PINS)}"
 
 cell_re = re.compile(
     r"^CELL idx=(\d+) spv=(\S+) op=(\S+) wg=(\d+) forced=(\S+) probe_size=(-?\d+) "
@@ -334,7 +334,7 @@ def load(path, b, wm, dd):
             gt = int(f[6][10:])
             hn = int(f[9][8:])
             float(f[7][7:])
-            float(f[8][15:])
+            float(f[8][16:])
             assert (int(f[3][6:]) == b and int(f[4][9:]) == wm
                     and int(f[5][5:]) == dd), line
             ticks.setdefault(idx, []).append(gt)
@@ -344,7 +344,11 @@ def load(path, b, wm, dd):
 
 
 def load_run(path, b, wm, dd):
-    cells, verifies, header, ticks, hosts, counts = load(path)
+    cells, verifies, header, ticks, hosts, counts = load(path, b, wm, dd)
+    s128 = [k for k, v in cells.items()
+            if (v["op"], v["wg"], v["forced"]) == ("sum", 128, "16")]
+    assert len(s128) == 1, f"sum128 cells {s128}"
+    host128 = hosts.pop(s128[0])  # keep only the (sum,128,S=16) host list
     integrity = []
     ok = True
     if len(cells) != 24:
@@ -389,7 +393,7 @@ def load_run(path, b, wm, dd):
         if counts.get(kk, 0) != R:
             ok = False
             integrity.append(f"SAMPLE COUNT idx={kk} {counts.get(kk, 0)} != {R}")
-    return cells, verifies, header, ticks, ok_cells, ok, integrity
+    return cells, verifies, header, ticks, ok_cells, ok, integrity, host128
 
 
 out = []
@@ -554,13 +558,13 @@ for tag in TAGS:
     b, wm, dd, k = ARMB[tag], ARMW[tag], ARMD[tag], ARMK[tag]
     for r in range(1, k + 1):
         fn = f"run-{tag}-r{r:02d}.txt.gz"
-        cells, verifies, header, ticks, ok_cells_r, ok_r, integ = load_run(
+        cells, verifies, header, ticks, ok_cells_r, ok_r, integ, host128 = load_run(
             os.path.join(HERE, fn), b, wm, dd)
         if not ok_r:
             load_ok = False
             for i in integ:
                 integrity.append(f"{fn}: {i}")
-        data[(tag, r)] = (cells, verifies, header, ticks)
+        data[(tag, r)] = (cells, verifies, header, ticks, host128)
         keys = tuple(sorted((kk, v["op"], v["wg"], v["forced"], v["pipeline"])
                             for kk, v in cells.items()))
         if cell_keys is None:
@@ -597,8 +601,9 @@ for tag in TAGS:
             else:
                 if c["forced"] == "8":
                     s8_fail += 1
-        if sum(counts.values()) if False else False:
-            pass
+
+sample_counts_ok = not any("SAMPLE COUNT" in i for i in integrity)
+spv_identity_ok = not any("CELL spv SET MISMATCH" in i for i in integrity)
 
 assert dev_line is not None, "device line not parsed"
 m = re.search(r"timestampPeriod=([\d.]+)", tp_line)
@@ -668,6 +673,12 @@ def run_med(tag, r, idx):
     return med_cache[key]
 
 
+def run_host(tag, r):
+    """Per-run host_ns median at (sum,128,S=16) -- the X1/L3 descriptive
+    helper over the host_ns list load_run kept (one value per round)."""
+    return statistics.median(data[(tag, r)][4])
+
+
 P("2. PER-RUN DESCRIPTIVE (W2/L10: per-run quantities are DESCRIPTIVE")
 P("   ONLY and never classify; each run: (sum,128,S=16) per-cell median")
 P(f"   gpu_ticks over its {R:,} rounds, then min..max over the 18")
@@ -681,8 +692,6 @@ for tag in TAGS:
     for r in range(1, k + 1):
         vals = [run_med(tag, r, kk) for kk in ok_cells]
         v16 = run_med(tag, r, sum128)
-        hn = statistics.median(data[(tag, r)][3][sum128 + 1000000]
-                               if False else [0]) if False else None
         P(f"     r{r:02d}  (sum,128,16) {fmt(v16):>7}   18-cell "
           f"{fmt(min(vals)):>6}..{fmt(max(vals)):<6}   host_ns "
           f"{fmt(run_host(tag, r))}")
@@ -757,8 +766,6 @@ P("")
 # standing cut protocol
 c2_stats, cls_c2, _ = unit_rows[("c2", "block1 (k=3 control)")]
 c8_stats, cls_c8, _ = unit_rows[("c8", "block1 (k=3 control)")]
-v_c2 = [m_ for kk, m_, mad, h_ in [None] * 0] if False else None
-v_c2 = dict((kk, m_) for kk, m_, mad, h_ in []) if False else None
 v_c2 = c2_stats[ok_cells.index(sum128)][0]
 v_c8 = c8_stats[ok_cells.index(sum128)][0]
 c1_c2_ok = cls_c2 == "FLOOR" and C2_BAND[0] <= v_c2 <= C2_BAND[1]
