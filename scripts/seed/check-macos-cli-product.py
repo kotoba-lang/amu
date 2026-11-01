@@ -73,6 +73,7 @@ def check(cli, out):
         stdout=('compiled ' + str(project_program) + '\n').encode())
     mac.verify_macho(project_program)
     run('locked-project-native-execute', expected=0, stdout=b'42\n', image=project_program)
+    run('locked-project-run', 'run', app, '--source-lock', lock, stdout=b'42\n')
     project_program_bytes = project_program.read_bytes()
     run('locked-project-output-collision', 'compile', app, '--source-lock', lock, '-o', project_program.name,
         expected=1, diagnostic=b'EOUTPUT')
@@ -95,6 +96,8 @@ def check(cli, out):
     run('locked-project-changed-source', 'check', app, '--source-lock', lock,
         expected=1, diagnostic=b'EINPUT a locked project source')
     run('locked-project-compile-changed-source', 'compile', app, '--source-lock', lock, '-o', 'changed-source-program',
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    run('locked-project-run-changed-source', 'run', app, '--source-lock', lock,
         expected=1, diagnostic=b'EINPUT a locked project source')
     util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
 
@@ -155,10 +158,11 @@ def check(cli, out):
     run('check-type-error', 'check', bad.name, expected=1, diagnostic=b'E')
     for i, args in enumerate((('compile', hello.name, '--target', 'x86_64-linux'),
                               ('check', hello.name, '--source-path', '.'),
-                              ('run', hello.name, '--source-lock', 'missing'),
                               ('compile', hello.name, '-o'), ('garbage', hello.name),
                               ('run', hello.name, '--receipt'), ('run', hello.name, '--receipt', 'r.json', 'extra'))):
         run('usage' + str(i), *args, expected=2, diagnostic=b'usage:')
+    run('project-run-missing-lock', 'run', hello.name, '--source-lock', 'missing',
+        expected=1, diagnostic=b'EINPUT expected a bounded regular source lock')
     # removed with the C loader (docs/c-loader-removal.md): refused by name, not as unknown (JUN-282)
     for name in ('measure-runtime', 'package-ios', 'package-macos', 'test'):
         run('removed-' + name, name, hello.name, expected=2, diagnostic=b'EREMOVED ' + name.encode())
