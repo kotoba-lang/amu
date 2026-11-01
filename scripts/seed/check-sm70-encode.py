@@ -516,6 +516,23 @@ def op_sgxt(guard, deps, d, a, bits, signed):
     return finish(e, guard, deps)
 
 
+def op_plop3(guard, deps, pd, a, na, b, nb, c, nc, lut):
+    e = Instr()
+    e.set_field(0, 12, 0x81C)
+    e.set_field(68, 71, c)
+    e.set_bit(71, nc)
+    e.set_field(77, 80, b)
+    e.set_bit(80, nb)
+    e.set_field(87, 90, a)
+    e.set_bit(90, na)
+    e.set_field(16, 24, 0)            # ops[1]: constant false
+    e.set_field(64, 67, lut & 7)
+    e.set_field(72, 77, lut >> 3)
+    e.set_field(81, 84, pd)
+    e.set_field(84, 87, 7)            # dsts[1] None: PT
+    return finish(e, guard, deps)
+
+
 def decode_cases():
     C1_, C2_ = C1, C2
     c = {}
@@ -558,8 +575,12 @@ def decode_cases():
         "refuse.fsetp.pd": E_PRED, "refuse.mufu.tanh": E_ENUM, "refuse.mufu.rcp64h": E_ENUM,
         "refuse.i2f.rnd": E_ENUM, "refuse.lop3.lut": E_ENUM, "refuse.shf.imm": E_IMM,
         "refuse.shf.type": E_ENUM, "refuse.wide.reg.odd": E_REG, "refuse.sel.pred": E_PRED,
-        "refuse.sgxt.bits": E_IMM,
+        "refuse.sgxt.bits": E_IMM, "refuse.plop3.pred": E_PRED, "refuse.plop3.lut": E_ENUM,
     }
+    c["plop3.and"] = op_plop3(G, C0, 2, 0, False, 1, False, 7, False, 0xC0)
+    c["plop3.or"] = op_plop3(G, C2_, 3, 0, False, 1, False, 7, False, 0xFC)
+    c["plop3.select"] = op_plop3((4, False), C0, 5, 0, False, 1, True, 2, False, 0xE4)
+    c["plop3.not.a"] = op_plop3(G, C0, 6, 7, True, 4, False, 7, False, 0xF0)
     c.update({k: ("R", v) for k, v in refusals.items()})
     return c
 
@@ -716,6 +737,8 @@ MUTANTS = [
     ("lop3-pred-not", "(hf 87 3 7) (hf 90 1 1)))\n\n(defn sm70-lop3", "(hf 87 3 7) (hf 90 1 0)))\n\n(defn sm70-lop3", ["lop3.and3"]),
     ("shf-right-bit", "(hf 75 1 wrap) (hf 76 1 right)", "(hf 75 1 wrap) (hf 77 1 right)", ["shf.r.w.u32.hi"]),
     ("imad-wide-reg-form", "(lf (alu-lo 0x025 1 d a) 32 8 b)", "(lf (alu-lo 0x025 4 d a) 32 8 b)", ["imad.wide.u32.rz"]),
+    ("plop3-lut-split", "(hf 72 5 (u64-shift-right lut 3))", "(hf 72 5 (u64-shift-right lut 2))", ["plop3.and"]),
+    ("plop3-src1-not", "(hf 77 3 b) (hf 80 1 nb)", "(hf 77 3 b) (hf 79 1 nb)", ["plop3.select"]),
     ("sgxt-signed-bit", "(-> 0 (hf 73 1 sgn) (hf 75 1 0))", "(-> 0 (hf 72 1 sgn) (hf 75 1 0))", ["sgxt.s8"]),
 ]
 
