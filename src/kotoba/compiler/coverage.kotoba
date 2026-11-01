@@ -1,6 +1,6 @@
 (ns kotoba.compiler.coverage
   "Canonical Kotoba validators for coverage manifest identity fields and schema."
-  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid?]})
+  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report]})
 
 (defn- ascii-digit? [byte :i64] :bool
   (and (>= byte 48) (<= byte 57)))
@@ -254,3 +254,79 @@
                       (release-entry-evidence-valid? entry verified)
                       true)
                     (recur (+ index 1)))))))))
+
+(defn- observation-share [observations :document wanted :keyword] :i64
+  (loop [index 0 total 0]
+    (if (>= index (document-count observations)) total
+      (let [entry (vector-item observations index)]
+        (if (= (platform entry) wanted)
+          (recur (+ index 1)
+                 (+ total (option-value-of [:option :i64]
+                           (document-i64-value (field entry :share-bps)) 0)))
+          (recur (+ index 1) total))))))
+
+(defn- released-share [observations :document support :document] :i64
+  (loop [index 0 total 0]
+    (if (>= index (document-count support)) total
+      (let [entry (vector-item support index)
+            status (option-value-of [:option :keyword]
+                                    (document-keyword-value (field entry :status)) :invalid)]
+        (if (= status :release)
+          (recur (+ index 1) (+ total (observation-share observations (platform entry))))
+          (recur (+ index 1) total))))))
+
+(defn- release-platform-set [support :document] :document
+  ;; Kotoba currently exposes set membership but no set append operation.
+  ;; Serialize only validated keyword values, then parse them as a native
+  ;; document set; no host reader or legacy runtime is involved.
+  (document-edn-read
+    (loop [index 0 encoded "#{"]
+      (if (>= index (document-count support))
+        (string-concat encoded "}")
+        (let [entry (vector-item support index)
+              status (option-value-of [:option :keyword]
+                                      (document-keyword-value (field entry :status)) :invalid)]
+          (if (= status :release)
+            (recur (+ index 1)
+                   (string-concat encoded
+                     (string-concat (document-edn-print (field entry :platform)) " ")))
+            (recur (+ index 1) encoded)))))))
+
+(defn- report-document [manifest :document] :document
+  (let [observations (field manifest :observations)
+        support (field manifest :support)
+        unknown (observation-share observations :unknown)
+        identifiable (- 10000 unknown)
+        supported (released-share observations support)
+        coverage (if (= identifiable 0) 0 (quot (* supported 10000) identifiable))
+        threshold (option-value-of [:option :i64]
+                                   (document-i64-value (field manifest :threshold-bps)) 0)]
+    (document-map
+      (document-keyword :format) (document-keyword :kotoba.coverage-report/v1)
+      (document-keyword :population) (field manifest :population)
+      (document-keyword :period) (field manifest :period)
+      (document-keyword :dataset-sha256) (field (field manifest :dataset) :sha256)
+      (document-keyword :unknown-bps) (document-i64 unknown)
+      (document-keyword :identifiable-bps) (document-i64 identifiable)
+      (document-keyword :supported-bps) (document-i64 supported)
+      (document-keyword :coverage-bps) (document-i64 coverage)
+      (document-keyword :threshold-bps) (document-i64 threshold)
+      (document-keyword :goal-met?) (document-bool (>= coverage threshold))
+      (document-keyword :release-platforms) (release-platform-set support))))
+
+(defn- coverage-error [message :string] :document
+  (document-map (document-keyword :phase) (document-keyword :coverage)
+                (document-keyword :message) (document-string message)))
+
+(defn report [manifest :document verified :document] [:result :document :document]
+  (if (not (manifest-valid? manifest))
+    (result-err-of [:result :document :document]
+                   (coverage-error "coverage manifest schema rejected"))
+    (if (not (verified-evidence-valid? verified))
+      (result-err-of [:result :document :document]
+                     (coverage-error "verified coverage evidence rejected"))
+      (if (not (release-evidence-valid? manifest verified))
+        (result-err-of [:result :document :document]
+                       (coverage-error "release coverage evidence is missing or mismatched"))
+        (result-ok-of [:result :document :document]
+                      (report-document manifest))))))

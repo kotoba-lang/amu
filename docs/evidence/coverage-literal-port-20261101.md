@@ -88,3 +88,26 @@ This is locked source admission and signature resolution only. It does not
 execute this predicate or establish CLJK semantic parity. Report calculation,
 dataset file IO/hash, `trust_cli` wiring, and production Amu qualification
 remain open. No test suite or legacy oracle was run.
+
+## Report calculation locked source admission — 2026-11-01
+
+Added public `report`, returning a typed Kotoba `Result`. It validates the
+manifest and verified-evidence vector, rejects release evidence with a missing
+or mismatched digest/platform/path set, then computes unknown and identifiable
+share, released supported share, floored coverage bps, threshold outcome and
+release platform set. The release set is formed by reading a serialized set of
+validated keywords through the native document reader; this avoids introducing
+a host or legacy EDN runtime.
+
+A locked two-module Kotoba caller importing `report` passed the candidate Amu
+`check --source-lock` at commit
+`d673111b66f43a8569e545c772a70e51737e1707`; bootstrap CLI image SHA-256
+`ae94dc99ffe489ef77cb5eb0044bea1d2500a4273d45c55bcf57b887994f390a`.
+Source SHA-256: `088f256c735e65577c2c5ca52de806435de81f8b2ff963861329aaa0a8a6f2a8`;
+caller SHA-256: `d60465940aad335b8c8681db0edb2d3c855483dbe939e26355a04796abf536c3`;
+KSL2 lock SHA-256: `8b38992d11b96bea99fa0a2ed4e8232c9aeabac665a801f4b24be74f1adca9f5`.
+
+This verifies locked source admission and public signature/dependency
+resolution only. The function was not executed; report parity, dataset file IO
+and digest verification, `trust_cli` wiring, and production Amu qualification
+remain open. No test suite or legacy oracle was run.
