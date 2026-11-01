@@ -68,7 +68,18 @@ def check(cli, out):
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
     run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
+    project_program = out / 'locked-project-program'
+    run('locked-project-compile', 'compile', app, '--source-lock', lock, '-o', project_program.name,
+        stdout=('compiled ' + str(project_program) + '\n').encode())
+    mac.verify_macho(project_program)
+    run('locked-project-native-execute', expected=0, stdout=b'42\n', image=project_program)
+    project_program_bytes = project_program.read_bytes()
+    run('locked-project-output-collision', 'compile', app, '--source-lock', lock, '-o', project_program.name,
+        expected=1, diagnostic=b'EOUTPUT')
+    assert project_program.read_bytes() == project_program_bytes
     run('locked-project-wrong-entry', 'check', util, '--source-lock', lock,
+        expected=1, diagnostic=b'ELOCK entry does not match')
+    run('locked-project-compile-wrong-entry', 'compile', util, '--source-lock', lock, '-o', 'wrong-entry-program',
         expected=1, diagnostic=b'ELOCK entry does not match')
     bad_utf8_lock = project / 'invalid-utf8.ksl'
     bad_utf8_lock.write_bytes(b'KSL2\n\xff\n')
@@ -82,6 +93,8 @@ def check(cli, out):
         expected=1, diagnostic=b'ELOCK project files must use canonical .kotoba paths')
     util.write_text(util.read_text() + '\n')
     run('locked-project-changed-source', 'check', app, '--source-lock', lock,
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    run('locked-project-compile-changed-source', 'compile', app, '--source-lock', lock, '-o', 'changed-source-program',
         expected=1, diagnostic=b'EINPUT a locked project source')
     util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
 
