@@ -57,6 +57,8 @@
 ;;   SGXT   d = the low x bits of a, extended (y = 1 signed)
 ;;   FMULI  d = a * x, x an f32 bit pattern
 ;;   PLOP3  predicate d = lut x of predicates a, b, c (each inverted by its bit in y: 1 a, 2 b, 4 c)
+;;   FFMA   d = a * b + c (RN)
+;;   F2F    d = the f16 half x (0 low, 1 high) of a, as f32
 ;; A guarded BRA is a conditional branch. The lowering resolves its branch
 ;; targets before scheduling (y holds the label until then).
 ;;
@@ -102,6 +104,8 @@
 (def MI-SGXT 37)
 (def MI-FMULI 38)
 (def MI-PLOP3 39)
+(def MI-FFMA 40)
+(def MI-F2F 41)
 
 ;; refusals of the scheduler (Q[1]); the lowering's are 101..
 (def MI-E-CAP 120)    ;; the IR is full
@@ -151,13 +155,13 @@
                 (= op MI-IMADW) (case j 0 a 1 c 2 (+ c 1) -1)
                 (= op MI-IMADWR) (case j 0 a 1 b 2 c 3 (if (= c 255) -1 (+ c 1)) -1)
                 (or (= op MI-MOV) (= op MI-LDS) (= op MI-SHR) (= op MI-FSETPI) (= op MI-MUFU) (= op MI-I2F)
-                    (= op MI-F2I) (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI)) (case j 0 a -1)
+                    (= op MI-F2I) (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI) (= op MI-F2F)) (case j 0 a -1)
                 (= op MI-STS) (case j 0 a 1 b -1)
                 (or (= op MI-ISETP) (= op MI-FADD) (= op MI-FMUL) (= op MI-FADDN) (= op MI-FSETP) (= op MI-SEL)
                     (= op MI-SHLR) (= op MI-SHRR) (= op MI-IMNMX) (= op MI-FMNMX)) (case j 0 a 1 b -1)
                 (= op MI-LDG) (case j 0 a 1 (+ a 1) -1)
                 (= op MI-STG) (case j 0 a 1 (+ a 1) 2 b -1)
-                (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3)) (case j 0 a 1 b 2 c -1)
+                (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3) (= op MI-FFMA)) (case j 0 a 1 b 2 c -1)
                 :else -1))))
 
 (defn- mi-dst [Q :vector-i64 k :i64 j :i64] :i64
@@ -179,11 +183,11 @@
                 :else 7)]
     (if (= p 7) -1 p)))
 ;; variable latency (NAK has_fixed_latency): S2R, the memory operations,
-;; MUFU and the conversions; BAR is not fixed either but has no register
+;; MUFU and the conversions (F2F too); BAR is not fixed either but has no register
 ;; operand, so it takes no scoreboard
 (defn- mi-var? [op :i64] :bool
   (or (= op MI-S2R) (= op MI-LDG) (= op MI-STG) (= op MI-LDS) (= op MI-STS) (= op MI-MUFU) (= op MI-I2F)
-      (= op MI-F2I)))
+      (= op MI-F2I) (= op MI-F2F)))
 
 ;; the target of a branch or BSSY at k
 (defn- mi-target [Q :vector-i64 k :i64] :i64 (+ k 1 (mi-f Q k 6)))
@@ -407,6 +411,8 @@
           (= op MI-IMADWR) (sm70-imad-wide M g c d a b cc 0)
           (= op MI-SGXT) (sm70-sgxt-imm M g c d a x y)
           (= op MI-FMULI) (sm70-fmul-imm M g c d a x 0 0 0)
+          (= op MI-FFMA) (sm70-ffma M g c d a b cc 0 0 0)
+          (= op MI-F2F) (sm70-f2f-f16 M g c d a x 0)
           (= op MI-PLOP3) (sm70-plop3 M g c d a (bit-and y 1) b (bit-and (u64-shift-right y 1) 1) cc (bit-and (u64-shift-right y 2) 1) x)
           :else (sm-fail M MI-E-OP))))
 

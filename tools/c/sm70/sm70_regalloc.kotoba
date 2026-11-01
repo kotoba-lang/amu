@@ -10,12 +10,13 @@
 ;; Liveness is computed per instruction over the IR's control flow: an
 ;; instruction falls through to the next one, a BRA also goes to its target
 ;; (an unguarded one only there), an unguarded EXIT ends the thread. A
-;; guarded instruction may not run, so its write does not end the old
-;; value's life. A register pair (the address of LDG / STG, the result and
-;; addend of IMAD.WIDE) is one node of two registers on an even register;
-;; its low half is written first (MOV from the constant bank, then the high
-;; half), so an unguarded write of the low half ends the pair's old value
-;; and a write of the high half does not. Two nodes interfere when one is
+;; guarded instruction may not run, so its write ends the old value's life
+;; only where there is none to keep (kills?): a value written once, or a
+;; pair's low half. A register pair (the address of LDG / STG, the result
+;; and addend of IMAD.WIDE) is one node of two registers on an even
+;; register; its low half is written first (MOV from the constant bank,
+;; then the high half), so a write of the low half ends the pair's old
+;; value and a write of the high half does not. Two nodes interfere when one is
 ;; written while the other is live after that instruction; the result of a
 ;; variable-latency instruction also interferes with its sources, which the
 ;; instruction still reads after it issues. Nodes are coloured in order of
@@ -40,10 +41,10 @@
         (or (= op MI-ISETP) (= op MI-STG) (= op MI-STS) (= op MI-FSETP)) 6
         (= op MI-FSETPI) 2
         (or (= op MI-LDG) (= op MI-MOV) (= op MI-LDS) (= op MI-SHR) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I)
-            (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI)) 3
+            (= op MI-SHLI) (= op MI-SGXT) (= op MI-FMULI) (= op MI-F2F)) 3
         (or (= op MI-FADD) (= op MI-FMUL) (= op MI-FADDN) (= op MI-SEL) (= op MI-SHLR) (= op MI-SHRR)
             (= op MI-IMNMX) (= op MI-FMNMX)) 7
-        (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3) (= op MI-IMADWR)) 15
+        (or (= op MI-IADD3) (= op MI-IMAD) (= op MI-LOP3) (= op MI-IMADWR) (= op MI-FFMA)) 15
         :else 0))
 
 ;; does the op write its d field as a GPR?
@@ -129,7 +130,28 @@
           :else (+ k 1))))
 
 ;; the GPR uses and kills of each instruction
-(defn- gpr-sets [Q :vector-i64 N :vector-i64 w :i64 U :vector-i64 K :vector-i64] :i64
+;; the number of instructions that write each GPR node (C) or predicate (PC)
+(defn- def-counts [Q :vector-i64 N :vector-i64 nn :i64 np :i64] :vector-i64
+  (let [C (vector-alloc (+ nn np 1)) n (mi-count Q)]
+    (loop [k 0]
+      (if (>= k n) C
+        (let [op (qf Q k 0)
+              a (if (gpr-def? op) (let [nd (node-of N (qf Q k 2))] (if (>= nd 0) (vector-assoc! C nd (inc (vector-at C nd))) C)) C)
+              b (if (and (pred-def? op) (>= (qf Q k 2) RA-P0))
+                  (let [i (+ nn (- (qf Q k 2) RA-P0))] (vector-assoc! C i (inc (vector-at C i)))) C)]
+          (recur (inc k)))))))
+
+;; does the write of node nd at an instruction end its old value? Always
+;; unguarded. Guarded too: for a value written once (it has no old value
+;; to keep: where the guard is false it is not read), and for the low half
+;; of a pair (an address is built afresh: low, high, then IMAD.WIDE). Not
+;; for a Function variable, written in several places, nor for the high
+;; half of a pair.
+(defn- kills? [N :vector-i64 C :vector-i64 v :i64 nd :i64 unguarded :bool] :bool
+  (let [kind (vector-at N (- v RA-V0))]
+    (and (not= kind 3) (or unguarded (= kind 2) (= (vector-at C nd) 1)))))
+
+(defn- gpr-sets [Q :vector-i64 N :vector-i64 C :vector-i64 w :i64 U :vector-i64 K :vector-i64] :i64
   (let [n (mi-count Q)]
     (loop [k 0]
       (if (>= k n) 0
@@ -139,13 +161,12 @@
                     (let [v (qf Q k (+ 2 j)) nd (if (fbit m j) (node-of N v) -1)
                           y (cond (< nd 0) 0
                                   (and (= j 0) (gpr-def? op))
-                                  ;; a write of a pair's high register does not kill
-                                  (if (and unguarded (not= (vector-at N (- v RA-V0)) 3)) (bset K (* k w) nd) 0)
+                                  (if (kills? N C v nd unguarded) (bset K (* k w) nd) 0)
                                   :else (bset U (* k w) nd))]
                       (recur (inc j)))))]
           (recur (inc k)))))))
 
-(defn- pred-sets [Q :vector-i64 pw :i64 U :vector-i64 K :vector-i64] :i64
+(defn- pred-sets [Q :vector-i64 C :vector-i64 nn :i64 pw :i64 U :vector-i64 K :vector-i64] :i64
   (let [n (mi-count Q)]
     (loop [k 0]
       (if (>= k n) 0
@@ -155,7 +176,8 @@
                               (let [f (pred-src-field op j)
                                     y (if (and (>= f 0) (>= (qf Q k f) RA-P0)) (bset U (* k pw) (- (qf Q k f) RA-P0)) 0)]
                                 (recur (inc j)))))
-              c (if (and (pred-def? op) unguarded (>= (qf Q k 2) RA-P0)) (bset K (* k pw) (- (qf Q k 2) RA-P0)) 0)]
+              c (if (and (pred-def? op) (>= (qf Q k 2) RA-P0) (or unguarded (= (vector-at C (+ nn (- (qf Q k 2) RA-P0))) 1)))
+                  (bset K (* k pw) (- (qf Q k 2) RA-P0)) 0)]
           (recur (inc k)))))))
 
 ;; live-out O from uses U and kills K, w words per set: out(k) = union of
@@ -198,7 +220,7 @@
         (let [op (qf Q k 0) m (gpr-fields op) d (if (gpr-def? op) (node-of N (qf Q k 2)) -1)
               a (if (< d 0) 0
                   (loop [x 0] (if (>= x nn) 0 (let [y (if (bget O (* k w) x) (interfere I w d x) 0)] (recur (inc x))))))
-              b (if (or (< d 0) (not (or (= op MI-S2R) (= op MI-LDG) (= op MI-LDS) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I)))) 0
+              b (if (or (< d 0) (not (or (= op MI-S2R) (= op MI-LDG) (= op MI-LDS) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I) (= op MI-F2F)))) 0
                   (loop [j 1] (if (>= j 4) 0
                                 (let [s (if (fbit m j) (node-of N (qf Q k (+ 2 j))) -1) y (if (>= s 0) (interfere I w d s) 0)] (recur (inc j))))))]
           (recur (inc k)))))))
@@ -260,11 +282,12 @@
           w (+ 1 (u64-shift-right nn 6)) pw (+ 1 (u64-shift-right np 6))
           N (node-kinds Q nn)
           U (vector-alloc (* (+ n 1) w)) K (vector-alloc (* (+ n 1) w))
-          s1 (gpr-sets Q N w U K)
+          DC (def-counts Q N nn np)
+          s1 (gpr-sets Q N DC w U K)
           O (liveness Q w U K)
           I (gpr-interference Q N w nn O)
           PU (vector-alloc (* (+ n 1) pw)) PK (vector-alloc (* (+ n 1) pw))
-          s2 (pred-sets Q pw PU PK)
+          s2 (pred-sets Q DC nn pw PU PK)
           PO (liveness Q pw PU PK)
           PI (pred-interference Q pw np PO)
           C (loop [i 0 V (vector-alloc nn)] (if (>= i nn) V (recur (inc i) (vector-assoc! V i -1))))

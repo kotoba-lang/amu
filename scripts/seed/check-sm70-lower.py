@@ -117,18 +117,48 @@ def unit_text(test, mods, replace=None):
     return first + "\n" + "".join(parts) + "\n" + rest
 
 
-def run_unit(amu, text, work, tag, args=()):
+def run_unit(amu, text, work, tag, args=(), groups=None):
+    """run the unit with args; with groups (a list of argument lists) compile
+    it once and run the program per group, the outputs joined (one count line
+    at the end, their sum)"""
     d = Path(work) / tag
     d.mkdir()
     (d / "unit.kotoba").write_text(text)
-    p = subprocess.run([str(amu), "run", "unit.kotoba", "--", *args], cwd=d, capture_output=True, text=True,
+    h = hashlib.sha256(text.encode()).hexdigest()
+    if groups is None:
+        p = subprocess.run([str(amu), "run", "unit.kotoba", "--", *args], cwd=d, capture_output=True, text=True,
+                           timeout=600)
+        if p.returncode != 0:
+            raise RuntimeError(f"{tag}: bin/amu exit {p.returncode}: {p.stderr.strip()[:400]}")
+        return p.stdout, h
+    p = subprocess.run([str(amu), "compile", "unit.kotoba", "-o", "unit.bin"], cwd=d, capture_output=True, text=True,
                        timeout=600)
     if p.returncode != 0:
-        raise RuntimeError(f"{tag}: bin/amu exit {p.returncode}: {p.stderr.strip()[:400]}")
-    return p.stdout, hashlib.sha256(text.encode()).hexdigest()
+        raise RuntimeError(f"{tag}: bin/amu compile exit {p.returncode}: {p.stderr.strip()[:400]}")
+    lines, total = [], 0
+    for g in groups:
+        p = subprocess.run([str(amu), "run", "unit.bin", "--", *g], cwd=d, capture_output=True, text=True, timeout=600)
+        if p.returncode != 0:
+            raise RuntimeError(f"{tag}: bin/amu exit {p.returncode}: {p.stderr.strip()[:400]}")
+        out = p.stdout.rstrip("\n").split("\n")
+        lines += out[:-1]
+        total += int(out[-1])
+    return "\n".join(lines + [str(total)]) + "\n", h
 
 
 ARG_MAX = 3900   # bin/amu refuses a program argument of more than about 4 KiB (exit 70)
+ARGS_MAX = 56    # and a command line of more than about 62 program arguments (exit 2)
+
+
+def module_groups(modules):
+    """module_args for groups of modules, each at most ARGS_MAX arguments"""
+    groups, cur = [], {}
+    for name, words in modules.items():
+        if cur and len(module_args({**cur, name: words})) > ARGS_MAX:
+            groups.append(module_args(cur))
+            cur = {}
+        cur[name] = words
+    return groups + [module_args(cur)]
 
 
 def module_args(modules):
@@ -279,6 +309,14 @@ def decode(lo, hi):
             raise Unsupported("PLOP3 with a second destination or a uniform source")
         i.update(op="plop3", pd=f(81, 84), srcs=((f(87, 90), f(90, 91)), (f(77, 80), f(80, 81)), (f(68, 71), f(71, 72))),
                  lut=f(64, 67) | f(72, 77) << 3)
+    elif op9 == 0x104 and form == 1:
+        if f(75, 77) != 2 or f(84, 86) != 1 or f(78, 80):
+            raise Unsupported("F2F other than F32.F16 RN")
+        i.update(op="f2f", d=f(16, 24), a=f(32, 40), h=f(60, 62), ftz=f(80, 81))
+    elif op9 == 0x023 and form == 1:
+        if f(76, 81):
+            raise Unsupported("FFMA rounding, ftz, sat or dnz")
+        i.update(op="ffma", d=f(16, 24), a=f(24, 32), b=f(32, 40), c=f(64, 72))
     elif op9 == 0x01A and form == 4:
         i.update(op="sgxt", d=f(16, 24), a=f(24, 32), bits=f(32, 64), signed=f(73, 74))
     else:
@@ -370,6 +408,10 @@ def reencode(i):
                           SHF_TYPE[i["ty"]], bool(i["wrap"]), bool(i["right"]), bool(i["high"]))
     if o == "imad.wide":
         return NAK.op_imad_wide(g, c, i["d"], r(i["a"]), r(i["b"]), r(i["c"]), bool(i["signed"]))
+    if o == "f2f":
+        return NAK.op_f2f_f16(g, c, i["d"], i["a"], i["h"], bool(i["ftz"]))
+    if o == "ffma":
+        return NAK.op_ffma(g, c, i["d"], r(i["a"]), r(i["b"]), r(i["c"]), 0, False, False)
     if o == "plop3":
         (a, na), (b, nb), (c2, nc) = i["srcs"]
         return NAK.op_plop3(g, c, i["pd"], a, bool(na), b, bool(nb), c2, bool(nc), i["lut"])
@@ -425,7 +467,7 @@ class Memory:
         struct.pack_into("<I", data, o, v & 0xFFFFFFFF)
 
 
-VAR_OPS = ("s2r", "ldg", "stg", "lds", "sts", "mufu", "i2f", "f2i")
+VAR_OPS = ("s2r", "ldg", "stg", "lds", "sts", "mufu", "i2f", "f2i", "f2f")
 
 
 def latency(kind, seed):
@@ -717,6 +759,16 @@ def run_thread(prog, cbank, mem, shared, ctaid, tid, ctaid_y=0):
                 v = (read(i["a"], rt, pc) * read(i["b"], rt, pc) + c) % 2**64
                 write(i["d"], issue + LAT_GPR, v, pc, issue)
                 write(i["d"] + 1, issue + LAT_GPR, v >> 32, pc, issue)
+            elif o == "f2f":
+                var_read((i["a"],), pc, rt, issue)
+                a = read(i["a"], rt, pc)
+                v = struct.unpack("<e", struct.pack("<H", (a >> 16 * i["h"]) & 0xFFFF))[0]
+                write(i["d"], issue + latency("cvt", seed), f_bits(f32(v)), pc, issue)
+            elif o == "ffma":
+                # a * b is exact in f64; the sum is rounded to f64 and then to
+                # f32, which can differ from one fused rounding in the last place
+                a, b, c = (bits_f(read(i[k], rt, pc)) for k in ("a", "b", "c"))
+                write(i["d"], issue + LAT_GPR, f_bits(f32(a * b + c)), pc, issue)
             elif o == "plop3":
                 v = [rpred(p, rt, pc) != bool(n) for p, n in i["srcs"]]
                 if i["pd"] != 7:
@@ -889,11 +941,15 @@ def run_nex_case(prog, gate, case):
     """answers (None or the first failure, the largest relative error)"""
     meta = case["meta"]
     bufs = {b: list(v) for b, v in case["bufs"].items()}
-    sizes = {b: len(bufs.get(b, [])) for b in range(1, 7)}
-    data = [bytearray(struct.pack("<4I4f", *meta[:4], *meta[4:]))]
-    for b in range(1, 7):
+    # the nex layout (6 = ids, u32) unless the case names its u32 bindings
+    u32s = case.get("u32", (6,))
+    nb = case.get("bindings", 7)
+    sizes = {b: len(bufs.get(b, [])) for b in range(1, nb)}
+    data = [bytearray(struct.pack("<4I4f", *meta[:4], *meta[4:]) if "meta_words" not in case
+                      else struct.pack(f"<{len(case['meta_words'])}I", *case["meta_words"]))]
+    for b in range(1, nb):
         v = bufs.get(b, [])
-        fmt = "I" if b == 6 else "f"
+        fmt = "I" if b in u32s else "f"
         data.append(bytearray(struct.pack(f"<{len(v)}{fmt}", *v) + struct.pack("<I", 0xDEADBEEF) * NEX_CANARY))
     before = [bytes(d) for d in data]
     mem = Memory()
@@ -905,12 +961,12 @@ def run_nex_case(prog, gate, case):
     try:
         for cy in range(case.get("grid_y", 1)):
             for ctaid in range(case["grid"]):
-                run_cta(prog, cbank, mem, ctaid, 256, cy, gate.get("shared", SHARED_BYTES))
+                run_cta(prog, cbank, mem, ctaid, gate.get("wg", 256), cy, gate.get("shared", SHARED_BYTES))
     except (Hazard, Unsupported, KeyError, ArithmeticError, ValueError) as e:
         return f"{type(e).__name__}: {e}", None
     want = case["want"]   # binding -> {index: (value, exact)}
     worst = 0.0
-    for b in range(7):
+    for b in range(nb):
         n = sizes.get(b, 0)
         words = struct.unpack(f"<{len(data[b]) // 4}I", data[b])
         old = struct.unpack(f"<{len(before[b]) // 4}I", before[b])
@@ -923,7 +979,7 @@ def run_nex_case(prog, gate, case):
             ref, exact = w
             scale = None if isinstance(exact, bool) else exact
             exact = exact is True
-            if b == 6:
+            if b in u32s:
                 if words[k] != ref % 2**32:
                     return f"ids[{k}] = {words[k]}, reference {ref}", worst
                 continue
@@ -1102,6 +1158,57 @@ def case_attn(d, heads, kvh, T, scale, nogate, dyn):
             "grid": heads, "bufs": {1: q, 2: kc, 3: vc, 4: [0.0] * (heads * d), 5: s, 6: [T - 1, 9]}, "want": {4: want}}
 
 
+def q8_rows(rows, cols, seed):
+    """rows of Q8_0 blocks (an f16 scale, then 32 int8), packed little-endian
+    into u32 words (zero-padded); answers (words, the f64 value of each weight)"""
+    raw, vals = bytearray(), []
+    for r in range(rows):
+        for b in range(cols // 32):
+            seed = (seed * 1103515245 + 12345) % 2**31
+            d = struct.unpack("<e", struct.pack("<e", (1 + (seed >> 8) % 1000) / 40000.0 * (-1 if seed & 64 else 1)))[0]
+            raw += struct.pack("<e", d)
+            for j in range(32):
+                seed = (seed * 1103515245 + 12345) % 2**31
+                q = (seed >> 9) % 256 - 128
+                raw += struct.pack("<b", q)
+                vals.append(d * q)
+    raw += b"\0" * (-len(raw) % 4)
+    return list(struct.unpack(f"<{len(raw) // 4}I", raw)), vals
+
+
+def case_embed_q8(cols, rows, dyn, slot):
+    """embed_iq4xs -DQ8, decode: o[row cols + j] = the dequantized weight of
+    token ids[base + row], base = (dyn != 0) ? pos[0] : slot; exact (an f16
+    times an int8 fits f32)"""
+    vocab = 7
+    words, vals = q8_rows(vocab, cols, 101 + cols)
+    ids = [(3 * k + 2) % vocab for k in range(slot + rows + 4)]
+    base = 1 if dyn else slot
+    want = {}
+    for r in range(rows):
+        tok = ids[base + r]
+        for j in range(cols):
+            want[r * cols + j] = (vals[tok * cols + j], True)
+    return {"label": f"cols={cols} rows={rows} {'dyn' if dyn else f'slot={slot}'}", "bindings": 5, "u32": (1, 2, 4),
+            "meta": None, "meta_words": [cols, slot, 1 if dyn else 0, 0], "grid": 1, "grid_y": rows,
+            "bufs": {1: words, 2: ids, 3: [0.0] * (rows * cols), 4: [1, 0]}, "want": {3: want}}
+
+
+def case_kdot_q8(rows, cols, seed):
+    """kdot_f32_r1, Q8_0 (type 8), one position: o[row] = sum over k of
+    w[row][k] x[k]; error relative to sum |w x| (as dot_rows)"""
+    words, vals = q8_rows(rows, cols, 211 + seed * 7 + cols)
+    x = unit_values(cols, 223 + seed, True)
+    want = {}
+    for r in range(rows):
+        ref = sum(vals[r * cols + k] * float(x[k]) for k in range(cols))
+        mag = sum(abs(vals[r * cols + k] * float(x[k])) for k in range(cols))
+        want[r] = (ref, mag)
+    return {"label": f"rows={rows} cols={cols}", "bindings": 5, "u32": (1, 4), "meta": None,
+            "meta_words": [rows, cols, 8, 1, 0, 0, 0, 0], "grid": rows,
+            "bufs": {1: words, 2: x, 3: [0.0] * rows, 4: [0]}, "want": {3: want}}
+
+
 # Qwen2.5-0.5B's widths: hidden 896, KV row 128 (2 heads of 64), FFN 4864
 NEX_GATES = {
     "nex-add": {"cases": [case_add(896), case_add(256), case_add(1)]},
@@ -1127,6 +1234,11 @@ NEX_GATES = {
     # Qwen2: head dim 64, 14 query heads on 2 KV heads, scale 1/8, no gate
     "nex-attn-decode": {"cases": [case_attn(64, 4, 2, 1, 0.125, True, False), case_attn(64, 4, 2, 7, 0.125, True, True),
                                   case_attn(64, 2, 1, 200, 0.125, True, False), case_attn(32, 2, 2, 5, 0.25, False, False)]},
+    # the Q8_0 token row: one 32-value block a thread
+    "embed-q8": {"cases": [case_embed_q8(896, 2, False, 3), case_embed_q8(896, 1, True, 5), case_embed_q8(64, 3, False, 0)]},
+    # every matvec and the lm head (kdot_f32_r1, Q8_0 arm): 64 threads a row
+    "kdot-f32-r1": {"wg": 64, "shared": 256, "cases": [case_kdot_q8(2, 896, 1), case_kdot_q8(3, 96, 2), case_kdot_q8(1, 4864, 3),
+                                                       case_kdot_q8(2, 32, 4)]},
 }
 
 
@@ -1257,7 +1369,7 @@ LOWER_MUTANTS = [
     ("shared-stride", LOWER, "(add Q L MI-IMADI r (vreg T ix) 0 255 4 0)", "(add Q L MI-IMADI r (vreg T ix) 0 255 8 0)"),
     ("shared-const-offset", LOWER, "(tset T id 17 (+ off (* 4 (tg T ix 2))) -1 0 0)", "(tset T id 17 (+ 4 off (* 4 (tg T ix 2))) -1 0 0)"),
     ("header-not-moved", LOWER, "h (tset T hd 14 (mi-count Q) 0 0 0)", "h 0"),
-    ("no-bsync", LOWER, "y (if (>= merge-bar 0) (add Q L MI-BSYNC merge-bar 0 0 0 0 0) 0)", "y 0"),
+    ("no-bsync", LOWER, "y (if (>= merge-bar 0) (let [b (ls L 13 (dec (lg L 13)))] (add Q L MI-BSYNC merge-bar 0 0 0 0 0)) 0)", "y 0"),
     ("var-store-lost", LOWER, "(cond (>= v 0) (add Q L MI-MOV (tg T p 3) v 0 0 0 0)", "(cond (>= v 0) (add Q L MI-MOV 255 v 0 0 0 0)"),
     ("shift-amount", LOWER, "(add Q L (if right MI-SHR MI-SHLI) r a 0 0 (tg T bid 2) 0)",
      "(add Q L (if right MI-SHR MI-SHLI) r a 0 0 (+ 1 (tg T bid 2)) 0)"),
@@ -1271,7 +1383,7 @@ LOWER_MUTANTS = [
     ("isub-as-iadd", LOWER, "(= mop SP-ISUB) (add Q L MI-IADD3 r a b 255 0 2)", "(= mop SP-ISUB) (add Q L MI-IADD3 r a b 255 0 0)"),
     ("funord-ne-as-eq", LOWER, "182 5 183 13", "182 5 183 2"),
     ("u2f-as-f2u", LOWER, "(cond (= op SP-UTOF) (add Q L MI-I2F r a 0 0 0 0)", "(cond (= op SP-UTOF) (add Q L MI-F2I r a 0 0 0 0)"),
-    ("select-arms-swapped", LOWER, "(add Q L MI-SEL r a b 0 (tg T c 1) 0)", "(add Q L MI-SEL r b a 0 (tg T c 1) 0)"),
+    ("select-arms-swapped", LOWER, "(add Q L MI-SEL r a b 0 (tg T c 1) (tg T c 2))", "(add Q L MI-SEL r b a 0 (tg T c 1) (tg T c 2))"),
     # JUN-739 part 2
     ("lor-as-land", LOWER, "(cond (= op SP-LOR) 0xfc", "(cond (= op SP-LOR) 0xc0"),
     ("bool-select-arms-swapped", LOWER, "(tg T b 1) 0xca 0)", "(tg T b 1) 0xac 0)"),
@@ -1279,6 +1391,12 @@ LOWER_MUTANTS = [
     ("branched-if-not-inverted", LOWER, "(branch Q (mi-g cp 1) (if (>= el 0) el m))", "(branch Q (mi-g cp 0) (if (>= el 0) el m))"),
     ("else-guard-not-inverted", LOWER, "(ls L 2 (mi-g (if-slot L 2) 1))", "(ls L 2 (mi-g (if-slot L 2) 0))"),
     ("continue-unguarded", LOWER, ":else (branch Q (lg L 2) tl)", ":else (branch Q (mi-g 7 0) tl)"),
+    # JUN-739 part 2b
+    ("dot-drops-last-component", LOWER, "(if (>= k nc) acc", "(if (>= k (dec nc)) acc"),
+    ("sbfe-zero-extends", LOWER, "e (add Q L MI-SGXT r s 0 0 (tg T c 2) 1)]", "e (add Q L MI-SGXT r s 0 0 (tg T c 2) 0)]"),
+    ("unpack-half-swapped", LOWER, "(add Q L MI-F2F x a 0 0 0 0) y (gpr Q L) f (add Q L MI-F2F y a 0 0 1 0)",
+     "(add Q L MI-F2F x a 0 0 1 0) y (gpr Q L) f (add Q L MI-F2F y a 0 0 0 0)"),
+    ("branched-if-shares-barrier", LOWER, "x (ls L 13 (inc b))", "x (ls L 13 b)"),
     ("workgroup-y-as-x", LOWER, "(add Q L MI-S2R r 0 0 0 (+ 0x25 k) 0)] r)\n        (= bi 27)", "(add Q L MI-S2R r 0 0 0 0x25 0)] r)\n        (= bi 27)"),
 ]
 REGALLOC = "tools/c/sm70/sm70_regalloc.kotoba"
@@ -1286,10 +1404,10 @@ REGALLOC_MUTANTS = [
     ("ra-no-interference", REGALLOC,
      "(loop [x 0] (if (>= x nn) 0 (let [y (if (bget O (* k w) x) (interfere I w d x) 0)] (recur (inc x))))))", "0)"),
     ("ra-variable-latency-sources", REGALLOC,
-     "(not (or (= op MI-S2R) (= op MI-LDG) (= op MI-LDS) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I)))", "true"),
-    ("ra-guarded-write-kills", REGALLOC, "(if (and unguarded (not= (vector-at N (- v RA-V0)) 3)) (bset K (* k w) nd) 0)",
-     "(if (not= (vector-at N (- v RA-V0)) 3) (bset K (* k w) nd) 0)"),
+     "(not (or (= op MI-S2R) (= op MI-LDG) (= op MI-LDS) (= op MI-MUFU) (= op MI-I2F) (= op MI-F2I) (= op MI-F2F)))", "true"),
+    ("ra-guarded-write-kills", REGALLOC, "(and (not= kind 3) (or unguarded (= kind 2) (= (vector-at C nd) 1)))", "(not= kind 3)"),
     ("ra-no-back-edge", REGALLOC, "(and (= op MI-BRA) unguarded) tgt", "(and (= op MI-BRA) unguarded) (+ k 1)"),
+    ("ra-guarded-write-never-kills", REGALLOC, "(or unguarded (= kind 2) (= (vector-at C nd) 1))", "unguarded"),
     ("ra-pred-no-interference", REGALLOC,
      "(loop [x 0] (if (>= x np) 0 (let [y (if (bget O (* k pw) x) (interfere I pw d x) 0)] (recur (inc x))))))", "0)"),
 ]
@@ -1307,6 +1425,7 @@ SCHED_MUTANTS = [
     ("mufu-fixed-latency", SCHED, "(= op MI-STS) (= op MI-MUFU) (= op MI-I2F)", "(= op MI-STS) (= op MI-I2F)"),
     ("predicate-source-not-waited", SCHED, "(let [ps (mi-psrc Q k j)]", "(let [ps -1]"),
     ("scoreboard-reused-without-wait", SCHED, "(recur (bit-or m1 b))", "(recur m1)"),
+    ("f2f-fixed-latency", SCHED, "(= op MI-F2I) (= op MI-F2F)))", "(= op MI-F2I)))"),
 ]
 
 
@@ -1330,11 +1449,11 @@ def main():
         assert int(lines[-1]) == len(modules) == 5 + len(NEX_GATES), lines[-1]
         report["modules"] = {k: hashlib.sha256(struct.pack(f"<{len(v)}I", *v)).hexdigest() for k, v in modules.items()}
         print(f"modules: {', '.join(f'{k} ({len(v)} words)' for k, v in modules.items())}")
-        margs = module_args(modules)
+        margs = module_groups(modules)
 
         text = unit_text(*LOWER_UNIT)
-        out1, uh = run_unit(args.amu, text, work, "lower-1", margs)
-        out2, _ = run_unit(args.amu, text, work, "lower-2", margs)
+        out1, uh = run_unit(args.amu, text, work, "lower-1", groups=margs)
+        out2, _ = run_unit(args.amu, text, work, "lower-2", groups=margs)
         same = out1 == out2
         print(f"determinism: two runs {'identical' if same else 'DIFFER'} ({hashlib.sha256(out1.encode()).hexdigest()[:16]})")
         ok &= same
@@ -1384,7 +1503,7 @@ def main():
             ("dot-bssy-target", dops.index("bssy"), lambda w: (w[0] ^ (1 << 36), w[1])),
         ]
         nops = {n: [i["op"] for i in decoded[n]] for n in ("nex-rmsnorm", "nex-add-bias", "nex-silu-mul", "nex-argmax-partial",
-                                                          "nex-attn-decode")}
+                                                          "nex-attn-decode", "embed-q8", "kdot-f32-r1")}
         attn_bra = next(k for k, i in enumerate(decoded["nex-attn-decode"]) if i["op"] == "bra" and i["guard"] != (7, 0))
         ncontrols = [
             # MUFU.RSQ -> MUFU.RCP (function field 74..79: 5 -> 4)
@@ -1397,12 +1516,18 @@ def main():
             ("nex-argmax-partial:or-as-and", nops["nex-argmax-partial"].index("plop3", nops["nex-argmax-partial"].index("plop3") + 1), lambda w: (w[0], w[1] ^ (0x07 << (72 - 64)))),
             # the branched if's skip branch taken on the wrong side
             ("nex-attn-decode:skip-not-inverted", attn_bra, lambda w: (w[0] ^ (1 << 15), w[1])),
+            # the Q8_0 scale read from the other half (F2F swizzle bit 60)
+            ("embed-q8:scale-other-half", nops["embed-q8"].index("f2f"), lambda w: (w[0] ^ (1 << 60), w[1])),
+            # the int8 weights zero-extended (SGXT .S32 bit 73)
+            ("kdot-f32-r1:q8-unsigned", [k for k, o in enumerate(nops["kdot-f32-r1"]) if o == "sgxt"],
+             lambda w: (w[0], w[1] ^ (1 << (73 - 64)))),
         ]
         ctl_report = []
         for cname, k, fn in ncontrols:
             name = cname.split(":")[0]
             words = list(progs[name]["words"])
-            words[k] = fn(words[k])
+            for kk in (k if isinstance(k, list) else [k]):
+                words[kk] = fn(words[kk])
             try:
                 prog = [decode(lo, hi) for lo, hi in words]
                 r = None
@@ -1433,7 +1558,7 @@ def main():
         muts = []
         for mname, path, old, new in LOWER_MUTANTS + SCHED_MUTANTS + REGALLOC_MUTANTS:
             try:
-                mo, mhash = run_unit(args.amu, unit_text(*LOWER_UNIT, replace=(path, old, new)), work, f"mutant-{mname}", margs)
+                mo, mhash = run_unit(args.amu, unit_text(*LOWER_UNIT, replace=(path, old, new)), work, f"mutant-{mname}", groups=margs)
                 mb, _ = judge(parse_programs(mo))
             except (RuntimeError, AssertionError) as e:
                 mb, mhash = [f"build/run: {e}"], None
