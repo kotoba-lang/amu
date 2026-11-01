@@ -49,6 +49,38 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # KOTOBA-13: the public host stages a locked KSL2 namespace map,
+    # verifies every original source digest, then asks the pinned Kotoba
+    # compiler to check the rewritten project lock in its private FS2 root.
+    project = out / 'locked-project'
+    project.mkdir()
+    app = project / 'app.kotoba'
+    util = project / 'util.kotoba'
+    app.write_text('(ns app (:require [util :as u]) (:export [main]))\n(defn main [] :i64 (u/add 41))\n')
+    util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
+
+    def project_lock(entry, modules, files):
+        return ('KSL2\nentry ' + str(entry) + '\n'
+                + ''.join('module ' + name + ' ' + str(path) + '\n' for name, path in modules)
+                + ''.join('file ' + hashlib.sha256(path.read_bytes()).hexdigest() + ' ' + str(path) + '\n'
+                          for path in sorted(files)))
+
+    lock = project / 'project.ksl'
+    lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
+    run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
+    run('locked-project-wrong-entry', 'check', util, '--source-lock', lock,
+        expected=1, diagnostic=b'ELOCK entry does not match')
+    util.write_text(util.read_text() + '\n')
+    run('locked-project-changed-source', 'check', app, '--source-lock', lock,
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
+
+    missing = project / 'missing.kotoba'
+    missing.write_text('(ns app (:require [absent :as a]) (:export [main]))\n(defn main [] :i64 (a/value))\n')
+    missing_lock = project / 'missing.ksl'
+    missing_lock.write_text(project_lock(missing, [('app', missing), ('util', util)], [missing, util]))
+    run('locked-project-missing-import', 'check', missing, '--source-lock', missing_lock,
+        expected=1, diagnostic=b'E')
     run('compile-default', 'compile', hello.name)
     mac.verify_macho(out / 'hello')
     run('execute-default', expected=0, stdout=b'42\n', image=out / 'hello')

@@ -33,8 +33,74 @@
 (defn- mc-exit [reply :vector-i64] :i64
   (if (hc-ok? reply) (vector-at reply 1) 70))
 (defn- mc-argv [a :string] :string (hc-field a))
+(defn- mc-project-name [i :i64] :string
+  (string-concat "project/" (string-concat
+    (if (< i 10) "00" (if (< i 100) "0" ""))
+    (string-concat (hc-dec i) ".kotoba"))))
+(defn- mc-project-path [i :i64] :string
+  (string-concat "/" (mc-project-name i)))
+(defn- mc-lock-file-path-at [text :string wanted :i64] :string
+  (loop [index (+ (ksl-end text 5) 1) seen 0]
+    (if (>= index (string-length text)) ""
+      (let [end (ksl-end text index)]
+        (if (and (ksl-prefix? text index end "file ") (= seen wanted))
+          (string-substring text (+ index 70) end)
+          (recur (+ end 1) (if (ksl-prefix? text index end "file ") (+ seen 1) seen)))))))
+(defn- mc-lock-file-index [text :string path :string] :i64
+  (loop [i 0]
+    (cond (>= i (ksl-file-count text)) -1
+          (string=? (mc-lock-file-path-at text i) path) i
+          :else (recur (+ i 1)))))
+(defn- mc-project-module-name-at [text :string wanted :i64] :string
+  (loop [index (+ (ksl-end text 5) 1) seen 0]
+    (if (>= index (string-length text)) ""
+      (let [end (ksl-end text index)]
+        (if (ksl-prefix? text index end "module ")
+          (if (= seen wanted)
+            (let [split (ksl-space text (+ index 7) end)] (string-substring text (+ index 7) split))
+            (recur (+ end 1) (+ seen 1)))
+          (recur (+ end 1) seen))))))
+(defn- mc-project-module-rows [text :string i :i64 count :i64] :string
+  (if (= i count) ""
+    (let [name (mc-project-module-name-at text i)
+          source (ksl-module-path text name)
+          index (mc-lock-file-index text source)]
+      (string-concat "module " (string-concat name (string-concat " "
+        (string-concat (mc-project-path index)
+          (string-concat "\n" (mc-project-module-rows text (+ i 1) count)))))))))
+(defn- mc-project-file-rows [text :string i :i64 count :i64] :string
+  (if (= i count) ""
+    (let [path (mc-lock-file-path-at text i)
+          hash (ksl-hash text path)]
+      (string-concat "file " (string-concat hash (string-concat " "
+        (string-concat (mc-project-path i)
+          (string-concat "\n" (mc-project-file-rows text (+ i 1) count)))))))))
+(defn- mc-project-lock [text :string] :string
+  (let [count (ksl-file-count text)
+        entry (mc-lock-file-index text (ksl-entry text))]
+    (if (or (< entry 0) (= count 0)) ""
+      (string-concat "KSL2\nentry " (string-concat (mc-project-path entry)
+        (string-concat "\n" (string-concat (mc-project-module-rows text 0 count)
+          (mc-project-file-rows text 0 count))))))))
+(defn- mc-stage-project-files [text :string dir :string i :i64 total :i64] :i64
+  (if (= i (ksl-file-count text)) 0
+    (let [path (mc-lock-file-path-at text i)
+          source (hc-read path)
+          bytes (if (hc-ok? source) (mc-read-data source) [])
+          size (vector-count bytes)
+          target (mc-join dir (mc-project-name i))]
+      (if (or (not (hc-ok? source)) (not (ksl-check-bytes? text path bytes))
+              (> (+ total size) 8388608) (not (hc-ok? (hc-write target bytes))))
+        1
+        (mc-stage-project-files text dir (+ i 1) (+ total size))))))
+(defn- mc-log-error [path :string] :i64
+  (let [r (hc-read path)] (if (hc-ok? r) (hc-err (hc-text (mc-read-data r))) 0)))
 (defn- mc-clean [dir :string] :i64
-  (let [w (loop [i 0]
+  (let [project (loop [i 0]
+            (if (= i 256) 0
+              (let [r (hc-path-call 4 (mc-join dir (mc-project-name i)))] (recur (+ i 1)))))
+        subdir (hc-path-call 5 (mc-join dir "project"))
+        w (loop [i 0]
             (if (= i 10) 0
               (let [r (hc-path-call 4 (mc-join dir (case i
                 0 "source.kotoba" 1 "source.ksl" 2 "program.kseed" 3 "program.raw"
@@ -168,6 +234,45 @@
                   (cond (= status 124) (mc-error "ETIME native program exceeded 5 seconds" 124)
                         (not= written 0) written
                         :else status)))))))))
+(defn- mc-project-check [dir :string compiler :string text :string] :i64
+  (let [count (ksl-file-count text)
+        rewritten (mc-project-lock text)
+        made (hc-path-call 3 (mc-join dir "project"))
+        staged (if (hc-ok? made) (mc-stage-project-files text dir 0 0) 1)
+        lock (hc-bytes rewritten)
+        saved (if (and (= staged 0) (ksl-valid? rewritten))
+                (hc-write (mc-join dir "source.ksl") lock) [1 22 0])]
+    (cond (= count 0) (mc-error "ELOCK expected a nonempty locked Kotoba project" 1)
+          (not (ksl-mapped? text)) (mc-error "ELOCK public project check requires a KSL2 module map" 1)
+          (not= staged 0) (mc-error "EINPUT a locked project source is missing, oversized, or changed" 1)
+          (not (ksl-valid? rewritten)) (mc-error "ELOCK cannot construct a bounded project lock" 1)
+          (not (hc-ok? saved)) (mc-error "EHOST cannot stage the verified project lock" 70)
+          :else
+            (let [reply (hc-spawn 1 dir (mc-join dir "check.log") compiler 7
+              (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "check")
+              (string-concat (mc-argv (ksl-entry rewritten)) (string-concat (mc-argv "--source-lock")
+              (string-concat (mc-argv "source.ksl") (string-concat (mc-argv "--source-lock-sha256")
+              (mc-argv (sh-text rewritten)))))))))]
+              (if (= (mc-exit reply) 0) (hc-out "ok\n")
+                (let [logged (mc-log-error (mc-join dir "check.log"))] (mc-exit reply)))))))
+(defn- mc-project-work [entry :string lock-path :string info :vector-i64] :i64
+  (let [root (mc-parent (hc-info-exe info))
+        compiler (mc-join root "amu-full-root.macho")
+        lock-reply (hc-read (mc-absolute (hc-info-cwd info) lock-path))]
+    (cond (not (hc-ok? lock-reply)) (mc-error "EINPUT expected a bounded regular source lock (symlinks are refused)" 1)
+          (not (mc-pinned? compiler MC-COMPILER-SHA256)) (mc-error "EPROVENANCE full compiler digest mismatch" 70)
+          :else
+            (let [bytes (mc-read-data lock-reply)
+                  text (hc-text bytes)
+                  dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
+              (cond (or (> (vector-count bytes) 1048576) (not (ksl-valid? text)) (not (ksl-mapped? text)))
+                      (mc-error "ELOCK expected a valid bounded KSL2 source lock" 1)
+                    (not (string=? (mc-absolute (hc-info-cwd info) entry) (ksl-entry text)))
+                      (mc-error "ELOCK entry does not match the locked project" 1)
+                    (not (hc-ok? (hc-path-call 3 dir)))
+                      (mc-error "EHOST cannot create private work directory" 70)
+                    :else (let [status (mc-project-check dir compiler text)
+                                clean (mc-clean dir)] status))))))
 (defn- mc-work [command :string source-path :string output :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info)) compiler (mc-join root "amu-full-root.macho")
         packager (mc-join root "kotoba-packager-root.macho")
@@ -189,15 +294,19 @@
   (or (string=? command "measure-runtime") (string=? command "package-ios")
       (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | compile FILE.kotoba [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]" 2))
 (defn- seed-main [] :i64
   (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
+        project-check? (and (string=? command "check") (= n 4) (string=? (hc-arg 2) "--source-lock"))
         output-flag (and (= n 4) (or (string=? (hc-arg 2) "-o") (string=? (hc-arg 2) "--output")))
         receipt-flag (and (string=? command "run") (>= n 4) (string=? (hc-arg 2) "--receipt"))
         output (cond receipt-flag (hc-arg 3) (string=? command "run") "" output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu compile FILE.kotoba [-o OUTPUT]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+      (and project-check? (mc-path? source) (mc-path? (hc-arg 3)))
+        (let [info (hc-call 0 [])]
+          (if (hc-ok? info) (mc-project-work source (hc-arg 3) info) (mc-error "EHOST cannot resolve native host context" 70)))
       (not (mc-path? source)) (mc-usage)
       (or (and (string=? command "check") (= n 2) (mc-ends? source ".kotoba"))
           (and (string=? command "compile") (or (= n 2) output-flag)
