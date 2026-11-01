@@ -30,6 +30,7 @@ PINS = [
     "seed/bootstrap/aarch64-linux-static-root.json",
     "seed/bootstrap/aarch64-macos/amu-cli.macho",
     "seed/bootstrap/aarch64-macos/amu-full-root.macho",
+    "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
     "seed/bootstrap/aarch64-macos/cli.json",
     "seed/bootstrap/aarch64-macos/root.json",
 ]
