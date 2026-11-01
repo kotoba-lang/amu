@@ -24,7 +24,16 @@
         ints (document-edn-read "{:x 5, :y 2}")
         nested (document-edn-read "{:y [1 2], :x false}")
         big (document-edn-read (spaced-map 79))
-        items (document-edn-read "[{:a 1,\n :b 2}\n {:a 3}]")]
+        items (document-edn-read "[{:a 1,\n :b 2}\n {:a 3}]")
+        canonical-set (document-set (document-keyword :b) (document-keyword :a)
+                                   (document-keyword :a))
+        set-first (option-value-of [:option :document]
+                    (document-set-at canonical-set 0) (document-null))
+        set-second (option-value-of [:option :document]
+                     (document-set-at canonical-set 1) (document-null))
+        set-outside (document-set-at canonical-set 2)
+        duplicate-set (document-set-conj canonical-set (document-keyword :a))
+        extended-set (document-set-conj canonical-set (document-keyword :c))]
     (cond
       (not= (document-kind (at commas ":x")) :bool) 1
       (not= (int-at ints ":x") 5) 2
@@ -51,4 +60,12 @@
       (not= (document-count (document-edn-read "[ ]")) 0) 23
       (not= (document-count (document-edn-read "{ }")) 0) 24
       (not= (int-at (option-value-of [:option :document] (document-vector-at items 1) (document-null)) ":a") 3) 25
+      (not= (document-count canonical-set) 2) 26
+      (not (document-equal? set-first (document-keyword :a))) 27
+      (not (document-equal? set-second (document-keyword :b))) 28
+      (not= (document-kind (option-value-of [:option :document] set-outside (document-null))) :null) 29
+      (not= (document-count duplicate-set) 2) 30
+      (not (document-equal? duplicate-set canonical-set)) 31
+      (not= (document-count extended-set) 3) 32
+      (not (document-set-contains? extended-set (document-keyword :c))) 33
       :else 0)))
