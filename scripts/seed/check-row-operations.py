@@ -75,7 +75,7 @@ MUTANTS = [
      "E2103 wrong number of arguments to 'merge'"),
     ("no-update-sugar", CHECK, [
         ("(ck-fn-form? M f)))) 2   ; update", "(ck-fn-form? M f)))) 0   ; update")],
-     "E2101 unknown or unsupported form 'update'"),
+     "E2139"),   # the first refusal is a fn literal update would have applied as a let
     ("assoc-copies-by-position", LOWER, [
         ("(lw-seconds (+ t i) (lw-src M (:a q) (:b q) i))", "(lw-seconds (+ t i) i)")],
      "run"),
