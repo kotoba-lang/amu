@@ -56,6 +56,8 @@ def main(compiler, out):
     run("build-gate", [compiler, "cdci-build", "kotoba-native", out / "entry.kotoba",
                        out / "runtime.kotoba", out / "kotoba-gate.kotoba", gate])
     gate.chmod(0o755)
+    report["nativeGateSHA256"] = pin(gate)
+    (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     assert pin(gate) == policy["kotobaNativeGateSHA256"]
     lines = ["KCGATE1", str(out), pin(gate), "24"]
     for i, case in enumerate(cases):
