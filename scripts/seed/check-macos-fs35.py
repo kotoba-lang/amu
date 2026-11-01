@@ -65,19 +65,47 @@ def main(out):
     packager, _ = macos.build(compiler, bootstrap, build, "packager.kotoba", "packager")
     shutil.copyfile(TEST_SOURCE, build / "fs35.kotoba")
     image, unsigned = macos.build(compiler, packager, build, "fs35.kotoba", "fs35")
-    # Negative control: a packager whose general mode does not branch to the FS35
-    # helper (the one changed binding) leaves the same request to the FS2 chain.
+    # Package the identical native entry in the explicit app-data-granted
+    # amu-program-fs35 profile and in default amu-program (no wire-35 grant).
+    # The bundle fixture tests helper placement/dispatch, not locked replay.
+    source_bundle = build / "source.bundle"
+    source_bundle.write_bytes(b"\x00FS2\x00fs35-runtime-gate")
+    mac = macos._mac()
+    (build / "fs35-program.kotoba").write_text(
+        (build / "fs35.kotoba").read_text().replace(
+            '(typed-cap-call :cli/args :string :string "0")',
+            '(typed-cap-call :cli/args :string :string "1")'))
+    mac.native_run(compiler, build, "compile", "fs35-program.kotoba", "--target", "aarch64-macos", "--output", "fs35-program.kseed")
+    extracted = mac.native_run(compiler, build, "extract-native", "fs35-program.kseed", "--symbol", "main", "--output", "fs35-program.raw")
+    import re
+    match = re.search(rb":offset (\d+), :length (\d+), :arity 0}", extracted.stdout)
+    assert match and int(match[2]) == (build / "fs35-program.raw").stat().st_size, extracted.stdout[-300:]
+    mac.native_run(packager, build, "fs35-program-unsigned.macho", "fs35-program.raw", "amu-program-fs35", match[1].decode(), "source.bundle")
+    program_image = build / "fs35-program.macho"
+    mac.sign(build / "fs35-program-unsigned.macho", program_image)
+    mac.verify_macho(program_image)
+    mac.native_run(packager, build, "fs35-program-ungranted-unsigned.macho", "fs35-program.raw", "amu-program", match[1].decode(), "source.bundle")
+    program_ungranted = build / "fs35-program-ungranted.macho"
+    mac.sign(build / "fs35-program-ungranted-unsigned.macho", program_ungranted)
+    mac.verify_macho(program_ungranted)
+    # Negative control: disabling the helper branch leaves the request to the
+    # FS2 chain even when the explicit profile is selected.
     source = PACKAGER_SOURCE.read_text()
-    hook = '        fs35 (string=? mode "fs2-cli-stdio-general")\n'
+    hook = '        fs35 (or (string=? mode "fs2-cli-stdio-general") (amu-program-fs35? mode))\n'
     assert source.count(hook) == 1, "FS35 hook drifted"
     (build / "packager-control.kotoba").write_text(source.replace(hook, "        fs35 false\n"))
     packager_control, _ = macos.build(compiler, bootstrap, build, "packager-control.kotoba", "packager-control")
     control, _ = macos.build(compiler, packager_control, build, "fs35.kotoba", "fs35-control")
+    mac.native_run(packager_control, build, "fs35-program-control-unsigned.macho", "fs35-program.raw", "amu-program-fs35", match[1].decode(), "source.bundle")
+    program_control = build / "fs35-program-control.macho"
+    mac.sign(build / "fs35-program-control-unsigned.macho", program_control)
+    mac.verify_macho(program_control)
     report = dict(schema="amu.macos-fs35.v1", host=["Darwin", os.uname().machine], compiler=pin(compiler),
                   bootstrapPackager=pin(bootstrap), packagerSource=pin(PACKAGER_SOURCE), testSource=pin(TEST_SOURCE),
-                  stagedPackager=pin(packager), image=pin(unsigned), calls=[])
+                  stagedPackager=pin(packager), image=pin(unsigned), amuProgramFs35Image=pin(build / "fs35-program-unsigned.macho"),
+                  amuProgramUngrantImage=pin(build / "fs35-program-ungranted-unsigned.macho"), calls=[])
 
-    def observe(name, img, args, scope_name, expect=None, trap=False):
+    def observe(name, img, args, scope_name, expect=None, trap=False, expected_stdout=None):
         s, outside = scope(out, scope_name)
         if args and args[0] == "paths":
             (s / "d" / "a").write_text("a")
@@ -89,6 +117,8 @@ def main(out):
             assert p.returncode == -signal.SIGTRAP, (name, p.returncode, stderr[-300:])
         else:
             assert p.returncode == expect, (name, p.returncode, stderr[-300:])
+        if expected_stdout is not None:
+            assert stdout == expected_stdout, (name, "unexpected program result", stdout)
         assert (outside / "file").read_text() == "outside", (name, "outside file changed")
         assert sorted(x.name for x in outside.iterdir()) == ["file"], (name, "write escaped the scope")
         print(name, p.returncode, flush=True)
@@ -96,8 +126,15 @@ def main(out):
 
     for case in CASES:
         observe(case, image, [case], case, expect=0)
+    for case in CASES:
+        observe("amu-program-" + case, program_image, ["amu-program", case], "amu-program-" + case, expect=0, expected_stdout=b"0\n")
+    ungranted_scope = observe("amu-program-no-wire35-grant", program_ungranted,
+                              ["amu-program", "roundtrip"], "amu-program-ungranted", trap=True)
+    assert not (ungranted_scope / "d" / "a").exists(), "default amu-program performed an ungranted write"
     for case in TRAPS:
         observe(case, image, [case], case, trap=True)
+    for case in TRAPS:
+        observe("amu-program-" + case, program_image, ["amu-program", case], "amu-program-" + case, trap=True)
     # Exclusive lock across processes: a holder keeps it, a second process is refused, death releases it.
     s, _ = scope(out, "hold")
     holder = launch(image, s, ["hold"])
@@ -116,6 +153,8 @@ def main(out):
     report["calls"].append(dict(name="cross-process-lock", exit=0))
     # Negative control: without FS35 the legacy request traps instead of answering.
     observe("control-without-fs35", control, ["roundtrip"], "control", trap=True)
+    observe("amu-program-fs35-profile-without-helper", program_control,
+            ["amu-program", "roundtrip"], "amu-program-control", trap=True)
     report["status"] = "PASS_MACOS_FS35"
     (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], flush=True)
