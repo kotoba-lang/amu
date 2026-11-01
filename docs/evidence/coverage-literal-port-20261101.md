@@ -111,3 +111,30 @@ This verifies locked source admission and public signature/dependency
 resolution only. The function was not executed; report parity, dataset file IO
 and digest verification, `trust_cli` wiring, and production Amu qualification
 remain open. No test suite or legacy oracle was run.
+
+## Native bounded dataset verification source admission — 2026-11-01
+
+Added public `verify-dataset` in `coverage.kotoba`. It validates the manifest,
+reads the dataset with Amu's Kotoba `io/read-bounded-bytes-file` at the existing
+8 MiB limit, and computes raw-byte SHA-256 through the Kotoba
+`multiformats.sha256/digest-hex` implementation. The reader rejects missing,
+symbolic-link, and non-regular inputs and checks that the file size did not
+change during its single-descriptor read. The digest implementation is from
+Kotoba commit `135e733a8a6ecee895ba0a68c76548be8ca895e1`.
+
+A locked 12-module KSL2 caller importing both `report` and `verify-dataset`
+passed candidate Amu `check --source-lock` at
+`d673111b66f43a8569e545c772a70e51737e1707`; CLI image SHA-256
+`ae94dc99ffe489ef77cb5eb0044bea1d2500a4273d45c55bcf57b887994f390a`.
+Coverage source SHA-256:
+`7d5256f06e94517d2bfb9db6a54451e539fe25ca3e15227eb588988c694e4c24`; caller
+SHA-256: `ea712c1bed84d6a69483dfef6a112e953aae51bd9b5af5d7f21723a23222b363`;
+KSL2 lock SHA-256:
+`774f5fad4150aa9e132ce3bd305d69daedc0bcdb2f61d8642616ba2d89792c47`; locked
+SHA module SHA-256:
+`40620f336ea53fe4432adbe65d302f999bc20cdafe93f9199ea8b86200738760`.
+
+This proves locked source admission and signature/dependency resolution only;
+the verifier was not executed, compared against the oracle, or wired into
+`trust_cli`. No tests or legacy oracle were run. Runtime qualification remains
+open.

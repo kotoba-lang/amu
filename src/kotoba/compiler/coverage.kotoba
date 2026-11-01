@@ -1,6 +1,9 @@
 (ns kotoba.compiler.coverage
   "Canonical Kotoba validators for coverage manifest identity fields and schema."
-  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report]})
+  {:kotoba/export [sha256? month? manifest-valid? release-evidence-valid? report verify-dataset]}
+  (:require [kotoba.compiler.io :as io]
+            [kotoba.compiler.io-buffer :as buffer]
+            [multiformats.sha256 :as sha256]))
 
 (defn- ascii-digit? [byte :i64] :bool
   (and (>= byte 48) (<= byte 57)))
@@ -330,3 +333,35 @@
                        (coverage-error "release coverage evidence is missing or mismatched"))
         (result-ok-of [:result :document :document]
                       (report-document manifest))))))
+
+(defn- append-chunk-bytes [chunk :bytes out :vector-i64] :vector-i64
+  (loop [byte-index 0 current out]
+    (if (>= byte-index (bytes-count chunk)) current
+      (recur (+ byte-index 1)
+             (vector-conj current (bytes-at chunk byte-index))))))
+
+(defn- buffer-bytes [value [:ref :io.buffer/value]] :vector-i64
+  (loop [chunk-index 0 out (vector-alloc 0)]
+    (if (>= chunk-index (buffer/chunk-count value)) out
+      (let [chunk-option (buffer/chunk-at value chunk-index)
+            chunk (option-value-of [:option :bytes] chunk-option (bytes-empty))]
+        (recur (+ chunk-index 1) (append-chunk-bytes chunk out))))))
+
+(defn verify-dataset [manifest :document path :string] [:result :bool :document]
+  (if (not (manifest-valid? manifest))
+    (result-err-of [:result :bool :document]
+                   (coverage-error "coverage manifest schema rejected"))
+    (let [loaded (io/read-bounded-bytes-file path 8388608)]
+      (if (not (result-ok?-of [:result [:ref :io.buffer/value] :document] loaded))
+        (result-err-of [:result :bool :document]
+          (result-error-of [:result [:ref :io.buffer/value] :document] loaded
+                           (coverage-error "coverage dataset could not be read")))
+        (let [value (result-value-of [:result [:ref :io.buffer/value] :document] loaded
+                                     (buffer/empty-buffer))
+              actual (sha256/digest-hex (buffer-bytes value))
+              expected (option-value-of [:option :string]
+                         (document-string-value (field (field manifest :dataset) :sha256)) "")]
+          (if (= actual expected)
+            (result-ok-of [:result :bool :document] true)
+            (result-err-of [:result :bool :document]
+                           (coverage-error "coverage dataset digest mismatch"))))))))
