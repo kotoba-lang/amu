@@ -2232,6 +2232,7 @@
     (cond (= ty (ck-poison)) (ck-err M E-CHECK-BINDINGS n 0)
           (and (>= slot 0) (neg? (ck-known-get M slot))) (ck-err M E-ATOM-ESCAPE n 0)   ; R5B: a cell as a value
           (and (< slot 0) (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-err M E-STATE-VALUE n 0)   ; R5B
+          (and (< slot 0) (= (ck-callable M fi) 1) (ck-row-gen? M fi)) (ck-err M E-CHECK-FNVALUE n 0)   ; JUN-733: a row generic
           (and (>= slot 0) (ck-known-bare? M slot)) (ck-err M E-CHECK-FNVALUE n 0)
           (>= slot 0) (ck-param-use (ck-mark M n ty (+ (* RES-LOCAL RES-SCALE) slot)) n slot ty)   ; R6C
           (and (= (nm-ff M fi FF-KIND) FK-DEF) (zero? dty)) (ck-err M E-CHECK-DEF n 0)   ; R6B: an opaque def
@@ -2313,6 +2314,7 @@
           (nm-ne (nm-kind M h) ND-SYM) (ck-err M E-CHECK-HEAD h 0)
           (>= (nm-local-slot M s) 0) (ck-call-local M n fx)
           (and (= (ck-callable M fi) 1) (ck-r5b-tmpl? M fi)) (ck-r5b-scall M n fi fx)   ; R5B: a stateful defn
+          (and (= (ck-callable M fi) 1) (ck-row-gen? M (ck-pick M fi (dec (nm-count M n))))) (ck-row-call M n (ck-pick M fi (dec (nm-count M n))) fx)   ; JUN-733
           (= (ck-callable M fi) 1) (ck-call M n fi fx)
           (> hd 0) (ck-head (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx ctx)
           (pos? (ck-fl-code (nm-sf M s SF-HASH))) (ck-fl-op M n h (+ ck-fl-base (ck-fl-code (nm-sf M s SF-HASH))) fx)   ; FLOAT
@@ -2650,7 +2652,7 @@
           ty (ck-ty M1)]
       (if (or (= ty want) (ck-probe-lenient? M1 fi k want))   ; R6C: a probe run passes a provisional parameter by
         (ck-call-args M1 nx fi (+ k 1) fx h)
-        (ck-err (if (= want TY-I64) (ck-r6m-refine M1 fi k (ck-r6m-fnsig-np M1 ty)) M1) E-CHECK-TYPE h want)))))   ; R6M
+        (ck-err (if (= want TY-I64) (ck-r6m-refine (ck-row-note M1 fi k ty) fi k (ck-r6m-fnsig-np M1 ty)) M1) E-CHECK-TYPE h want)))))   ; R6M; JUN-733: a row
 
 (defn- ck-call [M :vector-i64 n :i64 f0 :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -3028,6 +3030,8 @@
         d (nm-next M r)
         M1 (ck-expr M r fx 0)]
     (cond (nm-failed M1) (ck-touch M1)
+          (ck-rec-ty? M1 (ck-ty M1)) (ck-rget-d M1 n r kw d fx)   ; JUN-733: a default on a record
+          (and (= (ck-ty M1) TY-I64) (pos? (vector-at M1 MM-CK-LAST))) (ck-err M1 E-CHECK-TYPE kw TY-REC-BASE)   ; JUN-733: a row
           (nm-ne (ck-tcon M1 (ck-ty M1)) TC-MAP) (ck-err M1 E-CHECK-ARITY kw 1)
           :else (let [M2 (ck-n-head M1 (nm-nf M1 kw NF-TOK) HD-GET)
                       gh (ck-r M2)
@@ -3205,7 +3209,9 @@
         :else (ck-err M E-CHECK-RESULT nm rt)))
 
 (defn- ck-body [M :vector-i64 f :i64] :vector-i64
-  (ck-done-set (ck-r5b-body0 (ck-state-reset (ck-done-set M f 2) f) f) f 1))
+  (if (ck-row-gen? M f)
+    (ck-done-set M f 1)   ; JUN-733: a row generic is checked as its specializations
+    (ck-done-set (ck-r5b-body0 (ck-state-reset (ck-done-set M f 2) f) f) f 1)))
 (defn- ck-body0 [M :vector-i64 f :i64] :vector-i64
   (let [n (nm-ff M f FF-NODE)
         nm (nm-nth M n 1)
@@ -3241,6 +3247,8 @@
           (nm-failed M) (ck-touch M)
           (and (= e 2) (ck-multi? M f)) (ck-exports (nm-set-ff M f FF-EXPORT 0) (+ f 1))
           (and (= e 1) (ck-multi? M f)) (ck-err M E-CHECK-MULTI-EXPORT (nm-nth M n 1) 0)
+          (and (= e 1) (ck-row-gen? M f)) (ck-err M E-CHECK-ROW-EXPORT (nm-nth M n 1) 0)   ; JUN-733
+          (and (= e 2) (ck-row-gen? M f)) (ck-exports (nm-set-ff M f FF-EXPORT 0) (+ f 1))   ; JUN-733
           (= e 2) (ck-exports (ck-abort-export (nm-set-ff M f FF-EXPORT (ck-exportable M f)) f) (+ f 1))
           (= e 1) (ck-exports (ck-abort-export (ck-sig-export M f (nm-nth M n 1)) f) (+ f 1))
           :else (ck-exports M (+ f 1)))))
@@ -4033,6 +4041,7 @@
   (let [M1 (if (>= (nm-count M n) 3) (ck-expr M (nm-nth M n 1) (+ fx 7) 0) M)]
     (cond (nm-failed M1) (ck-touch M1)
           (and (>= (nm-count M1 n) 3) (ck-rec-ty? M1 (ck-ty M1))) (ck-shrink M1 n fx 0)
+          (and (= (ck-ty M1) TY-I64) (pos? (vector-at M1 MM-CK-LAST))) (ck-err M1 E-CHECK-TYPE (nm-first M1 n) TY-REC-BASE)   ; JUN-733
           :else (ck-r3 M1 n HD-DISSOC fx ctx))))
 ;; mode 0: the keys after r are removed; mode 1: the keyword vector after r is kept
 (defn- ck-shrink [M :vector-i64 n :i64 fx :i64 mode :i64] :vector-i64
@@ -4068,7 +4077,7 @@
         fx2 (ck-ty M1)
         M2 (ck-expr (ck-empty-rec M1 a fx2) a fx2 0)
         ta (ck-ty M2)
-        M3 (ck-expr M2 b fx2 0)
+        M3 (if (or (nm-failed M2) (not (ck-rec-ty? M2 ta))) M2 (ck-expr M2 b fx2 0))   ; a's type first: a bare row parameter
         tb (ck-ty M3)]
     (cond (nm-ne (nm-count M n) 3) (ck-err M E-CHECK-ARITY h 2)
           (nm-failed M3) (ck-touch M3)
@@ -4109,29 +4118,32 @@
           kw (nm-next M m)
           f (nm-next M kw)
           xs (nm-next M f)
+          sym? (= (nm-kind M m) ND-SYM)   ; a symbol is read twice, no let: a bare parameter stays a row (ck-refine-note)
           M1 (nm-gensym M (nm-tf M tok TF-START) 0)
           g (ck-r M1)
           M2 (ck-new M1 ND-KW (nm-nf M1 kw NF-TOK) 0 (nm-sym-of M1 kw))
           kw2 (ck-r M2)
-          M3 (ck-n-ref M2 tok g)
+          M3 (if sym? (ck-n-copy M2 m) (ck-n-ref M2 tok g))
           g1 (ck-r M3)
           M4 (ck-chain2 M3 kw2 g1)
           M5 (ck-n-list M4 tok kw2)
           get (ck-r M5)   ; (:k g)
           M6 (if (ck-fn-form? M5 f) (ck-rowop-apply M5 f get xs) (let [M7 (ck-link (ck-link M5 f get) get xs)] (ck-n-list M7 tok f)))
           val (ck-r M6)
-          M8 (ck-n-ref M6 tok g)
+          M8 (if sym? (nm-put M6 MM-R0 m) (ck-n-ref M6 tok g))
           g2 (ck-r M8)
-          M9 (ck-chain3 M8 g2 kw val)
-          M10 (ck-mkh M9 tok HD-ASSOC g2)
-          as (ck-r M10)
-          M11 (ck-n-ref M10 tok g)
-          g3 (ck-r M11)
-          M12 (ck-chain2 M11 g3 m)
-          M13 (ck-n-vec M12 tok g3)
-          bv (ck-r M13)
-          M14 (ck-chain2 M13 bv as)]
-      (ck-rehead M14 n HD-LET bv))))
+          M9 (ck-chain3 M8 g2 kw val)]
+      (if sym?
+        (ck-rehead M9 n HD-ASSOC g2)
+        (let [M10 (ck-mkh M9 tok HD-ASSOC g2)
+              as (ck-r M10)
+              M11 (ck-n-ref M10 tok g)
+              g3 (ck-r M11)
+              M12 (ck-chain2 M11 g3 m)
+              M13 (ck-n-vec M12 tok g3)
+              bv (ck-r M13)
+              M14 (ck-chain2 M13 bv as)]
+          (ck-rehead M14 n HD-LET bv))))))
 ;; ((fn [p1 p2 ..] body ..) v1 v2 ..) -> (let [p1 v1 p2 v2 ..] body ..) (R0 = the let), v1 = the node get, then xs; a
 ;; parameter count other than the value count is E2103 at f
 (defn- ck-rowop-apply [M :vector-i64 f :i64 get :i64 xs :i64] :vector-i64
@@ -4151,6 +4163,115 @@
             bv (ck-r M3)
             M4 (ck-link M3 bv body)]
         (ck-mkh M4 tok HD-LET bv)))))
+;; ==== JUN-733 slice 3 (owner decision 2026-11-01): row inference for unannotated parameters ==========================
+;; docs/language-ladder.edn :row-records :row-get-and-match :options-map-argument. An unannotated parameter used as a record
+;; -- read with (:k p) / get, an assoc / dissoc / merge / select-keys operand, destructured with :keys, or passed a record
+;; by a caller -- is a ROW: the refinement (R6C, ck-refine-note / ck-row-note) asks for the pseudo type TY-REC-BASE (no
+;; record has symbol 0), and the re-run marks its function a ROW GENERIC (FN2-FLAGS bits 0 and 5: bit 0 keeps it out of
+;; the lowering, as a stateful template; bit 5 tells it apart). A generic is never checked or lowered itself; each call
+;; (ck-row-call) uses its SPECIALIZATION at the record types of the row arguments (FN2-FLAGS bit 6, FN2-ORIGIN = the
+;; generic): a clone of its defn form typed at them, checked when it is made. A non-record argument to a row parameter is
+;; E2104; an explicitly exported generic is E2183; a generic as a value E2134.
+(defn- ck-row-gen? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 32) 32)))
+(defn- ck-row-spec? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 64) 64)))
+;; the function a refinement of f's parameter names: a specialization's generic
+(defn- ck-row-origin [M :vector-i64 f :i64] :i64 (if (ck-row-spec? M f) (ck-f2 M f FN2-ORIGIN) f))
+;; set the type of parameter k of FN f
+(defn- ck-pt-set [M :vector-i64 f :i64 k :i64 t :i64] :vector-i64
+  (if (< k 5) (nm-set-ff M f (+ FF-PT0 k) t) (nm-set-nf M (nm-nth M (nm-nth M (nm-ff M f FF-NODE) 2) (inc (* 2 k))) NF-TYPE t)))
+;; a caller passes a record (type ty) to parameter k of fi that is still a provisional :i64: ask for a row (first one only)
+(defn- ck-row-note [M :vector-i64 fi :i64 k :i64 ty :i64] :vector-i64
+  (let [g (ck-row-origin M fi)]
+    (if (and (ck-rec-ty? M ty) (zero? (vector-at M MM-ERR)) (zero? (vector-at M MM-CK-REFINE)) (pos? (ck-pinfer-node M g k)))
+      (nm-put M MM-CK-REFINE (ck-hint-pack g k TY-REC-BASE))
+      M)))
+;; the specialization of generic g for the argument types in tys (one per parameter; 0 = not a row parameter), 0 = none yet
+(defn- ck-row-spec-find [M :vector-i64 g :i64 tys :vector-i64] :i64
+  (loop [f 1]
+    (cond (>= f (vector-at M MM-FN-N)) 0
+          (and (ck-row-spec? M f) (= (ck-f2 M f FN2-ORIGIN) g)
+               (loop [k 0] (cond (>= k (vector-count tys)) true
+                                 (or (zero? (vector-at tys k)) (= (ck-pt M f k) (vector-at tys k))) (recur (inc k))
+                                 :else false)))
+          f
+          :else (recur (inc f)))))
+;; R0 = the specialization of g for tys: found, or made (a clone of g's defn form) and checked now
+(defn- ck-row-spec [M :vector-i64 g :i64 tys :vector-i64] :vector-i64
+  (let [old (ck-row-spec-find M g tys)]
+    (if (pos? old)
+      (nm-put M MM-R0 old)
+      (let [np (nm-ff M g FF-NPARAMS)
+            M1 (ck-r5b-clone M (nm-ff M g FF-NODE))
+            c (ck-r M1)
+            M2 (ck-fn-new M1 c FK-PRIV np)
+            f (ck-r M2)
+            M3 (-> M2 (nm-set-ff f FF-RTYPE (nm-ff M2 g FF-RTYPE)) (ck-f2-set f FN2-FLAGS 64) (ck-f2-set f FN2-ORIGIN g) (ck-done-set f 0))
+            M4 (loop [M5 M3 k 0]
+                 (if (>= k np) M5 (recur (ck-pt-set M5 f k (if (pos? (vector-at tys k)) (vector-at tys k) (ck-pt M5 g k))) (inc k))))]
+        (if (nm-failed M4) (nm-put M4 MM-R0 0) (nm-put (ck-nested M4 f) MM-R0 f))))))
+;; (g a ..) with g a row generic: the arguments of its row parameters are checked first (each a record, E2104 otherwise:
+;; a bare provisional parameter of the caller asks for a row itself), then the call is the specialization's
+(defn- ck-row-call [M :vector-i64 n :i64 g :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        np (nm-ff M g FF-NPARAMS)]
+    (if (nm-ne (- (nm-count M n) 1) np)
+      (ck-err M E-CHECK-ARITY h np)
+      (let [M1 (loop [M2 M c (nm-next M h) k 0 tys (vector-i64)]
+                 (cond (nm-failed M2) M2
+                       (zero? c) (ck-row-spec M2 g tys)
+                       (= (ck-pt M2 g k) TY-REC-BASE)
+                       (let [M3 (ck-expr M2 c fx 0)
+                             ty (ck-ty M3)]
+                         (cond (nm-failed M3) M3
+                               (ck-rec-ty? M3 ty) (recur M3 (nm-next M3 c) (inc k) (vector-conj tys ty))
+                               :else (ck-err M3 E-CHECK-TYPE h TY-REC-BASE)))
+                       :else (recur M2 (nm-next M2 c) (inc k) (vector-conj tys 0))))
+            sp (ck-r M1)
+            rt (if (nm-failed M1) 0 (nm-ff M1 sp FF-RTYPE))]
+        (cond (nm-failed M1) (ck-touch M1)
+              (< rt 1) (ck-err M1 E-CHECK-INFER h 0)
+              :else (let [M2 (ck-call-args (nm-set-nf M1 h NF-RES (+ (* RES-FN RES-SCALE) sp)) (nm-next M1 h) sp 0 fx h)]
+                      (if (nm-failed M2) (ck-touch M2) (ck-mark (ck-fuel M2 (ck-fx-f fx)) n rt HD-CALL))))))))
+;; ---- (get m :k d) and (:k m d) on a record (ladder :row-get-and-match, :options-map-argument): a field m has reads as
+;; (:k m) (d must have the field's type, and is evaluated), an [:option T] field as (option-or (:k m) d), a key m does not have
+;; is d (m evaluated first). Rewritten in place, then checked ----
+(defn- ck-rget-d [M :vector-i64 n :i64 m :i64 kw :i64 d :i64 fx :i64] :vector-i64
+  (let [tok (nm-nf M kw NF-TOK)
+        b (ck-blk M (nm-nf M m NF-TYPE))
+        j (ck-field M b (nm-sym-of M kw))
+        f (if (neg? j) 0 (ck-blk-ty M b j))
+        M1 (ck-new M ND-KW tok 0 (nm-sym-of M kw))
+        k2 (ck-r M1)]
+    (cond (neg? j) (let [M2 (ck-chain2 M1 m d) M3 (ck-mkh M2 tok HD-DO m)] (ck-expr (ck-become M3 n (ck-r M3)) n fx 0))
+          (= (ck-tcon M1 f) TC-OPTION)
+          (let [M2 (ck-chain2 M1 k2 m)
+                M3 (ck-n-list M2 tok k2)
+                l (ck-r M3)
+                M4 (ck-chain2 M3 l d)
+                M5 (ck-mkh M4 tok HD-OPTION-OR l)]
+            (ck-expr (ck-become M5 n (ck-r M5)) n fx 0))
+          :else
+          (let [M2 (ck-want M1 d fx f kw)]
+            (if (nm-failed M2)
+              (ck-touch M2)
+              (let [M3 (nm-gensym M2 (nm-tf M2 tok TF-START) 0)
+                    g (ck-r M3)
+                    M4 (ck-n-ref M3 tok g)
+                    g1 (ck-r M4)
+                    M5 (ck-chain2 M4 k2 g1)
+                    M6 (ck-n-list M5 tok k2)
+                    l (ck-r M6)
+                    M7 (ck-chain2 M6 d l)
+                    M8 (ck-mkh M7 tok HD-DO d)
+                    dl (ck-r M8)
+                    M9 (ck-n-ref M8 tok g)
+                    g2 (ck-r M9)
+                    M10 (ck-chain2 M9 g2 m)
+                    M11 (ck-n-vec M10 tok g2)
+                    bv (ck-r M11)
+                    M12 (ck-chain2 M11 bv dl)
+                    M13 (ck-mkh M12 tok HD-LET bv)]
+                (ck-expr (ck-become M13 n (ck-r M13)) n fx 0)))))))
 (defn- ck-maplit2 [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [c (nm-first M n)
         M1 (ck-hide M n NF-SYM 7 fx)
@@ -4899,6 +5020,7 @@
     (cond (or (nm-ne (nm-kind M x) ND-SYM) (>= (nm-local-slot M (nm-sym-of M x)) 0) (zero? (ck-callable M fi)))
           (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
           (ck-r5b-tmpl? M fi) (nm-put (ck-err M E-STATE-VALUE x 0) MM-R0 0)   ; R5B
+          (ck-row-gen? M fi) (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)   ; JUN-733
           (zero? g) (nm-put (ck-err M E-CHECK-CLAUSE x ar) MM-R0 0)
           (ck-variadic? M g) (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
           (nm-ne (nm-sf M (nm-ff M g FF-SYM) SF-ABORT) 0) (nm-put (ck-err M E-CHECK-FNVALUE x 0) MM-R0 0)
@@ -5166,7 +5288,7 @@
 (defn- ck-f2 [M :vector-i64 f :i64 fld :i64] :i64 (vector-at M (+ (vector-at M MM-FN2) (* f FN2-W) fld)))
 (defn- ck-f2-set [M :vector-i64 f :i64 fld :i64 v :i64] :vector-i64 (nm-put M (+ (vector-at M MM-FN2) (* f FN2-W) fld) v))
 (defn- ck-f2-or [M :vector-i64 f :i64 fld :i64 v :i64] :vector-i64 (ck-f2-set M f fld (bit-or (ck-f2 M f fld) v)))
-(defn- ck-r5b-tmpl? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 1) 1)))
+(defn- ck-r5b-tmpl? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 33) 1)))   ; JUN-733: not a row generic (bit 5)
 (defn- ck-r5b-spec? [M :vector-i64 f :i64] :bool (and (pos? f) (= (bit-and (ck-f2 M f FN2-FLAGS) 2) 2)))
 (defn- ck-r5b-clause? [M :vector-i64 f :i64] :bool (and (pos? f) (pos? (bit-and (ck-f2 M f FN2-FLAGS) 12))))
 ;; 1 for a get clause, 2 for a put clause
@@ -5928,6 +6050,9 @@
   (let [M1 (ck-expr M (nm-nth M n 1) (+ fx 5) 0)]
     (cond (nm-failed M1) (ck-touch M1)
           (= (ck-ty M1) TY-DOC) (ck-r6b-docget M1 n fx)
+          (and (ck-rec-ty? M1 (ck-ty M1)) (= (nm-kind M1 (nm-nth M1 n 2)) ND-KW))   ; JUN-733: a default on a record
+          (ck-rget-d M1 n (nm-nth M1 n 1) (nm-nth M1 n 2) (nm-nth M1 n 3) fx)
+          (and (= (ck-ty M1) TY-I64) (pos? (vector-at M1 MM-CK-LAST))) (ck-err M1 E-CHECK-TYPE (nm-first M1 n) TY-REC-BASE)   ; JUN-733
           :else (ck-gget M1 n fx))))
 (defn- ck-r6b-docget [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -6696,7 +6821,7 @@
   (let [p (vector-at M MM-CK-LAST)]
     (if (and (= code E-CHECK-TYPE) (pos? p) (zero? (vector-at M MM-ERR)) (zero? (vector-at M MM-CK-REFINE))
              (pos? want) (not= want TY-I64) (pos? (vector-at M MM-CK-STATE)))
-      (let [f (ck-sg M ck-s-fn)
+      (let [f (ck-row-origin M (ck-sg M ck-s-fn))   ; JUN-733: a specialization's parameter is its generic's
             k (dec (+ (nm-nf M p NF-RES) (- (* RES-LOCAL RES-SCALE))))]   ; R6C rung proof: (- x)
         (if (pos? (ck-pinfer-node M f k)) (nm-put M MM-CK-REFINE (ck-hint-pack f k want)) M))
       M)))
@@ -6704,12 +6829,13 @@
 ;; 1 when t names a type the hint may give: a simple value type, a registered record, a composite type of the table
 (defn- ck-hint-type-ok? [M :vector-i64 t :i64] :bool
   (cond (or (<= t 0) (= t TY-I64)) false
+        (= t TY-REC-BASE) true   ; JUN-733: a row (ck-row-gen?)
         (< t TY-REC-BASE) (or (= t TY-BOOL) (= t TY-STR) (= t TY-VEC) (= t TY-BYTES) (= t TY-KW) (= t TY-DOC) (= t TY-SYM) (= t TY-F64) (= t ck-ty-f32))
         (< t TY-COMP-BASE) (pos? (nm-sf M (- t TY-REC-BASE) SF-REC))
         :else (and (pos? (vector-at M MM-CT)) (< (- t TY-COMP-BASE) (vector-at M (+ (vector-at M MM-CT) CT-N))))))
 (defn- ck-hint-set [M :vector-i64 f :i64 k :i64 t :i64 tn :i64] :vector-i64
   (let [M1 (if (< k 5) (nm-set-ff M f (+ FF-PT0 k) t) (nm-set-nf M tn NF-TYPE t))]
-    (if (= (nm-ff M1 f FF-EXPORT) 1) (ck-sig-export M1 f (nm-nth M1 (nm-ff M1 f FF-NODE) 1)) M1)))
+    (if (and (= (nm-ff M1 f FF-EXPORT) 1) (nm-ne t TY-REC-BASE)) (ck-sig-export M1 f (nm-nth M1 (nm-ff M1 f FF-NODE) 1)) M1)))   ; JUN-733: a row is refused at pass E
 (defn- ck-hints-apply [M :vector-i64] :vector-i64
   (let [h (vector-at M MM-CK-HINTS)]
     (if (or (zero? h) (nm-failed M))
@@ -6724,6 +6850,7 @@
                 tn (ck-pinfer-node M f k)
                 w (cond (zero? tn) M
                         (>= t ck-r6m-fnhint) (let [M1 (ck-r6m-fn-i64 M (- t ck-r6m-fnhint))] (ck-hint-set M1 f k (ck-r M1) tn))   ; R6M
+                        (= t TY-REC-BASE) (ck-f2-set (ck-hint-set M f k t tn) f FN2-FLAGS (bit-or (ck-f2 M f FN2-FLAGS) 33))   ; JUN-733
                         (ck-hint-type-ok? M t) (ck-hint-set M f k t tn)
                         :else M)]
             (recur (inc i))))))))
@@ -6746,10 +6873,11 @@
             :else (recur (ck-tb M p) (inc n))))
     0))
 ;; note the refinement of parameter k of f to the fn recipe of np parameters (first one only, before the refusal)
-(defn- ck-r6m-refine [M :vector-i64 f :i64 k :i64 np :i64] :vector-i64
+(defn- ck-r6m-refine [M :vector-i64 f0 :i64 k :i64 np :i64] :vector-i64
+  (let [f (ck-row-origin M f0)]   ; JUN-733
   (if (and (>= np 1) (<= np 4) (zero? (vector-at M MM-ERR)) (zero? (vector-at M MM-CK-REFINE)) (pos? (ck-pinfer-node M f k)))
     (nm-put M MM-CK-REFINE (ck-hint-pack f k (+ ck-r6m-fnhint np)))
-    M))
+    M)))
 ;; a local symbol node x of the function being checked used as a function with np arguments; in a fn literal's body a
 ;; CAPTURE (slot beyond the literal's own parameters) refers to the enclosing function's slot (the capture block in NF-TYPE
 ;; of the literal's parameter vector, ck-fn-caps)

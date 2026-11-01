@@ -138,7 +138,14 @@
   [:c KW-SYMBOL 39 ":symbol (type)"]
   ;; -- R6C --
   [:c KW-PINFER 40 "(no spelling) the synthetic type of an unannotated defn parameter: :i64 unless the checker's own refusal
-   asks for another type (the reference's infer-absent-parameter-types; 21-check records the refinement, the driver re-runs)"]
+   asks for another type (the reference's infer-absent-parameter-types; 21-check records the refinement, the driver re-runs).
+   JUN-733 (docs/language-ladder.edn :row-records :row-get-and-match): a parameter used as a record -- (:k p), get, assoc /
+   dissoc / merge / select-keys, :keys destructuring -- or passed a record by a caller asks for a ROW (the pseudo type
+   TY-REC-BASE): the re-run makes its defn a row generic (FN2-FLAGS bits 0 and 5), never checked or lowered itself; each
+   call uses its specialization at the record types of its row arguments (a clone of the defn form, FN2-FLAGS bit 6,
+   checked when made). A non-record argument to a row parameter is E2104, an explicitly exported row function E2183, one
+   as a value E2134, a self-recursive one without a declared result E2126. (get r :k d) / (:k r d) on a record: a field r
+   has reads as (:k r) (d of its type), an [:option T] field as (option-or (:k r) d), a key r lacks is d"]
   [:c KW-F64 41 ":f64 (type)"]
   ;; -- ADR 0371 step 3 (2026-10-22): wire 42 :gpu/compute admitted as typed-cap-call :string :string
   [:c KW-GPU-COMPUTE 42 ":gpu/compute (capability wire 42)"]
@@ -643,6 +650,8 @@
   ;; JUN-733: nil at a keyword key of a map literal is the none of an [:option T] field; refused when no declared record
   ;; takes the literal and the module spells no T at that key (lang/guest-grammar.edn :keyword-keys :refused-by-name :nil)
   [:c E-CHECK-NILKEY 2182 "nil at key '{name}' has no field type: no declared record takes this literal and no other value at that key says T"]
+  ;; JUN-733 slice 3: an unannotated parameter used as a record is a row; its function exists only as its specializations
+  [:c E-CHECK-ROW-EXPORT 2183 "a function with a row parameter has no single interface and cannot be exported: '{name}'"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
