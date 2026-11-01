@@ -1,0 +1,138 @@
+DESIGN-VERIFY-S193 BYTE-IDENTITY RECORD (session 194, 2026-11-01 UTC)
+================================================================
+Scope: the s193 design-verify slice (the s193 carry-forward) --
+design-verify-s193.py, fail-closed quote + arithmetic
+re-derivation vs the committed bytes the state-s193 draft cites,
+run TWICE byte-identical. QUOTE-ONLY / ARITHMETIC-ONLY: NO
+eighteenth-cut quantity is computed -- NO run log, NO class, NO
+verdict, NO claim; every 18th-cut quantity stays UNMEASURED.
+
+RUN PAIR (this session, in this directory):
+  run 1: python3 design-verify-s193.py -> rc 0, stdout 16,127
+         bytes (design-verify-s193-run1.txt), stderr 0 bytes
+         (design-verify-s193-run1.err).
+  run 2: python3 design-verify-s193.py -> rc 0, stdout 16,127
+         bytes (design-verify-s193-run2.txt), stderr 0 bytes
+         (design-verify-s193-run2.err).
+  BYTE-IDENTITY: cmp run1.txt vs run2.txt -> exit 0;
+                 cmp run1.err vs run2.err -> exit 0.
+  sha256 (both stdout runs, identical):
+    50d02075406a22c2c4a330b3c547ee7553b5ef84782e61508e45395dd4e3a236
+    design-verify-s193-run1.txt / design-verify-s193-run2.txt
+    (16,127 bytes both runs; .err 0 bytes both runs)
+  design-verify-s193.py (the script that produced both runs):
+    b7313f8881c3e59c1ef1a682ae3539084d97ed60b43ef598d14fbf8fb1dcf348
+
+VERDICT (both runs, identical output):
+  DESIGN-VERIFY S193 SUMMARY: 154 ok / 0 failed
+  DESIGN-VERIFY S193 COMPLETE (fail-closed: 0 failed)
+
+CHECK SET (154 wants, every one matched):
+  File pins (9): publication-s185.txt 59,777 bytes sha256
+  c62c01e1... (== the s189/s190 pull pin); publication-s169.txt
+  56,352 bytes sha256 c9aab750...; publication-s158.txt 56,588
+  bytes sha256 45538ad7...; publication-s139.txt 33,345 bytes
+  sha256 b6eb79cb...; publication-s147.txt 29,876 bytes sha256
+  d41df35a...; confrontation-spec.txt 9,660 bytes sha256
+  c0eff7fb...; protocol.txt (the 17th cut's frozen protocol)
+  19,974 bytes sha256 ad8ace96...; state-s179.txt 19,949 bytes
+  sha256 a165e8c3...; knob-search-s192-run1.txt 9,477 bytes
+  sha256 78fe5a96... (== the s192 identity pin).
+  Pair pin (1): knob-search-s192-run1.txt ==
+  knob-search-s192-run2.txt byte-identity.
+  Line-pinned quotes (120): knob-search-s192-run1.txt L12/21/24/
+  25/28x2/30/31/32/33x2/34x3/36/39x2/40x2/41x3/42/45/46/47x3/50/
+  53x2/54x2/55/56/57/61 (37 wants -- the width-488 bracket, the
+  q=3 census row, the C1 (a) controls, the D2 supersession, the
+  12x+4x re-count, the q1 binding/m lines, the C2 (c) + L9 +
+  second-edge + verdict-summary quotes, the disputed-record
+  citations, the spec pins + the 16/16 computed line, the
+  floor-midpoint re-derivation, the fm/q3 occurrence rows, the
+  VIRGIN line, the q-fraction, the census-complete line);
+  publication-s185.txt L81/624-627/631-633/636-638/641x2/642/
+  643/644x2/645/647/651-654/672-674 (26 wants -- the 'this cut
+  does not measure 254,801' quote, the C1 (a) letters, the D2
+  supersession, the C2 q1 header + VIRGIN quote, the block
+  classes / binding / pooled / m lines, the CLASS-UNRESOLVED +
+  L9 lines, the arm-(b) re-read hazard second edge verbatim, the
+  W1 (c) NOTHING-MOVES + bracket + SUSPENDED lines);
+  publication-s169.txt L615/620x2/621/624/626 (6 wants -- the
+  16th cut's fm content 10/3/3 + binding line + C2 (c) + L9);
+  publication-s158.txt L135/646/647/649/712-722 (15 wants -- the
+  52fb68b6... bis pin, the bis binding and pooled lines, the
+  STABLE-CAPTURED line, the 5 dual-class rows, lo pooled-12 /
+  mid pooled-48, the cabff942... cross-window disagreement);
+  publication-s139.txt L86/270x2/380x2/381x2/382x2/391x2/393x2
+  (13 wants -- the disputed record's PRIMARY row quotes and the
+  pooled-12 / pooled-48 lines); publication-s147.txt
+  L284x3/310x2/311/363x2 (8 wants -- the 14th cut's mid content
+  TOLERANCE-UNRESOLVED, pooled-48 1148 / min 1005, the 16x
+  minima line); confrontation-spec.txt L59/100/101/116/123/128/
+  129 (7 wants -- the wander band both units, the arm-(b)
+  re-read hazard quote, the arm-(c) band line, the 'statistic
+  chosen after the runs are read' line, the arm-(d) MID-ONLY
+  suspension); protocol.txt L88/124/125 (3 wants -- the
+  ROUNDS6400 instrument variant and the c2704aaa... source pin
+  as frozen); state-s179.txt L132/133/136/137/138 (5 wants --
+  the D3 (ii) conditional the s193 draft quotes).
+  Arithmetic re-derivations (15): (1,000,003*246)//965 =
+  254,923; gcd(246, 965) = 1; (1,000,003*313)//1,229 = 254,679;
+  (254,557+255,045)//2 = 254,801; width 488; q=1 grid
+  254,557+488//4 = 254,679; q=3 grid 254,557+3*(488//4) =
+  254,923; mid q-fraction (254,882-254,557)/488 = 0.665984 (6
+  dp); arm table 3+48+3 = 54; q1 binding spread 3.9212; fm
+  binding spread 9.7371; bis binding spread 2.9737; band width
+  34; q3 top clip 255,045-254,923 = 122; q3 low clip
+  254,923-254,557 = 366.
+  Derived re-computation from committed bytes (9): pub185 L641
+  block classes re-counted 16 total / 12x CAPTURED / 4x IN-BAND-
+  UNDECIDED; class == (binding >= 1,000) at 16/16 blocks
+  (pub185 L641 vs L642 parsed); q1 binding min 999.0012 max
+  1002.9224 spread 3.9212 re-derived from the L642 list; 16/16
+  in the 981..1,015 wander band and the range STRADDLES 1,000
+  (the s192 census section-4 claim re-derived from committed
+  bytes); pub185 L643 pooled-48 binding 1,001.7437; pub169 L621
+  fm binding min 997.0538 max 1006.7909 spread 9.7371; pub158
+  L646 bis binding min 1005.8172 max 1008.7909 spread 2.9737;
+  pub158 L647 pooled-48 binding 1,009.6912; pub185 L644 block m
+  min 1,132 max 1,135 pooled-48 1,133.
+
+NAMED, NOT HIDDEN: no draft pair exists for this script -- the
+first run passed fail-closed and the pair is the first capture
+(there is no hidden earlier attempt to name; the pull-verify-
+s185 precedent). The verify's scope is exactly the state-s193
+cited bytes + its VERIFIED THIS TICK arithmetic paragraph; it
+does not re-run the s192 census (that was knob-search-s192's own
+byte-identical pair) and it does not freeze anything.
+
+STATE (three-state discipline): with this run-twice pair the
+s193 design draft's every quote and arithmetic claim is now
+fail-closed verified against committed bytes -- the eighteenth-
+cut design is still ACCEPTED-DESIGN-IN-DRAFT (now DESIGN-
+VERIFIED, run-twice byte-identical), NOT frozen (no protocol.txt,
+no freeze stamp -- protocol.txt FROZEN + freeze-record is the
+NEXT slice, s195), NOT implemented compiler code, NOT a
+measurement. NO eighteenth-cut quantity exists; every 18th-cut
+quantity UNMEASURED. RULE 4 unchanged: NOTHING MOVES; bracket
+stays EXACTLY (254,557, 255,045]; MID-ONLY NARROWING CLAIM
+SUSPENDED; NO vendor optimization exists for Intel (or for any
+vendor); the accelerator-targets workgroup rows stay exactly as
+ADR-0358 left them (:measured? false rows remain provisional --
+NOT optimization evidence).
+
+BAR NON-INTERFERENCE held: NO settle-bar-ledger line (git diff
+--exit-code rc 0), NO day-slot consumption, NO hardware, NO
+builds, NO compile, NO GO stamp. find docs/evidence/gpu -name
+'*.sh' -> 0 (re-verified this session). Diff touches NO
+committed .cljk namespace (evidence .py/.txt only; no scoped-
+gate re-run needed, the s160/s166 precedent; full suite RED AT
+BASE kotoba.form ADR-0362 outside this diff per the standing
+captures -- NOT re-run this tick -- NO green full suite
+claimed).
+
+NOT DONE (s195 carries exactly this list): protocol.txt FROZEN
++ freeze-record at its own slice (the design is design-verified
+but NOT frozen); standing, not queued: any further counted-day
+slot (the 2026-11-01 UTC slot needs its own freeze -- still
+open at this write) and the cross-day tail-movement row. RULE 4
+unchanged. (JUN-55, JUN-59; Linear tracking JUN-499)
