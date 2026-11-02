@@ -3,7 +3,7 @@
 ;; its exact decimal parser imported from the seed's existing decimal group.
 ;; No host printer/parser or C runtime is involved. See document-runtime.json
 ;; for source bindings; this candidate has not been executed or qualified.
-(defn- __krft_decimal-bits [text :string] [:option :i64]
+(defn- __krft_decimal-bits-internal [text :string] [:option :i64]
   (let [parsed (decimal-f64-parse text)]
     (if (option-some?-of [:option :f64] parsed)
       (option-some-of [:option :i64]
@@ -14,23 +14,40 @@
 ;; ties-to-even rounded prefix that parses back to the original bits. Every
 ;; finite binary64 has such a prefix by17 significant digits. No host float
 ;; printer, float arithmetic, platform locale, C runtime or numeric cast is used.
+(defn- __krft_decimal-bits [text :string] [:option :i64]
+  (let [bits (arena-scope (option-value-of [:option :i64] (__krft_decimal-bits-internal text) -1))]
+    (if (= bits -1) (option-none-of [:option :i64]) (option-some-of [:option :i64] bits))))
+
 (defn- __krft_finite-bits? [bits :i64] :bool
   (not (= (bit-and (u64-shift-right bits 52) 2047) 2047)))
 
 (defn- __krft_digit [value :i64] :string
   (string-substring "0123456789" value (+ value 1)))
-(defn- __krft_multiply [text :string factor :i64] :string
-  (loop [i (- (string-byte-length text) 1) carry 0 out ""]
-    (if (< i 0)
-      (if (= carry 0) out (string-concat (__krft_digit carry) out))
-      (let [value (+ (* (- (string-code-point-at text i) 48) factor) carry)
-            next-carry (quot value 10)]
-        (recur (- i 1) next-carry
-               (string-concat (__krft_digit (- value (* next-carry 10))) out))))))
+;; Decimal digits are kept least-significant first in a single mutable vector.
+;; Slot 0 is the used length; binary64 requires fewer than 1100 digits.
+(defn- __krft_decimal-init [text :string] :vector-i64
+  (let [n (string-byte-length text) v (vector-assoc! (vector-alloc 1101) 0 n)]
+    (loop [i 0 m v]
+      (if (= i n) m
+        (recur (+ i 1) (vector-assoc! m (+ i 1) (string-code-point-at text (- (- n 1) i))))))))
+(defn- __krft_decimal-times [v :vector-i64 factor :i64] :vector-i64
+  (let [n (vector-at v 0)]
+    (loop [i 1 carry 0 m v]
+      (if (> i n)
+        (if (= carry 0) m
+          (vector-assoc! (vector-assoc! m (+ n 1) (+ 48 carry)) 0 (+ n 1)))
+        (let [value (+ (* (- (vector-at m i) 48) factor) carry)
+              next-carry (quot value 10)]
+          (recur (+ i 1) next-carry (vector-assoc! m i (+ 48 (- value (* next-carry 10))))))))))
+(defn- __krft_decimal-render [v :vector-i64] :string
+  (let [n (vector-at v 0) result (vector-alloc n)]
+    (loop [i 0 out result]
+      (if (= i n) (string-from-utf8 (bytes-from-vector-i64 out))
+        (recur (+ i 1) (vector-assoc! out i (vector-at v (- n i))))))))
 (defn- __krft_multiply-power [text :string factor :i64 exponent :i64] :string
-  (loop [i 0 current text]
-    (if (>= i exponent) current
-      (recur (+ i 1) (__krft_multiply current factor)))))
+  (loop [i 0 v (__krft_decimal-init text)]
+    (if (>= i exponent) (__krft_decimal-render v)
+      (recur (+ i 1) (__krft_decimal-times v factor)))))
 (defn- __krft_zeros [count :i64] :string
   (loop [i 0 out ""]
     (if (>= i count) out (recur (+ i 1) (string-concat out "0")))))

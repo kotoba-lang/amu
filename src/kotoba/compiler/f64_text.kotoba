@@ -12,18 +12,31 @@
 
 (defn- digit [value :i64] :string
   (string-substring "0123456789" value (+ value 1)))
-(defn- multiply [text :string factor :i64] :string
-  (loop [i (- (string-byte-length text) 1) carry 0 out ""]
-    (if (< i 0)
-      (if (= carry 0) out (string-concat (digit carry) out))
-      (let [value (+ (* (- (string-code-point-at text i) 48) factor) carry)
-            next-carry (quot value 10)]
-        (recur (- i 1) next-carry
-               (string-concat (digit (- value (* next-carry 10))) out))))))
+;; Decimal digits are kept least-significant first in a single mutable vector.
+;; Slot 0 is the used length; binary64 requires fewer than 1100 digits.
+(defn- decimal-init [text :string] :vector-i64
+  (let [n (string-byte-length text) v (vector-assoc! (vector-alloc 1101) 0 n)]
+    (loop [i 0 m v]
+      (if (= i n) m
+        (recur (+ i 1) (vector-assoc! m (+ i 1) (string-code-point-at text (- (- n 1) i))))))))
+(defn- decimal-times [v :vector-i64 factor :i64] :vector-i64
+  (let [n (vector-at v 0)]
+    (loop [i 1 carry 0 m v]
+      (if (> i n)
+        (if (= carry 0) m
+          (vector-assoc! (vector-assoc! m (+ n 1) (+ 48 carry)) 0 (+ n 1)))
+        (let [value (+ (* (- (vector-at m i) 48) factor) carry)
+              next-carry (quot value 10)]
+          (recur (+ i 1) next-carry (vector-assoc! m i (+ 48 (- value (* next-carry 10))))))))))
+(defn- decimal-render [v :vector-i64] :string
+  (let [n (vector-at v 0) result (vector-alloc n)]
+    (loop [i 0 out result]
+      (if (= i n) (string-from-utf8 (bytes-from-vector-i64 out))
+        (recur (+ i 1) (vector-assoc! out i (vector-at v (- n i))))))))
 (defn- multiply-power [text :string factor :i64 exponent :i64] :string
-  (loop [i 0 current text]
-    (if (>= i exponent) current
-      (recur (+ i 1) (multiply current factor)))))
+  (loop [i 0 v (decimal-init text)]
+    (if (>= i exponent) (decimal-render v)
+      (recur (+ i 1) (decimal-times v factor)))))
 (defn- zeros [count :i64] :string
   (loop [i 0 out ""]
     (if (>= i count) out (recur (+ i 1) (string-concat out "0")))))
