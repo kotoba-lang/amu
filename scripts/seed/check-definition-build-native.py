@@ -239,6 +239,32 @@ def main(compiler, out, *, mutations=True):
         exhausted.chmod(0o755)
         p = call("fuel-exhaustion-execute", [exhausted], code=-signal.SIGILL, environment=dict(PATH="/nonexistent"))
         assert not p.stdout and not p.stderr
+    # Reusing the same object bodies must never reuse an earlier invocation's
+    # fuel budget. Compare fresh reference/link bytes for several budgets,
+    # including exhaustion, with the same already-populated SCC cache.
+    cycle_before = {p.name: pin(p) for p in cyc.iterdir()}
+    fuel_images = {}
+    for budget in ("1", "2", "3", "1000000"):
+        reference = invoke("fuel-" + budget + "-reference", cycle, cyc, mode="reference", fuel=budget)
+        candidate = invoke("fuel-" + budget + "-cached", cycle, cyc, hits=(3, 0), fuel=budget)
+        assert reference.read_bytes() == candidate.read_bytes(), budget
+        fuel_images[budget] = pin(candidate)
+        assert {p.name: pin(p) for p in cyc.iterdir()} == cycle_before
+        if machine == "x86_64":
+            outcomes = []
+            for lane, image in (("reference", reference), ("cached", candidate)):
+                image.chmod(0o755)
+                observed = call("fuel-" + budget + "-" + lane + "-execute", [image],
+                                environment=dict(PATH="/nonexistent"), exact=False)
+                outcomes.append((observed.returncode, observed.stdout, observed.stderr))
+            assert outcomes[0] == outcomes[1], budget
+            if budget == "1":
+                assert outcomes[0] == (-signal.SIGILL, b"", b"")
+            if budget == "1000000":
+                assert outcomes[0] == (0, (41).to_bytes(8, "little", signed=True), b"")
+    assert len({v["sha256"] for v in fuel_images.values()}) == len(fuel_images)
+    report["freshFuelLinkParity"] = fuel_images
+    save()
     missing = directory("missing")
     pair("missing-fill", base, missing, (0, 2), 42)
     next(missing.glob("*.kdo")).unlink()
