@@ -6954,3 +6954,57 @@ instrument -- its resolution is its own act), any further
 counted-day slot (its own freeze), the cross-day tail-movement
 row. Evidence: docs/evidence/gpu/anv-b3bisect19-20261102/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 215-223, landing s224, JUN-59 -- THE OPEN
+CONTROL QUESTION'S RESOLUTION-ACT PRE-REGISTRATION: ROW DECISION +
+THE FOUR-CUT CONTROL-STATE RECORD + COMMITTED-REFERENCE
+CONFRONTATION + ARMS/STATISTIC + LETTERS + INVALIDATION CRITERIA +
+THE NAME'S SEMANTICS + DESIGN-VERIFY + PROTOCOL FREEZE + standing
+gates + record at s224): THE RESOLUTION ACT -- FOUR CONSECUTIVE
+CONTROL-ARM READINGS (c2 (B=2, WM=1, NDIV=1) k=3 + c8 (B=8, WM=1,
+NDIV=1) k=3, 24 fresh processes, the deep-pooling CI class
+statistic R = 6,400 ADOPTED UNCHANGED) ON THE ROUNDS6400
+INSTRUMENT, CONFRONTING THE FROZEN NAME "a three-state control
+record" AGAINST THE FOUR-CUT COMMITTED CONTROL RECORD (b)/(a)/
+(a)/(b) (c2 pooled medians 30/31/31/30; c8 -0.29%/-0.43%/-0.42%/
+-1.08% of the committed 32,915; VERIFY-clean at all four) --
+PRE-REGISTERED AND FROZEN (protocol.txt freeze stamp
+2026-11-02T10:48:32Z, written ONCE BEFORE any run of the act
+exists -- run-log count 0), NOT MEASURED. The name's semantics
+DECIDED (s220): "three-state" = THREE state-BLOCKS exactly
+(b) | (a,a) | (b) at letter granularity; occurrence count NOT
+identity count -- TWO letter IDENTITIES; the underlying-state
+count is UNMEASURED and never read off the name; prong B's "more
+than one state" = MORE THAN ONE BLOCK. Letters EXACTLY {a,b} per
+reading ((a) = c2 m FLOOR in 31..32 at B=2 + c8 in band +
+VERIFY-clean; (b) = c2 m out of band while c8/VERIFY hold), the
+sequence L1..L4 confronts (b)/(a)/(a)/(b) one-for-one,
+PATTERN-LEVEL (NO p-value, NO test statistic). Invalidation
+FAIL-CLOSED: "ACT VERDICT: INVALID" is NOT a letter, confronts
+neither prong, NOTHING MOVES; NO selective re-run; outcome space
+2^4 + 1 = 17. Design-verify 357 wants / 0 failed run TWICE
+BYTE-IDENTICAL (s222, two draft pairs kept visible); freeze-
+verify 113 wants / 0 failed run TWICE BYTE-IDENTICAL (s223, one
+draft pair kept visible with four named checker defects).
+Landing (s224): standing gates (a)-(f) all == the s88/s117 pins
+(scoped GPU gate GREEN 123 tests / 12,162 assertions / 0 failures
+/ 0 errors twice; FULL run-tests.cljk RED AT BASE kotoba.form
+ADR-0362 OUTSIDE this diff -- NO green full suite claimed);
+record.txt + this note. BAR NON-INTERFERENCE held: NO settle-bar-
+ledger line, NO day-slot consumption, NO hardware, NO builds, the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. RULE 4
+unchanged: NOTHING MOVES; the committed bracket stays EXACTLY
+(254,923, 255,045]; L9 binds at n=254,984; NO vendor optimization
+exists for any vendor; the workgroup rows stay exactly as
+ADR-0358 left them. Three-state: the pre-registration is
+ACCEPTED DESIGN ONLY, now FROZEN as pre-registration content --
+NOT implemented compiler code, NOT a measurement; every
+resolution-act quantity (every reading letter, the sequence,
+B_act, the act verdict) is UNMEASURED until a FUTURE act runs 24
+fresh processes under this frozen protocol (NOT queued -- its own
+act). Carry-forward s225: standing, not queued: the control
+question's RESOLUTION measurement act under the frozen protocol
+(its own act), any further counted-day slot (its own freeze), the
+cross-day tail-movement row. Evidence:
+docs/evidence/gpu/anv-b3control3state-prereg-20261102/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
