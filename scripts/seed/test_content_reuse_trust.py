@@ -10,6 +10,22 @@ from content_reuse import Runs, pin
 
 
 class UntrustedStoreTest(unittest.TestCase):
+    def test_store_does_not_publish_process_verdict_or_streams(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            out = root / "out"
+            out.mkdir()
+            store = root / "store"
+            script = root / "producer.sh"
+            script.write_text('printf fresh > "$1"\nprintf executed\n')
+            output = out / "image"
+            runner = Runs(out, store=store)
+            runner.run_cached("compile", ["/bin/sh", script, output], {}, [output])
+            entry = next(store.iterdir())
+            self.assertEqual({p.name for p in entry.iterdir()}, {"image", "record.json"})
+            self.assertNotIn("exit", json.loads((entry / "record.json").read_text()))
+            self.assertEqual((out / "raw/compile.stdout").read_bytes(), b"executed")
+
     def test_forged_record_and_rewritten_hash_do_not_replace_execution(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

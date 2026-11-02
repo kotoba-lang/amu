@@ -74,18 +74,17 @@ class Runs:
         # Do not replay stdout, stderr or a historical success verdict. The
         # old record's output hashes are self-asserted by the same store and
         # key_material does not establish a complete dependency closure.
-        r = self.run(name, argv, env, timeout=timeout)
+        self.run(name, argv, env, timeout=timeout)
         self.calls[-1]["key"] = key
         if self.store:
             entry = self.store / key
-            entry.mkdir(parents=True, exist_ok=True)
+            # Never adopt an existing directory that may contain old verdicts.
+            entry.mkdir(parents=True, exist_ok=False)
             for o in outputs:
                 shutil.copyfile(o, entry / Path(o).name)
-            (entry / "stdout").write_bytes(r.stdout)
-            (entry / "stderr").write_bytes(r.stderr)
             origin = {k: os.environ[k] for k in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SHA", "GITHUB_EVENT_NAME")
                       if k in os.environ} or "local"
-            (entry / "record.json").write_text(json.dumps(dict(key=key, material=material, exit=r.returncode, **{"from": origin},
+            (entry / "record.json").write_text(json.dumps(dict(key=key, material=material, **{"from": origin},
                                                                outputs={Path(o).name: pin(o) for o in outputs}), indent=1) + "\n")
         return None
 
