@@ -1,0 +1,255 @@
+;; Fixed-fixture native driver candidate; caller supplies a delegated parent FD 3.
+;; Sealed artifacts and fixed hashes are diagnostic identities, not release trust.
+(defn- fd-open [dir :i64 path :i64 flags :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0) c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 dir path how 24 0 0)))
+(defn- fd-empty? [root :i64 m :i64] :bool
+  (let [path (+ m 2300) how (+ m 2800) buf (+ m 3500)
+        p (kxrt-w path (kxrt-w path 0 0x652e70756f726763 8) 0x73746e6576 6)
+        fd (fd-open root path 524288 how)]
+    (if (< fd 0) false
+      (let [n (kxrt-syscall 63 fd buf 127 0 0 0) c (kxrt-close fd)]
+        (and (>= n 12) (= c 0) (= (kxrt-load64 buf) 0x6574616c75706f70)
+             (= (kxrt-load8 (+ buf 8)) 100) (= (kxrt-load8 (+ buf 9)) 32)
+             (= (kxrt-load8 (+ buf 10)) 48) (= (kxrt-load8 (+ buf 11)) 10))))))
+;; Remove only the exact inode created by this driver, and only when empty.
+(defn- fd-clean [m :i64] :bool
+  (if (= (kxrt-load64 (+ m 9000)) 0) true
+    (let [saved (kxrt-load64 (+ m 9008)) name (+ m 2000) how (+ m 2800)
+          reopened (fd-open 3 name 540672 how)]
+      (if (or (< saved 0) (< reopened 0)) false
+        (let [s1 (+ m 3000) s2 (+ m 3200) a (kxrt-syscall 80 saved s1 0 0 0 0)
+              b (kxrt-syscall 80 reopened s2 0 0 0 0)
+              same (and (= a 0) (= b 0) (= (kxrt-load64 s1) (kxrt-load64 s2))
+                        (= (kxrt-load64 (+ s1 8)) (kxrt-load64 (+ s2 8))))
+              c (kxrt-close reopened)
+              empty (loop [i 0]
+                      (if (fd-empty? saved m) true
+                        (if (= i 500) false
+                          (let [ts (+ m 6048) x (kxrt-store64 ts 0) y (kxrt-store64 (+ ts 8) 10000000)
+                                z (kxrt-syscall 73 0 0 ts 0 0 0)] (recur (+ i 1))))))
+              removed (if (and same (= c 0) empty) (kxrt-syscall 35 3 name 512 0 0 0) -1)]
+          (if (= removed 0) (let [z (kxrt-store64 (+ m 9000) 0)] true) false))))))
+(defn- fd-fail [stage :i64] :i64
+  (let [m (kxrt-load64 (+ (kxrt-g) 23960)) clean (if (= m 0) true (fd-clean m))
+        b (+ (kxrt-g) 24000) a (kxrt-w b 0 0x3a45535546455246 8)
+        n (+ a (kxrt-dec (+ b a) stage)) z (kxrt-store8 (+ b n) 10)
+        wr (kxrt-write-all 2 b (+ n 1))
+        pending (if clean 0 (let [s (kxrt-w b (kxrt-w b (kxrt-w b 0 0x72645f656e7566 7) 0x705f72657669 6) 0x0a676e69646e65 7)] (kxrt-write-all 2 b s)))]
+    (kxrt-exit 2)))
+
+(defn- fd-sha-init [c :i64] :i64
+  (let [z (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store64 (+ c (* 8 i)) (kxrt-sha-h0 i))] (recur (inc i)))))
+        a (kxrt-store64 (+ c 640) 0)]
+    (kxrt-store64 (+ c 648) 0)))
+(defn- fd-sha-update [c :i64 a :i64 n :i64] :i64
+  (let [t (kxrt-store64 (+ c 648) (+ (kxrt-load64 (+ c 648)) n))]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [cl (kxrt-load64 (+ c 640))]
+          (if (and (= cl 0) (>= (- n i) 64))
+            (let [z (kxrt-sha-block c (+ c 64) (+ a i))] (recur (+ i 64)))
+            (let [k (if (< (- 64 cl) (- n i)) (- 64 cl) (- n i))
+                  z (kxrt-copy (+ c 576 cl) (+ a i) k)
+                  y (if (= (+ cl k) 64)
+                      (let [x (kxrt-sha-block c (+ c 64) (+ c 576))] (kxrt-store64 (+ c 640) 0))
+                      (kxrt-store64 (+ c 640) (+ cl k)))]
+              (recur (+ i k)))))))))
+;; 64 lowercase hex digits and a NUL at hex
+(defn- fd-sha-final [c :i64 hex :i64] :i64
+  (let [cl (kxrt-load64 (+ c 640)) n (kxrt-load64 (+ c 648)) tail (+ c 656)
+        a (kxrt-copy tail (+ c 576) cl)
+        p (kxrt-store8 (+ tail cl) 128)
+        padded (if (<= (inc cl) 56) 64 128)
+        zz (loop [i (inc cl)] (if (>= i padded) 0 (let [y (kxrt-store8 (+ tail i) 0)] (recur (inc i)))))
+        bits (* n 8)
+        lb (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right bits (* 8 i)) 255))] (recur (inc i)))))
+        b1 (kxrt-sha-block c (+ c 64) tail)
+        b2 (if (= padded 128) (kxrt-sha-block c (+ c 64) (+ tail 64)) 0)]
+    (loop [i 0]
+      (if (= i 32) (kxrt-store8 (+ hex 64) 0)
+        (let [word (kxrt-load64 (+ c (* 8 (quot i 4)))) byte (bit-and (u64-shift-right word (* 8 (- 3 (- i (* 4 (quot i 4)))))) 255)
+              hi (u64-shift-right byte 4) lo (bit-and byte 15)
+              y1 (kxrt-store8 (+ hex (* 2 i)) (if (< hi 10) (+ 48 hi) (+ 87 hi)))
+              y2 (kxrt-store8 (+ hex (inc (* 2 i))) (if (< lo 10) (+ 48 lo) (+ 87 lo)))]
+          (recur (inc i)))))))
+
+;; Compare the sealed image with the caller's explicit expected SHA-256.
+;; pread uses explicit offsets so a shared file offset cannot affect the hash.
+;; The caller must obtain the expected digest from an authenticated source.
+(defn- fd-image-ok? [fd :i64 expected :i64 m :i64] :bool
+  (let [ctx (+ m 6528) hex (+ m 7456) buf (+ m 12000) init (fd-sha-init ctx)
+        count (loop [off 0]
+          (let [r (kxrt-syscall 67 fd buf 4096 off 0 0)]
+            (cond (= r -4) (recur off) (< r 0) -1 (= r 0) off
+                  (> (+ off r) 16777216) -1
+                  :else (let [z (fd-sha-update ctx buf r)] (recur (+ off r))))))]
+    (if (<= count 0) false
+      (let [finish (fd-sha-final ctx hex)]
+        (loop [i 0]
+          (if (= i 64) true
+            (if (= (kxrt-load8 (+ hex i)) (kxrt-load8 (+ expected (+ i 7))))
+              (recur (+ i 1)) false)))))))
+
+
+
+;; Read a regular file into a sealed memfd, then hash the immutable snapshot.
+(defn- fd-snapshot [path :i64 expected :i64 m :i64] :i64
+  (let [src (kxrt-syscall 56 -100 path 559104 0 0 0) opened (if (< src 0) (fd-fail 2) 0)
+        stat (+ m 3000) st (kxrt-syscall 80 src stat 0 0 0 0)
+        regular (if (or (< st 0) (not= (bit-and (kxrt-load64 (+ stat 16)) 61440) 32768)) (fd-fail 2) 0)
+        name (+ m 2200) z (kxrt-store64 name 0x656e7566)
+        dst (kxrt-syscall 279 name 3 0 0 0 0) created (if (or (< dst 0) (> dst 99)) (fd-fail 2) 0)
+        buf (+ m 12000)
+        total (loop [n 0]
+                (let [r (kxrt-syscall 63 src buf 4096 0 0 0)]
+                  (cond (= r -4) (recur n) (< r 0) (fd-fail 2) (= r 0) n
+                        (> (+ n r) 16777216) (fd-fail 2)
+                        :else (let [wr (if (= (kxrt-write-all dst buf r) 1) 0 (fd-fail 2))] (recur (+ n r))))))
+        close (kxrt-close src) valid (if (or (= total 0) (not= close 0)) (fd-fail 2) 0)
+        seal (kxrt-syscall 25 dst 1033 15 0 0 0)
+        verify (kxrt-syscall 25 dst 1034 0 0 0 0)
+        sealed (if (or (< seal 0) (< verify 0) (not= (bit-and verify 15) 15)) (fd-fail 2) 0)
+        digest (if (fd-image-ok? dst expected m) 0 (fd-fail 2))] dst))
+;; Exact cgroup values are written once, read back and compared.
+(defn- fd-set [root :i64 path :i64 value :i64 n :i64 m :i64] :i64
+  (let [how (+ m 2800) buf (+ m 3500) fd (fd-open root path 524289 how)
+        ok (if (< fd 0) (fd-fail 4) 0) wr (kxrt-syscall 64 fd value n 0 0 0)
+        c (kxrt-close fd) written (if (or (not= wr n) (not= c 0)) (fd-fail 4) 0)
+        rd (fd-open root path 524288 how) ro (if (< rd 0) (fd-fail 4) 0)
+        got (kxrt-syscall 63 rd buf 127 0 0 0) close (kxrt-close rd)
+        match (if (or (not= got (+ n 1)) (not= close 0) (not= (kxrt-load8 (+ buf n)) 10)
+                      (not (kxrt-same value buf n))) (fd-fail 4) 0)] 0))
+(defn- fd-group [m :i64] :i64
+  (let [st (+ m 3000) fsbuf (+ m 3200) fs (kxrt-syscall 44 3 fsbuf 0 0 0 0) s (kxrt-syscall 80 3 st 0 0 0 0)
+        uid (kxrt-syscall 175 0 0 0 0 0 0) gid (kxrt-syscall 177 0 0 0 0 0 0)
+        valid (if (or (< fs 0) (< s 0) (not= (kxrt-load64 fsbuf) 1667723888)
+                      (not= (bit-and (kxrt-load64 (+ st 16)) 61440) 16384)
+                      (not= (bit-and (kxrt-load64 (+ st 24)) 4294967295) uid)
+                      (<= uid 0) (< gid 0) (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                      (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (fd-fail 3) 0)
+        empty (if (fd-empty? 3 m) 0 (fd-fail 3))
+        name (+ m 2000) prefix (kxrt-w name 0 0x2d656e7566 5)
+        pid (kxrt-syscall 172 0 0 0 0 0 0) len (+ prefix (kxrt-dec (+ name prefix) pid))
+        term (kxrt-store8 (+ name len) 0)
+        made (if (< (kxrt-syscall 34 3 name 448 0 0 0) 0) (fd-fail 3) 0)
+        mark (kxrt-store64 (+ m 9000) 1) init (kxrt-store64 (+ m 9008) -1)
+        group (fd-open 3 name 540672 (+ m 2800))
+        saved (if (< group 0) (fd-fail 3) (kxrt-store64 (+ m 9008) group))
+        group-empty (if (fd-empty? group m) 0 (fd-fail 3))
+        path (+ m 2300) value (+ m 2400)
+        a (kxrt-w path (kxrt-w path 0 0x6d2e79726f6d656d 8) 0x7861 3)
+        b (kxrt-w value (kxrt-w value 0 0x3436383830313736 8) 0 1)
+        mem (fd-set group path value 8 m)
+        c (kxrt-w path (kxrt-w path 0 0x78616d2e73646970 8) 0 1)
+        d (kxrt-w value 0 0x34 2) pids (fd-set group path value 1 m)
+        e (kxrt-w path 0 0x78616d2e757063 8)
+        f (kxrt-w value (kxrt-w value 0 0x3031203030303035 8) 0x30303030 4)
+        cpu (fd-set group path value 12 m)] group))
+
+
+(defn- fd-now [m :i64] :i64
+  (let [t (+ m 6024) r (kxrt-syscall 113 1 t 0 0 0 0)]
+    (if (< r 0) -1 (+ (* (kxrt-load64 t) 1000000000) (kxrt-load64 (+ t 8))))))
+(defn- fd-kill [pid :i64 st :i64] :i64
+  (let [k (kxrt-syscall 129 pid 9 0 0 0 0)
+        w (loop [i 0] (let [x (kxrt-syscall 260 pid st 0 0 0 0)] (if (= x -4) (recur (+ i 1)) x)))] -1))
+(defn- fd-collect [pid :i64 fd :i64 m :i64] :i64
+  (let [status (+ m 6000) ts (+ m 6048) buf (+ m 5000) z (kxrt-store64 status 0)
+        a (kxrt-store64 ts 0) b (kxrt-store64 (+ ts 8) 10000000) start (fd-now m)]
+    (if (< start 0) (fd-kill pid status)
+      (loop [n 0 done false eof false]
+        (let [read (if eof 0 (kxrt-syscall 63 fd (+ buf n) (- 18 n) 0 0 0))
+              badread (and (< read 0) (not= read -4) (not= read -11))
+              size (+ n (if (> read 0) read 0)) ended (or eof (= read 0))
+              r (if done 0 (kxrt-syscall 260 pid status 1 0 0 0)) waited (or done (= r pid)) now (fd-now m)
+              bad (or badread (> size 17) (and (< r 0) (not= r -4)) (< now 0) (> (- now start) 75000000000))]
+          (cond bad (if waited -1 (fd-kill pid status))
+                (and waited ended) (if (and (= size 17) (= (bit-and (kxrt-load64 status) 65535) 0)) size -1)
+                :else (let [sleep (if (> read 0) 0 (kxrt-syscall 73 0 0 ts 0 0 0))]
+                        (recur size waited ended))))))))
+(defn- fd-child [parent :i64 sup :i64 worker :i64 producer :i64 cg :i64 output :i64 m :i64] :i64
+  (let [p (kxrt-syscall 167 1 9 0 0 0 0) alive (if (or (< p 0) (not= (kxrt-syscall 173 0 0 0 0 0 0) parent)) (kxrt-exit 127) 0)
+        a (if (< (kxrt-syscall 24 sup 111 524288 0 0 0) 0) (kxrt-exit 127) 0)
+        b (if (< (kxrt-syscall 24 worker 112 0 0 0 0) 0) (kxrt-exit 127) 0)
+        c (if (< (kxrt-syscall 24 producer 113 0 0 0 0) 0) (kxrt-exit 127) 0)
+        d (if (< (kxrt-syscall 24 cg 114 0 0 0 0) 0) (kxrt-exit 127) 0)
+        e (if (< (kxrt-syscall 24 output 1 0 0 0 0) 0) (kxrt-exit 127) 0)
+        input-pair (+ m 6160) made (if (< (kxrt-syscall 59 input-pair 524288 0 0 0 0) 0) (kxrt-exit 127) 0)
+        input-both (kxrt-load64 input-pair) input-r (bit-and input-both 4294967295)
+        input-w (u64-shift-right input-both 32) input-shut (kxrt-close input-w)
+        input (if (= input-r 0) (kxrt-syscall 25 0 2 0 0 0 0) (kxrt-syscall 24 input-r 0 0 0 0 0))
+        input-ok (if (or (not= input-shut 0) (< input 0)) (kxrt-exit 127) 0)
+        lo (if (< (kxrt-syscall 436 3 110 0 0 0 0) 0) (kxrt-exit 127) 0)
+        hi (if (< (kxrt-syscall 436 115 4294967295 0 0 0 0) 0) (kxrt-exit 127) 0)
+        nnp (if (< (kxrt-syscall 167 38 1 0 0 0 0) 0) (kxrt-exit 127) 0)
+        empty (+ m 200) z (kxrt-store64 empty 0) e0 (kxrt-store64 (+ m 128) 0)
+        result (kxrt-syscall 281 111 empty m (+ m 128) 4096 0)] (kxrt-exit 127)))
+(defn- kxrt-start [sp :i64] :i64
+  (let [global (+ (kxrt-g) 23960) init (kxrt-store64 global 0)
+        argc (kxrt-load64 sp) valid (if (not= argc 6) (fd-fail 1) 0)
+        stdio (if (or (< (kxrt-syscall 25 0 1 0 0 0 0) 0) (< (kxrt-syscall 25 1 1 0 0 0 0) 0)
+                      (< (kxrt-syscall 25 2 1 0 0 0 0) 0)) (fd-fail 1) 0)
+        close-extra (if (< (kxrt-syscall 436 4 4294967295 0 0 0 0) 0) (fd-fail 1) 0)
+        m (kxrt-syscall 222 0 16384 3 34 -1 0) mapped (if (< m 0) (fd-fail 1) 0)
+        save (kxrt-store64 global m) mark (kxrt-store64 (+ m 9000) 0)
+        s1000_0 (kxrt-w m 1000 0x353a363532616873 8)
+        s1000_8 (kxrt-w m 1008 0x6136396432623362 8)
+        s1000_16 (kxrt-w m 1016 0x3336383463616264 8)
+        s1000_24 (kxrt-w m 1024 0x3933643039353761 8)
+        s1000_32 (kxrt-w m 1032 0x3533653261383166 8)
+        s1000_40 (kxrt-w m 1040 0x6162343962396638 8)
+        s1000_48 (kxrt-w m 1048 0x6636303837306238 8)
+        s1000_56 (kxrt-w m 1056 0x3634643664333036 8)
+        s1000_64 (kxrt-w m 1064 0x38393831383466 8)
+        s1100_0 (kxrt-w m 1100 0x353a363532616873 8)
+        s1100_8 (kxrt-w m 1108 0x3831656633393362 8)
+        s1100_16 (kxrt-w m 1116 0x3330346233653562 8)
+        s1100_24 (kxrt-w m 1124 0x3637313465396135 8)
+        s1100_32 (kxrt-w m 1132 0x3635656538626461 8)
+        s1100_40 (kxrt-w m 1140 0x3837303337356238 8)
+        s1100_48 (kxrt-w m 1148 0x3663623237383763 8)
+        s1100_56 (kxrt-w m 1156 0x6363396636663463 8)
+        s1100_64 (kxrt-w m 1164 0x63623762383266 8)
+        s1200_0 (kxrt-w m 1200 0x333a363532616873 8)
+        s1200_8 (kxrt-w m 1208 0x3661363132303166 8)
+        s1200_16 (kxrt-w m 1216 0x6335306334656263 8)
+        s1200_24 (kxrt-w m 1224 0x3030633839623534 8)
+        s1200_32 (kxrt-w m 1232 0x3130376366393334 8)
+        s1200_40 (kxrt-w m 1240 0x6637396531323837 8)
+        s1200_48 (kxrt-w m 1248 0x3735313562393461 8)
+        s1200_56 (kxrt-w m 1256 0x6131346538376337 8)
+        s1200_64 (kxrt-w m 1264 0x35346436396165 8)
+        s1400_0 (kxrt-w m 1400 0x7075732d656e7566 8)
+        s1400_8 (kxrt-w m 1408 0x726f7369767265 8)
+        s1450_0 (kxrt-w m 1450 0x323131 4)
+        s1460_0 (kxrt-w m 1460 0x333131 4)
+        s1470_0 (kxrt-w m 1470 0x343131 4)
+        s1480_0 (kxrt-w m 1480 0x3436383830313736 8)
+        s1480_8 (kxrt-w m 1488 0x0 1)
+        s1490_0 (kxrt-w m 1490 0x34 2)
+        s1500_0 (kxrt-w m 1500 0x3030303035 6)
+        s1510_0 (kxrt-w m 1510 0x4f 2)
+        sup (fd-snapshot (kxrt-load64 (+ sp 16)) (+ m 1200) m)
+        worker (fd-snapshot (kxrt-load64 (+ sp 24)) (+ m 1000) m)
+        producer (fd-snapshot (kxrt-load64 (+ sp 32)) (+ m 1100) m)
+        cg (fd-group m)
+        a0 (kxrt-store64 m (+ m 1400)) a1 (kxrt-store64 (+ m 8) (+ m 1450))
+        a2 (kxrt-store64 (+ m 16) (+ m 1000)) a3 (kxrt-store64 (+ m 24) (+ m 1460))
+        a4 (kxrt-store64 (+ m 32) (+ m 1100)) a5 (kxrt-store64 (+ m 40) (kxrt-load64 (+ sp 40)))
+        a6 (kxrt-store64 (+ m 48) (kxrt-load64 (+ sp 48))) a7 (kxrt-store64 (+ m 56) (+ m 1470))
+        a8 (kxrt-store64 (+ m 64) (+ m 1480)) a9 (kxrt-store64 (+ m 72) (+ m 1490))
+        a10 (kxrt-store64 (+ m 80) (+ m 1500)) a11 (kxrt-store64 (+ m 88) (+ m 1510)) a12 (kxrt-store64 (+ m 96) 0)
+        pipe (+ m 6100) made (if (< (kxrt-syscall 59 pipe 526336 0 0 0 0) 0) (fd-fail 5) 0)
+        both (kxrt-load64 pipe) reader (bit-and both 4294967295) writer (u64-shift-right both 32)
+        parent (kxrt-syscall 172 0 0 0 0 0 0) pid (kxrt-syscall 220 17 0 0 0 0 0)
+        forked (cond (< pid 0) (fd-fail 5) (= pid 0) (fd-child parent sup worker producer cg writer m) :else 0)
+        closew (kxrt-close writer) count (fd-collect pid reader m) closer (kxrt-close reader)
+        child-ok (if (or (not= closew 0) (not= closer 0) (not= count 17)) (fd-fail 5) 0)
+        expected (+ m 4500) k (kxrt-store8 expected 75) e (kxrt-store8 (+ expected 1) 7)
+        x (kxrt-store8 (+ expected 2) 0) y (kxrt-store8 (+ expected 3) 0) z (kxrt-store8 (+ expected 4) 0)
+        l (kxrt-store8 (+ expected 5) 11) t (kxrt-w expected 6 0x6f6d732d656e7566 8) u (kxrt-w expected 14 0x0a656b 3)
+        frame (if (kxrt-same expected (+ m 5000) 17) 0 (fd-fail 5))
+        clean (if (fd-clean m) 0 (fd-fail 6))
+        sent (kxrt-write-all 1 expected 17)]
+    (kxrt-exit (if (= sent 1) 0 2))))

@@ -91,3 +91,20 @@
               (if (= (vector-at m MM-ERR) 0) (xa-write m (io-arg 3) 0)
                 (xg-report m (io-arg 2) (io-arg 3))))
             (drv-fail0 E-PROJ-UNPINNED)))))
+
+
+;; Closed ARM64 fixed-fixture driver factory; not a general workload runner.
+(defn- xfd-command [] :i64
+  (cond (or (not= (io-argc) 4) (not (string=? (io-arg 1) "aarch64-linux"))
+            (= (string-length (io-arg 3)) 0)) (drv-usage)
+        (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
+        (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
+        :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
+          (if (string=? (sh-text host) "4d1d7a3519b2347855e5b17fcf2e52b88c4dce5632d86c8013dcb6d705508e73")
+            (let [guest "(ns fune-fixed-driver (:export [main]))\n(defn main [] :i64 0)\n"
+                  rt (string-concat (xa-rt-core-profile 0) host)
+                  text (string-concat guest rt)
+                  m (xa-build (xg-front text) text (string-length guest) 0 (vector-alloc 1) 0 0 0)]
+              (if (= (vector-at m MM-ERR) 0) (xa-write m (io-arg 3) 0)
+                (xg-report m (io-arg 2) (io-arg 3))))
+            (drv-fail0 E-PROJ-UNPINNED)))))
