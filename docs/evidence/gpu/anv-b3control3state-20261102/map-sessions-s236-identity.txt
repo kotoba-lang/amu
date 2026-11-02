@@ -1,0 +1,82 @@
+map-sessions-s236 identity (map-sessions-s236.py -> the s236
+official pair).  This file is the honesty ledger for the s236 slice:
+what is evidence, what is not, and every mark left along the way.
+
+THE ROW: the s235 commit's named carry-forward (ii) -- "whether every
+record session-numbered window maps onto a committed dir enumerated
+here stays UNCHECKED from committed bytes (a publication-side mapping
+row, not a raw-log row)" -- taken as this tick's ONE row.
+
+THE OFFICIAL PAIR (the evidence):
+  map-sessions-s236-run1.txt 76,081 bytes sha256
+  94790b9332dc1b9cdf71aaff42b92e5b8d651e1956e625cd795fe7517766fd47
+  / .err 0 bytes sha256
+  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  map-sessions-s236-run2.txt 76,081 bytes sha256
+  94790b9332dc1b9cdf71aaff42b92e5b8d651e1956e625cd795fe7517766fd47
+  / .err 0 bytes sha256
+  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  run1 == run2 BYTE-IDENTICAL (cmp exit 0 on stdout pair and stderr
+  pair); both rc 0; tail:
+  '# map-sessions s236 (map-sessions-s236.py): 131 ok / 0 failed'
+  map-sessions-s236.py sha256
+  712214543c3e7b6be58ba7272ad5daad3e64e17b713cedc0d62fda70d512167b
+  map-sessions-s236-devrun3.txt (the clean pre-pair confirmation run,
+  the s234 devrun3 precedent shape) BYTE-IDENTICAL to both pair legs
+  (cmp exit 0, same sha256 94790b93...).
+
+NAMED, NOT HIDDEN -- every non-official run and every pre-official
+fix/refinement, kept visible.  NONE of them is evidence; every fix
+touches the VERIFIER only -- no committed capture, publication or
+record byte changed, no parsed value changed.
+
+(i) map-sessions-s236-devrun.txt/.err (rc 1; 98,718 / 0 bytes;
+    '126 ok / 295 failed'): TWO defect families, both VERIFIER-side:
+    (i.a) 294 false FAILs 'v2 run without # n= header line': the
+    census header scan opened .gz run logs as RAW gzip bytes
+    (open(p, "rb")) instead of through gzip -- the s235 read_bytes/
+    read_lines suffix condition was not carried over to the new scan
+    loop.  Fixed: the same .gz suffix condition (gzip.open "rt").
+    (i.b) C6 's215 record rows parse ... (got 0)': RE_S215_ROW lacked
+    re.M -- '^' anchored only at string start and missed the four
+    record rows.  Fixed: re.M.  Both fixes touch the VERIFIER only.
+
+(ii) map-sessions-s236-devrun2.txt/.err (rc 0; '131 ok / 0 failed',
+    74,186 / 0 bytes): the first clean run.  Its unparsed-form census
+    exposed window-citation forms the frozen singular V3/V7 probes do
+    not cover (plural lists 'MEASURED in sessions 36/38/39/51',
+    'sessions 36/38/39 (run windows ...)', and range/tick-span forms
+    'sessions 157-163', 'sessions 21-26') -- named there, NOT
+    silently dropped.  THREE pre-official-pair refinements followed
+    (devrun2 is NOT a pair leg):
+    (ii.a) the generic session probe RE_GENERIC extended to capture
+    full list/range tokens and expand their members into the REPORT-
+    only generic-session census (map status per member);
+    (ii.b) a COMPOSITION answer block (anchor-set membership, anchor
+    target census status, the E2-only knob-set boundary rows);
+    (ii.c) REPORT column width fixes.
+    The map criterion, the citation forms V1..V7, the checks and the
+    frozen universe are UNTOUCHED by (ii.a)-(ii.c) -- all three are
+    REPORT-side.  NAMED SCOPE DECISION, carried in the docstring:
+    range/tick-span forms ('sessions 157-163') are ambiguous between
+    measurement-window citations and analysis-tick sequence citations
+    (the bare 'sN' ambiguity family) -- they stay REPORT-only rows,
+    never W members, never checks.
+
+dev capture sha256 (all kept committed, none is evidence):
+  devrun   (rc 1) stdout 98,718 / stderr 0
+  devrun2  (rc 0) stdout 74,186 / stderr 0
+  devrun3  (rc 0) stdout 76,081 / stderr 0 == the pair legs byte-
+           identical (cmp exit 0)
+
+Gates (e)/(f) LIVE with s236 captures: gate-s236-nosh.txt 0 bytes
+(find docs/evidence/gpu -name '*.sh' -> 0, rc 0);
+gate-s236-ledger.txt 0 bytes (git diff --exit-code --
+docs/evidence/gpu/settle-bar-ledger.txt rc 0).
+
+BLOCKER-FIRST immediately before the push
+(prlist-s236-prepush.json, committed with this slice): 30 open
+kotoba-lang/amu PRs, 0 hermes/ heads (python headRefName startswith
+filter); chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-20261028-4
+-- the one this push advances; MERGEABLE, no origin/main merge
+needed).
