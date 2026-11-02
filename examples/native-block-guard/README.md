@@ -176,3 +176,35 @@ the one-time object SHA-256 is
 The native build/test use checked-in Kotoba words, not the assembly reference,
 clang, an assembler, C or a C loader. Python operates the synthetic PTYs and
 observes the compiled program; it does not supply a real user decision.
+
+## Combined choice and raw I/O fixture
+
+`TMPDIR=/workspace/scratch ./check-macos-raw-choice.sh` builds a single
+Amu-generated native executable that checks the fixed 4 MiB test geometry and
+marker, verifies the input and output are the same terminal, presents the
+fixed test-only warning, and accepts `YES` before its one fixed-sector write,
+`fsync` and readback. On fresh task-owned virtual images, the test observer
+injects `NO`, `YES`, and no-terminal cases through a PTY; denial or missing TTY
+must leave the target sector zero. A successful write is followed by detach,
+read-only reattach and the independent native full-sector verifier. Wrong
+geometry, marker, read-only FD and corrupted readback are refusal controls.
+The observer checks the temporary backing-image/device association before
+opening FD3, and the harness checks the complete backing bytes and safe detach.
+
+This is an integrated **fixture**, not an Itonami capability or a real user
+approval. The PTY is controlled by a test process; equality of TTY devices
+cannot prove a human chose `YES`. The message contains only the fixed test
+identity, and the geometry/marker are not a physical-device identity or
+exclusive claim. No application may use this as a production approval or pass
+it a physical disk. `fsync` and virtual reattach do not establish physical
+power-loss behavior or cache bypass.
+
+The inert `raw-choice-reference.txt` was derived once using Apple clang 21.0.0
+(clang-2100.1.1.101), `clang -target arm64-apple-macos -c raw-choice.s`, then
+`xcrun llvm-objdump --macho --section=__text --full-contents`. The reference
+SHA-256 is `8e63a67a2886ab9b7801630aa4c478031a890c577c9fede6118eb899aa52ec74`;
+the one-time object SHA-256 is
+`364579fc5a01ad1a7328775bde0e06e9de7d6bf85dac816cbf1a14ce19832b31`.
+The build/test consume checked-in Kotoba words, not the reference, clang,
+an assembler, C or a C loader. Python opens the verified test-image FD and
+injects synthetic PTY input as a test observer only.
