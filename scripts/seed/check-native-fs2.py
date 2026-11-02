@@ -147,12 +147,19 @@ def main(compiler, out):
     for script, cases in (("check-fs2-observed.py", boundary_cases), ("check-fs2-errno.py", errno_cases)):
         for case in cases:
             observe(case, [sys.executable, ROOT / "scripts/seed" / script, "--image", image, "--output", out / case, "--case", case], os.environ.copy(), timeout=45)
+    # The snapshot fixture uses this same compiler, not a previously compiled
+    # image. Its live kernel-seal observer and negative cases run on the host
+    # ISA alongside the existing FS2 matrix.
+    observe("sealed-snapshot", [sys.executable, ROOT / "scripts/seed/check-fs2-snapshot.py",
+                                "--compiler", compiler, "--output", out / "snapshot"],
+            os.environ.copy(), timeout=900)
     assert pin(source) == source_pin
     report = dict(status="PASS_NATIVE_FS2_CURRENT_MATRIX", host=[platform.system(), machine], source=source_pin,
                   compiler=pin(compiler), image=pin(image), calls=calls, positiveFixtureCases=len(positives),
                   observedKernelBoundaries=len(boundary_cases), kernelErrnoCases=len(errno_cases),
                   framingRangeShapeRefusals=len(refusals),
                   nativeGuestOwnsPositiveAssertions=True, legacyRuntimeFallback=False, emulation=False,
+                  sealedSnapshotCandidateChecked=True,
                   allFaultRaceParityQualified=False, wholePublicCLIQualified=False)
     (out / "native-fs2.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], machine)
