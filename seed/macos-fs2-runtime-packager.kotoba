@@ -34,7 +34,8 @@
 (def FS2-DA-BYTES 736)
 (def FS2-BC-BYTES 776)
 (def FS2-KIND9-BYTES 256)
-(def FS2-LOCK-BYTES 792)
+(def FS2-LOCK-ONE-BYTES 792)
+(def FS2-LOCK-BYTES (* FS2-LOCK-ONE-BYTES 2))
 (def FS2-EF-BYTES 1172)
 (def FS35-BYTES 1768)
 (def MAC-PACKAGER-RAW-BYTES 49680)
@@ -746,6 +747,19 @@
        0xa9407bfd 0x91400fff 0xd65f03c0 0xd42006c0 0x14000001 0xd4202060])
       (vector-assoc! 197 (b-direct (+ start 788) bc-start))))
 
+;; KFR1 has a distinct prefix and treats invalid basename bytes as a zero
+;; status. Allocation/capability violations remain traps. Branches 62, 64,
+;; 66 and 72 target the helper's existing status-zero epilogue (word 171).
+(defn- fs2-read-helper-words [start :i64 bc-start :i64] :vector-i64
+  (-> (fs2-lock-helper-words start bc-start)
+      (vector-assoc! 14 0xf100195f)
+      (vector-assoc! 33 0xf101191f)
+      (vector-assoc! 36 0xf101491f)
+      (vector-assoc! 62 0xb4000da8)
+      (vector-assoc! 64 0x54000d68)
+      (vector-assoc! 66 0x54000d20)
+      (vector-assoc! 72 0x54000c60)))
+
 ;; Scoped Darwin FS2 F metadata and E range read. The one-time assembly
 ;; derivation is review evidence; emitted words are owned by this Kotoba source.
 ;; This callback accepts pair-backed 1->1 requests only, verifies the FD3
@@ -974,6 +988,12 @@
                   (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES)))
       (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
                 (fs2-lock-helper-words (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)))
+      ;; The KFR1 application operation has its own exact prefix; reuse the
+      ;; same scoped regular-file mechanism without treating KSL1 as public.
+      (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)
+                (fs2-read-helper-words
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)
                   (+ fs2-start FS2-DA-BYTES)))
       (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES)
                 (fs2-ef-helper-words
