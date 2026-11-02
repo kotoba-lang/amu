@@ -208,3 +208,29 @@ the one-time object SHA-256 is
 The build/test consume checked-in Kotoba words, not the reference, clang,
 an assembler, C or a C loader. Python opens the verified test-image FD and
 injects synthetic PTY input as a test observer only.
+
+## Self-open read-only geometry control
+
+`check-macos-open-geometry.sh` tests a separate Amu-generated image which
+opens its sole pathname argument with `O_RDONLY | O_NONBLOCK | O_NOFOLLOW`,
+requires a character device, and reads the two geometry ioctls. It emits no
+user data and has no raw write calls. A read-only temporary disk image returns
+512/8192; a final-component symlink, regular file, `/dev/null`, missing path
+and absent argument refuse. Missing-path and symlink tests check the native
+open errno separately. This test does not protect intermediate path components,
+identify a physical device, establish exclusive access or authorize a write.
+The device's geometry remains a self-report.
+
+`build-macos-open-geometry.sh` builds the same signed test executable at a new
+absolute output path. The caller is responsible for restricting and validating
+any pathname before calling it. It is not a production broker.
+
+The inert `open-geometry-reference.txt` was derived on 2026-11-02 using Apple
+clang 21.0.0 (clang-2100.1.1.101), `clang -target arm64-apple-macos -c
+open-geometry.s`, then `xcrun llvm-objdump --macho --disassemble`. Reference
+SHA-256: `6daea4a9b650c13d946c7a4ffc463b02b12596528947fc8633539acddc40beda`.
+One-time object SHA-256:
+`a915a96cdaef59192bd0693050943e17e129c3e2ac5b309267ec98f26f1ee562`.
+The native build/test consume checked-in Kotoba words, not clang, assembler,
+C, a C loader or the inert reference. The temporary image is detached only
+after an independent image-path/device association check.
