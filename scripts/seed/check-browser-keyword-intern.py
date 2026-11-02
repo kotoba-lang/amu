@@ -2,7 +2,7 @@
 """Exercise the browser keyword intern runtime on Wasm and JS (JUN-772).
 
 Usage: python3 scripts/seed/check-browser-keyword-intern.py --compiler F
-       --baseline OLD_F --output NEW_DIR --browser CHROME
+       [--baseline OLD_F] --output NEW_DIR --browser CHROME
 The caller builds F from the candidate FULL-MANIFEST; OLD_F is an unmodified
 root. Python stages inputs and observes compiler and browser reports.
 """
@@ -24,8 +24,9 @@ def module(name, path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    for flag in ('compiler', 'baseline', 'output', 'browser'):
+    for flag in ('compiler', 'output', 'browser'):
         ap.add_argument('--' + flag, type=Path, required=True)
+    ap.add_argument('--baseline', type=Path, help='also prove an older compiler refuses the guest')
     a = ap.parse_args()
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
@@ -37,13 +38,15 @@ def main():
         raise ValueError('mutant anchor changed')
     for name, text in [('good', source), ('mutant', source.replace(old, old.replace('"名"', '"別"')))]:
         (out / (name + '.kotoba')).write_text(text, encoding='utf-8')
-    compiler, baseline = a.compiler.resolve(strict=True), a.baseline.resolve(strict=True)
+    compiler = a.compiler.resolve(strict=True)
+    baseline = a.baseline.resolve(strict=True) if a.baseline else None
     rows = []
     for target, ext in [('wasm32-browser', '.wasm'), ('js-browser', '.mjs')]:
-        refused = mac.native_run(baseline, out, 'compile', 'good.kotoba', '--target', target,
-                                 '--output', 'baseline-' + target, expected=1)
-        if b'E7101' not in refused.stderr:
-            raise ValueError('baseline did not refuse missing runtime slot: ' + target)
+        if baseline:
+            refused = mac.native_run(baseline, out, 'compile', 'good.kotoba', '--target', target,
+                                     '--output', 'baseline-' + target, expected=1)
+            if b'E7101' not in refused.stderr:
+                raise ValueError('baseline did not refuse missing runtime slot: ' + target)
         for name in ('good', 'mutant'):
             artifact = name + '-' + target + ext
             mac.native_run(compiler, out, 'compile', name + '.kotoba', '--target', target,
@@ -62,12 +65,12 @@ def main():
         if lines[name + '-wasm32-browser']['report'] != lines[name + '-js-browser']['report']:
             raise ValueError(name + ': Wasm and JS result/fuel mismatch')
     receipt = {'status': 'PASS_BROWSER_KEYWORD_INTERN', 'browser': version,
-               'compiler': mac.pin(compiler), 'baseline': mac.pin(baseline),
+               'compiler': mac.pin(compiler), 'baseline': mac.pin(baseline) if baseline else None,
                'source': mac.pin(ROOT / 'seed/tests/browser-keyword-intern.kotoba'),
                'runs': {name: {'report': line.get('report'), 'exit': line.get('exit'),
                                'wasmTrap': line.get('wasmTrap')} for name, line in lines.items()}}
     (out / 'browser-keyword-intern.json').write_text(json.dumps(receipt, indent=2) + '\n')
-    print('PASS_BROWSER_KEYWORD_INTERN: baseline refusals and 4 browser results')
+    print('PASS_BROWSER_KEYWORD_INTERN: 4 browser results' + (' and baseline refusals' if baseline else ''))
 
 
 if __name__ == '__main__':
