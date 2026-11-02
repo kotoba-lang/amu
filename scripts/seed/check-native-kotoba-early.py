@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -31,7 +32,7 @@ def main(compiler, out):
     report = dict(schema="amu.early-native-kotoba24.v1", nativeControllerQualified=False,
                   qualificationReplacement=False, producerSHA256=pin(compiler),
                   observerSourceSHA256=pin(Path(__file__)), fixtureSHA256=pin(ROOT / "seed/static-cases.json"),
-                  caseArtifacts=[], calls=[])
+                  caseArtifacts=[], caseRuntimeObservations=[], calls=[])
     env = dict(PATH="/nonexistent", KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES="8388608")
 
     def run(name, argv, expected=0, native_gate=False):
@@ -73,6 +74,33 @@ def main(compiler, out):
         lines += [pin(source), pin(image), source.name, image.name,
                   str(0 if case["reference"]["exit"] else case["result"]),
                   str(case["reference"]["exit"]), str(case["reference"]["remainingFuel"])]
+    # Diagnostic only: retain each native process's observed tuple so an
+    # aggregate E4002 can be localized. The pinned Kotoba gate below remains
+    # the sole verdict and still decides whether the ledger is accepted.
+    case_env = {"PATH": "/nonexistent", "KEXE_STRUCTURED_REPORT": "1",
+                "KEXE_FUEL": "1000000", "KEXE_ALLOW": "-"}
+    for i, case in enumerate(cases):
+        image = out / f"case-{i}.elf"
+        observed = subprocess.run([str(image)], cwd=out, env=case_env,
+                                  capture_output=True, timeout=180)
+        (out / f"case-runtime-{i}.stdout").write_bytes(observed.stdout)
+        (out / f"case-runtime-{i}.stderr").write_bytes(observed.stderr)
+        result_match = re.search(rb":result (-?[0-9]+)", observed.stdout)
+        fuel_match = re.search(rb":remaining ([0-9]+)", observed.stdout)
+        expected = case["reference"]
+        row = dict(index=i, name=case["name"], exit=observed.returncode,
+                   result=int(result_match[1]) if result_match else None,
+                   remainingFuel=int(fuel_match[1]) if fuel_match else None,
+                   expectedExit=expected["exit"],
+                   expectedResult=case["result"] if expected["exit"] == 0 else None,
+                   expectedRemainingFuel=expected["remainingFuel"])
+        row["matchesReference"] = (
+            row["exit"] == row["expectedExit"]
+            and row["remainingFuel"] == row["expectedRemainingFuel"]
+            and (row["expectedResult"] is None or row["result"] == row["expectedResult"])
+        )
+        report["caseRuntimeObservations"].append(row)
+        (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     ledger = out / "cases.kcg"
     ledger.write_text("\n".join(lines) + "\n")
     run("native-complete24", [gate, ledger, pin(ledger)], native_gate=True)
