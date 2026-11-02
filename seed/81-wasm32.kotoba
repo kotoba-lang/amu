@@ -334,6 +334,41 @@
                (or (and (>= f first) (< f (+ first count))) (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
           (xw-project-code M (xw-skip M i) first count)
         :else (xw-project-code (xw-one M i) (inc i) first count)))
+;; Preserve each module's already-emitted Wasm bodies after its frontend M is
+;; reused for another module. The project image holds consecutive records:
+;; u32 function index, u8 arity, u32 body byte length, then the exact body.
+;; This is an internal linker archive, not a Wasm file. Validate the entire
+;; batch and its contiguous global index range before writing any bytes. Thunk
+;; records are refused until the project table archive is implemented.
+(defn- xw-project-archive-valid? [M :vector-i64 k :i64 n :i64 used :i64 next :i64 finish :i64] :bool
+  (if (>= k n) (= next finish)
+    (let [kind (xw-fix M k 1)]
+      (cond (not= kind 30) false
+            :else (let [a (xw-fix M k 0) b (xw-fix M k 3) f (xw-fix M k 2) len (- b a)]
+                    (and (>= a 0) (> b a) (<= b (xg-pos M))
+                         (> f 0) (< f (vector-at M MM-FN-N))
+                         (= (xw-idx M f) next) (>= (xg-f M f FF-NPARAMS) 0)
+                         (<= (xg-f M f FF-NPARAMS) 16) (<= used (- pj-img-cap 9))
+                         (<= len (- (- pj-img-cap used) 9))
+                         (xw-project-archive-valid? M (+ k 1) n (+ used 9 len) (+ next 1) finish)))))))
+(defn- xw-project-archive-bytes [M :vector-i64 L :vector-i64 src :i64 end :i64 dst :i64] :vector-i64
+  (if (>= src end) L
+    (xw-project-archive-bytes M (pj-ibset L dst (xg-code-byte M src)) (+ src 1) end (+ dst 1))))
+(defn- xw-project-archive-write [M :vector-i64 L :vector-i64 k :i64 n :i64 at :i64] :vector-i64
+  (cond (>= k n) (pj-ls L pj-k-img at)
+        :else (let [a (xw-fix M k 0) b (xw-fix M k 3) f (xw-fix M k 2) len (- b a)
+                    header (-> L (pj-put32 at (xw-idx M f)) (pj-ibset (+ at 4) (xg-f M f FF-NPARAMS))
+                                 (pj-put32 (+ at 5) len))
+                    copied (xw-project-archive-bytes M header a b (+ at 9))]
+                (xw-project-archive-write M copied (+ k 1) n (+ at 9 len)))))
+(defn- xw-project-archive [M :vector-i64 L :vector-i64 start :i64] :vector-i64
+  (let [used (pj-l L pj-k-img) n (vector-at M MM-FIX-N) count (xg-get M 3)]
+    (if (or (not (pj-ok M)) (< used 0) (> used pj-img-cap) (< n 1) (> n MM-FIX-CAP)
+            (< count 0) (> count 4294967291) (< start XW-NIMPORT) (> start (+ XW-NIMPORT count))
+            (not (xw-project-archive-valid? M 1 n used start (+ XW-NIMPORT count))))
+      (xg-err M 7104 0)
+      (let [written (xw-project-archive-write M L 1 n used)] M))))
+
 ;; thunks: type 5 (five i64) -> the target's first p parameters
 (defn- xw-thunks [M :vector-i64 k :i64 n :i64] :vector-i64
   (cond (or (not= (vector-at M MM-ERR) 0) (= k n)) M

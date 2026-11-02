@@ -71,12 +71,24 @@ def main():
     stub_negative = subprocess.run([str(stub_mutant)],cwd=out,env=dict(PATH='/nonexistent', KEXE_ALLOW='-', KEXE_STRUCTURED_REPORT='1', KEXE_STACK_BYTES='8388608'),
                                    capture_output=True,timeout=120)
     assert not stub_negative.stderr and re.search(rb':status :ok :result 39(?:\s|})',stub_negative.stdout), (stub_negative.returncode,stub_negative.stdout,stub_negative.stderr)
+    archive_guard = b'(not (xw-project-archive-valid? M 1 n used start (+ XW-NIMPORT count)))'
+    assert stub_bytes.count(archive_guard) == 1
+    archive_source = out/'archive-mutant.kotoba'; archive_source.write_bytes(stub_bytes.replace(archive_guard,b'false'))
+    archive_image = out/'archive-mutant.elf'
+    archive_build = subprocess.run([str(compiler),'compile',str(archive_source),'--target',target,'--output',str(archive_image),'--format','static'],
+                                   cwd=out,env=env,capture_output=True,timeout=900)
+    assert archive_build.returncode == 0 and not archive_build.stderr and archive_image.is_file(), (archive_build.returncode,archive_build.stderr[-1000:])
+    archive_image.chmod(0o755)
+    archive_negative = subprocess.run([str(archive_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                                      capture_output=True,timeout=120)
+    assert not archive_negative.stderr and re.search(rb':status :ok :result 51(?:\s|})',archive_negative.stdout), (archive_negative.returncode,archive_negative.stdout,archive_negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
                'negativeControlSourceSha256':sha(mutant_source),'negativeControlImageSha256':sha(mutant),
                'stubFixtureSha256':sha(STUB_FIXTURE),'stubSourceSha256':sha(stub_source),'stubImageSha256':sha(stub_image),
                'stubNegativeSourceSha256':sha(stub_mutant_source),'stubNegativeImageSha256':sha(stub_mutant),
+               'archiveNegativeSourceSha256':sha(archive_source),'archiveNegativeImageSha256':sha(archive_image),
                'limitations':['interface mapping component only; no project linker or Wasm execution']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
