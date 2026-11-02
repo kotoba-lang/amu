@@ -92,6 +92,14 @@ def _deny_cap_range_proc():
     _install_filter(program)
 
 
+def _deny_filter_install():
+    # Existing setup still runs; only the worker's seccomp(2) install fails.
+    program = (_SockFilter * 4)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 1, 277),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
 def outside_identity():
     try:
         st = os.lstat("/tmp/rootfs")
@@ -587,6 +595,55 @@ def main(compiler, out):
             if p.poll() is None:
                 p.kill()
                 p.communicate(timeout=20)
+
+        # Observe that a new filter was installed, then exercise all denied
+        # namespace paths and an allowed ordinary clone/wait in the worker.
+        p, child, proc_denied = start()
+        try:
+            before = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
+                      if ":" in line for k, v in [line.split(":", 1)]}
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload)
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"D"
+            after = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
+                     if ":" in line for k, v in [line.split(":", 1)]}
+            assert after["Seccomp"] == "2" and int(after["Seccomp_filters"]) == int(before["Seccomp_filters"]) + 1
+            p.stdin.write(b"N")
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"K", "namespace calls must fail while ordinary clone works"
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "namespace-filter", "ordinaryClone": "allowed"})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_deny_filter_install)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:24" in stderr, (p.returncode, stdout, stderr)
+            observations.append({"case": "namespace-filter-install-denied", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        for op, label in ((b"J", "remount-probe"), (b"N", "namespace-probe")):
+            p, child, proc_denied = start()
+            stdout, stderr = p.communicate(b"C\x00\x00" + op, timeout=20)
+            assert p.returncode == 2 and stdout == b"D" and b"FREFUSE:15" in stderr
+            observations.append({"case": label + "-after-data-terminal", "exit": p.returncode})
 
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (

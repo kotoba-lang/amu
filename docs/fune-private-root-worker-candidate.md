@@ -214,3 +214,26 @@ A separate disposable namespace probe on the same host created a new user
 namespace after capability sets were cleared and `no_new_privs` was set; the
 child gained capabilities in that new namespace. Consequently the capability
 drop alone must not be treated as preventing namespace-based reacquisition.
+
+## Runnable worker namespace-filter candidate
+
+After dropping capabilities and before `D`, the worker installs a narrow
+ARM64 seccomp filter and checks that filter mode is active. It rejects
+`unshare`, `setns`, and namespace flags on legacy `clone`. It returns `ENOSYS`
+for `clone3` so software can fall back to legacy `clone`; ordinary legacy
+clone remains allowed. The filter kills a process using a different syscall
+architecture. If installation or verification fails, the worker refuses
+before `D`. The single-use `N` diagnostic checks those namespace operations
+and verifies ordinary clone/wait still works.
+
+A local ARM64 Linux observer saw the filter count increase and `N` passed.
+A test-only filter denying the installation syscall prevented `D`.
+Separately built debug controls that bypassed the filter, removed the user
+namespace clone mask, allowed clone3, or used the wrong architecture were
+caught. The filter is inherited by descendant processes, but it covers only
+these specific namespace syscalls; it is not a full seccomp sandbox, a PID
+namespace, a cgroup controller, or authorization to execute an OCI image.
+The actual workload and host escape boundaries remain unqualified.
+The filter's syscall numbers and namespace flag mask follow the Linux
+[generic syscall table](https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/unistd.h)
+and [clone flag definitions](https://github.com/torvalds/linux/blob/master/include/uapi/linux/sched.h).
