@@ -1,5 +1,27 @@
 # Native block guard candidate (JUN-767)
 
+## Mach bootstrap-port control
+
+`TMPDIR=/workspace/scratch ./check-macos-mach-bootstrap.sh` builds a native
+Darwin ARM64 diagnostic using the pinned Amu compiler and Kotoba packager.
+It obtains its own task and reply ports, sends the kernel task special-port
+request through `mach_msg2_trap`, and checks the complex reply and nonzero
+bootstrap send right. A separately generated invalid selector must refuse.
+The process exits immediately; it does not contact Disk Arbitration, enumerate
+or claim a disk, open a device, or request user approval. The reply checks do
+not qualify Mach IPC for other messages or macOS versions. An earlier attempt
+using `mach_msg_trap` was terminated by macOS with `EXC_GUARD` /
+`INVALID_OPTIONS`; the passing control uses `mach_msg2_trap` instead.
+
+The inert `mach-bootstrap-reference.txt` was derived on 2026-11-02 using Apple
+clang 21.0.0 (clang-2100.1.1.101), `clang -target arm64-apple-macos -c
+bootstrap.s`, and `xcrun llvm-objdump --macho --disassemble`. The reference
+SHA-256 is `146f7f32758f31776912b0f31ec32752b09bd4d86919a9f14aa5e7274a1a257f`;
+the one-off object SHA-256 is
+`140eb78bd1d7f8afa86bcc901fc9de207da4ce79480c59fecfbf5ee72cc0d6e8`.
+Normal native builds use the checked-in Kotoba instruction words without an
+assembler or libSystem load command.
+
 ## Variable sector write fixture
 
 `TMPDIR=/workspace/scratch ./check-macos-pwrite-fixture.sh` builds a native
