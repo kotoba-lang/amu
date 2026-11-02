@@ -49,6 +49,12 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # KOTOBA-161: negative float comparisons catch the previously observed
+    # integer-condition lowering error; the reversed operands are the control.
+    float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
+    float_greater = source('float-negative-greater', '(defn main [] :i64 (if (f64-lt -1.0 -2.0) 42 7))')
+    run('float-negative-less', 'run', float_less.name, stdout=b'42\n')
+    run('float-negative-greater', 'run', float_greater.name, stdout=b'7\n')
     # KOTOBA-13: the public host stages a locked KSL2 namespace map,
     # verifies every original source digest, then asks the pinned Kotoba
     # compiler to check the rewritten project lock in its private FS2 root.
