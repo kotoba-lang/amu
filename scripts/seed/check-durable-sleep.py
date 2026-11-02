@@ -179,8 +179,8 @@ def main(compiler, output, target, seccomp_if_available=False):
     assert (scope / "final").read_bytes() == b"hello" and not (scope / "tmp").exists() and not (outside / "stolen").exists()
     assert (scope / "old").read_bytes() == b"new" and not (scope / "new").exists() and (scope / "b").read_bytes() == b"a"
 
-    unlink_scope = out / "unlink-scope"
-    unlink_outside = out / "unlink-outside"
+    unlink_scope = output / "unlink-scope"
+    unlink_outside = output / "unlink-outside"
     unlink_scope.mkdir()
     unlink_outside.mkdir()
     (unlink_scope / "remove-me").write_text("inside")
