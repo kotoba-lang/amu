@@ -181,6 +181,45 @@ def main(compiler, out):
         assert outside_identity() == outside
         observations.append({"case": "hex-transport", "binaryBytes": len(payload)})
 
+        p, child, proc_denied = start()
+        p.stdin.write(b"H")
+        p.stdin.flush()
+        assert exchange_hex(p, b"F", "committed", 1, b"x") == b""
+        p.stdin.write(b"430001")
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        assert exchange_hex(p, b"R", "committed", 1, answer=1) == b"x"
+        stdout, stderr = p.communicate(frame(b"F", "after", 1, b"x").hex().encode("ascii"), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        assert outside_identity() == outside
+        observations.append({"case": "commit-freezes-writes", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        p.stdin.write(b"H")
+        p.stdin.flush()
+        assert exchange_hex(p, b"F", "committed", 1, b"x") == b""
+        stdout, stderr = p.communicate(b"430002", timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:19" in stderr
+        assert outside_identity() == outside
+        observations.append({"case": "commit-count-mismatch", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        p.stdin.write(b"H")
+        p.stdin.flush()
+        assert exchange_hex(p, b"F", "committed", 1, b"x") == b""
+        p.stdin.write(b"430001")
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        assert exchange_hex(p, b"R", "committed", 1, answer=1) == b"x"
+        stdout, stderr = p.communicate(frame(b"R", "committed", 1).hex().encode("ascii"), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "commit-read-limit", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        stdout, stderr = p.communicate(b"C\x00\x00X", timeout=20)
+        assert p.returncode == 0 and stdout == b"D" and not stderr
+        observations.append({"case": "empty-commit", "exit": p.returncode})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
@@ -217,6 +256,19 @@ def main(compiler, out):
         assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
         assert outside_identity() == outside
         observations.append({"case": "operation-limit", "accepted": 512, "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        p.stdin.write(b"H")
+        p.stdin.flush()
+        assert exchange_hex(p, b"F", "empty", 0, b"") == b""
+        for _ in range(511):
+            assert exchange_hex(p, b"R", "empty", 0, answer=0) == b""
+        p.stdin.write(b"430200")
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        stdout, stderr = p.communicate(b"58", timeout=20)
+        assert p.returncode == 0 and not stdout and not stderr
+        observations.append({"case": "commit-at-operation-limit", "accepted": 512, "exit": p.returncode})
 
         p, child, proc_denied = start()
         p.kill()

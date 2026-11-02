@@ -118,29 +118,31 @@
             (if (= (kxrt-load8 (+ hex i)) (kxrt-load8 (+ expected (+ i 7))))
               (recur (+ i 1)) false)))))))
 
-;; Verify the exact worker readiness followed only by the caller's expected
-;; count of acknowledgments. Read after worker exit, so no live child blocks.
-(defn- sb-acks? [fd :i64 expected :i64 m :i64] :bool
-  (let [b (+ m 5000) max (+ 24 expected)
+;; The worker emits D only after validating the producer's terminal command
+;; count. Verify readiness, zero to 512 K bytes, then exactly one D.
+;; Read after worker exit, so no live child blocks.
+(defn- sb-acks? [fd :i64 m :i64] :bool
+  (let [b (+ m 5000) max 537
         n (loop [at 0]
             (if (> at max) -1
               (let [r (kxrt-syscall 63 fd (+ b at) (- (+ max 1) at) 0 0 0)]
                 (cond (= r -4) (recur at) (< r 0) -1 (= r 0) at :else (recur (+ at r))))))
-        prefix (and (= n max)
+        prefix (and (>= n 25) (<= n max)
           (= (kxrt-load64 b) 0x6972702d656e7566)
           (= (kxrt-load64 (+ b 8)) 0x6f6f722d65746176)
-          (= (kxrt-load64 (+ b 16)) 0x0a79646165722d74))]
-    (and prefix (loop [i 24] (if (= i n) true (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
+          (= (kxrt-load64 (+ b 16)) 0x0a79646165722d74)
+          (= (kxrt-load8 (+ b (- n 1))) 68))]
+    (and prefix (loop [i 24] (if (= i (- n 1)) true (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
 
 ;; argc: worker fd, worker digest, producer fd, producer digest, layout root,
-;; manifest digest, expected K count. Both inputs must be sealed. The caller
+;; manifest digest. Both inputs must be sealed. The caller
 ;; must obtain image digests from an authenticated source.
 (defn- kxrt-start [sp :i64] :i64
-  (let [argc (kxrt-load64 sp) valid (if (not (= argc 8)) (sb-fail 1) 0)
+  (let [argc (kxrt-load64 sp) valid (if (not (= argc 7)) (sb-fail 1) 0)
         worker (sb-num (kxrt-load64 (+ sp 16)) 1023) worker-digest (kxrt-load64 (+ sp 24))
         producer (sb-num (kxrt-load64 (+ sp 32)) 1023) producer-digest (kxrt-load64 (+ sp 40))
-        root (kxrt-load64 (+ sp 48)) digest (kxrt-load64 (+ sp 56)) count (sb-num (kxrt-load64 (+ sp 64)) 512)
-        input-ok (if (or (< worker 3) (< producer 3) (= worker producer) (< count 1)
+        root (kxrt-load64 (+ sp 48)) digest (kxrt-load64 (+ sp 56))
+        input-ok (if (or (< worker 3) (< producer 3) (= worker producer)
                          (not (sb-sealed? worker)) (not (sb-sealed? producer)) (not (sb-root? root))
                          (not (sb-digest? digest)) (not (sb-digest? worker-digest)) (not (sb-digest? producer-digest))) (sb-fail 1) 0)
         m (kxrt-syscall 222 0 16384 3 34 -1 0) mapped (if (< m 0) (sb-fail 2) 0)
@@ -191,7 +193,7 @@
                               gs (sb-wait gpid m)
                               command (if (= gs 0) (let [b (+ m 4600) t (kxrt-w b 0 0x3835 2)] (kxrt-write-all in-w b 2)) 0)
                               c5 (kxrt-close in-w) ws (sb-wait wpid m)
-                              acks (if (= ws 0) (sb-acks? out-r count m) false) c6 (kxrt-close out-r)]
+                              acks (if (= ws 0) (sb-acks? out-r m) false) c6 (kxrt-close out-r)]
                           (if (and (= gs 0) (= command 1) (= ws 0) acks)
                             (let [sent (kxrt-write-all 1 (+ m 4512) 19)] (kxrt-exit (if (= sent 1) 0 2)))
                             (sb-fail 4))))))))

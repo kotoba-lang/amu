@@ -59,7 +59,7 @@ def digest(path, padding=b""):
     return "sha256:" + hashlib.sha256(path.read_bytes() + padding).hexdigest()
 
 
-def invoke(supervisor, worker, producer, root, *, acks=3, sealed=True, wrong_digest=False, polluted=False, corrupt=False, manifest_digest=DIGEST, padding=b""):
+def invoke(supervisor, worker, producer, root, *, sealed=True, wrong_digest=False, polluted=False, corrupt=False, manifest_digest=DIGEST, padding=b""):
     wf = image_fd(worker, sealed=sealed, corrupt=corrupt, padding=padding)
     pf = image_fd(producer)
     try:
@@ -67,7 +67,7 @@ def invoke(supervisor, worker, producer, root, *, acks=3, sealed=True, wrong_dig
         env = {"PATH": "/nonexistent"}
         if polluted:
             env["KEXE_STRUCTURED_REPORT"] = "1"
-        return subprocess.run([str(supervisor), str(wf), wd, str(pf), digest(producer), str(root), manifest_digest, str(acks)],
+        return subprocess.run([str(supervisor), str(wf), wd, str(pf), digest(producer), str(root), manifest_digest],
                               stdin=subprocess.DEVNULL, capture_output=True, pass_fds=(wf, pf),
                               env=env, timeout=75)
     finally:
@@ -79,7 +79,7 @@ def parent_death(supervisor, worker, slow, root):
     wf, pf = image_fd(worker), image_fd(slow)
     p = None
     try:
-        p = subprocess.Popen([str(supervisor), str(wf), digest(worker), str(pf), digest(slow), str(root), DIGEST, "1"],
+        p = subprocess.Popen([str(supervisor), str(wf), digest(worker), str(pf), digest(slow), str(root), DIGEST],
                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              pass_fds=(wf, pf), env={"PATH": "/nonexistent"})
         deadline = time.monotonic() + 15
@@ -124,7 +124,7 @@ def parent_death(supervisor, worker, slow, root):
         os.close(pf)
 
 
-def main(supervisor, worker, producer, layouts, slow, large_digest, stress):
+def main(supervisor, worker, producer, layouts, slow, large_digest, stress, wrong_count, no_commit, repeat_digest):
     good = invoke(supervisor, worker, producer, layouts / "plan-binary")
     assert good.returncode == 0 and good.stdout == b"fune-supervisor-ok\n" and not good.stderr, (good.returncode, good.stdout, good.stderr)
     # The worker image is aligned to 64 bytes; trailing bytes are ignored by
@@ -135,12 +135,14 @@ def main(supervisor, worker, producer, layouts, slow, large_digest, stress):
         assert boundary.returncode == 0 and boundary.stdout == good.stdout and not boundary.stderr, (pad, boundary.stderr)
     clean_env = invoke(supervisor, worker, producer, layouts / "plan-binary", polluted=True)
     assert clean_env.returncode == 0 and clean_env.stdout == good.stdout and not clean_env.stderr
-    # Two commands precede this corruption. Matching their count ensures a
-    # supervisor that ignores producer failure cannot pass on ack count alone.
-    bad = invoke(supervisor, worker, producer, layouts / "plan-binary-third-tampered", acks=2)
+    bad = invoke(supervisor, worker, producer, layouts / "plan-binary-third-tampered")
     assert bad.returncode == 2 and not bad.stdout and b"fune/blob-digest" in bad.stderr, (bad.returncode, bad.stdout, bad.stderr)
-    wrong = invoke(supervisor, worker, producer, layouts / "plan-binary", acks=4)
-    assert wrong.returncode == 2 and not wrong.stdout, (wrong.returncode, wrong.stdout, wrong.stderr)
+    if wrong_count:
+        wrong = invoke(supervisor, worker, wrong_count, layouts / "plan-binary")
+        assert wrong.returncode == 2 and not wrong.stdout, (wrong.returncode, wrong.stdout, wrong.stderr)
+    if no_commit:
+        missing = invoke(supervisor, worker, no_commit, layouts / "plan-binary")
+        assert missing.returncode == 2 and not missing.stdout, (missing.returncode, missing.stdout, missing.stderr)
     unsealed = invoke(supervisor, worker, producer, layouts / "plan-binary", sealed=False)
     assert unsealed.returncode == 2 and not unsealed.stdout, (unsealed.returncode, unsealed.stdout, unsealed.stderr)
     mismatch = invoke(supervisor, worker, producer, layouts / "plan-binary", wrong_digest=True)
@@ -156,6 +158,9 @@ def main(supervisor, worker, producer, layouts, slow, large_digest, stress):
     if large_digest:
         large = invoke(supervisor, worker, producer, layouts / "plan-binary-max", manifest_digest=large_digest)
         assert large.returncode == 0 and large.stdout == good.stdout and not large.stderr
+    if repeat_digest:
+        repeated = invoke(supervisor, worker, producer, layouts / "plan-binary-repeat-dir", manifest_digest=repeat_digest)
+        assert repeated.returncode == 0 and repeated.stdout == good.stdout and not repeated.stderr
     if stress:
         pad = b"x" * (16777216 - worker.stat().st_size)
         at_limit = invoke(supervisor, worker, producer, layouts / "plan-binary", padding=pad)
@@ -165,13 +170,15 @@ def main(supervisor, worker, producer, layouts, slow, large_digest, stress):
     if slow is not None:
         parent_death(supervisor, worker, slow, layouts / "plan-binary")
         began = time.monotonic()
-        timed = invoke(supervisor, worker, slow, layouts / "plan-binary", acks=1)
+        timed = invoke(supervisor, worker, slow, layouts / "plan-binary")
         elapsed = time.monotonic() - began
         assert timed.returncode == 2 and not timed.stdout and 25 <= elapsed <= 45, (timed.returncode, elapsed, timed.stderr)
     report = {"status": "PASS_FUNE_SUPERVISOR_OBSERVATION", "supervisor": digest(supervisor),
               "worker": digest(worker), "producer": digest(producer), "fixtureManifest": DIGEST,
               "shaPaddingBoundaries": [55, 56, 63], "imageSizeStress": bool(stress),
               "largeLayerChecked": bool(large_digest), "parentDeathAndTimeoutChecked": slow is not None,
+              "wrongCountChecked": wrong_count is not None, "missingCommitChecked": no_commit is not None,
+              "repeatedDirectoryChecked": repeat_digest is not None,
               "authenticatesDigestAuthority": False, "ociComplete": False, "releaseQualified": False}
     print(report["status"])
     return report
@@ -188,6 +195,9 @@ if __name__ == "__main__":
     p.add_argument("--slow-producer", type=Path)
     p.add_argument("--large-digest")
     p.add_argument("--stress", action="store_true", help="exercise executable hash size limit")
+    p.add_argument("--wrong-count-producer", type=Path)
+    p.add_argument("--no-commit-producer", type=Path)
+    p.add_argument("--repeat-dir-digest")
     a = p.parse_args()
     if a.compiler:
         assert a.output and not a.supervisor
@@ -196,7 +206,9 @@ if __name__ == "__main__":
         assert a.supervisor and not a.output
         supervisor = a.supervisor.resolve()
     report = main(supervisor, a.worker.resolve(), a.producer.resolve(), a.layouts.resolve(),
-                  a.slow_producer.resolve() if a.slow_producer else None, a.large_digest, a.stress)
+                  a.slow_producer.resolve() if a.slow_producer else None, a.large_digest, a.stress,
+                  a.wrong_count_producer.resolve() if a.wrong_count_producer else None,
+                  a.no_commit_producer.resolve() if a.no_commit_producer else None, a.repeat_dir_digest)
     report["supervisorSource"] = digest(ROOT / "seed/fune/private-root-supervisor.kotoba")
     report["factorySourceMutationRejected"] = bool(a.compiler)
     if a.output:

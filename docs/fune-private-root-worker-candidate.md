@@ -25,9 +25,14 @@ big-endian 16-bit path length, big-endian 32-bit byte count, and path bytes.
 operation. `R` writes `K` before returning the requested bytes; it can still
 fail partway through, so `K` is not a successful-read verdict and the caller
 must receive every byte. There is no separate final read acknowledgment.
-`X` has no following fields and exits. Paths are at most 255
+`C` carries a two-byte big-endian operation count; when that count matches the
+worker's completed commands, the worker writes `D` and refuses further writes.
+One diagnostic `R` remains available afterward. `X` has no following fields
+and exits, including before `C`; the supervisor must require `D` for success.
+The `C` marker does not publish or persist the tree. Paths are at most 255
 printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
-file operations are at most 1 MiB each and the session is at most 512 commands.
+file operations are at most 1 MiB each and the session has at most 512 commands
+before `C`, plus one optional diagnostic read afterward.
 Directory and file access is rooted at the private root directory descriptor.
 Intermediate directory and final file opens use `openat2` with
 `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`;
@@ -80,6 +85,10 @@ do not establish an adversarial same-principal boundary, OCI validation,
 cross-process controller authentication, or a secure launcher.
 Hex transport round-tripped 10,242 bytes containing every byte value, and
 rejected odd-length and malformed hex while preserving the binary protocol.
+The terminal-count candidate accepted a zero-operation marker, refused a
+wrong count, refused a write after the marker, and allowed only one diagnostic
+read after it. A separate test worker with the count comparison disabled
+incorrectly accepted a wrong count and failed the supervisor observation.
 In another test-only worker with an injected in-root symlink, updating through
 the symlink was refused. A separate mutant disabling both the no-symlink
 resolution rule and the final no-follow flag accepted that update and failed

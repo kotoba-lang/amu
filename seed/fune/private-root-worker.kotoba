@@ -105,17 +105,29 @@
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
 ;; exact number of bytes. F/U are followed by that many bytes. Each successful
-;; command writes K; R follows K with data. Modes are fixed to 0700/0600.
+;; command writes K; R follows K with data. C and a two-byte big-endian count
+;; freeze mutations only if the count matches, then write D. One R and X remain
+;; available for diagnostics after C. Modes are fixed to 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
 (defn- fw-commands [root :i64 mem :i64] :i64
   (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
-    (loop [operations 0 mode 0]
+    (loop [operations 0 mode 0 committed false reads 0]
       (let [got (if (= mode 0) (fw-read-one 0 head) (let [z (fw-read-wire mode head 1 (+ mem 8192))] 1))
             op (if (= got 1) (kxrt-load8 head) -1)]
-        (cond (and (= operations 0) (= mode 0) (= op 72)) (recur 0 1)
+        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0)
               (= op 88) (kxrt-exit 0)
-              (or (< got 1) (>= operations 512) (not (or (= op 77) (= op 70) (= op 85) (= op 82)))) (fw-die 15)
+              (= op 67) (if committed (fw-die 15)
+                (let [read (fw-read-wire mode head 2 (+ mem 8192))
+                      count (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
+                      valid (if (not (= count operations)) (fw-die 19) 0)
+                      mark (kxrt-store8 head 68)
+                      sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode true 0)))
+              (or (< got 1) (and (>= operations 512) (not (and committed (= op 82))))
+                  (and committed (not (= op 82)))
+                  (and committed (= op 82) (>= reads 1))
+                  (not (or (= op 77) (= op 70) (= op 85) (= op 82)))) (fw-die 15)
               :else (let [header (fw-read-wire mode head 6 (+ mem 8192))
                           n (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
                           size (+ (* 16777216 (kxrt-load8 (+ head 2))) (* 65536 (kxrt-load8 (+ head 3)))
@@ -139,7 +151,7 @@
                                          close (fw-close fd 18)] 0))
                           parent-close (if (>= slash 0) (fw-close parent 18) 0)
                           reply (if (= op 82) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
-                      (recur (+ operations 1) mode)))))))
+                      (recur (if committed operations (+ operations 1)) mode committed (if committed (+ reads 1) reads))))))))
 
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID

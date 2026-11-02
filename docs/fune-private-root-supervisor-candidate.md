@@ -13,11 +13,10 @@ is not an authorization policy. Same-host-principal interference has not been
 qualified.
 
 The arguments after the supervisor image are: worker fd, worker digest,
-producer fd, producer digest, absolute layout root, manifest digest, and the
-expected count of worker `K` acknowledgments (1–512). Digests use lowercase
+producer fd, producer digest, absolute layout root, and manifest digest. Digests use lowercase
 `sha256:<64 hex>`. The root path is bounded, absolute and cannot contain a
-colon, empty, dot or dot-dot component. The caller supplies the acknowledgment
-count; this candidate does not independently derive that count from OCI.
+colon, empty, dot or dot-dot component. The producer's bounded planner counts
+the filesystem commands it emits and sends that count in a terminal `C` frame.
 
 The supervisor constructs the producer environment (including one scoped FS2
 root) instead of inheriting arbitrary caller variables. It connects producer
@@ -26,7 +25,11 @@ The worker output is kept on a separate pipe. Each child is given a parent-death
 signal and `no_new_privs`, and descriptors above stderr are marked close-on-exec.
 Only if the producer exits zero does the supervisor append the worker's hex
 shutdown byte. It then waits for the worker to exit zero and checks the exact
-readiness line and caller-supplied count of `K` bytes. Any other result is a
+readiness line, up to 512 `K` bytes, and a final `D`. The worker emits `D` only
+when the producer's count matches the worker's completed operations, and then
+refuses further writes. A missing or mismatched terminal frame is a failure.
+The supervisor trusts the selected producer and worker to implement this
+protocol; the marker is not a cryptographic attestation. Any other result is a
 refusal. Each direct-child wait has its own 30-second bound. On ordinary producer
 failure, the worker gets EOF and exits; timeout handling kills and waits for the
 direct child. A successful diagnostic run also shuts down the worker, so its
@@ -44,8 +47,8 @@ and the worker is a candidate from this branch; neither is a released artifact.
 On the Fedora ARM64 VM, `check-fune-supervisor.py` staged candidate native
 images in sealed memfds, supplied their observed SHA-256 values, and invoked
 the native supervisor. The same three-layer stream fixture passed with its
-expected three acknowledgments. A corrupt final layer failed even when the
-expected count matched the two earlier commands; a wrong count, unsealed image,
+expected three acknowledgments and a terminal `D`. A corrupt final layer failed;
+a wrong terminal count, missing terminal frame, unsealed image,
 wrong image digest, changed sealed image, and broken worker were refused.
 Caller environment containing `KEXE_STRUCTURED_REPORT=1` did not change the
 producer's configured output. SHA-256 checks passed independently hashed ELF
@@ -57,12 +60,17 @@ experiment the observed producer, worker parent and worker child all became
 gone or zombie. These are local observations, not a proof for arbitrary
 process trees or all crash races.
 
-A separately source-pinned test mutant that ignored the producer's exit status
-incorrectly reported success for the corrupt-layer fixture; another mutant that
-skipped executable-digest checks incorrectly accepted a wrong digest. Both
-failed the observer. The verifier/worker pair was independently checked with
+A prior-version test mutant that ignored the producer's exit status incorrectly
+reported success for the corrupt-layer fixture; another mutant that skipped
+executable-digest checks incorrectly accepted a wrong digest. Both failed the
+prior observer. The verifier/worker pair was independently checked with
 private-root file readback in Kotoba PR #1174; this supervisor test checks
 statuses and acknowledgments and does not itself inspect the final private file.
+With the terminal-count protocol, separately compiled producer fixtures with an
+incorrect count or no terminal frame were refused. A worker mutant that ignored
+the count and a supervisor mutant that ignored the final `D` each incorrectly
+reported success and failed the observer. These checks do not prove that an
+untrusted producer emitted the entries required by a manifest.
 
 The optional `--compiler` and `--output` flags on the observer build the exact
 candidate supervisor with Amu and verify that altered supervisor source is
