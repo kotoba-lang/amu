@@ -127,3 +127,11 @@ The reference bytes are review material; native build/test use the checked-in
 Kotoba instruction words, not clang, an assembler, C or a C loader. The
 harness uses Python only to observe the current DiskImages attachment list for
 safe test-device ownership and cleanup.
+
+For a separate read-only diagnostic, `TMPDIR=/workspace/scratch
+./build-macos-geometry.sh /absolute/new-output` builds and signs the same FD3
+geometry control. It refuses an existing output. The caller chooses and opens
+FD3; the image checks only that FD3 is a character device and that the two
+read-only geometry ioctls succeed. It does not discover, identify, claim,
+unmount or write a device, and it does not obtain authorization. Use outside
+the isolated image test requires a separately scoped and reviewed host.
