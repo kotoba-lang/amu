@@ -1809,6 +1809,7 @@
           (ck-r6f-dinl? M n) (ck-ds-walk (ck-r6f-dinl M S n) S n)   ; R6F (before R6B's document folds)
           (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (pos? (ck-r6m-ods-code M n)) (ck-ds-walk (ck-r6m-ods M n) S n)   ; R6M: if-some when-some if-let when-let
+          (ck-kwmkeys? M n) (ck-ds-walk (ck-kwmkeys M S n) S n)
           (ck-r6f-ksnth? M n) (ck-ds-walk (ck-r6f-ksnth M S n) S n)   ; R6F
           (ck-r6f-adb3? M n) (ck-ds-walk (ck-r6f-adb3 M S n) S n)   ; R6F
           (ck-r6f-exi3? M n) (ck-ds-walk (ck-r6f-exi3 M S n) S n)   ; R6F
@@ -5324,6 +5325,7 @@
             :else (recur (+ i (mem-cpw (string-code-point-at t i))))))))
 (defn- ck-r6b-head-bit [S :string a :i64 b :i64] :i64
   (cond (and (> (- b a) 9) (ck-r6b-is? S a (+ a 9) "document-")) ck-r6b-g-doc
+        (ck-kwmkeys-text? S a b) (bit-or ck-kwm-g ck-r6f-g-kwo)
         (ck-r6f-ksnth-text? S a b) ck-r6f-g-kwo   ; R6F
         (or (ck-r6b-is? S a b "f32-to-bits") (ck-r6b-is? S a b "f32-from-bits")) ck-r6f-g-f32   ; R6F
         (pos? (ck-r6f-name-bit S a b)) (ck-r6f-name-bit S a b)   ; R6F
@@ -5433,7 +5435,8 @@
           (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))   ; R6C
           (string-concat (ck-r6b-pick m ck-r6b-g-oi64 (ck-r6b-t-oi64)))   ; R6D
           (string-concat (ck-r6b-pick m ck-r6b-g-dec (ck-r6b-t-dec)))   ; R6D
-          (string-concat (ck-r6b-pick m ck-r6f-g-kwo (ck-r6f-t-kwo)))   ; R6F
+          (string-concat (ck-r6b-pick m ck-r6f-g-kwo (ck-r6f-t-kwo)))
+          (string-concat (ck-r6b-pick m ck-kwm-g (ck-kwmkeys-lib)))   ; R6F
           (string-concat (ck-r6b-pick m ck-r6f-g-f32 (ck-r6f-t-f32)))   ; R6F
           (string-concat (ck-r6f-t-str m))   ; R6F
           (string-concat (ck-r6m-t-lib m))   ; R6M
@@ -6599,7 +6602,9 @@
 ;; Now `(typed-set-nth [:set :keyword] s i)` (the type argument spelled exactly so; a template's text after instantiation,
 ;; clojure.set / kotoba.lang.coll) desugars to `(__r6-kwsnth s i)`, a library defn (group kwo, which needs kw) that answers
 ;; the item of text rank i: the reference's answer, O(n^2) text comparisons per call (n <= 32). Index out of range traps.
-;; keys/vals of a keyword-keyed map and typed-set-nth with a type alias stay refused (ck-order-head?).
+;; Keyword-map keys are admitted below for the explicit [:map :keyword :string]
+;; spelling. Other keyword-map keys/vals and typed-set-nth with a type alias
+;; remain refused (ck-order-head?).
 (def ck-r6f-g-kwo 16384)
 ;; S[a, b) spells typed-set-nth and the next form is [:set :keyword]
 (defn- ck-r6f-ksnth-text? [S :string a :i64 b :i64] :bool
@@ -6631,6 +6636,39 @@
 (defn- ck-r6f-t-kwo [] :string
   (string-concat "(defn- __r6-kwrank [v :vector-i64 t :string] :i64 (loop [k 0 r 0] (if (>= k (vector-count v)) r (recur (+ k 1) (if (< (string-compare (__r6-kwtext (__r6-as :keyword (vector-at v k))) t) 0) (+ r 1) r)))))\n"
   "(defn- __r6-kwsnth [s [:set :keyword] i :i64] :keyword (let [v (__r6-as :vector-i64 s)] (loop [j 0] (cond (>= j (vector-count v)) (__r6-as :keyword (__r6-trap)) (= (__r6-kwrank v (__r6-kwtext (__r6-as :keyword (vector-at v j)))) i) (__r6-as :keyword (vector-at v j)) :else (recur (+ j 1))))))\n"))
+;; UTF-16 printed-order keys for [:map :keyword :string]. Other value types
+;; remain refused. This does not change existing typed-set-nth behavior.
+(def ck-kwm-g 65536)
+(defn- ck-kwmkeys-text? [S :string a :i64 b :i64] :bool
+  (let [q (lx-sk-ws S b) n (string-length S)]
+    (if (and (or (ck-r6b-is? S a b "typed-map-keys") (ck-r6b-is? S a b "clojure.core/typed-map-keys"))
+             (< q n) (= (string-code-point-at S q) 91))
+      (let [a1 (lx-sk-ws S (+ q 1))]
+        (if (and (< a1 n) (= (string-code-point-at S a1) 58))
+          (let [b1 (ck-r6b-symend S (+ a1 1)) a2 (lx-sk-ws S b1)]
+            (if (and (ck-r6b-is? S a1 b1 ":map") (< a2 n) (= (string-code-point-at S a2) 58))
+              (let [b2 (ck-r6b-symend S (+ a2 1)) a3 (lx-sk-ws S b2)]
+                (if (and (ck-r6b-is? S a2 b2 ":keyword") (< a3 n) (= (string-code-point-at S a3) 58))
+                  (let [b3 (ck-r6b-symend S (+ a3 1)) end (lx-sk-ws S b3)]
+                    (and (ck-r6b-is? S a3 b3 ":string") (< end n) (= (string-code-point-at S end) 93)))
+                  false))
+              false))
+          false))
+      false)))
+(defn- ck-kwmkeys? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n) ta (nm-next M h)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (= (nm-count M n) 3)
+         (zero? (nm-sf M (nm-sym-of M h) SF-FN)) (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-MAP-KEYS)
+         (= (nm-kind M ta) ND-VEC) (= (nm-count M ta) 3)
+         (= (nm-head-of M (nm-first M ta)) KW-MAP) (= (nm-head-of M (nm-nth M ta 1)) KW-KEYWORD)
+         (= (nm-head-of M (nm-nth M ta 2)) KW-STRING))))
+(defn- ck-kwmkeys [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n) tok (nm-nf M h NF-TOK) x (nm-next M (nm-next M h))
+        s (ck-r6b-sym M S "__r6-kwmkeys")]
+    (if (zero? s) (ck-err M E-CHECK-HEAD h 0)
+      (let [M1 (ck-n-ref M tok s) hn (ck-r M1) M2 (ck-link M1 hn x)]
+        (nm-set-nf M2 n NF-FIRST hn)))))
+(defn- ck-kwmkeys-lib [] :string "(defn- __r6-kwm-rank [c :i64] :i64 (cond (>= c 65536) (+ 55296 (- c 65536)) (>= c 57344) (+ c 1048576) :else c))\n(defn- __r6-kwm-width [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n(defn- __r6-kwm-less [a :string b :string] :bool\n  (loop [i 0 j 0]\n    (cond (>= i (string-length a)) (< j (string-length b))\n          (>= j (string-length b)) false\n          :else (let [x (string-code-point-at a i) y (string-code-point-at b j)\n                      rx (__r6-kwm-rank x) ry (__r6-kwm-rank y)]\n                  (cond (< rx ry) true (> rx ry) false\n                        :else (recur (+ i (__r6-kwm-width x)) (+ j (__r6-kwm-width y))))))))\n(defn- __r6-kwm-textrank [v :vector-i64 t :string] :i64\n  (loop [k 0 r 0] (if (>= k (vector-count v)) r\n    (recur (+ k 1) (if (__r6-kwm-less (__r6-kwtext (__r6-as :keyword (vector-at v k))) t) (+ r 1) r)))))\n(defn- __r6-kwm-at [v :vector-i64 i :i64] :keyword\n  (loop [j 0] (cond (>= j (vector-count v)) (__r6-as :keyword (__r6-trap))\n    (= (__r6-kwm-textrank v (__r6-kwtext (__r6-as :keyword (vector-at v j)))) i) (__r6-as :keyword (vector-at v j))\n    :else (recur (+ j 1)))))\n(defn- __r6-kwmkeys [m [:map :keyword :string]] [:list :keyword]\n  (let [v (__r6-as :vector-i64 m)\n        raw (loop [j 0 acc (vector-alloc 0)]\n              (if (>= j (vector-count v)) acc (recur (+ j 2) (vector-conj acc (vector-at v j)))))]\n    (loop [i 0 acc (typed-list-new [:list :keyword])]\n      (if (>= i (vector-count raw)) acc\n        (recur (+ i 1) (typed-list-conj [:list :keyword] acc (__r6-kwm-at raw i)))))))\n")
 ;; R6F: :f32, an opaque binary32 carrier (as R6C's :f64): the value is its IEEE-754 bit pattern sign-extended from 32 bits in
 ;; an i64 (the KIR route's representation, 12-kirread KIR5: (f32-to-bits -1.0f) = -1082130432). f32-to-bits is the identity;
 ;; f32-from-bits b traps unless b is a signed i32 (the reference oracle refuses a pattern above Integer/MAX_VALUE,
