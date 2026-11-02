@@ -180,12 +180,39 @@
           (= (kxrt-load8 (+ b (- n 1))) 68))]
     (and prefix (loop [i 24] (if (= i (- n 1)) true (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
 
+;; Fixed O diagnostic response only. The expected stdout/status frame is
+;; small enough that readiness, 640 acks and the frame fit within PIPE_BUF.
+;; No bytes are released to the caller until producer and worker both exit.
+(defn- sb-output-acks? [fd :i64 m :i64] :bool
+  (let [b (+ m 5000) max 682 expected (+ m 4700)
+        a (kxrt-store8 expected 75) c (kxrt-store8 (+ expected 1) 7)
+        d (kxrt-store8 (+ expected 2) 0) e (kxrt-store8 (+ expected 3) 0)
+        f (kxrt-store8 (+ expected 4) 0) g (kxrt-store8 (+ expected 5) 11)
+        h (kxrt-w expected 6 0x6f6d732d656e7566 8)
+        j (kxrt-w expected 14 0x0a656b 3)
+        n (loop [at 0]
+            (if (> at max) -1
+              (let [r (kxrt-syscall 63 fd (+ b at) (- (+ max 1) at) 0 0 0)]
+                (cond (= r -4) (recur at) (< r 0) -1 (= r 0) at :else (recur (+ at r))))))
+        prefix (and (>= n 42) (<= n max)
+                    (= (kxrt-load64 b) 0x6972702d656e7566)
+                    (= (kxrt-load64 (+ b 8)) 0x6f6f722d65746176)
+                    (= (kxrt-load64 (+ b 16)) 0x0a79646165722d74)
+                    (= (kxrt-load8 (+ b (- n 18))) 68)
+                    (kxrt-same (+ b (- n 17)) expected 17))]
+    (and prefix (loop [i 24] (if (= i (- n 18)) true
+                   (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
+
+(defn- sb-output-mode? [p :i64] :bool
+  (and (= (kxrt-load8 p) 79) (= (kxrt-load8 (+ p 1)) 0)))
+
 ;; argc: worker fd, worker digest, producer fd, producer digest, layout root,
 ;; manifest digest. Both inputs must be sealed. The caller
 ;; must obtain image digests from an authenticated source.
 (defn- kxrt-start [sp :i64] :i64
-  (let [argc (kxrt-load64 sp) valid (if (not (or (= argc 7) (= argc 11))) (sb-fail 1) 0)
-        grouped (= argc 11)
+  (let [argc (kxrt-load64 sp) valid (if (not (or (= argc 7) (= argc 11) (= argc 12))) (sb-fail 1) 0)
+        output (= argc 12) grouped (or (= argc 11) output)
+        mode-ok (if (and output (not (sb-output-mode? (kxrt-load64 (+ sp 96))))) (sb-fail 1) 0)
         cg (if grouped (sb-num (kxrt-load64 (+ sp 64)) 1023) -1)
         memory (if grouped (sb-num (kxrt-load64 (+ sp 72)) 4294967295) 0)
         pids (if grouped (sb-num (kxrt-load64 (+ sp 80)) 4096) 0)
@@ -244,9 +271,13 @@
                                    k (kxrt-syscall 129 wpid 9 0 0 0 0) q (sb-wait wpid m)] (sb-fail 3))
                   :else (let [c1 (kxrt-close in-r) c2 (kxrt-close out-w) c3 (kxrt-close worker) c4 (kxrt-close producer)
                               gs (sb-wait gpid m)
-                              command (if (= gs 0) (let [b (+ m 4600) t (kxrt-w b 0 0x3835 2)] (kxrt-write-all in-w b 2)) 0)
+                              command (if (= gs 0) (let [b (+ m 4600)
+                                                t (if output (kxrt-w b 0 0x38356634 4) (kxrt-w b 0 0x3835 2))]
+                                            (kxrt-write-all in-w b t)) 0)
                               c5 (kxrt-close in-w) ws (sb-wait wpid m)
-                              acks (if (= ws 0) (sb-acks? out-r m) false) c6 (kxrt-close out-r)]
+                              acks (if (= ws 0) (if output (sb-output-acks? out-r m) (sb-acks? out-r m)) false)
+                              c6 (kxrt-close out-r)]
                           (if (and (= gs 0) (= command 1) (= ws 0) acks)
-                            (let [sent (kxrt-write-all 1 (+ m 4512) 19)] (kxrt-exit (if (= sent 1) 0 2)))
+                            (let [sent (if output (kxrt-write-all 1 (+ m 4700) 17) (kxrt-write-all 1 (+ m 4512) 19))]
+                              (kxrt-exit (if (= sent 1) 0 2)))
                             (sb-fail 4))))))))
