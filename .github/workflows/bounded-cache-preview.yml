@@ -1,0 +1,47 @@
+name: temporary-branch-bounded-cache-attestation
+# Test-only signing, scoped to this task branch; main verifiers reject its ref.
+on:
+  push:
+    branches: [codex/jun-358-attested-producer-20261102]
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted identities
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Build and qualify the native fixture
+        run: >-
+          python3 scripts/seed/check-definition-build-native.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/bounded-producer"
+      - name: Pack only the experimental producer and objects
+        run: >-
+          python3 scripts/seed/bounded_cache_bundle.py
+          --producer "$RUNNER_TEMP/bounded-producer/producer.elf"
+          --cache "$RUNNER_TEMP/bounded-producer/cache" --output "$RUNNER_TEMP/bounded-cache.tar"
+      - name: Attest this branch-scoped bundle
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ runner.temp }}/bounded-cache.tar
+      - name: Stage the pinned verifier
+        run: |
+          curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 --max-filesize 33554432 --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          python3 scripts/seed/stage_pinned_gh.py --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
+      - name: Verify branch identity, then freshly link and execute signed objects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/seed/preview_bounded_attestation.py
+      - name: Retain only the branch-scoped bundle for independent readback
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: experimental-preview-${{ github.sha }}
+          path: ${{ runner.temp }}/bounded-cache.tar
+          retention-days: 1
+          if-no-files-found: error
