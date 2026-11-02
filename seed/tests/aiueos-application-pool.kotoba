@@ -1,0 +1,44 @@
+(ns application-pool-probe (:export [main]))
+
+;; Full eight-MiB observation, with bounded64KiB access operations. The
+;; compiler owns the region root; no literal is used as a memory address.
+(defn- pattern [offset :i64] :i64 (bit-xor offset 0xa55a17c3))
+(defn- inspect [page :i64 bytes :i64 offset :i64 patterned :bool] :i64
+  (loop [i 0 errors 0]
+    (if (>= i bytes) errors
+      (recur (+ i 4) (+ errors (if (= (kernel-load-u32-64k page bytes i)
+          (if patterned (pattern (+ offset i)) 0)) 0 1))))))
+(defn- fill [page :i64 bytes :i64 offset :i64 patterned :bool] :i64
+  (loop [i 0]
+    (if (>= i bytes) 0
+      (let [w (kernel-store-u32-64k page bytes i
+                (if patterned (pattern (+ offset i)) 0))]
+        (recur (+ i 4))))))
+(defn- check-all [pool :i64 bytes :i64 patterned :bool] :i64
+  (loop [offset 0 errors 0]
+    (if (>= offset bytes) errors
+      (let [page (kernel-subregion pool bytes offset 65536)]
+        (recur (+ offset 65536) (+ errors (inspect page 65536 offset patterned)))))))
+(defn- fill-all [pool :i64 bytes :i64 patterned :bool] :i64
+  (loop [offset 0]
+    (if (>= offset bytes) 0
+      (let [page (kernel-subregion pool bytes offset 65536)
+            w (fill page 65536 offset patterned)]
+        (recur (+ offset 65536))))))
+(defn main [] :i64
+  (let [off (kernel-cli)
+        pool (kernel-application-pool) receipt (kernel-owned-page 0)
+        initial (kernel-store-u64-4k receipt 4096 48 0)
+        fresh (check-all pool 8388608 false)
+        written (fill-all pool 8388608 true)
+        checked (check-all pool 8388608 true)
+        boot (kernel-boot-info)
+        changed (kernel-store-u64-64k boot 16544 8 6)
+        stable (if (= pool (kernel-application-pool)) 0 1)
+        a (kernel-store-u64-4k receipt 4096 8 fresh)
+        b (kernel-store-u64-4k receipt 4096 16 checked)
+        c (kernel-store-u64-4k receipt 4096 24 stable)
+        d (kernel-store-u64-4k receipt 4096 32 pool)
+        e (kernel-store-u64-4k receipt 4096 40 8388608)
+        f (kernel-store-u64-4k receipt 4096 0 0x3154534554505041)]
+    (loop [spin 0] (let [pause (kernel-pause)] (recur (inc spin))))))

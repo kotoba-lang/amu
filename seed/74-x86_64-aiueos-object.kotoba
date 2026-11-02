@@ -1711,6 +1711,8 @@
         (xg-out (if pci 0x31494350 0) 8)
         (xg-out (if (= (xg-get M 4) 2) (+ context (if pci 65536 20480)) 0) 8)
         (xg-pad (+ data 464)) (xg-out (cond (uv-used? M) (uv-magic) (lv-used? M) LV-MAGIC :else 0) 8)
+        (cond-> (km-application?) (xg-pad (+ data 496))
+                  (km-application?) (xg-out KM-APP-MARKER 8))
         (lv-data data)
         (cond-> (uv-used? M) (xg-pad (+ data UV-HANDLER))
                   (uv-used? M) (xg-out (vector-at M 210) 8))

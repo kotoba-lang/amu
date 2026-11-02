@@ -40,6 +40,58 @@
 (def KR-PCI-READY 320)
 (def KR-PCI-MAGIC 0x31494350)
 
+;; v4 kernel / v7 boot only. The fixed grant follows the complete v6 BAR
+;; capacity, before the payload. All addresses are sealed before main, after
+;; the ordinary map/PCI seals. Private cells33536..33559 are below the stack,
+;; after the user-fault record and before the non-evicting domain table.
+;; R10/R11 carry the allocated half-open interval throughout these checks.
+(defn- kr-seal-application [M :vector-i64 fail :i64] :vector-i64
+  (let [image-ok (vector-at M MM-LABEL-N) scratch-ok (inc image-ok)
+        scan (+ image-ok 2) next (+ image-ok 3) found (+ image-ok 4)]
+    (-> M (iv-reserve 5) (iv-mem 139 1 9 80)
+        (iv-hex "488db1c060000048b8") (xg-bytes 0x314c4f4f5050414b 8)
+        (iv-hex "483906") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e0801") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48817e1800008000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e2001") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e3800") (xg-rel 0x850f 2 2 fail)
+        (iv-mem 139 10 6 16)
+        (iv-hex "4981fa00000001") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "49f7c2ff0f0000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "4d89d34981c300008000") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "48b800000000010000004939c3") (xg-rel 0x870f 2 2 fail)
+        ;; A bounded, page-aligned loader interval enclosing this header.
+        (iv-mem 139 8 6 40) (iv-mem 139 2 6 48)
+        (iv-hex "4d85c0") (xg-rel 0x840f 2 2 fail)
+        (iv-hex "49f7c0ff0f0000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "4881fa00100000") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4881fa00008000") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4c01c2") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4c39c1") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "488d81006100004839d0") (xg-rel 0x870f 2 2 fail)
+        (iv-hex "4d39c3") (xg-rel 0x860f 2 2 image-ok)
+        (iv-hex "4939d2") (xg-rel 0x820f 2 2 fail)
+        (xg-label image-ok)
+        (iv-mem 139 0 9 KM-SEALED-SCRATCH)
+        (iv-hex "4889c24881c200f00000") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4939c3") (xg-rel 0x860f 2 2 scratch-ok)
+        (iv-hex "4939d2") (xg-rel 0x820f 2 2 fail)
+        (xg-label scratch-ok)
+        (iv-mem 141 8 9 KR-MAP-DATA) (iv-mem 139 2 9 KR-MAP-SIZE)
+        (xg-label scan) (iv-hex "4885d2") (xg-rel 0x840f 2 2 fail)
+        (iv-mem 139 0 8 24) (iv-hex "4889c748c1ef34") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48c1e00c") (iv-mem 3 0 8 8) (xg-rel 0x820f 2 2 fail)
+        (iv-hex "41833802") (xg-rel 0x850f 2 2 next)
+        (iv-hex "490fba60203f") (xg-rel 0x820f 2 2 next)
+        (iv-hex "4d3b5008") (xg-rel 0x820f 2 2 next)
+        (iv-hex "4939c3") (xg-rel 0x860f 2 2 found)
+        (xg-label next) (iv-mem 3 8 9 KR-MAP-STRIDE)
+        (iv-mem 43 2 9 KR-MAP-STRIDE) (xg-rel 0x820f 2 2 fail)
+        (xg-rel 0xe9 1 2 scan)
+        (xg-label found) (iv-mem 137 10 9 KM-APP-BASE)
+        (iv-hex "49c781") (xg-bytes KM-APP-SIZE 4) (xg-bytes KM-APP-BYTES 4)
+        (iv-hex "49c781") (xg-bytes KM-APP-READY 4) (xg-bytes KM-APP-MARKER 4))))
+
 (defn- kr-pci-protected [M :vector-i64 fail :i64] :vector-i64
   (let [again (vector-at M MM-LABEL-N) next (inc again) done (+ again 2)]
     (-> M (iv-reserve 3)

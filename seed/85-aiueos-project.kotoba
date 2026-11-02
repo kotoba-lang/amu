@@ -12,7 +12,7 @@
 ;; then leaves a separate MiB before data so the next user region can grow.
 ;; v1 and v2 keep their byte-for-byte layouts.
 (defn- kp-v2? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v2"))
-(defn- kp-v3? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v3"))
+(defn- kp-v3? [] :bool (or (string=? (io-arg 3) "x86_64-aiueos-kernel-v3") (km-application?)))
 (defn- kp-text-cap [] :i64 (if (or (kp-v2?) (kp-v3?)) 2097152 1048576))
 (defn- kp-data-offset [] :i64 (if (kp-v3?) 3145728 (kp-text-cap)))
 
@@ -148,7 +148,7 @@
   (let [reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1) (iv-reserve 1))
         checked (-> reset (iv-hex "498b49504885c9") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48b8") (xg-bytes 0x544f4f4245554941 8) (iv-hex "483901") (xg-rel 0x850f 2 2 1)
-                    (iv-hex "48837908") (xg-byte (if pci 6 5)) (xg-rel 0x850f 2 2 1)
+                    (iv-hex "48837908") (xg-byte (if (km-application?) 7 (if pci 6 5))) (xg-rel 0x850f 2 2 1)
                     (iv-hex "488379580f") (xg-rel 0x850f 2 2 1)
                     (iv-hex "488b51504885d2") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48f7c2ff0f0000") (xg-rel 0x850f 2 2 1)
@@ -157,6 +157,7 @@
                     (iv-hex "49c781") (xg-bytes KM-SEALED-PAGES 4) (xg-bytes 15 4)
                     (kr-seal-map 1)
                     (cond-> pci (kr-seal-pci 1))
+                    (cond-> (km-application?) (kr-seal-application 1))
                     (cond-> (wg-used? M) (wg-seal 1)))
         delta (- (dec main-entry) (+ at (xg-pos checked) 5))
         code (if (or (< delta -2147483648) (> delta 2147483647)) (xg-err checked 7103 at)
@@ -192,7 +193,7 @@
     fixed))
 (defn- kp-image [M :vector-i64 L :vector-i64 G :vector-i64 fuel :i64] :vector-i64
   (let [entry (xg-get M 1) user-main (pj-l L KP-ENTRY) raw-program (pj-l L pj-k-img)
-        pci (or (kp-pci? M) (lv-used? M)) owned (or (kp-needs-owned? M) (lv-used? M)) init-at (bit-and (+ raw-program 15) -16)
+        pci (or (km-application?) (kp-pci? M) (lv-used? M)) owned (or (km-application?) (kp-needs-owned? M) (lv-used? M)) init-at (bit-and (+ raw-program 15) -16)
         initialized (if owned (kp-owned-init M L init-at user-main pci) M)
         before-user (if owned (+ init-at (xg-pos initialized)) raw-program)
         user-at (bit-and (+ before-user 15) -16)

@@ -39,6 +39,15 @@
                 (<= (+ (eb-le V (+ ph 8) 8) (eb-le V (+ ph 32) 8)) (eb-le V (+ ph 64) 8))
                 (or (<= (+ rx rxn) rw) (<= (+ rw rwn) rx)))))))
 
+;; v7 owns a separately allocated eight-MiB kernel application pool.
+;; v5/v6 package bytes and their allocation policy remain unchanged.
+(def EB-APP-OFF (+ 16560 EP-BYTES))
+(defn- eb-application-required? [K :vector-i64] :bool
+  (let [ph (eb-le K 32 8) rw (eb-le K (+ ph 64) 8)]
+    (= (eb-le K (+ rw 496) 8) KM-APP-MARKER)))
+(defn- eb-payload-offset [M :vector-i64] :i64
+  (+ 16560 (if (= (xg-get M 15) 1) EP-BYTES 0)
+     (if (= (xg-get M 19) 1) 64 0)))
 ;; Backend state 0..8: entry, RX file/address/size, RW file/address/size,
 ;; kernel bytes, payload bytes. 9..14: data RVA/size/file, reloc RVA/file,
 ;; embedded kernel offset. CODE is the loader; OUT is the resulting PE.
@@ -49,9 +58,9 @@
         (xg-set 2 (eb-le K (+ p 24) 8)) (xg-set 3 (eb-le K (+ p 32) 8))
         (xg-set 4 (eb-le K (+ p 64) 8)) (xg-set 5 (eb-le K (+ p 80) 8))
         (xg-set 6 (eb-le K (+ p 88) 8)) (xg-set 7 (vector-count K)) (xg-set 8 payload)
-        (xg-set 15 (if pci 1 0)) (xg-set 16 (bit-and opts 1))
+        (xg-set 15 (if pci 1 0)) (xg-set 19 (if (eb-application-required? K) 1 0)) (xg-set 16 (bit-and opts 1))
         (xg-set 17 (bit-and (quot opts 2) 1)) (xg-set 18 (bit-and (quot opts 4) 1))
-        (xg-set 14 (eb-align (+ 16560 (if pci EP-BYTES 0) payload) 16)))))
+        (xg-set 14 (eb-align (+ 16560 (if pci EP-BYTES 0) (if (eb-application-required? K) 64 0) payload) 16)))))
 (defn- eb-rip [M :vector-i64 op :i64 n :i64 label :i64] :vector-i64 (xg-rel M op n 2 label))
 (defn- eb-alloc [M :vector-i64 second :bool] :vector-i64
   (let [size (if second (xg-get M 6) (xg-get M 3)) address (if second 2 1) source (if second 23 22)]
@@ -61,6 +70,20 @@
         (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26)
         (eb-rip 0x0d8b48 3 address) (eb-rip 0x158d48 3 source)
         (xg-bytes 0xb841 2) (xg-bytes size 4) (xg-bytes 0x0000016096ff41 7))))
+;; AllocateMaxAddress / EfiLoaderData, then zero every byte before the
+;; final GetMemoryMap. The returned address is not a requested fixed address.
+;; Labels90/93 are the grant base and published PE base cell. Before boot
+;; that cell contains the header RVA; derive the actual relocated PE base
+;; from the real header address, without an out-of-section fixup target.
+(defn- eb-application-code [M :vector-i64] :vector-i64
+  (if (not= (xg-get M 19) 1) M
+    (-> M (iv-hex "b901000000ba0200000041b800080000")
+        (eb-rip 0x0d8d4c 3 90) (iv-hex "41ff56284885c0") (eb-rip 0x850f 2 26)
+        (eb-rip 0x3d8b48 3 90) (iv-hex "4881ff00000001") (eb-rip 0x820f 2 26)
+        (iv-hex "4889f8480500008000") (eb-rip 0x820f 2 26)
+        (iv-hex "48ba00000000010000004839d0") (eb-rip 0x870f 2 26)
+        (iv-hex "31c0b900001000fcf348ab")
+        (eb-rip 0x058d48 3 3) (eb-rip 0x052b48 3 93) (eb-rip 0x058948 3 93))))
 (defn- eb-gop [M :vector-i64] :vector-i64
   (-> M (eb-rip 0x0d8d48 3 19) (xg-bytes 0xd231 2) (eb-rip 0x058d4c 3 20)
       (xg-bytes 0x0000014096ff41 7) (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 24)
@@ -254,7 +277,7 @@
                   (eb-stage 4)
                   (xg-bytes 0x00000000b9 5) (xg-bytes 0x00000002ba 5) (xg-bytes 0xb841 2) (xg-bytes 15 4)
                   (eb-rip 0x0d8d4c 3 9) (xg-bytes 0x2856ff41 4)
-                  (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26) (eb-stage 5))
+                  (xg-bytes 0xc08548 3) (eb-rip 0x850f 2 26) (eb-application-code) (eb-stage 5))
         payload (if (> (xg-get M 8) 0)
                   (-> start (eb-rip 0x058d48 3 21) (eb-rip 0x058948 3 11)
                       (xg-byte 0xb8) (xg-bytes (xg-get M 8) 4) (eb-rip 0x058948 3 12)) start)
@@ -285,8 +308,10 @@
         (eb-external 11 112) (eb-external 12 120) (eb-external 13 128)
         (eb-external 14 136) (eb-external 15 144) (eb-external 16 148)
         (eb-external 17 152) (eb-external 18 156) (eb-external 19 guid) (eb-external 20 (+ guid 16))
-        (eb-external 21 (+ 16560 (if (= (xg-get M 15) 1) EP-BYTES 0))) (eb-external 22 (+ (xg-get M 14) (xg-get M 1)))
-        (eb-external 23 (+ (xg-get M 14) (xg-get M 4))))))
+        (eb-external 21 (eb-payload-offset M)) (eb-external 22 (+ (xg-get M 14) (xg-get M 1)))
+        (eb-external 23 (+ (xg-get M 14) (xg-get M 4)))
+        (cond-> (= (xg-get M 19) 1) (eb-external 90 (+ EB-APP-OFF 16))
+                  (= (xg-get M 19) 1) (eb-external 93 (+ EB-APP-OFF 40))))))
 
 (defn- eb-section [M :vector-i64 name :i64 size :i64 rva :i64 raw :i64 off :i64 flags :i64] :vector-i64
   (-> M (xg-out name 8) (xg-out size 4) (xg-out rva 4) (xg-out raw 4) (xg-out off 4)
@@ -328,15 +353,21 @@
           (xg-pad (+ file EP-CATALOG EP-BYTES))) M))
 (defn- eb-pci-data [M :vector-i64] :vector-i64
   (if (= (xg-get M 15) 1) (ep-data M) M))
+(defn- eb-application-data [M :vector-i64] :vector-i64
+  (if (not= (xg-get M 19) 1) M
+    (-> M (xg-out 0x314c4f4f5050414b 8) (xg-out 1 8)
+        (xg-out 4294967295 8) (xg-out KM-APP-BYTES 8) (xg-out 1 8)
+        (xg-out (+ (xg-get M 9) 16) 8) (xg-out (eb-align (+ (xg-get M 12) 12) 4096) 8)
+        (xg-out 0 8))))
 (defn- eb-image [M :vector-i64 K :vector-i64 P :vector-i64 Q :vector-i64] :vector-i64
   (let [file (xg-get M 11) kernel (xg-get M 14) guid (eb-align (+ kernel (vector-count K)) 8)]
     (-> M (eb-header) (xg-out-code 1) (xg-pad file)
         (xg-out (xg-get M 2) 8) (xg-out (xg-get M 5) 8)
-        (xg-out 0x544f4f4245554941 8) (xg-out (if (= (xg-get M 15) 1) 6 5) 8) (xg-pad (+ file 72))
+        (xg-out 0x544f4f4245554941 8) (xg-out (if (= (xg-get M 19) 1) 7 (if (= (xg-get M 15) 1) 6 5)) 8) (xg-pad (+ file 72))
         (xg-out (eb-align (+ (xg-get M 2) (xg-get M 3)) 4096) 8)
         (xg-out (xg-get M 5) 8) (xg-out (+ (xg-get M 5) (xg-get M 6)) 8)
         (xg-out 0 8) (xg-out 15 8) (xg-pad (+ file 16560))
-        (eb-pci-header file)
+        (eb-pci-header file) (eb-application-data)
         (eb-copy P 0 (vector-count P)) (eb-copy Q 0 (vector-count Q))
         (xg-pad (+ file kernel)) (eb-copy K 0 (vector-count K))
         (xg-pad (+ file guid)) (xg-out 0x4a3823dc9042a9de 8) (xg-out 0x6a5180d0de7afb96 8) (xg-out 0 8)
@@ -395,7 +426,7 @@
                   (not= (eb-le Q 16 8) 8280)
                   (not (eb-dual-layout? K slot-version)))
               (> (vector-count P) 524288))
-            (and (eb-pci-required? K) (not pci)))
+            (and (or (eb-pci-required? K) (eb-application-required? K)) (not pci)))
       (let [w (io-err "seed-aiueos-boot: E7111 bounded ELF64 kernel/payload admission refused\n")] 1)
       (let [M (eb-build K P Q pci opts) e (vector-at M MM-ERR)]
         (if (not= e 0) (drv-fail M kernel)
