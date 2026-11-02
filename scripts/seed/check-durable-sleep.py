@@ -198,7 +198,7 @@ def main(compiler, output, target, seccomp_if_available=False):
     assert (unlink_outside / "parent-target").read_text() == "outside-parent"
     ungranted_unlink = compile_(producer, "unlink-ungranted", unlink_guest(unlink_scope, unlink_outside), target)
     case("unlink-wire-not-granted", ungranted_unlink, {"KEXE_ALLOW": "37,38", "KEXE_CAP_RESOURCES_35": str(unlink_scope)},
-         want_exit=120, stderr_has=[sigill, b"KEXE_CAP {:wire 35 :refused :not-granted}\\n"])
+         want_exit=120, stderr_has=[sigill, b"KEXE_CAP {:wire 35 :refused :not-granted}\n"])
     malformed_unlink = compile_(producer, "unlink-malformed", UNLINK_MALFORMED, target)
     case("unlink-malformed-duplicate-token", malformed_unlink, unlink_env, want_exit=120, stderr_has=[sigill])
     fsync_one = compile_(producer, "fsync-one", FSYNC_ONLY, target)
