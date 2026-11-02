@@ -1,5 +1,32 @@
 # Native block guard candidate (JUN-767)
 
+## Disk Arbitration session control
+
+`TMPDIR=/workspace/scratch ./check-macos-da-session.sh` builds an Amu-emitted
+Darwin ARM64 control which obtains a bootstrap port, looks up the Disk
+Arbitration service, creates a short-lived session using a special reply port,
+then sends the session-release request. It checks the returned message shape
+and nonzero session port. Separately emitted invalid-service and invalid-RPC
+mutants must refuse. A prior regular-reply-port attempt was terminated by
+macOS with `EXC_GUARD / REQUIRE_REPLY_PORT_SEMANTICS`.
+
+The release is a one-way Mach message: successful send does not independently
+prove server-side cleanup. Service audit-token interpretation remains
+unqualified as described below. This control does not identify, claim, unmount,
+read or write a disk, and does not obtain user approval.
+
+The one-time `xcrun mig` interface oracle used Apple DiskArbitration
+`diskarbitrationd/DAServer.defs` at commit
+`a542bda934211dc3c301bfdcc7f21349c4164a85`, SHA-256
+`ad03feb8ab44c5bfcbc423212c0c87ea0751b56347761273f1e9f525979deda0`,
+and the pinned launchd definitions recorded below. The inert reference was
+assembled once on 2026-11-02 with Apple clang 21.0.0
+(clang-2100.1.1.101): `da-session-reference.txt` SHA-256
+`2a7a991cae8553b5b74a1720e8fe98cb54ad644dc7222bd5566f1e50b3640dc2`,
+object SHA-256 `14aa90aafe91ccc455bdbb8d6f65238cb6b324f5f827d7b3fd3da6cf8db6651e`.
+Normal native builds consume Kotoba instruction words without MIG, clang or a
+libSystem load command.
+
 ## Disk Arbitration service lookup control
 
 `TMPDIR=/workspace/scratch ./check-macos-da-lookup.sh` builds a separate
