@@ -81,6 +81,17 @@
             a (vector-assoc! A at n) b (vector-assoc! A (inc at) index)
             c (vector-assoc! A 1 (inc index)) d (vector-assoc! A 2 (inc count))]
         (dcp-sym (string-concat "k" (mem-u2dec index)))))))
+(defn- dcp-inline-record? [M :vector-i64 S :string n :i64] :bool
+  (let [head (kr-first M n) id (kr-next M head) fields (kr-next M id)]
+    (and (= (kr-kind M n) ND-VEC) (= (kr-count M n) 3)
+         (= (dcp-text M S head) ":record") (= (kr-kind M id) ND-KW)
+         (dsq-fields? M S fields))))
+(defn- dcp-record-new [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
+  (let [head (kr-first M n) schema (kr-next M head) args (kr-next M schema)]
+    (if (not (dcp-inline-record? M S schema)) (dcp-bad A)
+      (dcp-list (loop [p args out (typed-list-new [:list :string] (dcp-sym "record-new") (dsq-encode M S A schema 0))]
+        (if (or (= p 0) (not= (vector-at A 0) 0)) out
+          (recur (kr-next M p) (typed-list-conj [:list :string] out (dcp-form M S A p R depth)))))))))
 (defn- dcp-type [M :vector-i64 S :string A :vector-i64 n :i64 depth :i64] :string
   (cond (> depth 64) (dcp-bad A)
     (= (kr-kind M n) ND-KW)
@@ -90,13 +101,15 @@
                 (= text ":pair") (= text ":option") (= text ":result") (= text ":map") (= text ":set"))
           (dc-kw (string-substring text 1 (string-length text))) (dcp-bad A)))
     (= (kr-kind M n) ND-VEC)
+      (if (= (dcp-text M S (kr-first M n)) ":record")
+        (if (dcp-inline-record? M S n) (dsq-encode M S A n depth) (dcp-bad A))
       (if (= (dcp-text M S (kr-first M n)) ":ref")
         (let [key (kr-next M (kr-first M n)) text (dcp-text M S key)]
           (if (or (not= (kr-count M n) 2) (not= (kr-kind M key) ND-KW)) (dcp-fail A 5)
             (dcp-vec (typed-list-new [:list :string] (dc-kw "ref") (dc-kw (string-substring text 1 (string-length text)))))))
         (dcp-vec (loop [p (kr-first M n) out (typed-list-new [:list :string])]
           (if (= p 0) out (recur (kr-next M p)
-            (typed-list-conj [:list :string] out (dcp-type M S A p (inc depth))))))))
+            (typed-list-conj [:list :string] out (dcp-type M S A p (inc depth)))))))))
     :else (dcp-bad A)))
 ;; The native checker's registered wire vocabulary, named by the pinned
 ;; language catalog before it is sealed into payload-v2. No grant is created.
@@ -287,7 +300,8 @@
         (dcp-vec (dcp-sequence M S A (kr-first M n) R (inc depth))))
     (= (kr-kind M n) ND-LIST)
       (let [head (dcp-text M S (kr-first M n))]
-        (cond (= head "let") (dcp-let M S A n R (inc depth))
+        (cond (= head "record-new") (dcp-record-new M S A n R (inc depth))
+              (= head "let") (dcp-let M S A n R (inc depth))
               (= head "fn") (dcp-fn M S A n R (inc depth))
               (or (= head "result-match-of") (= head "option-match") (= head "variant-match")) (dcp-match M S A n R (inc depth))
               :else (dcp-list (dcp-sequence M S A (kr-first M n) R (inc depth)))))

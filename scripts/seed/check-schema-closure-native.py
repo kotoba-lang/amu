@@ -142,9 +142,18 @@ def main(compiler, out):
     old = '(dsq-catalog M S A doc)'
     assert text.count(old) == 1
     mutant_catalog = build('mutant-catalog', text.replace(old, 'A', 1))
+    old = '(dcp-sym "record-new") (dsq-encode M S A schema 0)'
+    assert text.count(old) == 1
+    mutant_record_body = build('mutant-record-body', text.replace(
+        old, '(dcp-sym "record-new") (dcp-vec (typed-list-new [:list :string]))', 1))
+    old = '(if (dcp-inline-record? M S n) (dsq-encode M S A n depth) (dcp-bad A))'
+    assert text.count(old) == 1
+    mutant_record_result = build('mutant-record-result', text.replace(
+        old, '(if (dcp-inline-record? M S n) (dcp-vec (typed-list-new [:list :string])) (dcp-bad A))', 1))
     report['images'] = {name: pin(image) for name, image in (
         ('producer', producer), ('mutant-transitive', mutant_transitive),
-        ('mutant-params', mutant_params), ('mutant-catalog', mutant_catalog))}
+        ('mutant-params', mutant_params), ('mutant-catalog', mutant_catalog),
+        ('mutant-record-body', mutant_record_body), ('mutant-record-result', mutant_record_result))}
     save()
 
     def evaluate(name, source, image=producer, code=0):
@@ -185,6 +194,53 @@ def main(compiler, out):
     # Removing the catalog check must admit the otherwise unreferenced bad
     # schema; the normal producer refuses the same module atomically.
     assert evaluate('mutant-catalog', module(SCHEMAS['bad-legacy'], [fn('g', '42', '[]', '[]')]), mutant_catalog)['g'][0] == pure
+    # Reference values are one-time local nbb v1.5.212-cljk.1 measurements
+    # (2026-11-02, lock SHA-256 46385bd1f4e16c848f5c3a079fa2f36b072ece9db132759ffb9e12ca5d784e75).
+    # nbb never runs in this gate or serves as a fallback.
+    def record_module(inner=':i64', field=':inner', record=':demo/Outer', include=True):
+        child = '[:record :s/n [[:value ' + inner + ']]]'
+        outer = '[:record ' + record + ' [[' + field + ' [:ref :s/n]]]]'
+        catalog = '{:s/n ' + child + '}' if include else '{}'
+        constructor = ('{:name make :params [x] :param-types [[:ref :s/n]] :result ' + outer +
+                       ' :effects #{} :body (record-new ' + outer + ' x)}')
+        return module(catalog, [constructor])
+    pair = '[:record :demo/Pair [[:a :i64] [:b :string]]]'
+    pair_fn = ('{:name ->Pair :params [a b] :param-types [:i64 :string] :result ' + pair +
+               ' :effects #{} :body (record-new ' + pair + ' a b)}')
+    pair_source = module('{:demo/Pair ' + pair + '}', [pair_fn])
+    pair_cid = 'bafyreidchstvi7lv67pe7i3d3sariwahxq7sknhpqv4xzvdm3vn6gk7q2y'
+    assert evaluate('record-pair', pair_source)['->Pair'][0] == pair_cid
+    record_cases = [
+        ('nested', record_module(), 'bafyreiay4ndtxa452qjirf3ntujjx7vy7v7drm4w62qf2apifnb756pz44'),
+        ('nested-edit', record_module(inner=':string'), 'bafyreibfuhxjhqcesupnwvxxdw3lfyk4zq6z5gujlodeksgyaqrdxdioda'),
+        ('field-edit', record_module(field=':other'), 'bafyreiehw3v2oti3ockwakojf4d5upwmha33vmxw24cjadqzg4aewanjdy'),
+        ('name-edit', record_module(record=':demo/Changed'), 'bafyreiggbpcf53ewh2x3qwnmvnynwzves2gyldvdks5jlf46ewixfstvau'),
+    ]
+    for name, source, expected in record_cases:
+        assert evaluate('record-' + name, source)['make'][0] == expected
+    valid = record_module()
+    invalid = {
+        'arity': valid.replace(' x)}]', ' x x)}]'),
+        'duplicate-field': valid.replace('[[:inner [:ref :s/n]]]', '[[:inner [:ref :s/n]] [:inner [:ref :s/n]]]'),
+        'bad-type': valid.replace(':value :i64', ':value :notatype'),
+        'schema-inconsistency': valid.replace('(record-new [:record :demo/Outer', '(record-new [:record :demo/Other'),
+        'unbound': valid.replace('] x)}]', '] missing)}]'),
+        'missing-schema': record_module(include=False),
+    }
+    for name, source in invalid.items():
+        assert source != valid
+        evaluate('record-invalid-' + name, source, code=1)
+    # Same record name with different fields in the catalog must never be
+    # accepted as the inline result and body schema.
+    catalog = '{:demo/Pair ' + pair + '}'
+    conflict = '{:demo/Pair [:record :demo/Pair [[:evil :i64] [:b :string]]]}'
+    assert pair_source.count(catalog) == 1
+    evaluate('record-invalid-catalog-conflict', pair_source.replace(catalog, conflict), code=1)
+    assert evaluate('mutant-record-body', pair_source, mutant_record_body)['->Pair'][0] != pair_cid
+    assert evaluate('mutant-record-result', pair_source, mutant_record_result)['->Pair'][0] != pair_cid
+    report['recordConstructorCases'] = len(record_cases) + 1
+    report['recordConstructorRefusals'] = len(invalid) + 1
+    report['recordConstructorSourceQualified'] = False
     report['status'] = 'PASS_NATIVE_KIR_SCHEMA_CLOSURE'
     save()
     print(report['status'], len(report['calls']), 'calls', flush=True)

@@ -143,6 +143,19 @@ def main(compiler, out, *, mutations=True):
         rejected = invoke("schema-refusal-" + mode, schema_kir, schema_cache, mode=mode, code=1)
         assert not rejected.stdout and b"E7102" in rejected.stderr
         assert not list(schema_cache.iterdir())
+    # Encoding record-new identity is not permission for the scalar object
+    # backend to build it, even when the constructor is unused by main.
+    ctor_cache = directory("record-constructor-refusal-cache")
+    pair_type = '[:record :s/r [[:a :i64]]]'
+    ctor_kir = ('{:format :kotoba.kir/v4 :entry main :exports [main] :effects #{} '
+                ':schemas {:s/r ' + pair_type + '} :functions ['
+                '{:name make :params [a] :param-types [:i64] :result ' + pair_type +
+                ' :effects #{} :body (record-new ' + pair_type + ' a)} ' +
+                function("main", "42", "") + ']}\n')
+    for mode in ("reference", "cached"):
+        rejected = invoke("constructor-refusal-" + mode, ctor_kir, ctor_cache, mode=mode, code=1)
+        assert not rejected.stdout and b"E7102" in rejected.stderr
+        assert not list(ctor_cache.iterdir())
     invoke("native-controls", base, cache, mode="controls")
     pair("rename", module([function("renamed", "(if (< x 0) 0 (+ x 2))"),
                             function("main", "(renamed 40)", "")]), cache, (2, 0), 42)
