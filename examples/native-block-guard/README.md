@@ -1,5 +1,29 @@
 # Native block guard candidate (JUN-767)
 
+## Disk Arbitration claim-state query control
+
+`TMPDIR=/workspace/scratch ./check-macos-da-claimed.sh` builds a separate
+native diagnostic that looks up Disk Arbitration, creates a session, and
+queries `_DAServerDiskIsClaimed` for a NUL-terminated disk name on stdin. It
+checks RPC status and a boolean reply and sends a session-release message.
+Its test queries a newly attached private virtual disk and requires a boolean;
+it also rejects a nonexistent disk, missing input and unterminated input. The
+test does not independently establish whether the returned boolean is correct.
+
+The query is read-only and establishes neither an exclusive claim nor a stable
+target identity. Its result can change immediately after the query and must
+never authorize a write. Session-release send and audit-token limitations in
+the following controls still apply. No physical disk is opened or modified.
+
+The interface oracle was the pinned Apple `DAServer.defs` described below;
+the inert `da-claimed-reference.txt` was assembled once on 2026-11-02 with
+Apple clang 21.0.0 (clang-2100.1.1.101). Its SHA-256 is
+`26fd8fa584b9df782ac0a4d4ac21f0116611fa93795d0f6f201c8891012f574e`,
+and the object SHA-256 is
+`30c595f99fd344511fb072ae029f2dc15f924b75965fd6ab691c583bb0673b29`.
+The normal native build consumes Kotoba instruction words without MIG, clang
+or a libSystem load command.
+
 ## Disk Arbitration session control
 
 `TMPDIR=/workspace/scratch ./check-macos-da-session.sh` builds an Amu-emitted
