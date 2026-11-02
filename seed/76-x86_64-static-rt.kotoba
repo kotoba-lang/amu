@@ -1228,11 +1228,19 @@
   (let [st (+ (kxrt-gl 232) 4194304)]
     (loop [k 0] (let [r (kxrt-syscall 61 pid (+ st 8) 0 0 0 0)] (if (= r -4) (recur (inc k)) (bit-and (kxrt-load64 (+ st 8)) 4294967295))))))
 (defn- kxrt-sp-kill [pid :i64] :i64 (let [z (kxrt-syscall 62 pid 9 0 0 0 0)] (kxrt-sp-reap pid)))
+;; Bound each direct child to the process that forked it. Check the saved
+;; parent after installing the signal to close the fork/prctl race. This is
+;; not a process-tree fence: an executed program can fork or alter its signal.
+(defn- kxrt-sp-parent-bound? [parent :i64] :bool
+  (and (> parent 0) (>= (kxrt-syscall 157 1 9 0 0 0 0) 0)
+       (= (kxrt-syscall 110 0 0 0 0 0 0) parent)))
 ;; the child: stdio, every other descriptor close-on-exec, no new privileges,
 ;; the scope root as its directory, execve. A failure goes to the status
 ;; pipe as step * 4096 + errno (op 42), then exit 127.
-(defn- kxrt-sp-child [in-r :i64 out-w :i64 st-w :i64 prog :i64 argv :i64 envp :i64] :i64
+(defn- kxrt-sp-child [in-r :i64 out-w :i64 st-w :i64 prog :i64 argv :i64 envp :i64 parent :i64] :i64
   (let [s (+ (kxrt-gl 232) 4194304)
+        bound (if (kxrt-sp-parent-bound? parent) 0
+                (let [z (kxrt-store64 s 8193) y (kxrt-write-all st-w s 8)] (kxrt-exit 127)))
         ;; the helper ignores SIGPIPE; the program starts with the default
         q (+ s 128) d0 (kxrt-store64 q 0) d1 (kxrt-store64 (+ q 8) 0) d2 (kxrt-store64 (+ q 16) 0) d3 (kxrt-store64 (+ q 24) 0)
         dfl (kxrt-signal 13 q)
@@ -1334,9 +1342,9 @@
         out-r (bit-and x 4294967295) out-w (u64-shift-right x 32)
         st-r (bit-and y 4294967295) st-w (u64-shift-right y 32)]
     (if (or (< p1 0) (< p2 0) (< p3 0)) (kxrt-sp-refused an 7)
-      (let [dl (+ (kxrt-now-ns) 10000000000)
+      (let [dl (+ (kxrt-now-ns) 10000000000) parent (kxrt-syscall 39 0 0 0 0 0 0)
             pid (kxrt-syscall 56 17 0 0 0 0 0)]
-        (cond (= pid 0) (kxrt-sp-child in-r out-w st-w (kxrt-sp-prog k) argv envp)
+        (cond (= pid 0) (kxrt-sp-child in-r out-w st-w (kxrt-sp-prog k) argv envp parent)
               (< pid 0) (let [z (kxrt-sp-close4 in-r in-w out-r out-w) y (kxrt-close st-r) v (kxrt-close st-w)] (kxrt-sp-refused an 7))
               :else
               (let [c (let [x (kxrt-close in-r) y (kxrt-close out-w)] (kxrt-close st-w))
@@ -1400,9 +1408,9 @@
           rq-r (bit-and w 4294967295) rq-w (u64-shift-right w 32)
           an-r (bit-and x 4294967295) an-w (u64-shift-right x 32)]
       (if (or (< p1 0) (< p2 0)) (kxrt-die)
-        (let [pid (kxrt-syscall 56 17 0 0 0 0 0)]
+        (let [parent (kxrt-syscall 39 0 0 0 0 0 0) pid (kxrt-syscall 56 17 0 0 0 0 0)]
           (cond (< pid 0) (kxrt-die)
-                (= pid 0) (let [z (kxrt-close rq-w) y (kxrt-close an-r)
+                (= pid 0) (let [bound (if (kxrt-sp-parent-bound? parent) 0 (kxrt-exit 127)) z (kxrt-close rq-w) y (kxrt-close an-r)
                                 act (+ (kxrt-gl 200) 8192)
                                 a0 (kxrt-store64 act 1) a1 (kxrt-store64 (+ act 8) 0) a2 (kxrt-store64 (+ act 16) 0) a3 (kxrt-store64 (+ act 24) 0)
                                 g (kxrt-signal 13 act)]

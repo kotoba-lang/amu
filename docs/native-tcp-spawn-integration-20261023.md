@@ -36,6 +36,30 @@ executes in the replacement build or runtime.
 The catalog names `:amu-selfhost-static` separately from the historical
 hosted `:linux-static` packager and removed `:kexe-loader`.
 
+## Parent-death candidate (AWAI-152)
+
+The static-runtime source candidate binds the spawn helper to the guest and
+the directly spawned child to that helper using Linux `PR_SET_PDEATHSIG` and
+checks the expected parent after installing the signal. A failed child setup
+is sent through the existing spawn refusal status pipe. This candidate is
+not yet present in a rebuilt or qualified compiler/runtime artifact.
+
+The [small source-unity mock fixtures](evidence/awai152-spawn-parent-death-20261103/)
+exercise the parent check and refusal decisions for both syscall-number sets;
+the Mac Amu CLI printed `0` for each. Removing the parent comparison printed
+`1` in both controls. Separately, a one-off Python observer on Linux ARM64
+7.2.7 in a disposable one-CPU VM exercised the analogous kernel signal chain:
+both helper and child were no longer live 0.5 seconds after killing the root
+process. That observer does not run this runtime implementation. The VM was
+removed.
+
+The candidate does not govern grandchildren, daemonized processes, programs
+that reset their death signal, external services or macOS; termination is
+asynchronous and is not an atomic resource-release or distributed fence.
+Full rebuilt native ARM and x86 runtime gates, startup race and failure tests,
+process-tree handling, lock/queue/resource integration and host qualification
+remain required before any governor or deployment claim.
+
 ## Verification
 
 The evidence publisher checks source pins against the checkout before
