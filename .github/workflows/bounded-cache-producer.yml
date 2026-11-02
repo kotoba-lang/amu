@@ -7,11 +7,14 @@ on:
   pull_request:
     paths:
       - "seed/**"
-      - "bin/amu-linux-x86_64"
+      - "bin/**"
       - "native-product.json"
       - "scripts/seed/check-definition-build-native.py"
+      - "scripts/seed/check-native-identities.py"
+      - "scripts/seed/check-native-cdci.py"
       - "scripts/seed/sealed_image.py"
       - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/test_verified_attestation.py"
       - "scripts/seed/bounded_cache_bundle.py"
       - "scripts/seed/test_bounded_cache_bundle.py"
       - "scripts/seed/fetch_bounded_cache.py"
@@ -21,6 +24,7 @@ on:
       - "scripts/seed/check_bounded_producer_attestation.py"
       - "scripts/seed/test_bounded_producer_attestation.py"
       - ".github/workflows/bounded-cache-producer.yml"
+      - ".github/workflows/bounded-cache-consumer.yml"
   push:
     branches: [main]
 permissions:
@@ -40,6 +44,8 @@ jobs:
         run: python3 scripts/seed/check-native-identities.py
       - name: Refuse untrusted producer contexts
         run: python3 scripts/seed/test_bounded_producer_attestation.py -v
+      - name: Check every attestation policy field
+        run: python3 scripts/seed/test_verified_attestation.py -v
       - name: Check pinned provenance-verifier staging
         run: python3 scripts/seed/test_stage_pinned_gh.py -v
       - name: Fresh native candidate and negative controls
