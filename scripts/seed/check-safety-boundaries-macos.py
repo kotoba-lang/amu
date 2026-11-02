@@ -21,10 +21,12 @@ FIXTURES = ROOT / 'test/fixtures/selfhost/safety-boundaries'
 REFUSALS = {'internal-17': 'E2178', 'exported-9': 'E2108',
             'unknown-op': 'E2101', 'unbound': 'E2102',
             'duplicate-ns': 'E2004', 'namespace-extra': 'E6021',
-            'fs-empty-capabilities': 'E2176', 'fs-wrong-capability': 'E2176'}
+            'fs-empty-capabilities': 'E2176', 'fs-wrong-capability': 'E2176',
+            'fs-transitive-empty': 'E2176'}
 POSITIVES = {'arity-positive': (b') 136)', b') 135)'),
              'metadata-positive': (b'(sequence) 2)', b'(sequence) 3)'),
-             'fs-positive': (b') 3)', b') 4)')}
+             'fs-positive': (b') 3)', b') 4)'),
+             'fs-transitive-positive': (b'(helper) 3)', b'(helper) 4)')}
 
 
 def sha(path):
