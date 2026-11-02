@@ -1,0 +1,98 @@
+name: experimental-bounded-cache-producer
+# This publishes a bounded KIR test producer, not an adopted compiler or a
+# cache admission verdict. Main/full and every native gate remain fresh.
+on:
+  merge_group:
+    types: [checks_requested]
+  pull_request:
+    paths:
+      - "seed/**"
+      - "bin/amu-linux-x86_64"
+      - "native-product.json"
+      - "scripts/seed/check-definition-build-native.py"
+      - "scripts/seed/sealed_image.py"
+      - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/check_bounded_producer_attestation.py"
+      - "scripts/seed/test_bounded_producer_attestation.py"
+      - ".github/workflows/bounded-cache-producer.yml"
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: bounded-producer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted identities
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Refuse untrusted producer contexts
+        run: python3 scripts/seed/test_bounded_producer_attestation.py -v
+      - name: Fresh native candidate and negative controls
+        run: >-
+          python3 scripts/seed/check-definition-build-native.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/bounded-producer"
+      - name: Stage only the candidate image from this run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: experimental-bounded-kir-producer-${{ github.sha }}
+          path: ${{ runner.temp }}/bounded-producer/producer.elf
+          if-no-files-found: error
+          retention-days: 7
+  attest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: qualify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: experimental-bounded-kir-producer-${{ github.sha }}
+          path: ${{ runner.temp }}/bounded-producer
+      - name: Attest the bounded image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ runner.temp }}/bounded-producer/producer.elf
+      - name: Download and verify the pinned provenance verifier
+        env:
+          RUNNER_TMP: ${{ runner.temp }}
+        run: |
+          curl --fail --location --silent --show-error --output "$RUNNER_TMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          python3 - <<'PY'
+          import hashlib, os, tarfile
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TMP'])
+          archive = root / 'gh.tar.gz'
+          if hashlib.sha256(archive.read_bytes()).hexdigest() != '4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d':
+              raise SystemExit('provenance verifier archive mismatch')
+          with tarfile.open(archive, 'r:gz') as tar:
+              member = tar.getmember('gh_2.103.3_linux_amd64/bin/gh')
+              if not member.isfile() or member.size > 128 * 1024 * 1024:
+                  raise SystemExit('invalid provenance verifier member')
+              data = tar.extractfile(member).read()
+          if hashlib.sha256(data).hexdigest() != 'b768184570b12536be4ac1528893f6340d1c6a7b40b56ad45bca9cd0e87ad34d':
+              raise SystemExit('provenance verifier image mismatch')
+          tool = root / 'pinned-gh'
+          tool.write_bytes(data)
+          tool.chmod(0o500)
+          PY
+      - name: Verify the exact sealed candidate and signer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/seed/check_bounded_producer_attestation.py
+          --artifact "$RUNNER_TEMP/bounded-producer/producer.elf" --gh "$RUNNER_TEMP/pinned-gh"
