@@ -274,6 +274,13 @@ def main(compiler, out):
     negatives = {
         "ill-typed": "(defn main [] :i64 true)",
         "unknown": "(defn main [] :i64 (unknown 1))",
+        # The source identity bridge does not yet bind the abort control row.
+        # Do not mint persistent identities for escaping or caught aborts,
+        # including a callee whose abort is eliminated by its caller.
+        "abort-escape": "(defn- f [x :i64] :i64 (if (= x 0) (throw 7) x))",
+        "abort-caught-direct": "(defn- f [x :i64] :i64 (try (if (= x 0) (throw 7) x) (catch :i64 e (+ e 2))))",
+        "abort-caught-callee": "(defn- g [x :i64] :i64 (if (= x 0) (throw 7) (+ x 1))) (defn- f [x :i64] :i64 (try (g x) (catch :i64 e (+ e 2))))",
+        "abort-escaping-handler": "(defn- f [x :i64] :i64 (try (if (= x 0) (throw x) 4) (catch :i64 e (throw (+ e 1)))))",
         "loop-closure": "(defn main [] :i64 (loop [x 0] (let [f (fn [y] (+ y x))] (f 1))))",
         # B1 (JUN-588): a let-bound closure is bridged now ("closure" cases above); these positions stay refused.
         "closure-operator": "(defn main [] :i64 ((fn [x] (+ x 1)) 2))",
@@ -305,6 +312,8 @@ def main(compiler, out):
         inputs[name] = src
         stdout, stderr = run("refuse-" + name, [producer, src], 1)
         assert not stdout and stderr.startswith("DSB:")
+        if name.startswith("abort-"):
+            assert stderr.startswith("DSB:BRIDGE:3:")
         if name in ("computed-def", "constant-alias", "option-refinement", "tuple-refinement", "nested-refinement", "function-type"):
             assert stderr.startswith("DSB:BRIDGE:")
     mutations = [
