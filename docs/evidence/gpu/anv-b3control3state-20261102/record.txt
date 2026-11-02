@@ -1,0 +1,167 @@
+2026-11-02/03 (sessions 215-229, landing s230, JUN-59 -- THE OPEN
+CONTROL QUESTION'S RESOLUTION ACT: PRE-REGISTRATION (s215-224) +
+MEASUREMENT WINDOW (s225) + WINDOW-CONTINUATION/CAPTURE (s226-s227)
++ PULL/CUSTODY (s228) + ANALYSIS (s229) + STANDING GATES + THIS
+RECORD, the s229 carry-forward's landing half COMPLETED)
+== THE RESOLUTION ACT: FOUR CONTROL-ARM READINGS ON THE
+ROUNDS6400 INSTRUMENT, PRE-REGISTERED, FROZEN, RUN, ANALYZED AND
+NOW LANDED -- ACT VERDICT: VALID, L1..L4 = (b) / (b) / (b) / (b) ==
+
+ROW: (s215-s220) the six pre-registration design decisions (state-
+s215.txt / refs-provenance-s216.txt / arms-statistic-s217.txt /
+letters-s218.txt / invalidation-s219.txt / threestate-s220.txt,
+all in ../anv-b3control3state-prereg-20261102/); (s221-s222) the
+fail-closed design-verify (357 ok / 0 failed, run TWICE BYTE-
+IDENTICAL); (s223) the protocol FREEZE (protocol.txt freeze stamp
+2026-11-02T10:48:32Z, written ONCE BEFORE any run of the act
+existed; freeze-verify 113 ok / 0 failed run TWICE BYTE-
+IDENTICAL); (s224) the pre-registration landing (standing gates
+(a)-(f) + ../anv-b3control3state-prereg-20261102/record.txt + the
+ADR-0355 dated note); (s225) the MEASUREMENT WINDOW on
+aiueos-6600hs (24 fresh processes under the frozen protocol,
+frozen order reading 1..4 x (c2-r01..03 then c8-r01..03), GO
+2026-11-02T13:17:41Z); (s226) the measuring continuation
+(STARTED, NOT FINISHED -- runtime-budget cutoff, read-only
+monitoring only); (s227) the window-completion capture (24/24
+runs complete and clean, host-runs-s225.txt captured whole,
+driver canonical aggregate 31c0feaeef55a01a3e965fead1508babcf7e
+26a9aff95d369f189f9f7e2c49f0); (s228) the 48-run-log PULL +
+CUSTODY (gzip -n commit form; pull-verify-s225.py run TWICE
+BYTE-IDENTICAL fail-closed over the committed bytes only -- name
+set 48/48, gzip fidelity 24/24, aggregate re-derived through the
+committed form == 31c0feae...; raw-digests-s225.txt); (s229) the
+ANALYSIS HALF (analysis-s229.py run TWICE BYTE-IDENTICAL ->
+publication-s229.txt, 11,026 bytes sha256 040ee2f60b601d9fb77d3
+ed044856d93549fa4bb0d10d12a8564ec6c9d3eb96d); (s230, this
+record) the LANDING half: standing gates (a)-(f) run LIVE with
+s230 captures + this record + the ADR-0355 dated note + the
+landing tail (blocker-first re-check + commit + push to the chain
+branch + the JUN-499 landing comment).
+
+1. THE RESOLUTION-ACT OUTCOME (the s229 publication, all rows
+   computed fresh from the 24 committed run logs by analysis-
+   s229.py -- never transcribed): INTEGRITY 24/24 clean (run-
+   count self-check 4*(3+3)=24 True; cell map identical across
+   runs, map pin c35d16af3a929dd55bc57739b4ceb08781a67a105502b5a
+   bf8ffb59dc6aaf3ce; tail '# done cells=24' 24/24; SAMPLE lines
+   115,200 per run 24/24; forced=8 pipeline-FAIL cells 144 fail-
+   closed never read; 24/24 committed 0-byte .stderr.txt
+   siblings); VERIFY mismatches 0 over all 24 runs (per-arm
+   c2=0 c8=0; per-reading 0/0/0/0). PER-READING POOLED MEDIANS
+   at cell (sum,128,S=16), N = 3R = 19,200 each (MEASURED --
+   computed from the s225 hardware runs on aiueos-6600hs (Intel
+   BMG G31) under the frozen protocol): c2 m 30 / 30 / 30 / 30
+   (mad 0, h 0.0000 all four); c8 m 32872 / 32862 / 32795 /
+   32867 (mad 203/192/195/221; h descriptive ONLY) -- all four
+   c8 within +/-5% of the committed 32,915 (-0.13% / -0.16% /
+   -0.36% / -0.15%) and VERIFY-mismatch-free -> all four
+   readings in the s218 letter domain. LETTERS (the frozen s218
+   1(c) derivation: letter = f(pooled median m against the
+   committed floor band 31..32 at B=2) ONLY -- h is NOT a letter
+   input; the deep-pooling class descriptor stays FLOOR on every
+   reading's c2 line per s218 4(d); the record's own C1
+   derivation agrees with the frozen band-only boolean on all
+   four): L1 = (b), L2 = (b), L3 = (b), L4 = (b) (every c2 m 30
+   OUT of band). SEQUENCE CONFRONTATION (s220 2(d) rows,
+   PATTERN-LEVEL): L1..L4 = (b)/(b)/(b)/(b) vs the committed
+   record (b)/(a)/(a)/(b) -- sequence identical: False; B_act = 1
+   (act block shape (b,b,b,b); I_act = 1) vs B_record = 3 with
+   shape (b) | (a,a) | (b) -- the s220 2(d) row fires as B_act in
+   {1,2,4}: differs from the record at COUNT LEVEL; the s218 2(b)
+   ALL-FOUR-(b) shape row: a constant (b) sequence -- ONE present
+   state-BLOCK of the (b) state-IDENTITY. NAMED, NOT HIDDEN: this
+   does NOT confirm the committed "current control state"
+   (constancy and identity are separate -- prong A requires BOTH
+   constancy AND identity (a); prong B confronts only ACROSS the
+   full record (present (b) readings + the historical (a) state)
+   -- an all-(b) act ALONE shows one present state and does not by
+   itself establish two states). PATTERN-LEVEL ONLY (s218 2(e)):
+   NO p-value, NO test statistic, NO probability claim. ACT
+   VERDICT: VALID (NAMED: the frozen protocol fixes the INVALID
+   literal only (s219 2(c)); "VALID" is the analysis's report
+   label for 4/4 evaluable readings, not a frozen literal).
+
+2. THE RETRO-RESOLUTION BOUNDARY AND THE OPEN HAZARD (carried
+   verbatim into the landing): the D2 retro-resolution boundary
+   binds under this sequence -- the letters read the PRESENT
+   instrument only; the historical discrepancy cause stays
+   UNMEASURED (L2 binds); the s216 identity hazard stays OPEN (no
+   act sequence establishes an underlying-state count; whether
+   m 30 is a NEW control state or a tolerance/defect reading
+   stays UNDECIDED and UNQUEUED). The three-state discipline on
+   the outcome: the four per-reading pooled medians are MEASURED
+   quantities (the s225 hardware runs, one named device, one
+   named instrument channel); the letters, sequence, B_act and
+   verdict are DERIVED confrontations of those measured
+   quantities under the frozen derivation. NOT workgroup
+   defaults: the accelerator-targets workgroup rows stay exactly
+   as ADR-0358 left them (:measured? true scoped to each row's
+   one named measured device for :nvidia/:apple/:intel/:amd;
+   :arm and :unknown remain provisional; :measured? false rows
+   remain provisional design assumptions -- NOT optimization
+   evidence). NO vendor optimization exists for Intel (or for any
+   vendor); this is control-question measurement-machinery
+   content on ONE host's instrument question.
+
+3. STANDING GATES (a)-(f) run LIVE at s230 (captures gate-s230-*,
+   bar-s230-* in this directory; the s88 pins in
+   ../anv-b3w6tailrep-20261030/ and the s117 post-append eval
+   pins in ../anv-b3w7ledgerappend-20261031/), every capture
+   byte-compared to its pin (cmp exit 0, tool output this tick):
+   (a) gpu_regime_classify.py --self-test rc 0, 17,925 bytes ==
+       the s88 pin (cmp exit 0), .err 0 bytes.
+   (b) scoped GPU gate (scratch/scoped-gpu-gate.cljk -- the eight
+       GPU-owned accelerator-* test namespaces of run-tests.cljk,
+       same engine and classpath; created, run twice, DELETED
+       ("No such file or directory" tool-checked), never
+       committed): GREEN 'Ran 123 tests containing 12162
+       assertions. 0 failures, 0 errors.' run 1 == run 2 ==
+       both s88 pins (919 bytes, cmp exit 0 x5), rc 0 both,
+       .err 0 bytes both.
+   (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+       ('Could not find namespace: kotoba.form', ADR-0362,
+       outside this diff -- touches NO committed .cljk
+       namespace), .out 0 bytes == pin, .err 879 bytes == pin
+       (cmp exit 0 x2) -- NO green full suite claimed.
+   (d) settle-bar evaluator (../anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test rc 0, 3,590
+       bytes == the s88 pin (cmp exit 0); the LEDGER EVAL pair
+       twice BYTE-IDENTICAL (bar-s230-eval-run1.txt ==
+       bar-s230-eval-run2.txt, 1,006 bytes, cmp exit 0) == the
+       s117 post-append pins (cmp exit 0 x2) -> VERDICT: SETTLED
+       INTERMEDIATE/MIXED (unchanged).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 lines
+       (gate-s230-nosh.txt 0 bytes).
+   (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+       ledger.txt rc 0 (no append this row).
+
+4. THREE-STATE / RULE 4 / BAR: the resolution act is LANDED --
+   its measured rows (the four per-reading pooled medians) are
+   MEASURED on the one named device; its letters/sequence/B_act/
+   verdict are DERIVED confrontations under the frozen
+   derivation; NO vendor optimization exists for Intel (or for
+   any vendor) and NONE follows from this act. RULE 4 unchanged:
+   NOTHING MOVES -- the committed bracket stays EXACTLY (254,923,
+   255,045]; L9 binds at n=254,984 (C2 (c), D3 (v)); the MID-ONLY
+   NARROWING CLAIM stays SUSPENDED; the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   false rows remain provisional -- NOT optimization evidence).
+   BAR NON-INTERFERENCE held at s230: NO settle-bar-ledger line
+   (gate (f) rc 0), NO day-slot consumption, NO hardware, NO
+   builds, NO GO stamp; the bar's SETTLED INTERMEDIATE/MIXED
+   verdict unmoved. Sessions 215-229 in sum: s215-s224 ran NO
+   hardware (pre-registration DESIGN + landing); s225-s227 ran
+   the one named measurement window on aiueos-6600hs (the act's
+   24 fresh processes -- INSTRUMENT channel, no day-slot
+   consumption, no ledger line); s228-s229 were custody/analysis
+   over committed bytes; s230 (this landing) ran NO hardware.
+
+5. Carry-forward s231: standing, not queued: any further
+   counted-day slot (each needs its own freeze) and the cross-day
+   tail-movement row; the s216 identity hazard's own question
+   (whether the (b) readings' m 30 is a NEW control state or a
+   tolerance/defect reading) stays UNMEASURED and unqueued; if
+   needed: the full enumeration of every committed session 5..20
+   c2/c8 reading (s216 NAMED (a)); a post-hoc record-verify over
+   the committed captures (standing).
+(JUN-55, JUN-59; Linear tracking JUN-499)

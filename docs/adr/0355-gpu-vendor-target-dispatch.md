@@ -7008,3 +7008,62 @@ question's RESOLUTION measurement act under the frozen protocol
 cross-day tail-movement row. Evidence:
 docs/evidence/gpu/anv-b3control3state-prereg-20261102/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-03 (sessions 225-229, landing s230, JUN-59 -- THE OPEN
+CONTROL QUESTION'S RESOLUTION ACT: MEASUREMENT + CUSTODY +
+ANALYSIS + standing gates + record at s230): THE ACT RAN AND IS
+LANDED -- 24 fresh processes on aiueos-6600hs (Intel BMG G31)
+under the frozen anv-b3control3state-prereg-20261102/protocol.txt
+(freeze stamp 2026-11-02T10:48:32Z), frozen order reading 1..4 x
+(c2 (B=2, WM=1, NDIV=1) k=3 then c8 (B=8, WM=1, NDIV=1) k=3),
+GO 2026-11-02T13:17:41Z; 24/24 runs complete and clean (samples
+115,200 each = 18 pipeline-ok cells x R = 6,400; VERIFY
+mismatches 0 over all runs; integrity 24/24). CUSTODY (s228):
+the 48-run-log pull in gzip -n commit form, pull-verify-s225.py
+run TWICE BYTE-IDENTICAL fail-closed over the committed bytes
+only (name set 48/48, gzip fidelity 24/24, canonical aggregate
+31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f
+0 re-derived through the committed form). ANALYSIS (s229):
+analysis-s229.py run TWICE BYTE-IDENTICAL ->
+publication-s229.txt (sha256 040ee2f6...): per-reading pooled
+medians at cell (sum,128,S=16), N = 3R = 19,200 each (MEASURED):
+c2 m 30/30/30/30 (mad 0), c8 m 32872/32862/32795/32867 all
+within +/-5% of the committed 32,915 and VERIFY-clean -> all
+four readings in the s218 letter domain. LETTERS (frozen s218
+1(c) derivation, h descriptive never a letter input): L1..L4 =
+(b) / (b) / (b) / (b) (every c2 m 30 OUT of the committed floor
+band 31..32 at B=2). SEQUENCE CONFRONTATION (PATTERN-LEVEL, s220
+2(d)): vs the committed record (b)/(a)/(a)/(b) -- sequence
+identical False; B_act = 1, act block shape (b,b,b,b), I_act = 1
+vs B_record = 3 with shape (b) | (a,a) | (b) -- differs at count
+level; the s218 ALL-FOUR-(b) shape: ONE present state-BLOCK of
+the (b) identity -- NAMED, NOT HIDDEN: this does NOT confirm the
+committed "current control state" (constancy and identity are
+separate; prong A needs BOTH (a); prong B confronts only ACROSS
+the full record). ACT VERDICT: VALID (4/4 evaluable; NAMED: the
+frozen protocol fixes the INVALID literal only -- VALID is the
+analysis's report label). PATTERN-LEVEL ONLY: NO p-value, NO
+test statistic, NO probability claim. The retro-resolution
+boundary binds: the letters read the PRESENT instrument only; the
+historical discrepancy cause stays UNMEASURED (L2 binds); the
+s216 identity hazard stays OPEN (whether m 30 is a NEW control
+state or a tolerance/defect reading stays UNDECIDED and
+unqueued). Landing (s230): standing gates (a)-(f) all == the
+s88/s117 pins (scoped GPU gate GREEN 123 tests / 12,162
+assertions / 0 failures / 0 errors twice; FULL run-tests.cljk
+RED AT BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green
+full suite claimed); record.txt + this note. BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, NO
+hardware at the landing; the bar's SETTLED INTERMEDIATE/MIXED
+verdict unmoved. RULE 4 unchanged: NOTHING MOVES; the committed
+bracket stays EXACTLY (254,923, 255,045]; L9 binds at n=254,984;
+NO vendor optimization exists for any vendor; the workgroup rows
+stay exactly as ADR-0358 left them. Three-state: the four pooled
+medians are MEASURED (one named device, one named channel); the
+letters/sequence/B_act/verdict are DERIVED confrontations under
+the frozen derivation. Carry-forward s231: standing, not queued:
+any further counted-day slot (its own freeze), the cross-day
+tail-movement row; the s216 identity hazard's own question
+(UNMEASURED, unqueued). Evidence:
+docs/evidence/gpu/anv-b3control3state-20261102/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
