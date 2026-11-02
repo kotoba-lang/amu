@@ -33,7 +33,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
-NO_READ0_RULE = ("        i7 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i6 0) i6)\n", "        i7 i6\n", 2)
+NO_READ0_RULE = ("        i8 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i7 0) i7)\n", "        i8 i7\n", 2)
 
 HEAD = ('(ns t (:export [main]))\n'
         '(defn- rd [s :string] :string (typed-cap-call :io/read :string :string s))\n'

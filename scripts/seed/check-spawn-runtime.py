@@ -48,7 +48,7 @@ SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 S = "ARG_SEP"
 T = "STDIN_SEP"
-NO_READ_RULE = ("(if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)", "i4", 2)
+NO_READ_RULE = ("(if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i5 (kxrt-gl 2096)) i5)", "i5", 2)
 NO_SIGPIPE_RESET = ("        dfl (kxrt-signal 13 q)\n", "        dfl 0\n", 2)
 SIGPIPE_BIT = "m=$(grep SigIgn /proc/self/status | cut -f2); echo $(( (0x$m >> 12) & 1 ))"
 

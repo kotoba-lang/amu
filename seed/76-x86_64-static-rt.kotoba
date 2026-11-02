@@ -41,6 +41,8 @@
 ;; 752 last monotonic nanoseconds (clock/now), 760 absolute vector item highwater,
 ;; 768 private FS2 journal pointer (seed/72-linux-fs2.kotoba), 776 file-lock path length,
 ;; 784 file-lock canonical-path buffer pointer, 792 file-lock fd+1
+;; 800 browse root paths (16x4096), 808 count, 816 lengths, 944 fds, 1072 matched fd
+;; 1088 browse names/table, 1112 getdents scratch
 ;; 8192..12287 reserved canonical lock path (inside the fixed 64KiB RW map)
 ;; 16384..16679 --format launcher only (the launcher text, ADR 0371 step 4): keep clear
 ;; 16704 --format platform-linked only (the platform scratch page): keep clear
@@ -457,7 +459,7 @@
       (let [a (kxrt-vbytes h) r (kxrt-utf8 a n)]
         (if (> r 0) (kxrt-value r) (kxrt-mark (kxrt-intern a n)))))))
 
-;; ---- capabilities: wires 20 :process/spawn, 35 :fs/app-data, 37 :io/write, 38 :cli/args, 39 :io/write-error, 41 :io/read, 42 :gpu/compute, 43..47 :net/* ----
+;; ---- capabilities: wires 20 :process/spawn, 34 :fs/browse, 35 :fs/app-data, 37 :io/write, 38 :cli/args, 39 :io/write-error, 41 :io/read, 42 :gpu/compute, 43..47 :net/* ----
 (defn- kxrt-admitted? [id :i64] :bool
   (and (>= id 0) (< id 256)
        (= (bit-and (u64-shift-right (kxrt-load64 (+ (kxrt-ctx) 16 (* 8 (quot id 64)))) (- id (* 64 (quot id 64)))) 1) 1)))
@@ -564,6 +566,99 @@
       (let [rest (if (>= k m) (let [z (kxrt-store8 (+ d m 1) 46) y (kxrt-store8 (+ d m 2) 0)] (+ d m 1)) (+ d k))
             x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) 10)]
         (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
+;; Reject NUL and parent components before normalization; browse roots are
+;; matched against the normalized absolute path after this raw-path check.
+(defn- kxrt-browse-clean? [a :i64 n :i64] :bool
+  (and (> n 0) (< n 4096)
+    (loop [i 0 st 0]
+      (cond (= i n) (not (and (= (- i st) 2) (= (kxrt-load8 (+ a st)) 46) (= (kxrt-load8 (+ a st 1)) 46)))
+            (= (kxrt-load8 (+ a i)) 0) false
+            (= (kxrt-load8 (+ a i)) 47)
+              (if (and (= (- i st) 2) (= (kxrt-load8 (+ a st)) 46) (= (kxrt-load8 (+ a st 1)) 46)) false (recur (inc i) (inc i)))
+            :else (recur (inc i) st)))))
+(defn- kxrt-browse-admit-root [m :i64 i :i64] :i64
+  (let [d (kxrt-gl 208) r (+ (kxrt-gl 800) (* 4096 i)) rn (kxrt-gl (+ 816 (* 8 i)))]
+    (if (or (= rn 1) (and (>= m rn) (kxrt-same d r rn) (or (= m rn) (= (kxrt-load8 (+ d rn)) 47))))
+      (if (= m rn) m (inc rn)) -1)))
+(defn- kxrt-browse-admit [m :i64] :i64
+  (loop [i 0]
+    (if (>= i (kxrt-gl 808)) -1
+      (let [k (kxrt-browse-admit-root m i)]
+        (if (< k 0) (recur (inc i)) (let [z (kxrt-gs 1072 (kxrt-gl (+ 944 (* 8 i))))] k))))))
+(defn- kxrt-browse-less? [x :i64 y :i64] :bool
+  (let [d (kxrt-gl 1088) xo (bit-and x 1048575) xn (bit-and (u64-shift-right x 20) 255)
+        yo (bit-and y 1048575) yn (bit-and (u64-shift-right y 20) 255) lim (if (< xn yn) xn yn)]
+    (loop [i 0]
+      (if (= i lim) (< xn yn)
+        (let [a (kxrt-load8 (+ d xo i)) b (kxrt-load8 (+ d yo i))]
+          (cond (< a b) true (> a b) false :else (recur (inc i))))))))
+(defn- kxrt-browse-u16 [p :i64] :i64 (+ (kxrt-load8 p) (* 256 (kxrt-load8 (+ p 1)))))
+(defn- kxrt-browse-page [raw :i64 got :i64 names :i64 table :i64 used :i64 count :i64] :i64
+  (loop [p 0 used used count count]
+    (if (= p got) (bit-or used (i64-shift-left count 32))
+      (let [reclen (kxrt-browse-u16 (+ raw p 16)) valid (and (>= reclen 20) (<= (+ p reclen) got))
+            nl (if valid (loop [j 19] (cond (>= j reclen) -1 (= (kxrt-load8 (+ raw p j)) 0) (- j 19) :else (recur (inc j)))) -1)]
+        (if (or (not valid) (< nl 0) (> nl 255) (> (+ used nl) 1048576)) -1
+          (let [dot (and (= nl 1) (= (kxrt-load8 (+ raw p 19)) 46))
+                dotdot (and (= nl 2) (= (kxrt-load8 (+ raw p 19)) 46) (= (kxrt-load8 (+ raw p 20)) 46))
+                skip (or dot dotdot) full (and (>= count 4096) (not skip))
+                nextused (if skip used (+ used nl))
+                copy (if skip 0 (kxrt-copy (+ names used) (+ raw p 19) nl))
+                key (bit-or used (bit-or (i64-shift-left nl 20) (i64-shift-left (if (= (kxrt-load8 (+ raw p 18)) 4) 1 0) 28)))
+                put (if skip 0 (kxrt-store64 (+ table (* 8 count)) key))
+                nc (if skip count (inc count))]
+            (if full -1 (recur (+ p reclen) nextused nc))))))))
+(defn- kxrt-browse-sift [table :i64 n :i64 root :i64] :i64
+  (loop [r root]
+    (let [left (inc (* 2 r)) right (inc left)]
+      (if (>= left n) 0
+        (let [child (if (and (< right n) (kxrt-browse-less? (kxrt-load64 (+ table (* 8 left))) (kxrt-load64 (+ table (* 8 right))))) right left)
+              parent-value (kxrt-load64 (+ table (* 8 r))) child-value (kxrt-load64 (+ table (* 8 child)))]
+          (if (kxrt-browse-less? parent-value child-value)
+            (let [a (kxrt-store64 (+ table (* 8 r)) child-value) b (kxrt-store64 (+ table (* 8 child)) parent-value)] (recur child))
+            0))))))
+(defn- kxrt-browse-sort [table :i64 n :i64] :i64
+  (let [heap (loop [i (quot n 2)]
+               (if (= i 0) n (let [root (dec i) sift (kxrt-browse-sift table n root)] (recur root))))]
+    (loop [end heap]
+      (if (<= end 1) n
+        (let [top (kxrt-load64 table) tail (kxrt-load64 (+ table (* 8 (dec end))))
+              a (kxrt-store64 table tail) b (kxrt-store64 (+ table (* 8 (dec end))) top)
+              sift (kxrt-browse-sift table (dec end) 0)]
+          (recur (dec end)))))))
+(defn- kxrt-browse-collect [fd :i64 raw :i64 names :i64 table :i64 used :i64 count :i64] :i64
+  (let [got (kxrt-syscall 217 fd raw 65536 0 0 0)]
+    (cond (= got -4) (kxrt-browse-collect fd raw names table used count)
+          (< got 0) -1 (= got 0) (bit-or used (i64-shift-left count 32))
+          :else (let [state (kxrt-browse-page raw got names table used count)]
+            (if (< state 0) -1
+              (kxrt-browse-collect fd raw names table (bit-and state 4294967295) (u64-shift-right state 32)))))))
+(defn- kxrt-fs-browse [h :i64] :i64
+  (let [a (kxrt-saddr h) n (kxrt-ps h)]
+    (if (or (not (kxrt-admitted? 34)) (not (> (kxrt-gl 808) 0)) (not (kxrt-browse-clean? a n))) (kxrt-fail)
+      (let [m (kxrt-path a n) k (if (< m 0) -1 (kxrt-browse-admit m)) d (kxrt-gl 208)
+            root (if (< k 0) -1 (kxrt-gl 1072))
+            rest (if (< k 0) 0 (if (>= k m) (let [z (kxrt-store8 (+ d m 1) 46) y (kxrt-store8 (+ d m 2) 0)] (+ d m 1)) (+ d k)))
+            how (+ (kxrt-gl 200) 4096) h0 (kxrt-store64 how 589824) h1 (kxrt-store64 (+ how 8) 0) h2 (kxrt-store64 (+ how 16) 14)
+            fd (if (< k 0) -1 (kxrt-syscall 437 root rest how 24 0 0))]
+        (if (< fd 0) (kxrt-fail)
+          (let [raw (kxrt-gl 1112) names (kxrt-gl 1088) table (+ names 1048576)
+                state (kxrt-browse-collect fd raw names table 0 0) closed (kxrt-close fd)
+                count (u64-shift-right state 32) collected (if (< state 0) -1 (kxrt-browse-sort table count))
+                u (kxrt-gl 32) out (+ (kxrt-gl 24) u)
+                answer (if (or (< collected 0) (> collected 4096)) -1
+                  (loop [i 0 at 0]
+                    (if (= i collected) at
+                      (let [key (kxrt-load64 (+ table (* 8 i))) off (bit-and key 1048575)
+                            len (bit-and (u64-shift-right key 20) 255) dir (bit-and (u64-shift-right key 28) 1)
+                            prefix (if (= i 0) 0 1) need (+ len 2 prefix)]
+                        (if (> (+ at need) (- KXRT-POOL u)) -1
+                          (let [nl (if (= prefix 0) 0 (kxrt-store8 (+ out at) 10)) dst (+ out at prefix)
+                                c (kxrt-copy dst (+ names off) len) t (kxrt-store8 (+ dst len) 9)
+                                v (kxrt-store8 (+ dst len 1) (+ 48 dir))]
+                            (recur (inc i) (+ at need))))))))]
+            (if (or (< state 0) (< closed 0) (< collected 0) (< answer 0) (not= (kxrt-utf8 out answer) 0)) (kxrt-fail)
+              (let [w (kxrt-gs 32 (+ u answer))] (kxrt-pair-new (- -1 u) answer)))))))))
 (defn- kxrt-sink-close [] :i64
   (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
@@ -1548,7 +1643,7 @@
         (not= rk sk) (kxrt-fail)
         (= rk 1)
           (let [v (kxrt-valid req)
-                r (case id 3 (kxrt-sha256 req) 7 (kxrt-clock req) 20 (kxrt-spawn req) 23 (kxrt-entropy req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 40 (kxrt-cwd req) 41 (kxrt-io-read req) 42 (kxrt-gpu req)
+                r (case id 3 (kxrt-sha256 req) 7 (kxrt-clock req) 20 (kxrt-spawn req) 23 (kxrt-entropy req) 34 (kxrt-fs-browse req) 35 (kxrt-fs req) 37 (kxrt-io-write req) 38 (kxrt-args req) 39 (kxrt-io-error req) 40 (kxrt-cwd req) 41 (kxrt-io-read req) 42 (kxrt-gpu req)
                     43 (kxrt-net 43 req) 44 (kxrt-net 44 req) 45 (kxrt-net 45 req) 46 (kxrt-net 46 req) 47 (kxrt-net 47 req) (kxrt-fail))]
             (kxrt-valid r))
         (and (= rk 8) (= id 35))
@@ -1675,6 +1770,9 @@
   (-> i (kxrt-allow-nr-at p 107) (kxrt-allow-nr-at p 73) (kxrt-allow-nr-at p 0) (kxrt-allow-nr-at p 2) (kxrt-allow-nr-at p 257) (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 3) (kxrt-allow-nr-at p 8) (kxrt-allow-nr-at p 17) (kxrt-allow-nr-at p 5) (kxrt-allow-nr-at p 262) (kxrt-allow-nr-at p 21) (kxrt-allow-nr-at p 439)))
 (defn- kxrt-allow-scope [p :i64 i :i64] :i64
   (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 316) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318) (kxrt-allow-nr-at p 107) (kxrt-allow-nr-at p 73)))
+;; Browse admits openat2 and getdents64; close releases its temporary directory fd.
+(defn- kxrt-allow-browse [p :i64 i :i64] :i64
+  (-> i (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 217) (kxrt-allow-nr-at p 3)))
 ;; read (0) only when args[0] (low word at offset 16) is fd; then the
 ;; syscall number is loaded back for the rules after it
 (defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64
@@ -1699,15 +1797,17 @@
   (let [fs2 (kxrt-f2-state) p (+ (kxrt-gl 200) 12352) prog (+ (kxrt-gl 200) 12304)
         i0 (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p (kxrt-bpf p 0 32 0 0 4) 21 1 0 3221225534) 6 0 0 2147483648) 32 0 0 0)
         fs (and (> (kxrt-gl 656) 0) (kxrt-admitted? 35))
+        browse (and (> (kxrt-gl 808) 0) (kxrt-admitted? 34))
         i1 (kxrt-allow-base p i0)
         i2 (if fs (kxrt-allow-scope p (kxrt-allow-fs p i1)) i1)
-        i3 (if (> (kxrt-gl 312) 2) (kxrt-allow-read-fd p i2 (kxrt-gl 312)) i2)
-        i4 (if (kxrt-net-any?) (kxrt-allow-net p i3) i3)
-        i5 (if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)
-        i6 (if (kxrt-admitted? 23) (kxrt-allow-nr p i5 318) i5)
-        i7 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i6 0) i6)
-        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 230) 219) i7)
-        n (kxrt-bpf p i8 6 0 0 196608)
+        i3 (if browse (kxrt-allow-browse p i2) i2)
+        i4 (if (> (kxrt-gl 312) 2) (kxrt-allow-read-fd p i3 (kxrt-gl 312)) i3)
+        i5 (if (kxrt-net-any?) (kxrt-allow-net p i4) i4)
+        i6 (if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i5 (kxrt-gl 2096)) i5)
+        i7 (if (kxrt-admitted? 23) (kxrt-allow-nr p i6 318) i6)
+        i8 (if (kxrt-admitted? 41) (kxrt-allow-read-fd p i7 0) i7)
+        i9 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i8 230) 219) i8)
+        n (kxrt-bpf p i9 6 0 0 196608)
         a (kxrt-store64 prog n) b (kxrt-store64 (+ prog 8) p)]
     (if (< (kxrt-syscall 157 38 1 0 0 0 0) 0) (kxrt-die)
       (let [r (kxrt-syscall 317 1 0 prog 0 0 0)]
@@ -1810,6 +1910,24 @@
         (cond (= i n) (kxrt-scope-add (+ s st) (- n st))
               (= (kxrt-load8 (+ s i)) 58) (let [z (kxrt-scope-add (+ s st) (- i st))] (recur (inc i) (inc i)))
               :else (recur (inc i) st))))))
+;; KEXE_CAP_RESOURCES_34 is an independent, read-only directory grant. Keep
+;; its paths, lengths, and O_PATH descriptors separate from wire 35.
+(defn- kxrt-browse-scope-add [a :i64 n :i64] :i64
+  (let [m (if (and (> n 0) (= (kxrt-load8 a) 47)) (kxrt-path a n) -1) c (kxrt-gl 808)]
+    (if (or (< m 0) (>= c 16)) 0
+      (let [r (+ (kxrt-gl 800) (* 4096 c)) z (kxrt-copy r (kxrt-gl 208) (inc m))
+            how (+ (kxrt-gl 200) 4096)
+            h0 (kxrt-store64 how 2686976) h1 (kxrt-store64 (+ how 8) 0) h2 (kxrt-store64 (+ how 16) 4)
+            fd (kxrt-syscall 437 -100 r how 24 0 0)]
+        (if (< fd 0) 0
+          (let [y1 (kxrt-gs (+ 816 (* 8 c)) m) y2 (kxrt-gs (+ 944 (* 8 c)) fd)] (kxrt-gs 808 (inc c))))))))
+(defn- kxrt-browse-scope [s :i64] :i64
+  (if (or (= s 0) (not (kxrt-admitted? 34))) 0
+    (let [n (kxrt-cstrlen s)]
+      (loop [i 0 st 0]
+        (cond (= i n) (kxrt-browse-scope-add (+ s st) (- n st))
+              (= (kxrt-load8 (+ s i)) 58) (let [z (kxrt-browse-scope-add (+ s st) (- i st))] (recur (inc i) (inc i)))
+              :else (recur (inc i) st))))))
 (defn- kxrt-signal [sig :i64 act :i64] :i64 (kxrt-syscall 13 sig act 0 8 0 0))
 (defn- kxrt-report [r :i64] :i64
   (let [b (kxrt-gl 200)
@@ -1883,6 +2001,7 @@
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+                m16 (kxrt-gs 800 (kxrt-map 65536)) m17 (kxrt-gs 1088 (kxrt-map 1114112)) m18 (kxrt-gs 1112 (kxrt-map 65536))
         mf2 (kxrt-f2-state) mki (kxrt-ki-init)
         cw (kxrt-syscall 79 (kxrt-gl 184) 4096 0 0 0 0)
         cl (kxrt-gs 192 (if (and (> cw 1) (= (kxrt-load8 (kxrt-gl 184)) 47)) (kxrt-cstrlen (kxrt-gl 184)) 0))
@@ -1899,6 +2018,7 @@
         f1 (kxrt-store64 (+ ctx 8) (kxrt-gl 168))
         rp (kxrt-gs 160 (if (= (kxrt-env 0x5254535f4558454b 0x5f44455255544355 0x3d54524f504552 23) 0) 0 1))
         sc (kxrt-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d35335f5345 22))
+        bsc (kxrt-browse-scope (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d34335f5345 22))
         gk (kxrt-gpu-fds (kxrt-env 0x5041435f4558454b 0x4352554f5345525f 0x3d32345f5345 22))
         nk (kxrt-net-grants)
         ;; wire 20: the spawn helper is forked here, before the limits and the filter

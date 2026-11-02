@@ -43,7 +43,7 @@ SELFHOST = "seed/X86_64-LINUX-SELFHOST-MANIFEST"
 FUEL = "100000000"
 
 # The control: the read rule names another fd, in both runtimes.
-WRONG_READ_FD = ("(kxrt-allow-read-fd p i2 (kxrt-gl 312))", "(kxrt-allow-read-fd p i2 (+ (kxrt-gl 312) 100))", 2)
+WRONG_READ_FD = ("(kxrt-allow-read-fd p i3 (kxrt-gl 312))", "(kxrt-allow-read-fd p i3 (+ (kxrt-gl 312) 100))", 2)
 
 PLAIN = "(ns t (:export [main]))\n(defn main [] :i64 42)\n"
 GPU_DEFS = ('(defn- gpu [s :string] :string (typed-cap-call 42 :string :string s))\n'

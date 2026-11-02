@@ -45,10 +45,10 @@ NO_FSYNC_RULE = [("(kxrt-allow-nr-at p 82) (kxrt-allow-nr-at p 278)", "(kxrt-all
                  ("(kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318)", "(kxrt-allow-nr-at p 318)", 1)]
 # Deny clock_nanosleep while retaining the current restart_syscall rule.
 # A restart allowance alone must not let a fresh sleep escape the filter.
-NO_SLEEP_RULE = [("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 115) 128) i7)\n",
-                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 128) i7)\n", 1),
-                 ("        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i7 230) 219) i7)\n",
-                  "        i8 (if (kxrt-admitted? 7) (kxrt-allow-nr p i7 219) i7)\n", 1)]
+NO_SLEEP_RULE = [("        i9 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i8 115) 128) i8)\n",
+                  "        i9 (if (kxrt-admitted? 7) (kxrt-allow-nr p i8 128) i8)\n", 1),
+                 ("        i9 (if (kxrt-admitted? 7) (kxrt-allow-nr p (kxrt-allow-nr p i8 230) 219) i8)\n",
+                  "        i9 (if (kxrt-admitted? 7) (kxrt-allow-nr p i8 219) i8)\n", 1)]
 
 HEAD = ('(ns t (:export [main]))\n'
         '(defn- fs [s :string] :string (typed-cap-call :fs/app-data :string :string s))\n'
