@@ -4,8 +4,8 @@ This isolated pure Kotoba example models a small, fail-closed subset of the
 host's target-bound destructive operation policy. It checks an eight-word
 session/target/geometry/expiry/approval ticket against independently supplied
 host observation, rejects internal, mounted and nonexclusive devices, consumes
-one ticket and validates a bounded sector range without offset addition or size
-multiplication overflow. Session and identity components are opaque positive
+one ticket and validates a bounded sector range and translates it to a byte offset and byte
+count without overflowing signed 64-bit arithmetic. Session and identity components are opaque positive
 numbers here, not real disk identities or cryptographic tokens.
 
 This is **not an authorization mechanism** until a native host owns both
@@ -19,7 +19,7 @@ not use this candidate to write to any disk. A passing fixture cannot qualify
 JUN-767 or prove the safety of attached SSDs.
 
 Run `AMU=/absolute/path/to/bin/amu TMPDIR=/workspace/scratch ./check.sh`. The
-actual selfhost native Kotoba program runs 21 positive/refusal assertions; two
+actual selfhost native Kotoba program runs 28 positive/refusal assertions; three
 independently compiled mutants must be detected. This is a component check only.
 
 ## Scoped regular-file exercise

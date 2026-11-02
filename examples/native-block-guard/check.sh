@@ -12,4 +12,7 @@ result=$("$AMU" run "$tmp/mounted.kotoba")
 sed 's/(= (vector-at ticket 7) 0)/(= (vector-at ticket 7) 1)/' "$here/guard.kotoba" > "$tmp/replay.kotoba"
 result=$("$AMU" run "$tmp/replay.kotoba")
 [ "$result" != 0 ] && [ -n "$result" ]
-printf '%s\n' 'native block guard: 21 assertions passed; mounted and replay mutants rejected'
+sed 's/(not (valid-block-size block))/false/g' "$here/guard.kotoba" > "$tmp/block-size.kotoba"
+result=$("$AMU" run "$tmp/block-size.kotoba")
+[ "$result" != 0 ] && [ -n "$result" ]
+printf '%s\n' 'native block guard: 28 assertions passed; mounted, replay and block-size mutants rejected'

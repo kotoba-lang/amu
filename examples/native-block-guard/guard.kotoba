@@ -37,6 +37,16 @@
           (< start 0) (<= count 0) (> count 64) (>= start sectors)) 0
     (if (<= count (- sectors start)) 1 0)))
 
+;; Checked byte translation for a future host: validate the complete sector
+;; interval before multiplying. A negative result must never be used as I/O.
+(defn byte-offset [sectors block start count]
+  (if (or (not (valid-block-size block)) (not= (range-ok sectors start count) 1)) -1
+    (* start block)))
+
+(defn byte-count [sectors block start count]
+  (if (or (not (valid-block-size block)) (not= (range-ok sectors start count) 1)) -1
+    (* count block)))
+
 (defn main [] :i64
   (let [good [7 11 13 4096 4096 100 1 0]
         dev [7 11 13 4096 4096 1 0 1]
@@ -61,4 +71,11 @@
        (if (= (range-ok 4096 4095 2) 0) 0 1)
        (if (= (range-ok 4096 -1 1) 0) 0 1)
        (if (= (range-ok 4096 0 65) 0) 0 1)
-       (if (= (range-ok 4096 0 0) 0) 0 1))))
+       (if (= (range-ok 4096 0 0) 0) 0 1)
+       (if (= (byte-offset 4096000000 4096 4095999999 1) 16777215995904) 0 1)
+       (if (= (byte-count 4096000000 4096 4095999999 1) 4096) 0 1)
+       (if (= (byte-offset 4096000000 4096 4095999999 2) -1) 0 1)
+       (if (= (byte-offset 4096 513 0 1) -1) 0 1)
+       (if (= (byte-count 4096 4096 0 65) -1) 0 1)
+       (if (= (byte-offset 2251799813685248 4096 0 1) -1) 0 1)
+       (if (= (byte-offset 2251799813685247 4096 2251799813685246 1) 9223372036854767616) 0 1))))
