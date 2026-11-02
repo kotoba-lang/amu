@@ -127,6 +127,22 @@ No other wire inherits these combinations. Form T is no-replace publication
 through Linux renameat2; it has no ordinary-rename fallback. Wire40 is an
 explicit string/string sys/cwd grant and does not inherit wire35 authority.
 
+Draft FS2 form U is a no-follow metadata read with the same four-field
+response as O, except that its first field is `mode & 07777`, preserving
+setuid, setgid and sticky bits. O remains `mode & 0777`. U has no tail and
+uses the same scope and final-component semantics as O. This source candidate
+is unqualified: no regenerated Linux runtime, macOS provider, public compiler,
+or compatibility with the old loader is claimed. The `full-mode` fixture in
+`seed/tests/fs2-product.kotoba` expects real regular/0644, special/4644,
+group/2644, sticky/1644, link (symlink) and directory entries under its path.
+On 2026-11-03 a disposable 1 CPU / 2 GiB ARM64 Linux VM compiled this
+fixture with the pre-change root SHA-256
+`914b828a24ced086e09929894bb64806dea103bf79766ef144001a076717b1c4`.
+Fixture SHA-256 `a4c2f8f21b4c6a32b5d4c6d8e7419f07180785d1009fe5bb4f6f89e42bc774a0`,
+ELF SHA-256 `07a38364e57273873498ff104c95997fc775053d6d58094329a9a6a43a70a890`.
+The old embedded runtime refused U with `:fs2/refused` stage 8 / exit 126;
+this is a negative compatibility control, not a test of the candidate runtime.
+
 These are candidate source contracts. Complete selfbuild, conformance,
 actual x86 execution and public/CDCI image pins must be regenerated before
 the candidate replaces the qualified main product.
