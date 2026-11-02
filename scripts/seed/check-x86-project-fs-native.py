@@ -126,7 +126,7 @@ def main():
     for label, old, new, diagnostic in [
         ('missing-declaration', b'(:capabilities [:fs/app-data])', b'', b'E2176'),
         ('empty-declaration', b'(:capabilities [:fs/app-data])', b'(:capabilities [])', b'E2176'),
-        ('unsupported-wire', b':fs/app-data', b':io/write', b'E7101')]:
+        ('unsupported-wire', b':fs/app-data', b':net/listen', b'E7101')]:
         files = dict(original)
         files['io.kotoba'] = files['io.kotoba'].replace(old, new)
         build(label, files, diagnostic)
