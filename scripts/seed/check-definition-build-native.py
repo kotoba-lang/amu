@@ -131,6 +131,18 @@ def main(compiler, out, *, mutations=True):
     cache = directory("cache")
     pair("base-fill", base, cache, (0, 2), 42)
     pair("base-warm", base, cache, (2, 0), 42)
+    # Record-schema identity is supported by the checked KIR producer, but
+    # the current object backend is still the scalar profile. Neither a
+    # reference nor a cached build may manufacture an object for this input.
+    schema_cache = directory("schema-refusal-cache")
+    schema_kir = ('{:format :kotoba.kir/v4 :entry main :exports [main] :effects #{} '
+                  ':schemas {:s/r [:record :s/r [[:a :i64]]]} :functions ['
+                  '{:name f :params [x] :param-types [[:ref :s/r]] :result :i64 :effects #{} :body 42} '
+                  + function("main", "42", "") + ']}\n')
+    for mode in ("reference", "cached"):
+        rejected = invoke("schema-refusal-" + mode, schema_kir, schema_cache, mode=mode, code=1)
+        assert not rejected.stdout and b"E7102" in rejected.stderr
+        assert not list(schema_cache.iterdir())
     invoke("native-controls", base, cache, mode="controls")
     pair("rename", module([function("renamed", "(if (< x 0) 0 (+ x 2))"),
                             function("main", "(renamed 40)", "")]), cache, (2, 0), 42)
