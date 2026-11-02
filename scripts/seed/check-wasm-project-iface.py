@@ -11,6 +11,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-iface_t.kotoba'
+STUB_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-stubs_t.kotoba'
 
 
 def main():
@@ -25,7 +26,8 @@ def main():
     names = [line for line in (ROOT/'seed/FULL-MANIFEST').read_text().splitlines()
              if line and not line.startswith('#') and line != 'seed/78-full-entry.kotoba']
     source = out/'unit.kotoba'
-    source.write_bytes(b''.join((ROOT/name).read_bytes()+b'\n' for name in names)+FIXTURE.read_bytes())
+    prefix = b''.join((ROOT/name).read_bytes()+b'\n' for name in names)
+    source.write_bytes(prefix+FIXTURE.read_bytes())
     env = dict(PATH='/nonexistent', KEXE_ALLOW='35,37,38,39', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608')
     image = out/'unit.elf'
     built = subprocess.run([str(compiler),'compile',str(source),'--target',target,'--output',str(image),'--format','static'],
@@ -48,10 +50,33 @@ def main():
     negative = subprocess.run([str(mutant)],cwd=out,env=dict(PATH='/nonexistent', KEXE_ALLOW='-', KEXE_STRUCTURED_REPORT='1', KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=120)
     assert not negative.stderr and re.search(rb':status :ok :result 5(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    # Separate processes keep the compiler-sized test states independent.
+    stub_source = out/'stubs.kotoba'; stub_source.write_bytes(prefix+STUB_FIXTURE.read_bytes())
+    stub_image = out/'stubs.elf'
+    stub_build = subprocess.run([str(compiler),'compile',str(stub_source),'--target',target,'--output',str(stub_image),'--format','static'],
+                                cwd=out,env=env,capture_output=True,timeout=900)
+    assert stub_build.returncode == 0 and not stub_build.stderr and stub_image.is_file(), (stub_build.returncode,stub_build.stderr[-1000:])
+    stub_image.chmod(0o755)
+    stub_result = subprocess.run([str(stub_image)],cwd=out,env=dict(PATH='/nonexistent', KEXE_ALLOW='-', KEXE_STRUCTURED_REPORT='1', KEXE_STACK_BYTES='8388608'),
+                                 capture_output=True,timeout=120)
+    assert stub_result.returncode == 0 and not stub_result.stderr and re.search(rb':status :ok :result 0(?:\s|})',stub_result.stdout), (stub_result.returncode,stub_result.stdout,stub_result.stderr)
+    stub_guard = b'(not (xw-project-stubs-valid? M L first count start))'
+    stub_bytes = stub_source.read_bytes(); assert stub_bytes.count(stub_guard) == 1
+    stub_mutant_source = out/'stubs-mutant.kotoba'; stub_mutant_source.write_bytes(stub_bytes.replace(stub_guard, b'false'))
+    stub_mutant = out/'stubs-mutant.elf'
+    stub_mutant_build = subprocess.run([str(compiler),'compile',str(stub_mutant_source),'--target',target,'--output',str(stub_mutant),'--format','static'],
+                                      cwd=out,env=env,capture_output=True,timeout=900)
+    assert stub_mutant_build.returncode == 0 and not stub_mutant_build.stderr and stub_mutant.is_file(), (stub_mutant_build.returncode,stub_mutant_build.stderr[-1000:])
+    stub_mutant.chmod(0o755)
+    stub_negative = subprocess.run([str(stub_mutant)],cwd=out,env=dict(PATH='/nonexistent', KEXE_ALLOW='-', KEXE_STRUCTURED_REPORT='1', KEXE_STACK_BYTES='8388608'),
+                                   capture_output=True,timeout=120)
+    assert not stub_negative.stderr and re.search(rb':status :ok :result 39(?:\s|})',stub_negative.stdout), (stub_negative.returncode,stub_negative.stdout,stub_negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
                'negativeControlSourceSha256':sha(mutant_source),'negativeControlImageSha256':sha(mutant),
+               'stubFixtureSha256':sha(STUB_FIXTURE),'stubSourceSha256':sha(stub_source),'stubImageSha256':sha(stub_image),
+               'stubNegativeSourceSha256':sha(stub_mutant_source),'stubNegativeImageSha256':sha(stub_mutant),
                'limitations':['interface mapping component only; no project linker or Wasm execution']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

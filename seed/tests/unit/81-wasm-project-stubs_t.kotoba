@@ -1,0 +1,43 @@
+;; Project stub index binding and emitted call controls.
+(defn- xg-default [] :i64 2)
+(defn- t-bound-call? [M :vector-i64 i :i64] :bool
+  (if (>= (+ i 1) (xg-pos M)) false
+    (if (and (or (= (xg-code-byte M i) 16) (= (xg-code-byte M i) 18))
+             (= (xg-code-byte M (+ i 1)) 5)) true
+      (t-bound-call? M (+ i 1)))))
+(defn- t-project-stubs [] :i64
+  (let [S "(ns app (:export [main]))\n(defn main [] :i64 (dep 41))\n(defn- dep [x :i64] :i64 0)\n"
+        M (xg-front S) L (pj-new-l)
+        main-f (pj-fn-named M S "main") stub (pj-fn-named M S "dep")
+        target (pj-ls L pj-t-base 5)
+        assigned (xw-project-assign M L S stub 1 6)
+        prepared (-> assigned (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1))
+        code (xw-project-code prepared 1 stub 1)]
+    (cond (not (pj-ok code)) 31
+          (= main-f 0) 32
+          (not= stub (- (vector-at M MM-FN-N) 1)) 33
+          (not= (xw-idx M main-f) 6) 34
+          (not= (xw-idx M stub) 5) 35
+          (not= (xg-get M 3) 2) 36
+          (not= (vector-at M MM-FIX-N) 2) 37
+          (not (t-bound-call? M 1)) 38
+          :else (let [invalid (xg-front S) bad-target (pj-ls L pj-t-base 6)
+                      rejected (xw-project-assign invalid L S stub 1 6)]
+                  (cond (pj-ok rejected) 39
+                        (not= (xw-code-of rejected main-f) 0) 40
+                        (not= (xw-code-of rejected stub) 0) 41
+                        :else (let [valid-target (pj-ls L pj-t-base 5)
+                                    stub-at (loop [i 1] (if (>= i (vector-at M MM-SIR-N)) 0
+                                      (if (and (= (xg-si M i IF-OP) OP-FN) (= (xg-si M i IF-A) stub)) i (recur (+ i 1)))))
+                                    main-at (loop [i 1] (if (>= i (vector-at M MM-SIR-N)) 0
+                                      (if (and (= (xg-si M i IF-OP) OP-FN) (= (xg-si M i IF-A) main-f)) i (recur (+ i 1)))))
+                                    removed (mem-set M (+ MM-SIR-BASE (* stub-at MM-SIR-W) IF-OP) 0)
+                                    missing (xw-project-stubs-valid? removed L stub 1 6)
+                                    restored (mem-set M (+ MM-SIR-BASE (* stub-at MM-SIR-W) IF-OP) OP-FN)
+                                    duplicated (mem-set M (+ MM-SIR-BASE (* main-at MM-SIR-W) IF-A) stub)
+                                    duplicate (xw-project-stubs-valid? duplicated L stub 1 6)]
+                                (cond (or (= stub-at 0) (= main-at 0)) 42
+                                      missing 43 duplicate 44
+                                      (xw-project-stubs-valid? M L 9223372036854775807 1 6) 45
+                                      :else 0)))))))
+(defn- seed-main [] :i64 (t-project-stubs))

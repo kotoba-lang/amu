@@ -73,6 +73,44 @@
                   (= kind 2) (xw-assign (xw-set-code M f (i64-shift-left ix 48)) S (inc i) next)
                   :else (xw-assign (xw-set-code M f next) S (inc i) (inc next))))
         :else (xw-assign M S (inc i) next)))
+;; Assign one project's module after its dependency indices are known. Import
+;; stubs carry typed interfaces from pj-trailer; their validated targets are
+;; already-defined Wasm functions, so stubs must not consume a new index.
+;; The project checker remains responsible for the signature/refinement match.
+(defn- xw-project-stubs-valid? [M :vector-i64 L :vector-i64 first :i64 count :i64 start :i64] :bool
+  (if (or (< first 1) (< count 0) (> count pj-t-cap) (> first (vector-at M MM-FN-N))
+          (> count (- (vector-at M MM-FN-N) first)) (< start XW-NIMPORT) (> start 4294967295)) false
+    (if (not (loop [k 0]
+               (if (>= k count) true
+                 (let [target (pj-l L (+ pj-t-base k))]
+                   (and (>= target XW-NIMPORT) (< target start) (recur (+ k 1))))))) false
+      (if (= count 0) true
+        (let [seen (vector-alloc count)]
+          (loop [i 1 found 0]
+            (if (>= i (vector-at M MM-SIR-N)) (= found count)
+              (let [f (xg-si M i IF-A) slot (- f first)]
+                (if (and (= (xg-si M i IF-OP) OP-FN) (>= f first) (>= slot 0) (< slot count))
+                  (if (not= (vector-at seen slot) 0) false
+                    (let [marked (vector-assoc! seen slot 1)] (recur (+ i 1) (+ found 1))))
+                  (recur (+ i 1) found))))))))))
+(defn- xw-project-assign-loop [M :vector-i64 L :vector-i64 S :string i :i64 next :i64 first :i64 count :i64] :vector-i64
+  (cond (or (not (pj-ok M)) (>= i (vector-at M MM-SIR-N))) (xg-set M 3 (- next XW-NIMPORT))
+        (= (xg-si M i IF-OP) OP-FN)
+          (let [f (xg-si M i IF-A) sp (xw-sp M S f) kind (u64-shift-right sp 8) ix (bit-and (u64-shift-right sp 4) 15)]
+            (cond (> (xg-f M f FF-NPARAMS) 16) (xg-err M 7102 f)
+                  (and (>= f first) (< f (+ first count)))
+                    (if (> sp 0) (xg-err M 7102 f)
+                      (xw-project-assign-loop (xw-set-code M f (pj-l L (+ pj-t-base (- f first)))) L S (inc i) next first count))
+                  (and (> sp 0) (not= (xg-f M f FF-NPARAMS) (bit-and sp 15))) (xg-err M 7102 f)
+                  (= kind 1) (xw-project-assign-loop (xw-set-code M f ix) L S (inc i) next first count)
+                  (= kind 2) (xw-project-assign-loop (xw-set-code M f (i64-shift-left ix 48)) L S (inc i) next first count)
+                  (>= next 4294967295) (xg-err M 7102 f)
+                  :else (xw-project-assign-loop (xw-set-code M f next) L S (inc i) (inc next) first count)))
+        :else (xw-project-assign-loop M L S (inc i) next first count)))
+(defn- xw-project-assign [M :vector-i64 L :vector-i64 S :string first :i64 count :i64 start :i64] :vector-i64
+  (if (not (xw-project-stubs-valid? M L first count start)) (xg-err M 7102 0)
+    (xw-project-assign-loop M L S 1 start first count)))
+
 ;; Convert the project checker's typed exported clauses to absolute Wasm
 ;; function indices. pj-iface-one records base + 4*(FF-CODE-1), an AArch64
 ;; addressing convention; for Wasm, xw-assign must have run and xw-tables
@@ -287,6 +325,15 @@
         (and (= (xg-si M i IF-OP) OP-FN) (let [f (xg-si M i IF-A)] (or (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
           (xw-code M (xw-skip M i))
         :else (xw-code (xw-one M i) (inc i))))
+;; Imported stubs refer to already-defined functions and have no body in the
+;; combined module. Runtime imports and inline intrinsics are likewise skipped.
+(defn- xw-project-code [M :vector-i64 i :i64 first :i64 count :i64] :vector-i64
+  (cond (or (not (pj-ok M)) (>= i (vector-at M MM-SIR-N))) M
+        (and (= (xg-si M i IF-OP) OP-FN)
+             (let [f (xg-si M i IF-A)]
+               (or (and (>= f first) (< f (+ first count))) (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
+          (xw-project-code M (xw-skip M i) first count)
+        :else (xw-project-code (xw-one M i) (inc i) first count)))
 ;; thunks: type 5 (five i64) -> the target's first p parameters
 (defn- xw-thunks [M :vector-i64 k :i64 n :i64] :vector-i64
   (cond (or (not= (vector-at M MM-ERR) 0) (= k n)) M
