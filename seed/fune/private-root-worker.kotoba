@@ -1,0 +1,100 @@
+;; Fixed-source ARM64 private-root worker candidate (JUN-779).
+;; No OCI input, archive operations, exec or workload launch is admitted.
+;; The only protocol byte is X: close the worker and its private tmpfs.
+;; This text is appended as privileged runtime only by a source-pinned factory.
+
+(defn- fw-die [stage :i64] :i64
+  (let [b (+ (kxrt-g) 24000) a (kxrt-w b 0 0x3a45535546455246 8)
+        n (+ a (kxrt-dec (+ b a) stage)) z (kxrt-store8 (+ b n) 10)
+        w (kxrt-write-all 2 b (+ n 1))]
+    (kxrt-exit 2)))
+
+;; Constant C strings in private memory; no caller-controlled host paths.
+(defn- fw-strings [] :i64
+  (let [b (+ (kxrt-g) 24576)
+        e (kxrt-w b 96 0x2f 2) f (kxrt-w b 112 0x706d742f 5) g (kxrt-w b 128 0x7366706d74 6)
+        h (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 144 0x3931343d657a6973 8) 0x5f726e2c34303334 8) 0x343d7365646f6e69 8) 0x363930 4)
+        j (kxrt-w b (kxrt-w b 192 0x6f6f722f706d742f 8) 0x736674 4)
+        k (kxrt-w b 224 0x0a796e6564 5)] b))
+
+(defn- fw-write-path [path :i64 data :i64 n :i64 stage :i64] :i64
+  (let [fd (kxrt-open-path path 524289 0)]
+    (if (< fd 0) (fw-die stage)
+      (let [w (kxrt-write-all fd data n) c (kxrt-close fd)]
+        (if (or (not= w 1) (not= c 0)) (fw-die stage) 0)))))
+
+(defn- fw-map [path :i64 id :i64 stage :i64] :i64
+  (let [b (+ (kxrt-g) 25088) a (kxrt-w b 0 0x2030 2)
+        n (+ a (kxrt-dec (+ b a) id)) sep (kxrt-w b n 0x0a3120 3)]
+    (fw-write-path path b sep stage)))
+
+(defn- fw-proc-path [pid :i64 which :i64] :i64
+  (let [b (+ (kxrt-g) 25344) a (kxrt-w b 0 0x2f636f72702f 6)
+        n (+ a (kxrt-dec (+ b a) pid))
+        e (case which
+            0 (kxrt-w b (kxrt-w b n 0x70616d5f6469752f 8) 0 1)
+            1 (kxrt-w b (kxrt-w b n 0x70616d5f6469672f 8) 0 1)
+            (kxrt-w b (kxrt-w b n 0x756f72677465732f 8) 0x7370 3))] b))
+
+(defn- fw-close [fd :i64 stage :i64] :i64
+  (if (< (kxrt-close fd) 0) (fw-die stage) 0))
+(defn- fw-read-one [fd :i64 address :i64] :i64
+  (loop [attempt 0]
+    (let [r (kxrt-syscall 63 fd address 1 0 0 0)]
+      (if (= r -4) (recur (+ attempt 1)) r))))
+
+;; The child has no host directory descriptors, never executes an image and
+;; dies if its parent disappears. It cannot proceed until the original-UID
+;; parent has installed both maps.
+(defn- fw-child [parent :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 b :i64] :i64
+  (let [death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 4) 0)
+        alive (if (not= (kxrt-syscall 173 0 0 0 0 0 0) parent) (fw-die 4) 0)
+        c1 (fw-close ready-r 4) c2 (fw-close ack-w 4)
+        user (if (< (kxrt-syscall 97 268435456 0 0 0 0 0) 0) (fw-die 4) 0)
+        buf (+ b 320) marker (kxrt-store8 buf 85)
+        sent (if (not= (kxrt-write-all ready-w buf 1) 1) (fw-die 4) 0)
+        c3 (fw-close ready-w 4) got (fw-read-one ack-r buf) c4 (fw-close ack-r 4)
+        mapped (if (or (not= got 1) (not= (kxrt-load8 buf) 77)) (fw-die 8) 0)
+        nodump2 (if (< (kxrt-syscall 167 4 0 0 0 0 0) 0) (fw-die 8) 0)
+        ns (if (< (kxrt-syscall 97 1073872896 0 0 0 0 0) 0) (fw-die 9) 0)
+        private (if (< (kxrt-syscall 40 0 (+ b 96) 0 278528 0 0) 0) (fw-die 10) 0)
+        mount (if (< (kxrt-syscall 40 (+ b 128) (+ b 112) (+ b 128) 6 (+ b 144) 0) 0) (fw-die 11) 0)
+        dir (if (< (kxrt-syscall 34 -100 (+ b 192) 448 0 0 0) 0) (fw-die 12) 0)
+        nnp (if (< (kxrt-syscall 167 38 1 0 0 0 0) 0) (fw-die 13) 0)
+        out (+ b 256)
+        a (kxrt-w out (kxrt-w out (kxrt-w out 0 0x6972702d656e7566 8) 0x6f6f722d65746176 8) 0x0a79646165722d74 8)
+        announced (if (not= (kxrt-write-all 1 out a) 1) (fw-die 14) 0)
+        command (fw-read-one 0 buf)]
+    (if (and (= command 1) (= (kxrt-load8 buf) 88)) (kxrt-exit 0) (fw-die 15))))
+
+(defn- fw-parent [pid :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 uid :i64 gid :i64 b :i64] :i64
+  (let [c1 (fw-close ready-w 5) c2 (fw-close ack-r 5) buf (+ b 320)
+        got (fw-read-one ready-r buf) c3 (fw-close ready-r 5)
+        ready (if (or (not= got 1) (not= (kxrt-load8 buf) 85)) (fw-die 5) 0)
+        umap (fw-map (fw-proc-path pid 0) uid 5)
+        groups (fw-write-path (fw-proc-path pid 2) (+ b 224) 5 6)
+        gmap (fw-map (fw-proc-path pid 1) gid 7)
+        marker (kxrt-store8 buf 77) sent (if (not= (kxrt-write-all ack-w buf 1) 1) (fw-die 8) 0)
+        c4 (fw-close ack-w 8) st (+ b 352)
+        waited (loop [attempt 0] (let [r (kxrt-syscall 260 pid st 0 0 0 0)] (if (= r -4) (recur (+ attempt 1)) r)))
+        status (kxrt-load64 st)]
+    (if (or (not= waited pid) (not= (bit-and status 127) 0)) (kxrt-exit 2)
+      (kxrt-exit (bit-and (u64-shift-right status 8) 255)))))
+
+(defn- kxrt-start [sp :i64] :i64
+  (let [argc (kxrt-load64 sp) b (fw-strings)
+        uid (kxrt-syscall 175 0 0 0 0 0 0) gid (kxrt-syscall 177 0 0 0 0 0 0)
+        valid (if (or (not= argc 1) (<= uid 0) (< gid 0)
+                      (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                      (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (fw-die 1) 0)
+        dumpable (if (< (kxrt-syscall 167 4 1 0 0 0 0) 0) (fw-die 2) 0)
+        close-extra (if (< (kxrt-syscall 436 3 4294967295 0 0 0 0) 0) (fw-die 3) 0)
+        pipes (+ b 384) a (kxrt-syscall 59 pipes 524288 0 0 0 0)
+        z (kxrt-syscall 59 (+ pipes 8) 524288 0 0 0 0)
+        pipes-ok (if (or (< a 0) (< z 0)) (fw-die 3) 0)
+        pair1 (kxrt-load64 pipes) pair2 (kxrt-load64 (+ pipes 8))
+        ready-r (bit-and pair1 4294967295) ready-w (u64-shift-right pair1 32)
+        ack-r (bit-and pair2 4294967295) ack-w (u64-shift-right pair2 32)
+        parent (kxrt-syscall 172 0 0 0 0 0 0) child (kxrt-syscall 220 17 0 0 0 0 0)]
+    (cond (< child 0) (fw-die 3) (= child 0) (fw-child parent ready-r ready-w ack-r ack-w b)
+          :else (fw-parent child ready-r ready-w ack-r ack-w uid gid b))))
