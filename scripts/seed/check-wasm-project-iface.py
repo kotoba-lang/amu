@@ -82,6 +82,24 @@ def main():
     archive_negative = subprocess.run([str(archive_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                                       capture_output=True,timeout=120)
     assert not archive_negative.stderr and re.search(rb':status :ok :result 51(?:\s|})',archive_negative.stdout), (archive_negative.returncode,archive_negative.stdout,archive_negative.stderr)
+    payload_guard = b'(not (xw-project-archive-readable? L start count))'
+    assert stub_bytes.count(payload_guard) == 2
+    payload_receipts = {}
+    for name, replace_index, expected in (('types', 0, 74), ('bodies', 1, 72)):
+        parts = stub_bytes.split(payload_guard)
+        parts[replace_index] += b'false'
+        mutant_bytes = payload_guard.join(parts[:replace_index+1]) + payload_guard.join(parts[replace_index+1:])
+        payload_source = out/f'payload-{name}-mutant.kotoba'; payload_source.write_bytes(mutant_bytes)
+        payload_image = out/f'payload-{name}-mutant.elf'
+        built = subprocess.run([str(compiler),'compile',str(payload_source),'--target',target,'--output',str(payload_image),'--format','static'],
+                               cwd=out,env=env,capture_output=True,timeout=900)
+        assert built.returncode == 0 and not built.stderr and payload_image.is_file(), (built.returncode,built.stderr[-1000:])
+        payload_image.chmod(0o755)
+        negative = subprocess.run([str(payload_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                                  capture_output=True,timeout=120)
+        assert not negative.stderr and re.search(rb':status :ok :result '+str(expected).encode()+rb'(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+        payload_receipts[name] = {'sourceSha256':hashlib.sha256(payload_source.read_bytes()).hexdigest(),
+                                  'imageSha256':hashlib.sha256(payload_image.read_bytes()).hexdigest()}
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -89,6 +107,7 @@ def main():
                'stubFixtureSha256':sha(STUB_FIXTURE),'stubSourceSha256':sha(stub_source),'stubImageSha256':sha(stub_image),
                'stubNegativeSourceSha256':sha(stub_mutant_source),'stubNegativeImageSha256':sha(stub_mutant),
                'archiveNegativeSourceSha256':sha(archive_source),'archiveNegativeImageSha256':sha(archive_image),
+               'payloadNegativeControls':payload_receipts,
                'limitations':['interface mapping component only; no project linker or Wasm execution']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

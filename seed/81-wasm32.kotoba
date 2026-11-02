@@ -369,6 +369,42 @@
       (xg-err M 7104 0)
       (let [written (xw-project-archive-write M L 1 n used)] M))))
 
+;; Read back the internal archive into Wasm function-section type indices and
+;; code-section bodies. The archive is untrusted until its complete extent,
+;; index order, arity and body lengths have been validated. Thunk records are
+;; not represented by this format and remain a separate linker requirement.
+(defn- xw-project-archive-u32 [L :vector-i64 at :i64] :i64
+  (bit-or (bit-or (pj-ib L at) (i64-shift-left (pj-ib L (+ at 1)) 8))
+          (bit-or (i64-shift-left (pj-ib L (+ at 2)) 16) (i64-shift-left (pj-ib L (+ at 3)) 24))))
+(defn- xw-project-archive-scan [L :vector-i64 at :i64 end :i64 expected :i64 remaining :i64] :bool
+  (if (= remaining 0) (= at end)
+    (if (or (< at 0) (> at end) (< (- end at) 9)) false
+      (let [index (xw-project-archive-u32 L at) arity (pj-ib L (+ at 4)) len (xw-project-archive-u32 L (+ at 5))]
+        (and (= index expected) (<= arity 16) (> len 0) (<= len (- (- end at) 9))
+             (xw-project-archive-scan L (+ at 9 len) end (+ expected 1) (- remaining 1)))))))
+(defn- xw-project-archive-readable? [L :vector-i64 start :i64 count :i64] :bool
+  (let [end (pj-l L pj-k-img)]
+    (and (>= end 0) (<= end pj-img-cap) (>= start XW-NIMPORT) (<= start 4294967295)
+         (>= count 0) (<= count (- 4294967296 start))
+         (xw-project-archive-scan L 0 end start count))))
+(defn- xw-project-type-rows [M :vector-i64 L :vector-i64 at :i64 count :i64] :vector-i64
+  (if (or (= count 0) (not (pj-ok M))) M
+    (let [len (xw-project-archive-u32 L (+ at 5))]
+      (xw-project-type-rows (xw-uleb M (pj-ib L (+ at 4))) L (+ at 9 len) (- count 1)))))
+(defn- xw-project-archive-types [M :vector-i64 L :vector-i64 start :i64 count :i64] :vector-i64
+  (if (not (xw-project-archive-readable? L start count)) (xg-err M 7103 0)
+    (xw-project-type-rows (xw-uleb M count) L 0 count)))
+(defn- xw-project-body-bytes [M :vector-i64 L :vector-i64 at :i64 end :i64] :vector-i64
+  (if (or (>= at end) (not (pj-ok M))) M
+    (xw-project-body-bytes (xg-byte M (pj-ib L at)) L (+ at 1) end)))
+(defn- xw-project-body-rows [M :vector-i64 L :vector-i64 at :i64 count :i64] :vector-i64
+  (if (or (= count 0) (not (pj-ok M))) M
+    (let [len (xw-project-archive-u32 L (+ at 5)) begin (+ at 9) end (+ begin len)]
+      (xw-project-body-rows (xw-project-body-bytes (xw-uleb M len) L begin end) L end (- count 1)))))
+(defn- xw-project-archive-bodies [M :vector-i64 L :vector-i64 start :i64 count :i64] :vector-i64
+  (if (not (xw-project-archive-readable? L start count)) (xg-err M 7103 0)
+    (xw-project-body-rows (xw-uleb M count) L 0 count)))
+
 ;; thunks: type 5 (five i64) -> the target's first p parameters
 (defn- xw-thunks [M :vector-i64 k :i64 n :i64] :vector-i64
   (cond (or (not= (vector-at M MM-ERR) 0) (= k n)) M

@@ -11,6 +11,39 @@
 (defn- t-archive-u32 [L :vector-i64 at :i64] :i64
   (bit-or (bit-or (pj-ib L at) (i64-shift-left (pj-ib L (+ at 1)) 8))
           (bit-or (i64-shift-left (pj-ib L (+ at 2)) 16) (i64-shift-left (pj-ib L (+ at 3)) 24))))
+(defn- t-uleb-end [M :vector-i64 at :i64] :i64
+  (if (< (xg-code-byte M at) 128) (+ at 1) (t-uleb-end M (+ at 1))))
+(defn- t-uleb-value [M :vector-i64 at :i64 shift :i64] :i64
+  (let [b (xg-code-byte M at) part (i64-shift-left (bit-and b 127) shift)]
+    (if (< b 128) part (bit-or part (t-uleb-value M (+ at 1) (+ shift 7))))))
+(defn- t-archive-payload [M :vector-i64 L :vector-i64 size :i64] :i64
+  (let [ready (-> M (mem-set MM-ERR 0) (mem-set MM-CODE-N 1))
+        types (xw-project-archive-types ready L 6 2)]
+    (cond (not (pj-ok types)) 62
+          (not= (xg-pos M) 3) 63
+          (or (not= (xg-code-byte M 0) 2) (not= (xg-code-byte M 1) 0)
+              (not= (xg-code-byte M 2) 0)) 64
+          :else (let [reset (mem-set M MM-CODE-N 1)
+                      bodies (xw-project-archive-bodies reset L 6 2)
+                      len1 (t-archive-u32 L 5) len2 (t-archive-u32 L (+ size 5))
+                      p1 (t-uleb-end M 1) p2 (+ p1 len1) p3 (t-uleb-end M p2)]
+                  (cond (not (pj-ok bodies)) 65
+                        (not= (xg-code-byte M 0) 2) 66
+                        (not= (t-uleb-value M 1 0) len1) 67
+                        (not= (t-uleb-value M p2 0) len2) 68
+                        (not (t-archive-equal? M L p1 p2 9)) 69
+                        (not (t-archive-equal? M L p3 (+ p3 len2) (+ size 9))) 70
+                        (not= (xg-pos M) (+ p3 len2)) 71
+                        :else (let [bad (pj-ibset L size 99)
+                                    reset2 (mem-set M MM-CODE-N 1)
+                                    rejected (xw-project-archive-bodies reset2 bad 6 2)]
+                                (cond (pj-ok rejected) 72
+                                      (not= (xg-pos M) 0) 73
+                                      :else (let [clear (mem-set M MM-ERR 0)
+                                                  rejected-types (xw-project-archive-types clear bad 6 2)]
+                                              (cond (pj-ok rejected-types) 74
+                                                    (not= (xg-pos M) 0) 75
+                                                    :else 0)))))))))
 (defn- t-project-stubs [] :i64
   (let [S "(ns app (:export [main]))\n(defn main [] :i64 (dep 41))\n(defn- dep [x :i64] :i64 0)\n"
         M (xg-front S) L (pj-new-l)
@@ -73,5 +106,5 @@
                                                                 denied (xw-project-archive thunk L 6)]
                                                             (cond (pj-ok denied) 60
                                                                   (not= (pj-l L pj-k-img) size2) 61
-                                                                  :else 0)))))))))))
+                                                                  :else (t-archive-payload M L size))))))))))))
 (defn- seed-main [] :i64 (t-project-stubs))
