@@ -223,7 +223,7 @@ if __name__ == "__main__":
                         help="non-identifying host/OS label (lowercase letters, digits, hyphens)")
     parser.add_argument("--experimental-arm64", action="store_true",
                         help="observe the pinned Linux ARM64 root; not a qualified public profile")
-    parser.add_argument("--source-candidate-sha256",
+    parser.add_argument("--source-candidate-sha256", default=os.environ.get("SOURCE_CANDIDATE_SHA256") or None,
                         help="explicitly allow a changed source unity in preflight, pinned to its observed SHA-256")
     args = parser.parse_args()
     main(args.output, args.host_profile, args.experimental_arm64, args.source_candidate_sha256)

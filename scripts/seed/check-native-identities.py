@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import argparse
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +77,6 @@ def main(source_candidate_sha256=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-candidate-sha256")
+    parser.add_argument("--source-candidate-sha256", default=os.environ.get("SOURCE_CANDIDATE_SHA256") or None)
     args = parser.parse_args()
     main(args.source_candidate_sha256)
