@@ -6766,3 +6766,62 @@ further counted-day slot (its own freeze), the cross-day
 tail-movement row. Evidence: docs/evidence/gpu/
 anv-b3bisect18prereg-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 196-200, landing s201, JUN-59 -- THE
+EIGHTEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the MEASUREMENT
+half at s197-s199 on aiueos-6600hs under the frozen
+anv-b3bisect18prereg-20261101/protocol.txt, the ANALYSIS half at
+s200, the landing gates + record at s201): THE QUARTER-POINT CUT
+AT q3 (B=3, WM=246, NDIV=965) n=254,923 MEASURED -- CUT VERDICT:
+THE BRACKET NARROWS TO (254,923, 255,045]. Measurement (s197-
+s199): 54 fresh processes (c2/q3/c8 = 3/48/3) in frozen order, ALL
+54 runs clean (samples 115,200 = 18 pipeline-ok cells x frozen R =
+6,400 every run, VERIFY mismatch total 0); GO
+2026-11-01T22:45:52Z; 3/3 builds; FIRST-MEASURED binary pins q3
+c7ba9c86... (NEW, the one new knob triple of this cut, L8) with
+c2/c8 reproducing the s169 digests byte-identically (capture
+observation); 108/108 run logs host==local byte-identical at the
+canonical raw aggregate 03511dbf... (construction pinned THREE
+independent ways before use), committed under the gzip -n form
+with the 54 raw digests recorded; pull-verify-s197.py twice byte-
+identical at s199 and re-run byte-identical at s201. Analysis
+(s200): analysis-s197.py (sha256 ed47823d...) run TWICE BYTE-
+IDENTICAL -> publication-s197.txt (62,811 bytes sha256
+f3d7465a...); ONE verification-script defect named, not hidden
+(the binary-pin regex name-first vs the committed sha256sum line
+form; caught fail-closed before any number, fixed once, draft
+kept). FROZEN LETTERS: C1 (a) -- c2 pooled median m 31 FLOOR in
+the committed floor band 31..32 (True), c8 32,778 within +/-5% of
+committed 32,915 (True, -0.42%); D2 CONFRONTATION: the current
+control state (the 17th cut's C1 (a)) REPLICATES at back-to-back
+cuts -- no supersession needed (named). C2 (a) STABLE-
+INTERMEDIATE at q3 (246, 965) n=254,923 (VIRGIN point) under the
+pre-registered deep-pooling CI class statistic (R = 6,400): all
+16 block classes AND the pooled-48 arm class INTERMEDIATE/MIXED;
+block binding min(m-h) 995.1326..998.0538, pooled 997.7700. W1
+(b) -> THE BRACKET NARROWS TO (254,923, 255,045] ("THE B=3 CLASS
+FLIP LIES ABOVE n=254,923") -- THE FIRST BRACKET NARROWING IN THE
+SERIES (lower endpoint 254,557 -> 254,923; upper endpoint carried
+unchanged on hi's content; top clip 122 / low clip 366); the
+MID-ONLY NARROWING CLAIM's location statement is CONFIRMED BY
+IMPLICATION (F > 254,923 > 254,882 -- named, not claimed, by
+implication only). W2/W3/X1 descriptive; X1 (q3 host_ns spread
+62.4% of min, k=48) NAMED, cause UNMEASURED, not a C criterion.
+Landing (s201): standing gates (a)-(f) all == the s88/s117 pins
+(scoped GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk
+RED AT BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green
+full suite claimed); record.txt + this note. BAR NON-
+INTERFERENCE held: NO settle-bar-ledger line, NO day-slot
+consumption, the bar's SETTLED INTERMEDIATE/MIXED verdict
+unmoved. RULE 4 unchanged: NOTHING MOVES in the workgroup rows --
+they stay exactly as ADR-0358 left them; NO vendor optimization
+exists for Intel (or for any vendor); the bracket narrowing is
+BISECT-RECORD content per the frozen pre-registration -- the
+eighteenth-cut letters are bisect machinery measurements on ONE
+host, NOT workgroup-default measurements. Carry-forward s202:
+standing, not queued: any further counted-day slot (its own
+freeze), the cross-day tail-movement row; any nineteenth cut ONLY
+through a NEW pre-registered cut session (NOT queued) -- NO
+queued row remains. Evidence: docs/evidence/gpu/
+anv-b3bisect18-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
