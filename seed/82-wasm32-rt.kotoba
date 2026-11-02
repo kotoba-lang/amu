@@ -47,7 +47,7 @@
         d (xw-rt-cut T "(defn- kxrt-report" ";; Context word 408")]
     (if (or (= (string-length a) 0) (= (string-length b) 0) (= (string-length c) 0) (= (string-length d) 0)) ""
       (string-concat (xw-rt-head) (string-concat a (string-concat b (string-concat (xw-rt-caps)
-        (string-concat c (string-concat d (xw-rt-start))))))))))
+        (string-concat c (string-concat (linux-keyword-src) (string-concat d (xw-rt-start)))))))))))
 (defn- xw-rt-head [] :string
 "
 (defn- kxrt-load64 [a :i64] :i64 0)
@@ -159,6 +159,7 @@
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        ki (kxrt-ki-init)
         v (kxrt-store64 ctx 11) al (kxrt-store64 (+ ctx 16) (kxrt-in-allow))
         d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
         d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))

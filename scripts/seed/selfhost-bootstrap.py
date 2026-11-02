@@ -347,6 +347,15 @@ def main(out, tier, reuse=None, store=None):
 
 WASM_PROBES = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
                "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
+               "document": "(defn- verify-keywords [i :i64] :i64\n"
+                           "  (if (= i 200) 1 (let [name (string-concat \"dynamic-\" (string-from-i64 i))\n"
+                           "    k (keyword-from-string name)]\n"
+                           "    (if (string=? (keyword-name k) name) (verify-keywords (+ i 1)) 0))))\n"
+                           "(defn main [] :i64 (let [k (keyword-from-string \"remote/識別\")\n"
+                           "  d (document-map k (document-string \"言葉\"))\n"
+                           "  v (option-or (document-get d k) (document-null))]\n"
+                           "  (if (and (= (verify-keywords 0) 1) (string=? (keyword-name k) \"識別\")\n"
+                           "           (string=? (option-or (document-string-value v) \"\") \"言葉\")) 2 0)))",
                # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
                "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
                         "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
