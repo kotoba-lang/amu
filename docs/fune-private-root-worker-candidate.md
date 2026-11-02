@@ -34,14 +34,20 @@ file writes; further `P` commands are allowed. The controller is responsible
 for applying children before their parents and for sending the complete set.
 The worker does not attest that a producer sent every image path: an omitted
 `P` is not detectable from the count alone, so producer trust is still required.
-One diagnostic `R` or `V` remains available after `C`; `V` returns the mode
-observed by `fstat` as two big-endian bytes after `K`. `X` has no following fields
+For a runnable diagnostic stream, `T` replaces `C` after finalization: it
+carries the two-byte command count, four-byte spec length and `FPS` plus version-byte `1` process bytes. The worker bounds the allocation and validates framing, absolute paths
+and NUL exclusion before writing `D`. A single `Q` diagnostic returns the
+staged bytes after `K` and a four-byte length; `R` or `V` can be used instead.
+`V` returns the mode observed by `fstat` as two big-endian bytes after `K`.
+The worker does not validate environment-name syntax, duplicates, UTF-8, the
+executable inode or actual runtime access from this spec. Staged bytes are not
+authorization and must be revalidated by any future executor. `X` has no following fields
 and exits, including before `C`; the supervisor must require `D` for success.
-The `C` marker does not publish or persist the tree. Paths are at most 255
+Neither `C` nor `T` publishes or persists the tree. Paths are at most 255
 printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
 file operations are at most 1 MiB each. A session admits at most 512 ordinary
-commands and 128 finalization commands before `C`, plus one optional diagnostic
-read afterward. The candidate supervisor accepts up to 640 acknowledgments,
+commands and 128 finalization commands before `C` or `T`, plus one optional
+diagnostic read afterward. The candidate supervisor accepts up to 640 acknowledgments,
 matching this worker range.
 Directory and file access is rooted at the private root directory descriptor.
 Intermediate directory and final file opens use `openat2` with
@@ -133,3 +139,14 @@ repeated-directory and 1 MiB fixtures with this worker. A chmod-disabled
 control built with a patched debug-only compiler failed the mode readback.
 These observations do not authorize workload execution, verify arbitrary
 producer completeness, qualify x86 or establish release readiness.
+
+## Process specification handoff candidate
+
+The regenerated source-pinned ARM64 compiler built the worker and refused
+altered source. Local tests observed raw and hex handoff, empty arguments, UTF-8
+environment bytes, maximum item counts, 9 KiB and 65,536-byte payloads,
+malformed framing/path/NUL and size/count refusals, and a single-read limit.
+A debug-built mutant that ignored spec validation accepted malformed magic.
+The runnable OCI producer round-tripped config-derived specs through the
+worker; the supervisor refused invalid specs. This is not workload execution,
+complete process validation or runtime admission.

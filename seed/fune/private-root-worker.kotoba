@@ -101,6 +101,38 @@
             sent (if (= (kxrt-write-all target buf n) 1) 0 (fw-die 18))]
         (recur (- left n))))))
 
+(defn- fw-u16 [p :i64] :i64 (+ (* 256 (kxrt-load8 p)) (kxrt-load8 (+ p 1))))
+(defn- fw-u32 [p :i64] :i64
+  (+ (* 16777216 (kxrt-load8 p)) (* 65536 (kxrt-load8 (+ p 1)))
+     (* 256 (kxrt-load8 (+ p 2))) (kxrt-load8 (+ p 3))))
+(defn- fw-nonzero? [p :i64 n :i64] :bool
+  (loop [i 0] (if (= i n) true (if (= (kxrt-load8 (+ p i)) 0) false (recur (+ i 1))))))
+(defn- fw-absolute? [p :i64 n :i64 root-ok :bool] :bool
+  (if (or (< n 1) (> n 256) (not (= (kxrt-load8 p) 47))) false
+    (if (= n 1) root-ok (fw-path-ok? (+ p 1) (- n 1)))))
+;; This checks bounded framing and path/NUL invariants only. It does not
+;; authenticate the producer or grant permission to execute these bytes.
+(defn- fw-spec-ok? [p :i64 n :i64] :bool
+  (if (or (< n 10) (> n 67500) (not (= (kxrt-load8 p) 70)) (not (= (kxrt-load8 (+ p 1)) 80))
+          (not (= (kxrt-load8 (+ p 2)) 83)) (not (= (kxrt-load8 (+ p 3)) 1))) false
+    (let [argc (fw-u16 (+ p 4)) envc (fw-u16 (+ p 6)) cwdn (fw-u16 (+ p 8)) start (+ 10 cwdn)]
+      (if (or (< argc 1) (> argc 256) (> envc 128) (> start n)
+              (not (fw-absolute? (+ p 10) cwdn true))) false
+        (loop [i 0 at start total cwdn]
+          (if (= i (+ argc envc)) (and (= at n) (<= total 65536))
+            (if (> (+ at 4) n) false
+              (let [len (fw-u32 (+ p at)) begin (+ at 4) end (+ begin len)]
+                (if (or (> len 65536) (> end n) (> (+ total len) 65536)) false
+                  (if (not (fw-nonzero? (+ p begin) len)) false
+                    (if (and (= i 0) (not (fw-absolute? (+ p begin) len false))) false
+                      (recur (+ i 1) end (+ total len)))))))))))))
+(defn- fw-spec-read [mode :i64 p :i64 n :i64 scratch :i64] :i64
+  (loop [at 0]
+    (if (= at n) 0
+      (let [left (- n at) take (if (> left 4096) 4096 left)
+            got (fw-read-wire mode (+ p at) take scratch)]
+        (recur (+ at take))))))
+
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
@@ -109,24 +141,40 @@
 ;; freeze mutations only if the count matches, then write D. One R and X remain
 ;; available for diagnostics after C. P uses the payload-length field as a
 ;; mode (0..0777), applies it to an existing file/directory, and starts a
-;; finalization phase in which only further P, C, or X are accepted. V reads
-;; the two-byte mode of one path after C. Initial modes are 0700/0600.
+;; finalization phase. T may replace C after finalization and carries the
+;; operation count, four-byte process-spec length and bounded FPS1 bytes.
+;; Q reads back one staged spec; V reads a mode. Neither authorizes exec.
+;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
-(defn- fw-commands [root :i64 mem :i64] :i64
+(defn- fw-commands [root :i64 mem :i64 spec :i64] :i64
   (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
-    (loop [operations 0 mode 0 committed false reads 0 finalizing false finals 0]
+    (loop [operations 0 mode 0 committed false reads 0 finalizing false finals 0 specsize 0]
       (let [got (if (= mode 0) (fw-read-one 0 head) (let [z (fw-read-wire mode head 1 (+ mem 8192))] 1))
             op (if (= got 1) (kxrt-load8 head) -1)]
-        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0 false 0)
+        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0 false 0 0)
               (= op 88) (kxrt-exit 0)
+              (= op 84) (if (or committed (not finalizing)) (fw-die 15)
+                (let [read (fw-read-wire mode head 6 (+ mem 8192)) count (fw-u16 head) size (fw-u32 (+ head 2))
+                      valid (if (or (not (= count operations)) (< size 10) (> size 67500)) (fw-die 19) 0)
+                      receive (fw-spec-read mode spec size (+ mem 8192))
+                      checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
+                      mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode true 0 finalizing finals size)))
+              (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (bit-and (u64-shift-right specsize 24) 255))
+                      c (kxrt-store8 (+ head 2) (bit-and (u64-shift-right specsize 16) 255))
+                      d (kxrt-store8 (+ head 3) (bit-and (u64-shift-right specsize 8) 255)) e (kxrt-store8 (+ head 4) (bit-and specsize 255))
+                      sent (if (= (kxrt-write-all 1 head 5) 1) 0 (fw-die 18))
+                      payload (if (= (kxrt-write-all 1 spec specsize) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 67) (if committed (fw-die 15)
                 (let [read (fw-read-wire mode head 2 (+ mem 8192))
                       count (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
                       valid (if (not (= count operations)) (fw-die 19) 0)
                       mark (kxrt-store8 head 68)
                       sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
-                  (recur operations mode true 0 finalizing finals)))
+                  (recur operations mode true 0 finalizing finals 0)))
               (or (< got 1) (and (>= operations 640) (not (and committed (or (= op 82) (= op 86)))))
                   (and (>= operations 512) (not committed) (not (= op 80)))
                   (and (= op 80) (>= finals 128))
@@ -166,7 +214,7 @@
                           parent-close (if (>= slash 0) (fw-close parent 18) 0)
                           reply (if (or (= op 82) (= op 86)) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
                       (recur (if committed operations (+ operations 1)) mode committed (if committed (+ reads 1) reads)
-                             (or finalizing (= op 80)) (if (= op 80) (+ finals 1) finals))))))))
+                             (or finalizing (= op 80)) (if (= op 80) (+ finals 1) finals) specsize)))))))
 
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID
@@ -192,8 +240,9 @@
         root (kxrt-open-path (+ b 192) 2670592 0)
         root-ok (if (< root 0) (fw-die 14) 0)
         mem (kxrt-syscall 222 0 16384 3 34 -1 0)
-        mem-ok (if (< mem 0) (fw-die 14) 0)]
-    (fw-commands root mem)))
+        mem-ok (if (< mem 0) (fw-die 14) 0)
+        spec (kxrt-syscall 222 0 67500 3 34 -1 0) spec-ok (if (< spec 0) (fw-die 14) 0)]
+    (fw-commands root mem spec)))
 
 (defn- fw-parent [pid :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 uid :i64 gid :i64 b :i64] :i64
   (let [c1 (fw-close ready-w 5) c2 (fw-close ack-r 5) buf (+ b 320)

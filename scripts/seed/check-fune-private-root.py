@@ -255,6 +255,88 @@ def main(compiler, out):
         assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
         observations.append({"case": "finalization-freezes-writes", "exit": p.returncode})
 
+        def spec(argv, env, cwd):
+            raw = b"FPS\x01" + struct.pack(">HHH", len(argv), len(env), len(cwd)) + cwd
+            for value in argv + env:
+                raw += struct.pack(">I", len(value)) + value
+            return raw
+
+        for payload in (spec([b"/bin/app", b""], ["Z=雪".encode()], b"/bin"),
+                        spec([b"/bin/app"] + [b"x"] * 255,
+                             [f"E{i:03d}=x".encode() for i in range(128)], b"/"),
+                        spec([b"/bin/app", b"x" * 9000], [], b"/"),
+                        spec([b"/bin/app", b"x" * 65527], [], b"/")):
+            p, child, proc_denied = start()
+            assert exchange(p, b"M", "bin") == b""
+            assert exchange(p, b"F", "bin/app", 0) == b""
+            assert exchange(p, b"P", "bin/app", 0o755) == b""
+            assert exchange(p, b"P", "bin", 0o755) == b""
+            p.stdin.write(b"T" + struct.pack(">HI", 4, len(payload)) + payload)
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"D"
+            p.stdin.write(b"Q")
+            p.stdin.flush()
+            assert p.stdout.read(5) == b"K" + struct.pack(">I", len(payload))
+            assert p.stdout.read(len(payload)) == payload
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "process-spec-roundtrip", "bytes": len(payload)})
+
+        for name, payload in (
+            ("magic", b"BAD!" + spec([b"/bin/app"], [], b"/")[4:]),
+            ("cwd-traversal", spec([b"/bin/app"], [], b"/bin/..")),
+            ("argv-traversal", spec([b"/bin/../app"], [], b"/")),
+            ("embedded-nul", spec([b"/bin/app", b"a\x00b"], [], b"/")),
+            ("truncated-value", spec([b"/bin/app", b"xyz"], [], b"/")[:-1]),
+            ("payload-budget", spec([b"/bin/app", b"x" * 65528], [], b"/")),
+            ("empty-argv", spec([], [], b"/")),
+            ("argv-count", spec([b"/bin/app"] + [b"x"] * 256, [], b"/")),
+            ("env-count", spec([b"/bin/app"], [b"A=x"] * 129, b"/")),
+        ):
+            p, child, proc_denied = start()
+            assert exchange(p, b"F", "file", 0) == b""
+            assert exchange(p, b"P", "file", 0o755) == b""
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:20" in stderr, (name, p.returncode, stdout, stderr)
+            observations.append({"case": "process-spec-" + name, "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 1, 67501), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "process-spec-before-finalization", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        assert exchange(p, b"P", "file", 0o755) == b""
+        stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, 67501), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:19" in stderr
+        observations.append({"case": "process-spec-size-limit", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        assert exchange(p, b"P", "file", 0o755) == b""
+        payload = spec([b"/file"], [], b"/")
+        stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 3, len(payload)) + payload, timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:19" in stderr
+        observations.append({"case": "process-spec-count-mismatch", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        stdout, stderr = p.communicate(b"C\x00\x00Q", timeout=20)
+        assert p.returncode == 2 and stdout == b"D" and b"FREFUSE:15" in stderr
+        observations.append({"case": "process-spec-not-staged", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        assert exchange(p, b"P", "file", 0o755) == b""
+        payload = spec([b"/file"], [], b"/")
+        p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload + b"Q")
+        p.stdin.flush()
+        assert p.stdout.read(6 + len(payload)) == b"DK" + struct.pack(">I", len(payload)) + payload
+        stdout, stderr = p.communicate(b"Q", timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "process-spec-read-limit", "exit": p.returncode})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
