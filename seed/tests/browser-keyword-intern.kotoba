@@ -1,0 +1,18 @@
+(ns browser.keyword-intern (:export [main]))
+
+;; Both a literal and a dynamically constructed keyword use the private rows.
+;; A scoped construction must remain readable after the arena scope closes.
+(defn keyword-of [d :document] :keyword
+  (option-value-of [:option :keyword] (document-keyword-value d) :none))
+
+(defn main [] :i64
+  (let [a (keyword-from-string "sheet/名")
+        again (keyword-from-string "sheet/名")
+        other (keyword-from-string "sheet/別")
+        literal (= (keyword-from-string "a") :a)
+        doc (= (keyword-of (document-keyword :b)) :b)
+        scoped (arena-scope (__r6-as :i64 (keyword-from-string "scoped/persistent")))]
+    (if (and (= a again) (not (= a other)) literal doc
+             (string=? (keyword-name a) "名")
+             (string=? (keyword-name (__r6-as :keyword scoped)) "persistent"))
+      0 1)))
