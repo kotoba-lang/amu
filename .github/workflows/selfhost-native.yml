@@ -51,26 +51,10 @@ on:
       - "runtime/wasm32-browser-*"
       - "runtime/kotoba-client-runtime*"
       - ".github/workflows/selfhost-native.yml"
+  # Required checks must be emitted on every pull request, including docs-only changes.
   pull_request:
     branches: [main]
-    paths:
-      - "bin/amu-linux-x86_64"
-      - "bin/kotoba"
-      - "bin/kotoba-compiler"
-      - "bin/kotoba-linux-x86_64"
-      - "bin/kotoba-compiler-linux-x86_64"
-      - "native-product.json"
-      - "seed/**"
-      - "scripts/seed/**"
-      - "bench/embench/proof-v1/**"
-      - "examples/foundation-starter/**"
-      - "tools/gpu_*.kotoba"
-      - "tools/spirv_*.kotoba"
-      - "tools/static_launcher*.kotoba"
-      - "tools/b2/**"
-      - "runtime/wasm32-browser-*"
-      - "runtime/kotoba-client-runtime*"
-      - ".github/workflows/selfhost-native.yml"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   # A newer PR push supersedes the old run; full runs on main queue instead.
