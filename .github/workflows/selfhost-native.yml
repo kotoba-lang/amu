@@ -131,7 +131,14 @@ jobs:
           python3 bench/embench/proof-v1/validate.py
           python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
-        run: python3 scripts/seed/check-native-identities.py
+        env:
+          SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
+        run: |
+          args=()
+          if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
+            args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
+          fi
+          python3 scripts/seed/check-native-identities.py "${args[@]}"
       - name: Independent native preflight controls through the shared two-slot plan
         run: >-
           python3 scripts/seed/native_build_queue.py
