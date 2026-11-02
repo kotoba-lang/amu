@@ -1770,6 +1770,31 @@
         l (ck-r M2)]
     (ck-link (ck-link M2 rt l) l 0)))
 
+;; Direct quoted symbols are data. Store their UTF-8 spelling as a string literal;
+;; NF-SYM = -1 marks the synthetic literal as :symbol for type checking.
+(defn- ck-q-symbol? [M :vector-i64 S :string n :i64] :bool
+  (let [h (nm-first M n) x (nm-next M h)
+        ht (nm-nf M h NF-TOK) xt (nm-nf M x NF-TOK)
+        a (nm-tf M ht TF-START) b (nm-tf M ht TF-END)
+        xa (nm-tf M xt TF-START) xb (nm-tf M xt TF-END)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-count M n) 2)
+         (= (nm-kind M h) ND-SYM) (= (nm-kind M x) ND-SYM)
+         (ck-r6b-is? S a b "quote")
+         (not (or (ck-r6b-is? S xa xb "nil") (ck-r6b-is? S xa xb "true") (ck-r6b-is? S xa xb "false"))))))
+(defn- ck-q-lit [M :vector-i64 S :string n :i64] :vector-i64
+  (let [x (nm-next M (nm-first M n)) tok (nm-nf M x NF-TOK)
+        a (nm-tf M tok TF-START) b (nm-tf M tok TF-END)
+        lit (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N) p (+ MM-LIT-BASE (* lit MM-LIT-W))]
+    (cond (>= lit MM-LIT-CAP) (ck-err M E-HEAP-REGION n 2)
+          (> (+ lb (- b a)) MM-LITB-CAP) (ck-err M E-HEAP-REGION n 3)
+          :else
+          (let [M1 (loop [M2 M i a]
+                     (if (>= i b) M2
+                       (let [cp (string-code-point-at S i)]
+                         (recur (lx-utf8-push M2 cp) (+ i (lx-cpw cp))))))
+                M2 (-> M1 (nm-put (+ p LF-B) lb) (nm-put (+ p LF-LEN) (- b a))
+                            (nm-put (+ p LF-TOK) tok) (nm-put MM-LIT-N (+ lit 1)))]
+            (-> M2 (nm-set-nf n NF-KIND ND-STR) (nm-set-nf n NF-AUX lit) (nm-set-nf n NF-SYM -1))))))
 ;; rewrite n until it is no sugar, then walk its children
 (defn- ck-ds-walk[M :vector-i64 S :string n :i64] :vector-i64
   (let [k (nm-kind M n)
@@ -1777,6 +1802,7 @@
     (cond (= n 0) (ck-touch M)
           (nm-failed M) (ck-touch M)
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
+          (ck-q-symbol? M S n) (ck-q-lit M S n)
           (and (= k ND-LIST) (ck-dx-let? M n)) (ck-ds-walk (ck-dx M S n) S n)   ; JUN-729: destructuring
           (ck-vassoc? M n) (ck-ds-walk (ck-vassoc M n) S n)   ; JUN-734: variadic assoc
           (ck-pr-wrap? M n) (ck-ds-walk (ck-pr-wrap M n) S n)   ; JUN-730: a protocol call's receiver is a fresh local
@@ -2177,7 +2203,7 @@
   (let [k (nm-kind M n)]
     (cond (nm-failed M) (ck-touch M)
           (= k ND-INT) (ck-mark M n TY-I64 0)
-          (= k ND-STR) (ck-mark M n TY-STR 0)
+          (= k ND-STR) (ck-mark M n (if (= (nm-nf M n NF-SYM) -1) TY-SYM TY-STR) 0)
           (= k ND-KW) (ck-mark M n TY-KW 0)
           (and (= k ND-SYM) (ck-r6d-opaque-ref? M n)) (ck-expr (ck-r6d-inline-def M n) n fx ctx)   ; R6D
           (and (= k ND-SYM) (ck-r6f-cdef-ref? M n)) (ck-expr (ck-r6f-cdef-call M n) n fx ctx)   ; R6F: a computed def
