@@ -91,3 +91,39 @@ accepted it; a debug-built worker that emitted one extra `K` was refused.
 The extra-ack worker was independently observed emitting 641 `K` bytes,
 and a debug supervisor mutant with its bound increased by one accepted it. The supervisor still trusts its authenticated worker and producer;
 the count is not a proof that a producer emitted all image entries.
+
+## Optional delegated cgroup for the worker tree
+
+A caller may append four arguments after the six diagnostic arguments: an
+already-open cgroup-v2 directory FD, memory bytes, process limit, and CPU
+quota in microseconds per 100000-us period. The caller must provide an empty,
+exclusively owned subtree already configured to those exact finite limits.
+The fixed cgroup helper can configure it separately; this supervisor does not
+create or configure cgroups. With the extension present, the worker-side
+supervisor child checks the FD's cgroup-v2 type and owner, subtree population,
+and all three exact kernel values, moves itself into `cgroup.procs`, and
+verifies membership before executing the worker. Thus worker initialization
+and its descendants begin inside the cgroup; the supervisor and producer stay
+outside it. A failure refuses the run. The original six-argument diagnostic
+mode still runs without a cgroup and does not qualify resource enforcement.
+
+The owner must keep the cgroup exclusive and the limits stable throughout the
+run and dispose of the owned subtree afterward. The checks are not atomic
+against a hostile process with the same host principal. This does not provide
+workload execution, CPU time or output deadlines, PID-namespace isolation,
+recovery after a controller crash, or a complete security boundary.
+
+On the local ARM64 Linux host, an observer saw the worker parent and child in
+the target cgroup while the supervisor and producer remained outside, and
+observed a nonzero memory charge there and no cgroup directory FD in the
+post-exec worker parent. Both the data stream and a runnable
+image stream through `T` and a 640-operation stream completed under the
+configured limits; a non-executable target was refused. Mismatched values, a
+non-cgroup FD and a populated target
+were refused without killing the existing test process.
+With `pids.max=1`, the worker could not fork its child and the kernel's
+`pids.events` recorded the refusal; a four-process limit was a passing
+control. Killing the supervisor left this test's cgroup unpopulated. Debug
+controls bypassing the join or pids comparison were detected; omitting the
+move write failed the membership check. These are bounded observations, not
+proof of adversarial race resistance or crash-safe cgroup ownership.

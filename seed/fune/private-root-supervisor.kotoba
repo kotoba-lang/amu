@@ -56,9 +56,55 @@
                 (or (< r 0) (< now 0)) (sb-kill-reap pid status)
                 (> (- now start) 30000000000) (sb-kill-reap pid status)
                 :else (let [z (kxrt-syscall 73 0 0 ts 0 0 0)] (recur (+ i 1)))))))))
-(defn- sb-child [parent :i64 exe :i64 input :i64 output :i64 argv :i64 envp :i64 empty :i64] :i64
+;; Validate a caller-owned, empty cgroup and enter it before worker exec.
+;; The caller remains responsible for cgroup creation, exclusive ownership,
+;; cleanup and keeping the declared limits stable after this check.
+(defn- sb-cg-open [root :i64 path :i64 flags :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0) c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 root path how 24 0 0)))
+(defn- sb-cg-read [root :i64 path :i64 buf :i64 how :i64] :i64
+  (let [fd (sb-cg-open root path 524288 how) ok (if (< fd 0) (sb-fail 5) 0)
+        n (kxrt-syscall 63 fd buf 127 0 0 0) close (kxrt-close fd)]
+    (if (or (< n 0) (not= close 0)) (sb-fail 5) n)))
+(defn- sb-cg-match [root :i64 path :i64 expected :i64 size :i64 buf :i64 how :i64] :i64
+  (let [n (sb-cg-read root path buf how)
+        valid (if (or (not= n (+ size 1)) (not= (kxrt-load8 (+ buf size)) 10)) (sb-fail 5) 0)]
+    (loop [i 0] (if (= i size) 0
+      (if (not= (kxrt-load8 (+ expected i)) (kxrt-load8 (+ buf i))) (sb-fail 5)
+        (recur (+ i 1)))))))
+(defn- sb-cg-join [root :i64 memory :i64 pids :i64 cpu :i64 m :i64] :i64
+  (let [stat (+ m 512) how (+ m 1024) value (+ m 1200) buf (+ m 1400)
+        uid (kxrt-syscall 175 0 0 0 0 0 0) gid (kxrt-syscall 177 0 0 0 0 0 0)
+        identity (if (or (<= uid 0) (< gid 0) (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                         (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (sb-fail 5) 0)
+        fs (kxrt-syscall 44 root stat 0 0 0 0)
+        fsok (if (or (< fs 0) (not= (kxrt-load64 stat) 1667723888)) (sb-fail 5) 0)
+        st (kxrt-syscall 80 root stat 0 0 0 0)
+        mode (bit-and (kxrt-load64 (+ stat 16)) 61440) owner (bit-and (kxrt-load64 (+ stat 24)) 4294967295)
+        stok (if (or (< st 0) (not= mode 16384) (not= owner uid)) (sb-fail 5) 0)
+        n0 (kxrt-w m (kxrt-w m 0 0x6d2e79726f6d656d 8) 0x7861 3)
+        n1 (kxrt-w m (kxrt-w m 32 0x78616d2e73646970 8) 0 1)
+        n2 (kxrt-w m 64 0x78616d2e757063 8)
+        n3 (kxrt-w m (kxrt-w m 96 0x652e70756f726763 8) 0x73746e6576 6)
+        n4 (kxrt-w m (kxrt-w m 128 0x702e70756f726763 8) 0x73636f72 5)
+        events (sb-cg-read root (+ m 96) buf how)
+        empty (if (or (< events 12) (not= (kxrt-load64 buf) 0x6574616c75706f70)
+                      (not= (kxrt-load8 (+ buf 8)) 100) (not= (kxrt-load8 (+ buf 9)) 32)
+                      (not= (kxrt-load8 (+ buf 10)) 48) (not= (kxrt-load8 (+ buf 11)) 10)) (sb-fail 5) 0)
+        mn (kxrt-dec value memory) mv (sb-cg-match root m value mn buf how)
+        pn (kxrt-dec value pids) pv (sb-cg-match root (+ m 32) value pn buf how)
+        cn (kxrt-dec value cpu) rest (kxrt-w value cn 0x30303030303120 7)
+        cv (sb-cg-match root (+ m 64) value rest buf how)
+        fd (sb-cg-open root (+ m 128) 524289 how) fdok (if (< fd 0) (sb-fail 5) 0)
+        zero (kxrt-store8 value 48) wrote (kxrt-syscall 64 fd value 1 0 0 0) close (kxrt-close fd)
+        moved (if (or (not= wrote 1) (not= close 0)) (sb-fail 5) 0)
+        pid (kxrt-syscall 172 0 0 0 0 0 0) pn2 (kxrt-dec value pid)
+        verify (sb-cg-match root (+ m 128) value pn2 buf how)] 0))
+
+(defn- sb-child [parent :i64 exe :i64 input :i64 output :i64 argv :i64 envp :i64 empty :i64 cg :i64 memory :i64 pids :i64 cpu :i64 scratch :i64] :i64
   (let [p (kxrt-syscall 167 1 9 0 0 0 0)
         alive (if (or (< p 0) (not= (kxrt-syscall 173 0 0 0 0 0 0) parent)) (kxrt-exit 127) 0)
+        group (if (>= cg 0) (sb-cg-join cg memory pids cpu scratch) 0)
         a (if (and (>= input 0) (< (kxrt-syscall 24 input 0 0 0 0 0) 0)) (kxrt-exit 127) 0)
         b (if (< (kxrt-syscall 24 output 1 0 0 0 0) 0) (kxrt-exit 127) 0)
         c (if (< (kxrt-syscall 436 3 4294967295 4 0 0 0) 0) (kxrt-exit 127) 0)
@@ -138,13 +184,20 @@
 ;; manifest digest. Both inputs must be sealed. The caller
 ;; must obtain image digests from an authenticated source.
 (defn- kxrt-start [sp :i64] :i64
-  (let [argc (kxrt-load64 sp) valid (if (not (= argc 7)) (sb-fail 1) 0)
+  (let [argc (kxrt-load64 sp) valid (if (not (or (= argc 7) (= argc 11))) (sb-fail 1) 0)
+        grouped (= argc 11)
+        cg (if grouped (sb-num (kxrt-load64 (+ sp 64)) 1023) -1)
+        memory (if grouped (sb-num (kxrt-load64 (+ sp 72)) 4294967295) 0)
+        pids (if grouped (sb-num (kxrt-load64 (+ sp 80)) 4096) 0)
+        cpu (if grouped (sb-num (kxrt-load64 (+ sp 88)) 1000000) 0)
         worker (sb-num (kxrt-load64 (+ sp 16)) 1023) worker-digest (kxrt-load64 (+ sp 24))
         producer (sb-num (kxrt-load64 (+ sp 32)) 1023) producer-digest (kxrt-load64 (+ sp 40))
         root (kxrt-load64 (+ sp 48)) digest (kxrt-load64 (+ sp 56))
         input-ok (if (or (< worker 3) (< producer 3) (= worker producer)
                          (not (sb-sealed? worker)) (not (sb-sealed? producer)) (not (sb-root? root))
-                         (not (sb-digest? digest)) (not (sb-digest? worker-digest)) (not (sb-digest? producer-digest))) (sb-fail 1) 0)
+                         (not (sb-digest? digest)) (not (sb-digest? worker-digest)) (not (sb-digest? producer-digest))
+                         (and grouped (or (< cg 3) (= cg worker) (= cg producer) (< memory 1048576)
+                                          (< pids 1) (< cpu 1000)))) (sb-fail 1) 0)
         m (kxrt-syscall 222 0 16384 3 34 -1 0) mapped (if (< m 0) (sb-fail 2) 0)
         image-ok (if (and (sb-image-ok? worker worker-digest m) (sb-image-ok? producer producer-digest m)) 0 (sb-fail 1))
         q4096_0 (kxrt-w m 4096 0x4c4c415f4558454b 8)
@@ -183,10 +236,10 @@
         in-r (bit-and pair1 4294967295) in-w (u64-shift-right pair1 32)
         out-r (bit-and pair2 4294967295) out-w (u64-shift-right pair2 32)
         self (kxrt-syscall 172 0 0 0 0 0 0) wpid (kxrt-syscall 220 17 0 0 0 0 0)]
-    (cond (= wpid 0) (sb-child self worker in-r out-w (+ m 64) (+ m 192) (+ m 4550))
+    (cond (= wpid 0) (sb-child self worker in-r out-w (+ m 64) (+ m 192) (+ m 4550) cg memory pids cpu (+ m 12000))
           (< wpid 0) (sb-fail 3)
           :else (let [gpid (kxrt-syscall 220 17 0 0 0 0 0)]
-            (cond (= gpid 0) (sb-child self producer -1 in-w m (+ m 128) (+ m 4550))
+            (cond (= gpid 0) (sb-child self producer -1 in-w m (+ m 128) (+ m 4550) -1 0 0 0 (+ m 12000))
                   (< gpid 0) (let [x (kxrt-close in-w) y (kxrt-close in-r) z (kxrt-close out-w)
                                    k (kxrt-syscall 129 wpid 9 0 0 0 0) q (sb-wait wpid m)] (sb-fail 3))
                   :else (let [c1 (kxrt-close in-r) c2 (kxrt-close out-w) c3 (kxrt-close worker) c4 (kxrt-close producer)
