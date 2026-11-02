@@ -131,6 +131,12 @@ jobs:
                   assert {row["name"] for row in report["gates"]} == {
                       "local-project-fs", "early-kotoba", "b2-preflight"}
           PY_GATE
+      - name: Capture raw native complete24 fixture observations
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/early-kotoba/cases.kcg" ]; then
+            python3 scripts/seed/capture-native-kotoba24.py "$RUNNER_TEMP/early-kotoba"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
