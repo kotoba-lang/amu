@@ -53,6 +53,12 @@ both helper and child were no longer live 0.5 seconds after killing the root
 process. That observer does not run this runtime implementation. The VM was
 removed.
 
+A separate [kernel race observation](evidence/awai152-spawn-parent-death-20261103/race-observation.json)
+held a helper before `PR_SET_PDEATHSIG`, killed its parent, and then allowed
+the helper to install the signal. The parent comparison refused the changed
+parent; a control omitting that comparison would have dispatched. This also
+used a one-off observer and does not exercise the changed runtime.
+
 The candidate does not govern grandchildren, daemonized processes, programs
 that reset their death signal, external services or macOS; termination is
 asynchronous and is not an atomic resource-release or distributed fence.
