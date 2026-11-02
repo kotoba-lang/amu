@@ -252,6 +252,26 @@
         install (if (not= (kxrt-syscall 277 1 0 desc 0 0 0) 0) (fw-die 24) 0)
         active (if (not= (kxrt-syscall 167 21 0 0 0 0 0) 2) (fw-die 24) 0)] 0))
 
+;; Offline candidate: forbid creation of sockets, including AF_UNIX, and
+;; io_uring setup/use. This reduces network surface; it is not a complete
+;; syscall sandbox or a guarantee about caller-supplied descriptors.
+(defn- fw-offline-filter [buf :i64] :i64
+  (let [code (+ buf 1024) desc (+ buf 900)
+        i0a (kxrt-w code 0 0x20 4) i0b (kxrt-w code 4 4 4)
+        i1a (kxrt-w code 8 0x10015 4) i1b (kxrt-w code 12 0xc00000b7 4)
+        i2a (kxrt-w code 16 6 4) i2b (kxrt-w code 20 0x80000000 4)
+        i3a (kxrt-w code 24 0x20 4) i3b (kxrt-w code 28 0 4)
+        i4a (kxrt-w code 32 0x50015 4) i4b (kxrt-w code 36 198 4)
+        i5a (kxrt-w code 40 0x40015 4) i5b (kxrt-w code 44 199 4)
+        i6a (kxrt-w code 48 0x30015 4) i6b (kxrt-w code 52 425 4)
+        i7a (kxrt-w code 56 0x20015 4) i7b (kxrt-w code 60 426 4)
+        i8a (kxrt-w code 64 0x10015 4) i8b (kxrt-w code 68 427 4)
+        i9a (kxrt-w code 72 6 4) i9b (kxrt-w code 76 0x7fff0000 4)
+        i10a (kxrt-w code 80 6 4) i10b (kxrt-w code 84 0x50001 4)
+        d0 (kxrt-store64 desc 11) d1 (kxrt-store64 (+ desc 8) code)
+        install (if (not= (kxrt-syscall 277 1 0 desc 0 0 0) 0) (fw-die 24) 0)
+        active (if (not= (kxrt-syscall 167 21 0 0 0 0 0) 2) (fw-die 24) 0)] 0))
+
 ;; Controlled smoke tests only: fixed static ARM64 fixtures, not arbitrary
 ;; OCI execution. All data is read from the already frozen private root.
 (defn- fw-fixture-spec? [spec :i64 n :i64] :bool
@@ -392,6 +412,7 @@
                       entered (fw-enter-root root (kxrt-load64 (+ mem 512)) buf)
                       caps (fw-drop-caps buf last)
                       filter (fw-namespace-filter buf)
+                      offline (fw-offline-filter buf)
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
               (= op 69) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
@@ -464,6 +485,15 @@
               (= op 78) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [unshare (kxrt-syscall 97 268435456 0 0 0 0 0)
                       checked (if (not= unshare -1) (fw-die 24) 0)
+                      internet (kxrt-syscall 198 2 1 0 0 0 0)
+                      internet6 (kxrt-syscall 198 10 1 0 0 0 0)
+                      local (kxrt-syscall 198 1 1 0 0 0 0)
+                      pair (kxrt-syscall 199 1 1 0 buf 0 0)
+                      ring0 (kxrt-syscall 425 0 0 0 0 0 0)
+                      ring1 (kxrt-syscall 426 -1 0 0 0 0 0)
+                      ring2 (kxrt-syscall 427 -1 0 0 0 0 0)
+                      offline (if (or (not= internet -1) (not= internet6 -1) (not= local -1) (not= pair -1)
+                                      (not= ring0 -1) (not= ring1 -1) (not= ring2 -1)) (fw-die 24) 0)
                       setns (kxrt-syscall 268 -1 0 0 0 0 0)
                       c3 (kxrt-syscall 435 0 0 0 0 0 0)
                       blocked (if (or (not= setns -1) (not= c3 -38)) (fw-die 24) 0)
@@ -476,7 +506,9 @@
                                        cleanup (if (> n 0) (kxrt-syscall 260 n buf 0 0 0 0) 0)]
                                    (if (not= n -1) (fw-die 24) (recur (+ i 1))))))
                       child (kxrt-syscall 220 17 0 0 0 0 0)
-                      cexit (if (= child 0) (kxrt-syscall 93 0 0 0 0 0 0) 0)
+                      cexit (if (= child 0)
+                              (let [probe (kxrt-syscall 198 2 1 0 0 0 0)]
+                                (kxrt-syscall 93 (if (= probe -1) 0 61) 0 0 0 0 0)) 0)
                       valid (if (< child 0) (fw-die 24) 0)
                       wait (loop [i 0] (let [r (kxrt-syscall 260 child buf 0 0 0 0)] (if (= r -4) (recur (+ i 1)) r)))
                       reaped (if (or (not= wait child) (not= (bit-and (kxrt-load64 buf) 65535) 0)) (fw-die 24) 0)

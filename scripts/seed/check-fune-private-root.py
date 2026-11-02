@@ -666,8 +666,8 @@ def main(compiler, out):
                 p.kill()
                 p.communicate(timeout=20)
 
-        # Observe that a new filter was installed, then exercise all denied
-        # namespace paths and an allowed ordinary clone/wait in the worker.
+        # Observe both filters, then exercise namespace and offline refusals
+        # together with an allowed ordinary clone/wait in the worker.
         p, child, proc_denied = start()
         try:
             before = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
@@ -680,13 +680,13 @@ def main(compiler, out):
             assert p.stdout.read(1) == b"D"
             after = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
                      if ":" in line for k, v in [line.split(":", 1)]}
-            assert after["Seccomp"] == "2" and int(after["Seccomp_filters"]) == int(before["Seccomp_filters"]) + 1
+            assert after["Seccomp"] == "2" and int(after["Seccomp_filters"]) == int(before["Seccomp_filters"]) + 2
             p.stdin.write(b"N")
             p.stdin.flush()
-            assert p.stdout.read(1) == b"K", "namespace calls must fail while ordinary clone works"
+            assert p.stdout.read(1) == b"K", "namespace and offline calls must fail while ordinary clone works"
             stdout, stderr = p.communicate(b"X", timeout=20)
             assert p.returncode == 0 and not stdout and not stderr
-            observations.append({"case": "namespace-filter", "ordinaryClone": "allowed"})
+            observations.append({"case": "namespace-and-offline-filters", "ordinaryClone": "allowed"})
         finally:
             if p.poll() is None:
                 p.kill()
