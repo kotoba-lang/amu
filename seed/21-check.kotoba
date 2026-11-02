@@ -6640,14 +6640,21 @@
 ;; remain refused. This does not change existing typed-set-nth behavior.
 (def ck-kwm-g 65536)
 (defn- ck-kwmkeys-text? [S :string a :i64 b :i64] :bool
-  (let [q (lx-sk-ws S b) n (string-length S)
-        a1 (lx-sk-ws S (+ q 1)) b1 (ck-r6b-symend S (+ a1 1))
-        a2 (lx-sk-ws S b1) b2 (ck-r6b-symend S (+ a2 1))
-        a3 (lx-sk-ws S b2) b3 (ck-r6b-symend S (+ a3 1)) end (lx-sk-ws S b3)]
-    (and (or (ck-r6b-is? S a b "typed-map-keys") (ck-r6b-is? S a b "clojure.core/typed-map-keys"))
-         (< q n) (= (string-code-point-at S q) 91)
-         (ck-r6b-is? S a1 b1 ":map") (ck-r6b-is? S a2 b2 ":keyword")
-         (ck-r6b-is? S a3 b3 ":string") (< end n) (= (string-code-point-at S end) 93))))
+  (let [q (lx-sk-ws S b) n (string-length S)]
+    (if (and (or (ck-r6b-is? S a b "typed-map-keys") (ck-r6b-is? S a b "clojure.core/typed-map-keys"))
+             (< q n) (= (string-code-point-at S q) 91))
+      (let [a1 (lx-sk-ws S (+ q 1))]
+        (if (and (< a1 n) (= (string-code-point-at S a1) 58))
+          (let [b1 (ck-r6b-symend S (+ a1 1)) a2 (lx-sk-ws S b1)]
+            (if (and (ck-r6b-is? S a1 b1 ":map") (< a2 n) (= (string-code-point-at S a2) 58))
+              (let [b2 (ck-r6b-symend S (+ a2 1)) a3 (lx-sk-ws S b2)]
+                (if (and (ck-r6b-is? S a2 b2 ":keyword") (< a3 n) (= (string-code-point-at S a3) 58))
+                  (let [b3 (ck-r6b-symend S (+ a3 1)) end (lx-sk-ws S b3)]
+                    (and (ck-r6b-is? S a3 b3 ":string") (< end n) (= (string-code-point-at S end) 93)))
+                  false))
+              false))
+          false))
+      false)))
 (defn- ck-kwmkeys? [M :vector-i64 n :i64] :bool
   (let [h (nm-first M n) ta (nm-next M h)]
     (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (= (nm-count M n) 3)
