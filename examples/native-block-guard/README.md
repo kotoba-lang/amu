@@ -135,3 +135,20 @@ FD3; the image checks only that FD3 is a character device and that the two
 read-only geometry ioctls succeed. It does not discover, identify, claim,
 unmount or write a device, and it does not obtain authorization. Use outside
 the isolated image test requires a separately scoped and reviewed host.
+
+The raw-image gate also detaches the successful image and reattaches the same
+backing file read-only. A separately generated Amu-native verifier then checks
+the full 512-byte target sector. A fresh image with a corrupt byte after the
+marker must be rejected and remain unchanged. This is a virtual-device
+reattach test; it does not establish a hardware power cycle or bypass the
+host/device caches.
+
+The verifier's inert `raw-readback-reference.txt` was derived once with Apple
+clang 21.0.0 (clang-2100.1.1.101), `clang -target arm64-apple-macos -c
+raw-readback.s`, then `xcrun llvm-objdump --macho --disassemble`. The
+reference SHA-256 is
+`90161b17b0287824824e473036fcc8c6dc5539d77d749b959e356778854ed018`; the
+one-time object SHA-256 is
+`fa15bf0d33caf6b74f62971fac919ae1ea19836f370218679c5e6b0a6a6f1051`.
+Native build/test use only the checked-in Kotoba words, not the reference,
+clang, an assembler, C or a C loader.

@@ -53,6 +53,20 @@ chmod 755 "$work/gen/control.macho"
 /usr/bin/codesign --force --sign - "$work/gen/control.macho" 2>/dev/null
 /usr/bin/codesign --verify --strict "$work/gen/control.macho"
 if /usr/bin/otool -l "$work/gen/control.macho" | grep -q LC_LOAD_DYLIB; then echo 'unexpected dynamic library' >&2; exit 1; fi
+# Build a separate read-only verifier from Kotoba using the same pinned root.
+cp "$root/seed/macos-raw-readback-packager.kotoba" "$work/build/readback.kotoba"
+(cd "$work/build" && env -i PATH=/nonexistent "$bootstrap/amu-full-root.macho" compile readback.kotoba --target aarch64-macos --output r.kseed 3<.) > "$work/compile-read.log" 2>&1
+(cd "$work/build" && env -i PATH=/nonexistent "$bootstrap/amu-full-root.macho" extract-native r.kseed --symbol main --output r.raw 3<.) > "$work/extract-read.log" 2>&1
+read_entry=$(sed -n 's/^{:ok true, :output "r.raw", :offset \([0-9][0-9]*\), :length \([0-9][0-9]*\), :arity 0}$/\1/p' "$work/extract-read.log")
+[ -n "$read_entry" ] || { cat "$work/extract-read.log" >&2; exit 1; }
+(cd "$work/build" && env -i PATH=/nonexistent "$bootstrap/kotoba-packager-root.macho" reader-generator r.raw fs2-cli-stdio-general "$read_entry" 3<.) > "$work/package-read.log" 2>&1
+chmod 755 "$work/build/reader-generator"
+/usr/bin/codesign --force --sign - "$work/build/reader-generator" 2>/dev/null
+(cd "$work/gen" && env -i PATH=/nonexistent "$work/build/reader-generator" reader.macho strict 3<.)
+chmod 755 "$work/gen/reader.macho"
+/usr/bin/codesign --force --sign - "$work/gen/reader.macho" 2>/dev/null
+/usr/bin/codesign --verify --strict "$work/gen/reader.macho"
+if /usr/bin/otool -l "$work/gen/reader.macho" | grep -q LC_LOAD_DYLIB; then echo 'unexpected readback dynamic library' >&2; exit 1; fi
 # Construct and mark a private raw file *before* attaching it. This test
 # never accepts a caller-supplied device; only the attach result is opened.
 dd if=/dev/zero of="$work/fixture.img" bs=1048576 count=4 2>/dev/null
@@ -84,6 +98,21 @@ hdiutil detach "$rawdev" > "$work/detach.log"
 rm "$work/attach.plist"
 rawdev=
 cmp "$work/expected.img" "$work/fixture.img"
+# Reattach the same image read-only and execute a separately generated
+# Kotoba-native verifier. This checks the whole target block after reattach.
+current_image="$work/fixture.img"
+hdiutil attach -nomount -readonly -plist "$current_image" > "$work/attach.plist"
+rawdev=$(/usr/bin/plutil -extract system-entities.0.dev-entry raw -o - "$work/attach.plist")
+case "$rawdev" in /dev/disk[0-9]*) ;; *) echo 'invalid readback image device' >&2; exit 1;; esac
+case "$rawdev" in /dev/disk*[!0-9]*) echo 'invalid readback image device' >&2; exit 1;; esac
+owned_image "$rawdev" "$current_image" || { echo 'readback image identity mismatch' >&2; exit 1; }
+rawchar="/dev/r${rawdev#/dev/}"
+"$work/gen/reader.macho" 3<"$rawchar"
+owned_image "$rawdev" "$current_image" || { echo 'readback image changed' >&2; exit 1; }
+hdiutil detach "$rawdev" > "$work/detach.log"
+rm "$work/attach.plist"
+rawdev=
+cmp "$work/expected.img" "$work/fixture.img"
 # Fresh, task-owned negative images: wrong marker and wrong size. The
 # observer compares each complete backing file before and after refusal.
 for negative in marker geometry; do
@@ -106,13 +135,33 @@ for negative in marker geometry; do
   [ "$(printf '%s' "$info" | /usr/bin/plutil -extract Size raw -o - -)" = "$((blocks * 1048576))" ]
   rawchar="/dev/r${rawdev#/dev/}"
   if "$work/gen/control.macho" 3<>"$rawchar"; then echo "$negative accepted" >&2; exit 1; fi
+  if "$work/gen/reader.macho" 3<"$rawchar"; then echo "$negative readback accepted" >&2; exit 1; fi
   owned_image "$rawdev" "$current_image" || { echo "negative image changed" >&2; exit 1; }
   hdiutil detach "$rawdev" > "$work/detach.log"
   rm "$work/attach.plist"
   rawdev=
   cmp "$work/negative-before.img" "$work/negative.img"
 done
+# A valid image with a corrupted byte after the destination marker must
+# fail the independent native verifier, without any write by the verifier.
+dd if=/dev/zero of="$work/corrupt.img" bs=1048576 count=4 2>/dev/null
+printf JUN767V1 | dd of="$work/corrupt.img" bs=1 seek=4096 count=8 conv=notrunc 2>/dev/null
+printf X | dd of="$work/corrupt.img" bs=1 seek=4104 count=1 conv=notrunc 2>/dev/null
+cp "$work/corrupt.img" "$work/corrupt-before.img"
+current_image="$work/corrupt.img"
+hdiutil attach -nomount -readonly -plist "$current_image" > "$work/attach.plist"
+rawdev=$(/usr/bin/plutil -extract system-entities.0.dev-entry raw -o - "$work/attach.plist")
+case "$rawdev" in /dev/disk[0-9]*) ;; *) echo 'invalid corrupt image device' >&2; exit 1;; esac
+case "$rawdev" in /dev/disk*[!0-9]*) echo 'invalid corrupt image device' >&2; exit 1;; esac
+owned_image "$rawdev" "$current_image" || { echo 'corrupt image identity mismatch' >&2; exit 1; }
+rawchar="/dev/r${rawdev#/dev/}"
+if "$work/gen/reader.macho" 3<"$rawchar"; then echo 'corruption accepted' >&2; exit 1; fi
+owned_image "$rawdev" "$current_image" || { echo 'corrupt image changed' >&2; exit 1; }
+hdiutil detach "$rawdev" > "$work/detach.log"
+rm "$work/attach.plist"
+rawdev=
+cmp "$work/corrupt-before.img" "$work/corrupt.img"
 # A regular-file descriptor and an absent descriptor must refuse.
 if "$work/gen/control.macho" 3<"$work/fixture.img"; then echo 'regular file accepted' >&2; exit 1; fi
 if "$work/gen/control.macho" 3<&-; then echo 'absent fd accepted' >&2; exit 1; fi
-printf '%s\n' 'native raw image: aligned pwrite/fsync/pread passed; marker/geometry/readonly/regular/missing refused'
+printf '%s\n' 'native raw image: aligned write/fsync and native readback after reattach passed; negative and corrupted fixtures refused'
