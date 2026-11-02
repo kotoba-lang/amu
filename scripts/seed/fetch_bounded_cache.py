@@ -167,3 +167,24 @@ def fetch_verified(source_sha, gh, gh_sha256, destination):
         _unzip_exact(zip_path, tar_path)
         image, objects, image_digest, bundle_digest = verified_extract(tar_path, gh, gh_sha256, policy, destination)
         return image, objects, image_digest, bundle_digest
+
+
+if __name__ == "__main__":
+    import argparse
+    from check_bounded_producer_attestation import GH_SHA256, exercise
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source-sha", required=True, help="immutable revision from trusted host configuration")
+    parser.add_argument("--gh", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    args.output.mkdir(mode=0o700)
+    os.chmod(args.output, 0o700)
+    output = args.output.resolve()
+    try:
+        image, objects, image_digest, bundle_digest = fetch_verified(args.source_sha, args.gh, GH_SHA256,
+                                                                      output / "bundle")
+    except CacheUnavailable as error:
+        parser.exit(75, f"CACHE_UNAVAILABLE: {error}\n")
+    exercise(image, objects, image_digest, output)
+    print("PASS_FETCHED_BOUNDED_CACHE", args.source_sha, bundle_digest, flush=True)
