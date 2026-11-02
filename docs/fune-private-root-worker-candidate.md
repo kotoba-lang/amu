@@ -189,3 +189,28 @@ only the remount syscall caused refusal before `D`. These observations do
 not establish immutability against an actor retaining mount authority, a
 hostile same-principal process, or any workload isolation. A future launcher
 must drop the relevant authority and qualify its own confinement.
+
+## Runnable worker capability-drop candidate
+
+After the `T` read-only remount and before `D`, the worker drops its
+capability bounding set, clears ambient capabilities, clears effective,
+permitted and inheritable capabilities, and checks every kernel-supported
+capability reported by `/proc/sys/kernel/cap_last_cap` plus `no_new_privs`.
+The range must come from procfs and be representable by the v3 capability ABI;
+missing, invalid or unsupported information fails closed. An error refuses
+without `D`; `C` remains unchanged. The single-use `J` diagnostic attempts
+to remount the tmpfs read-write and
+returns `K` only when that attempt fails with `EPERM`.
+
+On the local ARM64 Linux host, an outside observer saw all five capability
+sets become zero while `no_new_privs` remained set, and `J` observed
+`EPERM`. A test-only seccomp filter denying `capset` caused refusal before
+`D`. Debug-built controls that skipped `capset` or bypassed the whole drop
+were detected. These checks apply to this worker, not to a future executor:
+without its own namespace, syscall and lifecycle policy a program may create
+new user namespaces or acquire other authority. They do not establish
+isolation from a hostile process with the same host principal.
+A separate disposable namespace probe on the same host created a new user
+namespace after capability sets were cleared and `no_new_privs` was set; the
+child gained capabilities in that new namespace. Consequently the capability
+drop alone must not be treated as preventing namespace-based reacquisition.

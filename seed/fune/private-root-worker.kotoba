@@ -169,6 +169,44 @@
         kind (kxrt-load64 stat) flags (kxrt-load64 (+ stat 80))]
     (if (or (< r 0) (not= kind 16914836) (not= (bit-and flags 7) 7)) (fw-die 22) 0)))
 
+
+;; Determine the kernel-supported capability range from procfs. An unknown or
+;; unavailable range fails closed instead of treating EINVAL as an empty set.
+(defn- fw-cap-last [buf :i64] :i64
+  (let [path (+ buf 1024) stat (+ buf 1536) data (+ buf 1280)
+        a (kxrt-w path (kxrt-w path (kxrt-w path (kxrt-w path 0 0x79732f636f72702f 8) 0x6c656e72656b2f73 8) 0x73616c5f7061632f 8) 0x7061635f74 6)
+        fd (kxrt-open-path path 524288 0) opened (if (< fd 0) (fw-die 23) 0)
+        fs (kxrt-syscall 44 fd stat 0 0 0 0)
+        proc (if (or (< fs 0) (not= (kxrt-load64 stat) 40864)) (fw-die 23) 0)
+        n (kxrt-syscall 63 fd data 8 0 0 0) close (kxrt-close fd)
+        size (if (or (not= close 0) (< n 2) (> n 3) (not= (kxrt-load8 (+ data (- n 1))) 10)) (fw-die 23) 0)
+        first (kxrt-load8 data) second (if (= n 3) (kxrt-load8 (+ data 1)) 48)
+        digits (if (or (< first 48) (> first 57) (< second 48) (> second 57)) (fw-die 23) 0)
+        value (if (= n 3) (+ (* 10 (- first 48)) (- second 48)) (- first 48))]
+    (if (> value 63) (fw-die 23) value)))
+
+;; Drop bounding capabilities before losing CAP_SETPCAP, then clear ambient,
+;; effective, permitted and inheritable sets. Every capability in the range
+;; reported by procfs must be dropped and independently read back as zero.
+(defn- fw-cap-range [option :i64 ambient? :bool last :i64] :i64
+  (loop [cap 0]
+    (if (> cap last) 0
+      (let [r (if ambient? (kxrt-syscall 167 47 option cap 0 0 0)
+                (kxrt-syscall 167 option cap 0 0 0 0))]
+        (if (= r 0) (recur (+ cap 1)) (fw-die 23))))))
+(defn- fw-drop-caps [buf :i64] :i64
+  (let [last (fw-cap-last buf) drop (fw-cap-range 24 false last)
+        ambient (if (not= (kxrt-syscall 167 47 4 0 0 0 0) 0) (fw-die 23) 0)
+        hdr (+ buf 512) data (+ buf 528)
+        h (kxrt-store64 hdr 537396514)
+        a (kxrt-store64 data 0) b (kxrt-store64 (+ data 8) 0) c (kxrt-store64 (+ data 16) 0)
+        set (if (not= (kxrt-syscall 91 hdr data 0 0 0 0) 0) (fw-die 23) 0)
+        get (if (not= (kxrt-syscall 90 hdr data 0 0 0 0) 0) (fw-die 23) 0)
+        zeros (if (or (not= (kxrt-load64 data) 0) (not= (kxrt-load64 (+ data 8)) 0)
+                      (not= (kxrt-load64 (+ data 16)) 0)) (fw-die 23) 0)
+        bounding (fw-cap-range 23 false last) amcheck (fw-cap-range 1 true last)
+        nnp (if (not= (kxrt-syscall 167 39 0 0 0 0 0) 1) (fw-die 23) 0)] 0))
+
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
@@ -181,6 +219,7 @@
 ;; operation count, four-byte process-spec length and bounded FPS1 bytes.
 ;; Q reads back one staged spec; V reads a mode; I checks retained FDs.
 ;; W probes whether a create on the held root fails specifically with EROFS.
+;; J probes whether remounting read-write is denied with EPERM.
 ;; None authorizes exec.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
@@ -199,6 +238,7 @@
                       checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
                       targets (if (= (fw-spec-targets root spec path how buf (+ mem 512)) 0) 0 (fw-die 21))
                       frozen (fw-freeze-tmpfs root buf)
+                      caps (fw-drop-caps buf)
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
@@ -219,6 +259,11 @@
                       fd (fw-openat2 root path 655553 384 how)
                       close (if (>= fd 0) (kxrt-close fd) 0)
                       valid (if (not= fd -30) (fw-die 22) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 74) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [b (fw-strings) r (kxrt-syscall 40 0 (+ b 112) 0 38 0 0)
+                      denied (if (not= r -1) (fw-die 23) 0)
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 67) (if committed (fw-die 15)

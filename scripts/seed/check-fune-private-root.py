@@ -42,10 +42,54 @@ def _deny_readonly_remount():
         _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 3, 40),
         _SockFilter(0x20, 0, 0, 40), _SockFilter(0x15, 0, 1, 39),
         _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
+def _install_filter(program):
     descriptor = _SockFprog(len(program), program)
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(38, 1, 0, 0, 0) != 0 or libc.prctl(22, 2, ctypes.byref(descriptor), 0, 0) != 0:
         os._exit(125)
+
+
+def _deny_capset():
+    # Test-only ARM64 seccomp denies capset without blocking initial setup.
+    program = (_SockFilter * 4)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 1, 91),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
+def _unsupported_bounding():
+    # Simulate a kernel that reports both bounding-set prctls unsupported.
+    # The worker must not treat a nonexistent interface as an empty set.
+    program = (_SockFilter * 7)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 4, 167),
+        _SockFilter(0x20, 0, 0, 16), _SockFilter(0x15, 1, 0, 23),
+        _SockFilter(0x15, 0, 1, 24), _SockFilter(0x06, 0, 0, 0x00050016),
+        _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
+def _hide_sys_admin_bounding():
+    # A selective EINVAL for one supported capability must also fail closed.
+    program = (_SockFilter * 9)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 6, 167),
+        _SockFilter(0x20, 0, 0, 16), _SockFilter(0x15, 1, 0, 23),
+        _SockFilter(0x15, 0, 3, 24), _SockFilter(0x20, 0, 0, 24),
+        _SockFilter(0x15, 0, 1, 21), _SockFilter(0x06, 0, 0, 0x00050016),
+        _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
+def _deny_cap_range_proc():
+    # The fixed procfs input is opened read-only with O_CLOEXEC. Initial
+    # root and uid-map setup use other flags and are not blocked.
+    program = (_SockFilter * 6)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 3, 56),
+        _SockFilter(0x20, 0, 0, 32), _SockFilter(0x15, 0, 1, 524288),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
 
 
 def outside_identity():
@@ -442,6 +486,103 @@ def main(compiler, out):
             stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
             assert p.returncode == 2 and not stdout and b"FREFUSE:22" in stderr
             observations.append({"case": "readonly-remount-denied", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        # Inspect the worker's real capability state from outside before and
+        # after T; then test an actual read-write remount using J.
+        p, child, proc_denied = start()
+        try:
+            before = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
+                      if ":" in line for k, v in [line.split(":", 1)]}
+            assert int(before["CapEff"], 16) & (1 << 21), "control must initially have CAP_SYS_ADMIN"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload)
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"D"
+            after = {k: v.strip() for line in Path(f"/proc/{child}/status").read_text().splitlines()
+                     if ":" in line for k, v in [line.split(":", 1)]}
+            for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb"):
+                assert int(after[key], 16) == 0, (key, after[key])
+            assert after["NoNewPrivs"] == "1"
+            p.stdin.write(b"J")
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"K", "read-write remount must be denied with EPERM"
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "runnable-capabilities-dropped", "remount": "EPERM"})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_deny_capset)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:23" in stderr
+            observations.append({"case": "capset-denied", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_unsupported_bounding)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:23" in stderr, (p.returncode, stdout, stderr)
+            observations.append({"case": "bounding-interface-unsupported", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_hide_sys_admin_bounding)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:23" in stderr, (p.returncode, stdout, stderr)
+            observations.append({"case": "bounding-supported-cap-hidden", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_deny_cap_range_proc)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:23" in stderr, (p.returncode, stdout, stderr)
+            observations.append({"case": "capability-range-unreadable", "exit": p.returncode})
         finally:
             if p.poll() is None:
                 p.kill()
