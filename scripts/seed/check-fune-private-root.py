@@ -220,6 +220,41 @@ def main(compiler, out):
         assert p.returncode == 0 and stdout == b"D" and not stderr
         observations.append({"case": "empty-commit", "exit": p.returncode})
 
+        # V uses fstat on the actual private inode after finalization. Separate
+        # processes permit the one-read diagnostic limit to remain enforced.
+        for name, target, expected in (("file", "dir/exe", 0o751), ("directory", "dir", 0o500)):
+            p, child, proc_denied = start()
+            assert exchange(p, b"M", "dir") == b""
+            assert exchange(p, b"F", "dir/exe", 1, b"x") == b""
+            assert exchange(p, b"P", "dir/exe", 0o751) == b""
+            assert exchange(p, b"P", "dir", 0o500) == b""
+            p.stdin.write(b"C\x00\x04")
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"D"
+            assert exchange(p, b"V", target, answer=2) == struct.pack(">H", expected)
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "final-mode-" + name, "mode": oct(expected)})
+
+        for expected in (0o000, 0o777):
+            p, child, proc_denied = start()
+            assert exchange(p, b"F", "file", 0) == b""
+            assert exchange(p, b"P", "file", expected) == b""
+            p.stdin.write(b"C\x00\x02")
+            p.stdin.flush()
+            assert p.stdout.read(1) == b"D"
+            assert exchange(p, b"V", "file", answer=2) == struct.pack(">H", expected)
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "final-mode-boundary", "mode": oct(expected)})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        assert exchange(p, b"P", "file", 0o755) == b""
+        stdout, stderr = p.communicate(frame(b"U", "file", 0), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "finalization-freezes-writes", "exit": p.returncode})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
@@ -230,6 +265,8 @@ def main(compiler, out):
             ("missing-parent", frame(b"F", "missing/file", 1, b"x")),
             ("missing-replacement", frame(b"U", "missing", 1, b"x")),
             ("oversize", frame(b"F", "large", 1048577)),
+            ("special-mode", frame(b"P", "file", 0o4755)),
+            ("early-stat", frame(b"V", "file", 0)),
             ("short-payload", frame(b"F", "partial", 5, b"xy")),
             ("short-header", b"F\x00"),
             ("odd-hex", b"H4"),
@@ -269,6 +306,28 @@ def main(compiler, out):
         stdout, stderr = p.communicate(b"58", timeout=20)
         assert p.returncode == 0 and not stdout and not stderr
         observations.append({"case": "commit-at-operation-limit", "accepted": 512, "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "empty", 0) == b""
+        for _ in range(511):
+            assert exchange(p, b"R", "empty", 0) == b""
+        for _ in range(128):
+            assert exchange(p, b"P", "empty", 0o600) == b""
+        p.stdin.write(b"C\x02\x80")
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        assert exchange(p, b"V", "empty", answer=2) == struct.pack(">H", 0o600)
+        stdout, stderr = p.communicate(b"X", timeout=20)
+        assert p.returncode == 0 and not stdout and not stderr
+        observations.append({"case": "finalization-at-operation-limit", "accepted": 640})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "empty", 0) == b""
+        for _ in range(128):
+            assert exchange(p, b"P", "empty", 0o600) == b""
+        stdout, stderr = p.communicate(frame(b"P", "empty", 0o600), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "finalization-count-limit", "accepted": 128})
 
         p, child, proc_denied = start()
         p.kill()

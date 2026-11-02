@@ -7,7 +7,8 @@ general facility for arbitrary guest source to access runtime intrinsics.
 
 The current worker accepts **no OCI archives and executes no workload**. After
 setup it prints `fune-private-root-ready` and accepts bounded file commands or
-`X` to exit. It uses fixed modes 0700 for directories and 0600 for files.
+`X` to exit. It initially creates directories as 0700 and files as 0600; a
+separate finalization command can apply bounded image modes after writes.
 The parent starts a child and supplies a single-ID user/group mapping through
 proc after a pipe handshake. The child installs a parent-death signal and
 checks its parent, enters user, mount and network namespaces, makes mount
@@ -17,7 +18,7 @@ sets `no_new_privs`. Extra inherited FDs are closed before the child is made.
 The worker exits on failed setup rather than falling back to host staging.
 The mount is held only by the child namespace; no named host tree is published.
 
-The binary protocol uses an operation byte `M`, `F`, `U`, or `R`, then a
+The binary protocol uses an operation byte `M`, `F`, `U`, `R`, `P`, or `V`, then a
 big-endian 16-bit path length, big-endian 32-bit byte count, and path bytes.
 `M` creates a directory and requires count zero; `F` creates a new file;
 `U` truncates and replaces an existing file; `R` reads the requested prefix.
@@ -27,12 +28,21 @@ fail partway through, so `K` is not a successful-read verdict and the caller
 must receive every byte. There is no separate final read acknowledgment.
 `C` carries a two-byte big-endian operation count; when that count matches the
 worker's completed commands, the worker writes `D` and refuses further writes.
-One diagnostic `R` remains available afterward. `X` has no following fields
+Before `C`, `P` uses the count field as a mode from 0000 to 0777 and applies it
+to an existing inode. The first `P` begins finalization and rejects all later
+file writes; further `P` commands are allowed. The controller is responsible
+for applying children before their parents and for sending the complete set.
+The worker does not attest that a producer sent every image path: an omitted
+`P` is not detectable from the count alone, so producer trust is still required.
+One diagnostic `R` or `V` remains available after `C`; `V` returns the mode
+observed by `fstat` as two big-endian bytes after `K`. `X` has no following fields
 and exits, including before `C`; the supervisor must require `D` for success.
 The `C` marker does not publish or persist the tree. Paths are at most 255
 printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
-file operations are at most 1 MiB each and the session has at most 512 commands
-before `C`, plus one optional diagnostic read afterward.
+file operations are at most 1 MiB each. A session admits at most 512 ordinary
+commands and 128 finalization commands before `C`, plus one optional diagnostic
+read afterward. The existing supervisor still caps acknowledgments at 512, so
+the full 640-command worker range is not yet integrated with it.
 Directory and file access is rooted at the private root directory descriptor.
 Intermediate directory and final file opens use `openat2` with
 `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`;
@@ -110,3 +120,16 @@ python3 scripts/seed/check-fune-private-root.py \
 The candidate branch regenerates its bootstrap pins for this factory. Native
 x86 worker support, exact-head CI, security review, OCI verification/extraction,
 lifecycle and release are still open.
+
+## Final mode candidate
+
+The regenerated ARM64 Linux compiler built the fixed-source worker and refused
+an altered worker source. On the rootless Fedora ARM64 VM the observer checked
+actual `fstat` modes, including 0000, 0751 and 0777, after the bounded `P`
+phase; it also checked post-finalization write refusal, special mode refusal,
+512 ordinary plus 128 finalization commands, and rejection of a 129th `P`.
+The source-composed layout producer passed file-content and mode readback,
+repeated-directory and 1 MiB fixtures with this worker. A chmod-disabled
+control built with a patched debug-only compiler failed the mode readback.
+These observations do not authorize workload execution, verify arbitrary
+producer completeness, qualify x86 or establish release readiness.

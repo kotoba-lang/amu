@@ -101,21 +101,24 @@
             sent (if (= (kxrt-write-all target buf n) 1) 0 (fw-die 18))]
         (recur (- left n))))))
 
-;; Protocol: X closes; M/F/U/R then two-byte big-endian path length,
+;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
 ;; exact number of bytes. F/U are followed by that many bytes. Each successful
 ;; command writes K; R follows K with data. C and a two-byte big-endian count
 ;; freeze mutations only if the count matches, then write D. One R and X remain
-;; available for diagnostics after C. Modes are fixed to 0700/0600.
+;; available for diagnostics after C. P uses the payload-length field as a
+;; mode (0..0777), applies it to an existing file/directory, and starts a
+;; finalization phase in which only further P, C, or X are accepted. V reads
+;; the two-byte mode of one path after C. Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
 (defn- fw-commands [root :i64 mem :i64] :i64
   (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
-    (loop [operations 0 mode 0 committed false reads 0]
+    (loop [operations 0 mode 0 committed false reads 0 finalizing false finals 0]
       (let [got (if (= mode 0) (fw-read-one 0 head) (let [z (fw-read-wire mode head 1 (+ mem 8192))] 1))
             op (if (= got 1) (kxrt-load8 head) -1)]
-        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0)
+        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0 false 0)
               (= op 88) (kxrt-exit 0)
               (= op 67) (if committed (fw-die 15)
                 (let [read (fw-read-wire mode head 2 (+ mem 8192))
@@ -123,16 +126,21 @@
                       valid (if (not (= count operations)) (fw-die 19) 0)
                       mark (kxrt-store8 head 68)
                       sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
-                  (recur operations mode true 0)))
-              (or (< got 1) (and (>= operations 512) (not (and committed (= op 82))))
-                  (and committed (not (= op 82)))
-                  (and committed (= op 82) (>= reads 1))
-                  (not (or (= op 77) (= op 70) (= op 85) (= op 82)))) (fw-die 15)
+                  (recur operations mode true 0 finalizing finals)))
+              (or (< got 1) (and (>= operations 640) (not (and committed (or (= op 82) (= op 86)))))
+                  (and (>= operations 512) (not committed) (not (= op 80)))
+                  (and (= op 80) (>= finals 128))
+                  (and committed (not (or (= op 82) (= op 86))))
+                  (and committed (>= reads 1))
+                  (and finalizing (not committed) (not (= op 80)))
+                  (and (= op 86) (not committed))
+                  (not (or (= op 77) (= op 70) (= op 85) (= op 82) (= op 80) (= op 86)))) (fw-die 15)
               :else (let [header (fw-read-wire mode head 6 (+ mem 8192))
                           n (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
                           size (+ (* 16777216 (kxrt-load8 (+ head 2))) (* 65536 (kxrt-load8 (+ head 3)))
                                   (* 256 (kxrt-load8 (+ head 4))) (kxrt-load8 (+ head 5)))
-                          checked (if (or (<= n 0) (> n 255) (> size 1048576) (and (= op 77) (not (= size 0)))) (fw-die 16) 0)
+                          checked (if (or (<= n 0) (> n 255) (> size 1048576) (and (= op 77) (not (= size 0)))
+                                          (and (= op 80) (> size 511)) (and (= op 86) (not (= size 0)))) (fw-die 16) 0)
                           received (fw-read-wire mode path n (+ mem 8192)) term (kxrt-store8 (+ path n) 0)
                           valid (if (fw-path-ok? path n) 0 (fw-die 16))
                           slash (fw-last-slash path n)
@@ -146,12 +154,19 @@
                                          fd (fw-openat2 parent leaf flags (if (= op 70) 384 0) how)
                                          opened (if (< fd 0) (fw-die 17) 0)
                                          trunc (if (and (= op 85) (< (kxrt-syscall 46 fd 0 0 0 0 0) 0)) (fw-die 17) 0)
+                                         chmod (if (and (= op 80) (< (kxrt-syscall 52 fd size 0 0 0 0) 0)) (fw-die 17) 0)
+                                         stat (if (= op 86) (if (< (kxrt-syscall 80 fd buf 0 0 0 0) 0) (fw-die 17) 0) 0)
                                          ack (if (= op 82) (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))) 0)
-                                         transfer (fw-file-data fd buf size (not (= op 82)) mode (+ mem 8192))
+                                         transfer (if (or (= op 80) (= op 86)) 0 (fw-file-data fd buf size (not (= op 82)) mode (+ mem 8192)))
+                                         stat-reply (if (= op 86) (let [bits (bit-and (kxrt-load64 (+ buf 16)) 511)
+                                                                       a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (u64-shift-right bits 8))
+                                                                       c (kxrt-store8 (+ head 2) (bit-and bits 255))]
+                                                                   (if (= (kxrt-write-all 1 head 3) 1) 0 (fw-die 18))) 0)
                                          close (fw-close fd 18)] 0))
                           parent-close (if (>= slash 0) (fw-close parent 18) 0)
-                          reply (if (= op 82) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
-                      (recur (if committed operations (+ operations 1)) mode committed (if committed (+ reads 1) reads))))))))
+                          reply (if (or (= op 82) (= op 86)) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
+                      (recur (if committed operations (+ operations 1)) mode committed (if committed (+ reads 1) reads)
+                             (or finalizing (= op 80)) (if (= op 80) (+ finals 1) finals))))))))
 
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID
