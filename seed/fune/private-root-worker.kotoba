@@ -252,7 +252,7 @@
         install (if (not= (kxrt-syscall 277 1 0 desc 0 0 0) 0) (fw-die 24) 0)
         active (if (not= (kxrt-syscall 167 21 0 0 0 0 0) 2) (fw-die 24) 0)] 0))
 
-;; Controlled smoke test only: one exact static ARM64 fixture, not arbitrary
+;; Controlled smoke tests only: fixed static ARM64 fixtures, not arbitrary
 ;; OCI execution. All data is read from the already frozen private root.
 (defn- fw-fixture-spec? [spec :i64 n :i64] :bool
   (and (= n 19) (= (fw-u16 (+ spec 4)) 1) (= (fw-u16 (+ spec 6)) 0)
@@ -261,7 +261,7 @@
        (= (kxrt-load8 (+ spec 16)) 97) (= (kxrt-load8 (+ spec 17)) 112)
        (= (kxrt-load8 (+ spec 18)) 112)))
 
-(defn- fw-fixture-hash? [root :i64 exe :i64 buf :i64] :bool
+(defn- fw-fixture-hash? [root :i64 exe :i64 buf :i64 variant :i64] :bool
   (let [h buf w (+ buf 64) data (+ buf 1024) path (+ buf 2048) how (+ buf 2304)
         st (+ buf 4096) xt (+ buf 4352)
         p (kxrt-store64 path 0x707061) fd (fw-openat2 root path 524288 0 how)
@@ -281,8 +281,11 @@
         final (kxrt-sha-block h w data)]
     (and (= extra 0)
          (loop [i 0] (if (= i 8) true
-           (let [expected (case i 0 3142250384 1 1908581378 2 3010228737 3 780788070
-                                4 2867704908 5 3356614750 6 1289681377 1342585609)]
+           (let [expected (if (= variant 0)
+                            (case i 0 3142250384 1 1908581378 2 3010228737 3 780788070
+                                    4 2867704908 5 3356614750 6 1289681377 1342585609)
+                            (case i 0 3772893843 1 566504159 2 4280254111 3 3834684789
+                                    4 51427483 5 4188647605 6 2010967957 1676433319))]
              (if (= (kxrt-load64 (+ h (* i 8))) expected) (recur (+ i 1)) false)))))))
 
 (defn- fw-fixture-now [buf :i64] :i64
@@ -313,6 +316,45 @@
         exec (kxrt-syscall 281 111 empty argv env 4096 0)]
     (kxrt-exit 127)))
 
+;; Output fixture only: no inherited host descriptors except a bounded stdout
+;; pipe, which is drained while wait4 and the monotonic deadline are polled.
+(defn- fw-output-child [exe :i64 writer :i64 buf :i64] :i64
+  (let [text (+ buf 5000) argv (+ buf 5024) env (+ buf 5048) empty (+ buf 5064)
+        x (kxrt-store64 text 0x7070612f) a (kxrt-store64 argv text) b (kxrt-store64 (+ argv 8) 0)
+        c (kxrt-store64 env 0) d (kxrt-store64 empty 0)
+        stdout (if (or (= writer 1) (< (kxrt-syscall 24 writer 1 0 0 0 0) 0)) (kxrt-exit 127) 0)
+        dup (if (or (= exe 111) (< (kxrt-syscall 24 exe 111 524288 0 0 0) 0)) (kxrt-exit 127) 0)
+        lo (if (< (kxrt-syscall 436 3 110 0 0 0 0) 0) (kxrt-exit 127) 0)
+        hi (if (< (kxrt-syscall 436 112 4294967295 0 0 0 0) 0) (kxrt-exit 127) 0)
+        i (kxrt-close 0) e (kxrt-close 2)
+        exec (kxrt-syscall 281 111 empty argv env 4096 0)]
+    (kxrt-exit 127)))
+
+;; Packed return: exit code in high 32 bits and captured length in low 32.
+;; If already reaped, do not signal the numeric PID again on error.
+(defn- fw-output-fail [pid :i64 status :i64 done :bool] :i64
+  (if done -1 (fw-fixture-kill pid status)))
+(defn- fw-output-collect [pid :i64 fd :i64 buf :i64 out :i64] :i64
+  (let [status (+ buf 6000) clock (+ buf 6024) ts (+ buf 6048)
+        z (kxrt-store64 status 0) a (kxrt-store64 ts 0) b (kxrt-store64 (+ ts 8) 10000000)
+        start (fw-fixture-now clock)]
+    (if (< start 0) (fw-fixture-kill pid status)
+      (loop [used 0 done false eof false]
+        (let [n (if eof 0 (kxrt-syscall 63 fd (+ out used) (- 4097 used) 0 0 0))
+              invalid (and (< n 0) (not= n -4) (not= n -11))
+              size (+ used (if (> n 0) n 0))
+              ended (or eof (= n 0))
+              r (if done 0 (kxrt-syscall 260 pid status 1 0 0 0))
+              waited (or done (= r pid)) now (fw-fixture-now clock)
+              bad (or invalid (> size 4096) (and (< r 0) (not= r -4))
+                      (< now 0) (> (- now start) 5000000000))]
+          (cond bad (fw-output-fail pid status waited)
+                (and waited ended) (let [raw (bit-and (kxrt-load64 status) 65535)]
+                                     (if (or (not= (bit-and raw 127) 0) (not= (u64-shift-right raw 8) 7)) -1
+                                       (+ (i64-shift-left 7 32) size)))
+                :else (let [sleep (if (> n 0) 0 (kxrt-syscall 73 0 0 ts 0 0 0))]
+                        (recur size waited ended))))))))
+
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
@@ -328,7 +370,7 @@
 ;; J probes whether remounting read-write is denied with EPERM.
 ;; N checks namespace syscall refusals and ordinary clone/wait.
 ;; G verifies the held root/cwd and probes that /proc/self/status is absent.
-;; E executes only one fixed, digest-pinned diagnostic ELF; it is not admission.
+;; E and O execute only fixed, digest-pinned diagnostic ELFs; neither is admission.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
@@ -355,12 +397,33 @@
               (= op 69) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [shape (if (fw-fixture-spec? spec specsize) 0 (fw-die 26))
                       exe (kxrt-load64 (+ mem 520))
-                      digest (if (fw-fixture-hash? root exe buf) 0 (fw-die 26))
+                      digest (if (fw-fixture-hash? root exe buf 0) 0 (fw-die 26))
                       pid (kxrt-syscall 220 17 0 0 0 0 0)
                       forked (cond (< pid 0) (fw-die 26) (= pid 0) (fw-fixture-exec-child exe buf) :else 0)
                       status (fw-fixture-wait pid buf)
                       checked (if (not= status 0) (fw-die 26) 0)
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 79) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [shape (if (fw-fixture-spec? spec specsize) 0 (fw-die 26))
+                      exe (kxrt-load64 (+ mem 520))
+                      digest (if (fw-fixture-hash? root exe buf 1) 0 (fw-die 26))
+                      out (kxrt-syscall 222 0 8192 3 34 -1 0) allocated (if (< out 0) (fw-die 27) 0)
+                      pair (+ buf 6100) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 27) 0)
+                      both (kxrt-load64 pair) reader (bit-and both 4294967295) writer (u64-shift-right both 32)
+                      pid (kxrt-syscall 220 17 0 0 0 0 0)
+                      forked (cond (< pid 0) (fw-die 27) (= pid 0) (fw-output-child exe writer buf) :else 0)
+                      close-w (fw-close writer 27) result (fw-output-collect pid reader buf out)
+                      close-r (fw-close reader 27) valid (if (< result 0) (fw-die 27) 0)
+                      count (bit-and result 4294967295) exit (u64-shift-right result 32)
+                      a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) exit)
+                      c (kxrt-store8 (+ head 2) (bit-and (u64-shift-right count 24) 255))
+                      d (kxrt-store8 (+ head 3) (bit-and (u64-shift-right count 16) 255))
+                      e (kxrt-store8 (+ head 4) (bit-and (u64-shift-right count 8) 255))
+                      f (kxrt-store8 (+ head 5) (bit-and count 255))
+                      header (if (= (kxrt-write-all 1 head 6) 1) 0 (fw-die 18))
+                      payload (if (= (kxrt-write-all 1 out count) 1) 0 (fw-die 18))
+                      unmap (if (< (kxrt-syscall 215 out 8192 0 0 0 0) 0) (fw-die 27) 0)]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (bit-and (u64-shift-right specsize 24) 255))

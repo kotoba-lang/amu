@@ -18,6 +18,8 @@ from pathlib import Path
 
 EXPECTED = 'bb4aef9071c2a402b36c72012e89e166aaedb44cc811e05e4cdef9e150063b09'
 READY = b'fune-private-root-ready\n'
+OUTPUT_EXPECTED = 'e0e1ca9321c42adfff1f7e9fe490a5750310b89bf9a9b0b577dcef9563ec57a7'
+OUTPUT_FRAME = b'K\x07\x00\x00\x00\x0bfune-smoke\n'
 
 
 class Filter(ctypes.Structure):
@@ -59,11 +61,15 @@ def spec(args, env=(), cwd=b'/'):
     return result
 
 
-def main(worker, fixture, expect_pids_refusal, producer, output):
+def main(worker, fixture, expect_pids_refusal, producer, output, output_fixture):
     assert platform.system() == 'Linux' and platform.machine() in ('aarch64', 'arm64')
     assert os.geteuid() != 0
     data = fixture.read_bytes()
     assert len(data) == 320000 and hashlib.sha256(data).hexdigest() == EXPECTED
+
+    outdata = output_fixture.read_bytes() if output_fixture else None
+    if outdata is not None:
+        assert len(outdata) == 320000 and hashlib.sha256(outdata).hexdigest() == OUTPUT_EXPECTED
 
     def run(request, preexec=None):
         return subprocess.run([str(worker)], input=request, capture_output=True,
@@ -79,9 +85,10 @@ def main(worker, fixture, expect_pids_refusal, producer, output):
         def denied_count():
             return int(dict(line.split() for line in (cgroup / 'pids.events').read_text().splitlines())['max'])
         before = denied_count()
-        limited = run(setup(data, payload) + b'E')
+        limited = run(setup(outdata or data, payload) + (b'O' if outdata else b'E'))
         after = denied_count()
-        assert limited.returncode == 2 and limited.stdout == READY + b'KKD' and b'FREFUSE:26' in limited.stderr
+        stage = b'FREFUSE:27' if outdata else b'FREFUSE:26'
+        assert limited.returncode == 2 and limited.stdout == READY + b'KKD' and stage in limited.stderr
         assert after > before, (before, after)
         print('PASS_FUNE_FIXED_FIXTURE_PIDS_REFUSAL')
         return
@@ -108,7 +115,34 @@ def main(worker, fixture, expect_pids_refusal, producer, output):
     assert no_clock.returncode == 2 and no_clock.stdout == READY + b'KKD' and b'FREFUSE:26' in no_clock.stderr
     early = run(b'E')
     assert early.returncode == 2 and early.stdout == READY and b'FREFUSE:15' in early.stderr
+    if outdata is not None:
+        out = run(setup(outdata, payload) + b'OX')
+        assert out.returncode == 0 and out.stdout == READY + b'KKD' + OUTPUT_FRAME and not out.stderr, (out.returncode, out.stdout, out.stderr)
+        changed = bytearray(outdata); changed[-1] ^= 1
+        bad = run(setup(changed, payload) + b'O')
+        assert bad.returncode == 2 and bad.stdout == READY + b'KKD' and b'FREFUSE:26' in bad.stderr
+        wrong_fixture = run(setup(data, payload) + b'O')
+        assert wrong_fixture.returncode == 2 and wrong_fixture.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_fixture.stderr
+        wrong_output_args = run(setup(outdata, spec([b'/app', b'extra'])) + b'O')
+        assert wrong_output_args.returncode == 2 and wrong_output_args.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_output_args.stderr
+        wrong_output_env = run(setup(outdata, spec([b'/app'], [b'X=1'])) + b'O')
+        assert wrong_output_env.returncode == 2 and wrong_output_env.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_output_env.stderr
+        wrong_command = run(setup(outdata, payload) + b'E')
+        assert wrong_command.returncode == 2 and wrong_command.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_command.stderr
+        early_out = run(b'O')
+        assert early_out.returncode == 2 and early_out.stdout == READY and b'FREFUSE:15' in early_out.stderr
+        data_only_out = run(b'C\x00\x00O')
+        assert data_only_out.returncode == 2 and data_only_out.stdout == READY + b'D' and b'FREFUSE:15' in data_only_out.stderr
+        denied_out = run(setup(outdata, payload) + b'O', deny_execveat)
+        assert denied_out.returncode == 2 and denied_out.stdout == READY + b'KKD' and b'FREFUSE:27' in denied_out.stderr
+        no_clock_out = run(setup(outdata, payload) + b'O', deny_clock)
+        assert no_clock_out.returncode == 2 and no_clock_out.stdout == READY + b'KKD' and b'FREFUSE:27' in no_clock_out.stderr
+        repeat_out = run(setup(outdata, payload) + b'OO')
+        assert repeat_out.returncode == 2 and repeat_out.stdout == READY + b'KKD' + OUTPUT_FRAME and b'FREFUSE:15' in repeat_out.stderr
+        print('PASS_FUNE_FIXED_FIXTURE_OUTPUT')
     if producer is not None:
+        data = outdata if outdata is not None else data
+        expected_digest = OUTPUT_EXPECTED if outdata is not None else EXPECTED
         assert output is not None and not output.exists()
         root = output / 'oci-layout'
         blobs = root / 'blobs/sha256'
@@ -156,11 +190,12 @@ def main(worker, fixture, expect_pids_refusal, producer, output):
             assert refused_layer.returncode != 0 and not refused_layer.stdout
         finally:
             layer_path.write_bytes(layer)
-        launched = run(stream.stdout + b'4558')
-        assert launched.returncode == 0 and launched.stdout == READY + b'KKDK' and not launched.stderr, (launched.returncode, launched.stdout[-500:], launched.stderr[-500:])
+        launched = run(stream.stdout + (b'4f58' if outdata is not None else b'4558'))
+        expected_output = READY + b'KKD' + (OUTPUT_FRAME if outdata is not None else b'K')
+        assert launched.returncode == 0 and launched.stdout == expected_output and not launched.stderr, (launched.returncode, launched.stdout[-500:], launched.stderr[-500:])
         (output / 'result.json').write_text(json.dumps({'manifest': manifest_digest, 'producerSHA256': hashlib.sha256(producer.read_bytes()).hexdigest(),
                                                         'workerSHA256': hashlib.sha256(worker.read_bytes()).hexdigest(),
-                                                        'fixtureSHA256': EXPECTED, 'status': 'PASS_FUNE_OCI_FIXED_FIXTURE_EXEC'}, indent=2) + '\n')
+                                                        'fixtureSHA256': expected_digest, 'status': 'PASS_FUNE_OCI_FIXED_FIXTURE_EXEC'}, indent=2) + '\n')
         print('PASS_FUNE_OCI_FIXED_FIXTURE_EXEC')
     print('PASS_FUNE_FIXED_FIXTURE_EXEC')
 
@@ -168,6 +203,7 @@ def main(worker, fixture, expect_pids_refusal, producer, output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--worker', type=Path, required=True)
+    parser.add_argument('--output-fixture', type=Path)
     parser.add_argument('--fixture', type=Path, required=True)
     parser.add_argument('--expect-pids-refusal', action='store_true')
     parser.add_argument('--producer', type=Path)
@@ -175,4 +211,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
     assert bool(args.producer) == bool(args.output)
     main(args.worker.resolve(), args.fixture.resolve(), args.expect_pids_refusal,
-         args.producer.resolve() if args.producer else None, args.output.resolve() if args.output else None)
+         args.producer.resolve() if args.producer else None, args.output.resolve() if args.output else None,
+         args.output_fixture.resolve() if args.output_fixture else None)
