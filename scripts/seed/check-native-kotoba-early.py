@@ -30,7 +30,8 @@ def main(compiler, out):
     assert len(cases) == 24
     report = dict(schema="amu.early-native-kotoba24.v1", nativeControllerQualified=False,
                   qualificationReplacement=False, producerSHA256=pin(compiler),
-                  observerSourceSHA256=pin(Path(__file__)), fixtureSHA256=pin(ROOT / "seed/static-cases.json"), calls=[])
+                  observerSourceSHA256=pin(Path(__file__)), fixtureSHA256=pin(ROOT / "seed/static-cases.json"),
+                  calls=[], compiledCases=[])
     env = dict(PATH="/nonexistent", KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES="8388608")
 
     def run(name, argv, expected=0, native_gate=False):
@@ -55,6 +56,8 @@ def main(compiler, out):
     run("build-gate", [compiler, "cdci-build", "kotoba-native", out / "entry.kotoba",
                        out / "runtime.kotoba", out / "kotoba-gate.kotoba", gate])
     gate.chmod(0o755)
+    report["compiledKotobaGate"] = dict(sha256=pin(gate), bytes=gate.stat().st_size)
+    (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     assert pin(gate) == policy["kotobaNativeGateSHA256"]
     lines = ["KCGATE1", str(out), pin(gate), "24"]
     for i, case in enumerate(cases):
@@ -67,6 +70,9 @@ def main(compiler, out):
         lines += [pin(source), pin(image), source.name, image.name,
                   str(0 if case["reference"]["exit"] else case["result"]),
                   str(case["reference"]["exit"]), str(case["reference"]["remainingFuel"])]
+        report["compiledCases"].append(dict(index=i, name=case["name"], sourceSHA256=pin(source),
+                                            imageSHA256=pin(image), imageBytes=image.stat().st_size))
+        (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     ledger = out / "cases.kcg"
     ledger.write_text("\n".join(lines) + "\n")
     run("native-complete24", [gate, ledger, pin(ledger)], native_gate=True)
