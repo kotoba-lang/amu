@@ -1772,7 +1772,7 @@
   (-> i (kxrt-allow-nr-at p 258) (kxrt-allow-nr-at p 263) (kxrt-allow-nr-at p 264) (kxrt-allow-nr-at p 316) (kxrt-allow-nr-at p 91) (kxrt-allow-nr-at p 74) (kxrt-allow-nr-at p 318) (kxrt-allow-nr-at p 107) (kxrt-allow-nr-at p 73)))
 ;; Browse admits openat2 and getdents64; close releases its temporary directory fd.
 (defn- kxrt-allow-browse [p :i64 i :i64] :i64
-  (-> i (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 217) (kxrt-allow-nr-at p 57)))
+  (-> i (kxrt-allow-nr-at p 437) (kxrt-allow-nr-at p 217) (kxrt-allow-nr-at p 3)))
 ;; read (0) only when args[0] (low word at offset 16) is fd; then the
 ;; syscall number is loaded back for the rules after it
 (defn- kxrt-allow-read-fd [p :i64 i :i64 fd :i64] :i64
