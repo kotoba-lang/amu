@@ -1,0 +1,81 @@
+amu-gpu s223 -- freeze-verify-s215to220-identity.txt (the identity
+record of the resolution-act pre-registration FREEZE verification,
+the freeze-record-s215to220.txt companion; the design-verify-
+s215to220-identity.txt naming precedent).
+
+WHAT WAS VERIFIED: docs/evidence/gpu/anv-b3control3state-prereg-
+20261102/protocol.txt (the FROZEN resolution-act pre-registration,
+32,790 bytes, sha256 0316671b9b076929c2488c1c73b8d29ae01291eb
+6f1bb7e187c8f8379b11b11f, freeze stamp 2026-11-02T10:48:32Z) by
+freeze-verify-s215to220.py (11,911 bytes, sha256 5c65ab0fdd7234a9
+458168aae7cf94052dfbc571528881460cfff1f732652cd8): (1) 13 file pins
+(size + sha256 vs the s222 design-verify pin values, re-checked at
+this freeze -- the 4 publications, the 19th-cut protocol, analysis-
+s209-identity, the ROUNDS6400 source pin c2704aaa..., publication-
+s4, and 5 of the 6 decision records); (2) 28 quote blocks re-
+extracted from committed bytes at their pinned lines and byte-
+compared against protocol.txt (the [[Q <path> L<a>[-<b>]]] blocks);
+(3) gloss adjacency (every occurrence of the frozen name "a
+three-state control record" carries the s220 2(e) gloss within 700
+characters); (4) terminology scan (every "state" token outside quote
+blocks listed with its disposition: state-BLOCK / state-IDENTITY /
+underlying-state / decision-record filename / double-quoted term;
+prose double-quote balance asserted); (5) 13 DERIVED re-derivations
+computed from scratch (4*(3+3) = 24; 3R = 19,200; 1.96*1.2533*1.4826
+= 3.6420; 31 * 52.083 = 1,614.573; 2^4 = 16; 16 + 1 = 17; the
+16-sequence enumeration: B=1: 2, B=2: 6, B=3: 6, B=4: 2; I=1: 2,
+I=2: 14; record b a a b -> B=3, I=2; the B=3 set; I=2 iff B>=2;
+record c2 median span 1 tick) with each printed literal asserted
+present in protocol.txt (whitespace-normalized).
+
+DRAFT PAIR KEPT VISIBLE (NAMED, NOT HIDDEN -- the s214/s222
+precedent): draft-1 (rc 1 both, pair byte-identical, stdout 9,222
+bytes sha256 a30271fefadf0679b65b456b44ac9a8a93259c241b37fc5ea6
+ae7a11e66497d7 both runs, stderr 0 bytes both -- capture pair
+freeze-verify-s215to220-draft1-run1/2.txt + .err both): 7 failures,
+FOUR defects, all named before any correction --
+(i) G-3 GLOSS-PLACEMENT DEFECT (protocol content, the real one):
+the frozen name's THIRD occurrence (inside the s220 2(a) decision-
+record quote, threestate-s220.txt L122-141) carried no adjacent
+gloss -- the s220 2(e) fix says the protocol glosses the name
+WHEREVER it quotes it -> gloss added in place immediately before
+that quote block in the template; the checker window broadened to
++/-700 chars (before or after) so an in-place gloss at either edge
+of a block is accepted;
+(ii) T-FILENAME DEFECT (checker rule): the decision-record
+filename rule matched "state-sNNN" BEFORE the token instead of
+"state-sNNN.txt" AT it -> state-s215.txt etc. were misflagged as
+bare 'state';
+(iii) T-QUOTE-SPAN DEFECT (checker rule): the double-quoted-term
+rule could not cross newlines, so the wrapped quoted terms
+committed "current control / state" and "more than / one state"
+were misflagged -> quoted spans now computed by toggling at each
+double quote over the whole prose (prose double-quote balance
+asserted as T-BALANCE);
+(iv) D-LITERAL-WRAP DEFECT (checker rule): DERIVED literal
+presence was checked against raw text, so line-wrapped literals
+(B=1: 2, B=2: 6, / B=3: 6 ... / I=2 iff / B>=2) failed although
+present -> literals checked whitespace-normalized.
+DEFECT (i) changed protocol.txt (the template gained the gloss and
+re-expanded; the freeze stamp is the FINAL protocol.txt write time
+2026-11-02T10:48:32Z -- honest: the earlier expansion's stamp
+10:42:21Z/10:44:36Z belongs to no committed or verified state, no
+run exists at any stamp); (ii)-(iv) changed the checker only.
+
+THE OFFICIAL RUN-TWICE PAIR (RE-TAKEN fresh after the fixes, the
+s214 precedent): run1 == run2 byte-identical (cmp exit 0), stdout
+9,685 bytes sha256 af0246f92daf320456dd51d1a66211c07148f8040fa
+7c3f58907b6ff4f0a71b8 both runs, stderr 0 bytes both, rc 0 both
+(capture pair freeze-verify-s215to220-run1/2.txt + .err both); tail
+'FREEZE-VERIFY S215-TO-S220 SUMMARY: 113 ok / 0 failed' / 'COMPLETE
+(fail-closed: 0 failed)'; 113 wants = 13 file pins + 28 quote-block
+wants + 28 [[/Q]]-close wants + 1 block count + 3 gloss wants + 1
+gloss count + 1 quote-balance + 20 terminology dispositions + 13
+DERIVED wants (tool-counted: grep -c '^ok' = 113, matches the
+summary).
+
+QUOTE-ONLY / ARITHMETIC-ONLY: NO resolution-act quantity computed
+anywhere -- every resolution-act quantity (every reading letter,
+the sequence, B_act, the act verdict) stays UNMEASURED. RULE 4
+unchanged: NOTHING MOVES; the committed bracket stays EXACTLY
+(254,923, 255,045].
