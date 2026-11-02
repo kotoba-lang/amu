@@ -433,6 +433,8 @@ if __name__ == "__main__":
                         help="the wasm32-browser target only (not a native tier): F of --bootstrap compiles the modules")
     parser.add_argument("--bootstrap", type=Path, help="with --wasm32-browser: a passing native bootstrap output")
     a = parser.parse_args()
+    if a.reuse:
+        parser.error("--reuse is disabled until the producer and input closure are independently trusted")
     if a.wasm32_browser:
         assert a.bootstrap and not (a.reuse or a.store), "--wasm32-browser takes --bootstrap and no reuse"
         sys.exit(wasm32_browser(a.output.resolve(), a.bootstrap.resolve()))
