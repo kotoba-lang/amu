@@ -87,6 +87,25 @@ def fs_guest(scope, outside):
     return HEAD + "(defn main [] :i64\n  (let [" + body + "]\n    7))\n"
 
 
+def unlink_guest(scope, outside):
+    p = lambda rest: lit(f"{scope}/{rest}")
+    requests = [
+        f'(say (fs {p("remove-meUNLINK_SEP")}))',
+        f'(say (fs {p("remove-meEXISTS_SEP")}))',
+        f'(say (fs {p("absentUNLINK_SEP")}))',
+        f'(say (fs {lit(f"{outside}/outside-fileUNLINK_SEP")}))',
+        f'(say (fs {p("parent-link/parent-targetUNLINK_SEP")}))',
+        f'(say (fs {p("final-linkUNLINK_SEP")}))',
+        f'(say (fs {p("final-linkEXISTS_SEP")}))',
+    ]
+    body = " ".join(f"s{k} {x}" for k, x in enumerate(requests))
+    return HEAD + "(defn main [] :i64\n  (let [" + body + "]\n    7))\n"
+
+
+UNLINK_MALFORMED = HEAD + ('(defn main [] :i64\n'
+                           '  (let [x (typed-cap-call :fs/app-data :string :string "badUNLINK_SEPUNLINK_SEP")] 7))\n')
+
+
 SLEEP = HEAD + ('(defn main [] :i64\n'
                 '  (let [t0 (decimal (clock "monotonic")) t1 (decimal (clock "sleep 200")) t2 (decimal (clock "sleep 0"))\n'
                 '        a (say (if (>= (- t1 t0) 200000000) "slept" "short")) b (say (if (>= t2 t1) "ok" "back"))]\n'
@@ -140,6 +159,7 @@ def main(compiler, output, target, seccomp_if_available=False):
         return out
 
     rows = []
+    sigill = b":signal :SIGILL"
 
     def case(name, elf, env, args=(), want_exit=0, stdout_is=None, stderr_has=()):
         x = subprocess.run([str(elf), *args], env=dict(base_env, **env), capture_output=True, timeout=120)
@@ -158,7 +178,29 @@ def main(compiler, output, target, seccomp_if_available=False):
     case("replace-and-refusals", fs_elf, fs_env, stdout_is=b"1|1|hello|0|1|new|1|a|1|0|0|0|0|1|")
     assert (scope / "final").read_bytes() == b"hello" and not (scope / "tmp").exists() and not (outside / "stolen").exists()
     assert (scope / "old").read_bytes() == b"new" and not (scope / "new").exists() and (scope / "b").read_bytes() == b"a"
-    sigill = b":signal :SIGILL"
+
+    unlink_scope = out / "unlink-scope"
+    unlink_outside = out / "unlink-outside"
+    unlink_scope.mkdir()
+    unlink_outside.mkdir()
+    (unlink_scope / "remove-me").write_text("inside")
+    (unlink_outside / "outside-file").write_text("outside")
+    (unlink_outside / "parent-target").write_text("outside-parent")
+    os.symlink(unlink_outside, unlink_scope / "parent-link", target_is_directory=True)
+    os.symlink(unlink_outside / "outside-file", unlink_scope / "final-link")
+    unlink_env = {"KEXE_ALLOW": "35,37,38", "KEXE_CAP_RESOURCES_35": str(unlink_scope)}
+    unlink = compile_(producer, "unlink", unlink_guest(unlink_scope, unlink_outside), target)
+    case("unlink-positive-absent-outside-symlink", unlink, unlink_env,
+         stdout_is=b"1|0|0|0|0|1|0|")
+    assert not (unlink_scope / "remove-me").exists()
+    assert not (unlink_scope / "final-link").exists()
+    assert (unlink_outside / "outside-file").read_text() == "outside"
+    assert (unlink_outside / "parent-target").read_text() == "outside-parent"
+    ungranted_unlink = compile_(producer, "unlink-ungranted", unlink_guest(unlink_scope, unlink_outside), target)
+    case("unlink-wire-not-granted", ungranted_unlink, {"KEXE_ALLOW": "37,38", "KEXE_CAP_RESOURCES_35": str(unlink_scope)},
+         want_exit=120, stderr_has=[sigill, b"KEXE_CAP {:wire 35 :refused :not-granted}\\n"])
+    malformed_unlink = compile_(producer, "unlink-malformed", UNLINK_MALFORMED, target)
+    case("unlink-malformed-duplicate-token", malformed_unlink, unlink_env, want_exit=120, stderr_has=[sigill])
     fsync_one = compile_(producer, "fsync-one", FSYNC_ONLY, target)
     case("fsync-trailing-bytes", fsync_one, fs_env, args=[f"{scope}/finalFSYNC_SEPx"], want_exit=120, stderr_has=[sigill])
 
