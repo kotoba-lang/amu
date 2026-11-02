@@ -765,6 +765,7 @@
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
         ri (kxrt-find a n 0x45535f45474e4152 0x50 9) rni (kxrt-find a n 0x535f454d414e4552 0x5045 10) fi (kxrt-find a n 0x45535f434e595346 0x50 9)
         li (kxrt-find a n 4995441188540468294 80 9) ui (kxrt-find a n 6007603180400823893 20549 10)
+        uni (kxrt-find a n 0x535f4b4e494c4e55 0x5045 10)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
     (cond (and (>= n 6) (kxrt-tok-at a 0x3156504b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-private (+ a 6) (- n 6)))
@@ -781,10 +782,12 @@
           ;; directory)
           (>= rni 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
+          (>= uni 0) (let [z (kxrt-sink-close)]
+                      (if (= (kxrt-count2 a n 0x535f4b4e494c4e55 0x5045 10) 1) (kxrt-fs-unlink a n uni) (kxrt-fail)))
           (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
           (>= li 0) (let [z (kxrt-sink-close)] (if (= (+ li 9) n) (kxrt-fs-lock a li false) (kxrt-fail)))
           (>= ui 0) (let [z (kxrt-sink-close)] (if (= (+ ui 10) n) (kxrt-fs-lock a ui true) (kxrt-fail)))
-          ;; STAT, MTIME, ... are not provided by this runtime: refused.
+          ;; STAT, MTIME, RMDIR and the remaining metadata forms are not provided: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
 
@@ -817,6 +820,15 @@
         f2 (if (< f1 0) -1 (let [m (kxrt-path (+ a i 10) (- n (+ i 10)))] (if (< m 0) -1 (kxrt-fs-parent m b2))))
         r (if (< f2 0) -1 (kxrt-syscall 264 f1 b1 f2 b2 0 0))
         z1 (if (>= f1 0) (kxrt-close f1) 0) z2 (if (>= f2 0) (kxrt-close f2) 0)]
+    (kxrt-intern-dec (if (= r 0) 1 0))))
+;; UNLINK_SEP: remove the final directory entry without following it. Resolve
+;; the parent beneath the granted app-data root, then unlinkat its basename.
+(defn- kxrt-fs-unlink [a :i64 n :i64 i :i64] :i64
+  (let [s (kxrt-gl 200) base (+ s 9216)
+        m (kxrt-path a i)
+        fd (if (< m 0) -1 (kxrt-fs-parent m base))
+        r (if (< fd 0) -1 (kxrt-syscall 263 fd base 0 0 0 0))
+        z (if (>= fd 0) (kxrt-close fd) 0)]
     (kxrt-intern-dec (if (= r 0) 1 0))))
 ;; Scope-bound single-writer fencing. One cooperative lock per process;
 ;; a nonblocking kernel flock persists across arena resets and is released
