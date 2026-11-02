@@ -612,6 +612,16 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: F's wasm32-browser modules of the runtime cases and probes, float refusals (JUN-353)
         run: python3 scripts/seed/selfhost-bootstrap.py --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
+      - name: Locked Wasm project discovery and refusal controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-project-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: wasm-project-admission-arm
+          path: ${{ runner.temp }}/wasm-project-arm/receipt.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wasm32-browser-modules
@@ -620,6 +630,24 @@ jobs:
             ${{ runner.temp }}/wasm32-target/calls.json
             ${{ runner.temp }}/wasm32-target/wasm32/*.wasm
           if-no-files-found: error
+  wasm32-project-admission-x86:
+    name: wasm32-browser project admission (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Locked Wasm project discovery and refusal controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-project-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: wasm-project-admission-x86
+          path: ${{ runner.temp }}/wasm-project-x86/receipt.json
+          if-no-files-found: warn
   wasm32-browser-chrome:
     name: wasm32-browser target (headless Chrome, x86_64)
     needs: wasm32-browser-compile

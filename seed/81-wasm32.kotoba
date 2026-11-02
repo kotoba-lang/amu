@@ -342,17 +342,39 @@
                              (string-concat ", :pool-bytes " (string-concat (mem-u2dec (xg-get M 2))
                                (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+;; Locked project admission precedes the target-specific Wasm linker.  Until
+;; that linker exists, even a completely checked source graph is refused.
+;; The canonical discovery/lock owner caches and verifies every source; never
+;; accept --unpinned or ignore an option on the Wasm project path.
+(defn- xw-project-flags? [i :i64 roots :i64 lock :bool digest :bool] :bool
+  (if (= i (io-argc)) (and (> roots 0) (<= roots 16) lock digest)
+    (if (>= (+ i 1) (io-argc)) false
+      (let [flag (io-arg i)]
+        (cond (string=? flag "--source-path") (xw-project-flags? (+ i 2) (+ roots 1) lock digest)
+              (and (string=? flag "--source-lock") (not lock)) (xw-project-flags? (+ i 2) roots true digest)
+              (and (string=? flag "--source-lock-sha256") (not digest)) (xw-project-flags? (+ i 2) roots lock true)
+              :else false)))))
+(defn- xw-project-check [path :string] :i64
+  (let [M (mem-new) L (pj-new-l) roots (drv-pj-roots L (pj-new-p L) 1 (io-argc))
+        locked (drv-pj-lock M L roots path)
+        graph (if (pj-ok M) (pj-discover M L (pj-padd L locked path) (- (pj-n L) 1)) locked)]
+    (cond (not (pj-ok M)) (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in M path "") (drv-pj-fail M L graph))
+          :else (let [w (io-err "seed-wasm32-browser: E7107 locked project linker is not implemented; no artifact emitted\n")] 2))))
+
 ;; compile SRC --target wasm32-browser --output NEW
 ;;   [--source-lock LOCK --source-lock-sha256 DIGEST]
 ;; The optional lock is currently the single-source KSL form, not a project
 ;; linker. Never accept and discard roots or any unsupported flags.
 (defn- xw-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) count (io-argc)
+        project (= (drv-pj-has 1 count "--source-path") 1)
         locked (and (= count 10) (string=? (io-arg 6) "--source-lock")
                     (string=? (io-arg 8) "--source-lock-sha256"))]
-    (cond (or (and (not= count 6) (not locked))
+    (cond (or (and project (not (xw-project-flags? 6 0 false false)))
+              (and (not project) (not= count 6) (not locked))
               (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM [--source-lock LOCK --source-lock-sha256 DIGEST]\n")] 2)
+          project (xw-project-check src)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           (= (string-length (xw-rt-src)) 0)
             (let [w (io-err "seed-wasm32-browser: E7106 a section marker of the seed/77 runtime text is missing\n")] 1)
