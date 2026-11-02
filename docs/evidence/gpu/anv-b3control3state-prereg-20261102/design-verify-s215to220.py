@@ -423,7 +423,7 @@ LINE_WANTS = [
     ("Q-S219-171", "s219", 171, "a new symbol would have no counterpart in the committed"),
     ("Q-S219-172", "s219", 172, "record and would break the one-for-one confrontation (design"),
     ("Q-S219-173", "s219", 173, "reading)."),
-    ("Q-S220-25", "s220", 25, "L109-115 (quote)"),
+    ("Q-S220-26", "s220", 26, "L109-115 (quote)"),
     ("Q-S220-33", "s220", 33, "own copy, publication-s209.txt L663-671 (quote)"),
     ("Q-S220-45", "s220", 45, "state-s215.txt L104-109 (quote)"),
     ("Q-S220-53", "s220", 53, "L207-216 (quote)"),
@@ -578,7 +578,7 @@ def main():
         c8_good = c8_good and row_ok
         c8_rows.append((key, med, parsed_pct, derived_pct))
     record("D-C8-PCT",
-           "c8 medians parsed/re-derived vs the +/-5% band: %s" % (c8_rows,),
+           "c8 medians parsed/re-derived vs the +/-5%% band: %s" % (c8_rows,),
            c8_good)
 
     # 5c. the c2 lines: pooled median vs the committed floor band flag
@@ -586,21 +586,29 @@ def main():
     flag_re = re.compile(r"band 31\.\.32 at B=2\): (True|False)")
     c2_rows = []
     c2_good = True
-    cur_m = None
-    for key, lineno, want_flag in (("pub169", 607, "False"), ("pub169", 608, "False"),
-                                   ("pub185", 624, "True"), ("pub185", 625, "True"),
-                                   ("pub197", 630, "True"), ("pub197", 631, "True"),
-                                   ("pub209", 657, "False"), ("pub209", 658, "False")):
-        if lineno % 2 == 1:
-            m = c2_re.search(line_of(texts, key, lineno))
-            cur_m = int(m.group(1)) if m else None
-        else:
-            m = flag_re.search(line_of(texts, key, lineno))
-            flag = m.group(1) if m else None
-            in_band = cur_m is not None and 31 <= cur_m <= 32
-            row_ok = (flag == want_flag and (flag == "True") == in_band)
-            c2_good = c2_good and row_ok
-            c2_rows.append((key, cur_m, flag, in_band))
+    # DEV CODE-SHAPE FIX (s222, named in design-verify-s215to220-
+    # identity.txt): median line and flag line pinned EXPLICITLY per
+    # reading -- the old odd/even parity heuristic held for pub169
+    # (607/608) and pub209 (657/658) but was INVERTED for pub185
+    # (median 624 / flag 625) and pub197 (median 630 / flag 631);
+    # committed bytes are the authority. Want CONTENT unchanged
+    # (m values + floor-band flags). Fail-closed strengthened to
+    # match the named intent: a None median now fails the row want
+    # for ANY want_flag (the s221 fix's stated semantics).
+    for key, med_line, flag_line, want_flag in (
+            ("pub169", 607, 608, "False"),
+            ("pub185", 624, 625, "True"),
+            ("pub197", 630, 631, "True"),
+            ("pub209", 657, 658, "False")):
+        m = c2_re.search(line_of(texts, key, med_line))
+        cur_m = int(m.group(1)) if m else None
+        m = flag_re.search(line_of(texts, key, flag_line))
+        flag = m.group(1) if m else None
+        in_band = cur_m is not None and 31 <= cur_m <= 32
+        row_ok = (cur_m is not None and flag == want_flag
+                  and (flag == "True") == in_band)
+        c2_good = c2_good and row_ok
+        c2_rows.append((key, cur_m, flag, in_band))
     record("D-C2-BAND",
            "c2 pooled medians vs the committed floor band 31..32 at B=2: %s" % (c2_rows,),
            c2_good)
