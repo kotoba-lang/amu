@@ -26,7 +26,7 @@ def pin(path):
 def main(build, complete, out):
     graph, producers, _ = load_native_producers(build=build, complete=complete)
     fixture = ROOT / 'seed/tests/aiueos-application-pool.kotoba'
-    evidence = ROOT / 'docs/evidence/aiueos-application-pool-20261103/receipt.json'
+    evidence = ROOT / 'docs/evidence/aiueos-application-pool-main-merge-20261103/receipt.json'
     reference = json.loads(evidence.read_text())
     assert pin(fixture) == reference['sources'][str(fixture.relative_to(ROOT))]
     unity = b''.join((ROOT / p).read_bytes() + b'\n'
