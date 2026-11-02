@@ -34,3 +34,32 @@ by the test program itself: they are not trusted user approval, device identity
 or an OS authorization boundary. This exercises a real regular-file effect,
 not arbitrary-offset block I/O or physical storage. The public CLI still
 does not grant its ordinary guests filesystem or device access.
+
+## macOS fixed-offset regular-file control
+
+`TMPDIR=/workspace/scratch ./check-macos-offset.sh` uses the pinned Amu
+macOS root and packager to build a Kotoba image generator, then uses the
+generated, ad-hoc-signed executable on a fresh private 8192-byte file opened
+as FD3. The generated code checks `fstat64` for a regular file, performs a
+four-byte `pwrite` at offset 4096, calls `fsync`, and checks a `pread` from the
+same offset. An external comparison checks the entire file. Read-only,
+character-device and missing descriptors must refuse; the read-only file must
+remain unchanged. The image carries no dynamic library load command.
+
+This is a fixed diagnostic, not a reusable provider, a genuine approval, a
+physical block device, or a durability/power-loss qualification. It is not
+linked to the guard or application. It deliberately rejects character devices,
+which include macOS raw disks. The test opens only its own private file;
+passing it does not authorize or enable access to any connected disk.
+
+The literal ARM64 instruction words in `seed/macos-offset-control-packager.kotoba`
+were derived once on 2026-11-02 using Apple clang 21.0.0 (clang-2100.1.1.101),
+`clang -target arm64-apple-macos -c offset-control.s`, where the `.s` file
+had the bytes retained as `offset-control-reference.txt`, followed by `xcrun llvm-objdump --macho
+--disassemble`. The inert assembly reference has SHA-256
+`ccbc4535d37e3c74d0b026b937e2fd8feac56f3e4952a12371d3a1317103cedb`;
+the one-off object had SHA-256
+`e3acb36553c4c042ff20a979501e31bbb4fa2d1971dfff584b73049cf8321e33`.
+The test and generated code do not run clang, an assembler, C code or a C
+loader. The checked-in Kotoba words are the build input; the reference is
+inert review material only.
