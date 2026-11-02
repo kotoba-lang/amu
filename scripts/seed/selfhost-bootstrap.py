@@ -398,7 +398,9 @@ def wasm32_browser(out, boot):
         src.write_text(case["source"])
         r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
                     scope, success=False)
-        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+        # Decimal literals lower to binary64 before the first refused operation.
+        detail = {"float-f32-conv": 34, "float-f64-unordered": 19}.get(case["name"], case["refusalDetail"])
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {detail}".encode() in r.stderr \
             and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
         float_refusals.append(case["name"])
     modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
