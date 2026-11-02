@@ -75,12 +75,29 @@
   (loop [i 0 last -1]
     (if (= i n) last
       (recur (+ i 1) (if (= (kxrt-load8 (+ path i)) 47) i last)))))
-(defn- fw-file-data [fd :i64 buf :i64 size :i64 write? :bool] :i64
+;; Optional transport: H as the first byte selects lowercase ASCII hex for
+;; every subsequent protocol byte. This lets a string-only producer stream
+;; arbitrary binary without changing the binary protocol or buffering a layer.
+(defn- fw-nibble [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 102)) (+ 10 (- c 97))
+        :else (fw-die 16)))
+(defn- fw-read-wire [mode :i64 address :i64 count :i64 scratch :i64] :i64
+  (if (= mode 0) (fw-read-exact 0 address count 16)
+    (let [got (fw-read-exact 0 scratch (* count 2) 16)]
+      (loop [i 0]
+        (if (= i count) 0
+          (let [hi (fw-nibble (kxrt-load8 (+ scratch (* i 2))))
+                lo (fw-nibble (kxrt-load8 (+ scratch (+ (* i 2) 1))))
+                w (kxrt-store8 (+ address i) (+ (* 16 hi) lo))]
+            (recur (+ i 1))))))))
+
+(defn- fw-file-data [fd :i64 buf :i64 size :i64 write? :bool mode :i64 scratch :i64] :i64
   (loop [left size]
     (if (= left 0) 0
       (let [n (if (> left 4096) 4096 left)
             source (if write? 0 fd) target (if write? fd 1)
-            got (fw-read-exact source buf n 18)
+            got (if write? (fw-read-wire mode buf n scratch) (fw-read-exact source buf n 18))
             sent (if (= (kxrt-write-all target buf n) 1) 0 (fw-die 18))]
         (recur (- left n))))))
 
@@ -93,16 +110,18 @@
 ;; command. The controller must discard the tree on all errors.
 (defn- fw-commands [root :i64 mem :i64] :i64
   (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
-    (loop [operations 0]
-      (let [got (fw-read-one 0 head) op (if (= got 1) (kxrt-load8 head) -1)]
-        (cond (= op 88) (kxrt-exit 0)
+    (loop [operations 0 mode 0]
+      (let [got (if (= mode 0) (fw-read-one 0 head) (let [z (fw-read-wire mode head 1 (+ mem 8192))] 1))
+            op (if (= got 1) (kxrt-load8 head) -1)]
+        (cond (and (= operations 0) (= mode 0) (= op 72)) (recur 0 1)
+              (= op 88) (kxrt-exit 0)
               (or (< got 1) (>= operations 512) (not (or (= op 77) (= op 70) (= op 85) (= op 82)))) (fw-die 15)
-              :else (let [header (fw-read-exact 0 head 6 16)
+              :else (let [header (fw-read-wire mode head 6 (+ mem 8192))
                           n (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
                           size (+ (* 16777216 (kxrt-load8 (+ head 2))) (* 65536 (kxrt-load8 (+ head 3)))
                                   (* 256 (kxrt-load8 (+ head 4))) (kxrt-load8 (+ head 5)))
                           checked (if (or (<= n 0) (> n 255) (> size 1048576) (and (= op 77) (not (= size 0)))) (fw-die 16) 0)
-                          received (fw-read-exact 0 path n 16) term (kxrt-store8 (+ path n) 0)
+                          received (fw-read-wire mode path n (+ mem 8192)) term (kxrt-store8 (+ path n) 0)
                           valid (if (fw-path-ok? path n) 0 (fw-die 16))
                           slash (fw-last-slash path n)
                           cut (if (>= slash 0) (kxrt-store8 (+ path slash) 0) 0)
@@ -116,11 +135,11 @@
                                          opened (if (< fd 0) (fw-die 17) 0)
                                          trunc (if (and (= op 85) (< (kxrt-syscall 46 fd 0 0 0 0 0) 0)) (fw-die 17) 0)
                                          ack (if (= op 82) (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))) 0)
-                                         transfer (fw-file-data fd buf size (not (= op 82)))
+                                         transfer (fw-file-data fd buf size (not (= op 82)) mode (+ mem 8192))
                                          close (fw-close fd 18)] 0))
                           parent-close (if (>= slash 0) (fw-close parent 18) 0)
                           reply (if (= op 82) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
-                      (recur (+ operations 1))))))))
+                      (recur (+ operations 1) mode)))))))
 
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID

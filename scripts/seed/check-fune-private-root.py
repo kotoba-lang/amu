@@ -69,6 +69,13 @@ def main(compiler, out):
         assert p.stdout.read(1) == b"K"
         return p.stdout.read(answer)
 
+    def exchange_hex(p, op, path, size=0, data=b"", answer=0):
+        p.stdin.write(frame(op, path, size, data).hex().encode("ascii"))
+        p.stdin.flush()
+        ready, _, _ = select.select([p.stdout], [], [], 20)
+        assert ready and p.stdout.read(1) == b"K"
+        return p.stdout.read(answer)
+
     def start():
         p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                              pass_fds=(inherited,), cwd=out, env={"PATH": "/nonexistent"})
@@ -157,6 +164,23 @@ def main(compiler, out):
                              "replaceBytes": 3, "multiChunkBytes": len(payload), "maxFileBytes": len(maximum),
                              "procRootDenied": proc_denied})
 
+        p, child, proc_denied = start()
+        try:
+            p.stdin.write(b"H")
+            p.stdin.flush()
+            payload = bytes(range(256)) * 40 + b"\x00\xff"
+            assert exchange_hex(p, b"M", "hex") == b""
+            assert exchange_hex(p, b"F", "hex/all-bytes", len(payload), payload) == b""
+            assert exchange_hex(p, b"R", "hex/all-bytes", len(payload), answer=len(payload)) == payload
+            stdout, stderr = p.communicate(b"58", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+        assert outside_identity() == outside
+        observations.append({"case": "hex-transport", "binaryBytes": len(payload)})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
@@ -169,6 +193,8 @@ def main(compiler, out):
             ("oversize", frame(b"F", "large", 1048577)),
             ("short-payload", frame(b"F", "partial", 5, b"xy")),
             ("short-header", b"F\x00"),
+            ("odd-hex", b"H4"),
+            ("invalid-hex", b"H4G"),
         ):
             p, child, proc_denied = start()
             stdout, stderr = p.communicate(request, timeout=20)

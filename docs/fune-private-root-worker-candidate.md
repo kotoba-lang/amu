@@ -37,6 +37,12 @@ before their children. A failed update can leave partial data in the temporary
 tree until process exit; it must never be published. This is a diagnostic
 protocol, not an OCI layer admission or transactional rootfs interface.
 
+For a string-only producer, a literal `H` as the first input byte selects an
+ASCII-hex transport: every subsequent protocol byte, including `X`, is sent
+as two lowercase hex digits. The worker decodes in bounded chunks; responses
+are unchanged. Invalid or truncated hex terminates the worker. This transport
+does not authenticate the producer or validate OCI metadata.
+
 The parent sets itself dumpable to permit proc mapping on some Linux systems
 and remains dumpable for its lifetime. This candidate does not establish a
 security boundary against a hostile process with the same host principal.
@@ -72,6 +78,8 @@ seccomp rule denied it. A separately built mutant that removed exclusive
 creation accepted the duplicate and failed its negative control. These checks
 do not establish an adversarial same-principal boundary, OCI validation,
 cross-process controller authentication, or a secure launcher.
+Hex transport round-tripped 10,242 bytes containing every byte value, and
+rejected odd-length and malformed hex while preserving the binary protocol.
 In another test-only worker with an injected in-root symlink, updating through
 the symlink was refused. A separate mutant disabling both the no-symlink
 resolution rule and the final no-follow flag accepted that update and failed
