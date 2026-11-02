@@ -19,7 +19,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'test/fixtures/selfhost/safety-boundaries'
 REFUSALS = {'internal-17': 'E2178', 'exported-9': 'E2108',
-            'runtime-require-quoted': 'E1005',
+            'runtime-require-quoted': 'E1005', 'runtime-require-string': 'E2101',
             'unknown-op': 'E2101', 'unbound': 'E2102',
             'duplicate-ns': 'E2004', 'namespace-extra': 'E6021',
             'fs-empty-capabilities': 'E2176', 'fs-wrong-capability': 'E2176',
