@@ -185,6 +185,25 @@ def main(compiler, out, *, mutations=True):
     cache = directory("cache")
     pair("base-fill", base, cache, (0, 2), 42)
     pair("base-warm", base, cache, (2, 0), 42)
+    # Source-to-KIR conversion may erase a checker-injected vector-new call and
+    # change fuel behavior. This bounded producer accepts checked scalar KIR
+    # only: neither raw source nor these vector KIRs may enter its object store.
+    vector_cache = cache  # Keep populated, verified scalar objects in the store.
+    vector_before = {p.name: pin(p) for p in vector_cache.iterdir()}
+    assert len(vector_before) == 2
+    vector_inputs = {
+        "empty": "(vector-count (vector-new))",
+        "conj": "(let [v (vector-new) w (vector-conj v 42)] (if (= (vector-count v) 0) (vector-at w 0) 7))",
+    }
+    for name, body in vector_inputs.items():
+        input_source = "(ns vector-runtime (:export [main])) (defn main [] :i64 " + body + ")\n"
+        kir = module([function("main", body, "")])
+        for mode in ("cold", "cached", "reference"):
+            refused_source = invoke("vector-" + name + "-source-" + mode, input_source, vector_cache, mode=mode, code=1)
+            assert not refused_source.stdout
+            refused_kir = invoke("vector-" + name + "-kir-" + mode, kir, vector_cache, mode=mode, code=1)
+            assert not refused_kir.stdout and b"E7101" in refused_kir.stderr
+            assert {p.name: pin(p) for p in vector_cache.iterdir()} == vector_before
     invoke("native-controls", base, cache, mode="controls")
     pair("rename", module([function("renamed", "(if (< x 0) 0 (+ x 2))"),
                             function("main", "(renamed 40)", "")]), cache, (2, 0), 42)
