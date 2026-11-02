@@ -2,10 +2,11 @@
 ;; checker, typed interfaces and exact source-lock reader remain authoritative.
 ;; This emits KX64V1 for the existing C-free native runner, not an AIUEOS image.
 ;; Every declaration is admitted. This profile supports explicitly declared
-;; native fs/browse (34), fs/app-data (35), and cli/args (38) calls; the runner
-;; must separately grant each wire and its resource root. Other wires and
-;; unsupported value operations refuse. A zero-argument i64 main is the only
-;; payload entry.
+;; hash/sha256 (3), fs/browse (34), fs/app-data (35), io/write (37), cli/args
+;; (38), and io/write-error (39) calls for the Itonami notepad guest. The
+;; runner must separately grant each wire and its resource root. Other wires
+;; and unsupported value operations refuse. A zero-argument i64 main is the
+;; only payload entry.
 
 ;; KX64 string literals contain offsets from the payload's code base. The
 ;; scalar byte linker already preserves relative branches; literal offsets
@@ -50,7 +51,7 @@
                     (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))
         entry (xg-get admitted 1)]
     (cond (not (pj-ok admitted)) admitted
-          (not= (bit-and (vector-at admitted MM-CAPS) (bit-not 326417514496)) 0)
+          (not= (bit-and (vector-at admitted MM-CAPS) (bit-not 1013612281864)) 0)
             (xg-err admitted 7101 OP-CAP)
           (and (not= (vector-at admitted MM-CAPS) 0) (= (pj-mf L module pj-mf-caps) 0))
             (xg-err admitted E-CAP-UNDECLARED OP-CAP)
