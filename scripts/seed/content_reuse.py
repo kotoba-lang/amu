@@ -33,6 +33,9 @@ def pin(p):
 
 class Runs:
     def __init__(self, out, reuse=None, store=None):
+        # A record stored alongside an artifact cannot authenticate it. Until a
+        # separately trusted producer binds output pins to the full input
+        # closure, never consume a persisted result as a successful call.
         self.out, self.calls, self.reuse, self.store = out, [], reuse, store
         (out / "raw").mkdir(exist_ok=True)
 
@@ -68,32 +71,20 @@ class Runs:
         outputs and verifies their pins. Anything different reruns the call."""
         material = self.key_material(argv, env, outputs)
         key = hashlib.sha256(json.dumps(material, sort_keys=True).encode()).hexdigest()
-        entry = self.reuse / key if self.reuse else None
-        if entry and (entry / "record.json").is_file():
-            record = json.loads((entry / "record.json").read_text())
-            assert record["key"] == key and record["material"] == material, (name, "reuse record does not match its key")
-            for o in outputs:
-                stored = entry / Path(o).name
-                assert pin(stored) == record["outputs"][Path(o).name], (name, "reused output drift", o)
-                shutil.copyfile(stored, o)
-            for stream in ("stdout", "stderr"):
-                (self.out / "raw" / f"{name}.{stream}").write_bytes((entry / stream).read_bytes())
-            assert record["exit"] == 0 and not (entry / "stderr").read_bytes(), name
-            reused = dict(key=key, **{"from": record["from"]})
-            self._record(dict(name=name, argv=list(map(str, argv)), env=env, exit=0, seconds=0, reused=reused))
-            return reused
-        r = self.run(name, argv, env, timeout=timeout)
+        # Do not replay stdout, stderr or a historical success verdict. The
+        # old record's output hashes are self-asserted by the same store and
+        # key_material does not establish a complete dependency closure.
+        self.run(name, argv, env, timeout=timeout)
         self.calls[-1]["key"] = key
         if self.store:
             entry = self.store / key
-            entry.mkdir(parents=True, exist_ok=True)
+            # Never adopt an existing directory that may contain old verdicts.
+            entry.mkdir(parents=True, exist_ok=False)
             for o in outputs:
                 shutil.copyfile(o, entry / Path(o).name)
-            (entry / "stdout").write_bytes(r.stdout)
-            (entry / "stderr").write_bytes(r.stderr)
             origin = {k: os.environ[k] for k in ("GITHUB_REPOSITORY", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SHA", "GITHUB_EVENT_NAME")
                       if k in os.environ} or "local"
-            (entry / "record.json").write_text(json.dumps(dict(key=key, material=material, exit=r.returncode, **{"from": origin},
+            (entry / "record.json").write_text(json.dumps(dict(key=key, material=material, **{"from": origin},
                                                                outputs={Path(o).name: pin(o) for o in outputs}), indent=1) + "\n")
         return None
 

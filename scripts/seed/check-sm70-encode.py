@@ -533,6 +533,19 @@ def op_plop3(guard, deps, pd, a, na, b, nb, c, nc, lut):
     return finish(e, guard, deps)
 
 
+def op_f2f_f16(guard, deps, d, a, h, ftz):
+    # OpF2F {src_type F16, dst_type F32}: encode_alu_base(0x104, dst, None,
+    # src, None, F16): src1 at 32..39 with the F16 swizzle at 60..61 (Xx 0, Yy 1)
+    e = Instr()
+    alu(e, 0x104, d, None, r(a), None)
+    e.set_field(60, 62, h)
+    e.set_field(75, 77, 2)       # ilog2(32 / 8)
+    e.set_field(78, 80, 0)
+    e.set_bit(80, ftz)
+    e.set_field(84, 86, 1)       # ilog2(16 / 8)
+    return finish(e, guard, deps)
+
+
 def decode_cases():
     C1_, C2_ = C1, C2
     c = {}
@@ -581,6 +594,9 @@ def decode_cases():
     c["plop3.or"] = op_plop3(G, C2_, 3, 0, False, 1, False, 7, False, 0xFC)
     c["plop3.select"] = op_plop3((4, False), C0, 5, 0, False, 1, True, 2, False, 0xE4)
     c["plop3.not.a"] = op_plop3(G, C0, 6, 7, True, 4, False, 7, False, 0xF0)
+    c["f2f.f32.f16.h0"] = op_f2f_f16(G, C1, 4, 5, 0, False)
+    c["f2f.f32.f16.h1.ftz"] = op_f2f_f16(G, C2, 4, 5, 1, True)
+    c["refuse.f2f.half"] = ("R", E_ENUM)
     c.update({k: ("R", v) for k, v in refusals.items()})
     return c
 
@@ -739,6 +755,8 @@ MUTANTS = [
     ("imad-wide-reg-form", "(lf (alu-lo 0x025 1 d a) 32 8 b)", "(lf (alu-lo 0x025 4 d a) 32 8 b)", ["imad.wide.u32.rz"]),
     ("plop3-lut-split", "(hf 72 5 (u64-shift-right lut 3))", "(hf 72 5 (u64-shift-right lut 2))", ["plop3.and"]),
     ("plop3-src1-not", "(hf 77 3 b) (hf 80 1 nb)", "(hf 77 3 b) (hf 79 1 nb)", ["plop3.select"]),
+    ("f2f-swizzle-field", "(lf 32 8 a) (lf 60 2 h))", "(lf 32 8 a) (lf 61 2 h))", ["f2f.f32.f16.h1.ftz"]),
+    ("f2f-source-size", "(hf 80 1 ftz) (hf 84 2 1)))))", "(hf 80 1 ftz) (hf 84 2 2)))))", ["f2f.f32.f16.h0"]),
     ("sgxt-signed-bit", "(-> 0 (hf 73 1 sgn) (hf 75 1 0))", "(-> 0 (hf 72 1 sgn) (hf 75 1 0))", ["sgxt.s8"]),
 ]
 
