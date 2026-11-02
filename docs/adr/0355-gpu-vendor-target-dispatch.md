@@ -6825,3 +6825,80 @@ through a NEW pre-registered cut session (NOT queued) -- NO
 queued row remains. Evidence: docs/evidence/gpu/
 anv-b3bisect18-20261101/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 202-207, landing s208, JUN-59 -- THE
+NINETEENTH CUT PRE-REGISTRATION: ROW DECISION + CUT-POINT
+CONFRONTATION CENSUS + DESIGN DECISIONS + DESIGN-VERIFY (WITH THE
+q=1 PER-LETTER CORRECTION AS A SUPERSEDING RECORD) + PROTOCOL
+FREEZE + STANDING GATES + THIS RECORD): THE FLOOR-MIDPOINT CUT AT
+q2 (B=3, WM=307, NDIV=1204) n=254,984 PRE-REGISTERED AND FROZEN
+-- NOT MEASURED. Census (s203): knob-search-s203.py run TWICE
+BYTE-IDENTICAL (14,169 bytes sha256 39de9bc2...) over the
+remaining bracket (254,923, 255,045], the 18th cut's content and
+the disputed record -- the s192 enumeration RE-DERIVED (all five
+pins MATCH), the new endpoints enumerated (lo 254,923 carries
+the 18th cut's FIRST content; hi 255,045 the 13th/15th cut
+content), and the three quarter points q=1 254,953 / q=2 254,984
+/ q=3 255,014 ALL RE-CONFIRMED VIRGIN. Design (s204, D1-D5): the
+cut's point q2 254,984 ((1,000,003*307)//1204 = 254,984, gcd 1,
+the floor midpoint of (254,923, 255,045]) -- the MINIMAX CLIP
+CHOICE (q=1 worst case 92, q=2 61/61 EQUAL, q=3 worst case 91;
+the s166 D1 symmetric-narrowing criterion's strongest form); lo
+254,923 NOT re-cut (the general re-read logic binds there; NAMED
+per D1 (iii): NO L9 clause binds at 254,923 from the 18th cut's
+freeze), hi 255,045 NOT re-measured (the per-point rule); arm
+(a) the 18th cut's content confronted FIRST + the C1 control-
+state confrontation (C1 (a) at three consecutive cuts; C1 (b)
+re-opens as a named three-state record); arm (b) 16 blocks +
+pooled-48 at NEW first-measured binaries (ROUNDS6400 variant,
+source pin c2704aaa...) with the re-read hazard named on every
+binding edge (i)-(v); arm (c) option (i) the deep-pooling CI
+class statistic ADOPTED UNCHANGED (R = 6,400), (ii) considered
+and not chosen (deadlock), (iii) unavailable at a virgin point,
+the NAMED GAP (the 981..1,015 wander band bounds the RAW min's
+within-window wander only -- (i)'s binding min(m-h) within-window
+wander is UNMEASURED, NOT claimed); arm (d) the disputed record,
+the MID-ONLY NARROWING CLAIM SUSPENDED (this cut's W1 (b) would
+CONFIRM its location AGAIN BY IMPLICATION F > 254,984 > 254,882
+-- pre-registered letter SHAPES, not claims). ROW QUESTION: AT
+FIXED B=3, IS THE CLASS AT (307, 1204) n=254,984 SINGLE-CLASS
+STABLE AT 16-BLOCK GRANULARITY UNDER THE PRE-REGISTERED
+DEEP-POOLING CI CLASS STATISTIC (R = 6,400) AT ITS NEW FIRST-
+MEASURED BINARY (THE ROUNDS6400 INSTRUMENT VARIANT)? ARM TABLE
+c2/q2/c8 = 54 fresh processes (3+48+3). ONE NEW KNOB TRIPLE q2
+(307, 1204) (L8 APPLIES; 6 in-box same-ratio doubles, NONE
+measured). W1 (a) -> (254,923, 254,984] / W1 (b) -> (254,984,
+255,045] / W1 (c) NOTHING MOVES / W1 (d) INVALID; both
+(a)/(b) narrow with EQUAL clips 61/61. THE q=1 PER-LETTER
+CORRECTION (discovered s205, recorded s206 as a superseding
+record): the original q=1 sentence (W1 (a) 92 / W1 (b) 30) is
+pinned verbatim as SUPERSEDED and the corrected record (W1 (a)
+30 / W1 (b) 92) == the re-derivation from the committed W1
+letter shapes; the clip pairs, worst cases 92/61/91, equal clips
+at q=2 and the point choice UNAFFECTED. Design-verify (s205
+written / s206 run): design-verify-s204.py run TWICE BYTE-
+IDENTICAL (220 ok / 0 failed; 220 wants: 14 file pins + 1 pair
+pin + 155 line-pinned quotes + 33 arithmetic re-derivations + 17
+DERIVED re-computations from committed bytes) with the
+supersession check passing. Freeze (s207): protocol.txt written
+ONCE at freeze stamp 2026-11-02T04:07:06Z BEFORE any run log of
+this cut exists (26,405 bytes sha256 9a6f7b75..., run-log count
+0 at freeze and at landing), freeze-record-s204.txt. Landing
+(s208): standing gates (a)-(f) all == the s88/s117 pins (scoped
+GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk RED AT
+BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green full
+suite claimed); record.txt + this note. BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay exactly as
+ADR-0358 left them. Three-state: the nineteenth-cut pre-
+registration is ACCEPTED DESIGN ONLY, FROZEN -- NOT implemented
+compiler code, NOT a measurement; every nineteenth-cut quantity
+is UNMEASURED until a FUTURE measuring session runs 54 fresh
+processes under the frozen protocol (NOT queued -- its own act).
+Carry-forward s209: standing, not queued: the nineteenth cut
+MEASUREMENT half (NOT queued), any further counted-day slot (its
+own freeze), the cross-day tail-movement row. Evidence:
+docs/evidence/gpu/anv-b3bisect19prereg-20261102/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
