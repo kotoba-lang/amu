@@ -25,7 +25,16 @@ def sealed_image(path, expected_sha256):
     """
     if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
         raise ValueError("invalid trusted image digest")
-    flags = os.O_RDONLY | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+    with sealed_blob(path) as (fd, actual):
+        if not hmac.compare_digest(actual, expected_sha256):
+            raise ValueError("image digest mismatch")
+        yield fd, actual
+
+
+@contextmanager
+def sealed_blob(path):
+    """Yield immutable bytes and their digest; this does not authenticate them."""
+    flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK
     source = os.open(Path(path), flags)
     fd = -1
     try:
@@ -60,8 +69,6 @@ def sealed_image(path, expected_sha256):
                 break
             digest.update(chunk)
         actual = digest.hexdigest()
-        if not hmac.compare_digest(actual, expected_sha256):
-            raise ValueError("image digest mismatch")
         yield fd, actual
     finally:
         os.close(source)
