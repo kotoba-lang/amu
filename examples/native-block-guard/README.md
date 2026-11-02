@@ -29,7 +29,7 @@ a synthetic host fixture using the pinned native macOS Amu root, extracts and
 packages the generated code, ad-hoc signs it and executes it with a fresh
 FD3-scoped directory per case. An external observer checks the file itself:
 the synthetic allowed case writes four bytes, and nine synthetic denials plus
-a missing FD3 produce no fixture file. These records and choices are created
+a missing or non-directory FD3 produce no fixture file. These records and choices are created
 by the test program itself: they are not trusted user approval, device identity
 or an OS authorization boundary. This exercises a real regular-file effect,
 not arbitrary-offset block I/O or physical storage. The public CLI still

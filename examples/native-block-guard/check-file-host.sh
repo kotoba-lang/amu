@@ -42,4 +42,10 @@ no_grant=0
 (cd "$work/scope/no-grant" && env -i PATH=/nonexistent "$work/build/program.macho" allow 3<&-) > "$work/no-grant.out" 2> "$work/no-grant.err" || no_grant=$?
 [ ! -e "$work/scope/no-grant/fixture" ] || { echo 'missing grant wrote a file' >&2; exit 1; }
 [ "$no_grant" != 0 ] || { echo 'missing grant incorrectly reported success' >&2; exit 1; }
-printf '%s\n' 'native scoped file host: allow writes; ten refusal conditions leave no file'
+mkdir "$work/scope/wrong-grant"
+printf 'not-a-directory' > "$work/not-a-directory"
+wrong_grant=0
+(cd "$work/scope/wrong-grant" && env -i PATH=/nonexistent "$work/build/program.macho" allow 3<"$work/not-a-directory") > "$work/wrong-grant.out" 2> "$work/wrong-grant.err" || wrong_grant=$?
+[ ! -e "$work/scope/wrong-grant/fixture" ] || { echo 'wrong grant wrote a file' >&2; exit 1; }
+[ "$wrong_grant" != 0 ] || { echo 'wrong grant incorrectly reported success' >&2; exit 1; }
+printf '%s\n' 'native scoped file host: allow writes; eleven refusal conditions leave no file'
