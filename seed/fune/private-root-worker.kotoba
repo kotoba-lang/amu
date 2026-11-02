@@ -363,17 +363,8 @@
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID
 ;; parent has installed both maps.
-(defn- fw-child [parent :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 b :i64] :i64
-  (let [death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 4) 0)
-        alive (if (not= (kxrt-syscall 173 0 0 0 0 0 0) parent) (fw-die 4) 0)
-        c1 (fw-close ready-r 4) c2 (fw-close ack-w 4)
-        user (if (< (kxrt-syscall 97 268435456 0 0 0 0 0) 0) (fw-die 4) 0)
-        buf (+ b 320) marker (kxrt-store8 buf 85)
-        sent (if (not= (kxrt-write-all ready-w buf 1) 1) (fw-die 4) 0)
-        c3 (fw-close ready-w 4) got (fw-read-one ack-r buf) c4 (fw-close ack-r 4)
-        mapped (if (or (not= got 1) (not= (kxrt-load8 buf) 77)) (fw-die 8) 0)
-        nodump2 (if (< (kxrt-syscall 167 4 0 0 0 0 0) 0) (fw-die 8) 0)
-        ns (if (< (kxrt-syscall 97 1073872896 0 0 0 0 0) 0) (fw-die 9) 0)
+(defn- fw-private-root [b :i64] :i64
+  (let [ns (if (< (kxrt-syscall 97 1073872896 0 0 0 0 0) 0) (fw-die 9) 0)
         private (if (< (kxrt-syscall 40 0 (+ b 96) 0 278528 0 0) 0) (fw-die 10) 0)
         mount (if (< (kxrt-syscall 40 (+ b 128) (+ b 112) (+ b 128) 6 (+ b 144) 0) 0) (fw-die 11) 0)
         dir (if (< (kxrt-syscall 34 -100 (+ b 192) 448 0 0 0) 0) (fw-die 12) 0)
@@ -387,6 +378,41 @@
         mem-ok (if (< mem 0) (fw-die 14) 0)
         spec (kxrt-syscall 222 0 67500 3 34 -1 0) spec-ok (if (< spec 0) (fw-die 14) 0)]
     (fw-commands root mem spec)))
+
+
+;; The namespace init is a child of the mapping process. Its parent is outside
+;; the PID namespace, so getppid cannot detect the parent-death race. A
+;; nonblocking pipe closes that race after setting PR_SET_PDEATHSIG.
+(defn- fw-pid-enter [b :i64] :i64
+  (let [ns (if (< (kxrt-syscall 97 536870912 0 0 0 0 0) 0) (fw-die 9) 0)
+        pair (+ b 400) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 9) 0)
+        value (kxrt-load64 pair) reader (bit-and value 4294967295) writer (u64-shift-right value 32)
+        pid (kxrt-syscall 220 17 0 0 0 0 0)]
+    (cond (< pid 0) (fw-die 9)
+          (= pid 0) (let [cw (fw-close writer 9)
+                          death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 9) 0)
+                          live (kxrt-syscall 63 reader (+ b 416) 1 0 0 0)
+                          checked (if (or (not= live -11) (not= (kxrt-syscall 172 0 0 0 0 0 0) 1)) (fw-die 9) 0)
+                          cr (fw-close reader 9)]
+                      (fw-private-root b))
+          :else (let [cr (fw-close reader 9) st (+ b 424)
+                      waited (loop [attempt 0] (let [r (kxrt-syscall 260 pid st 0 0 0 0)] (if (= r -4) (recur (+ attempt 1)) r)))
+                      status (kxrt-load64 st) cw (fw-close writer 9)]
+                  (if (or (not= waited pid) (not= (bit-and status 127) 0)) (kxrt-exit 2)
+                    (kxrt-exit (bit-and (u64-shift-right status 8) 255)))))))
+
+(defn- fw-child [parent :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 b :i64] :i64
+  (let [death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 4) 0)
+        alive (if (not= (kxrt-syscall 173 0 0 0 0 0 0) parent) (fw-die 4) 0)
+        c1 (fw-close ready-r 4) c2 (fw-close ack-w 4)
+        user (if (< (kxrt-syscall 97 268435456 0 0 0 0 0) 0) (fw-die 4) 0)
+        buf (+ b 320) marker (kxrt-store8 buf 85)
+        sent (if (not= (kxrt-write-all ready-w buf 1) 1) (fw-die 4) 0)
+        c3 (fw-close ready-w 4) got (fw-read-one ack-r buf) c4 (fw-close ack-r 4)
+        mapped (if (or (not= got 1) (not= (kxrt-load8 buf) 77)) (fw-die 8) 0)
+        nodump2 (if (< (kxrt-syscall 167 4 0 0 0 0 0) 0) (fw-die 8) 0)]
+    (fw-pid-enter b)))
+
 
 (defn- fw-parent [pid :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 uid :i64 gid :i64 b :i64] :i64
   (let [c1 (fw-close ready-w 5) c2 (fw-close ack-r 5) buf (+ b 320)

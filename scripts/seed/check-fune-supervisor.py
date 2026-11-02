@@ -94,12 +94,17 @@ def parent_death(supervisor, worker, slow, root):
                     except (FileNotFoundError, ProcessLookupError):
                         continue
                     if len(grand) == 1:
-                        descendants = [int(x) for x in children + grand]
-                        break
+                        try:
+                            init = Path(f"/proc/{grand[0]}/task/{grand[0]}/children").read_text().split()
+                        except (FileNotFoundError, ProcessLookupError):
+                            continue
+                        if len(init) == 1:
+                            descendants = [int(x) for x in children + grand + init]
+                            break
             if descendants:
                 break
             time.sleep(0.02)
-        assert len(descendants) == 3, "producer, worker and worker child did not all start"
+        assert len(descendants) == 4, "producer and complete worker tree did not all start"
         p.send_signal(signal.SIGKILL)
         p.communicate(timeout=20)
         deadline = time.monotonic() + 15

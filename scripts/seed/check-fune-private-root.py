@@ -100,6 +100,15 @@ def _deny_filter_install():
     _install_filter(program)
 
 
+def _deny_pid_namespace():
+    # Deny only unshare(CLONE_NEWPID), preserving user and mount setup.
+    program = (_SockFilter * 6)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 3, 97),
+        _SockFilter(0x20, 0, 0, 16), _SockFilter(0x15, 0, 1, 536870912),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
 def outside_identity():
     try:
         st = os.lstat("/tmp/rootfs")
@@ -163,7 +172,13 @@ def main(compiler, out):
                 raise AssertionError(("worker refusal", line, p.poll()))
             children = Path(f"/proc/{p.pid}/task/{p.pid}/children").read_text().split()
             assert len(children) == 1, children
+            mapper = int(children[0])
+            children = Path(f"/proc/{mapper}/task/{mapper}/children").read_text().split()
+            assert len(children) == 1, children
             child = int(children[0])
+            ns_pid = next(line for line in Path(f"/proc/{child}/status").read_text().splitlines()
+                          if line.startswith("NSpid:")).split()[1:]
+            assert len(ns_pid) >= 2 and ns_pid[-1] == "1", ns_pid
             assert outside_identity() == outside, "worker changed the outer /tmp/rootfs entry"
             descriptors = Path(f"/proc/{p.pid}/fd")
             open_targets = []
@@ -200,6 +215,29 @@ def main(compiler, out):
             raise
 
     try:
+        denied = subprocess.run([str(image)], input=b"X", capture_output=True, timeout=20,
+                                cwd=out, env={"PATH": "/nonexistent"}, preexec_fn=_deny_pid_namespace)
+        assert denied.returncode == 2 and not denied.stdout and b"FREFUSE:9" in denied.stderr, (denied.returncode, denied.stdout, denied.stderr)
+        observations.append({"case": "pid-namespace-denied", "exit": denied.returncode})
+
+        p, child, proc_denied = start()
+        mapper = int(Path(f"/proc/{p.pid}/task/{p.pid}/children").read_text().strip())
+        os.kill(mapper, 9)
+        p.communicate(timeout=20)
+        assert p.returncode == 2
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            try:
+                status = Path(f"/proc/{child}/status").read_text()
+            except (FileNotFoundError, ProcessLookupError):
+                break
+            if "\nState:\tZ" in status:
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("PID namespace init survived mapper death")
+        observations.append({"case": "pid-mapper-sigkill", "childGoneOrZombie": True})
+
         for command, expected in ((b"X", 0), (b"Z", 2)):
             p, child, proc_denied = start()
             p.stdin.write(command)
@@ -726,7 +764,7 @@ def main(compiler, out):
         while time.monotonic() < deadline:
             try:
                 status = Path(f"/proc/{child}/status").read_text()
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
                 break
             if "\nState:\tZ" in status:
                 break
@@ -742,7 +780,7 @@ def main(compiler, out):
     report = {"status": "PASS_FUNE_PRIVATE_ROOT_CANDIDATE", "host": [platform.system(), platform.machine()],
               "compiler": pin(compiler), "source": pin(SOURCE), "worker": pin(image),
               "observations": observations, "sourceMutationRefused": True,
-              "privateTmpfsMountObserved": True, "otherNamespacesIndependentlyObserved": False,
+              "privateTmpfsMountObserved": True, "pidNamespaceInitObserved": True, "otherNamespacesIndependentlyObserved": False,
               "ociExtractionQualified": False,
               "containerIsolationQualified": False, "releaseQualified": False}
     (out / "private-root.json").write_text(json.dumps(report, indent=2) + "\n")

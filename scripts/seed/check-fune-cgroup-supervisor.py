@@ -154,9 +154,9 @@ def main(compiler, worker, producer, slow, layouts, runnable, runnable_layouts, 
                     if p.poll() is not None: break
                     members = (target / 'cgroup.procs').read_text().split()
                     children = Path(f'/proc/{p.pid}/task/{p.pid}/children').read_text().split()
-                    if len(members) == 2 and len(children) == 2: break
+                    if len(members) == 3 and len(children) == 2: break
                     time.sleep(.05)
-                assert len(members) == 2, (members,p.poll())
+                assert len(members) == 3, (members,p.poll())
                 assert str(os.getpid()) not in members and str(p.pid) not in members
                 assert len(children) == 2, children
                 worker_parent = list(set(children).intersection(members))
