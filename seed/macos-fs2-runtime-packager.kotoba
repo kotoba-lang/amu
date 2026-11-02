@@ -35,7 +35,8 @@
 (def FS2-BC-BYTES 776)
 (def FS2-KIND9-BYTES 256)
 (def FS2-LOCK-ONE-BYTES 792)
-(def FS2-LOCK-BYTES (* FS2-LOCK-ONE-BYTES 2))
+(def FS2-READ-BYTES 816)
+(def FS2-LOCK-BYTES (+ FS2-LOCK-ONE-BYTES FS2-READ-BYTES))
 (def FS2-EF-BYTES 1172)
 (def FS35-BYTES 1768)
 (def MAC-PACKAGER-RAW-BYTES 49680)
@@ -747,18 +748,24 @@
        0xa9407bfd 0x91400fff 0xd65f03c0 0xd42006c0 0x14000001 0xd4202060])
       (vector-assoc! 197 (b-direct (+ start 788) bc-start))))
 
-;; KFR1 has a distinct prefix and treats invalid basename bytes as a zero
-;; status. Allocation/capability violations remain traps. Branches 62, 64,
-;; 66 and 72 target the helper's existing status-zero epilogue (word 171).
+;; KFR1 has a distinct prefix and treats malformed path bytes as a zero
+;; status. A leading slash denotes the FD3 root, never the host root. The
+;; openat flags include O_RESOLVE_BENEATH and O_NOFOLLOW_ANY; the kernel must
+;; refuse traversal and every symlink. Allocation/capability failures trap.
 (defn- fs2-read-helper-words [start :i64 bc-start :i64] :vector-i64
-  (-> (fs2-lock-helper-words start bc-start)
+  (-> (vector-alloc 204)
+      (append-runtime-words 0 (fs2-lock-helper-words start bc-start))
       (vector-assoc! 14 0xf100195f)
       (vector-assoc! 33 0xf101191f)
       (vector-assoc! 36 0xf101491f)
       (vector-assoc! 62 0xb4000da8)
       (vector-assoc! 64 0x54000d68)
-      (vector-assoc! 66 0x54000d20)
-      (vector-assoc! 72 0x54000c60)))
+      (vector-assoc! 66 0xd503201f)
+      (vector-assoc! 72 0x54000c60)
+      (vector-assoc! 75 (b-direct (+ start 300) (+ start 792)))
+      ;; ldrb w8,[x1]; cmp w8,#'/'; b.ne +8; add x1,x1,#1; mov x0,#3
+      (append-runtime-words 198 [0x39400028 0x7100bd1f 0x54000041 0x91000421 0xd2800060 0x14000000])
+      (vector-assoc! 203 (b-direct (+ start 812) (+ start 304)))))
 
 ;; Scoped Darwin FS2 F metadata and E range read. The one-time assembly
 ;; derivation is review evidence; emitted words are owned by this Kotoba source.

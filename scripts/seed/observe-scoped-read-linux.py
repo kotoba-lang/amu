@@ -23,6 +23,9 @@ def check(name, path, expected, output, e=env):
 (scope / 'big').write_bytes(b'x' * (1048576 + 1))
 (work / 'outside').write_text('outside')
 (scope / 'link').symlink_to('hello')
+(scope / 'folder').mkdir()
+(scope / 'folder' / 'hello').write_text('hello\n')
+(scope / 'parent-link').symlink_to('folder', target_is_directory=True)
 if len(sys.argv) > 1 and sys.argv[1] == 'pread-fault':
     check('pread-eio', scope / 'hello', 2, '0 1 \n')
     if (scope / 'hello').read_text() != 'hello\n':
@@ -35,6 +38,8 @@ check('missing', scope / 'missing', 2, '0 1 \n')
 check('directory', scope, 2, '0 1 \n')
 check('too-large', scope / 'big', 2, '0 1 \n')
 check('symlink', scope / 'link', 2, '0 1 \n')
+check('nested', scope / 'folder' / 'hello', 0, '1 7 hello\n\n')
+check('parent-symlink', scope / 'parent-link' / 'hello', 2, '0 1 \n')
 check('outside', work / 'outside', 2, '0 1 \n')
 (scope / 'binary').write_bytes(bytes([0, 255, 128]))
 binary = subprocess.run([str(work / 'binary.elf'), str(scope / 'binary')], env=env,

@@ -24,6 +24,12 @@ image = scope.build(gate, a.compiler.resolve(strict=True), a.packager.resolve(st
 (out / 'hello').write_text('hello\n')
 (out / 'big').write_bytes(b'x' * (1048576 + 1))
 (out / 'link').symlink_to('hello')
+(out / 'folder').mkdir()
+(out / 'folder' / 'hello').write_text('hello\n')
+(out / 'parent-link').symlink_to('folder', target_is_directory=True)
+outside = out.parent / (out.name + '-outside')
+outside.write_text('protected-outside')
+(out / 'outside-link').symlink_to(outside)
 cases = []
 for name, path, expected, output in [
     ('regular', 'hello', 0, b'1 7 hello\n\n'),
@@ -33,13 +39,22 @@ for name, path, expected, output in [
     ('too-large', 'big', 2, b'0 1 \n'),
     ('symlink', 'link', 2, b'0 1 \n'),
     ('outside', '../outside', 2, b'0 1 \n'),
-    ('nested-refused', 'folder/hello', 2, b'0 1 \n'),
+    ('nested', 'folder/hello', 0, b'1 7 hello\n\n'),
+    ('virtual-root', '/folder/hello', 0, b'1 7 hello\n\n'),
+    ('parent-symlink', 'parent-link/hello', 2, b'0 1 \n'),
+    ('outside-file', '../' + outside.name, 2, b'0 1 \n'),
+    ('outside-virtual-root', '/../' + outside.name, 2, b'0 1 \n'),
+    ('outside-link', 'outside-link', 2, b'0 1 \n'),
+    ('nested-escape', 'folder/../../' + outside.name, 2, b'0 1 \n'),
+    ('double-root', '//etc/passwd', 2, b'0 1 \n'),
     ('empty-path', '', 2, b'0 1 \n')]:
     print('checking', name, flush=True)
     result = gate.native_run(image, out, path, expected=expected, timeout=30)
     if result.stdout != output or result.stderr:
         raise ValueError((name, result.returncode, result.stdout, result.stderr))
     cases.append(name)
+if outside.read_text() != 'protected-outside':
+    raise ValueError('outside sentinel changed')
 ksl = source.read_text().replace('KFR1', 'KSL1')
 if ksl == source.read_text():
     raise ValueError('source-lock control not constructed')
