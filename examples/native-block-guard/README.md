@@ -1,5 +1,30 @@
 # Native block guard candidate (JUN-767)
 
+## Disk Arbitration service lookup control
+
+`TMPDIR=/workspace/scratch ./check-macos-da-lookup.sh` builds a separate
+native Darwin ARM64 diagnostic. After acquiring its bootstrap port, it sends
+the launchd `look_up2` Mach request for Disk Arbitration and checks the reply
+descriptor count, nonzero port name, and audit trailer; a mutated service name must
+refuse. The current control checks the trailer's effective-UID word as used by
+the examined Apple launchd client, but the audit token is documented as
+opaque, and this is not a portable or production-qualified identity check.
+It does not create a Disk Arbitration session, claim or unmount a disk,
+obtain user consent, or access any storage device.
+
+The one-time interface oracle was `xcrun mig` applied to Apple launchd
+`job.defs` and `job_types.defs` at commit
+`d448a1c8f70a61202f8705f94337f686b87c30c4`; their SHA-256 hashes were
+`a177ddb03afbe5ef4483ff4c6173759bdff055327b03d3a186944c78a08d245f` and
+`4f0913150edc5a4fc41f51f63ffcfc64c65723769253fa39437f8698975f861b`.
+The inert `da-lookup-reference.txt` was then assembled once on 2026-11-02 by
+Apple clang 21.0.0 (clang-2100.1.1.101); the reference SHA-256 is
+`599e5cc0253faeb03c355c2b930843b038c141f816ae737ced470538e6f2f472`
+and the object SHA-256 is
+`9d13b5029412447eac31588cabbc69807a14d16ac164c5cde21da5391b6d5e85`.
+The native build uses only the Kotoba instruction words, without MIG, an
+assembler or a libSystem load command.
+
 ## Mach bootstrap-port control
 
 `TMPDIR=/workspace/scratch ./check-macos-mach-bootstrap.sh` builds a native
