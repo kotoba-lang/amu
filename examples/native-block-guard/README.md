@@ -1,5 +1,32 @@
 # Native block guard candidate (JUN-767)
 
+## Variable sector write fixture
+
+`TMPDIR=/workspace/scratch ./check-macos-pwrite-fixture.sh` builds a native
+control that accepts an eight-byte sector index followed by exactly 512 bytes
+of data on stdin, writes one sector to FD3, calls `fsync`, and compares a
+`pread` of the entire sector. The control requires a character device with
+8192 reported 512-byte sectors, a fixed marker in sector zero, and an index
+between 1 and 8191. The test itself attaches and identity-checks its own
+private virtual image before opening it, and compares the whole backing image
+after detaching. It exercises three locations and rejects out-of-range index,
+short payload, read-only, regular/missing FD, wrong marker and wrong geometry.
+
+The fixed marker and geometry can be imitated: they are **not physical-device
+identity, an exclusive claim, trusted user approval, or an authorization**.
+Never pass a physical disk to this fixture. `fsync` plus immediate readback
+and backing-image comparison do not qualify persistence on real hardware.
+The 4096-byte sector path and real-device I/O are not implemented here.
+
+The inert `pwrite-fixture-reference.txt` was derived on 2026-11-02 using
+Apple clang 21.0.0 (clang-2100.1.1.101), `clang -target arm64-apple-macos
+-c write.s`, followed by `xcrun llvm-objdump --macho --disassemble`. The
+reference SHA-256 is
+`5163537b9c97a42d4f1eff48698fa948364522a4e60a4db15ff693e1ac6bc249`,
+and the object SHA-256 is
+`6fcec61956537a632af27977c0b9660d96314792aca849cbf119e409a0b0216b`.
+The normal native build uses Kotoba instruction words without an assembler.
+
 ## Bounded read-only pread control
 
 `TMPDIR=/workspace/scratch ./check-macos-pread.sh` builds a Kotoba-emitted
