@@ -185,6 +185,28 @@
         value (if (= n 3) (+ (* 10 (- first 48)) (- second 48)) (- first 48))]
     (if (> value 63) (fw-die 23) value)))
 
+;; Enter only the already checked root and cwd. Compare opened / and . with
+;; the retained inode identities before capability drop. No host directory FD
+;; is retained by this worker; this is still not workload admission.
+(defn- fw-root-identity [expected :i64 path :i64 buf :i64] :i64
+  (let [fd (kxrt-open-path path 2621440 0)
+        valid (if (< fd 0) (fw-die 25) 0)
+        a (kxrt-syscall 80 expected buf 0 0 0 0)
+        b (kxrt-syscall 80 fd (+ buf 256) 0 0 0 0)
+        same (if (or (< a 0) (< b 0) (not= (kxrt-load64 buf) (kxrt-load64 (+ buf 256)))
+                     (not= (kxrt-load64 (+ buf 8)) (kxrt-load64 (+ buf 264)))) (fw-die 25) 0)
+        close (fw-close fd 25)] 0))
+
+(defn- fw-enter-root [root :i64 cwd :i64 buf :i64] :i64
+  (let [dot (+ buf 768) slash (+ buf 776)
+        a (kxrt-store64 dot 46) b (kxrt-store64 slash 47)
+        c (if (< (kxrt-syscall 50 root 0 0 0 0 0) 0) (fw-die 25) 0)
+        chroot (if (< (kxrt-syscall 51 dot 0 0 0 0 0) 0) (fw-die 25) 0)
+        dir (if (< (kxrt-syscall 49 slash 0 0 0 0 0) 0) (fw-die 25) 0)
+        rootcheck (fw-root-identity root slash buf)
+        cd (if (< (kxrt-syscall 50 cwd 0 0 0 0 0) 0) (fw-die 25) 0)
+        cwdcheck (fw-root-identity cwd dot buf)] 0))
+
 ;; Drop bounding capabilities before losing CAP_SETPCAP, then clear ambient,
 ;; effective, permitted and inheritable sets. Every capability in the range
 ;; reported by procfs must be dropped and independently read back as zero.
@@ -194,8 +216,8 @@
       (let [r (if ambient? (kxrt-syscall 167 47 option cap 0 0 0)
                 (kxrt-syscall 167 option cap 0 0 0 0))]
         (if (= r 0) (recur (+ cap 1)) (fw-die 23))))))
-(defn- fw-drop-caps [buf :i64] :i64
-  (let [last (fw-cap-last buf) drop (fw-cap-range 24 false last)
+(defn- fw-drop-caps [buf :i64 last :i64] :i64
+  (let [drop (fw-cap-range 24 false last)
         ambient (if (not= (kxrt-syscall 167 47 4 0 0 0 0) 0) (fw-die 23) 0)
         hdr (+ buf 512) data (+ buf 528)
         h (kxrt-store64 hdr 537396514)
@@ -244,6 +266,7 @@
 ;; W probes whether a create on the held root fails specifically with EROFS.
 ;; J probes whether remounting read-write is denied with EPERM.
 ;; N checks namespace syscall refusals and ordinary clone/wait.
+;; G verifies the held root/cwd and probes that /proc/self/status is absent.
 ;; None authorizes exec.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
@@ -262,7 +285,9 @@
                       checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
                       targets (if (= (fw-spec-targets root spec path how buf (+ mem 512)) 0) 0 (fw-die 21))
                       frozen (fw-freeze-tmpfs root buf)
-                      caps (fw-drop-caps buf)
+                      last (fw-cap-last buf)
+                      entered (fw-enter-root root (kxrt-load64 (+ mem 512)) buf)
+                      caps (fw-drop-caps buf last)
                       filter (fw-namespace-filter buf)
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
@@ -279,6 +304,17 @@
                       valid (if (or (< a 0) (< b 0)) (fw-die 21) 0)
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 71) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [dot (+ buf 768) slash (+ buf 776) proc (+ buf 800)
+                      a (kxrt-store64 dot 46) b (kxrt-store64 slash 47)
+                      rootcheck (fw-root-identity root slash buf)
+                      cwdcheck (fw-root-identity (kxrt-load64 (+ mem 512)) dot buf)
+                      path (kxrt-w proc (kxrt-w proc (kxrt-w proc 0 0x65732f636f72702f 8) 0x75746174732f666c 8) 0x73 2)
+                      fd (kxrt-open-path proc 524288 0)
+                      close (if (>= fd 0) (kxrt-close fd) 0)
+                      absent (if (not= fd -2) (fw-die 25) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 87) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [a (kxrt-w path (kxrt-w path (kxrt-w path 0 0x725f656e75665f5f 8) 0x5f65626f72705f6f 8) 0x5f 2)
                       fd (fw-openat2 root path 655553 384 how)
@@ -287,7 +323,7 @@
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 74) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
-                (let [b (fw-strings) r (kxrt-syscall 40 0 (+ b 112) 0 38 0 0)
+                (let [b (fw-strings) r (kxrt-syscall 40 0 (+ b 96) 0 38 0 0)
                       denied (if (not= r -1) (fw-die 23) 0)
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))

@@ -100,6 +100,14 @@ def _deny_filter_install():
     _install_filter(program)
 
 
+def _deny_chroot():
+    # Deny only the root transition after staging, retaining all other setup.
+    program = (_SockFilter * 4)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 1, 51),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    _install_filter(program)
+
+
 def _deny_pid_namespace():
     # Deny only unshare(CLONE_NEWPID), preserving user and mount setup.
     program = (_SockFilter * 6)(
@@ -492,9 +500,39 @@ def main(compiler, out):
             assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
             observations.append({"case": "retained-process-descriptors", "cwd": cwd.decode()})
 
+        for cwd in (b"/", b"/bin"):
+            p, child, proc_denied = start()
+            assert exchange(p, b"M", "bin") == b""
+            assert exchange(p, b"F", "bin/app", 0) == b""
+            assert exchange(p, b"P", "bin/app", 0o755) == b""
+            assert exchange(p, b"P", "bin", 0o755) == b""
+            payload = spec([b"/bin/app"], [], cwd)
+            p.stdin.write(b"T" + struct.pack(">HI", 4, len(payload)) + payload + b"G")
+            p.stdin.flush()
+            assert p.stdout.read(2) == b"DK", "root, cwd and absent procfs probe failed"
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+            observations.append({"case": "private-root-and-cwd", "cwd": cwd.decode(), "hostProcPath": "absent"})
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_deny_chroot)
+        try:
+            assert p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:25" in stderr, (p.returncode, stdout, stderr)
+            observations.append({"case": "chroot-denied", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill(); p.communicate(timeout=20)
+
         # T remounts the original tmpfs read-only, so the root descriptor
-        # opened before the remount is covered as well. Observe mountinfo
-        # independently and ask the worker to attempt a create via that FD.
+        # opened before the remount is covered as well. After chroot the
+        # outer /tmp mount is no longer visible in this process's mountinfo;
+        # probe the retained descriptor directly instead.
         p, child, proc_denied = start()
         assert exchange(p, b"F", "app", 0) == b""
         assert exchange(p, b"P", "app", 0o755) == b""
@@ -502,12 +540,6 @@ def main(compiler, out):
         p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload)
         p.stdin.flush()
         assert p.stdout.read(1) == b"D"
-        rows = [row.split() for row in Path(f"/proc/{child}/mountinfo").read_text().splitlines()]
-        mount = [row for row in rows if row[4] == "/tmp"][-1]
-        sep = mount.index("-")
-        assert mount[sep + 1] == "tmpfs"
-        assert {"ro", "nosuid", "nodev"} <= set(mount[5].split(",")), mount
-        assert "ro" in mount[sep + 3].split(","), mount
         p.stdin.write(b"W")
         p.stdin.flush()
         assert p.stdout.read(1) == b"K", "pre-remount root FD must reject create with EROFS"
@@ -677,7 +709,7 @@ def main(compiler, out):
                 p.kill()
                 p.communicate(timeout=20)
 
-        for op, label in ((b"J", "remount-probe"), (b"N", "namespace-probe")):
+        for op, label in ((b"J", "remount-probe"), (b"N", "namespace-probe"), (b"G", "root-probe")):
             p, child, proc_denied = start()
             stdout, stderr = p.communicate(b"C\x00\x00" + op, timeout=20)
             assert p.returncode == 2 and stdout == b"D" and b"FREFUSE:15" in stderr
