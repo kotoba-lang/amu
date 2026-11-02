@@ -586,6 +586,7 @@ def main():
     flag_re = re.compile(r"band 31\.\.32 at B=2\): (True|False)")
     c2_rows = []
     c2_good = True
+    cur_m = None
     for key, lineno, want_flag in (("pub169", 607, "False"), ("pub169", 608, "False"),
                                    ("pub185", 624, "True"), ("pub185", 625, "True"),
                                    ("pub197", 630, "True"), ("pub197", 631, "True"),
@@ -596,7 +597,7 @@ def main():
         else:
             m = flag_re.search(line_of(texts, key, lineno))
             flag = m.group(1) if m else None
-            in_band = 31 <= cur_m <= 32
+            in_band = cur_m is not None and 31 <= cur_m <= 32
             row_ok = (flag == want_flag and (flag == "True") == in_band)
             c2_good = c2_good and row_ok
             c2_rows.append((key, cur_m, flag, in_band))
