@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Selection, hostile ZIP and native cached-object round-trip controls."""
+import hashlib
 import os
 import tempfile
 import unittest
@@ -8,8 +9,8 @@ from pathlib import Path
 
 from bounded_cache_bundle import _extract_sealed, pack
 from check_bounded_producer_attestation import exercise
-from fetch_bounded_cache import _artifact_matches, _run_matches, _select_artifact, _unzip_exact, fetch_verified
-from sealed_image import sealed_blob
+from fetch_bounded_cache import _artifact_matches, _download, _run_matches, _select_artifact, _unzip_exact, fetch_verified
+from sealed_image import sealed_blob, sealed_image
 
 SHA = "a" * 40
 REPO = 1297097065
@@ -84,6 +85,28 @@ class FetchControls(unittest.TestCase):
                     _unzip_exact(archive, output)
                 self.assertFalse(output.exists())
                 self.assertFalse((self.root / "escape").exists())
+
+    def test_download_stream_size_digest_and_process_failure(self):
+        # A transport stub, not a provenance verifier or a compiler fallback.
+        stub = self.root / "stub"
+        stub.write_text("#!/usr/bin/python3\nimport os\nos.write(1, b'probe')\n")
+        stub.chmod(0o500)
+        pin = hashlib.sha256(stub.read_bytes()).hexdigest()
+        expected = {"id": 1, "size_in_bytes": 5, "digest": "sha256:" + hashlib.sha256(b"probe").hexdigest()}
+        with sealed_image(stub, pin) as (fd, _):
+            good = self.root / "good.zip"
+            _download(fd, {"PATH": "/usr/bin:/bin"}, expected, good)
+            self.assertEqual(good.read_bytes(), b"probe")
+            for name, changed in (("size", dict(expected, size_in_bytes=4)),
+                                  ("digest", dict(expected, digest="sha256:" + "0" * 64))):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    _download(fd, {"PATH": "/usr/bin:/bin"}, changed, self.root / (name + ".zip"))
+        stub.chmod(0o700)
+        stub.write_text("#!/usr/bin/python3\nraise SystemExit(7)\n")
+        stub.chmod(0o500)
+        pin = hashlib.sha256(stub.read_bytes()).hexdigest()
+        with sealed_image(stub, pin) as (fd, _), self.assertRaises(ValueError):
+            _download(fd, {"PATH": "/usr/bin:/bin"}, expected, self.root / "failed.zip")
 
 
 if __name__ == "__main__":
