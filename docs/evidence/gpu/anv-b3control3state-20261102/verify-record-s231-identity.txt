@@ -1,0 +1,45 @@
+== verify-record-s231 run-twice byte-identity (session 231) ==
+script verify-record-s231.py sha256
+bf99220476ab196c486a2744b529f9978f02ec0ce4360563d730e7e56fe6da6c
+(15,153 bytes)
+run1: rc 0, stdout 3,264 bytes sha256
+646bdb1b2961c22577b29f545fad43f9007e89c52b22f7c7e8f5890d3308e1e6,
+stderr 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+run2: rc 0, stdout 3,264 bytes sha256
+646bdb1b2961c22577b29f545fad43f9007e89c52b22f7c7e8f5890d3308e1e6
+(same), stderr 0 bytes same sha256 (same).
+cmp exit 0 x2 (report pair and stderr pair byte-identical).  Report
+tail: '# record-verify s231 (verify-record-s231.py): 38 ok / 0
+failed'.  The report is stdout (unlike analysis-s229.py, whose output
+is its publication file) -- the run1/run2 .txt legs ARE the report.
+
+NAMED, NOT HIDDEN -- TWO defective development attempts, both visible
+in this directory (NOT pair legs; the s229 (i) precedent shape):
+(i) verify-record-s231-devrun.txt / .err (560 / 325 bytes, sha256
+dfee4dbab40c9bb28e1b51e2dc516a274fdc79eec52085bb55ebb009edef6565 /
+0ded790947708875b149879dc3e861f90e5d4acc7806756ed5e614b34a34dddf):
+the run-log parser aborted on the committed VERIFY lines (the parser
+handled CELL / SAMPLE / '#' only; assert line.startswith('#') fired on
+'VERIFY idx=0 ... note=pipeline-failed').  FIXED by adding VERIFY-line
+parsing -- which also STRENGTHENS the verifier: C2.4 and C6.1 now
+RE-DERIVE the per-run VERIFY-line counts and the mismatch total from
+the committed logs instead of trusting the publication row.
+(ii) verify-record-s231-devrun2.txt / .err (1,859 / 232 bytes, sha256
+76a3cea8360c8f63ece79ce6930c438c8861e5bf7b1d698191b21e112ed19459 /
+9557c52b9732ab93da157f32632cbe7561167d9afd4a93fb3f12161c06e11ced):
+TWO defects in one run, both fixed before the official pair -- (a)
+check C2.1 compared the CUMULATIVE pooled length against R inside the
+per-run loop (a verifier bug: run 2 and run 3 of every reading failed
+the row unconditionally even though the captures are correct -- C2.3's
+pooled N == 19,200 already proved the pools right); (b) the
+VERIFY-summary regex targeted the wrong publication wording
+('VERIFY mismatches ... over all 24 runs' -- the publication row
+actually reads 'VERIFY mismatch total over all runs: 0 (per-arm: c2=0,
+c8=0; per-reading 0/0/0/0)'), and the mverify assert aborted the run.
+The attempt-2 run2 leg was byte-identical to its run1 (cmp exit 0,
+both legs compared before removal) and was discarded as a pure
+duplicate, not a distinct artifact.  Both fixes touch the VERIFIER
+only: no committed capture, publication or record byte changed, and
+the official pair's 38 rows are computed from the same committed
+bytes.
