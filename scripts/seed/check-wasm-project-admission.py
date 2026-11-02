@@ -38,6 +38,13 @@ def main():
                            cwd=root,env=env,capture_output=True,timeout=120)
     assert basic.returncode == 0 and not basic.stderr and wasm.read_bytes().startswith(b'\0asm\1\0\0\0'), (basic.returncode,basic.stderr)
     calls.append({'case':'single-source','exit':basic.returncode,'wasmSha256':sha(wasm.read_bytes())})
+    single_text = f'KSL2\nentry {scalar}\nmodule scalar {scalar}\nfile {sha(scalar.read_bytes())} {scalar}\n'
+    lock.write_text(single_text); single_wasm = root / 'single-mapped.wasm'
+    single = subprocess.run([str(compiler),'compile',str(scalar),'--target','wasm32-browser','--output',str(single_wasm),
+                             '--source-lock',str(lock),'--source-lock-sha256',sha(single_text.encode())],
+                            cwd=root,env=env,capture_output=True,timeout=120)
+    assert single.returncode == 0 and not single.stderr and single_wasm.read_bytes() == wasm.read_bytes(), (single.returncode,single.stderr)
+    calls.append({'case':'single-mapped-source','exit':single.returncode,'wasmSha256':sha(single_wasm.read_bytes())})
     digest = make_lock()
     prefix = ['--source-path',str(root),'--source-lock',str(lock),'--source-lock-sha256']
     positive = subprocess.run([str(compiler),'check',str(entry),*prefix,digest],cwd=root,env=env,capture_output=True,timeout=120)
@@ -53,6 +60,18 @@ def main():
     digest = make_lock()
     run('missing-digest', ['--source-path',str(root),'--source-lock',str(lock)], 2, b'E7100')
     run('unpinned', ['--source-path',str(root),'--unpinned'], 2, b'E7100')
+    mapped = f'KSL2\nentry {entry}\nmodule app {entry}\nmodule util {dep}\n' + ''.join(
+        f'file {sha(path.read_bytes())} {path}\n' for path in sorted([entry, dep]))
+    lock.write_text(mapped); mapped_digest = sha(mapped.encode())
+    mapped_args = ['--source-lock',str(lock),'--source-lock-sha256',mapped_digest]
+    mapped_check = subprocess.run([str(compiler),'check',str(entry),*mapped_args],cwd=root,env=env,capture_output=True,timeout=120)
+    assert mapped_check.returncode == 0 and not mapped_check.stderr, (mapped_check.returncode,mapped_check.stderr)
+    run('mapped-project', mapped_args, 2, b'E7107')
+    run('mapped-wrong-digest', ['--source-lock',str(lock),'--source-lock-sha256','0'*64], 1, b'E6015')
+    run('mapped-missing-digest', ['--source-lock',str(lock)], 2, b'E7100')
+    run('mapped-unpinned', ['--source-lock',str(lock),'--source-lock-sha256',mapped_digest,'--unpinned'], 2, b'E7100')
+    dep.write_text(dep.read_text() + '\n;; changed mapped dependency\n')
+    run('mapped-changed-source', mapped_args, 1, b'E6015')
     (root/'receipt.json').write_text(json.dumps({'status':'PASS_LOCKED_WASM_PROJECT_ADMISSION', 'compilerSha256':sha(compiler.read_bytes()),
         'cases':calls, 'limitations':['valid project still refuses E7107; no Wasm project linker or artifact', 'no browser graph or x86 qualification']},indent=2)+'\n')
     print('PASS_LOCKED_WASM_PROJECT_ADMISSION')

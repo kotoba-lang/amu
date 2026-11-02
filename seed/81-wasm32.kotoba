@@ -347,13 +347,18 @@
 ;; The canonical discovery/lock owner caches and verifies every source; never
 ;; accept --unpinned or ignore an option on the Wasm project path.
 (defn- xw-project-flags? [i :i64 roots :i64 lock :bool digest :bool] :bool
-  (if (= i (io-argc)) (and (> roots 0) (<= roots 16) lock digest)
+  (if (= i (io-argc)) (and (<= roots 16) lock digest)
     (if (>= (+ i 1) (io-argc)) false
       (let [flag (io-arg i)]
         (cond (string=? flag "--source-path") (xw-project-flags? (+ i 2) (+ roots 1) lock digest)
               (and (string=? flag "--source-lock") (not lock)) (xw-project-flags? (+ i 2) roots true digest)
               (and (string=? flag "--source-lock-sha256") (not digest)) (xw-project-flags? (+ i 2) roots lock true)
               :else false)))))
+(defn- xw-mapped-project? [] :bool
+  (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
+    (and (>= argument 0)
+         (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
+           (and (ksl-mapped? text) (> (ksl-file-count text) 1))))))
 (defn- xw-project-check [path :string] :i64
   (let [M (mem-new) L (pj-new-l) roots (drv-pj-roots L (pj-new-p L) 1 (io-argc))
         locked (drv-pj-lock M L roots path)
@@ -367,7 +372,7 @@
 ;; linker. Never accept and discard roots or any unsupported flags.
 (defn- xw-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) count (io-argc)
-        project (= (drv-pj-has 1 count "--source-path") 1)
+        project (or (= (drv-pj-has 1 count "--source-path") 1) (xw-mapped-project?))
         locked (and (= count 10) (string=? (io-arg 6) "--source-lock")
                     (string=? (io-arg 8) "--source-lock-sha256"))]
     (cond (or (and project (not (xw-project-flags? 6 0 false false)))
