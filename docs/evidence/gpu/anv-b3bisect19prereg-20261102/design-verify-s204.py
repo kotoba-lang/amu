@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
-# design-verify-s204.py -- JUN-59 session 205: the s204 design-verify
-# (the s205 carry-forward, fail-closed quote + arithmetic re-derivation
-# vs the committed bytes the state-s204 draft cites).
+# design-verify-s204.py -- JUN-59 sessions 205/206: the s204
+# design-verify (the s205 carry-forward's remainder completed at s206,
+# fail-closed quote + arithmetic re-derivation vs the committed bytes
+# the state-s204 draft cites).
+#
+# SESSION 206 CHANGES (all named in state-s205.txt section 2/3; the
+# draft1 pair design-verify-s204-draft1-run{1,2} is kept visible):
+# (a) dev pin-shape fixes: Q-S204-{38,39,41,43} re-anchored to the
+#     committed lines 39/40/42/44 (want content unchanged, renamed to
+#     the line numbers the committed bytes actually carry); the m_q1/
+#     m_q3 claim regexes read those same lines;
+# (b) A-MINIMAX code fix: argmin now over the worst-case remaining
+#     width max(255,045-p, p-254,923) per q (was top-piece only);
+# (c) SUPERSESSION-AWARE want set: state-s205.txt (F-S205 + Q-S205-*)
+#     records the D1 (2) q=1 per-letter correction; D-W1-Q1-LETTERS
+#     asserts the corrected record == the re-derivation AND the
+#     original state-s204 sentence pinned VERBATIM as SUPERSEDED.
 #
 # FAIL-CLOSED: every want is a (file, line number, substring) triple
 # checked against the exact committed line, plus file-level size/sha256
@@ -43,6 +57,7 @@ FILES = {
     "s193": os.path.join(GPU, "anv-b3bisect18prereg-20261101", "state-s193.txt"),
     "s203": os.path.join(HERE, "state-s203.txt"),
     "s204": os.path.join(HERE, "state-s204.txt"),
+    "s205": os.path.join(HERE, "state-s205.txt"),
 }
 
 SHORT = {
@@ -60,6 +75,7 @@ SHORT = {
     "s193": "state-s193.txt",
     "s203": "state-s203.txt",
     "s204": "state-s204.txt",
+    "s205": "state-s205.txt",
 }
 
 # (id, file key, 1-based line number, exact substring expected on that line)
@@ -211,10 +227,12 @@ LINE_WANTS = [
     ("Q-S203-46", "s203", 46, "0/16 >= 1,000 (range + pooled entirely below 1,000) while all"),
     ("Q-S203-53", "s203", 53, "THREE VIRGIN (0 occurrences in every parsed publication source"),
     # -- state-s204.txt (the design record itself: the D-shape, the arm table, the VERIFIED paragraph, the D1 (2) sentences) --
-    ("Q-S204-38", "s204", 38, "derived this session): at q=1 the W1 (a) outcome leaves"),
-    ("Q-S204-39", "s204", 39, "width 92 of 122 and W1 (b) leaves 30 (worst case 92);"),
-    ("Q-S204-41", "s204", 41, "61); at q=3 W1 (a) leaves 91 and W1 (b) leaves 31"),
-    ("Q-S204-43", "s204", 43, "worst-case remaining bracket width (61 < 91 < 92) and"),
+    # s206: re-anchored to the committed lines (39/40/42/44; the
+    # draft1 pair's off-by-one pin-shape defect, state-s205.txt 2 (i)).
+    ("Q-S204-39", "s204", 39, "derived this session): at q=1 the W1 (a) outcome leaves"),
+    ("Q-S204-40", "s204", 40, "width 92 of 122 and W1 (b) leaves 30 (worst case 92);"),
+    ("Q-S204-42", "s204", 42, "61); at q=3 W1 (a) leaves 91 and W1 (b) leaves 31"),
+    ("Q-S204-44", "s204", 44, "worst-case remaining bracket width (61 < 91 < 92) and"),
     ("Q-S204-97", "s204", 97, "does not measure 254,923 and NO letter of this cut"),
     ("Q-S204-200", "s204", 200, "this cut does not measure 254,923; that content stands"),
     ("Q-S204-391", "s204", 391, "(a) C2 (b) -> the bracket narrows to (254,923, 254,984]"),
@@ -223,6 +241,14 @@ LINE_WANTS = [
     ("Q-S204-419", "s204", 419, "q2  (B=3, WM=307, NDIV=1204)  n=254,984 (knob"),
     ("Q-S204-422", "s204", 422, "c8  (B=8, WM=1, NDIV=1)       control, k=3"),
     ("Q-S204-493", "s204", 493, "gcd(307,1204) = gcd(674,2643) = 1; clip widths q=1 92/30,"),
+    # -- state-s205.txt (the superseding record: the D1 (2) q=1
+    #    per-letter correction; original pinned verbatim as SUPERSEDED) --
+    ("Q-S205-16", "s205", 16, "ORIGINAL, pinned here VERBATIM as SUPERSEDED content -- byte-exact"),
+    ("Q-S205-19", "s205", 19, "derived this session): at q=1 the W1 (a) outcome leaves"),
+    ("Q-S205-20", "s205", 20, "width 92 of 122 and W1 (b) leaves 30 (worst case 92);"),
+    ("Q-S205-31", "s205", 31, "CORRECTED: at q=1 the W1 (a) outcome leaves width 30 of 122 and"),
+    ("Q-S205-32", "s205", 32, "W1 (b) leaves 92 (worst case 92)."),
+    ("Q-S205-42", "s205", 42, "STANDS: the nineteenth cut's point remains the q=2 floor midpoint"),
 ]
 
 # (id, file key, expected size in bytes, expected sha256 hex)
@@ -253,6 +279,8 @@ FILE_PINS = [
      "35656eac8f6add1bd34edcff8d2a0d45170a96a76964a356a5f69de0045dde49"),
     ("F-S204", "s204", 32324,
      "0619aef27022f9a406dfc3047b25595b6da0ef9347906380ed9531126261a5f3"),
+    ("F-S205", "s205", 7173,
+     "99fc8aff7383c71adbc686329f6a27629221202ab746b79e72d2041ff2410d81"),
 ]
 
 # (id, description, computed string, expected string) -- the state-s204
@@ -305,8 +333,10 @@ ARITH_WANTS = [
     ("A-WORST-Q3", "worst-case remaining width at q=3 max(31,91)",
      str(max(255045 - 255014, 255014 - 254923)), "91"),
     ("A-MINIMAX", "argmin worst-case over q=1/q=2/q=3",
-     min({"q=1": 255045 - 254953, "q=2": 255045 - 254984,
-          "q=3": 255045 - 255014}.items(), key=lambda kv: kv[1])[0],
+     min({"q=1": max(255045 - 254953, 254953 - 254923),
+          "q=2": max(255045 - 254984, 254984 - 254923),
+          "q=3": max(255045 - 255014, 255014 - 254923)}.items(),
+         key=lambda kv: kv[1])[0],
      "q=2"),
     ("A-ARM-TABLE", "arm table self-check 3+48+3",
      str(3 + 48 + 3), "54"),
@@ -489,17 +519,33 @@ def main():
     pts = {"q=1": 254953, "q=2": 254984, "q=3": 255014}
     derived = {k: (p - lo_n, hi_n - p) for k, p in pts.items()}
     s204 = texts["s204"].decode("utf-8")
-    q1_claim_text = (line_of(texts, "s204", 38) + " " + line_of(texts, "s204", 39))
+    # s206: claim reads re-anchored to the committed lines 39+40 / 42
+    # (the draft1 pair's mis-anchored regex defect, state-s205 2 (iii));
+    # the joined-line claims are whitespace-normalized first (the s203
+    # normalization-shape precedent -- no want weakened).
+    q1_claim_text = re.sub(r"\s+", " ",
+                           line_of(texts, "s204", 39) + " " + line_of(texts, "s204", 40))
     m_q1 = re.search(r"at q=1 the W1 \(a\) outcome leaves width (\d+) of 122 and W1 \(b\) leaves (\d+)", q1_claim_text)
     m_q3 = re.search(r"at q=3 W1 \(a\) leaves (\d+) and W1 \(b\) leaves (\d+)",
-                     line_of(texts, "s204", 41))
+                     line_of(texts, "s204", 42))
     claimed_q1 = (int(m_q1.group(1)), int(m_q1.group(2))) if m_q1 else None
     claimed_q3 = (int(m_q3.group(1)), int(m_q3.group(2))) if m_q3 else None
+    # s206: the superseding record (state-s205.txt section 1).
+    corr_text = re.sub(r"\s+", " ",
+                       line_of(texts, "s205", 31) + " " + line_of(texts, "s205", 32))
+    m_corr = re.search(r"CORRECTED: at q=1 the W1 \(a\) outcome leaves width (\d+) of 122 and W1 \(b\) leaves (\d+)", corr_text)
+    corrected_q1 = (int(m_corr.group(1)), int(m_corr.group(2))) if m_corr else None
+    verbatim_a = line_of(texts, "s205", 19) == line_of(texts, "s204", 39)
+    verbatim_b = line_of(texts, "s205", 20) == line_of(texts, "s204", 40)
+    superseded_label = "SUPERSEDED" in line_of(texts, "s205", 16)
     record("D-W1-Q1-LETTERS",
-           "state-s204 D1 (2) q=1 per-letter remaining widths (W1 (a), W1 (b)) "
-           "claimed %s vs re-derived %s from the committed W1 shapes"
-           % (claimed_q1, derived["q=1"]),
-           claimed_q1 == derived["q=1"])
+           "state-s205 D1 (2) q=1 SUPERSESSION: original claim %s pinned "
+           "verbatim as SUPERSEDED (L19==s204 L39 %s, L20==s204 L40 %s, "
+           "label %s); corrected %s vs re-derived %s"
+           % (claimed_q1, verbatim_a, verbatim_b, superseded_label,
+              corrected_q1, derived["q=1"]),
+           claimed_q1 == (92, 30) and verbatim_a and verbatim_b
+           and superseded_label and corrected_q1 == derived["q=1"])
     record("D-W1-Q2-LETTERS",
            "state-s204 D1 (2) q=2 per-letter remaining widths claimed (61, 61) vs re-derived %s"
            % (derived["q=2"],),
