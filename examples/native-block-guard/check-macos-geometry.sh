@@ -8,15 +8,26 @@ bootstrap="$root/seed/bootstrap/aarch64-macos"
 [ "$(uname -s) $(uname -m)" = 'Darwin arm64' ] || exit 1
 work=$(mktemp -d "$TMPDIR/block-geometry.XXXXXXXX")
 rawdev=
+current_image=
+# Safety observer: match both the temporary backing image and its device in
+# DiskImages' current attachment list before opening or detaching anything.
+owned_image() {
+  hdiutil info -plist | /usr/bin/python3 -c 'import os, plistlib, sys
+p=plistlib.loads(sys.stdin.buffer.read())
+dev,image=sys.argv[1:]
+matches=[x for x in p.get("images",[]) if os.path.realpath(x.get("image-path", "")) == os.path.realpath(image) and any(y.get("dev-entry") == dev for y in x.get("system-entities", []))]
+sys.exit(0 if len(matches)==1 else 1)' "$1" "$2"
+}
 cleanup() {
   if [ -z "$rawdev" ] && [ -s "$work/attach.plist" ]; then
     rawdev=$(/usr/bin/plutil -extract system-entities.0.dev-entry raw -o - "$work/attach.plist" 2>/dev/null || true)
-    if [ -z "$rawdev" ]; then echo "cannot identify attached image; retaining $work" >&2; return; fi
+    if [ -z "$rawdev" ]; then echo "cannot identify attached image; retaining $work" >&2; return 1; fi
   fi
   if [ -n "$rawdev" ]; then
-    case "$rawdev" in /dev/disk[0-9]*) ;; *) echo "invalid attached image; retaining $work" >&2; return;; esac
-    case "$rawdev" in /dev/disk*[!0-9]*) echo "invalid attached image; retaining $work" >&2; return;; esac
-    if ! hdiutil detach "$rawdev" >/dev/null 2>&1; then echo "detach failed; retaining $work" >&2; return; fi
+    case "$rawdev" in /dev/disk[0-9]*) ;; *) echo "invalid attached image; retaining $work" >&2; return 1;; esac
+    case "$rawdev" in /dev/disk*[!0-9]*) echo "invalid attached image; retaining $work" >&2; return 1;; esac
+    if [ -z "$current_image" ] || ! owned_image "$rawdev" "$current_image"; then echo "image identity changed; retaining $work" >&2; return 1; fi
+    if ! hdiutil detach "$rawdev" >/dev/null 2>&1; then echo "detach failed; retaining $work" >&2; return 1; fi
   fi
   rm -rf "$work"
 }
@@ -45,10 +56,12 @@ if /usr/bin/otool -l "$work/gen/control.macho" | grep -q LC_LOAD_DYLIB; then ech
 # Attach only a newly created read-only task-owned disk image. Never use an
 # existing disk number as input. Detach precisely the image this test attached.
 hdiutil create -size 4m -type SPARSE -layout NONE "$work/fixture.sparseimage" > "$work/create.log"
-hdiutil attach -nomount -readonly -plist "$work/fixture.sparseimage" > "$work/attach.plist"
+current_image="$work/fixture.sparseimage"
+hdiutil attach -nomount -readonly -plist "$current_image" > "$work/attach.plist"
 rawdev=$(/usr/bin/plutil -extract system-entities.0.dev-entry raw -o - "$work/attach.plist")
 case "$rawdev" in /dev/disk[0-9]*) ;; *) echo 'invalid disk image device' >&2; exit 1;; esac
 case "$rawdev" in /dev/disk*[!0-9]*) echo 'invalid disk image device' >&2; exit 1;; esac
+owned_image "$rawdev" "$current_image" || { echo "image identity mismatch" >&2; exit 1; }
 info=$(diskutil info -plist "$rawdev")
 [ "$(printf '%s' "$info" | /usr/bin/plutil -extract BusProtocol raw -o - -)" = 'Disk Image' ]
 [ "$(printf '%s' "$info" | /usr/bin/plutil -extract VirtualOrPhysical raw -o - -)" = Virtual ]

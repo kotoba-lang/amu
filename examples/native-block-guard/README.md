@@ -92,3 +92,38 @@ then `xcrun llvm-objdump --macho --disassemble`. The reference SHA-256 is
 the one-time object SHA-256 is
 `de56c6a6f1ad23972de783312fbe1177a7e88f494833a96fbad575a1312a085a`.
 Neither clang nor the reference is invoked by the native build/test.
+
+## Fixed raw-device image control
+
+`TMPDIR=/workspace/scratch ./check-macos-raw-fixture.sh` builds an Amu-native
+macOS ARM64 test image. The harness constructs its own 4 MiB raw file, marks
+its first sector, attaches it as a virtual disk, and independently checks its
+current DiskImages backing-path/device association before opening it. The
+native image accepts only a character FD reporting exactly 512-byte blocks and
+8192 blocks and containing the eight-byte test marker at sector zero. It reads
+that sector, writes it at byte offset 4096, calls `fsync`, reads back and
+compares all 512 bytes. After detach the observer compares the complete backing
+image against a separately constructed expected file. A read-only descriptor,
+wrong marker, wrong geometry, regular-file FD and absent FD must refuse; the
+negative backing files must remain byte-identical. Detach is attempted only
+while the current image/device association matches; if it cannot be verified
+or detach fails, scratch is retained for inspection.
+
+This fixed control is **not a general raw-device provider or a trusted
+approval**. Its deliberately narrow geometry and marker are not a secure
+identity mechanism, nor a substitute for exclusive claim. The helper and
+harness are for disposable virtual images only; do not pass a physical disk.
+The `fsync` return and immediate readback do not prove cache bypass, device
+persistence through reset, or power-loss behavior. It is not connected to the
+policy candidate or the application and does not qualify either SSD.
+
+The inert `raw-fixture-reference.txt` was derived once with Apple clang 21.0.0
+(clang-2100.1.1.101), `clang -target arm64-apple-macos -c raw-control.s`, then
+`xcrun llvm-objdump --macho --disassemble`. Its SHA-256 is
+`35ef456fee6ebf0a8f18a1219b1256a47b48a12595e23acacefd8967fff965ec`; the
+one-time object SHA-256 is
+`7524aeea8f3e7f108adc50d55fb2c1767f308c8a4e68fde6b26e437ab3f617e3`.
+The reference bytes are review material; native build/test use the checked-in
+Kotoba instruction words, not clang, an assembler, C or a C loader. The
+harness uses Python only to observe the current DiskImages attachment list for
+safe test-device ownership and cleanup.
