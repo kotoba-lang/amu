@@ -19,7 +19,10 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'test/fixtures/selfhost/safety-boundaries'
 REFUSALS = {'internal-17': 'E2178', 'exported-9': 'E2108',
-            'unknown-op': 'E2101', 'unbound': 'E2102'}
+            'unknown-op': 'E2101', 'unbound': 'E2102',
+            'duplicate-ns': 'E2004', 'namespace-extra': 'E6021'}
+POSITIVES = {'arity-positive': (b') 136)', b') 135)'),
+             'metadata-positive': (b'(sequence) 2)', b'(sequence) 3)')}
 
 
 def sha(path):
@@ -36,15 +39,15 @@ def main():
     compiler, packager = (p.resolve(strict=True) for p in (a.compiler, a.packager))
     for p in (compiler, packager):
         subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(p)], check=True, capture_output=True, timeout=30)
-    fixtures = [FIXTURES / 'arity-positive.kotoba'] + [FIXTURES / 'refusals' / (n + '.kotoba') for n in REFUSALS]
+    fixtures = [FIXTURES / (n + '.kotoba') for n in POSITIVES] + [FIXTURES / 'refusals' / (n + '.kotoba') for n in REFUSALS]
     inputs = [compiler, packager, Path(__file__).resolve(), *fixtures]
     pins = {str(p): sha(p) for p in inputs}
     out = a.output.resolve(); out.mkdir(parents=True, exist_ok=False)
     for p in fixtures: shutil.copyfile(p, out / p.name)
-    source = (out / 'arity-positive.kotoba').read_bytes()
-    old, new = b') 136)', b') 135)'
-    if source.count(old) != 1: raise ValueError('positive negative-control anchor changed')
-    (out / 'arity-negative-control.kotoba').write_bytes(source.replace(old, new, 1))
+    for name, (old, new) in POSITIVES.items():
+        source = (out / (name + '.kotoba')).read_bytes()
+        if source.count(old) != 1: raise ValueError('positive negative-control anchor changed: ' + name)
+        (out / (name + '-negative-control.kotoba')).write_bytes(source.replace(old, new, 1))
     fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
     saved = None
     try:
@@ -56,7 +59,7 @@ def main():
             return subprocess.run(list(map(str, args)), cwd=out, env={'PATH': '/nonexistent', 'LANG': 'C'},
                                   pass_fds=(3,), capture_output=True, timeout=180)
         observations = []
-        for name, expected in [('arity-positive', 42), ('arity-negative-control', 7)]:
+        for name, expected in [(name + suffix, expected) for name in POSITIVES for suffix, expected in (('', 42), ('-negative-control', 7))]:
             image, payload, raw = out / (name + '.macho'), out / (name + '.kseed'), out / (name + '.raw')
             r = run([compiler, 'compile', '/' + name + '.kotoba', '--target', 'aarch64-macos', '--output', payload.name])
             if r.returncode or r.stderr or not payload.is_file(): raise ValueError((name, 'compile', r.returncode, r.stderr[-300:]))
