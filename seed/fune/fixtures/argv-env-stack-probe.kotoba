@@ -1,0 +1,15 @@
+;; Test-only privileged runtime: print exact argv/env entries from Linux stack.
+(defn- af-len [p :i64] :i64
+  (loop [i 0] (if (or (>= i 1024) (= (kxrt-load8 (+ p i)) 0)) i (recur (+ i 1)))))
+(defn- af-emit [p :i64 tag :i64] :i64
+  (let [m (+ (kxrt-g) 22000) a (kxrt-store8 m tag) b (kxrt-store8 (+ m 1) 58)
+        c (kxrt-store8 (+ m 2) 10) x (kxrt-write-all 1 m 2)
+        y (kxrt-write-all 1 p (af-len p)) z (kxrt-write-all 1 (+ m 2) 1)] 0))
+(defn- kxrt-start [sp :i64] :i64
+  (let [n (kxrt-load64 sp) argv (+ sp 8) env (+ argv (* 8 (+ n 1)))
+        a (loop [i 0] (if (= i n) 0 (let [v (af-emit (kxrt-load64 (+ argv (* i 8))) 65)] (recur (+ i 1)))))
+        b (loop [i 0] (let [p (kxrt-load64 (+ env (* i 8)))]
+                        (if (= p 0) 0 (let [v (af-emit p 69)] (recur (+ i 1))))))
+        cwd (+ (kxrt-g) 23000) got (kxrt-syscall 17 cwd 512 0 0 0 0)
+        c (if (< got 0) (kxrt-exit 126) (af-emit cwd 67))]
+    (kxrt-exit 7)))

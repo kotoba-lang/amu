@@ -123,10 +123,8 @@ def main(worker, fixture, expect_pids_refusal, producer, output, output_fixture)
         assert bad.returncode == 2 and bad.stdout == READY + b'KKD' and b'FREFUSE:26' in bad.stderr
         wrong_fixture = run(setup(data, payload) + b'O')
         assert wrong_fixture.returncode == 2 and wrong_fixture.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_fixture.stderr
-        wrong_output_args = run(setup(outdata, spec([b'/app', b'extra'])) + b'O')
-        assert wrong_output_args.returncode == 2 and wrong_output_args.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_output_args.stderr
-        wrong_output_env = run(setup(outdata, spec([b'/app'], [b'X=1'])) + b'O')
-        assert wrong_output_env.returncode == 2 and wrong_output_env.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_output_env.stderr
+        with_args_env = run(setup(outdata, spec([b'/app', b'extra'], [b'X=1'])) + b'OX')
+        assert with_args_env.returncode == 0 and with_args_env.stdout == READY + b'KKD' + OUTPUT_FRAME and not with_args_env.stderr
         wrong_command = run(setup(outdata, payload) + b'E')
         assert wrong_command.returncode == 2 and wrong_command.stdout == READY + b'KKD' and b'FREFUSE:26' in wrong_command.stderr
         early_out = run(b'O')
@@ -155,13 +153,21 @@ def main(worker, fixture, expect_pids_refusal, producer, output, output_fixture)
             return json.dumps(obj, separators=(',', ':')).encode()
         layer_bytes = io.BytesIO()
         with tarfile.open(fileobj=layer_bytes, mode='w', format=tarfile.USTAR_FORMAT) as archive:
+            if outdata is not None:
+                directory = tarfile.TarInfo('work')
+                directory.type, directory.mode = tarfile.DIRTYPE, 0o755
+                directory.uid = directory.gid = directory.mtime = 0
+                archive.addfile(directory)
             entry = tarfile.TarInfo('app')
             entry.size, entry.mode, entry.uid, entry.gid, entry.mtime = len(data), 0o755, 0, 0, 0
             archive.addfile(entry, io.BytesIO(data))
         layer = layer_bytes.getvalue(); layer_digest = blob(layer)
         config = encode({'architecture': 'arm64', 'os': 'linux',
                          'rootfs': {'type': 'layers', 'diff_ids': [layer_digest]},
-                         'config': {'Entrypoint': ['/app'], 'Cmd': [], 'Env': [], 'WorkingDir': '/'}})
+                         'config': ({'Entrypoint': ['/app'], 'Cmd': ['hello', '世界'],
+                                     'Env': ['X=1', 'EMPTY='], 'WorkingDir': '/work'}
+                                    if outdata is not None else
+                                    {'Entrypoint': ['/app'], 'Cmd': [], 'Env': [], 'WorkingDir': '/'})})
         config_digest = blob(config)
         manifest = encode({'schemaVersion': 2, 'mediaType': 'application/vnd.oci.image.manifest.v1+json',
                            'config': {'mediaType': 'application/vnd.oci.image.config.v1+json',
@@ -191,7 +197,7 @@ def main(worker, fixture, expect_pids_refusal, producer, output, output_fixture)
         finally:
             layer_path.write_bytes(layer)
         launched = run(stream.stdout + (b'4f58' if outdata is not None else b'4558'))
-        expected_output = READY + b'KKD' + (OUTPUT_FRAME if outdata is not None else b'K')
+        expected_output = READY + (b'KKKKD' if outdata is not None else b'KKD') + (OUTPUT_FRAME if outdata is not None else b'K')
         assert launched.returncode == 0 and launched.stdout == expected_output and not launched.stderr, (launched.returncode, launched.stdout[-500:], launched.stderr[-500:])
         (output / 'result.json').write_text(json.dumps({'manifest': manifest_digest, 'producerSHA256': hashlib.sha256(producer.read_bytes()).hexdigest(),
                                                         'workerSHA256': hashlib.sha256(worker.read_bytes()).hexdigest(),

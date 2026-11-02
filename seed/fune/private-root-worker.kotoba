@@ -281,6 +281,32 @@
        (= (kxrt-load8 (+ spec 16)) 97) (= (kxrt-load8 (+ spec 17)) 112)
        (= (kxrt-load8 (+ spec 18)) 112)))
 
+;; O still admits only the fixed /app fixture, but its already validated
+;; process spec may carry additional arguments, environment and cwd.
+(defn- fw-output-spec? [spec :i64 n :i64] :bool
+  (let [head (+ 10 (fw-u16 (+ spec 8))) p (+ spec head)]
+    (and (fw-spec-ok? spec n) (= (fw-u32 p) 4)
+         (= (kxrt-load8 (+ p 4)) 47) (= (kxrt-load8 (+ p 5)) 97)
+         (= (kxrt-load8 (+ p 6)) 112) (= (kxrt-load8 (+ p 7)) 112))))
+
+;; Copy the validated length-delimited FPS1 arguments and environment into a
+;; private allocation, with distinct NUL terminators and pointer-vector ends.
+(defn- fw-output-argv [spec :i64 block :i64] :i64
+  (let [argc (fw-u16 (+ spec 4)) envc (fw-u16 (+ spec 6))
+        envp (+ block (* 8 (+ argc 1))) strings (+ envp (* 8 (+ envc 1)))
+        first (+ spec (+ 10 (fw-u16 (+ spec 8))))]
+    (loop [i 0 src first dst strings]
+      (if (= i (+ argc envc))
+        (let [a (kxrt-store64 (+ block (* 8 argc)) 0)
+              b (kxrt-store64 (+ envp (* 8 envc)) 0)] envp)
+        (let [n (fw-u32 src) input (+ src 4)
+              slot (if (< i argc) (+ block (* 8 i)) (+ envp (* 8 (- i argc))))
+              p (kxrt-store64 slot dst)
+              copied (loop [j 0] (if (= j n) 0
+                       (let [w (kxrt-store8 (+ dst j) (kxrt-load8 (+ input j)))] (recur (+ j 1)))))
+              end (kxrt-store8 (+ dst n) 0)]
+          (recur (+ i 1) (+ input n) (+ dst n 1)))))))
+
 (defn- fw-fixture-hash? [root :i64 exe :i64 buf :i64 variant :i64] :bool
   (let [h buf w (+ buf 64) data (+ buf 1024) path (+ buf 2048) how (+ buf 2304)
         st (+ buf 4096) xt (+ buf 4352)
@@ -338,10 +364,10 @@
 
 ;; Output fixture only: no inherited host descriptors except a bounded stdout
 ;; pipe, which is drained while wait4 and the monotonic deadline are polled.
-(defn- fw-output-child [exe :i64 writer :i64 buf :i64] :i64
-  (let [text (+ buf 5000) argv (+ buf 5024) env (+ buf 5048) empty (+ buf 5064)
-        x (kxrt-store64 text 0x7070612f) a (kxrt-store64 argv text) b (kxrt-store64 (+ argv 8) 0)
-        c (kxrt-store64 env 0) d (kxrt-store64 empty 0)
+(defn- fw-output-child [exe :i64 writer :i64 buf :i64 spec :i64] :i64
+  (let [empty (+ buf 5064) argv (kxrt-syscall 222 0 73728 3 34 -1 0)
+        mapped (if (< argv 0) (kxrt-exit 127) 0)
+        env (fw-output-argv spec argv) d (kxrt-store64 empty 0)
         stdout (if (or (= writer 1) (< (kxrt-syscall 24 writer 1 0 0 0 0) 0)) (kxrt-exit 127) 0)
         dup (if (or (= exe 111) (< (kxrt-syscall 24 exe 111 524288 0 0 0) 0)) (kxrt-exit 127) 0)
         lo (if (< (kxrt-syscall 436 3 110 0 0 0 0) 0) (kxrt-exit 127) 0)
@@ -426,14 +452,14 @@
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 79) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
-                (let [shape (if (fw-fixture-spec? spec specsize) 0 (fw-die 26))
+                (let [shape (if (fw-output-spec? spec specsize) 0 (fw-die 26))
                       exe (kxrt-load64 (+ mem 520))
                       digest (if (fw-fixture-hash? root exe buf 1) 0 (fw-die 26))
                       out (kxrt-syscall 222 0 8192 3 34 -1 0) allocated (if (< out 0) (fw-die 27) 0)
                       pair (+ buf 6100) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 27) 0)
                       both (kxrt-load64 pair) reader (bit-and both 4294967295) writer (u64-shift-right both 32)
                       pid (kxrt-syscall 220 17 0 0 0 0 0)
-                      forked (cond (< pid 0) (fw-die 27) (= pid 0) (fw-output-child exe writer buf) :else 0)
+                      forked (cond (< pid 0) (fw-die 27) (= pid 0) (fw-output-child exe writer buf spec) :else 0)
                       close-w (fw-close writer 27) result (fw-output-collect pid reader buf out)
                       close-r (fw-close reader 27) valid (if (< result 0) (fw-die 27) 0)
                       count (bit-and result 4294967295) exit (u64-shift-right result 32)
