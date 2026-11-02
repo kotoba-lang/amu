@@ -59,6 +59,22 @@
                 (xg-report m (io-arg 2) (io-arg 3))))
             (drv-fail0 E-PROJ-UNPINNED)))))
 
+;; Closed ARM64 cgroup-v2 limit configuration candidate.
+(defn- xfc-command [] :i64
+  (cond (or (not= (io-argc) 4) (not (string=? (io-arg 1) "aarch64-linux"))
+            (= (string-length (io-arg 3)) 0)) (drv-usage)
+        (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
+        (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
+        :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
+          (if (string=? (sh-text host) "5fcba27a8e0a44f770cd937a33c596951bf149507f7762b398a9ef9784e696d8")
+            (let [guest "(ns fune-cgroup-limits (:export [main]))\n(defn main [] :i64 0)\n"
+                  rt (string-concat (xa-rt-core-profile 0) host)
+                  text (string-concat guest rt)
+                  m (xa-build (xg-front text) text (string-length guest) 0 (vector-alloc 1) 0 0 0)]
+              (if (= (vector-at m MM-ERR) 0) (xa-write m (io-arg 3) 0)
+                (xg-report m (io-arg 2) (io-arg 3))))
+            (drv-fail0 E-PROJ-UNPINNED)))))
+
 ;; Closed source-pinned diagnostic fune supervisor; executable image identity
 ;; is still a caller responsibility and this is not a production launcher.
 (defn- xfs-command [] :i64
