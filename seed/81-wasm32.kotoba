@@ -343,13 +343,22 @@
                                (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
 ;; compile SRC --target wasm32-browser --output NEW
+;;   [--source-lock LOCK --source-lock-sha256 DIGEST]
+;; The optional lock is currently the single-source KSL form, not a project
+;; linker. Never accept and discard roots or any unsupported flags.
 (defn- xw-command [] :i64
-  (let [src (io-arg 1) out (io-arg 5)]
-    (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM\n")] 2)
+  (let [src (io-arg 1) out (io-arg 5) count (io-argc)
+        locked (and (= count 10) (string=? (io-arg 6) "--source-lock")
+                    (string=? (io-arg 8) "--source-lock-sha256"))]
+    (cond (or (and (not= count 6) (not locked))
+              (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM [--source-lock LOCK --source-lock-sha256 DIGEST]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           (= (string-length (xw-rt-src)) 0)
             (let [w (io-err "seed-wasm32-browser: E7106 a section marker of the seed/77 runtime text is missing\n")] 1)
-          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      s (string-concat guest (xw-rt-src))]
-                  (xw-report (xw-build (xg-front s) s (string-length guest)) src out)))))
+          :else (let [original (drv-read src)]
+                  (if (and locked (not (drv-single-lock? original src)))
+                    (drv-fail0 E-PROJ-UNPINNED)
+                    (let [guest (string-concat original (ck-r6b-lib original))
+                          s (string-concat guest (xw-rt-src))]
+                      (xw-report (xw-build (xg-front s) s (string-length guest)) src out)))))))

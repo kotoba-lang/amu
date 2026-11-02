@@ -401,6 +401,30 @@ def wasm32_browser(out, boot):
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
         compile_(src, wasm_dir / f"probe-{name}.wasm", f"probe-{name}-wasm32")
+    # Single-source Wasm locks must be verified, not silently discarded. The
+    # multi-module Wasm linker is a separate, still-unimplemented route.
+    src = out / "wasm-probe-document.kotoba"
+    source_lock = out / "wasm-document.ksl"
+    source_lock.write_text(f"KSL1\nentry {src}\nfile {pin(src)['sha256']} {src}\n")
+    locked_wasm = out / "wasm-document-locked.wasm"
+    lock_args = ["--source-lock", source_lock, "--source-lock-sha256", pin(source_lock)["sha256"]]
+    run.run("wasm-document-locked", [F, "compile", src, "--target", "wasm32-browser",
+                                     "--output", locked_wasm, *lock_args], senv)
+    assert pin(locked_wasm) == pin(wasm_dir / "probe-document.wasm"), "locked output changed"
+    bad_lock = out / "wasm-document-bad-source.ksl"
+    bad_lock.write_text(f"KSL1\nentry {src}\nfile {'0' * 64} {src}\n")
+    for name, lock, digest in (("bad-digest", source_lock, "0" * 64),
+                               ("bad-source", bad_lock, pin(bad_lock)["sha256"])):
+        refused = out / f"wasm-document-{name}.wasm"
+        r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
+                    "--output", refused, "--source-lock", lock, "--source-lock-sha256", digest], senv, success=False)
+        assert r.returncode != 0 and b"E6015" in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
+    for name, flags in (("missing-digest", ["--source-lock", source_lock]),
+                        ("project-roots", [*lock_args, "--source-path", out])):
+        refused = out / f"wasm-document-{name}.wasm"
+        r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
+                    "--output", refused, *flags], senv, success=False)
+        assert r.returncode != 0 and b"E7100" in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
     float_refusals = []
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
