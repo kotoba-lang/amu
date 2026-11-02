@@ -119,10 +119,10 @@
               (recur (+ i 1)) false)))))))
 
 ;; The worker emits D only after validating the producer's terminal command
-;; count. Verify readiness, zero to 512 K bytes, then exactly one D.
+;; count. Verify readiness, zero to 640 K bytes, then exactly one D.
 ;; Read after worker exit, so no live child blocks.
 (defn- sb-acks? [fd :i64 m :i64] :bool
-  (let [b (+ m 5000) max 537
+  (let [b (+ m 5000) max 665
         n (loop [at 0]
             (if (> at max) -1
               (let [r (kxrt-syscall 63 fd (+ b at) (- (+ max 1) at) 0 0 0)]

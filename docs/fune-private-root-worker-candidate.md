@@ -41,8 +41,8 @@ The `C` marker does not publish or persist the tree. Paths are at most 255
 printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
 file operations are at most 1 MiB each. A session admits at most 512 ordinary
 commands and 128 finalization commands before `C`, plus one optional diagnostic
-read afterward. The existing supervisor still caps acknowledgments at 512, so
-the full 640-command worker range is not yet integrated with it.
+read afterward. The candidate supervisor accepts up to 640 acknowledgments,
+matching this worker range.
 Directory and file access is rooted at the private root directory descriptor.
 Intermediate directory and final file opens use `openat2` with
 `RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`;

@@ -124,7 +124,8 @@ def parent_death(supervisor, worker, slow, root):
         os.close(pf)
 
 
-def main(supervisor, worker, producer, layouts, slow, large_digest, stress, wrong_count, no_commit, repeat_digest):
+def main(supervisor, worker, producer, layouts, slow, large_digest, stress, wrong_count, no_commit, repeat_digest,
+         limit_layout, limit_digest, overlimit_worker):
     good = invoke(supervisor, worker, producer, layouts / "plan-binary")
     assert good.returncode == 0 and good.stdout == b"fune-supervisor-ok\n" and not good.stderr, (good.returncode, good.stdout, good.stderr)
     # The worker image is aligned to 64 bytes; trailing bytes are ignored by
@@ -161,6 +162,12 @@ def main(supervisor, worker, producer, layouts, slow, large_digest, stress, wron
     if repeat_digest:
         repeated = invoke(supervisor, worker, producer, layouts / "plan-binary-repeat-dir", manifest_digest=repeat_digest)
         assert repeated.returncode == 0 and repeated.stdout == good.stdout and not repeated.stderr
+    if limit_layout:
+        limit = invoke(supervisor, worker, producer, limit_layout, manifest_digest=limit_digest)
+        assert limit.returncode == 0 and limit.stdout == good.stdout and not limit.stderr, (limit.returncode, limit.stderr)
+        if overlimit_worker:
+            overflow = invoke(supervisor, overlimit_worker, producer, limit_layout, manifest_digest=limit_digest)
+            assert overflow.returncode == 2 and not overflow.stdout, (overflow.returncode, overflow.stdout, overflow.stderr)
     if stress:
         pad = b"x" * (16777216 - worker.stat().st_size)
         at_limit = invoke(supervisor, worker, producer, layouts / "plan-binary", padding=pad)
@@ -179,6 +186,8 @@ def main(supervisor, worker, producer, layouts, slow, large_digest, stress, wron
               "largeLayerChecked": bool(large_digest), "parentDeathAndTimeoutChecked": slow is not None,
               "wrongCountChecked": wrong_count is not None, "missingCommitChecked": no_commit is not None,
               "repeatedDirectoryChecked": repeat_digest is not None,
+              "limitFixtureAccepted": limit_layout is not None,
+              "overlimitWorkerRefused": overlimit_worker is not None,
               "authenticatesDigestAuthority": False, "ociComplete": False, "releaseQualified": False}
     print(report["status"])
     return report
@@ -198,7 +207,12 @@ if __name__ == "__main__":
     p.add_argument("--wrong-count-producer", type=Path)
     p.add_argument("--no-commit-producer", type=Path)
     p.add_argument("--repeat-dir-digest")
+    p.add_argument("--limit-layout", type=Path, help="OCI layout with exactly 640 completed worker operations")
+    p.add_argument("--limit-digest", help="manifest digest for --limit-layout")
+    p.add_argument("--overlimit-worker", type=Path, help="test-only worker that emits one extra K at 640")
     a = p.parse_args()
+    assert bool(a.limit_layout) == bool(a.limit_digest), "limit layout and digest must be supplied together"
+    assert not a.overlimit_worker or a.limit_layout, "overlimit worker requires the limit layout"
     if a.compiler:
         assert a.output and not a.supervisor
         supervisor = build_candidate(a.compiler.resolve(), a.output.resolve())
@@ -208,7 +222,9 @@ if __name__ == "__main__":
     report = main(supervisor, a.worker.resolve(), a.producer.resolve(), a.layouts.resolve(),
                   a.slow_producer.resolve() if a.slow_producer else None, a.large_digest, a.stress,
                   a.wrong_count_producer.resolve() if a.wrong_count_producer else None,
-                  a.no_commit_producer.resolve() if a.no_commit_producer else None, a.repeat_dir_digest)
+                  a.no_commit_producer.resolve() if a.no_commit_producer else None, a.repeat_dir_digest,
+                  a.limit_layout.resolve() if a.limit_layout else None, a.limit_digest,
+                  a.overlimit_worker.resolve() if a.overlimit_worker else None)
     report["supervisorSource"] = digest(ROOT / "seed/fune/private-root-supervisor.kotoba")
     report["factorySourceMutationRejected"] = bool(a.compiler)
     if a.output:

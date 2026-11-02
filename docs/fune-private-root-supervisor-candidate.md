@@ -25,7 +25,7 @@ The worker output is kept on a separate pipe. Each child is given a parent-death
 signal and `no_new_privs`, and descriptors above stderr are marked close-on-exec.
 Only if the producer exits zero does the supervisor append the worker's hex
 shutdown byte. It then waits for the worker to exit zero and checks the exact
-readiness line, up to 512 `K` bytes, and a final `D`. The worker emits `D` only
+readiness line, up to 640 `K` bytes, and a final `D`. The worker emits `D` only
 when the producer's count matches the worker's completed operations, and then
 refuses further writes. A missing or mismatched terminal frame is a failure.
 The supervisor trusts the selected producer and worker to implement this
@@ -80,3 +80,14 @@ producer and task-owned test layouts can be supplied with `--slow-producer` and
 The optional `--stress` check exercises the executable image size boundary.
 Native x86, exact-head hosted CI, an authenticated digest authority, and a
 product supervisor integration remain open.
+
+## Acknowledgment boundary candidate
+
+A separate OCI fixture has four layers of 128 regular files. It produces 512
+create/update commands and 128 final-mode commands. On ARM64, the previous
+supervisor refused this fixture while direct producer/worker streaming
+completed and checked the mode. The source-pinned supervisor built by the regenerated ARM64 compiler
+accepted it; a debug-built worker that emitted one extra `K` was refused.
+The extra-ack worker was independently observed emitting 641 `K` bytes,
+and a debug supervisor mutant with its bound increased by one accepted it. The supervisor still trusts its authenticated worker and producer;
+the count is not a proof that a producer emitted all image entries.
