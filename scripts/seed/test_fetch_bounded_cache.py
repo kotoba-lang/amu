@@ -5,11 +5,12 @@ import os
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 from pathlib import Path
 
 from bounded_cache_bundle import _extract_sealed, pack
 from check_bounded_producer_attestation import exercise
-from fetch_bounded_cache import _artifact_matches, _download, _fetch_with_policy, _run_matches, _select_artifact, _unzip_exact, fetch_verified
+from fetch_bounded_cache import _artifact_matches, _call, _download, _fetch_with_policy, _run_matches, _select_artifact, _unzip_exact, fetch_verified
 from sealed_image import sealed_blob, sealed_image
 from verified_attestation import AttestationPolicy
 
@@ -102,6 +103,35 @@ class FetchControls(unittest.TestCase):
                     _unzip_exact(archive, output)
                 self.assertFalse(output.exists())
                 self.assertFalse((self.root / "escape").exists())
+
+    def test_metadata_stream_is_bounded_and_process_failure_is_refused(self):
+        # A pinned transport stub, never an attestation verifier.
+        stub = self.root / "metadata-stub"
+        def use(body):
+            stub.write_text("#!/usr/bin/python3\n" + body + "\n")
+            stub.chmod(0o500)
+            return hashlib.sha256(stub.read_bytes()).hexdigest()
+        env = {"PATH": "/usr/bin:/bin"}
+        pin = use("import os; os.write(1, b'{\"ok\":true}')")
+        with sealed_image(stub, pin) as (fd, _):
+            self.assertEqual(_call(fd, env, "fixture"), {"ok": True})
+        stub.chmod(0o700)
+        pin = use("import os; b=b'x'*65536\nfor _ in range(65): os.write(1,b)")
+        with sealed_image(stub, pin) as (fd, _), self.assertRaisesRegex(ValueError, "size limit"):
+            _call(fd, env, "fixture")
+        stub.chmod(0o700)
+        pin = use("import os; os.write(1,b'{}'); raise SystemExit(7)")
+        with sealed_image(stub, pin) as (fd, _), self.assertRaisesRegex(ValueError, "request failed"):
+            _call(fd, env, "fixture")
+        stub.chmod(0o700)
+        pin = use("import os; os.write(1,b'not-json')")
+        with sealed_image(stub, pin) as (fd, _), self.assertRaises(ValueError):
+            _call(fd, env, "fixture")
+        stub.chmod(0o700)
+        pin = use("import time; time.sleep(30)")
+        with sealed_image(stub, pin) as (fd, _), patch("fetch_bounded_cache.select.select", return_value=([], [], [])):
+            with self.assertRaisesRegex(TimeoutError, "timed out"):
+                _call(fd, env, "fixture")
 
     def test_download_stream_size_digest_and_process_failure(self):
         # A transport stub, not a provenance verifier or a compiler fallback.

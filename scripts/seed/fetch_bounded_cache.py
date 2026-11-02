@@ -97,11 +97,33 @@ def _unzip_exact(path, destination):
 
 
 def _call(gh_fd, env, endpoint):
-    result = subprocess.run([f"/proc/self/fd/{gh_fd}", "api", endpoint], env=env, pass_fds=(gh_fd,),
-                            capture_output=True, timeout=120, check=True)
-    if len(result.stdout) > 4 * 1024 * 1024:
-        raise ValueError("GitHub metadata exceeds size limit")
-    return json.loads(result.stdout)
+    # Bound the stream while reading it: capture_output would allocate all
+    # producer-controlled metadata before the length check could run.
+    limit, deadline = 4 * 1024 * 1024, time.monotonic() + 120
+    with tempfile.TemporaryFile() as errors:
+        proc = subprocess.Popen([f"/proc/self/fd/{gh_fd}", "api", endpoint], env=env,
+                                pass_fds=(gh_fd,), stdout=subprocess.PIPE, stderr=errors)
+        try:
+            chunks, total = [], 0
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([proc.stdout], [], [], remaining)[0]:
+                    raise TimeoutError("GitHub metadata request timed out")
+                data = os.read(proc.stdout.fileno(), min(1024 * 1024, limit + 1 - total))
+                if not data:
+                    break
+                total += len(data)
+                if total > limit:
+                    raise ValueError("GitHub metadata exceeds size limit")
+                chunks.append(data)
+            if proc.wait(timeout=max(0.1, deadline - time.monotonic())) != 0:
+                raise ValueError("GitHub metadata request failed")
+        finally:
+            proc.stdout.close()
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+    return json.loads(b"".join(chunks))
 
 
 def _download(gh_fd, env, artifact, output):
