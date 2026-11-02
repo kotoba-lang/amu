@@ -8,6 +8,8 @@ import importlib.util
 import json
 import os
 import platform
+import signal
+import time
 import shutil
 import struct
 import subprocess
@@ -63,16 +65,72 @@ def main():
         observations.extend(actual); expected.extend(plan)
         records.append(dict(name=name, actual=actual, expected=plan))
 
-    def call(name, body=None, budget=1, root=cache, overrides=None, pin=None, code=0, status=0, spent=1, value=42, marker="CACHE_HIT\n", diagnostic=None, selected=compiler, selected_host=host):
+    def call(name, body=None, budget=1, root=cache, overrides=None, pin=None, code=0, status=0, spent=1, value=42, marker="CACHE_HIT\n", diagnostic=None, selected=compiler, selected_host=host, delayed_parent=False, early_kill=False):
         source = out / (name + ".cbor"); source.write_bytes(r.v.encode(r.v.program(r.v.const(42) if body is None else body)))
         lines = ["KTI64RUN3", str(root), str(source), cid(source.read_bytes()), str(selected), compiler_sha if selected == compiler else digest(selected),
                  a.source_sha256, "x86_64-linux", str(budget), "262144", "0", "0", "0", "0", "none", "allow"]
         for i, v in (overrides or {}).items():
             lines[i] = v
         request = out / (name + ".request"); request.write_text("\n".join(lines) + "\n")
-        result = subprocess.run([str(selected_host), str(request), digest(request) if pin is None else pin],
-                                env={"PATH": "/nonexistent", "KEXE_ALLOW": "all", "KEXE_FUEL": "9007199254740991"},
-                                capture_output=True, timeout=140)
+        argv = [str(selected_host), str(request), digest(request) if pin is None else pin]
+        run_env = {"PATH": "/nonexistent", "KEXE_ALLOW": "all", "KEXE_FUEL": "9007199254740991"}
+        if delayed_parent:
+            # Observe the actual child under its existing CPU limit while the host
+            # cannot reap it. This exercises the wait4/deadline race, not a cached verdict.
+            proc = subprocess.Popen(argv, env=run_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stopped = False
+            try:
+                limit = time.monotonic() + 30
+                child = None
+                while time.monotonic() < limit and proc.poll() is None:
+                    children = Path(f"/proc/{proc.pid}/task/{proc.pid}/children").read_text().split()
+                    if children:
+                        child = int(children[0]); break
+                    time.sleep(0.01)
+                assert child is not None, "deadline control child did not start"
+                os.kill(proc.pid, signal.SIGSTOP); stopped = True
+                deadline = time.monotonic() + 300
+                status = None
+                while time.monotonic() < deadline:
+                    try:
+                        raw = Path(f"/proc/{child}/stat").read_text()
+                        fields = raw[raw.rfind(")") + 2:].split()
+                        if fields[0] == "Z":
+                            status = fields; break
+                    except FileNotFoundError:
+                        break
+                    time.sleep(0.1)
+                # Linux proc stat: fields 14/15 are CPU ticks, field 52 exit status.
+                killed_at_limit = int(status is not None and int(status[49]) == 9 and
+                                      int(status[11]) + int(status[12]) >= 119 * os.sysconf("SC_CLK_TCK"))
+                observe("deadline-cpu-limit-control", [killed_at_limit], [1])
+                os.kill(proc.pid, signal.SIGCONT); stopped = False
+                stdout, stderr = proc.communicate(timeout=30)
+                result = subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+            finally:
+                if stopped:
+                    os.kill(proc.pid, signal.SIGCONT)
+                if proc.poll() is None:
+                    proc.kill(); proc.wait()
+        elif early_kill:
+            proc = subprocess.Popen(argv, env=run_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                limit = time.monotonic() + 30
+                child = None
+                while time.monotonic() < limit and proc.poll() is None:
+                    children = Path(f"/proc/{proc.pid}/task/{proc.pid}/children").read_text().split()
+                    if children:
+                        child = int(children[0]); break
+                    time.sleep(0.01)
+                assert child is not None, "early-kill control child did not start"
+                os.kill(child, signal.SIGKILL)
+                stdout, stderr = proc.communicate(timeout=30)
+                result = subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+            finally:
+                if proc.poll() is None:
+                    proc.kill(); proc.wait()
+        else:
+            result = subprocess.run(argv, env=run_env, capture_output=True, timeout=140)
         words = list(struct.unpack("<8q", result.stdout)) if len(result.stdout) == 64 else [0] * 8
         planned = [0] * 8 if code == 2 else [r.MAGIC, status, value if status == 0 else 0, budget, spent, budget - spent, 0, r.STACK]
         want_error = marker.encode() + (f"CDCI:E{diagnostic}\n".encode() if diagnostic else b"")
@@ -152,6 +210,14 @@ def main():
         control_host.chmod(0o755); deadline = out / "deadline"; deadline.mkdir(mode=0o700)
         call("compile-deadline", root=deadline, selected=spin, selected_host=control_host, code=2, marker="CACHE_MISS\n", diagnostic=4203)
         observe("deadline-cleanup", [len(list(deadline.iterdir()))], [0])
+        race = out / "deadline-race"; race.mkdir(mode=0o700)
+        call("compile-deadline-race", root=race, selected=spin, selected_host=control_host,
+             code=2, marker="CACHE_MISS\n", diagnostic=4203, delayed_parent=True)
+        observe("deadline-race-cleanup", [len(list(race.iterdir()))], [0])
+        killed = out / "early-kill"; killed.mkdir(mode=0o700)
+        call("compile-killed-early", root=killed, selected=spin, selected_host=control_host,
+             code=2, marker="CACHE_MISS\n", diagnostic=4204, early_kill=True)
+        observe("early-kill-cleanup", [len(list(killed.iterdir()))], [0])
     template = out / "host.kotoba"; saved = template.read_bytes(); template.write_bytes(saved + b"\n")
     refused = build_host(out / "unreviewed-host.elf", compiler_sha)
     observe("factory-source-pin", [refused.returncode, int((out / "unreviewed-host.elf").exists())], [1, 0]); template.write_bytes(saved)

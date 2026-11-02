@@ -238,7 +238,10 @@
           (= pid 0) (kn-child image args input output error seconds)
           :else (loop [attempt 0]
             (let [r (kxrt-syscall 61 pid (+ (kc-g) 64) 1 0 0 0)]
-              (cond (= r pid) (kc-get 64)
+              (cond (= r pid) (let [status (kc-get 64)]
+                                    ;; A CPU-limit SIGKILL observed after the wall deadline
+                                    ;; is still a deadline refusal. Other failures stay failures.
+                                    (if (and (= status 9) (>= (- (kc-now) start) seconds)) -1 status))
                     (and (< r 0) (not= r -4)) (kc-fail 4201)
                     (>= (- (kc-now) start) seconds)
                     (let [kill (kxrt-syscall 62 pid 9 0 0 0 0)
