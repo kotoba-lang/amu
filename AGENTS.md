@@ -1,5 +1,18 @@
 # Agent rules
 
+## Product introduction and performance evidence
+
+Describe Amu as the native compiler for Kotoba's Lisp machine in development.
+Lisp's programs-as-data and composable forms motivate the work; do not describe
+interactive machine capabilities as shipped without their own evidence.
+
+The 2026-10-15 M4 observation measured translated Kotoba ports at 0.80× C
+execution time across 19 Embench workloads for a specific compiler snapshot,
+with one sample per workload and audited algorithm substitutions. This is not
+an official score, a measurement of the current released compiler or a
+universal speed ranking. Keep the boundary and audit with the number:
+https://kotoba-lang.org/blog/embench-c-parity-20261015/.
+
 ## Selfhost is the top priority
 
 - Use canonical `.kotoba` source and an Amu-built native compiler for the
