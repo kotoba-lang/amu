@@ -152,3 +152,27 @@ one-time object SHA-256 is
 `fa15bf0d33caf6b74f62971fac919ae1ea19836f370218679c5e6b0a6a6f1051`.
 Native build/test use only the checked-in Kotoba words, not the reference,
 clang, an assembler, C or a C loader.
+
+## Native terminal-choice fixture
+
+`TMPDIR=/workspace/scratch ./check-macos-tty.sh` builds an Amu-generated,
+fixed-message macOS ARM64 executable. It makes sure stdin and stdout are
+terminals with the same nonzero device number, displays a warning naming only
+the marked 4 MiB **test fixture**, and accepts exactly `YES` plus newline.
+An observer supplies synthetic PTY responses and verifies yes, no, extra input,
+non-terminal pipes and different terminals. The executable performs no disk
+I/O, creates no authorization grant and does not take a disk path or identity.
+A PTY can be driven by another process: this is not evidence of a human choice
+or a trusted approval, nor can the static message authorize a real device. It
+is not linked to the disk writer, the guard or a native host.
+
+The inert `tty-approval-reference.txt` was derived once using Apple clang
+21.0.0 (clang-2100.1.1.101), `clang -target arm64-apple-macos -c
+ tty-approval.s`, followed by `xcrun llvm-objdump --macho --section=__text
+--full-contents`. The reference SHA-256 is
+`d28c642a7b4813bec172310a80af79a2a393293c08a74b0c068ad7af1fa51cfa`;
+the one-time object SHA-256 is
+`ecec5d9b6d99cd3f21694a14db7f41e83a6b790fdda5c293ee59cb3f03a8ee93`.
+The native build/test use checked-in Kotoba words, not the assembly reference,
+clang, an assembler, C or a C loader. Python operates the synthetic PTYs and
+observes the compiled program; it does not supply a real user decision.
