@@ -20,9 +20,11 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'test/fixtures/selfhost/safety-boundaries'
 REFUSALS = {'internal-17': 'E2178', 'exported-9': 'E2108',
             'unknown-op': 'E2101', 'unbound': 'E2102',
-            'duplicate-ns': 'E2004', 'namespace-extra': 'E6021'}
+            'duplicate-ns': 'E2004', 'namespace-extra': 'E6021',
+            'fs-empty-capabilities': 'E2176', 'fs-wrong-capability': 'E2176'}
 POSITIVES = {'arity-positive': (b') 136)', b') 135)'),
-             'metadata-positive': (b'(sequence) 2)', b'(sequence) 3)')}
+             'metadata-positive': (b'(sequence) 2)', b'(sequence) 3)'),
+             'fs-positive': (b') 3)', b') 4)')}
 
 
 def sha(path):
@@ -43,6 +45,7 @@ def main():
     inputs = [compiler, packager, Path(__file__).resolve(), *fixtures]
     pins = {str(p): sha(p) for p in inputs}
     out = a.output.resolve(); out.mkdir(parents=True, exist_ok=False)
+    (out / 'data').write_bytes(b'abc')  # Explicit test-only FD3 file grant.
     for p in fixtures: shutil.copyfile(p, out / p.name)
     for name, (old, new) in POSITIVES.items():
         source = (out / (name + '.kotoba')).read_bytes()
