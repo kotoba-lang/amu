@@ -234,3 +234,32 @@ One-time object SHA-256:
 The native build/test consume checked-in Kotoba words, not clang, assembler,
 C, a C loader or the inert reference. The temporary image is detached only
 after an independent image-path/device association check.
+
+## Multiple sample control
+
+`TMPDIR=/workspace/scratch ./check-macos-raw-samples.sh` extends the combined
+choice fixture to four fixed, aligned positions in its private 4 MiB virtual
+image. The Amu-generated native code writes four address-tagged test blocks,
+flushes, reads them and compares each complete 512-byte block. The harness
+compares the entire backing image with independently staged expected bytes.
+It also builds a deliberate mutation which forces all writes onto one offset;
+the native reader must reject that mutation, and the observed image must match
+that mutation's independently staged bytes. Synthetic `NO` and no-TTY cases
+must leave all four sample sectors untouched. This is a deliberately injected
+software alias, not a real counterfeit-controller measurement.
+
+These fixed sample offsets and deterministic fixture tags do not implement the
+F3 algorithm or establish the capacity or durability of any physical disk.
+The fixture has no physical-device identity, exclusive claim or trusted human
+approval. Never pass it a physical disk. PTY responses are injected by the test.
+
+The inert `raw-samples-reference.txt` was derived once on 2026-11-02 using
+Apple clang 21.0.0 (clang-2100.1.1.101),
+`clang -target arm64-apple-macos -c raw-samples.s`, followed by
+`xcrun llvm-objdump --macho --section=__text --full-contents`. Reference
+SHA-256: `3a1ea9f1499252e0dfd0be11cd686043f278a5978dadfb9f286e57a841b1f8b6`.
+One-time object SHA-256:
+`8aed640e7b0389e6ee6fe0e0b39d88e93baf02d2f0c955c0756bdbd89bce3603`.
+The checked-in Kotoba emits the native code; normal build/test do not execute
+the reference, clang, an assembler, C or a C loader. Python stages independent
+fixture bytes and drives synthetic PTY choices; it does not supply human consent.
