@@ -1,6 +1,6 @@
 ;; Fixed-source ARM64 private-root worker candidate (JUN-779).
 ;; No OCI input, archive operations, exec or workload launch is admitted.
-;; The only protocol byte is X: close the worker and its private tmpfs.
+;; Private root operations are bounded, with X closing the worker and tmpfs.
 ;; This text is appended as privileged runtime only by a source-pinned factory.
 
 (defn- fw-die [stage :i64] :i64
@@ -43,6 +43,85 @@
     (let [r (kxrt-syscall 63 fd address 1 0 0 0)]
       (if (= r -4) (recur (+ attempt 1)) r))))
 
+;; Exact bounded protocol I/O. Unexpected EOF or syscall failure kills the
+;; worker and its private mount: no partially written tree is published.
+(defn- fw-read-exact [fd :i64 address :i64 count :i64 stage :i64] :i64
+  (loop [done 0]
+    (if (= done count) 0
+      (let [r (kxrt-syscall 63 fd (+ address done) (- count done) 0 0 0)]
+        (cond (= r -4) (recur done) (<= r 0) (fw-die stage) :else (recur (+ done r)))))))
+(defn- fw-path-ok? [path :i64 n :i64] :bool
+  (if (or (<= n 0) (> n 255)) false
+    (loop [i 0 start 0]
+      (if (or (= i n) (= (kxrt-load8 (+ path i)) 47))
+        (let [len (- i start)]
+          (cond (= len 0) false
+                (and (= len 1) (= (kxrt-load8 (+ path start)) 46)) false
+                (and (= len 2) (= (kxrt-load8 (+ path start)) 46) (= (kxrt-load8 (+ path start 1)) 46)) false
+                (and (>= len 4) (= (kxrt-load8 (+ path start)) 46)
+                     (= (kxrt-load8 (+ path start 1)) 119) (= (kxrt-load8 (+ path start 2)) 104)
+                     (= (kxrt-load8 (+ path start 3)) 46)) false
+                (= i n) true :else (recur (+ i 1) (+ i 1))))
+        (let [c (kxrt-load8 (+ path i))]
+          (if (or (< c 32) (> c 126)) false (recur (+ i 1) start)))))))
+
+;; openat2: RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS.
+;; No fallback to openat on kernels that do not implement the confinement.
+(defn- fw-openat2 [dir :i64 path :i64 flags :i64 mode :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) mode)
+        c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 dir path how 24 0 0)))
+(defn- fw-last-slash [path :i64 n :i64] :i64
+  (loop [i 0 last -1]
+    (if (= i n) last
+      (recur (+ i 1) (if (= (kxrt-load8 (+ path i)) 47) i last)))))
+(defn- fw-file-data [fd :i64 buf :i64 size :i64 write? :bool] :i64
+  (loop [left size]
+    (if (= left 0) 0
+      (let [n (if (> left 4096) 4096 left)
+            source (if write? 0 fd) target (if write? fd 1)
+            got (fw-read-exact source buf n 18)
+            sent (if (= (kxrt-write-all target buf n) 1) 0 (fw-die 18))]
+        (recur (- left n))))))
+
+;; Protocol: X closes; M/F/U/R then two-byte big-endian path length,
+;; four-byte big-endian payload length and ASCII path. M creates a directory;
+;; F creates a new file; U replaces an existing file; R reads the requested
+;; exact number of bytes. F/U are followed by that many bytes. Each successful
+;; command writes K; R follows K with data. Modes are fixed to 0700/0600.
+;; Malformed requests and I/O errors terminate the whole worker, not just a
+;; command. The controller must discard the tree on all errors.
+(defn- fw-commands [root :i64 mem :i64] :i64
+  (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
+    (loop [operations 0]
+      (let [got (fw-read-one 0 head) op (if (= got 1) (kxrt-load8 head) -1)]
+        (cond (= op 88) (kxrt-exit 0)
+              (or (< got 1) (>= operations 512) (not (or (= op 77) (= op 70) (= op 85) (= op 82)))) (fw-die 15)
+              :else (let [header (fw-read-exact 0 head 6 16)
+                          n (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
+                          size (+ (* 16777216 (kxrt-load8 (+ head 2))) (* 65536 (kxrt-load8 (+ head 3)))
+                                  (* 256 (kxrt-load8 (+ head 4))) (kxrt-load8 (+ head 5)))
+                          checked (if (or (<= n 0) (> n 255) (> size 1048576) (and (= op 77) (not (= size 0)))) (fw-die 16) 0)
+                          received (fw-read-exact 0 path n 16) term (kxrt-store8 (+ path n) 0)
+                          valid (if (fw-path-ok? path n) 0 (fw-die 16))
+                          slash (fw-last-slash path n)
+                          cut (if (>= slash 0) (kxrt-store8 (+ path slash) 0) 0)
+                          parent (if (>= slash 0) (fw-openat2 root path 2670592 0 how) root)
+                          parent-ok (if (< parent 0) (fw-die 17) 0)
+                          leaf (if (>= slash 0) (+ path (+ slash 1)) path)
+                          status (if (= op 77)
+                                   (if (< (kxrt-syscall 34 parent leaf 448 0 0 0) 0) (fw-die 17) 0)
+                                   (let [flags (cond (= op 70) 557249 (= op 85) 557057 :else 557056)
+                                         fd (fw-openat2 parent leaf flags (if (= op 70) 384 0) how)
+                                         opened (if (< fd 0) (fw-die 17) 0)
+                                         trunc (if (and (= op 85) (< (kxrt-syscall 46 fd 0 0 0 0 0) 0)) (fw-die 17) 0)
+                                         ack (if (= op 82) (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))) 0)
+                                         transfer (fw-file-data fd buf size (not (= op 82)))
+                                         close (fw-close fd 18)] 0))
+                          parent-close (if (>= slash 0) (fw-close parent 18) 0)
+                          reply (if (= op 82) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
+                      (recur (+ operations 1))))))))
+
 ;; The child has no host directory descriptors, never executes an image and
 ;; dies if its parent disappears. It cannot proceed until the original-UID
 ;; parent has installed both maps.
@@ -64,8 +143,11 @@
         out (+ b 256)
         a (kxrt-w out (kxrt-w out (kxrt-w out 0 0x6972702d656e7566 8) 0x6f6f722d65746176 8) 0x0a79646165722d74 8)
         announced (if (not= (kxrt-write-all 1 out a) 1) (fw-die 14) 0)
-        command (fw-read-one 0 buf)]
-    (if (and (= command 1) (= (kxrt-load8 buf) 88)) (kxrt-exit 0) (fw-die 15))))
+        root (kxrt-open-path (+ b 192) 2670592 0)
+        root-ok (if (< root 0) (fw-die 14) 0)
+        mem (kxrt-syscall 222 0 16384 3 34 -1 0)
+        mem-ok (if (< mem 0) (fw-die 14) 0)]
+    (fw-commands root mem)))
 
 (defn- fw-parent [pid :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 uid :i64 gid :i64 b :i64] :i64
   (let [c1 (fw-close ready-w 5) c2 (fw-close ack-r 5) buf (+ b 320)

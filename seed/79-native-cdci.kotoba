@@ -43,14 +43,14 @@
 
 ;; Closed ARM64 fune worker factory. Only this exact reviewed runtime source
 ;; may access the privileged native intrinsics; arbitrary guest sources cannot.
-;; The current worker provides private tmpfs lifetime only and cannot exec.
+;; The current worker provides private tmpfs and bounded file operations; it cannot exec.
 (defn- xf-command [] :i64
   (cond (or (not= (io-argc) 4) (not (string=? (io-arg 1) "aarch64-linux"))
             (= (string-length (io-arg 3)) 0)) (drv-usage)
         (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
         (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
-          (if (string=? (sh-text host) "4e1ef8ea229d766913ed7dba27eb1b64cf204a6777e8b74bfd394e1bc40bbf2f")
+          (if (string=? (sh-text host) "d737d9c176f99fca0ce93d7a0295e2bc303a8342ae7b363ee6e8a70d6a269071")
             (let [guest "(ns fune-private-root (:export [main]))\n(defn main [] :i64 0)\n"
                   rt (string-concat (xa-rt-core-profile 0) host)
                   text (string-concat guest rt)

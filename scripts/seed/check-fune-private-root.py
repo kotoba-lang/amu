@@ -2,7 +2,7 @@
 """Build and observe the fixed-source ARM64 private-root worker candidate.
 
 The supplied Amu native compiler owns the build; this host observer drives the
-worker's one-byte protocol and inspects only its own children. This does not
+worker's bounded protocol and inspects only its own children. This does not
 qualify OCI extraction, container isolation, a cgroup or a release.
 """
 import argparse
@@ -11,6 +11,7 @@ import json
 import os
 import platform
 import select
+import struct
 import subprocess
 import time
 from pathlib import Path
@@ -55,6 +56,18 @@ def main(compiler, out):
     inherited = os.open(sentinel, os.O_RDONLY)
     outside = outside_identity()
     observations = []
+
+    def frame(op, path, size, data=b""):
+        path = path.encode("ascii")
+        return op + struct.pack(">HI", len(path), size) + path + data
+
+    def exchange(p, op, path, size=0, data=b"", answer=0):
+        p.stdin.write(frame(op, path, size, data))
+        p.stdin.flush()
+        ready, _, _ = select.select([p.stdout], [], [], 20)
+        assert ready, "worker command timed out"
+        assert p.stdout.read(1) == b"K"
+        return p.stdout.read(answer)
 
     def start():
         p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -118,6 +131,66 @@ def main(compiler, out):
             assert outside_identity() == outside
             observations.append({"case": "close" if command == b"X" else "invalid-command",
                                  "exit": p.returncode, "procRootDenied": proc_denied})
+
+        p, child, proc_denied = start()
+        try:
+            assert exchange(p, b"M", "bin") == b""
+            assert exchange(p, b"F", "bin/hello", 7, b"abc\x00xyz") == b""
+            assert exchange(p, b"R", "bin/hello", 7, answer=7) == b"abc\x00xyz"
+            assert exchange(p, b"U", "bin/hello", 3, b"new") == b""
+            assert exchange(p, b"R", "bin/hello", 3, answer=3) == b"new"
+            payload = bytes(range(256)) * 65 + b"end"
+            assert exchange(p, b"M", "bin/sub") == b""
+            assert exchange(p, b"F", "bin/sub/large", len(payload), payload) == b""
+            assert exchange(p, b"R", "bin/sub/large", len(payload), answer=len(payload)) == payload
+            maximum = bytes(range(256)) * 4096
+            assert exchange(p, b"F", "max", len(maximum), maximum) == b""
+            assert exchange(p, b"R", "max", len(maximum), answer=len(maximum)) == maximum
+            stdout, stderr = p.communicate(b"X", timeout=20)
+            assert p.returncode == 0 and not stdout and not stderr
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
+        assert outside_identity() == outside
+        observations.append({"case": "private-file-roundtrip", "binaryBytes": 7,
+                             "replaceBytes": 3, "multiChunkBytes": len(payload), "maxFileBytes": len(maximum),
+                             "procRootDenied": proc_denied})
+
+        # Each refusal kills the worker and therefore drops the entire tmpfs.
+        for name, request in (
+            ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
+            ("parent", frame(b"F", "../fune-escape", 1, b"x")),
+            ("whiteout", frame(b"F", ".wh.test", 1, b"x")),
+            ("empty-component", frame(b"F", "bin//file", 1, b"x")),
+            ("dot-component", frame(b"F", "bin/./file", 1, b"x")),
+            ("missing-parent", frame(b"F", "missing/file", 1, b"x")),
+            ("missing-replacement", frame(b"U", "missing", 1, b"x")),
+            ("oversize", frame(b"F", "large", 1048577)),
+            ("short-payload", frame(b"F", "partial", 5, b"xy")),
+            ("short-header", b"F\x00"),
+        ):
+            p, child, proc_denied = start()
+            stdout, stderr = p.communicate(request, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:" in stderr, (name, p.returncode, stdout, stderr)
+            assert outside_identity() == outside
+            observations.append({"case": name, "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "once", 1, b"x") == b""
+        stdout, stderr = p.communicate(frame(b"F", "once", 1, b"y"), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:" in stderr
+        assert outside_identity() == outside
+        observations.append({"case": "duplicate-create", "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "empty", 0, b"") == b""
+        for _ in range(511):
+            assert exchange(p, b"R", "empty", 0, answer=0) == b""
+        stdout, stderr = p.communicate(frame(b"R", "empty", 0), timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        assert outside_identity() == outside
+        observations.append({"case": "operation-limit", "accepted": 512, "exit": p.returncode})
 
         p, child, proc_denied = start()
         p.kill()

@@ -5,9 +5,9 @@
 factory rejects changed host source and existing output paths. It is not a
 general facility for arbitrary guest source to access runtime intrinsics.
 
-The current worker accepts **no OCI data and executes no workload**. It has
-only a one-byte shutdown protocol: after setup it prints
-`fune-private-root-ready`, accepts `X` and exits; every other input refuses.
+The current worker accepts **no OCI archives and executes no workload**. After
+setup it prints `fune-private-root-ready` and accepts bounded file commands or
+`X` to exit. It uses fixed modes 0700 for directories and 0600 for files.
 The parent starts a child and supplies a single-ID user/group mapping through
 proc after a pipe handshake. The child installs a parent-death signal and
 checks its parent, enters user, mount and network namespaces, makes mount
@@ -16,6 +16,26 @@ its own `/tmp`. It creates `/tmp/rootfs` there, marks itself non-dumpable and
 sets `no_new_privs`. Extra inherited FDs are closed before the child is made.
 The worker exits on failed setup rather than falling back to host staging.
 The mount is held only by the child namespace; no named host tree is published.
+
+The binary protocol uses an operation byte `M`, `F`, `U`, or `R`, then a
+big-endian 16-bit path length, big-endian 32-bit byte count, and path bytes.
+`M` creates a directory and requires count zero; `F` creates a new file;
+`U` truncates and replaces an existing file; `R` reads the requested prefix.
+`F`/`U` are followed by count data bytes. `M`/`F`/`U` write `K` after the
+operation. `R` writes `K` before returning the requested bytes; it can still
+fail partway through, so `K` is not a successful-read verdict and the caller
+must receive every byte. There is no separate final read acknowledgment.
+`X` has no following fields and exits. Paths are at most 255
+printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
+file operations are at most 1 MiB each and the session is at most 512 commands.
+Directory and file access is rooted at the private root directory descriptor.
+Intermediate directory and final file opens use `openat2` with
+`RESOLVE_BENEATH`, `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`;
+unsupported `openat2`, invalid input and I/O errors terminate the worker and
+discard the private mount, with no fallback. Directories must already exist
+before their children. A failed update can leave partial data in the temporary
+tree until process exit; it must never be published. This is a diagnostic
+protocol, not an OCI layer admission or transactional rootfs interface.
 
 The parent sets itself dumpable to permit proc mapping on some Linux systems
 and remains dumpable for its lifetime. This candidate does not establish a
@@ -40,6 +60,22 @@ worker source was rejected by the factory. Root execution refused; a separate
 disposable container with an explicit seccomp rule returning EPERM for
 `unshare` also refused before readiness. The test-only seccomp profile allowed
 other syscalls and is not a production sandbox.
+The updated worker also created, read and replaced binary files, including a
+16,643-byte nested file and a file at the 1 MiB operation limit across
+multiple 4 KiB chunks; it rejected absolute,
+parent/dot/empty-component and whiteout paths, missing parents, duplicate
+creates, missing replacement targets, overlong payloads, truncated headers
+and truncated payloads. The observer checked that the outer `/tmp/rootfs`
+entry was unchanged. In a disposable container the same nested create passed
+with `openat2` permitted and refused before acknowledgment when a test-only
+seccomp rule denied it. A separately built mutant that removed exclusive
+creation accepted the duplicate and failed its negative control. These checks
+do not establish an adversarial same-principal boundary, OCI validation,
+cross-process controller authentication, or a secure launcher.
+In another test-only worker with an injected in-root symlink, updating through
+the symlink was refused. A separate mutant disabling both the no-symlink
+resolution rule and the final no-follow flag accepted that update and failed
+the control. The normal worker itself provides no command to create links.
 In a disposable container, an independent outer-directory check passed with
 the normal worker and failed when a source-pinned test mutant skipped the
 tmpfs mount; this checks detection of that particular missing boundary.
