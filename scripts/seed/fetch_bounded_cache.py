@@ -16,47 +16,49 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path
+from urllib.parse import urlencode
 
 from bounded_cache_bundle import verified_extract
 from sealed_image import MAX_IMAGE_BYTES, sealed_image
-from verified_attestation import AttestationPolicy
+from verified_attestation import AttestationPolicy, _validate
 
 REPO = "kotoba-lang/amu"
 REPO_ID = 1297097065
 WORKFLOW = ".github/workflows/bounded-cache-producer.yml"
+PREFIX = "experimental-bounded-kir-producer-"
 
 
 class CacheUnavailable(Exception):
     """No successful producer exists for this exact source revision."""
 
 
-def _run_matches(row, sha):
+def _run_matches(row, sha, branch="main", workflow=WORKFLOW):
     return (row.get("event") == "push" and row.get("status") == "completed" and
-            row.get("conclusion") == "success" and row.get("head_branch") == "main" and
-            row.get("head_sha") == sha and row.get("path") == WORKFLOW and
+            row.get("conclusion") == "success" and row.get("head_branch") == branch and
+            row.get("head_sha") == sha and row.get("path") == workflow and
             row.get("repository", {}).get("id") == REPO_ID and
             row.get("head_repository", {}).get("id") == REPO_ID and
             type(row.get("id")) is int and row["id"] > 0)
 
 
-def _artifact_matches(row, run_id, sha):
+def _artifact_matches(row, run_id, sha, branch="main", prefix=PREFIX):
     run = row.get("workflow_run") or {}
-    return (row.get("name") == "experimental-bounded-kir-producer-" + sha and
+    return (row.get("name") == prefix + sha and
             row.get("expired") is False and type(row.get("id")) is int and row["id"] > 0 and
             type(row.get("size_in_bytes")) is int and 0 < row["size_in_bytes"] <= MAX_IMAGE_BYTES and
             bool(re.fullmatch(r"sha256:[0-9a-f]{64}", row.get("digest") or "")) and
             run.get("id") == run_id and run.get("repository_id") == REPO_ID and
-            run.get("head_repository_id") == REPO_ID and run.get("head_branch") == "main" and
+            run.get("head_repository_id") == REPO_ID and run.get("head_branch") == branch and
             run.get("head_sha") == sha)
 
 
-def _select_artifact(rows, run_id, sha):
-    candidates = [a for a in rows if a.get("name") == "experimental-bounded-kir-producer-" + sha]
+def _select_artifact(rows, run_id, sha, branch="main", prefix=PREFIX):
+    candidates = [a for a in rows if a.get("name") == prefix + sha]
     if len(candidates) > 1:
         raise ValueError("ambiguous producer artifacts")
     if not candidates or candidates[0].get("expired") is True:
         return None
-    if not _artifact_matches(candidates[0], run_id, sha):
+    if not _artifact_matches(candidates[0], run_id, sha, branch, prefix):
         raise ValueError("producer artifact metadata mismatch")
     return candidates[0]
 
@@ -139,17 +141,29 @@ def fetch_verified(source_sha, gh, gh_sha256, destination):
     if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
         raise ValueError("source revision must be an immutable SHA")
     policy = AttestationPolicy(REPO, str(REPO_ID), WORKFLOW, "refs/heads/main", source_sha, source_sha, "push")
+    return _fetch_with_policy(policy, PREFIX, gh, gh_sha256, destination)
+
+
+def _fetch_with_policy(policy, prefix, gh, gh_sha256, destination):
+    """Private fixture hook: policy and prefix must be chosen by a trusted host."""
+    _validate(policy)
+    if (policy.repository != REPO or policy.repository_id != str(REPO_ID) or policy.trigger != "push" or
+        not re.fullmatch(r"[a-z0-9-]{1,100}-", prefix)):
+        raise ValueError("untrusted producer policy")
+    source_sha = policy.source_sha
+    branch = policy.ref.removeprefix("refs/heads/")
+    workflow_name = policy.workflow.rsplit("/", 1)[-1]
     with tempfile.TemporaryDirectory(prefix="bounded-fetch-") as temp:
         env = {"PATH": "/usr/bin:/bin", "GH_HOST": "github.com", "GH_PROMPT_DISABLED": "1",
                "HOME": temp, "GH_CONFIG_DIR": temp}
         if "GH_TOKEN" in os.environ:
             env["GH_TOKEN"] = os.environ["GH_TOKEN"]
         with sealed_image(gh, gh_sha256) as (fd, _):
-            endpoint = (f"repos/{REPO}/actions/workflows/bounded-cache-producer.yml/runs"
-                        f"?event=push&branch=main&status=success&head_sha={source_sha}&per_page=100")
+            query = urlencode(dict(event="push", branch=branch, status="success", head_sha=source_sha, per_page=100))
+            endpoint = f"repos/{REPO}/actions/workflows/{workflow_name}/runs?{query}"
             listing = _call(fd, env, endpoint)
             rows = listing.get("workflow_runs", [])
-            if any(not _run_matches(r, source_sha) for r in rows):
+            if any(not _run_matches(r, source_sha, branch, policy.workflow) for r in rows):
                 raise ValueError("producer run metadata mismatch")
             runs = sorted(rows, key=lambda r: r["id"], reverse=True)
             selected = None
@@ -157,7 +171,7 @@ def fetch_verified(source_sha, gh, gh_sha256, destination):
                 listing = _call(fd, env, f"repos/{REPO}/actions/runs/{run['id']}/artifacts?per_page=100")
                 if listing.get("total_count", 0) > 100:
                     raise ValueError("too many artifacts for an unambiguous producer")
-                selected = _select_artifact(listing.get("artifacts", []), run["id"], source_sha)
+                selected = _select_artifact(listing.get("artifacts", []), run["id"], source_sha, branch, prefix)
                 if selected:
                     break
             if selected is None:

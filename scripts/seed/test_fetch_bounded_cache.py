@@ -9,8 +9,9 @@ from pathlib import Path
 
 from bounded_cache_bundle import _extract_sealed, pack
 from check_bounded_producer_attestation import exercise
-from fetch_bounded_cache import _artifact_matches, _download, _run_matches, _select_artifact, _unzip_exact, fetch_verified
+from fetch_bounded_cache import _artifact_matches, _download, _fetch_with_policy, _run_matches, _select_artifact, _unzip_exact, fetch_verified
 from sealed_image import sealed_blob, sealed_image
+from verified_attestation import AttestationPolicy
 
 SHA = "a" * 40
 REPO = 1297097065
@@ -58,6 +59,22 @@ class FetchControls(unittest.TestCase):
             _select_artifact([dict(artifact, digest="forged")], 42, SHA)
         with self.assertRaises(ValueError):
             fetch_verified("main", "/nonexistent", "0" * 64, self.root / "out")
+
+    def test_preview_policy_is_explicit_and_never_matches_main_defaults(self):
+        branch = "codex/task-branch"
+        workflow = ".github/workflows/bounded-cache-preview.yml"
+        run = dict(id=42, event="push", status="completed", conclusion="success", head_branch=branch,
+                   head_sha=SHA, path=workflow, repository={"id": REPO}, head_repository={"id": REPO})
+        ref = dict(id=42, repository_id=REPO, head_repository_id=REPO, head_branch=branch, head_sha=SHA)
+        artifact = dict(id=3, name="experimental-preview-" + SHA, expired=False, size_in_bytes=1024,
+                        digest="sha256:" + "c" * 64, workflow_run=ref)
+        self.assertFalse(_run_matches(run, SHA))
+        self.assertFalse(_artifact_matches(artifact, 42, SHA))
+        self.assertTrue(_run_matches(run, SHA, branch, workflow))
+        self.assertTrue(_artifact_matches(artifact, 42, SHA, branch, "experimental-preview-"))
+        policy = AttestationPolicy("other/repo", "1", workflow, "refs/heads/" + branch, SHA, SHA, "push")
+        with self.assertRaises(ValueError):
+            _fetch_with_policy(policy, "experimental-preview-", "/nonexistent", "0" * 64, self.root / "out")
 
     def test_zip_round_trip_keeps_fresh_native_admission(self):
         bundle, archive, unpacked = self.root / "source.tar", self.root / "artifact.zip", self.root / "received.tar"
