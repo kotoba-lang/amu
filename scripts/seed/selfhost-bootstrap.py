@@ -347,6 +347,17 @@ def main(out, tier, reuse=None, store=None):
 
 WASM_PROBES = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
                "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
+               "local-stdio": "(defn main [] :i64\n"
+                              "  (let [hello (typed-cap-call :io/write :string :string \"READY\\n\")\n"
+                              "        flush (typed-cap-call :io/write-error :string :string \"\")\n"
+                              "        first (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        second (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        eof (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        done (typed-cap-call :io/write :string :string \"DONE\\n\")]\n"
+                              "    (if (and (string=? first \"😀\") (string=? second \"x\") (string=? eof \"\")) 42 1)))",
+               "local-output-bound": '(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string "' + ('x' * 70000) + '")] 42))',
+               "local-read-bound": '(defn main [] :i64 (loop [i 0] (if (= i 257) 42 (let [x (typed-cap-call :io/read :string :string "1")] (recur (+ i 1))))))',
+               "local-broker-isolation": '(defn main [] :i64 (let [r (typed-cap-call :net/dial :string :string "GET /v1/items/abc") x (typed-cap-call :io/write :string :string (string-concat r "\\n"))] (string-byte-length r)))',
                "document": "(defn- verify-keywords [i :i64] :i64\n"
                            "  (if (= i 200) 1 (let [name (string-concat \"dynamic-\" (string-from-i64 i))\n"
                            "    k (keyword-from-string name)]\n"
