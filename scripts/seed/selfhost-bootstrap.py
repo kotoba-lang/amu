@@ -357,6 +357,7 @@ WASM_PROBES = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc
                               "    (if (and (string=? first \"😀\") (string=? second \"x\") (string=? eof \"\")) 42 1)))",
                "local-output-bound": '(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string "' + ('x' * 70000) + '")] 42))',
                "local-read-bound": '(defn main [] :i64 (loop [i 0] (if (= i 257) 42 (let [x (typed-cap-call :io/read :string :string "1")] (recur (+ i 1))))))',
+               "local-read-all": '(defn main [] :i64 (let [x (typed-cap-call :io/read :string :string "")] (if (string=? x "😀x") 42 1)))',
                "local-broker-isolation": '(defn main [] :i64 (let [r (typed-cap-call :net/dial :string :string "GET /v1/items/abc") x (typed-cap-call :io/write :string :string (string-concat r "\\n"))] (string-byte-length r)))',
                "document": "(defn- verify-keywords [i :i64] :i64\n"
                            "  (if (= i 200) 1 (let [name (string-concat \"dynamic-\" (string-from-i64 i))\n"

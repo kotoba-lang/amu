@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' file:; worker-src blob:; connect-src 'none'">
 <title>kotoba-pending</title><pre id="results"></pre>
-<script src="wasm32-browser-static-host.js"></script><script src="runs.js"></script>
+<script src="wasm32-browser-static-host.js"></script><script src="wasm32-browser-local-stdio.js"></script><script src="runs.js"></script>
 <script>
 "use strict";
 (async () => {
@@ -10,6 +10,7 @@
   const outputBytes = Uint8Array.from(atob(window.KOTOBA_OUTPUT_WASM), c => c.charCodeAt(0));
   const readBytes = Uint8Array.from(atob(window.KOTOBA_READ_WASM), c => c.charCodeAt(0));
   const brokerBytes = Uint8Array.from(atob(window.KOTOBA_BROKER_WASM), c => c.charCodeAt(0));
+  const allBytes = Uint8Array.from(atob(window.KOTOBA_ALL_WASM), c => c.charCodeAt(0));
   const source = "(" + kotobaWasm32BrowserStaticHost.toString() + ")()";
   async function one(name, options) {
     const prefix = options.noJspi ? 'Object.defineProperty(WebAssembly,"Suspending",{value:undefined,configurable:true});' : '';
@@ -17,8 +18,12 @@
     const events = [], replies = (options.replies || []).slice();
     return await new Promise(resolve => {
       const worker = new Worker(url);
+      const queueOutput = [];
+      let capacityRefused = false, invalidUnicodeRefused = false;
+      const channel = options.queue ? createKotobaLocalStdio(worker, {maxQueuedBytes:options.all ? 8 : 4,
+        onOutput:(fd, bytes) => queueOutput.push({fd, text:new TextDecoder().decode(bytes)})}) : null;
       const timer = setTimeout(() => finish({timeout:true}), 20000);
-      function finish(result) { clearTimeout(timer); worker.terminate(); URL.revokeObjectURL(url); resolve({name, events, ...result}); }
+      function finish(result) { clearTimeout(timer); if (channel) channel.dispose(); worker.terminate(); URL.revokeObjectURL(url); resolve({name, events, queueOutput, capacityRefused, invalidUnicodeRefused, ...result}); }
       worker.onerror = e => finish({hostError: String(e.message)});
       worker.onmessage = e => {
         const data = e.data;
@@ -26,8 +31,20 @@
           events.push({kind:"output", fd:data.localOutput.fd, text:new TextDecoder().decode(data.localOutput.bytes)});
         } else if (data.localRead) {
           events.push({kind:"read", request:data.localRead.request});
-          if (options.wrongChannel) worker.postMessage({capReply:{id:data.localRead.id,ok:true,status:200,content:"wrong"}});
-          worker.postMessage({localReadReply:{id:data.localRead.id,ok:!options.refuse,content:replies.shift() ?? ""}});
+          if (channel) {
+            if (events.filter(x => x.kind === "read").length === 1) {
+              if (options.abort) channel.dispose();
+              else if (options.all) { channel.write("😀"); setTimeout(() => { channel.write("x"); channel.end(); }, 10); }
+              else {
+                try { channel.write("😀x"); } catch (_) { capacityRefused = true; }
+                try { channel.write("\ud800"); } catch (_) { invalidUnicodeRefused = true; }
+                channel.write("😀"); channel.write("x"); channel.end();
+              }
+            }
+          } else {
+            if (options.wrongChannel) worker.postMessage({capReply:{id:data.localRead.id,ok:true,status:200,content:"wrong"}});
+            worker.postMessage({localReadReply:{id:data.localRead.id,ok:!options.refuse,content:replies.shift() ?? ""}});
+          }
         } else if (data.cap) {
           events.push({kind:"broker", wire:data.cap.wire});
           if (options.wrongChannel) worker.postMessage({localReadReply:{id:data.cap.id,ok:true,content:"wrong"}});
@@ -40,6 +57,9 @@
   }
   const results = [];
   results.push(await one("success", {replies:["😀","x",""],wrongChannel:true}));
+  results.push(await one("queued", {queue:true}));
+  results.push(await one("queue-abort", {queue:true,abort:true}));
+  results.push(await one("queue-read-all", {queue:true,all:true,bytes:allBytes}));
   results.push(await one("denied", {allow:[37,39]}));
   results.push(await one("not-local", {local:false}));
   results.push(await one("no-jspi", {noJspi:true}));

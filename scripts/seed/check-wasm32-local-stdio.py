@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--output-probe', required=True, type=Path)
     parser.add_argument('--read-probe', required=True, type=Path)
     parser.add_argument('--broker-probe', required=True, type=Path)
+    parser.add_argument('--all-probe', required=True, type=Path)
     parser.add_argument('--browser', required=True)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
@@ -25,18 +26,21 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     host = ROOT / 'runtime/wasm32-browser-static-host.js'
     page = ROOT / 'runtime/wasm32-browser-local-stdio-test.html'
-    for source in (host, page):
+    queue = ROOT / 'runtime/wasm32-browser-local-stdio.js'
+    for source in (host, page, queue):
         shutil.copyfile(source, out / source.name)
     data = args.wasm.read_bytes()
     output_data = args.output_probe.read_bytes()
     read_data = args.read_probe.read_bytes()
     broker_data = args.broker_probe.read_bytes()
+    all_data = args.all_probe.read_bytes()
     assert data[:8] == b'\0asm\x01\0\0\0'
-    assert output_data[:8] == read_data[:8] == broker_data[:8] == b'\0asm\x01\0\0\0'
+    assert output_data[:8] == read_data[:8] == broker_data[:8] == all_data[:8] == b'\0asm\x01\0\0\0'
     (out / 'runs.js').write_text('window.KOTOBA_WASM=' + json.dumps(base64.b64encode(data).decode()) + ';\n' +
                                  'window.KOTOBA_OUTPUT_WASM=' + json.dumps(base64.b64encode(output_data).decode()) + ';\n' +
                                  'window.KOTOBA_READ_WASM=' + json.dumps(base64.b64encode(read_data).decode()) + ';\n' +
-                                 'window.KOTOBA_BROKER_WASM=' + json.dumps(base64.b64encode(broker_data).decode()) + ';\n')
+                                 'window.KOTOBA_BROKER_WASM=' + json.dumps(base64.b64encode(broker_data).decode()) + ';\n' +
+                                 'window.KOTOBA_ALL_WASM=' + json.dumps(base64.b64encode(all_data).decode()) + ';\n')
     spec = importlib.util.spec_from_file_location('wasm_check', ROOT / 'scripts/seed/check-wasm32-browser.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -62,7 +66,7 @@ def main():
         pipe.close()
     (out / 'results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     rows = {row['name']: row for row in result['results']}
-    assert set(rows) == {'success', 'denied', 'not-local', 'no-jspi', 'conflict', 'oversized', 'lone-surrogate', 'read-refused', 'bounded-output', 'bounded-read-log', 'broker-isolation'}
+    assert set(rows) == {'success', 'queued', 'queue-abort', 'queue-read-all', 'denied', 'not-local', 'no-jspi', 'conflict', 'oversized', 'lone-surrogate', 'read-refused', 'bounded-output', 'bounded-read-log', 'broker-isolation'}
     success = rows['success']
     assert success['exit'] == 0 and ':status :ok :result 42' in success['report'], success
     assert success['output'] == 'READY\nDONE\n', success
@@ -70,6 +74,14 @@ def main():
     assert success['events'][0]['text'] == 'READY\n' and success['events'][4]['text'] == 'DONE\n'
     assert success['events'][5]['text'].startswith('{:status :ok :result 42 ')
     assert [event['request'] for event in success['events'] if event['kind'] == 'read'] == ['1', '1', '1']
+    queued = rows['queued']
+    assert queued['exit'] == 0 and ':status :ok :result 42' in queued['report']
+    assert queued['capacityRefused'] and queued['invalidUnicodeRefused']
+    assert [event['kind'] for event in queued['events']] == ['output', 'read', 'read', 'read', 'output', 'output']
+    assert ''.join(item['text'] for item in queued['queueOutput'] if item['fd'] == 1) == queued['stdout']
+    assert rows['queue-abort']['exit'] == 120 and ':status :trap' in rows['queue-abort']['report']
+    assert rows['queue-read-all']['exit'] == 0 and ':status :ok :result 42' in rows['queue-read-all']['report']
+    assert [event['request'] for event in rows['queue-read-all']['events'] if event['kind'] == 'read'] == ['']
     assert not any(event['kind'] == 'broker' for name, row in rows.items() if name != 'broker-isolation' for event in row['events'])
     for name in ('denied', 'not-local', 'no-jspi', 'oversized', 'lone-surrogate', 'read-refused'):
         assert rows[name]['exit'] == 120 and ':status :trap' in (rows[name]['report'] or ''), rows[name]
@@ -90,8 +102,10 @@ def main():
                'outputProbeSha256': hashlib.sha256(output_data).hexdigest(),
                'readProbeSha256': hashlib.sha256(read_data).hexdigest(),
                'brokerProbeSha256': hashlib.sha256(broker_data).hexdigest(),
+               'allProbeSha256': hashlib.sha256(all_data).hexdigest(),
                'hostSha256': hashlib.sha256(host.read_bytes()).hexdigest(),
                'pageSha256': hashlib.sha256(page.read_bytes()).hexdigest(),
+               'queueSha256': hashlib.sha256(queue.read_bytes()).hexdigest(),
                'network': 'CSP connect-src none', 'realUserQualified': False,
                'browserProjectQualified': False, 'brokerReviewQualified': False}
     (out / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
