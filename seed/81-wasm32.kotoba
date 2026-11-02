@@ -73,6 +73,52 @@
                   (= kind 2) (xw-assign (xw-set-code M f (i64-shift-left ix 48)) S (inc i) next)
                   :else (xw-assign (xw-set-code M f next) S (inc i) (inc next))))
         :else (xw-assign M S (inc i) next)))
+;; Convert the project checker's typed exported clauses to absolute Wasm
+;; function indices. pj-iface-one records base + 4*(FF-CODE-1), an AArch64
+;; addressing convention; for Wasm, xw-assign must have run and xw-tables
+;; must not yet have packed a table slot into FF-CODE. Check every clause
+;; before changing any interface record so a malformed index cannot leak a
+;; partially converted interface to an importer.
+(defn- xw-iface-valid? [M :vector-i64 L :vector-i64 first :i64 end :i64 base :i64] :bool
+  (loop [entry first clause 0]
+    (if (>= entry end) true
+      (let [count (pj-if L entry pj-if-ncl)]
+        (cond (or (<= count 0) (> count pj-if-maxcl)) false
+              (>= clause count) (recur (+ entry 1) 0)
+              :else (let [offset (pj-if L entry (+ pj-if-off0 clause)) delta (- offset base)
+                          index (+ (quot delta 4) 1)]
+                      (and (>= offset base) (>= delta 0) (= (bit-and delta 3) 0)
+                           (>= index XW-NIMPORT) (< index (+ XW-NIMPORT (xg-get M 3)))
+                           (recur entry (+ clause 1)))))))))
+(defn- xw-iface-remap [M :vector-i64 L :vector-i64 first :i64 end :i64 base :i64] :vector-i64
+  (if (or (< first 0) (< end first) (> end (pj-l L pj-k-nif)) (> end pj-i-cap) (< base 0)
+          (< (xg-get M 3) 0) (> (xg-get M 3) 4294967291)
+          (not (xw-iface-valid? M L first end base))) (xg-err M 7102 0)
+    (let [written (loop [entry first clause 0]
+                    (if (>= entry end) 0
+                      (if (>= clause (pj-if L entry pj-if-ncl)) (recur (+ entry 1) 0)
+                        (let [offset (pj-if L entry (+ pj-if-off0 clause))
+                              index (+ (quot (- offset base) 4) 1)
+                              w (pj-iset L entry (+ pj-if-off0 clause) index)]
+                          (recur entry (+ clause 1))))))]
+      M)))
+(defn- xw-iface-unpacked? [M :vector-i64 i :i64] :bool
+  (if (>= i (vector-at M MM-SIR-N)) true
+    (let [f (xg-si M i IF-A)]
+      (if (and (= (xg-si M i IF-OP) OP-FN) (not (xs-rt? M f)))
+        (and (= (u64-shift-right (xw-code-of M f) 32) 0)
+             (>= (xw-idx M f) XW-NIMPORT)
+             (< (xw-idx M f) (+ XW-NIMPORT (xg-get M 3)))
+             (xw-iface-unpacked? M (+ i 1)))
+        (xw-iface-unpacked? M (+ i 1))))))
+(defn- xw-project-iface [M :vector-i64 L :vector-i64 P :string S :string module :i64] :string
+  (if (not (xw-iface-unpacked? M 1))
+    (let [w (xg-err M 7102 0)] P)
+    (let [first (pj-l L pj-k-nif) base (pj-l L pj-k-base)
+          result (pj-iface M L P S module)
+          remapped (if (pj-ok M) (xw-iface-remap M L first (pj-l L pj-k-nif) base) M)]
+      result)))
+
 ;; pass B: a table slot (and a thunk record) for every function value
 (defn- xw-tables [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M

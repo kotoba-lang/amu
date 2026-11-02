@@ -1,0 +1,46 @@
+;; Wasm project interface offsets must become assigned function indices.
+;; This tests a linker component, not an executable project.
+(defn- xg-default [] :i64 2)
+(defn- t-real-iface [] :i64
+  (let [S "(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n"
+        L (pj-new-l) P (pj-padd L (pj-padd L (pj-new-p L) "util") "/util.kotoba")
+        registered (pj-add-mod L 0 1) M (xg-front S)
+        assigned (xw-assign M S 1 XW-NIMPORT)
+        f (pj-fn-named assigned S "add") expected (xw-idx assigned f)
+        iface (xw-project-iface assigned L P S 0)]
+    (cond (not (pj-ok assigned)) 21
+          (= f 0) 22
+          (not= (pj-l L pj-k-nif) 1) 23
+          (not= (pj-if L 0 pj-if-ncl) 1) 24
+          (not= (pj-if L 0 pj-if-off0) expected) 25
+          :else (let [packed (xw-set-code assigned f (bit-or (xw-code-of assigned f) (i64-shift-left 1 32)))
+                      refused (xw-project-iface packed L iface S 0)]
+                  (cond (pj-ok packed) 26 (not= (pj-l L pj-k-nif) 1) 27 :else 0)))))
+(defn- seed-main [] :i64
+  (let [M (xg-set (mem-new) 3 10) L (pj-new-l) base 100
+        a (-> L (pj-ls pj-k-nif 2) (pj-iset 0 pj-if-ncl 2) (pj-iset 1 pj-if-ncl 1)
+              (pj-iset 0 pj-if-off0 116) (pj-iset 0 (+ pj-if-off0 1) 148)
+              (pj-iset 1 pj-if-off0 152))
+        ok (xw-iface-remap M L 0 2 base)]
+    (cond (not (pj-ok ok)) 1
+          (not= (pj-if L 0 pj-if-off0) 5) 2
+          (not= (pj-if L 0 (+ pj-if-off0 1)) 13) 3
+          (not= (pj-if L 1 pj-if-off0) 14) 4
+          :else
+          (let [reset (-> L (pj-iset 0 pj-if-off0 116) (pj-iset 0 (+ pj-if-off0 1) 117)
+                          (pj-iset 1 pj-if-off0 152))
+                bad (xw-iface-remap M L 0 2 base)]
+            (cond (= (vector-at bad MM-ERR) 0) 5
+                  (not= (pj-if L 0 pj-if-off0) 116) 6
+                  (not= (pj-if L 0 (+ pj-if-off0 1)) 117) 7
+                  :else
+                  (let [cleared (mem-set M MM-ERR 0)
+                        set-low (pj-iset L 0 (+ pj-if-off0 1) 112)
+                        low (xw-iface-remap cleared L 0 2 base)]
+                    (cond (= (vector-at low MM-ERR) 0) 8
+                          (not= (pj-if L 0 pj-if-off0) 116) 9
+                          :else
+                          (let [clean (mem-set M MM-ERR 0)
+                                set-high (pj-iset L 0 (+ pj-if-off0 1) 156)
+                                high (xw-iface-remap clean L 0 2 base)]
+                            (if (= (vector-at high MM-ERR) 0) 10 (t-real-iface))))))))))
