@@ -1,0 +1,53 @@
+(ns fs2-snapshot (:export [main]))
+(defn- arg [n :string] :string (typed-cap-call :cli/args :string :string n))
+(defn- frame [op :string path :string tail :string] :string
+  (str "\u0000FS2\u0000" op path "\u0000" tail))
+(defn- call [op :string path :string tail :string] :string
+  (typed-cap-call :fs/app-data :string :string (frame op path tail)))
+(defn- yes? [s :string] :bool (= s "\u0000FS2\u00001"))
+(defn- positive [path :string] :i64
+  (let [written (call "B" path "abcdef") opened (call "V" path "6")
+        changed (call "B" path "UVWXYZ") snapshot (call "W" path "1:4")
+        source (call "A" path "") closed (call "X" path "")
+        reopened (call "V" path "6") changed-snapshot (call "W" path "0:6")
+        closed-again (call "X" path "")]
+    (if (and (= written "\u0000FS2\u0000abcdef") (yes? opened)
+             (= changed "\u0000FS2\u0000UVWXYZ") (= snapshot "\u0000FS2\u0000bcde")
+             (= source "\u0000FS2\u0000UVWXYZ") (yes? closed) (yes? reopened)
+             (= changed-snapshot "\u0000FS2\u0000UVWXYZ") (yes? closed-again)) 0 1)))
+(defn- empty-test [path :string] :i64
+  (let [write (call "B" path "") opened (call "V" path "0")
+        read (typed-cap-call :fs/app-data :string :bytes (frame "W" path "0:0"))
+        closed (call "X" path "")]
+    (if (and (= write "\u0000FS2\u0000") (yes? opened) (= (bytes-count read) 5)
+             (= (bytes-at read 0) 0) (= (bytes-at read 1) 70) (= (bytes-at read 2) 83)
+             (= (bytes-at read 3) 50) (= (bytes-at read 4) 0) (yes? closed)) 0 2)))
+(defn- observed [path :string] :i64
+  (let [opened (call "V" path "6") ready (call "B" (str path ".ready") "1")
+        waited (loop [i 0]
+                 (if (= (call "D" (str path ".done") "") "\u0000FS2\u00001") i (recur (+ i 1))))
+        snapshot (call "W" path "0:6") closed (call "X" path "")]
+    (if (and (yes? opened) (= ready "\u0000FS2\u00001")
+             (= snapshot "\u0000FS2\u0000abcdef") (yes? closed)) 0 3)))
+(defn- binary [path :string] :i64
+  (let [opened (call "V" path "65537")
+        a (typed-cap-call :fs/app-data :string :bytes (frame "W" path "32767:3"))
+        b (typed-cap-call :fs/app-data :string :bytes (frame "W" path "65535:2"))
+        closed (call "X" path "")]
+    (if (and (yes? opened) (= (bytes-count a) 8) (= (bytes-at a 5) 255)
+             (= (bytes-at a 6) 0) (= (bytes-at a 7) 1)
+             (= (bytes-count b) 7) (= (bytes-at b 5) 255) (= (bytes-at b 6) 0)
+             (yes? closed)) 0 4)))
+(defn main [] :i64
+  (let [mode (arg "0") path (arg "1")]
+    (cond (= mode "positive") (positive path)
+          (= mode "empty") (empty-test path)
+          (= mode "observed") (observed path)
+          (= mode "binary") (binary path)
+          (= mode "wrong-size") (if (yes? (call "V" path "5")) 10 11)
+          (= mode "too-large") (if (yes? (call "V" path "268435457")) 12 13)
+          (= mode "double-open") (let [a (call "V" path "6") b (call "V" path "6")] 14)
+          (= mode "wrong-path") (let [a (call "V" path "6") b (call "W" (str path "x") "0:1")] 15)
+          (= mode "range") (let [a (call "V" path "6") b (call "W" path "5:2")] 16)
+          (= mode "after-close") (let [a (call "V" path "6") b (call "X" path "") c (call "W" path "0:1")] 17)
+          :else 18)))
