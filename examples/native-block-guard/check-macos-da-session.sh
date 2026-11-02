@@ -1,6 +1,8 @@
 #!/bin/sh
 # Native Mach task bootstrap-port diagnostic; no disk access.
 set -eu
+echo 'disabled: Disk Arbitration daemon crash investigation (JUN-767)' >&2
+exit 1
 : "${TMPDIR:?set TMPDIR to workspace scratch}"
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH= cd -- "$here/../.." && pwd)

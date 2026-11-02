@@ -128,7 +128,7 @@
           (recur (inc i)) false)))
     false))
 
-(defn main [] :i64
+(defn- disabled-main [] :i64
   (let [path (typed-cap-call :cli/args :string :string "0")
         mode (typed-cap-call :cli/args :string :string "1")
         path-bytes (vector-i64-from-bytes (string-to-utf8 path))
@@ -145,3 +145,7 @@
                    (body-at offset mode))
             response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
         (if (acknowledged-image? v1 offset (vector-i64-from-bytes response)) 0 3)))))
+
+;; Fail closed: service crashes observed during these experimental sessions.
+;; Re-enable only after the OS lifecycle failure is diagnosed and qualified.
+(defn main [] :i64 3)
