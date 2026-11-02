@@ -166,3 +166,26 @@ file-as-cwd cases. A separately built debug target-check-removal mutant
 accepted a non-executable file. Matching source-composed runnable streams
 still passed readback/refusal fixtures. This is diagnostic, not permission to
 execute; other target hosts and runtime qualification remain open.
+
+## Read-only runnable tmpfs candidate
+
+For `T` only, after validating the process targets and before returning `D`,
+the worker remounts its entire private `/tmp` tmpfs read-only with `nosuid`
+and `nodev`, then requires `fstatfs` on the held root FD to report tmpfs and
+all three flags. Failure terminates the worker without `D`. The pre-existing
+root and target descriptors remain on that same mount; a self-bind of only
+`rootfs` is insufficient because descriptors held from the original mount
+would still have writable access. `C` remains a diagnostic-only logical freeze
+and does not perform this remount.
+
+After `T`, the single-use `W` diagnostic attempts a create via the original
+root FD and returns `K` only for `EROFS`; it does not authorize execution.
+A caller-selected file with the probe's fixed name can cause this optional
+check to refuse. On the local ARM64 Linux host, the observer checked the
+worker's mountinfo independently and saw `ro,nosuid,nodev`, and `W` observed
+`EROFS`. In debug-built controls, skipping the remount was refused before
+`D`, bypassing the entire freeze was caught by the write probe, and denying
+only the remount syscall caused refusal before `D`. These observations do
+not establish immutability against an actor retaining mount authority, a
+hostile same-principal process, or any workload isolation. A future launcher
+must drop the relevant authority and qualify its own confinement.

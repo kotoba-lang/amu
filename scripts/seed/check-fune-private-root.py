@@ -6,6 +6,7 @@ worker's bounded protocol and inspects only its own children. This does not
 qualify OCI extraction, container isolation, a cgroup or a release.
 """
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -23,6 +24,28 @@ SOURCE = ROOT / "seed/fune/private-root-worker.kotoba"
 def pin(path):
     data = path.read_bytes()
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+class _SockFilter(ctypes.Structure):
+    _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
+                ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint)]
+
+
+class _SockFprog(ctypes.Structure):
+    _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(_SockFilter))]
+
+
+def _deny_readonly_remount():
+    # Test-only ARM64 seccomp: deny mount(..., MS_REMOUNT|RDONLY|NOSUID|NODEV)
+    # while allowing the worker's initial private and tmpfs mounts.
+    program = (_SockFilter * 6)(
+        _SockFilter(0x20, 0, 0, 0), _SockFilter(0x15, 0, 3, 40),
+        _SockFilter(0x20, 0, 0, 40), _SockFilter(0x15, 0, 1, 39),
+        _SockFilter(0x06, 0, 0, 0x00050001), _SockFilter(0x06, 0, 0, 0x7fff0000))
+    descriptor = _SockFprog(len(program), program)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(38, 1, 0, 0, 0) != 0 or libc.prctl(22, 2, ctypes.byref(descriptor), 0, 0) != 0:
+        os._exit(125)
 
 
 def outside_identity():
@@ -378,6 +401,51 @@ def main(compiler, out):
             stdout, stderr = p.communicate(b"Q", timeout=20)
             assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
             observations.append({"case": "retained-process-descriptors", "cwd": cwd.decode()})
+
+        # T remounts the original tmpfs read-only, so the root descriptor
+        # opened before the remount is covered as well. Observe mountinfo
+        # independently and ask the worker to attempt a create via that FD.
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "app", 0) == b""
+        assert exchange(p, b"P", "app", 0o755) == b""
+        payload = spec([b"/app"], [], b"/")
+        p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload)
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        rows = [row.split() for row in Path(f"/proc/{child}/mountinfo").read_text().splitlines()]
+        mount = [row for row in rows if row[4] == "/tmp"][-1]
+        sep = mount.index("-")
+        assert mount[sep + 1] == "tmpfs"
+        assert {"ro", "nosuid", "nodev"} <= set(mount[5].split(",")), mount
+        assert "ro" in mount[sep + 3].split(","), mount
+        p.stdin.write(b"W")
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"K", "pre-remount root FD must reject create with EROFS"
+        stdout, stderr = p.communicate(b"Q", timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "runnable-root-readonly", "oldRootFdCreate": "EROFS"})
+
+        p, child, proc_denied = start()
+        stdout, stderr = p.communicate(b"W", timeout=20)
+        assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+        observations.append({"case": "readonly-probe-before-terminal", "exit": p.returncode})
+
+        p = subprocess.Popen([str(image)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, cwd=out, env={"PATH": "/nonexistent"},
+                             preexec_fn=_deny_readonly_remount)
+        try:
+            ready, _, _ = select.select([p.stdout], [], [], 20)
+            assert ready and p.stdout.readline() == b"fune-private-root-ready\n"
+            assert exchange(p, b"F", "app", 0) == b""
+            assert exchange(p, b"P", "app", 0o755) == b""
+            payload = spec([b"/app"], [], b"/")
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 2, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:22" in stderr
+            observations.append({"case": "readonly-remount-denied", "exit": p.returncode})
+        finally:
+            if p.poll() is None:
+                p.kill()
+                p.communicate(timeout=20)
 
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (

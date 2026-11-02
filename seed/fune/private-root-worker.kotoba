@@ -158,6 +158,17 @@
         (if (< exe 0) (let [close (if (= cwd root) 0 (kxrt-close cwd))] -1)
           (let [a (kxrt-store64 slots cwd) b (kxrt-store64 (+ slots 8) exe)] 0))))))
 
+
+;; Remount the entire worker-owned tmpfs read-only, not a bind of rootfs:
+;; pre-existing descriptors then refer to the same now-read-only mount. The
+;; caller must still drop mount authority before treating it as a boundary.
+(defn- fw-freeze-tmpfs [root :i64 stat :i64] :i64
+  (let [b (fw-strings) remount (kxrt-syscall 40 0 (+ b 112) 0 39 0 0)
+        status (if (< remount 0) (fw-die 22) 0)
+        r (kxrt-syscall 44 root stat 0 0 0 0)
+        kind (kxrt-load64 stat) flags (kxrt-load64 (+ stat 80))]
+    (if (or (< r 0) (not= kind 16914836) (not= (bit-and flags 7) 7)) (fw-die 22) 0)))
+
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
@@ -169,6 +180,7 @@
 ;; finalization phase. T may replace C after finalization and carries the
 ;; operation count, four-byte process-spec length and bounded FPS1 bytes.
 ;; Q reads back one staged spec; V reads a mode; I checks retained FDs.
+;; W probes whether a create on the held root fails specifically with EROFS.
 ;; None authorizes exec.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
@@ -186,6 +198,7 @@
                       receive (fw-spec-read mode spec size (+ mem 8192))
                       checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
                       targets (if (= (fw-spec-targets root spec path how buf (+ mem 512)) 0) 0 (fw-die 21))
+                      frozen (fw-freeze-tmpfs root buf)
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
@@ -199,6 +212,13 @@
                 (let [cwd (kxrt-load64 (+ mem 512)) exe (kxrt-load64 (+ mem 520))
                       a (kxrt-syscall 80 cwd buf 0 0 0 0) b (kxrt-syscall 80 exe (+ buf 256) 0 0 0 0)
                       valid (if (or (< a 0) (< b 0)) (fw-die 21) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 87) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [a (kxrt-w path (kxrt-w path (kxrt-w path 0 0x725f656e75665f5f 8) 0x5f65626f72705f6f 8) 0x5f 2)
+                      fd (fw-openat2 root path 655553 384 how)
+                      close (if (>= fd 0) (kxrt-close fd) 0)
+                      valid (if (not= fd -30) (fw-die 22) 0)
                       k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 67) (if committed (fw-die 15)
