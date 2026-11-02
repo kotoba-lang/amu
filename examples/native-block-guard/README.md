@@ -1,5 +1,29 @@
 # Native block guard candidate (JUN-767)
 
+## Disk Arbitration callback-queue control
+
+`TMPDIR=/workspace/scratch ./check-macos-da-queue.sh` creates a fresh native
+Disk Arbitration session, requests its callback queue through Mach, validates
+the expected out-of-line descriptor and bounded byte count, emits the data,
+deallocates the received mapping, and sends session release. An independent
+plist decoder confirms the fresh queue is empty; an invalid service mutant
+must refuse. Python is an observer in this test, not the native runtime.
+
+This does not decode callbacks in Kotoba, perform or prove an exclusive claim,
+verify release on the server, obtain consent, or access a disk. The queue
+request drains the session's callbacks, so this control must not be attached
+to another session or used as a production event handler. Audit-token and
+identity limitations of the earlier lookup control continue to apply.
+
+The inert `da-queue-reference.txt` was assembled once on 2026-11-02 with Apple
+clang 21.0.0 (clang-2100.1.1.101), using the pinned interface oracles below.
+The reference SHA-256 is
+`e84ed983e24b39679f9b9bded730d7ebd302976301bd713923fe8ce96b2f4bd5`;
+the object SHA-256 is
+`769fb6ce40f6fcb2fcd67e6c4593840d40c3ee054385e3b9ef07e8591ad69985`.
+The normal native build consumes Kotoba words without MIG, an assembler, or a
+libSystem load command.
+
 ## Disk Arbitration claim-state query control
 
 `TMPDIR=/workspace/scratch ./check-macos-da-claimed.sh` builds a separate
