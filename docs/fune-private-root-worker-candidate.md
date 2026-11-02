@@ -150,3 +150,13 @@ A debug-built mutant that ignored spec validation accepted malformed magic.
 The runnable OCI producer round-tripped config-derived specs through the
 worker; the supervisor refused invalid specs. This is not workload execution,
 complete process validation or runtime admission.
+
+## Private inode target check candidate
+
+The regenerated source-pinned ARM64 compiler built this worker and rejected
+altered source. After finalization, the worker accepted valid private targets
+and refused missing, directory-as-executable, no-execute-bit, missing cwd and
+file-as-cwd cases. A separately built debug target-check-removal mutant
+accepted a non-executable file. Matching source-composed runnable streams
+still passed readback/refusal fixtures. This is diagnostic, not permission to
+execute; other target hosts and runtime qualification remain open.

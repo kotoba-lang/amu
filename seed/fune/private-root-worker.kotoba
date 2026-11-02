@@ -133,6 +133,29 @@
             got (fw-read-wire mode (+ p at) take scratch)]
         (recur (+ at take))))))
 
+;; The spec has already passed fw-spec-ok?. Resolve only beneath the worker's
+;; root descriptor, with no symlinks, and inspect the actual private inodes.
+;; This does not decide UID/GID access, interpreter validity or authorization.
+(defn- fw-spec-path [src :i64 n :i64 dst :i64] :i64
+  (loop [i 1]
+    (if (= i n) (kxrt-store8 (+ dst (- n 1)) 0)
+      (let [w (kxrt-store8 (+ dst (- i 1)) (kxrt-load8 (+ src i)))] (recur (+ i 1))))))
+(defn- fw-spec-target? [root :i64 src :i64 n :i64 dir? :bool path :i64 how :i64 stat :i64] :bool
+  (let [is-root (and dir? (= n 1)) copy (if is-root 0 (fw-spec-path src n path))
+        fd (if is-root root (fw-openat2 root path 2621440 0 how))]
+    (if (< fd 0) false
+      (let [st (kxrt-syscall 80 fd stat 0 0 0 0)
+            bits (if (< st 0) 0 (kxrt-load64 (+ stat 16)))
+            close (if is-root 0 (kxrt-close fd))
+            kind (bit-and bits 61440)]
+        (and (= st 0) (= close 0)
+             (if dir? (= kind 16384) (and (= kind 32768) (not (= (bit-and bits 73) 0)))))))))
+(defn- fw-spec-targets? [root :i64 spec :i64 path :i64 how :i64 stat :i64] :bool
+  (let [cwdn (fw-u16 (+ spec 8)) argv-head (+ 10 cwdn)
+        argn (fw-u32 (+ spec argv-head)) argv (+ spec (+ argv-head 4))]
+    (and (fw-spec-target? root (+ spec 10) cwdn true path how stat)
+         (fw-spec-target? root argv argn false path how stat))))
+
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
 ;; F creates a new file; U replaces an existing file; R reads the requested
@@ -159,6 +182,7 @@
                       valid (if (or (not (= count operations)) (< size 10) (> size 67500)) (fw-die 19) 0)
                       receive (fw-spec-read mode spec size (+ mem 8192))
                       checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
+                      targets (if (fw-spec-targets? root spec path how buf) 0 (fw-die 21))
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)

@@ -50,7 +50,7 @@
         (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
         (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
-          (if (string=? (sh-text host) "54d7a7570054042c040f3ebe886523405ba345b95866640fa54cfd1d9dd4450c")
+          (if (string=? (sh-text host) "578e9f890690a778cfa78812d441948d21b664b2c5cb249294bfc16d6e83e727")
             (let [guest "(ns fune-private-root (:export [main]))\n(defn main [] :i64 0)\n"
                   rt (string-concat (xa-rt-core-profile 0) host)
                   text (string-concat guest rt)

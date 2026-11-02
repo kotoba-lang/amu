@@ -337,6 +337,34 @@ def main(compiler, out):
         assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
         observations.append({"case": "process-spec-read-limit", "exit": p.returncode})
 
+        for name, argv0, cwd, mode in (
+            ("missing-executable", b"/bin/missing", b"/bin", 0o755),
+            ("directory-executable", b"/bin", b"/bin", 0o755),
+            ("no-execute-bit", b"/bin/app", b"/bin", 0o644),
+            ("missing-working-dir", b"/bin/app", b"/missing", 0o755),
+            ("file-working-dir", b"/bin/app", b"/bin/app", 0o755),
+        ):
+            p, child, proc_denied = start()
+            assert exchange(p, b"M", "bin") == b""
+            assert exchange(p, b"F", "bin/app", 0) == b""
+            assert exchange(p, b"P", "bin/app", mode) == b""
+            assert exchange(p, b"P", "bin", 0o755) == b""
+            payload = spec([argv0], [], cwd)
+            stdout, stderr = p.communicate(b"T" + struct.pack(">HI", 4, len(payload)) + payload, timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:21" in stderr, (name, p.returncode, stdout, stderr)
+            observations.append({"case": "process-target-" + name, "exit": p.returncode})
+
+        p, child, proc_denied = start()
+        assert exchange(p, b"F", "file", 0) == b""
+        assert exchange(p, b"P", "file", 0o001) == b""
+        payload = spec([b"/file"], [], b"/")
+        p.stdin.write(b"T" + struct.pack(">HI", 2, len(payload)) + payload)
+        p.stdin.flush()
+        assert p.stdout.read(1) == b"D"
+        stdout, stderr = p.communicate(b"X", timeout=20)
+        assert p.returncode == 0 and not stdout and not stderr
+        observations.append({"case": "process-target-any-execute-bit", "mode": "0o1"})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
