@@ -134,27 +134,29 @@
         (recur (+ at take))))))
 
 ;; The spec has already passed fw-spec-ok?. Resolve only beneath the worker's
-;; root descriptor, with no symlinks, and inspect the actual private inodes.
+;; root descriptor, with no symlinks, and retain the checked private inodes.
 ;; This does not decide UID/GID access, interpreter validity or authorization.
 (defn- fw-spec-path [src :i64 n :i64 dst :i64] :i64
   (loop [i 1]
     (if (= i n) (kxrt-store8 (+ dst (- n 1)) 0)
       (let [w (kxrt-store8 (+ dst (- i 1)) (kxrt-load8 (+ src i)))] (recur (+ i 1))))))
-(defn- fw-spec-target? [root :i64 src :i64 n :i64 dir? :bool path :i64 how :i64 stat :i64] :bool
+(defn- fw-spec-target-open [root :i64 src :i64 n :i64 dir? :bool path :i64 how :i64 stat :i64] :i64
   (let [is-root (and dir? (= n 1)) copy (if is-root 0 (fw-spec-path src n path))
         fd (if is-root root (fw-openat2 root path 2621440 0 how))]
-    (if (< fd 0) false
+    (if (< fd 0) -1
       (let [st (kxrt-syscall 80 fd stat 0 0 0 0)
             bits (if (< st 0) 0 (kxrt-load64 (+ stat 16)))
-            close (if is-root 0 (kxrt-close fd))
-            kind (bit-and bits 61440)]
-        (and (= st 0) (= close 0)
-             (if dir? (= kind 16384) (and (= kind 32768) (not (= (bit-and bits 73) 0)))))))))
-(defn- fw-spec-targets? [root :i64 spec :i64 path :i64 how :i64 stat :i64] :bool
+            kind (bit-and bits 61440)
+            valid (and (= st 0) (if dir? (= kind 16384) (and (= kind 32768) (not (= (bit-and bits 73) 0)))))]
+        (if valid fd (let [close (if is-root 0 (kxrt-close fd))] -1))))))
+(defn- fw-spec-targets [root :i64 spec :i64 path :i64 how :i64 stat :i64 slots :i64] :i64
   (let [cwdn (fw-u16 (+ spec 8)) argv-head (+ 10 cwdn)
-        argn (fw-u32 (+ spec argv-head)) argv (+ spec (+ argv-head 4))]
-    (and (fw-spec-target? root (+ spec 10) cwdn true path how stat)
-         (fw-spec-target? root argv argn false path how stat))))
+        argn (fw-u32 (+ spec argv-head)) argv (+ spec (+ argv-head 4))
+        cwd (fw-spec-target-open root (+ spec 10) cwdn true path how stat)]
+    (if (< cwd 0) -1
+      (let [exe (fw-spec-target-open root argv argn false path how stat)]
+        (if (< exe 0) (let [close (if (= cwd root) 0 (kxrt-close cwd))] -1)
+          (let [a (kxrt-store64 slots cwd) b (kxrt-store64 (+ slots 8) exe)] 0))))))
 
 ;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
 ;; four-byte big-endian payload length and ASCII path. M creates a directory;
@@ -166,7 +168,8 @@
 ;; mode (0..0777), applies it to an existing file/directory, and starts a
 ;; finalization phase. T may replace C after finalization and carries the
 ;; operation count, four-byte process-spec length and bounded FPS1 bytes.
-;; Q reads back one staged spec; V reads a mode. Neither authorizes exec.
+;; Q reads back one staged spec; V reads a mode; I checks retained FDs.
+;; None authorizes exec.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
@@ -182,7 +185,7 @@
                       valid (if (or (not (= count operations)) (< size 10) (> size 67500)) (fw-die 19) 0)
                       receive (fw-spec-read mode spec size (+ mem 8192))
                       checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
-                      targets (if (fw-spec-targets? root spec path how buf) 0 (fw-die 21))
+                      targets (if (= (fw-spec-targets root spec path how buf (+ mem 512)) 0) 0 (fw-die 21))
                       mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode true 0 finalizing finals size)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
@@ -191,6 +194,12 @@
                       d (kxrt-store8 (+ head 3) (bit-and (u64-shift-right specsize 8) 255)) e (kxrt-store8 (+ head 4) (bit-and specsize 255))
                       sent (if (= (kxrt-write-all 1 head 5) 1) 0 (fw-die 18))
                       payload (if (= (kxrt-write-all 1 spec specsize) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 73) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [cwd (kxrt-load64 (+ mem 512)) exe (kxrt-load64 (+ mem 520))
+                      a (kxrt-syscall 80 cwd buf 0 0 0 0) b (kxrt-syscall 80 exe (+ buf 256) 0 0 0 0)
+                      valid (if (or (< a 0) (< b 0)) (fw-die 21) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 67) (if committed (fw-die 15)
                 (let [read (fw-read-wire mode head 2 (+ mem 8192))

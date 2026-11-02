@@ -35,14 +35,20 @@ for applying children before their parents and for sending the complete set.
 The worker does not attest that a producer sent every image path: an omitted
 `P` is not detectable from the count alone, so producer trust is still required.
 For a runnable diagnostic stream, `T` replaces `C` after finalization: it
-carries the two-byte command count, four-byte spec length and `FPS` plus version-byte `1` process bytes. The worker bounds the allocation and validates framing, absolute paths
-and NUL exclusion before writing `D`. A single `Q` diagnostic returns the
-staged bytes after `K` and a four-byte length; `R` or `V` can be used instead.
-`V` returns the mode observed by `fstat` as two big-endian bytes after `K`.
-The worker does not validate environment-name syntax, duplicates, UTF-8, the
-executable inode or actual runtime access from this spec. Staged bytes are not
-authorization and must be revalidated by any future executor. `X` has no following fields
-and exits, including before `C`; the supervisor must require `D` for success.
+carries a two-byte command count, a four-byte spec length and `FPS` plus
+version-byte `1` process bytes. Before `D`, the worker bounds and validates
+framing, absolute paths and NUL exclusion. It resolves cwd and executable
+beneath the private root with `openat2`, rejects symlinks, and uses `fstat` to
+require a directory cwd and a regular executable with an execute bit. It keeps
+the checked `O_PATH` descriptors until worker exit; `/` reuses the root FD.
+
+One diagnostic read is allowed after the terminal frame. `Q` returns the staged
+spec; `V` returns an inode mode; `I` checks that both retained process FDs still
+support `fstat`. The worker does not validate environment-name syntax,
+duplicates, UTF-8, interpreter availability or actual UID/GID access. Retaining
+an FD does not make file bytes immutable or authorize execution; a future
+executor must bind and revalidate its own target and policy. `X` exits even
+before the terminal frame; a supervisor must require `D` for success.
 Neither `C` nor `T` publishes or persists the tree. Paths are at most 255
 printable ASCII bytes with no empty, dot, dot-dot or whiteout components;
 file operations are at most 1 MiB each. A session admits at most 512 ordinary

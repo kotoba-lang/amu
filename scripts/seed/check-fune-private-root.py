@@ -365,6 +365,20 @@ def main(compiler, out):
         assert p.returncode == 0 and not stdout and not stderr
         observations.append({"case": "process-target-any-execute-bit", "mode": "0o1"})
 
+        for cwd in (b"/", b"/bin"):
+            p, child, proc_denied = start()
+            assert exchange(p, b"M", "bin") == b""
+            assert exchange(p, b"F", "bin/app", 0) == b""
+            assert exchange(p, b"P", "bin/app", 0o755) == b""
+            assert exchange(p, b"P", "bin", 0o755) == b""
+            payload = spec([b"/bin/app"], [], cwd)
+            p.stdin.write(b"T" + struct.pack(">HI", 4, len(payload)) + payload + b"I")
+            p.stdin.flush()
+            assert p.stdout.read(2) == b"DK", "retained cwd and executable descriptors must remain valid"
+            stdout, stderr = p.communicate(b"Q", timeout=20)
+            assert p.returncode == 2 and not stdout and b"FREFUSE:15" in stderr
+            observations.append({"case": "retained-process-descriptors", "cwd": cwd.decode()})
+
         # Each refusal kills the worker and therefore drops the entire tmpfs.
         for name, request in (
             ("absolute", frame(b"F", "/tmp/fune-escape", 1, b"x")),
