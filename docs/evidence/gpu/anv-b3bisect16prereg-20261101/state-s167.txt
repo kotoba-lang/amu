@@ -1,0 +1,60 @@
+amu-gpu s167 (2026-11-01 JST, cron) -- JUN-59 sixteenth cut
+PRE-REGISTRATION (the s166 carry-forward (c)): standing gates
+(a)-(f) run LIVE with s167 captures.
+
+ROW COMPLETED THIS TICK (carry-forward (c), exactly): the standing
+gate set (a)-(f), run fresh from the worktree root at this tick,
+byte-compared to the s88 pins in ../anv-b3w6tailrep-20261030/ and
+the s117 post-append eval pin in ../anv-b3w7ledgerappend-20261031/:
+(a) gpu_regime_classify.py --self-test: rc 0, 17,925 bytes == s88
+    pin (cmp exit 0), .err 0 bytes (gate-s167-classify.txt/.err) --
+    VERIFIED.
+(b) scoped GPU gate (scratch/scoped-gpu-gate.cljk, the eight GPU
+    namespaces of run-tests.cljk, same engine and classpath):
+    GREEN 'Ran 123 tests containing 12162 assertions. 0 failures,
+    0 errors.' run 1 == run 2 == both s88 pins (gate-s167-run1.txt
+    == gate-s167-run2.txt == 919 bytes, cmp exit 0 x3), rc 0 both,
+    .err 0 bytes both (scratch runner created/run twice/DELETED
+    this session, never committed -- final state deleted) --
+    VERIFIED.
+(c) FULL run-tests.cljk: exit 1 RED AT BASE kotoba.form ('Could
+    not find namespace: kotoba.form', ADR-0362, outside this diff
+    -- this diff touches NO committed .cljk namespace),
+    gate-s167-full.out 0 bytes == pin, gate-s167-full.err 879
+    bytes == pin (cmp exit 0 x2) -- NO green full suite claimed.
+(d) settle-bar evaluator (../anv-b3settlebar-20261027/settle-bar-
+    eval.py, frozen): --self-test rc 0, 3,590 bytes == the s88 pin
+    (cmp exit 0); ledger eval pair twice BYTE-IDENTICAL
+    (bar-s167-eval-run1.txt == bar-s167-eval-run2.txt, 1,006 bytes,
+    cmp exit 0) == the s117 post-append pin (cmp exit 0) ->
+    VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged) -- VERIFIED.
+(e) find docs/evidence/gpu -name '*.sh' -> 0 lines
+    (gate-s167-nosh captures 0 bytes) -- VERIFIED.
+(f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+    ledger.txt rc 0 (gate-s167-ledger-head captures 0 bytes --
+    no append this row) -- VERIFIED.
+Capture .err files are all 0 bytes. The full-suite err capture
+matches the s88 pin byte-identically including the pinned
+'Node.js v26.0.0' line (live node --version v26.0.0).
+
+NOTHING ELSE MOVED: NO sixteenth-cut quantity exists (no cut
+queued/run, NO class/verdict/claim); every sixteenth-cut quantity
+is UNMEASURED (the measurement half is NOT queued); MID-ONLY
+NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY (254,557,
+255,045]. This tick ran NO hardware, NO builds, NO compiles, NO
+GO stamp, NO day-slot consumption, NO ledger line -- BAR
+NON-INTERFERENCE held (the gate runs touch nothing the ledger
+reads). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor). Diff touches NO committed
+.cljk namespace (evidence .txt/.out/.err only).
+
+NOT DONE (s168 carries the s166 list minus (c)):
+(d) record.txt + the ADR-0355 dated note (the sixteenth-cut
+    pre-registration record, sessions 164-167);
+(e) standing, not queued: the sixteenth cut MEASUREMENT half (its
+    own pre-registered session under the frozen
+    anv-b3bisect16prereg-20261101/protocol.txt -- NOT queued),
+    any further counted-day slot (the 2026-11-01 UTC slot needs
+    its own freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

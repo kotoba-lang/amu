@@ -1,0 +1,146 @@
+JUN-59 session 85 -- THE ANCHOR-CLASS SETTLING BAR'S FOURTH
+COUNTED-DAY MEASUREMENT PRE-REGISTRATION (W7) (the s84 record
+section-6(c) carry-forward item "the fourth counted-day bar
+measurement (its own future freeze; its day follows W6's actual
+run day)" -- DESIGN slice; NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO day-slot consumption, NO ledger line;
+the row's MEASUREMENT half is slot-gated behind W6's ledger
+line -- STARTED, NOT FINISHED).
+
+1. FINDING (verified by real tool output): the settle-bar
+   PENDING 2/4's second-to-be-filled counted day slot is now
+   FROZEN at its design half -- protocol.txt (freeze stamp
+   2026-10-29T06:39:16Z, written before any W6 quantity exists
+   AND before any W7 quantity exists -- the W6 run logs do not
+   exist; the pre-freeze freshness greps over docs/evidence/gpu
+   at 2026-10-29T06:37:59Z-06:38:19Z were "anv-b3w7daybar" 0
+   hits, "20261031" 0 hits, "2*L_W7" 0 hits, whole-word "W7" 0
+   hits, "W7 =" 0 hits -- the only "session 85" hit is the s84
+   record's carry-forward line naming this work; the 4 bare
+   "2*L_W6" hits are the s84 T18 freeze's own future tokens --
+   named, not hidden) pre-registers W7 = the window whose 78
+   fresh processes run in the first measurement session that
+   starts at or after 00:00:00Z of the first UTC day STRICTLY
+   AFTER the UTC day named on W6's ledger line in settle-bar-
+   ledger.txt (read from the append-only ledger at execution
+   time, never hand-written; planned day 2026-10-31 if W6's
+   line takes 2026-10-30; its day follows W6's actual run day
+   if the runs slip), ONE ledger line = hi block A of W7 (the
+   frozen L12 single bar candidate) at the settle-bar.txt
+   section-2 READING (class at the frozen section-4 threshold,
+   (sum,128,S=16) pooled median, 18-cell pooled-median min),
+   COUNTED iff it is the first qualifying reading of its UTC
+   day in ledger order, FLAGGED construction (C1 (b) / VERIFY
+   mismatch / broken pin / missing-or-late GO) named and
+   consuming no slot, the s57 section-6 route UNCHANGED (custody
+   host-verify 3/3 + corpus sha256sum -c 16/16 before the GO
+   stamp; the four s51-frozen build pins c2 e5ed903e... / hi
+   a6c31b6c... / tw bb901eb5... / c8 480925e5... 4/4
+   BYTE-IDENTICAL; the 78 runs in the frozen run order c2 r1-3,
+   hi/tw blocks k=1..12 interleaved, c8 r1-3), and the s57
+   section-3 integrity machinery re-derived at W7 with C1
+   branch (a) required to qualify. THE THREE CONTINGENCIES ARE
+   FROZEN (protocol section 0, named not hidden): (i) W6 slips
+   past 2026-10-30 -> W7's day follows W6's actual line day by
+   the same strict-next-day rule; (ii) W6's session is FLAGGED
+   (its line consumes no day slot) -> W7 still runs under this
+   freeze and its line delivers the bar's THIRD counted reading
+   instead of the fourth; the remaining slot is then NEW pre-
+   registered work (NO SILENT EXTENSION, settle-bar.txt
+   section 2 V2); (iii) W6's ledger line is ABSENT -> this
+   freeze STANDS DOWN (fail-closed: W7 never starts before W6's
+   line exists in the ledger). NAMED, NOT HIDDEN (protocol
+   section 4): NO analysis row rides this freeze (the T18
+   analysis half binds only the (s36, W6) window pair -- W7 is
+   in NO frozen window pair and NO frozen contrast; any future
+   row naming W7 is its own pre-registration); the alternative
+   minimal 9-run bar-only session (c2 3 + hi block A 3 + c8 3)
+   was RE-CONSIDERED AND RE-REJECTED with the s80 section-4(b)
+   reasons adopted here (a 9-run window matches no prior window
+   shape and cannot support future pre-registered window-level
+   rows; the bar reading is identical either way; the marginal
+   cost of the full window is one sub-minute burst); further day
+   slots are NOT frozen here (protocol section 4(c)). This slice
+   runs NO hardware (NO reading -> NO settle-bar-ledger line, NO
+   day-slot consumption; settle-bar-ledger.txt == HEAD, git diff
+   empty verified).
+
+2. VERIFIED (real tool output, all runs this tick):
+   (a) the pre-freeze freshness greps at the freeze stamp (the
+       five patterns above, 0 hits each; named non-row hits
+       listed in section 1);
+   (b) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed, 0 failed; capture 17,925 bytes == the
+       s84 pin (cmp exit 0); .err 0 bytes;
+   (c) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run
+       2 -- "Ran 123 tests containing 12162 assertions. 0
+       failures, 0 errors."; run 1 == run 2 == both s84 pins
+       (919 bytes, cmp exit 0 x3); .err 0 bytes both runs;
+   (d) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk, worktree root): exit 1, RED AT BASE
+       kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO
+       .cljk namespace; the scoped runner is deleted and never
+       committed). Capture .err 879 bytes == the s84 pin (cmp
+       exit 0); stdout 0 bytes == the pin. NO green full suite
+       is claimed;
+   (e) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL 38
+       assertions passed, 0 failed, capture == the s84 pin (cmp
+       exit 0); ledger eval twice, exit 0, run 1 == run 2 == the
+       s84 pin -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+   (f) find docs/evidence/gpu -name '*.sh' -> 0 files.
+
+3. THE BAR: DESIGN session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD -- git diff
+   empty, verified this tick). The bar stays PENDING 2/4.
+
+4. UNMEASURED (named): the W6 window itself (the s80 route;
+   day-slot-gated to the first session at/after
+   2026-10-30T00:00:00Z -- this tick runs 2026-10-29T06:3xZ);
+   the W7 window itself (this freeze's measurement half; its
+   day follows W6's actual run day); every bar quantity at W7
+   (class/median/min of hi block A; the evaluator's verdict at
+   the third-or-fourth slot). RULE 4 unchanged: NOTHING MOVES --
+   accelerator-targets defaults remain provisional
+   (:measured? false); NO vendor optimization exists for Intel.
+   This freeze is ACCEPTED DESIGN ONLY (protocol.txt + this
+   record) -- not implemented compiler code, not a measurement.
+
+5. WHAT CHANGED (this commit): docs/evidence/gpu/
+   anv-b3w7daybar-20261031/ gains protocol.txt (the frozen W7
+   pre-registration), this record (freeze-record-s85.txt --
+   named so the running session owns record.txt in this same
+   directory, the s65 convention), and the s85 gate captures
+   (gate-s85-classify.txt/.err, gate-s85-run1/2.txt/.err,
+   gate-s85-full.out/.err, bar-s85-selftest.txt/.err,
+   bar-s85-eval-run1/2.txt/.err); plus the ADR-0355 dated note
+   (this session's step). NO run logs (no hardware this tick),
+   NO .sh files, NO statistics of any kind. The chain commit
+   cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+6. NOT DONE (carry-forward to session 86, named):
+   (a) the W6 measurement half (the s80 freeze; the first
+       session at/after 2026-10-30T00:00:00Z) -- the gate for
+       both T18's analysis half and this freeze's measurement
+       half;
+   (b) the T18 ANALYSIS half (the s84 freeze binds; runs after
+       the W6 tw logs are committed);
+   (c) the W7 measurement half (this freeze; day-slot-gated
+       behind W6's ledger line -- STARTED, NOT FINISHED);
+   (d) any further counted-day slot (its own future freeze --
+       protocol section 4(c));
+   (e) the tail-side vocabulary (s81 named limitation 4(b);
+       not queued);
+   (f) the standing gate set runs with each such tick.
+
+Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/ (this
+file, protocol.txt, the s85 gate captures). (JUN-55, JUN-59;
+Linear tracking JUN-499)

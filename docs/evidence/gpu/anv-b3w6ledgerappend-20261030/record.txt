@@ -1,0 +1,176 @@
+JUN-59 session 106 record (the W6 LEDGER-LANDING session -- the s105
+record's named carry-forward (a)+(b), the tail s105 cut at its runtime
+budget: the standing gate set's missing halves (b)+(c), THEN the
+settle-bar-ledger.txt APPEND of the byte-pinned s105 line, the post-
+append evaluator pair and reconcile-s105.py --line). ROW: complete the
+settle bar's THIRD counted-day landing (day=2026-10-30, session=s105).
+One finding (section 6). The named tail (a)+(b) is COMPLETE; (c)(d)
+stay queued (section 11).
+
+1. GATES (the standing set, real runs this tick, byte-compared to the
+   s88 committed pins in anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture 17,925 bytes == s88 pin
+       (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk
+       (accelerator-targets / -variants / -test / -pipeline /
+       -subgroup-reduce / -simdgroup-reduce / -spirv /
+       -spirv-compile-test), same engine and classpath; created,
+       run, deleted this tick, never committed): GREEN run 1 AND
+       run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin
+       == the s88 run-2 pin (cmp exit 0 x3, 919 bytes), stderr 0
+       bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO .cljk namespace; the scratch runner was
+       scratch, never committed). Capture .err 879 bytes == s88 pin
+       (cmp exit 0); stdout 0 bytes == pin. NO green full suite is
+       claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == s88 pin;
+       pre-append ledger eval twice, exit 0, run 1 == run 2 == s88
+       pin (823 bytes) -> VERDICT: PENDING 2/4 (the pre-append
+       state, recorded before the append).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files (re-checked
+       after the append: 0).
+   With (b)+(c) verified byte-equal to the pins, the s80 section-5
+   rule ("append ONLY after the standing gate set verifies") is
+   satisfied and the append gate opens.
+
+2. THE APPEND (the bar's data movement this tick): the s105 emitted
+   line -- byte-pinned at s105 (ledgerline-s105-run1.txt ==
+   ledgerline-s105-run2.txt, 83 bytes, sha256 065ea0dfc360bd82...,
+   .err 0 bytes both) -- appended VERBATIM (cat, no edit) to
+   docs/evidence/gpu/settle-bar-ledger.txt:
+       day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133 min=993 flag=none
+   git diff exactly ONE insertion, nothing else changed
+   (append-s106-diff.txt; git diff --stat: 1 file changed, 1
+   insertion(+)). The pre-append bytes are the committed HEAD bytes
+   (the file carried no uncommitted edits before this tick).
+
+3. THE POST-APPEND EVALUATOR PAIR (the evaluator is the ONLY verdict
+   source): settle-bar-eval.py over the appended ledger, exit 0,
+   run 1 == run 2 BYTE-IDENTICAL (907 bytes), .err 0 bytes both ->
+   VERDICT: PENDING 3/4 -- counted day=2026-10-28 session=s31;
+   counted day=2026-10-29 session=s73; counted day=2026-10-30
+   session=s105. The s105 record's named expectation ("expected
+   PENDING 3/4 -- evaluator-only verdict") is realized EXACTLY. The
+   bar settles nothing; no verdict beyond the evaluator's output is
+   claimed anywhere.
+
+4. THE FRESH-PAIR RECONCILIATION (the s99 tool, its named
+   post-append duty): reconcile-s105.py --line publication-s105.txt
+   ../settle-bar-ledger.txt s105 (run from the W6 window dir),
+   exit 0 twice BYTE-IDENTICAL (469 bytes), .err 0 bytes both --
+   publication rows parsed 2, pub-rows-agree=True (1133 993..1449
+   INTERMEDIATE/MIXED), ledger line "day=2026-10-30 class=INTER-
+   MEDIATE/MIXED median=1133 min=993 flag=none", X median pub=1133
+   line=1133 MATCH, X min pub=993 line=993 MATCH, X class MATCH ->
+   RECONCILE VERDICT: CONSISTENT. The reconciler self-test:
+   reconcile-s105.py --self-test exit 0 twice BYTE-IDENTICAL ==
+   the s99 committed pin (cmp exit 0), .err 0 bytes.
+
+5. THE BAR STATE (evaluator output only): PENDING 3/4. The
+   2026-10-30 day slot is CONSUMED by the s105 qualifying reading
+   (the FIRST qualifying reading of 2026-10-30 in ledger order);
+   a fourth counted day requires its own pre-registration freeze.
+
+6. FINDING -- THE ADOPTION CONTRACT'S "re-runs --compat" CLAUSE IS
+   STRUCTURALLY UNSATISFIABLE AFTER THE FIRST APPEND (found by the
+   first post-append execution of the clause; NAMED, not hidden):
+   the s99 adoption contract says the W6 session "re-runs --compat
+   in its own record" (the committed-window chain as the byte-level
+   proof the parsers agree) -- but the chain's ledger stage invokes
+   the s97 FROZEN ledger-prego.py (anv-b3w6ledgerrego-20261029/,
+   hardcoded LEDGER = ../settle-bar-ledger.txt) whose --compat
+   asserts the ledger holds exactly the frozen NINE sessions
+   ["s31".."s73"] (its docstring: "reproduce the nine committed
+   settle-bar-ledger.txt lines BYTE-EXACT"). Against the appended
+   (now ten-session) ledger it refuses fail-closed:
+       REFUSED-LEDGER-SHAPE: committed ledger sessions
+       ['s31','s32','s33','s34','s36','s38','s39','s51','s73','s105']
+       != the frozen nine ['s31',...,'s73']  (exit 2)
+   and reconcile-s105.py --compat fails closed downstream: STAGE
+   ledger-prego.py --compat rc=2 rows=0 -> FAIL; X0 s36/s51/s73
+   parse PARSE-MISSING -> MISMATCH; "TOTAL: stage rows 7 failed 1 |
+   cross rows 3 mismatched 3"; RECONCILE VERDICT: INCONSISTENT --
+   run twice BYTE-IDENTICAL (captures reconcile-s106-compat-run1/2),
+   and differing from the s99 committed pin in exactly those rows
+   (the pin's seven stage rows OK + 31 cross rows MATCH are the
+   pre-append state). WHAT THIS DOES NOT MEAN (named): it is NOT
+   evidence against the appended line (the fresh pair reconciles
+   CONSISTENT, section 4; the evaluator counts the day, section 3);
+   it is NOT a new red in any frozen tool (the nine-session
+   assertion is the s97 tool's designed pre-W6 shape check); the
+   s99 parser-agreement proof remains valid WHERE it was taken (the
+   committed s99 pin over the pre-append bytes) and --self-test
+   still reproduces its pin this tick (section 4). THE STRUCTURAL
+   STATEMENT: ANY qualifying append makes ledger-prego.py --compat
+   refuse -- so the contract clause can only ever be satisfied
+   BEFORE the append; s105 (the W6 session) captured no --compat
+   re-run and no honest green one exists post-append. RESOLUTION IS
+   PROPOSED ONLY (nothing accepted, nothing implemented; section
+   11(a)).
+
+7. NAMED, NOT HIDDEN: (a) two harness invocations of --line failed
+   (reconcile-s106-badargv-run1/2.err, 719 bytes each, exit 1,
+   FileNotFoundError '../../settle-bar-ledger.txt') -- my own argv
+   depth error: --line's ledger path is caller-supplied and the
+   documented "../../" spelling resolves OUTSIDE docs/evidence/gpu
+   from the W6 window dir; corrected to ../settle-bar-ledger.txt
+   and the tool ran clean (section 4); no tool defect; (b) the
+   scoped-gate scratch runner was created, run, deleted this tick
+   (never committed; scratch/ untracked); (c) the kbb engine's
+   standing "2 dep(s) are not :local/root" warning reaches no
+   capture (.err 0 bytes wherever the pins are 0).
+
+8. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor). This is the settling bar's ledger machinery,
+   not a workgroup-default measurement; the s105 reading's class is
+   the bar's own frozen threshold class, not a vendor row.
+
+9. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked at tick start and again immediately before this push
+   (state-s106.txt); chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4, MERGEABLE -- the one this commit
+   pushes to).
+
+10. DOUBLE-RUNS: every derived output this tick ran twice and the
+    pairs are byte-identical (scoped gate 1/2, evaluator pre 1/2,
+    evaluator post 1/2, --line 1/2, --compat 1/2, --self-test 1/2);
+    the gate captures compare byte-equal to committed pins.
+
+11. NOT DONE (carry-forward to session 107, named):
+    (a) the --compat post-append design decision (PROPOSED only --
+        nothing accepted): how the record re-validates parser
+        agreement post-append (candidates on the table: the frozen
+        tool's --compat asserts a frozen-window SUBSET of the live
+        ledger instead of the whole session set; or the chain stages
+        the pre-append nine-row ledger as a scratch stand-in; or the
+        W7 record carries the s99 committed --compat pin as the
+        parser-agreement proof and names the post-append refusal) --
+        a design slice; changing a frozen tool needs its own freeze;
+    (b) the T18 analysis half (s92 pre-build + s84 freeze bind) --
+        now unblocked behind the completed append;
+    (c) the T20 analysis half (s93 pre-build + s88 freeze bind) --
+        now unblocked;
+    (d) the W7 measurement half (s85 freeze; the 2026-10-31 day
+        slot under the same first-qualifying-reading construction;
+        NOTE for the W7 record: the s99 "re-runs --compat" clause
+        will refuse there too until 11(a) resolves);
+    (e) any further counted-day slot (its own pre-registration
+        freeze) and a cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6ledgerappend-20261030/ (this
+record, the s106 gate/eval/reconcile captures, append-s106-diff.txt,
+state-s106.txt) + the W6 record dir anv-b3w6daybar-20261030/ + the
+ADR-0355 dated note. (JUN-55, JUN-59; Linear tracking JUN-499)

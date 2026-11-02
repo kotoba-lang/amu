@@ -1,0 +1,204 @@
+JUN-59 -- session 86 protocol (DESIGN FREEZE ONLY):
+THE TAIL-SIDE HALF-PAIRS (TS-L/TS-R) -- THE SEPARATE
+TAIL-SIDE/ASYMMETRIC NAMED RANK-PAIR VOCABULARY (the s81 DL
+freeze's named limitation 4(b) taken to its design half; the
+s85 record section-6(e) carry-forward item).
+DESIGN slice this tick: name the vocabulary and freeze its
+selection rule. NO statistic of any run log is computed here --
+the eight named pairs' levels are UNMEASURED, and no analysis
+row rides this freeze. Written once at freeze stamp
+2026-10-29T07:22:17Z; never rewritten. The chain branch
+bot/amu-gpu-chain-20261028-4, the ONE open chain PR -- commit +
+push only.
+
+0. ROW QUESTION (ONE row: ONE design decision -- no measurement
+   this tick): the s81 vocabulary section-4(b) named limitation
+   -- "every DL pair is self-mirror, so it measures total spread
+   only ... probing which tail moves needs a SEPARATE future
+   vocabulary (asymmetric pairs), NOT named here" -- queued as
+   carry-forward at s81 7(d) ("future design work, not queued
+   as a row") and s85 6(e). WHY THIS ROW NOW (named, not
+   silent): of the s85 carry-forward items, (a) the W6
+   measurement half is day-slot-gated (the first session at/
+   after 2026-10-30T00:00:00Z; this tick runs 2026-10-29T07:0xZ,
+   ~16.7h before the slot opens), (b) the T18 analysis half and
+   (c) the W7 measurement half are gated behind W6's ledger
+   line, (d) any further counted-day slot is contingency-only
+   (its own future freeze -- needed only if a frozen session is
+   FLAGGED; the s85 freeze section 4(c) defers it), so (e) the
+   tail-side vocabulary is the only carry-forward item a
+   one-tick design slice can honestly take today.
+
+1. THE VOCABULARY (frozen; ranks of the pooled-75 order
+   statistics x_(1) <= ... <= x_(75), the frozen estimator unit
+   F3 of settle-bar.txt; deviation-center rank x_(38)). Per k
+   in the DL vocabulary's k set {4, 8, 16, 32} (named ONLY from
+   the s81 freeze -- this vocabulary introduces NO new k
+   selection), the two HALF-PAIRS of DLk's pair
+   (x_(38-k), x_(38+k)), sharing the deviation-center x_(38):
+     TS-L4  = (x_(34), x_(38))   k=4   span 4
+     TS-R4  = (x_(38), x_(42))   k=4   span 4
+     TS-L8  = (x_(30), x_(38))   k=8   span 8
+     TS-R8  = (x_(38), x_(46))   k=8   span 8
+     TS-L16 = (x_(22), x_(38))   k=16  span 16
+     TS-R16 = (x_(38), x_(54))   k=16  span 16
+     TS-L32 = (x_( 6), x_(38))   k=32  span 32
+     TS-R32 = (x_(38), x_( 70))  k=32  span 32
+   THE FROZEN SELECTION RULE: the k set is the DL vocabulary's k
+   set verbatim (tailpair-vocab-s86.py checks the equality);
+   for each k, TS-Lk = (x_(38-k), x_(38)) and TS-Rk =
+   (x_(38), x_(38+k)). Properties, all script-checked (271/0):
+   span control (span(TS-Lk) = span(TS-Rk) = k -- a left/right
+   contrast within a family holds the span FIXED); mirror
+   closure (mirror(TS-Lk) = TS-Rk under r <-> 76-r; no member
+   self-mirror; the set closed under the mirror); DL
+   decomposition (TS-Lk U TS-Rk = DLk's pair ranks plus the
+   shared center; HL_k + HR_k = D_k EXACTLY, an algebraic
+   identity on any increasing sequence, checked on a synthetic
+   in-script sequence, never run data); ranks in 1..75; each
+   pair DISJOINT from all 20 previously named pooled-75 rank
+   pairs (the inventory of section 2); the family is closed at
+   eight pairs (four k families -- the DL ladder tops out at
+   k=32, 2*32 = 64 > 37).
+
+2. THE PRIOR NAMED PAIR INVENTORY (frozen citation list; the
+   disjointness check's other side): the s81 section-2
+   inventory's 16 pairs -- k=0 (38,38) center anchor s58; k=1
+   (37,39) INNER5 s60/s61; k=2 (36,40) INNER4 s59; k=3 (35,41)
+   INNER3 s58; k=5 (33,43) INNER2 s56; k=10 (28,48) INNER s53;
+   k=19 (19,57) IQR s47; k=29 (9,67) OUTER s53; k=33 (5,71)
+   OUTER2 s56; k=35 (3,73) OUTER3 s58; k=36 (2,74) OUTER4 s59;
+   k=37 (1,75) OUTER5 s60/s61; asymmetric four-rank pairs
+   (1,57)/(19,75) HX s62, (1,19)/(57,75) HS s63 -- PLUS the 4
+   DL pairs s81 itself named: (34,42) DL4, (30,46) DL8,
+   (22,54) DL16, (6,70) DL32. The halving ladder (s56-s61), the
+   four-rank vocabulary (s62-s63) and the DL ladder's own full
+   pairs (s81) stay untouched; nothing here re-opens any of
+   them.
+
+3. THE SELECTION RULE FOR FUTURE ROWS (frozen, the s81 rule 3
+   adopted):
+   (a) a future tail-side row names its pair(s) ONLY from this
+       vocabulary; a pair outside it needs a NEW vocabulary
+       freeze (no silent extension);
+   (b) the row names its pairs in its OWN protocol freeze BEFORE
+       any statistic of the row exists (the campaign's pre-
+       registration convention, unchanged);
+   (c) estimators, nulls, thresholds and joint rules are NOT
+       frozen here -- each row freezes its own (the vocabulary
+       names rank pairs only);
+   (d) several pairs in one row take the row's own multiplicity
+       convention (the IUT rule the T-family rows used).
+
+4. NAMED, NOT HIDDEN:
+   (a) WHY THE HALF-PAIRS AT THE DL k's: the rule is data-
+       independent (it reads only the s81 freeze and the
+       committed naming history, never any statistic), the k
+       set is already committed to (no new selection, no new
+       tie-break), and the construction answers the s81
+       section-4(a) conflation objection BY CONSTRUCTION: a
+       left/right contrast within one family holds the span
+       fixed (both sides span k), so tail identity is probed
+       without re-introducing span as a confound. The algebraic
+       closure HL_k + HR_k = D_k keeps every future tail-side
+       row exactly reconcilable with the DL vocabulary (the
+       half-pairs partition DLk's spread). ALTERNATIVES
+       CONSIDERED AND REJECTED: (i) the s62/s63 four-rank
+       asymmetric vocabulary's shape -- the four-rank program is
+       COMPLETE AND RETIRED over its rank set (s81 section 2)
+       and its pairs conflate tail identity with span (the s81
+       section-4(a) objection, re-adopted); (ii) a per-row
+       free-k rule -- re-opens ad-hoc selection (the s81
+       section-4(a) reason, re-adopted); (iii) half-pairs at
+       NEW k's (or at the halving ladder's k=1..5) -- needs a
+       fresh selection rule and buys no power; k=1..5 half-pairs
+       additionally sit deep in the narrow-span band of (c);
+       (iv) treating s63's HS-SET-L/HS-SET-R pairs as "the
+       tail-side vocabulary" -- they are RETIRED with the
+       four-rank program and do not give a span-controlled
+       left/right contrast at a shared center.
+   (b) THE ESTIMATOR/CONTRAST CONVENTION IS NOT FROZEN HERE:
+       HL_k = x_(38) - x_(38-k) and HR_k = x_(38+k) - x_(38)
+       are the natural per-block half-spreads a future row may
+       use, but whether that row takes the contrast HR_k -
+       HL_k, the pair (HL_k, HR_k) jointly, or any other
+       estimator is ITS pre-registration (the s81 rule 3(c),
+       adopted). This vocabulary names RANKS ONLY; it
+       pre-registers NO direction, NO null, NO threshold.
+   (c) NARROW-SPAN CAVEAT (pre-registered; the s81 section-4(c)
+       band adopted and extended to half-pairs): the halving
+       ladder's inner cluster (full-pair spans 2..10) scattered
+       near its noise floors; a half-pair's span is k, so
+       TS-L4/TS-R4 (span 4) and TS-L8/TS-R8 (span 8) sit IN
+       that band -- a (b) at those families is uninformative
+       about tail identity. The informative families are
+       TS-L16/TS-R16 and TS-L32/TS-R32 (spans 16/32).
+   (d) FRESHNESS, BOUNDED: no committed file names any of these
+       pairs (verified this tick: grep -F over docs/evidence/gpu
+       at 2026-10-29T07:18:55Z-07:19:25Z, before this freeze
+       stamp, for the eight pair forms (34,38)/(38,42)/(30,38)/
+       (38,46)/(22,38)/(38,54)/(6,38)/(38,70), the eight name
+       tokens TS-L4/TS-R4/TS-L8/TS-R8/TS-L16/TS-R16/TS-L32/
+       TS-R32 and the eight pair tokens "x_(34), x_(38)"/
+       "x_(38), x_(42)"/"x_(30), x_(38)"/"x_(38), x_(46)"/
+       "x_(22), x_(38)"/"x_(38), x_(54)"/"x_(6), x_(38)"/
+       "x_(38), x_(70)": 24 tokens, 0 hits each). NOT CLAIMED
+       FRESH, named not hidden: the bare rank tokens x_(6),
+       x_(22), x_(30), x_(34), x_(38), x_(42), x_(46), x_(54),
+       x_(70) -- every rank this vocabulary uses is a rank the
+       DL vocabulary or the s58 center anchor already names
+       (the half-pairs re-pair DL's own ranks around x_(38));
+       the novelty is exactly the PAIRING, and the claim is
+       exactly that grep. It certifies nothing outside the
+       committed evidence tree.
+   (e) THE PRIOR ASYMMETRY EVIDENCE IS QUOTE-ONLY MOTIVATION,
+       NOT A PRIOR OF THIS FREEZE: three consecutive named
+       probes found mirror pair sets NOT mirror-symmetric in
+       level (s61/s62/s63; e.g. s63's D_HSL = x_(19)-x_(1) vs
+       D_HSR = x_(75)-x_(57), 2*L levels 583/579/568/554 vs
+       195/169/196/217 -- the s81 section-4(b) citation). That
+       is WHY this vocabulary exists; it licenses no direction
+       here. A future row that wants directional priors freezes
+       them as quote-only priors in its own pre-registration
+       (the s53/s54, s82 pattern).
+
+5. WHAT THIS FREEZE DOES NOT DO: computes NO statistic (the TS
+   levels are UNMEASURED -- no measurement exists to report);
+   NO hardware runs, NO builds, NO compiles, NO GO stamp, NO
+   reading, NO settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD, git diff 0
+   bytes, verified this tick); NO analysis row rides this
+   freeze; NO tail identity is claimed to move or not move.
+   RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them
+   (:measured? true scoped to each row's one named measured
+   device for :nvidia/:apple/:intel/:amd; :arm and :unknown
+   remain provisional, :measured? false); NO vendor optimization
+   exists for Intel (or for any vendor).
+
+6. IMPLEMENTATION PATHS (deterministic; the s81 section-6
+   discipline): tailpair-vocab-s86.py (pure Python, stdlib
+   only, no randomness, no clock) enumerates the family and
+   checks every frozen property of sections 1-3; run twice
+   byte-identical (3,188 bytes, sha256 7c9d98926bf70103... both,
+   cmp exit 0, stderr 0 bytes); --self-test "TOTAL: 271
+   assertions passed, 0 failed", exit 0. The standing gate set
+   runs at this tick as always (classify --self-test; scoped
+   GPU gate twice via the scratch runner, created/run/deleted,
+   never committed; FULL run-tests.cljk run live; the settle-bar
+   evaluator --self-test and ledger eval twice byte-identical;
+   find docs/evidence/gpu -name '*.sh' -> 0 -- no POSIX shell
+   execution files, ever).
+
+7. RULE 4 (frozen): NOTHING MOVES. WHAT THIS FREEZE CARRIES
+   FORWARD (named; each item is its own future row): (a) the W6
+   measurement half at the first session at/after
+   2026-10-30T00:00:00Z (the s80 freeze binds) -- the gate for
+   the T18 analysis half and the W7 measurement half; (b) the
+   T18 ANALYSIS half (the s84 freeze binds; after the W6 tw
+   logs are committed); (c) the W7 measurement half (the s85
+   freeze binds; behind W6's ledger line); (d) any further
+   counted-day slot (its own future freeze -- protocol section
+   4(c) of the s85 freeze); (e) any tail-side row (this
+   vocabulary is the route back; a row is a NEW pre-
+   registration, NOT taken here).

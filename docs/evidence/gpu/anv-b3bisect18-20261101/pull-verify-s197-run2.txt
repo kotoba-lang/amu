@@ -1,0 +1,13 @@
+committed name set == expected 108/108 (54 run-<tag>-r<NN>.txt.gz + 54 plain 0-byte .stderr.txt)
+raw-digests-s197.txt: 54 unique rows; raw bytes total 771124077 == the host wc -c census total
+gzip fidelity: checked=54 mismatch=0
+03511dbfa0f2a6a3f92caa1991493633e4fc2805778367fc5a59426d7adc3a53  -
+committed form -> raw aggregate preserved exactly
+run-header census (fields n,rounds,warmup,batch,barrier_n,work_mul,ndiv; parsed from the 54 committed logs):
+  q3: n=254923 rounds=6400 warmup=3 batch=3 barrier_n=0 work_mul=246 ndiv=965  logs=48 (run-q3-r01.txt..run-q3-r48.txt)
+  c2: n=1000003 rounds=6400 warmup=3 batch=2 barrier_n=0 work_mul=1 ndiv=1  logs=3 (run-c2-r01.txt..run-c2-r03.txt)
+  c8: n=1000003 rounds=6400 warmup=3 batch=8 barrier_n=0 work_mul=1 ndiv=1  logs=3 (run-c8-r01.txt..run-c8-r03.txt)
+q3 header census: batch=3 work_mul=246 ndiv=965 n=254,923 rounds=6400 -- 48/48 logs uniform; == the frozen knob arithmetic ((1,000,003*246)//965 = 254,923, gcd 1) -- ok
+c2 header census: batch=2 work_mul=1 ndiv=1 n=1,000,003 rounds=6400 -- 3/3 uniform; c8 header census: batch=8 work_mul=1 ndiv=1 n=1,000,003 rounds=6400 -- 3/3 uniform -- ok
+PULL-VERIFY S197 SUMMARY: name set 108/108, raw rows 54/54, gzip fidelity 54/54, aggregate MATCH, headers 54/54
+PULL-VERIFY S197 COMPLETE (fail-closed: 0 failed)

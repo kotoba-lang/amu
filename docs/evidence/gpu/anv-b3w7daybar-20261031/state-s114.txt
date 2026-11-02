@@ -1,0 +1,82 @@
+2026-10-31T00:5x:00Z (written at runtime-budget cutoff)
+== session 114 W7 DERIVATION-CONTINUATION state capture ==
+STARTED, NOT FINISHED. This session found the s113 measurement
+bytes intact and mapped the derivation chain; it ran NO gate, NO
+reading, NO census, NO custody check, NO emit, NO append, NO commit
+(the s110/s113 budget-cut precedent). Nothing pushed; Linear 未記録.
+
+WHAT EXISTS (verified this session by real tool output):
+- W7 window MEASURED at s113's session (session start
+  2026-10-31T00:02:31Z, qualifies as the W7 session per
+  state-s113.txt; slot arithmetic re-derived from the committed
+  settle-bar-ledger.txt W6 line day=2026-10-30 -> strict-next-day
+  2026-10-31): 78/78 rc=0 runs in the frozen order (c2 r1-3, hi/tw
+  blocks k=1..12 interleaved, c8 r1-3), host window
+  2026-10-31T00:24:19Z..00:24:35Z, per-run host-date/rc in
+  live-fields.txt (78 lines, all rc=0); run logs copied locally
+  (run-*.txt + run-*.stderr.txt = 156 files) and still present on
+  the host at ~/anv-b3w7daybar-20261031/.
+- NAMED, NOT HIDDEN (attempt1): the FIRST 78-process burst
+  (00:20:50Z-00:20:53Z) failed 78/78 rc=1 -- 'FATAL: cannot open
+  subgroup-reduce-w128-sum.emitted.spv' (the instrument opens
+  manifest-relative bare spv names; cwd must be shaders/).
+  Preserved as w7-attempt1-live-fields.txt (78 rc=1 lines) +
+  w7-attempt1-c2-r1.txt/.stderr.txt (the named FATAL example).
+  The successful burst (00:24:19Z-35Z) is the W7 window; attempt1
+  produced no samples and no reading.
+- Host staging (s113's transcript bookends): workdir probed
+  NO-WORKDIR 00:16:30Z; staged 00:19:23Z-00:19:38Z (cp -a of
+  exactly the 16 corpus files; instrument + cases-s113-a.txt +
+  expected-corpus.sha256 scp'd). Builds at 00:20 (anv-bb-{c2,c8,hi,tw},
+  build-*.err 0 bytes). Host dir listing captured this session.
+
+UNRESOLVED AT CUTOFF (the next tick's first duty):
+(1) CUSTODY CAPTURES: host-verify-<tag>.txt and build-census-<tag>.txt
+    are NOT persisted locally (s113 died before writing them). The
+    custody check (custody-check-prego.py --check) fails closed
+    without them; the GO stamp (which must PRECEDE the builds --
+    FLAGGED criterion 'custody GO missing/after the builds', s85
+    section 1) is unrecoverable from the filesystem. FIRST ACTION of
+    the next tick: scroll the s113 session transcript
+    (@session:amu-gpu/local-8b9af0c5e622e91b0ecb535812a5728e6927c9ea8030b543ceaada543fa73eca,
+    around message ids 54967-55063) for the verbatim host-verify /
+    corpus 16/16 / GO-stamp tool outputs of 00:16-00:20Z; if the GO
+    stamp exists there, reconstruct host-verify-s113.txt quoting it
+    with named transcript provenance; if it does NOT exist, the W7
+    reading is FLAGGED 'custody-go-missing' under the frozen criteria
+    (named in the ledger, NO day-slot consumption) -- do NOT invent a
+    GO stamp.
+(2) ADOPTION + DERIVATION (all pre-registered; the s94 pre-flight +
+    s100 adoption contract bind): run
+    adoption-check-prego.py --check anv-b3ledgersupersede-20261030/
+    adoption-manifest-v2.txt .  fail-closed BEFORE any copy; adopt
+    the seven tools; the READING TOOL TAKES THE s94-NAMED W7_DIR
+    REPOINT (reading-prego-fixed.py's single window constant
+    W6_DIR = "anv-b3w6daybar-20261030" -> the W7 workdir
+    "anv-b3w7daybar-20261031"; the ONLY sanctioned edit; all other
+    W6 prose stays frozen and is named in the record per the s105
+    section-9(a) precedent). The record's identity session is s113
+    (the measuring session; cases-s113-a.txt is already the window
+    manifest, header 'session 113') -- tools adopted as *-s113.py so
+    the ledger line's session= field (taken from the emitter
+    filename) reads s113, matching every prior bar row's
+    line-session == measuring-session binding; s114's own captures
+    keep s114 names (the s106 precedent).
+(3) Then: run-window.txt via run-window-prego.py --rebuild (parameterized);
+    reading-s113.py run twice byte-identical -> publication-s113.txt
+    (expect the frozen stale-prose tail, named not edited);
+    fresh-census-s113.py --w6 publication-s113.txt
+    anv-b3w7daybar-20261031 twice byte-identical;
+    custody-s113.py --check anv-b3w7daybar-20261031 s113
+    cases-s113-a.txt twice byte-identical -> pin/go tokens;
+    ledger-s113.py --emit ... -> the line twice byte-identical
+    (emit never appends); standing gates (a)-(f); THEN (next tick
+    per the s105/s106 split) the append + post-append evaluator +
+    reconcile-s113.py --line + the v2 --compat GREEN post-append
+    re-run in the record.
+
+BLOCKER-FIRST at this tick's start (00:31Z): 0 open kotoba-lang/amu
+PRs with a hermes/ head; chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4, MERGEABLE/CLEAN). Re-check before the
+next push.
+Untracked scratch/ and deps.edn are not this row's, not committed.

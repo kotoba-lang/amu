@@ -1,0 +1,206 @@
+amu-gpu s152 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut
+PRE-REGISTRATION (the s151 carry-forward (a)): STARTED, NOT
+FINISHED (runtime-budget cutoff after the design DECISIONS and
+committed-source reconnaissance, BEFORE any census run and any
+protocol freeze -- the s119/s133/s141/s143/s148/s150/s151
+interrupted-tick precedent; NO push this tick).
+
+ROW SELECTED: the fifteenth cut pre-registration FROZEN --
+protocol.txt with its own freeze stamp satisfying the
+confrontation spec's four arms (the s151 NOT DONE (a)). NOT
+REACHED this tick: no protocol.txt exists, NOTHING is frozen, no
+census written or run, no gates, no record, no landing.
+
+DECISIONS THIS TICK (the s151 delegation "the arm (c) statistic
+and the cut's point are UNDECIDED ... s152 decides (or overturns)
+and freezes" -- DECIDED here in draft; frozen only when
+protocol.txt is written at a later tick; every item below is
+ACCEPTED-DESIGN-IN-DRAFT, not yet a frozen protocol):
+
+D1. THE CUT'S POINT: ADOPT bis (3,316,1239) n=255,045 (s151's
+    direction, adopted not overturned): the interior point of
+    (254,557, 255,208] -- both class outcomes narrow the bracket
+    there by bisection (STABLE-CAPTURED -> (254,557, 255,045];
+    STABLE-INTERMEDIATE -> (255,045, 255,208]), unlike mid where
+    a CAPTURED outcome cannot narrow (lo is dual-class on the
+    record); largest committed pooled margin in the bracket
+    (bis pooled-48 18-cell min 1,006 / pooled-24 1,012). MID IS
+    NOT RE-MEASURED this cut (the s150 option "mid again" is not
+    taken); the 14th cut's TOLERANCE-UNRESOLVED mid content is
+    confronted in arm (a) FIRST (quoted, with the statement that
+    no letter of this cut supersedes it).
+
+D2. THE ARM (c) STATISTIC: option (i) -- THE DEEP-POOLING CI
+    CLASS STATISTIC (replacing the min-over-18 threshold-ride):
+    (i) INSTRUMENT VARIANT: '#define ROUNDS 25' -> '#define
+        ROUNDS R' (one-line diff of the committed a5e539f0...
+        source copy; NEW pins -- first-measured build digests,
+        the s136 bis-440604ef... precedent; the shader corpus
+        unchanged BYTE-IDENTICAL);
+    (ii) PER UNIT PER CELL (unit = a block of 3 runs x R rounds
+        per cell, or the pooled-48 arm of 48 runs x R rounds):
+        m_c = pooled sample median gpu_ticks, MAD_c = sample
+        median |x - m_c|, CI half-width h_c = 3.6420 * MAD_c /
+        sqrt(N) (95% normal-approximation CI for the population
+        median: 1.96 * 1.2533 * 1.4826 = 3.6420; frozen formula);
+    (iii) UNIT CLASSES at the FROZEN 1,000-tick threshold (the
+        threshold itself UNCHANGED -- only the statistic
+        changes): CAPTURED iff all 18 pipeline-ok cells
+        m_c - h_c >= 1,000; FLOOR iff all 18 m_c + h_c <= 100;
+        INTERMEDIATE/MIXED iff (some m_c + h_c < 1,000) AND
+        (some m_c - h_c > 100); IN-BAND-UNDECIDED otherwise.
+        The min-over-18 statistic is GONE (all-cells
+        quantifiers replace it) -- s150 (2)'s per-block argmin
+        rotation among {13,17,21} is moot at class level.
+
+D3. THE DEEP-POOLING CONSTANT R: fixed by PRE-REGISTERED
+    DERIVATION RULE (run in the pre-reg census, before the
+    freeze): R = the smallest value in the frozen ladder
+    {25, 50, 100, 200, 400, 800, 1600, 3200, 6400} such that
+    max over the 18 pipeline-ok cells of 3.6420 * MAD_c /
+    sqrt(3R) <= 2.0 ticks, the MADs taken over the COMMITTED
+    bis round-level samples (the s139 48 bis runs x 25 rounds =
+    1,200 samples/cell; the s147 mid window 48 x 25 as
+    cross-check). TARGET RATIONALE: 2.0 ticks is the class
+    rule's frozen decision resolution at the 1,000-tick
+    threshold (0.2% of the threshold), below every committed
+    in-bracket margin (bis pooled-48 min 1,006 = 6-tick margin;
+    the 14th cut's failure mode was margins 1..5 ticks against a
+    +-15-20-tick block walk). NAMED, NOT HIDDEN: the target is
+    chosen with committed margins visible (every
+    pre-registration confronts committed content); the
+    fifteenth cut's own margins at its NEW binaries are
+    UNMEASURED (the cross-binary hazard, W3) and the letters
+    handle IN-BAND-UNDECIDED honestly.
+
+D4. ARM TABLE (3 rows = 54 fresh processes; self-check
+    3+48+3 = 54): c2 (B=2, WM=1, NDIV=1) k=3 / bis (B=3,
+    WM=316, NDIV=1239) n=255,045 k=48 / c8 (B=8, WM=1, NDIV=1)
+    k=3. ZERO NEW KNOB TRIPLES. Frozen run order
+    c2-r01..03, bis-r01..48, c8-r01..03 (controls bookend).
+    Frozen block partition block j = runs r(3j-2..3j),
+    j=1..16; pooled-48 alongside (the s139 C2/C3 letter shape
+    preserved at 16 blocks of 3 runs).
+
+D5. LETTERS (shapes decided in draft): C1 (control
+    replication, unchanged); C2 at bis under D2/D3: (a)
+    STABLE-INTERMEDIATE (all 16 blocks + pooled-48 class I/M),
+    (b) STABLE-CAPTURED (all C), (c) CLASS-UNRESOLVED (mixed
+    block classes, or any IN-BAND-UNDECIDED unit, or pooled
+    differs -- FAILS, L9 binds at bis under the deep-pooling
+    statistic; any future narrowing claim at bis must confront
+    this cut's content first, named here, not specified here),
+    (d) INVALID (the frozen INVALIDATION criterion); W1: (a)
+    C2 (b) -> bracket narrows to (254,557, 255,045] ("THE B=3
+    CLASS FLIP LIES AT OR BELOW n=255,045"), MID-ONLY NARROWING
+    CLAIM stays SUSPENDED; (b) C2 (a) -> bracket narrows to
+    (255,045, 255,208] ("THE B=3 CLASS FLIP LIES ABOVE
+    n=255,045"; NAMED: this outcome IMPLIES the claim's
+    inequality F > 254,882 and SUPERSEDES its realization-at-mid
+    form -- the bracket is strictly narrower than (254,882,
+    255,208]); (c) C2 (c)/(d) -> NOTHING MOVES, bracket stays
+    EXACTLY (254,557, 255,208], claim SUSPENDED; (d) INVALID.
+    W3 confronts the committed bis windows at 440604ef...
+    (s136: 7x CAPTURED + 1x I/M, pooled-24 CAPTURED 1,147;
+    s139: 7x CAPTURED + 9x I/M, block medians 1,174..1,127,
+    block minima 1,002..990, pooled-48 CAPTURED 1,148) AND
+    NAMES THE CROSS-BINARY HAZARD: this cut's binaries are NEW
+    (the ROUNDS variant; first-measured digests) -- any class
+    disagreement with the committed windows may be BINARY-
+    driven, cause UNMEASURED (L2). Arm (d) quotes the
+    dual-class content (lo 254,557 and mid 254,882) and the
+    cross-window disagreement at cabff942... and states the
+    letters' treatment (no letter touches lo/mid; the disputed
+    record stands as committed content under ALL outcomes).
+
+RECONNAISSANCE THIS TICK (tool-verified reads of committed
+bytes only; quote-only):
+
+(1) THE SLOW-FAMILY CELL LABEL IS CORRECTED AGAINST COMMITTED
+    BYTES: state-s150 (2) calls {idx 13,17,21} "the w256
+    forced=32 cells"; the committed CELL lines of
+    anv-b3bisect14-20261031/run-mid-r01.txt say
+    idx=13/17/21 ... wg=256 forced=16 probe_size=16
+    probe_nsub=16 probe_wg=256 pipeline=ok (the w256 FORCED=16
+    cells; the forced=32 w256 cells are idx 14/18/22). The
+    census and protocol must quote the committed label
+    (forced=16); s150's prose label is a naming slip, corrected
+    here, NOT hidden.
+
+(2) THE ROUND-LEVEL DISPERSION SOURCE IS CONFIRMED: each run
+    log carries 450 SAMPLE lines = 18 pipeline-ok cells x 25
+    rounds, each SAMPLE printing gpu_ticks= per (cell, round)
+    -- the per-round values are the input of the D3 dispersion
+    derivation; the estimator shape is the committed '#define
+    ROUNDS 25' constant ('#define WARMUP 3' beside it in the
+    committed instrument copy gpu-subgroup-reduce-anv-ndiv.c.txt
+    -- the D2 variant's one-line target).
+
+(3) THE STANDING-GATE PINS ARE LOCATED (for the landing tick):
+    the s88 pins in ../anv-b3w6tailrep-20261030/
+    (gate-s88-classify.txt 17,925 bytes / gate-s88-run1.txt
+    919 bytes / gate-s88-full.err 879 bytes / bar-s88-selftest
+    3,590 bytes) and the s117 post-append ledger-eval pin
+    (bar-s117-eval-post-run1.txt, 1,006 bytes) in
+    ../anv-b3w7ledgerappend-20261031/; the frozen evaluator is
+    ../anv-b3settlebar-20261027/settle-bar-eval.py.
+
+NAMING (frozen by this state file, resolving the s143-precedent
+ambiguity): the fifteenth-cut pre-registration artifacts are
+named for s152, the DECISION session whose list owns them (the
+s143 precedent names design artifacts for the session whose
+design and NOT DONE list they complete -- here D1-D5 turn
+s151's PROPOSED direction into decisions): pre-reg-census-
+s152.py + pre-reg-census-s152-run1.txt/run2.txt +
+freeze-record-s152.txt; gate captures named for the running
+session (the completing-session precedent).
+
+NOT DONE (s153 carries exactly this list):
+(a) the committed fail-closed quote-only census
+    (pre-reg-census-s152.py; pure stdlib, no clock/RNG/network/
+    hardware, run twice byte-identical) re-deriving state-s150
+    (1)-(3) and state-s151 (1)-(2) from committed bytes AND the
+    D3 round-level dispersion derivation fixing R (bis s139 48
+    runs primary, s147 mid window cross-check), AND writing the
+    instrument variant source (the one-line diff of the
+    committed a5e539f0... copy) with its SHA-256 instrument
+    pin;
+(b) protocol.txt FROZEN (write-once; its own freeze stamp,
+    written once BEFORE any run log of the cut exists)
+    satisfying the confrontation spec's four arms with the 14th
+    cut's TOLERANCE-UNRESOLVED content at mid confronted FIRST
+    in arm (a) and the D2/D3 arm (c) statistic decided before
+    any run + freeze-record-s152.txt;
+(c) standing gates (a)-(f) with the running session's captures;
+(d) record.txt + the ADR-0355 dated note;
+(e) blocker-first re-check + landing commit + push to the ONE
+    chain PR + the JUN-499 Linear comment;
+(f) standing, not queued: the fifteenth cut MEASUREMENT half
+    (54 fresh processes under the frozen protocol on
+    aiueos-6600hs -- NOT queued), any further counted-day slot
+    (the 2026-10-31 UTC slot is consumed at s117; the next slot
+    is a NEW UTC day and its own freeze) and the cross-day
+    tail-movement row (not queued).
+
+STATE (three-state discipline): NO fifteenth-cut quantity
+exists -- no cut is frozen, queued or run; protocol.txt does
+NOT exist at this cutoff; D1-D5 are DECIDED DESIGN IN DRAFT
+(not frozen, not implemented, not measured) and every
+reconnaissance value above is QUOTE-ONLY from committed bytes,
+NOT a measurement and NOT a class/verdict/claim. The MID-ONLY
+NARROWING CLAIM stays SUSPENDED (named, not claimed); the
+committed bracket stays EXACTLY (254,557, 255,208] -- nothing
+moves. NAMED, NOT HIDDEN: this tick ran NO gates, NO hardware,
+NO builds, NO compiles, NO GO stamp, NO day-slot consumption,
+NO ledger line -- BAR NON-INTERFERENCE held; settle-bar-
+ledger.txt untouched. RULE 4 unchanged: NOTHING MOVES --
+workgroup rows stay as ADR-0358 left them (:measured? true
+scoped to each row's one named measured device for
+:nvidia/:apple/:intel/:amd; :arm/:unknown provisional
+:measured? false); NO vendor optimization exists for Intel (or
+for any vendor). This tick's diff touches NO committed .cljk
+namespace. Local commit only -- NOT pushed (slice unfinished).
+Linear 未記録 (this cutoff state; the landing carries the
+JUN-499 comment).
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

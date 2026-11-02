@@ -1,0 +1,84 @@
+JUN-59 session 120 -- THE EIGHTH CUT PRE-REGISTRATION FREEZE (the
+bisect re-open's design half; NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO day-slot consumption, NO ledger line; the
+measurement half is a FUTURE session and is NOT queued here -- its
+own act, under this frozen protocol).
+
+1. WHAT IS FROZEN: docs/evidence/gpu/anv-b3bisect8prereg-20261031/
+   protocol.txt (the EIGHTH CUT pre-registration, the s27 protocol
+   shape; freeze stamp 2026-10-31T03:53:30Z; written before any run
+   log of this cut exists -- at freeze this directory held only the
+   s119 knob-search derivation artifacts). The frozen content: the
+   row question at n=254,557 (the floor midpoint of the re-opened
+   bracket (253,906, 255,208]); the DIRECTION DERIVATION from the
+   settle-bar V3 settled class (INTERMEDIATE/MIXED at the
+   (1024,4033) anchor n=253,906 -> the flip to CAPTURED is bracketed
+   by the committed CAPTURED point n=255,208 ((1213,4753): s24 mid
+   1,166 / s25 hi 1,166 / s26 hi 1,156, all CAPTURED); had the bar
+   settled CAPTURED the earlier bracket (252,604, 253,906] would
+   have stood); the arm table c2/lo/mid/eq3/hi/b2m/c8 (mid
+   (3,405,1591), eq3 (3,810,3182), b2m (2,405,1591), lo = the
+   bar-SETTLED (1024,4033) anchor, hi = (1213,4753)); build
+   replication pins as PARSED from committed censuses (c2
+   e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489,
+   c8 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807,
+   (1024,4033) triple
+   a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c,
+   (1213,4753) triple
+   123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec);
+   the frozen classification thresholds (identical to sessions
+   2-27); the pre-registered letters C1/C2/C3/W1/W2/W3/X1; the BAR
+   NON-INTERFERENCE clause (the cut's runs are bisect content, NOT
+   bar readings: no ledger append, no day-slot consumption, no bar
+   verdict movement, no Rule 4 row or :measured? flag movement); the
+   frozen limitations L1/L2/L3/L4/L5/L8; the analysis route shape.
+
+2. THE KNOB SEARCH (the s119 slice, completed this tick): knob-
+   search-s119.py (committed-intent derivation, pure stdlib, no
+   clock/RNG/network/hardware) ran TWICE BYTE-IDENTICAL this tick
+   (knob-search-s119-run1.txt == run2.txt, 3,463 bytes, .err 0 both,
+   rc 0 both) after the s119-named (d1) defects were fixed AT
+   SOURCE (two committed-byte citation regexes: the s27 protocol
+   section-3 class lacked commas in [\d\s/]; the s24 C3 (b) pattern
+   did not span " vs <n> at n=<n>") -- after the fix BOTH citations
+   parse ("1,166 / 1,166 / 1,156 CAPTURED"; "1,000 vs 994 at
+   n=255,208") and the output prints ZERO "NOT PARSED" (grep count
+   0). The search SELF-VALIDATES against session 27's committed
+   census (253,255: 35 pairs / smallest (214,845) / 9 in-box
+   doubles -- all MATCH). Cut point: 31 in-box pairs hit 254,557,
+   smallest (405,1591), 7 with in-box same-ratio doubles, the eq3
+   double (810,3182) n=254,557 in-box True, gcd(254,557, 1,000,003)
+   = 1. Upper anchor: 18 in-box pairs hit 255,208, the SMALLEST IS
+   the committed measurement pair (1213,4753) --
+   (1,000,003*1213)//4753 == 255,208 verified; gcd = 1; the s24 C3
+   (b) twin (2426,9506) is out of the search box.
+
+3. NAMED, NOT HIDDEN: (d1) is named above (first-execution defects
+   of the s119 draft, fixed at source this tick, re-run twice
+   byte-identical); (d2) the s118 Linear comment's phrasing "255,208's
+   CAPTURED 1,166 is a single s25/s26-era quote reading" stands
+   CORRECTED against committed bytes (s119 read them directly): the
+   (1213,4753) pair carries THREE committed readings at n=255,208 --
+   s24 mid 1,166 / s25 hi 1,166 / s26 hi 1,156, all CAPTURED, all
+   UTC day 2026-10-27 (s24's 18-cell min 1,000 sits EXACTLY at the
+   frozen 1000 boundary; its C3 (b) twin (2426,9506) min 994 at
+   overlapping medians) -- the direction derivation is unaffected:
+   255,208 is CAPTURED on the committed record either way. This
+   file and protocol.txt are written once and never rewritten.
+
+4. STATE: the eighth cut is ACCEPTED DESIGN ONLY (protocol.txt +
+   this freeze-record + the ADR-0355 dated note) -- not implemented
+   compiler code, not a measurement. Every eighth-cut quantity (the
+   mid class, the anchor replications, C3 behavior, host_ns) is
+   UNMEASURED at freeze. RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358 left
+   them (:measured? true scoped to each row's one named measured
+   device for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists for
+   Intel (or for any vendor); this is bisect pre-registration
+   machinery on the ANV host, not a workgroup-default measurement.
+
+Evidence: docs/evidence/gpu/anv-b3bisect8prereg-20261031/ (this
+file, protocol.txt, knob-search-s119.py + its two byte-identical
+runs, the s120 gate captures, record.txt, state-s120.txt).
+(JUN-55, JUN-59; Linear tracking JUN-499)

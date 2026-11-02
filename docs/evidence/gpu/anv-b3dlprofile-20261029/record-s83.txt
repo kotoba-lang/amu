@@ -1,0 +1,134 @@
+JUN-59 session 83 -- the T17 DERIVATION CENSUS (the s82
+carry-forward item "this publication's derivation census
+(independent second parser)" -- verification slice; NO hardware
+runs, NO builds, NO compiles, NO GO stamp, NO day-slot
+consumption, NO ledger line).
+
+1. FINDING (verified by real tool output): derivation-census-
+   s82.py -- the INDEPENDENT second parser for publication-
+   s82.txt -- re-derives EVERY published value from the 390
+   committed run logs of the five fixed directories and matches
+   the committed bytes on EVERY row: 49/49 two-way rows, 0
+   mismatched (integrity 5 + named-cell 1, C1 3, block-min
+   vectors 15, anchors 5, parser validity pins 3, the DL table
+   12, the verdict summary 5). The s82 T17 values are no longer
+   one generator's output alone.
+
+2. INDEPENDENCE CONTRACT (frozen at s83, named in the script
+   header): NO regex / no re module (split()-based k=v run-log
+   parsing, find/split publication parsing -- analysis-s82.py
+   used regex); the observed DL/validity pair spreads are pure-
+   Python sorted() order statistics over the explicitly pooled
+   75 cross-checked IN-LOOP against the np.partition kth=(a,b)
+   paths (analysis used np.sort); the pooled-75 cell medians are
+   sorted()[37] cross-checked against np.partition kth=37
+   (analysis used np.median); the 12-value 2*L statistics are
+   sorted()[5]+[6] cross-checked against np.partition kth=(5,6).
+   NO RNG anywhere (the row is descriptive; no resampling exists
+   to re-implement).
+
+3. VERIFIED (real tool output): run 1 -> scratch/census-s82-
+   run1-pin.txt, run 2 -> derivation-census-s82.txt, BOTH
+   "TOTAL: 49 rows, 0 mismatched | B: 0 | C: 0" exit 0, cmp
+   exit 0, sha256 7ecc3ef46680b6a1434aa7651ca8fcb3a3a9338973
+   2481ba0f697df64722cb64 for BOTH (14,721 bytes), stderr 0
+   bytes both runs. Section B (estimator cross-check, in-loop
+   dual computation): pair-spread cross-check 6,480 comparisons
+   (5 windows x 12 blocks x 18 ok cells x 6 pairs), pooled-
+   median cross-check 2,255 comparisons, 2*L cross-check 30
+   comparisons -- 0 mismatched everywhere; the named-cell DL
+   values were extracted from the full-cell computation (the
+   future 18-cell scoreboard's data path is the same one).
+   Section C (evidence hygiene): evidence .sh count 0; W5 run-
+   window 78 host-dates all 2026-10-29; ledger reading-line
+   count 9; ledger session=s83 line count 0 (this row writes NO
+   line).
+
+4. BAND CONVENTION NAMED, NOT HIDDEN (the census's one
+   substantive finding beyond byte-reproduction): the published
+   section-5 band lines print sorted[0]..sorted[1] of the three
+   {s38,s39,s51} 2*L values under the label "closed interval
+   spanned by {s38,s39,s51}" -- with three values sorted[1] is
+   the MEDIAN, so the printed interval is min..median, NOT
+   min..max (DL4 prints 38..47 while s39's 48 sits above the
+   printed top; DL8 79..84 vs 79..99; DL16 187..188 vs 187..201;
+   DL32 537..564 vs 537..572). The census reproduces the
+   PUBLISHED convention for byte-equality and reports the
+   min..max intervals in section B. ALL FOUR BAND VERDICTS ARE
+   UNCHANGED under min..max (INSIDE / INSIDE / OUTSIDE-BELOW /
+   OUTSIDE-ABOVE -- checked, section B row 4) -- the s82
+   narrow-vs-wide descriptive picture does not move; only the
+   printed interval tops are understated by the published
+   convention. The publication and its ADR note stand as
+   published bytes; this note is their correction record. A
+   future inferential DL row's own freeze must name its band (or
+   other) convention explicitly.
+
+5. STANDING GATES (real runs this tick, byte-compared to the s82
+   committed pins):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture 17,925 bytes == the
+       s82 pin (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run 2
+       -- "Ran 123 tests containing 12162 assertions. 0 failures,
+       0 errors."; run 1 == run 2 == the s82 pin (cmp exit 0 x3,
+       919 bytes); stderr 0 bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk,
+       worktree root): exit 1, RED AT BASE kotoba.form ("Could
+       not find namespace: kotoba.form", ADR-0362, outside this
+       diff -- this session touches NO .cljk namespace). Capture
+       .err 879 bytes == the s82 pin (cmp exit 0); stdout content
+       0 bytes == the pin. NO green full suite is claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL:
+       38 assertions passed, 0 failed", capture 3,590 bytes == the
+       s82 pin; ledger eval twice, exit 0, run1 == run2 == the s82
+       pin (823 bytes) -> VERDICT: PENDING 2/4 (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73) unchanged. The frozen evaluator is the ONLY
+       source of the bar verdict.
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files.
+
+6. THE BAR: NO hardware runs at this ANALYSIS/VERIFICATION
+   session -> NO reading -> NO settle-bar-ledger line, NO day-
+   slot consumption (settle-bar-ledger.txt byte-identical to
+   HEAD -- git diff 0 bytes, verified this tick). The bar stays
+   PENDING 2/4 and settles nothing.
+
+7. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel. This census is verification of
+   committed descriptive bytes; it replaces no workgroup default
+   and moves nothing.
+
+8. WHAT CHANGED (this commit): this directory gains
+   derivation-census-s82.py, derivation-census-s82.txt, this
+   record (record-s83.txt) and the s83 gate captures
+   (gate-s83-classify.txt/.err, gate-s83-run1/2.txt/.err,
+   gate-s83-full.out/.err, bar-s83-selftest.txt/.err,
+   bar-s83-eval-run1/2.txt/.err); plus the ADR-0355 dated note
+   (this session's step). The chain commit cites JUN-55/JUN-59
+   (Linear tracking JUN-499).
+
+9. NOT DONE (carry-forward to session 84, named):
+   (a) the W6 measurement half -- day-slot-gated to the first
+       session at/after 2026-10-30T00:00:00Z (this tick runs
+       2026-10-29T05:xxZ; the slot is not open);
+   (b) the fourth counted-day bar measurement (its own future
+       freeze; its day follows W6's actual run day);
+   (c) an INFERENTIAL DL row (its own pre-registration; the s82
+       vectors are its quote-only priors; its freeze must name
+       its convention -- item 4 above);
+   (d) the tail-side vocabulary (named limitation, not queued);
+   (e) the standing gate set runs with each such tick.
+
+Evidence: docs/evidence/gpu/anv-b3dlprofile-20261029/ (this
+file, derivation-census-s82.py, derivation-census-s82.txt --
+run 2 byte-identical to run 1, and the s83 gate captures) + the
+s83 pins in scratch/ (untracked: census-s82-run1-pin.txt,
+census-s82-run1/2.stdout/.stderr). (JUN-55, JUN-59; Linear
+tracking JUN-499)

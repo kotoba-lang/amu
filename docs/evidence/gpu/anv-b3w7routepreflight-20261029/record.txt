@@ -1,0 +1,219 @@
+JUN-59 session 94 ROUTE/CUSTODY PRE-FLIGHT (the W7 measurement
+row's route preparation half -- NO runs, NO builds, NO compiles, NO
+GO stamp, NO host writes, NO day-slot consumption, NO ledger line).
+Row: the s93 carry-forward's item (d) (the W7 measurement half, the
+s85 freeze), taken to its ROUTE/CUSTODY PRE-FLIGHT half only (the
+per-window precedent: s67 -> W5, s91 -> W6, this tick -> W7). The
+measurement half itself REMAINS day-slot-gated behind W6's ledger
+line (STARTED, NOT FINISHED): W7 is DEFINED (s85 section 0) as the
+window whose 78 fresh processes run in the first measurement
+session starting at or after 00:00:00Z of the first UTC day
+STRICTLY AFTER the UTC day named on W6's ledger line in
+settle-bar-ledger.txt; W6's line does not exist (W6 itself is gated
+behind the first session at/after 2026-10-30T00:00:00Z; this tick
+runs 2026-10-29T11:5xZ-12:0xZ, ~12.0h before that slot opens) so
+W7's run day is UNKNOWN at this tick (planned 2026-10-31 if W6 runs
+and its line takes 2026-10-30; s85 section 0 names the three
+contingencies below). The frozen protocol forbids builds and runs
+before the session's own GO stamp, so this pre-flight touches
+nothing that could be a build, a run, or a bar-qualifying reading.
+
+1. LOCAL CUSTODY INPUTS (the s57 route's shared custody bytes --
+   identical for W6 and W7; verified against the s51 host-verify
+   digests -- docs/evidence/gpu/anv-b3levelrep-20261028/
+   host-verify-s51.txt -- and the committed bytes in that
+   directory; tool: shasum -a 256; ALL re-verified THIS tick):
+   instrument source gpu-subgroup-reduce-anv-ndiv.c (committed as
+     gpu-subgroup-reduce-anv-ndiv.c.txt): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+     == s51 host-verify local= and host= (MATCH).
+   expected-corpus.sha256 (the 16-digest corpus census):
+     eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+     == s51 host-verify (MATCH).
+   manifest cases-s51-a.txt: c568e32ef0363165c13e36d526de454f60afc34bc05e2bfe6033c26ac493f234
+     == s51 host-verify (MATCH).
+   MANIFEST CELL-LINE DIGEST (the chain's files quote
+     "873025d650afae23..." truncated): sha256 over the 24
+     non-comment cell lines of cases-s51-a.txt =
+     873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+     -- reproduces the chain's 873025d650afae23... prefix exactly;
+     and diff of the cell lines vs cases-s36-a.txt
+     (anv-b3commonmode-20261028/) is EMPTY (CELLS-BYTE-EQUAL). The
+     W7 session's fresh-header manifest (cases-s<NN>-a.txt) must
+     reproduce these cell lines byte-for-byte (the s28/s31
+     header/cell split).
+   CORPUS: the 16 census entries verify LOCALLY 16/16 against the
+     committed corpus bytes -- shasum -a 256 -c
+     expected-corpus.sha256 --ignore-missing -> 8 OK in
+     anv-subgroupsize-81632-20261027/shaders + 8 OK in
+     anv-subgroupsize-batch64-20261027/shaders (the s51/s67/s91
+     shape). NAMED, NOT HIDDEN: the same check run from the
+     docs/evidence/gpu parent reports "no file was verified" (the
+     census paths are corpus-dir-relative); the two per-directory
+     runs above are the check that counts.
+
+2. HOST ROUTE PROBE (read-only ssh, verbatim; tool output below;
+   NO GPU submission of any kind, NO vulkaninfo, NO enumeration
+   beyond filesystem reads):
+   $ ssh -o BatchMode=yes -o ConnectTimeout=15 murakumo-ci-6600hs 'date -u +%Y-%m-%dT%H:%M:%SZ; hostname; id -nG; ls -d ~/anv-b3w7daybar-* 2>/dev/null || echo NO-WORKDIR; command -v gcc || echo NO-GCC; ls /dev/dri/ 2>/dev/null || echo NO-DRI'
+   2026-10-29T12:02:58Z
+   aiueos-6600hs
+   murakumo-ci nix-users render kvm
+   NO-WORKDIR
+   /usr/bin/gcc
+   by-path
+   card0
+   renderD128
+   ssh_rc=0
+   VERIFIED: route reachable (ssh alias murakumo-ci-6600hs, user
+   murakumo-ci); host clock sane (2026-10-29T12:02:58Z == this
+   tick's UTC); the s27-era render-node permission fix HOLDS
+   (id -nG includes render); gcc present (the s51 toolchain
+   record's gcc 13.3.0 spot-check not re-run -- no compiles allowed
+   before GO); /dev/dri/card0 + renderD128 present. NAMED, NOT A
+   BLOCKER: the W7 workdir "~/anv-b3w7daybar-<ACTUAL-RUN-DAY,
+   default 20261031>" (s85 section 2) is NOT YET STAGED on the
+   host -- the probe globs ~/anv-b3w7daybar-* exactly because the
+   day component cannot be probed exactly before W6's line day is
+   known; staging (mkdir + scp of instrument, manifest,
+   expected-corpus census and the 16-file corpus) is the W7
+   session's own pre-GO custody step, exactly as at s51/s73/s91's
+   precedent; this pre-flight deliberately did not stage it (host
+   writes belong to the session's custody record).
+
+3. NAMED LIMITS OF THIS PRE-FLIGHT:
+   (a) the host-side 3/3 local-vs-host comparison and the corpus
+       sha256sum -c 16/16 are the W7 session's pre-GO checks and
+       were NOT performed host-side here (only their LOCAL halves,
+       above); no GO stamp, no build-census, no run-window, no
+       publication, no statistics of any kind (a pre-flight
+       computes no statistics, NAMED, not omitted);
+   (b) the frozen run order (c2 r1-3, then for k = 1..12 hi block
+       k immediately followed by tw block k, then c8 r1-3) is the
+       s57 route and is NOT re-frozen here;
+   (c) the reading machinery stays s90's pre-build
+       (reading-prego.py + derivation-census-prego.py). ADOPTION
+       EDIT NAMED (grep-verified this tick): reading-prego.py's
+       single window constant W6_DIR = "anv-b3w6daybar-20261030"
+       (line 65, consumed at lines 71/293) must be repointed at
+       the W7 workdir (whose name takes the ACTUAL run day) when
+       the W7 session adopts the file as reading-s<NN>.py;
+       derivation-census-prego.py's committed form is the
+       five-window compat census (WIN5 + the s73 publication
+       cross-check) and its own docstring names its window-
+       dependent parts UNVALIDATED until the running session --
+       the pair's s90 --compat validation is window-constant-
+       independent and is deliberately NOT re-run here;
+   (d) W7's day is UNKNOWN at this tick; the s85 section-0
+       contingencies bind unchanged -- (i) W6's runs slip past
+       2026-10-30: W7's day follows W6's actual line day; (ii)
+       W6's session is FLAGGED (its line carries a flag and
+       consumes no day slot): W7 still runs under the s85 freeze
+       and delivers the bar's THIRD counted reading instead of
+       the fourth, the remaining slot then NEW pre-registered
+       work (NO SILENT EXTENSION); (iii) W6's ledger line is
+       ABSENT: the s85 freeze STANDS DOWN -- no W7 session runs
+       under it -- and this pre-flight stands inert with it
+       (named evidence only, no measurement ever built on it).
+
+4. GATES (real runs this tick, byte-compared to the s88 committed
+   pins in docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed"; capture 17,925 bytes == the
+       s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s88 pins (919 bytes, cmp exit 0 x3); .err
+       0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this session touches NO .cljk namespace). Capture .err 879
+       bytes == the s88 pin (cmp exit 0); stdout 0 bytes == the
+       pin. NO green full suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL 38
+       assertions passed, 0 failed, capture 3,590 bytes == the s88
+       pin (cmp exit 0); ledger eval twice, exit 0, run 1 == run 2
+       == the s88 pin (823 bytes) -> VERDICT: PENDING 2/4 unchanged
+       (counted day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff 0
+       bytes -- verified this tick).
+
+5. THE BAR: preparation session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption. The bar stays
+   PENDING 2/4. Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- the settle-bar.txt section-2
+   rule).
+
+6. UNMEASURED (named): every W6 quantity (the W6 anchor reading,
+   W6 integrity/C1, the W6 run day); every W7 quantity (the W7
+   anchor reading, W7 integrity/C1, the W7 run day); the T18 and
+   T20 contrasts. RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358 left
+   them (:measured? true scoped to each row's one named measured
+   device for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor). This pre-flight verifies ROUTES
+   AND DIGESTS only -- it is not a measurement of any device.
+
+7. WHAT CHANGED (this commit): docs/evidence/gpu/
+   anv-b3w7routepreflight-20261029/ gains this record (record.txt)
+   and the s94 gate captures (gate-s94-classify.txt/.err,
+   gate-s94-run1/2.txt/.err, gate-s94-full.out/.err,
+   bar-s94-selftest.txt/.err, bar-s94-eval-run1/2.txt/.err); plus
+   the ADR-0355 dated note. NO run logs (no hardware this tick), NO
+   .sh files. The chain commit cites JUN-55/JUN-59 (Linear tracking
+   JUN-499).
+
+8. NOT DONE (carry-forward to session 95, named):
+   (a) the W6 measurement half (the s80 freeze; the first session
+       at/after 2026-10-30T00:00:00Z) -- the gate for the T18
+       analysis half, the T20 analysis half and the W7
+       measurement half; the W6 session adopts s90's reading pair,
+       s91's custody baseline and owns their record;
+   (b) the T18 ANALYSIS half (the s92 pre-build binds; the s84
+       freeze binds) -- STARTED, NOT FINISHED, day-slot-gated
+       behind (a);
+   (c) the T20 ANALYSIS half (the s93 pre-build binds; the s88
+       freeze binds) -- STARTED, NOT FINISHED, day-slot-gated
+       behind (a);
+   (d) the W7 measurement half (the s85 freeze; day-slot-gated
+       behind W6's ledger line) -- its ROUTE/CUSTODY preparation
+       half is THIS pre-flight plus the inherited s90 reading pair
+       (section 3(c) adoption edit); STARTED, NOT FINISHED;
+   (e) any further counted-day slot (its own future freeze);
+   (f) a cross-day tail-movement row (NOT queued);
+   (g) the standing gate set runs with each such tick;
+   (h) the band-convention correction record stands (record-s89.txt
+       section 4): any future row quoting a band placement uses
+       the protocol [MIN,MAX] convention and names it.
+
+WHY THIS ROW (named): of the s93 carry-forward items, (a)'s
+preparation halves are COMPLETE (s90 reading pre-build + s91
+custody pre-flight), (b)'s and (c)'s preparation halves are
+COMPLETE (s92/s93 analysis pre-builds) and (a)-(d) all gate behind
+the W6 measurement half (the slot opens 2026-10-30T00:00:00Z; this
+tick runs ~12.0h before it), (e) is contingency-only (that slot
+exists only under s85 contingency (ii) or the settle-bar V2
+extension path -- which is a NEW pre-registered BAR, not a slot of
+this bar -- and its pre-registration deadline is before THAT
+slot's measurement, not before W6's outcome) and (f) is explicitly
+NOT queued -- the honest one-tick slice today is the preparation
+half of the first gated row without one, item (d) (the per-window
+precedent: s67 -> W5, s91 -> W6). NAMED, NOT HIDDEN: the W6
+session (hours away) re-verifies these custody digests in its own
+host-verify and the W7 session must again at its own tick (s85
+section 2: "byte-copy checked at the W7 tick in host-verify") --
+this pre-flight's value is the s85 window's own route/custody
+binding plus drift-catching before the W6 slot (the s91 argument,
+applied per-window), and W7's day stays UNKNOWN (section 3(d)).
+
+Evidence: docs/evidence/gpu/anv-b3w7routepreflight-20261029/ (this
+file + the s94 gate captures). (JUN-55, JUN-59; Linear tracking
+JUN-499)

@@ -1,0 +1,166 @@
+JUN-59 session 95 RUN-WINDOW DRIVER PRE-BUILD (the W6 measurement
+row's RUN-PATH IMPLEMENTATION preparation half -- NO hardware runs,
+NO builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line). Row: the s94 carry-forward's item (a)
+(the W6 measurement half, the s80 freeze), taken to its remaining
+implementation preparation half -- the s69/s90 pre-build precedent
+applied to the s80 protocol SECTION-2 RUN path (s90 built the
+section-6 READING path; the run-window order/transcript machinery
+existed nowhere in the tree -- every prior window's driver was
+improvised live). The measurement half itself REMAINS day-slot-gated
+(STARTED, NOT FINISHED): W6 runs in the first measurement session at
+or after 2026-10-30T00:00:00Z; this tick runs 2026-10-29T12:1xZ-
+12:4xZ, ~11.5h before the slot opens.
+
+1. FINDING (verified by real tool output): run-window-prego.py (pure
+   stdlib, NO RNG, no clock; submits NOTHING to any GPU and opens NO
+   network connection) now implements the frozen section-2 run-window
+   machinery: (i) --plan emits the frozen 78-run order (c2 r1-3, then
+   for k=1..12 hi block k runs 3k-2..3k immediately followed by tw
+   block k, then c8 r1-3) with per-run artifact names
+   (run-<tag>.txt / run-<tag>.stderr.txt) and the invocation
+   ./anv-bb-<arm> <manifest> (the instrument's main takes exactly
+   one argument -- the manifest -- per
+   gpu-subgroup-reduce-anv-ndiv.c line 341); (ii) --rebuild
+   deterministically constructs run-window.txt's 78 per-run lines +
+   the frozen 3-line trailer from a window's run logs plus the
+   LIVE-FIELDS capture. LIVE-ONLY FIELDS NAMED, NOT HIDDEN: rc and
+   host-date exist nowhere in the run logs (host-date is the host
+   date -u taken immediately BEFORE the invocation); at --compat
+   time they are QUOTED from the committed transcripts as INPUT;
+   every other transcript field is re-derived from committed bytes
+   (stderr_bytes from the .stderr.txt byte counts;
+   samples/verifies/cells/tail from the run-log line census).
+   FAIL-CLOSED NAMED: tail containing a single quote, non-uniform
+   trailer window, missing/extra live tags, missing run log are hard
+   errors (the committed trailer format only attests uniform 78-run
+   windows).
+
+2. VALIDATION (--compat, three committed 78-run run-window
+   transcripts -- s38/s39 committed no run-window.txt): frozen plan
+   order vs committed per-run order 78/78 MATCH at all three
+   windows; rebuilt table bytes vs committed bytes BYTE-EQUAL 78/78
+   at s36 (anv-b3commonmode-20261028) and 81/81 (table+trailer) at
+   s51 (anv-b3levelrep-20261028) and W5 (anv-b3w5xdayrep-20261029) --
+   TOTAL 243 rows 0 mismatched, run twice BYTE-IDENTICAL.
+   NAMED, NOT HIDDEN: s36's transcript PREDATES the s57 route
+   freeze -- its per-run table is the same frozen byte format but
+   its trailer is session prose (inline-count attestation + a
+   host-file-mtime cross-check block), NOT the frozen 3-line
+   trailer; the trailer comparison therefore covers the s57-route
+   windows s51/W5 only and this pre-build constructs the frozen
+   s51/W5 trailer (its format was proven, not assumed: the first
+   --compat run found the s36 trailer difference and this record's
+   contract names it). --self-test TOTAL 18 assertions passed 0
+   failed (plan order properties at sentinel positions and the
+   k=1..12 interleave/block/run-number invariants; a MOCK 78-run
+   window rebuilt to the format spec -- MOCK bytes are FIXTURES,
+   never measurements; five fail-closed cases each raise). Both
+   modes plus --plan run twice BYTE-IDENTICAL (selftest 1,068
+   bytes; compat 2,647 bytes; plan 5,720 bytes; cmp exit 0 each;
+   stderr 0 bytes all runs).
+
+3. ADOPTION CONTRACT (named): the frozen route names NO driver
+   script filename (every prior window's driver was improvised
+   live; run-window.txt's own prose says "captured by the driver");
+   the W6 session adopts this file as its run-window driver under
+   whatever name it records (the s90 adoption precedent) and
+   re-runs --compat in its own record. The execution path (ssh, the
+   live rc/host-date capture, staging, GO) stays session-owned
+   exactly as at s51/s73; this pre-build covers the two mechanical
+   surfaces the frozen route specifies byte-precisely -- the run
+   ORDER and the TRANSCRIPT construction. The prose header of
+   run-window.txt stays session-written (this pre-build emits the
+   table+trailer only -- NAMED scope cut).
+
+4. GATES (real runs this tick, byte-compared to the s88 committed
+   pins in docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed 0 failed; capture 17,925 bytes == pin
+       (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+       created, run, deleted this tick, never committed): GREEN run
+       1 AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 pins
+       (919 bytes, cmp exit 0 x4); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO .cljk namespace). Capture .err 879 bytes
+       == the s88 pin (cmp exit 0); stdout 0 bytes == the pin. NO
+       green full suite is claimed;
+   (d) settle-bar evaluator (frozen): --self-test exit 0, TOTAL 38
+       assertions passed 0 failed, capture 3,590 bytes == pin (cmp
+       exit 0); ledger eval twice, exit 0, run 1 == run 2 == the
+       s88 pin (823 bytes) -> VERDICT: PENDING 2/4 unchanged
+       (counted day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff 0
+       bytes -- verified this tick).
+
+5. THE BAR: preparation session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 2/4. Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- settle-bar.txt section 2).
+
+6. UNMEASURED (named): every W6 quantity (anchor reading,
+   integrity/C1, run day); every W7 quantity; the T18 and T20
+   contrasts. RULE 4 unchanged: NOTHING MOVES -- the accelerator-
+   targets workgroup rows stay exactly as ADR-0358 left them
+   (:measured? true scoped to each row's one named measured device
+   for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor). This pre-build is run-log text
+   machinery, not a device measurement.
+
+7. WHAT CHANGED (this commit): docs/evidence/gpu/
+   anv-b3w6runprego-20261029/ gains run-window-prego.py,
+   runwindow-prego-selftest.txt/.err, compat-prego-validation.txt/
+   .err, runwindow-prego-plan.txt/.err, this record and the s95
+   gate captures (gate-s95-classify.txt/.err, gate-s95-run1/2.txt/
+   .err, gate-s95-full.out/.err, bar-s95-selftest.txt/.err,
+   bar-s95-eval-run1/2.txt/.err); plus the ADR-0355 dated note. NO
+   run logs (no hardware this tick), NO .sh files.
+
+8. NOT DONE (carry-forward to session 96, named):
+   (a) the W6 measurement half (the s80 freeze; the first session
+       at/after 2026-10-30T00:00:00Z) -- the gate for the T18
+       analysis half, the T20 analysis half and the W7 measurement
+       half; the W6 session adopts s90's reading pair, s91's
+       custody baseline, this pre-build's run-window driver and
+       owns their record;
+   (b) the T18 ANALYSIS half (the s92 pre-build + the s84 freeze
+       bind) -- STARTED, NOT FINISHED, day-slot-gated behind (a);
+   (c) the T20 ANALYSIS half (the s93 pre-build + the s88 freeze
+       bind) -- STARTED, NOT FINISHED, day-slot-gated behind (a);
+   (d) the W7 measurement half (the s85 freeze; behind W6's ledger
+       line; its route/custody preparation half is s94's pre-flight
+       + the inherited s90 reading pair with its named adoption
+       edit) -- STARTED, NOT FINISHED;
+   (e) any further counted-day slot (its own future freeze);
+   (f) a cross-day tail-movement row (NOT queued);
+   (g) the standing gate set runs with each such tick;
+   (h) the band-convention correction record stands (record-s89.txt
+       section 4): any future row quoting a band placement uses the
+       protocol [MIN,MAX] convention and names it.
+
+WHY THIS ROW (named): of the s94 carry-forward items, (a)-(d) all
+gate behind the W6 measurement half (the slot opens
+2026-10-30T00:00:00Z; this tick runs ~11.5h before it), (e) is
+contingency-only and (f) is explicitly NOT queued -- and of (a)'s
+machinery the READING path has a pre-build (s90) and the custody
+baseline has one (s91) but the RUN-WINDOW path (the frozen 78-run
+order + the run-window.txt transcript) had NONE -- every prior
+window improvised its driver live under slot pressure (s73's
+session exhausted its runtime budget mid-session). Building and
+validating the order+transcript machinery BEFORE any W6 quantity
+exists binds it to the three committed transcripts' bytes (243
+rows 0 mismatched) before it ever touches fresh data -- the s90
+argument applied to the s80 section-2 route. Carry-forward to s96:
+the W6 measurement half (the s80 freeze; first session at/after
+2026-10-30T00:00:00Z) -- the gate for the T18 analysis half, the
+T20 analysis half and the W7 measurement half --, then those three,
+any further counted-day slot (its own freeze), and a cross-day
+tail-movement row (not queued).

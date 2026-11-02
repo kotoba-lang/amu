@@ -1,0 +1,75 @@
+2026-10-31T05:1xZ (session cutoff)
+== session 121 state capture -- MEASUREMENT HALF COMPLETE, LANDING ==
+== NOT DONE (budget cutoff before gates (c)(e)(f), record.txt, commit, ==
+== push, Linear) ==
+
+ROW: the eighth cut's MEASUREMENT half (the s120 carry-forward (a)):
+21 fresh processes under the frozen protocol
+(anv-b3bisect8prereg-20261031/protocol.txt, freeze stamp
+2026-10-31T03:53:30Z).
+
+DONE THIS TICK (real tool output, files in
+docs/evidence/gpu/anv-b3bisect8-20261031/, UNCOMMITTED at cutoff):
+(1) derivation: instrument/cases/expected-corpus byte-copies verified
+    (a5e539f0... / cell lines 24/24 byte-equal to s27's /
+    eefba52e...); derivation-census-s121.txt rc 0, zero NOT PARSED,
+    4/4 build pins parsed from committed censuses. NAMED: the census
+    scratch generator's first run failed on my own regex bug (an
+    unclosed capture group in the (2048,8066) twin pattern) -- fixed
+    in the scratch generator (never committed), re-run clean; the
+    failed intermediate capture was overwritten in place.
+(2) host custody (host-verify-s121.txt): corpus 16/16 sha256sum -c
+    (corpus_rc=0), instrument+manifest+expected-corpus local-vs-host
+    MATCH 3/3, GO=2026-10-31T04:59:14Z BEFORE builds (05:00:16Z) and
+    all runs.
+(3) builds 7/7 rc=0, stderr 0 bytes; BUILD PINS 4/4 BYTE-IDENTICAL
+    (c2 e5ed903e..., c8 480925e5..., lo (3,1024,4033) a6c31b6c...,
+    hi (3,1213,4753) 123e8f73...); mid/eq3/b2m new digests
+    0ce4616c.../97d38f8f.../95fc34fe... (build-census-s121.txt).
+(4) 21 fresh processes (arm-table order, cwd=shaders/, manifest
+    ../cases-s121-a.txt): rc=0 21/21, stderr 0 bytes 21/21, 450
+    SAMPLE + 24 VERIFY + 24 CELL each, tail '# done cells=24' 21/21;
+    run window 2026-10-31T05:00:35Z..05:00:41Z (aiueos-6600hs-1);
+    mtime cross-check 21/21 consistent (worst delta 1s); 42 logs
+    pulled byte-identical (aggregate digest 0d147af1... host==local);
+    run-window.txt.
+(5) analysis-s121.py run TWICE, publications BYTE-IDENTICAL
+    (14,567 bytes, diff exit 0): publication-s121-run1.txt ==
+    run2.txt == publication-s121.txt. Want sources PARSED from
+    committed bytes (s27 census / s27 publication / settle-bar.txt /
+    bar-s117-eval-post pin), fail-closed.
+
+THE FINDING (publication-s121.txt, section 4): C1 (a)=True (c2 FLOOR
+31; c8 32,888 vs 32,915 -0.08%); C2 (a)=True (lo 1,142
+INTERMEDIATE/MIXED within +/-5% of EACH bar ref 1,129/1,132/1,131
+AND class == the bar-SETTLED class; hi 1,160 CAPTURED within +/-5% of
+the committed 1,166); C3 (a)=True (eq3 1,142 vs mid 1,156, class-
+identical -- scoreboard s24 (b) / s25 (a) / s26 (b) / s27 (a) /
+s121 (a)); W1 (b) MID-INTERMEDIATE -- THE B=3 CLASS FLIP SITS IN
+(254,557, 255,208] n-units = (0.2545562, 0.2552072] work-units among
+measured grid points (mid class INTERMEDIATE/MIXED, median 1,156,
+18-cell 986..1,459); b2m FLOOR extends 'B=2 never captures' to
+n=254,557 at total work 0.5091125. The eighth cut NARROWS the flip
+bracket from (253,906, 255,208] to (254,557, 255,208]. BAR
+NON-INTERFERENCE held: no ledger append, no day-slot consumption, no
+bar/Rule-4/:measured? movement.
+
+GATES RUN THIS TICK, == PINS: (a) classify --self-test 17,925 bytes
+== s88 pin (cmp exit 0), .err 0; (b) scoped GPU gate GREEN
+'Ran 123 tests containing 12162 assertions. 0 failures, 0 errors.'
+run 1 == run 2 == both s88 pins (919 bytes, cmp exit 0 x3), .err 0
+(scratch runner created/run twice/deleted, never committed); (d)
+evaluator --self-test == s88 pin (3,590-byte pin class) + ledger
+eval pair twice byte-identical (1,006 bytes) == the s117 post-append
+pin -> VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged).
+
+NOT DONE AT CUTOFF (carry-forward to s122 -- the LANDING tail):
+(c) FULL run-tests.cljk live run vs the s88 pins; (e) find
+docs/evidence/gpu -name '*.sh' -> 0; (f) settle-bar-ledger.txt ==
+HEAD; record.txt; state finalization; BLOCKER-FIRST check + chain
+commit/push to bot/amu-gpu-chain-20261028-4 (chain PR #1665); the
+Linear land comment on JUN-499. NOTHING is committed or pushed at
+this cutoff -- the evidence files above sit uncommitted in the
+worktree. RULE 4 unchanged: NOTHING MOVES. NO vendor optimization
+exists for Intel (or for any vendor); this is bisect measurement
+machinery on the ANV host, not a workgroup-default measurement.

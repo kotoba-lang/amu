@@ -1,0 +1,180 @@
+JUN-59 -- session 87 protocol (T19 FREEZE, written once at freeze
+stamp 2026-10-29T07:40:02Z (the stamp taken immediately before
+this write; the file was finalized 2026-10-29T07:40:27Z -- both
+after the pre-freeze greps and before any statistic of this row
+exists) BEFORE any statistic of this row
+exists; never rewritten):
+THE TAIL-SIDE HALF-PAIR DESCRIPTIVE REFERENCE ROW -- the s86-
+frozen TS-L/TS-R tail-side vocabulary's FIRST STATISTIC over the
+five committed windows. Pairs named ONLY from the s86-frozen
+tail-side vocabulary (docs/evidence/gpu/anv-b3tailvocab-20261029/
+vocabulary.txt, selection rule section 3: each row names its
+pairs in its OWN protocol freeze BEFORE any statistic;
+estimators/nulls/thresholds stay per-row). Written before ANY
+tail-side statistic exists: the pre-freeze freshness greps over
+docs/evidence/gpu (excluding the s86 vocabulary directory and
+this directory) ran 2026-10-29T07:38:25Z-07:38:39Z, BEFORE this
+freeze stamp: "anv-b3tailprofile" 0 hits, "TS-L4:" 0 hits,
+"TS-R32:" 0 hits, "half-spread LEVELS" 0 hits, "2*L TS" 0 hits,
+"analysis-s87" 0 hits, "tailprofile-s87" 0 hits; bare "T19" 64
+hits, ALL of them UTC-hour timestamps ("...T19:..." in run logs
+and records -- named not hidden, the s84 precedent; NO hit is a
+row name, a pair statistic or a tail-side quantity). ANALYSIS
+session: NO hardware runs, NO builds, NO compiles, NO GO stamp;
+per section 6 NO reading -> NO settle-bar-ledger line, NO day-
+slot consumption. Chain branch bot/amu-gpu-chain-20261028-4, the
+ONE open chain PR -- commit + push only.
+
+0. ROW QUESTION (ONE row: ONE measurement-analysis slice): what
+   are the TS-L4/TS-R4/TS-L8/TS-R8/TS-L16/TS-R16/TS-L32/TS-R32
+   within-block half-spread LEVELS of the tw arm's
+   (max,128,S=default) cell across the five committed windows
+   (s36/s38/s39/s51/W5) -- the first statistic computed under the
+   s86-frozen tail-side vocabulary? THE ROW IS DESCRIPTIVE ONLY
+   -- NO letter, NO null, NO resampling, NO threshold, NO
+   direction, NO hypothesis test of any kind. WHY DESCRIPTIVE
+   (frozen, named): the s86 freeze pre-registers NO direction and
+   its named motivation (the s61/s62/s63 mirror-pair asymmetry)
+   is quote-only on OTHER pairs (the retired four-rank HS/HX
+   shapes), never a prior on these half-pairs; choosing a
+   direction now would be post-hoc. The scientific deliverable is
+   the REFERENCE VECTORS a FUTURE pre-registered inferential
+   tail-side row will quote as priors (the s53/s54, s82 pattern --
+   an inferential row has no tail-side priors to quote until these
+   vectors exist). WHY THIS ROW NOW (named): of the s86 carry-
+   forward items, (a) the W6 measurement half is day-slot-gated
+   (first session at/after 2026-10-30T00:00:00Z; this tick runs
+   2026-10-29T07:3xZ, ~16.4h before the slot opens), (b) the T18
+   analysis half and (c) the W7 measurement half are gated behind
+   W6's ledger line, (d) any further counted-day slot is
+   contingency-only (its own future freeze -- needed only if a
+   frozen session is FLAGGED), so (e) the tail-side row (s86
+   carry-forward (e): "this vocabulary is the route; a NEW pre-
+   registration") is the only item a one-tick slice can honestly
+   take today, and its DESCRIPTIVE half is the half that needs no
+   fresh window (it reads only the five committed windows).
+
+1. THE CONSTRUCTION (frozen; the s82 T17 construction held
+   fixed so the tail-side vectors are comparable to the published
+   DL vectors): named cell (max,128,S=default) (the ok-map cell 5,
+   raw idx 7 -- the T14/T15/T16/T17 named cell, held fixed); arm
+   tw (runs 1..36 -> 12 blocks of 3 consecutive runs); per block
+   the two HALF-SPREADS over the block's pooled 75 gpu_ticks
+   samples (25 per run x 3 runs; the frozen estimator unit F3 of
+   settle-bar.txt), EXACT INTEGER, at the deviation-center rank
+   x_(38) of the pooled-75 order statistics x_(1) <= ... <=
+   x_(75):
+     TS-L4  = (x_(34), x_(38))  HL_4  = x_(38)-x_(34)  span 4
+     TS-R4  = (x_(38), x_(42))  HR_4  = x_(42)-x_(38)  span 4
+     TS-L8  = (x_(30), x_(38))  HL_8  = x_(38)-x_(30)  span 8
+     TS-R8  = (x_(38), x_(46))  HR_8  = x_(46)-x_(38)  span 8
+     TS-L16 = (x_(22), x_(38))  HL_16 = x_(38)-x_(22)  span 16
+     TS-R16 = (x_(38), x_(54))  HR_16 = x_(54)-x_(38)  span 16
+     TS-L32 = (x_( 6), x_(38))  HL_32 = x_(38)-x_( 6)  span 32
+     TS-R32 = (x_(38), x_( 70)) HR_32 = x_(70)-x_(38)  span 32
+   the WHOLE closed vocabulary (eight pairs -- no selection among
+   them, no silent extension; a pair outside it needs a NEW
+   vocabulary freeze, s86 rule 3(a)); per window L_w = median of
+   the 12 block half-spread values (2*L = 6th+7th order
+   statistics, INTEGER half-tick). Per pair the publication
+   carries the five-window 2*L vector, the 12 W5 block values
+   (for a future census), and the W5-vs-post-shift-band check
+   (descriptive). THE BAND CONVENTION IS THE S83 CORRECTED ONE
+   (named; the s82 publication printed min..median under a
+   "closed interval" label -- the s83 derivation census corrected
+   it): the post-shift band is the closed interval [MIN, MAX] of
+   {2*L_s38, 2*L_s39, 2*L_s51}, and every band placement is
+   DESCRIPTIVE, never a test.
+   THE DECOMPOSITION IDENTITY (frozen check): per block and per k,
+   HL_k + HR_k = x_(38+k)-x_(38-k) = D_DLk EXACTLY (an algebraic
+   identity on any increasing sequence; the s86 freeze property),
+   checked IN-LOOP against the DL pair spread computed
+   independently on the same block's pooled 75; any block-level
+   violation => NOT EVALUABLE. NAMED, NOT HIDDEN: the 2*L summary
+   statistics do NOT add -- 2*L(HL_k) + 2*L(HR_k) vs 2*L(D_k) is
+   printed per family/window as DESCRIPTIVE content and NO
+   additivity of levels is claimed or tested (order statistics are
+   not additive; the identity is at the block level only).
+
+2. INPUTS (frozen): the COMMITTED run logs of five fixed evidence
+   directories -- anv-b3commonmode-20261028 (s36),
+   anv-b3joint3-20261028 (s38), anv-b3joint4-20261028 (s39),
+   anv-b3levelrep-20261028 (s51), anv-b3w5xdayrep-20261029 (W5,
+   measured by s73 on aiueos-6600hs Intel BMG G31 ANV). NO new
+   run enters; this row runs NO hardware.
+
+3. INVALIDATION MACHINERY (frozen, the s78 section-3 set verbatim
+   plus the s82 additions): per window -- runs parsed 78; VERIFY
+   mismatch total 0; 450 SAMPLE + 24 VERIFY per run; knobs == arm
+   tables; S=8 fail-closed; cell map identical across all 390
+   logs and the named cell present as ok-map cell 5; the four
+   PRIOR windows' block-min vectors reproduce
+   publication-s39.txt/s51.txt section 3 EXACTLY (8/8); the four
+   prior anchor rows reproduce EXACTLY (4/4; this row computes NO
+   anchor at W5); C1 at W5 (c2 FLOOR; c8 pooled median within
+   +/-5% of committed 32915); the section-1 decomposition
+   identity holds at every block. Any violation marks the
+   descriptive table NOT EVALUABLE (there is no letter to fail).
+
+4. PARSER VALIDITY PINS (frozen; the row's own honesty anchor):
+   the SAME parser must reproduce EXACTLY (i) the published
+   publication-s78.txt quantile-pair vectors at the named cell/tw
+   arm -- INNER (28,48) 2*L s36/s38/s39/s51/s73 = 118/102/128/
+   113/100 and OUTER (9,67) = 496/429/437/446/502, plus both
+   published W5 block-D vectors (INNER 42 34 40 48 74 48 60 39
+   74 56 52 57; OUTER 267 189 242 377 340 278 214 181 255 247
+   268 194), and (ii) the published publication-s82.txt DL five-
+   window vectors and W5 block-D vectors -- DL4 46/47/48/38/40
+   (W5 blocks 20 17 18 21 33 17 20 15 36 20 16 23), DL8 97/84/
+   99/79/83 (35 27 34 44 61 38 48 25 57 42 41 45), DL16 238/187/
+   201/188/178 (74 63 70 87 116 91 96 70 113 103 92 81), DL32
+   655/537/572/564/658 (360 261 287 429 430 399 277 279 323 335
+   368 297). Any mismatch => the row is NOT EVALUABLE. (The
+   INNER/OUTER pairs are s53/s54 content and the DL pairs are s81
+   content -- NOT tail-side content; they exist here only as
+   validity.)
+
+5. NAMED, NOT HIDDEN:
+   (a) THE S86 NARROW-SPAN CAVEAT BINDS THIS ROW: the s81
+       section-4(c) band, extended to half-pairs by the s86
+       freeze -- TS-L4/TS-R4 (span 4) and TS-L8/TS-R8 (span 8)
+       sit IN the narrow-span noise band; a placement there is
+       UNINFORMATIVE about tail identity. The informative
+       families are TS-L16/TS-R16 and TS-L32/TS-R32 (spans
+       16/32). The publication prints all eight pairs (the whole
+       vocabulary, no selection) but tags the k=4/8 families
+       with the standing UNINFORMATIVE-BY-S86-CAVEAT tag.
+   (b) NO DIRECTION IS PRE-REGISTERED OR IMPLIED: the s61/s62/s63
+       mirror-pair asymmetry (e.g. s63's D_HSL = x_(19)-x_(1) vs
+       D_HSR = x_(75)-x_(57), 2*L levels 583/579/568/554 vs
+       195/169/196/217) is QUOTE-ONLY MOTIVATION (the s86 freeze
+       section 4(e) binds), not a prior of this row; the observed
+       left/right level differences here are DESCRIPTIVE and
+       license no direction for any future row.
+   (c) n = 12 blocks x 5 windows, ONE host; mechanism UNMEASURED;
+       threshold-artifact-vs-representation UNRESOLVED.
+   (d) A FUTURE inferential tail-side row (its own pre-
+       registration: direction/null/threshold/multiplicity per
+       the s86 selection rule 3(c)/3(d)) may quote these vectors
+       as quote-only priors; this row does not pre-register one.
+
+6. THE BAR (frozen): ANALYSIS session -> NO hardware runs -> NO
+   reading -> NO settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD, git diff 0
+   bytes, verified this tick). RULE 4 unchanged: NOTHING MOVES --
+   the accelerator-targets workgroup rows stay exactly as ADR-0358
+   left them (:measured? true scoped to each row's one named
+   measured device for :nvidia/:apple/:intel/:amd; :arm and
+   :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor).
+
+7. WHAT THIS FREEZE CARRIES FORWARD (named; each item is its own
+   future row): (a) the W6 measurement half (the s80 freeze; the
+   first session at/after 2026-10-30T00:00:00Z) -- the gate for
+   the T18 analysis half and the W7 measurement half; (b) the T18
+   ANALYSIS half (the s84 freeze binds); (c) the W7 measurement
+   half (the s85 freeze binds; behind W6's ledger line); (d) any
+   further counted-day slot (its own future freeze); (e) a FUTURE
+   inferential tail-side row (the s86 vocabulary + THIS row's
+   vectors are the route; its own pre-registration -- NOT taken
+   here); (f) the standing gate set runs with each such tick.

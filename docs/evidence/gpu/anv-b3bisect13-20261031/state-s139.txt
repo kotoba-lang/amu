@@ -1,0 +1,72 @@
+2026-11-01 (session 139)
+== session 139 state capture -- THIRTEENTH CUT MEASUREMENT HALF ==
+== STARTED, NOT FINISHED (runtime-budget cutoff, s129/s133/s137 ==
+== interim-capture precedent) ==
+
+ROW: the s137 carry-forward (a): the thirteenth cut's MEASUREMENT
+half -- 102 fresh processes under the frozen
+anv-b3bisect13prereg-20261031/protocol.txt (frozen
+2026-10-31T16:52:54Z; the row is "frozen to run", so s139 takes it).
+
+DONE this tick (real tool output,
+docs/evidence/gpu/anv-b3bisect13-20261031/):
+1. Staging + derivation census: cases-s139-a.txt (header + the 24
+   cell lines' block sha256 873025d6... == s27's), instrument
+   a5e539f0... and expected-corpus eefba52e... byte-copies;
+   host-stage-s139.txt (host==local digests, corpus 16/16 OK,
+   corpus_rc=0); host-verify-s139.txt (aiueos-6600hs /
+   murakumo-ci-6600hs, user murakumo-ci, groups include render).
+2. GO=2026-10-31T17:40:26Z before the build loop and all runs;
+   builds 4/4 rc=0 stderr 0 bytes (host-build-s139.txt); BUILD PINS
+   4/4 BYTE-IDENTICAL: c2 e5ed903e..., mid cabff942... (5-way
+   s125/s129/s132/s136/s139), bis 440604ef... (== the s136 first
+   measured digest DECLARED the pin at the freeze), c8 480925e5...
+   (build-census-s139.txt, derivation-census-s139.txt).
+3. THE 102 FRESH PROCESSES RAN in the frozen order (c2 bookend, 48
+   interleaved mid/bis pairs, c8 bookend; run window
+   17:40:51Z..17:41:12Z, all stamps strictly after GO):
+   rc=0 102/102, stderr 0 bytes 102/102, 450 SAMPLE + 24 VERIFY +
+   24 CELL each, tail '# done cells=24' 102/102, VERIFY mismatch
+   total 0 (the frozen INVALIDATION criterion did not fire)
+   (host-runs-s139.txt).
+4. 204 logs pulled byte-identical: canonical aggregate
+   338a212cfad611962a3fe0cd1c0f72db1c24111d2665053693b119c2466ff1d9
+   host == local over the exact sorted 204 this-cut names
+   (host-digests-s139.txt). NAMED, NOT HIDDEN: the raw driver
+   capture's aggregate line covers 252 unique names (the copied
+   shaders/ dir carries 48 stale run-hi-* logs of an earlier cut --
+   verified 48, all run-hi-*; not this cut's, never read, never
+   aggregated) and my first local name-list generator's seq -w
+   padding defect -- both named in host-digests-s139.txt, neither
+   reaching any evidence value.
+
+NOT DONE (the completing session's exact work -- s134 precedent):
+a. analysis-s139.py is WRITTEN (committed here) but NOT RUN: run it
+   twice byte-identical -> publication-s139.txt (the pre-registered
+   letters C1/C2/C3/W1/W2/W3/X1 evaluate ONLY from those runs; every
+   thirteenth-cut quantity and every letter is UNMEASURED until the
+   publication exists).
+b. STANDING GATES (a)-(f) not run this tick (no gate-s139-*/bar-*
+   capture exists).
+c. record.txt (full), the ADR-0355 dated note, and the landing tail
+   (the JUN-499 Linear comment for this work lands at the completing
+   session -- Linear 未記録 for the s139 tail).
+d. rule: the analysis must parse ONLY the 102 committed run logs in
+   this directory and the named committed want sources (protocol
+   section 7) -- do not extend its inputs.
+
+NAMED, NOT HIDDEN: this tick's measurement ran on UTC day 2026-10-31
+(the freeze's own UTC day). BAR NON-INTERFERENCE held: the runs are
+BISECT CONTENT -- NO ledger append, NO day-slot consumption, NO bar
+movement, NO Rule 4/:measured? movement (workgroup rows stay as
+ADR-0358 left them; NO vendor optimization exists for Intel or any
+vendor).
+
+Carry-forward to s140: (a) complete exactly this NOT DONE list (run
+analysis-s139.py twice byte-identical, evaluate the frozen letters,
+gates (a)-(f), record.txt, ADR-0355 dated note, landing commit if
+this commit is only the interim capture, JUN-499 comment); (b)
+unchanged: any further counted-day slot (the 2026-10-31 slot is
+consumed at s117; the next slot is a NEW UTC day and its own freeze)
+and the cross-day tail-movement row (not queued).
+(JUN-55, JUN-59; Linear tracking JUN-499)

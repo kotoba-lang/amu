@@ -1,0 +1,41 @@
+== JUN-59 session 73 build census (THE FIFTH-WINDOW CROSS-UTC-DAY ==
+== NAMED-CELL ROBUST-SCALE LEVEL REPLICATION PROBE) ==
+Build window (host timeline): builds ran after the verify GO
+(compile) and before the first run (run-window.txt).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale), user murakumo-ci
+(groups include render). Workdir ~/anv-b3w5xdayrep-20261029, runs
+cwd=shaders/ (manifest passed as ../cases-s73-a.txt; binaries
+../anv-bb-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of ==
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 28's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> ==
+== -o anv-bb-<tag> gpu-subgroup-reduce-anv-ndiv.c -lvulkan (4 arms, ==
+== one binary each) ==
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-29T00:34:24Z
+build hi (-DBATCH=3 -DWORK_MUL=1024 -DNDIV=4033) rc=0 @2026-10-29T00:34:24Z
+build tw (-DBATCH=3 -DWORK_MUL=2048 -DNDIV=8066) rc=0 @2026-10-29T00:34:24Z
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-29T00:34:24Z
+build stderr byte counts (host build-<tag>.err):
+0 build-c2.err
+0 build-c8.err
+0 build-hi.err
+0 build-tw.err
+0 total
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c  anv-bb-hi
+bb901eb5b1e98940c53b3ecaeccad2b8d410967952659f9902668de32c4524b0  anv-bb-tw
+BUILD REPLICATION PIN (the s51-frozen four build pins, declared in the
+s57-frozen protocol section 6 route; prior censuses parsed
+programmatically -- build-census-s51.txt):
+  BYTE-IDENTICAL: anv-bb-c2 e5ed903e5b9dfd64... == sessions 13-51's c2 (e5ed903e...) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-hi a6c31b6c5c566308... == session 26's anv-bb-mid == sessions 27-51's hi (a6c31b6c...) -- the (1024,4033) pair's TENTH cross-session rebuild -- PIN OK
+  BYTE-IDENTICAL: anv-bb-tw bb901eb5b1e98940... == session 26's anv-bb-eq3 == sessions 28/33/36/38/39/51's tw (bb901eb5...) -- the (2048,8066) twin's FIFTH cross-session rebuild -- PIN OK
+  BYTE-IDENTICAL: anv-bb-c8 480925e58d28e7d3... == sessions 13-51's c8 (480925e5...) -- PIN OK
+pins: 4/4 BYTE-IDENTICAL (the strongest pin position -- every arm
+carries a prior binary pin).

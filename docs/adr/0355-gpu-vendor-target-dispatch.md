@@ -3939,3 +3939,2889 @@ set them. Queue unchanged: the W5 measurement session (first
 at/after 2026-10-29T00:00:00Z, its pre-GO custody steps named at
 s67) then T7 and the three frozen analysis halves. Evidence:
 `docs/evidence/gpu/anv-b3w5pregocensus-20261028/`.
+
+## Dated note (2026-10-28, JUN-59 session 72: the s71 carry-forward batch)
+
+The census DOUBLE-RUN at the frozen 20,000-trial contract VERIFIED:
+run1 == run2 byte-identical (10,611 bytes), TOTAL 44 rows / 0
+mismatched three-way (the six RNG count/p rows now reproduce at full
+trials -- 99/9/2844/367/3657/12283), SECTION B 2/2, hygiene 4/4;
+`derivation-census-s71.txt` committed (was uncommitted until
+verified). The s71 in-flight background runs had not survived their
+session (named). FULL run-tests.cljk run live: exit 1, RED AT BASE
+`kotoba.form` (ADR-0362, outside this diff) -- no green full suite
+claimed. Standing gates byte-identical to the s71 pins (classify
+2649/0; scoped GPU gate 123/12162/0/0 x2; bar self-test + ledger
+eval x2 -> VERDICT PENDING 1/4; `find ... '*.sh'` -> 0). This
+session started 2026-10-28T23:30Z, before the W5 slot opens at
+2026-10-29T00:00:00Z -- NOT the W5 measurement session (named).
+Rule 4 binds: nothing moves; accelerator-targets defaults stay
+:measured? false. Chain PR #1643 was merged 23:21:57Z; this tick
+starts `bot/amu-gpu-chain-20261028-4` with one fresh PR. Evidence:
+`docs/evidence/gpu/anv-b3w5pregocensus-20261028/record-s72-carryforward.txt`.
+
+## Dated note (2026-10-29, JUN-59 session 75: the s73 carry-forward remainder)
+
+analysis-s73.py run 2 (foreground, numpy 2.5.4 interpreter --
+the s74 background run's interpreter lacked numpy, named there)
+completed rc=0 in 4m07s and is BYTE-IDENTICAL to run 1
+(publication-s73.txt sha256 221d5591... == scratch/pub-s73-run1-
+pin.txt, cmp exit 0): the w5-mode "run twice, diff exit 0"
+determinism claim is VERIFIED and the W5 (s73) T7 values -- (a)
+CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES (MAD 143 -> 98, p 0.000050;
+IQR 303 -> 223, p 0.000200) -- stand as two byte-identical runs of
+the validated generator. Standing gates: FULL run-tests.cljk exit
+1, RED AT BASE kotoba.form (ADR-0362, outside this diff) -- no
+green full suite claimed; settle-bar self-test 38/0 and pre-line
+ledger eval x2 byte-identical to the s72 pins; `find ... '*.sh'`
+-> 0. THE BAR: one ledger line appended after the gates verified
+(day=2026-10-29 session=s73 class=INTERMEDIATE/MIXED median=1131
+min=998 flag=none -- the frozen L12 hi block-A candidate; C1 (a),
+VERIFY mismatch 0, GO stamp 00:34:10Z before builds/runs); the
+frozen evaluator (run twice, byte-identical) reports s73 COUNTED
+(day 2026-10-29's first qualifying reading) and VERDICT: PENDING
+2/4. Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 76: the five-window derivation census
+(second-parser cross-check) and the three frozen analysis halves
+(T14/T15/T16). Evidence:
+`docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s75.txt`.
+
+## Dated note (2026-10-29, JUN-59 session 76: the five-window derivation census)
+
+derivation-census-s73.py -- the independent second parser for
+publication-s73.txt (s73 carry-forward 3(b), protocol section 0
+implementation paths: split-based parsing; observed estimators
+pure-Python sorted() cross-checked in-loop vs np.partition kth;
+resampling estimators np.partition kth paths, NOT a sort; RNG call
+order re-implemented) -- ran twice byte-identical (cmp exit 0,
+sha256 9ee77c15...) with "TOTAL: 57 rows, 0 mismatched" both runs:
+every published integer, count, p and letter of the W5 (s73) T7
+cross-checks, INCLUDING the resampling counts/p (MAD count 0
+p 0.000050; IQR count 3 p 0.000200) and the four five-window D3
+probes. The s73 T7 values -- (a) CROSS-DAY-REPLICATED-ON-BOTH-
+LEVEL-AXES -- are now two byte-identical runs of the validated
+generator PLUS an independent-parser cross-check. Standing gates
+NOT re-run this tick (named; no .cljk namespace touched). Rule 4
+binds: nothing moves; accelerator-targets defaults stay
+:measured? false. Evidence:
+docs/evidence/gpu/anv-b3w5xdayrep-20261029/record-s76.txt.
+
+## Dated note (2026-10-29, JUN-59 session 77: the T14 hi-wander analysis half)
+
+The s64-frozen pre-registered T14 row -- the s38-hi
+(sum,256,S=32) per-cell wander replication at (W5, hi), the
+s57 queue's second named candidate and the only route from one
+uncorrected (b) to a letter that survives multiplicity -- is
+taken to its ANALYSIS half over the committed W5 logs. THE ROW
+ANSWER: T14 = (b) NOT-REPLICATED
+[ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT] -- the named cell's 12 block
+pooled medians V = 1102 1090 1120 1093 1092 1143 1117 1109 1131
+1094 1162 1115, W_obs = 72 ticks vs the within-window
+run-repartition null (ONE random.Random(2026102814), 20,000
+trials, one fresh-list shuffle per trial): count 3019 / 20,001,
+p = 0.150992 one-sided upper, null median 61.0 -- W_obs is ABOVE
+the null median but NOT significant at the pre-registered 0.05,
+so the s45 s38-hi (b) wander-excess does NOT replicate on NEW
+cross-day data (a (b) is NOT evidence of no per-cell structure;
+frozen caveats unchanged). DOUBLE-RUNS: analysis-s77.py run twice
+byte-identical (publication-s77.txt 9,491 bytes, sha256
+f49d51f0..., cmp exit 0) and derivation-census-s77.py -- the
+independent second parser (split-based parsing, no regex;
+observed medians pure-Python sorted()[37] cross-checked vs
+np.partition kth=37; resampling np.partition kth=37, NOT
+np.median; RNG re-implemented) -- run twice byte-identical with
+"TOTAL: 57 rows, 0 mismatched | B: 0 | C: 0" (sha256
+5fa5633a...), every published integer/count/p/letter of the T14
+publication cross-checked including the RNG rows. Standing
+gates: classify --self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pin; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff) with the 879-byte
+.err byte-identical to the s64 pin -- no green full suite
+claimed; settle-bar self-test 38/0 == pin and ledger eval twice
+== pin -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` ->
+0. THE BAR: NO hardware runs at this analysis session -> NO
+ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 78: the T15 quantile-pair level axes
+and T16 second-pair profile axis analysis halves. Evidence:
+docs/evidence/gpu/anv-b3w5hiwander-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 78: the T15 quantile-pair level axes analysis half)
+
+The s65-frozen T15 row (the s53/s54 named quantile-pair level
+axes at W5) taken to its ANALYSIS half over the 390 committed
+run logs (the W5 tw arm's 36 runs + the four prior windows'
+integrity machinery; NO hardware runs, NO builds, NO GO stamp,
+NO day-slot consumption, NO settle-bar-ledger line). T15 =
+(b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES: the named cell
+(max,128,S=default) tw arm, s36 vs W5 -- INNER (28,48) 2*L
+118 -> 100 (2*C_obs 18, direction-consistent -- NARROWER at
+W5), count 1477/20,001, p = 0.073896 one-sided ->
+DIRECTION-CONSISTENT-NOT-SIGNIFICANT; OUTER (9,67) 2*L 496 ->
+502 (2*C_obs -6), count 11,558/20,001, p = 0.577921 ->
+DIRECTION-REVERSED (the outer-pair level is WIDER at W5 than
+at s36 -- the s54 T4 (a) post-shift outer-level drop does NOT
+hold at W5). Both axes read (b) under the pre-registered IUT
+joint rule. D1 descriptive (NO letter): the five-window level
+vectors reproduce the quote-only s53/s54 four-window priors
+EXACTLY (INNER 118/102/128/113/100; OUTER
+496/429/437/446/502); W5 sits OUTSIDE-BELOW the post-shift band
+on the inner pair (2*L_W5 100 vs 102..113) and OUTSIDE-ABOVE
+it on the outer pair (502 vs 429..437) -- opposite sides of
+the band, named not hidden, mechanism UNMEASURED. A (b) is NOT
+evidence of no per-cell structure; threshold-artifact-vs-
+representation and physical-vs-estimator-structure STAY
+UNRESOLVED. DOUBLE-RUNS: analysis-s78.py run twice byte-
+identical (publication-s78.txt 13,471 bytes, sha256
+501b9d0a...) and derivation-census-s78.py -- the independent
+second parser (split-based parsing, no regex; observed block
+spreads pure-Python sorted() cross-checked vs np.partition kth
+paths; resampling np.partition, NOT np.sort; RNG re-implemented
+in the frozen probe order) -- run twice byte-identical with
+"TOTAL: 79 rows, 0 mismatched | B: 0 | C: 0" (sha256
+a6985446...), every published integer/count/p/letter cross-
+checked including the RNG rows; section B 2,160 block-D
+cross-checks 0 mismatched. Standing gates: classify --self-test
+2649/0 == pin; scoped GPU gate GREEN 123/12162/0/0 twice ==
+pins; FULL run-tests.cljk exit 1, RED AT BASE kotoba.form
+(ADR-0362, outside this diff) with the 879-byte .err == pin --
+no green full suite claimed; settle-bar self-test 38/0 == pin
+and ledger eval twice == pin -> VERDICT: PENDING 2/4 unchanged;
+`find ... '*.sh'` -> 0. THE BAR: NO hardware runs -> NO ledger
+line, NO day-slot consumption (settle-bar-ledger.txt == HEAD).
+Rule 4 binds: nothing moves; accelerator-targets defaults stay
+:measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 79: the T16 second-pair profile axis
+analysis half. Evidence:
+docs/evidence/gpu/anv-b3w5qpairevel-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 79: the T16 second-pair profile axis analysis half)
+
+The s66-frozen T16 row (the second-pair profile axis -- the s56
+halving-rule pairs OUTER2 (5,71) / INNER2 (33,43) -- at W5) taken
+to its ANALYSIS half over the 390 committed run logs (the W5 tw
+arm's 36 runs + the four prior windows' integrity machinery; NO
+hardware runs, NO builds, NO GO stamp, NO day-slot consumption,
+NO settle-bar-ledger line). T16 = (b)
+NOT-SECONDPAIR-PROFILE-W5-OUTER-WEIGHTED-CONSISTENT
+[OPPOSITE-DIRECTION]: the named cell (max,128,S=default) tw arm,
+s36 vs W5 -- OUTER2 (5,71) 2*L 713 -> 715 (2*C_out2 -2 -- the
+outer2 level slightly WIDER at W5); INNER2 (33,43) 2*L 63 -> 54
+(2*C_in2 9 -- the inner2 level narrows); the primary
+difference-in-differences 2*P2_obs = -11 (P2_obs = -5.5), count
+11,211/20,001, p = 0.560572 one-sided in the pre-registered
+direction P2_obs > 0 -- REVERSED. The (b) [OPPOSITE-DIRECTION]
+is CONSISTENT WITH the s56-era power loss at this pair set AND
+EQUALLY CONSISTENT WITH genuine non-replication of the
+outer-weighted profile at the second pair set; the T6 (b) prior
+stands unrepaired; both named levels MOVED (composition
+structure named), mechanism UNMEASURED. D1 descriptive (NO
+letter): the five-window second-pair level vectors reproduce the
+quote-only s56 D1 four-window priors EXACTLY (OUTER2
+713/606/659/612/715; INNER2 63/54/62/56/54); W5 sits
+OUTSIDE-ABOVE the post-shift band on OUTER2 (715 vs 606..612)
+and INSIDE it on INNER2 (54 vs 54..56). A (b) is NOT evidence of
+no per-cell structure; threshold-artifact-vs-representation and
+physical-vs-estimator-structure STAY UNRESOLVED. DOUBLE-RUNS:
+analysis-s79.py run twice byte-identical (publication-s79.txt
+10,166 bytes, sha256 4f140b19...) and derivation-census-s79.py
+-- the independent second parser (split-based parsing, no regex;
+observed block spreads pure-Python sorted() cross-checked vs
+np.partition kth paths; resampling np.partition, NOT np.sort;
+RNG re-implemented with both axes on the same shuffles) -- run
+twice byte-identical with "TOTAL: 47 rows, 0 mismatched | B: 0 |
+C: 0" (sha256 f564d6dd...), every published integer/count/p/
+letter cross-checked including the RNG rows; section B 2,160
+block-D cross-checks 0 mismatched. Standing gates: classify
+--self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pins; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff) with the 879-byte
+.err == pin -- no green full suite claimed; settle-bar self-test
+38/0 == pin and ledger eval twice == pin -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. THE BAR: NO hardware runs ->
+NO ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+With this row the s57 W5 carry-forward queue is COMPLETE;
+carry-forward to session 80: the bar needs two more counted day
+slots (NEW pre-registered hardware measurements on future UTC
+days -- future design+measurement work) and any further named
+profile pair needs a NEW named rank-pair vocabulary (future
+design work). Evidence:
+docs/evidence/gpu/anv-b3w5pair2profile-20261029/record.txt.
+
+## Dated note (2026-10-29, JUN-59 session 80: the W6 counted-day measurement pre-registration)
+
+The s79 carry-forward item (a) taken to its DESIGN half: the
+pre-registration freeze of the hardware measurement the anchor-
+class settling bar's THIRD counted day slot needs (protocol.txt
+of docs/evidence/gpu/anv-b3w6daybar-20261030/, freeze stamp
+2026-10-29T04:23:51Z, before any W6 quantity exists). W6 = the
+window whose 78 fresh processes run in the first measurement
+session that starts at or after 2026-10-30T00:00:00Z on the ANV
+host; ONE ledger line -- hi block A of W6 (the frozen L12 single
+bar candidate) at the settle-bar section-2 reading (class at the
+frozen section-4 threshold, (sum,128,S=16) pooled median, 18-cell
+pooled-median min), COUNTED iff the first qualifying reading of
+its UTC day, FLAGGED construction (C1 (b) / VERIFY / pin / GO)
+named and consuming no slot; the s57 section-6 route UNCHANGED
+(custody host-verify 3/3 + corpus 16/16 before the GO stamp; the
+four s51-frozen build pins 4/4 BYTE-IDENTICAL; the 78 runs in the
+frozen run order). 2026-10-29's slot is consumed (s73), so the
+slice runs NO hardware (NO reading, NO ledger line, NO day-slot
+consumption; the bar stays PENDING 2/4). NAMED, NOT HIDDEN: no
+analysis row rides this freeze (the W5 queue is COMPLETE; any
+further named profile pair needs the NEW named rank-pair
+vocabulary, which does not exist); the alternative minimal 9-run
+bar-only session was CONSIDERED AND REJECTED with reasons in the
+freeze; the FOURTH day slot is NOT frozen here (no silent
+extension). Standing gates (real runs): classify --self-test
+2649/0 == pin; scoped GPU gate GREEN 123/12162/0/0 twice == pins;
+FULL run-tests.cljk exit 1, RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) with the 879-byte
+.err == pin -- no green full suite claimed; settle-bar self-test
+38/0 == pin and ledger eval twice == pin -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 81: the
+W6 measurement half (the first session at/after
+2026-10-30T00:00:00Z), then the fourth day slot (its own future
+freeze) and the named rank-pair vocabulary (unfrozen design
+work). Evidence:
+docs/evidence/gpu/anv-b3w6daybar-20261030/freeze-record-s80.txt.
+
+## Dated note (2026-10-29, JUN-59 session 81: the doubling-ladder named rank-pair vocabulary)
+
+The s80 carry-forward item (c) taken to its DESIGN half: the NEW
+named rank-pair vocabulary / selection rule -- the only route back
+for the rank-pair program retired at s62/s63 (vocabulary.txt of
+docs/evidence/gpu/anv-b3dladder-20261029/, written once at freeze
+stamp 2026-10-29T04:58:52Z, before any statistic of its pairs
+exists). THE DOUBLING LADDER (DL): DL4 (x_(34), x_(42)) k=4 span
+8, DL8 (x_(30), x_(46)) k=8 span 16, DL16 (x_(22), x_(54)) k=16
+span 32, DL32 (x_(6), x_(70)) k=32 span 64 -- k = half-distance
+from the pooled-75 deviation-center rank x_(38); the frozen rule
+is data-independent: k runs over the powers of two <= 37 that no
+committed record has named ({1,2} named at s58-s61 -> free
+{4,8,16,32}); each k sits strictly between consecutive named k
+(spacing repair 3<4<5, 5<8<10, 10<16<19, 29<32<33). Future rows
+name pairs ONLY from this vocabulary, each in its own protocol
+freeze before any statistic (estimators/nulls/thresholds stay
+per-row); no silent extension. NAMED, NOT HIDDEN: every DL pair is
+self-mirror (tail-side asymmetry is out of scope -- the s61/s62/
+s63 mirror-pair asymmetry needs a separate future vocabulary);
+DL4 (span 8) sits in the pre-registered narrow-span noise band, so
+a (b) at DL4 is uninformative; the freshness claim is exactly a
+grep -F over docs/evidence/gpu (0 hits outside the new directory);
+the alternative free-k and asymmetric-vocabulary designs were
+CONSIDERED AND REJECTED with reasons in the freeze. The slice
+computes NO statistic (the DL levels are UNMEASURED), runs NO
+hardware, writes NO ledger line (settle-bar-ledger.txt == HEAD);
+the bar stays PENDING 2/4. Standing gates (real runs):
+classify --self-test 2649/0 == pin; scoped GPU gate GREEN
+123/12162/0/0 twice == pins; FULL run-tests.cljk exit 1, RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO
+.cljk namespace) with the 879-byte .err == pin -- no green full
+suite claimed; settle-bar self-test 38/0 == pin and ledger eval
+twice == pin -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'`
+-> 0. Rule 4 binds: nothing moves; accelerator-targets defaults
+stay :measured? false; NO vendor optimization exists for Intel.
+Carry-forward to session 82: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z), the fourth day slot (its
+own future freeze), any DL rank-pair row (its own pre-
+registration), and the tail-side vocabulary (named limitation).
+Evidence: docs/evidence/gpu/anv-b3dladder-20261029/
+(freeze-record-s81.txt).
+
+## Dated note (2026-10-29, JUN-59 session 82: the DL level-axis descriptive reference row)
+
+The s81-frozen DOUBLING LADDER vocabulary's FIRST STATISTIC (the
+s81 carry-forward item "any DL rank-pair row" taken to its
+descriptive-reference half; protocol.txt of
+docs/evidence/gpu/anv-b3dlprofile-20261029/ frozen at stamp
+2026-10-29T05:22:05Z BEFORE any statistic of the row existed;
+the pre-freeze freshness greps were 0/0 hits). T17, DESCRIPTIVE
+ONLY -- NO letter, NO null, NO direction (the DL pairs carry no
+pre-existing directional hypothesis; the honest first statistic
+is the reference vectors a future inferential DL row quotes as
+priors): the tw arm's named cell (max,128,S=default), per-block
+D = x_(b)-x_(a) over each block's pooled 75 gpu_ticks, 2*L =
+6th+7th order statistics of the 12 block D values, five
+committed windows s36/s38/s39/s51/W5 -- DL4 (x_(34),x_(42)) 2*L
+46/47/48/38/40 (W5 INSIDE the post-shift band 38..47); DL8
+(x_(30),x_(46)) 97/84/99/79/83 (INSIDE 79..84); DL16
+(x_(22),x_(54)) 238/187/201/188/178 (W5 OUTSIDE-BELOW 187..188);
+DL32 (x_( 6),x_(70)) 655/537/572/564/658 (W5 OUTSIDE-ABOVE
+537..564). Span-dependent picture, named not hidden, NO letter:
+the two NARROW self-mirror pairs sit inside the post-shift band
+at W5 while the two WIDE pairs leave it in OPPOSITE directions
+-- the narrow-vs-wide opposition of T15's INNER/OUTER set, now
+visible inside one data-independent vocabulary; mechanism
+UNMEASURED; n=12 blocks x 5 windows, ONE host. VERIFIED (real
+tool output): analysis-s82.py (deterministic, no RNG) run twice
+BYTE-IDENTICAL (7,870 bytes, sha256 d858cc17..., cmp exit 0);
+parser validity pins EXACT (the published s78 INNER
+118/102/128/113/100 and OUTER 496/429/437/446/502 vectors and
+both W5 block-D vectors reproduced byte-for-value); integrity
+390 logs / VERIFY 0 / 8-8 block-min vectors / 4-4 anchors / C1
+(a). Standing gates (real runs == the s81 pins): classify
+2649/0; scoped GPU gate GREEN 123/12162/0/0 twice; FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 83: the
+W6 measurement half (first session at/after
+2026-10-30T00:00:00Z), the fourth day slot (its own future
+freeze), an inferential DL row or this publication's derivation
+census (each its own pre-registration), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3dlprofile-20261029/
+(freeze-record-s82.txt).
+
+## Dated note (2026-10-29, JUN-59 session 83: the T17 derivation census)
+
+The s82 carry-forward item "this publication's derivation census
+(independent second parser)" taken as a verification slice; NO
+hardware runs, NO compiles, NO GO stamp, NO ledger line.
+derivation-census-s82.py re-derives every published value of
+publication-s82.txt from the 390 committed run logs on a
+genuinely different path (split-based parsing, no regex; pure-
+Python sorted() estimators cross-checked in-loop against
+np.partition kth paths; NO RNG) and matches the committed bytes
+on EVERY row -- 49/49 two-way rows, 0 mismatched; section B
+6,480 pair-spread + 2,255 pooled-median + 30 2*L dual-
+computation cross-checks, 0 mismatched; section C hygiene 0
+mismatched. DOUBLE-RUN BYTE-IDENTICAL (14,721 bytes, sha256
+7ecc3ef4..., cmp exit 0). ONE FINDING NAMED, NOT HIDDEN: the
+published section-5 band lines print sorted[0]..sorted[1] (min..
+MEDIAN) of the three {s38,s39,s51} 2*L values under the label
+"closed interval spanned by {s38,s39,s51}" -- the printed
+interval tops are understated (DL4 38..47 vs min..max 38..48;
+DL8 79..84 vs 79..99; DL16 187..188 vs 187..201; DL32 537..564
+vs 537..572); ALL FOUR BAND VERDICTS are UNCHANGED under
+min..max (INSIDE/INSIDE/OUTSIDE-BELOW/OUTSIDE-ABOVE), so the
+narrow-vs-wide descriptive picture does not move; a future
+inferential DL row's freeze must name its convention explicitly.
+Standing gates (real runs == the s82 pins): classify 2649/0;
+scoped GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 84: the
+W6 measurement half (first session at/after
+2026-10-30T00:00:00Z), the fourth day slot (its own future
+freeze), an inferential DL row (its own pre-registration), and
+the tail-side vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3dlprofile-20261029/ (record-s83.txt).
+
+## Dated note (2026-10-29, JUN-59 session 84: the T18 inferential
+## DL row pre-registration)
+
+The s83 record section-9(c) carry-forward item "an INFERENTIAL
+DL row (its own pre-registration; the s82 vectors are its
+quote-only priors; its freeze names its convention)" taken to
+its DESIGN half; NO hardware runs, NO compiles, NO GO stamp,
+NO ledger line; the row's ANALYSIS half is day-slot-gated
+behind the W6 measurement half -- STARTED, NOT FINISHED.
+protocol.txt (freeze stamp 2026-10-29T06:14:31Z, before any
+statistic of the row exists and before any W6 quantity exists)
+pre-registers T18 at the fresh W6 window: per-pair contrast
+2*C_obs = 2*L_s36 - 2*L_W6 over the WHOLE closed DL vocabulary
+(DL4/DL8/DL16/DL32, named only from the s81 freeze),
+pre-registered direction C_obs > 0 per pair fixed by the s82
+quote-only priors alone (DL8 3/4 post-s36 windows below s36;
+DL16 4/4; DL32 3/4 with the W5 exception named -- the demanding
+axis; DL4 2/4 and uninformative per the s81 section-4(c)
+caveat), the s78/T15 two-window run-exchangeability null
+verbatim (72 tw runs, ONE random.Random(2026102918), probe
+order DL4/DL8/DL16/DL32, 20,000 trials per probe, p =
+(1+count(C* >= C_obs))/(1+20,000) one-sided), per-pair letters
+(a)/(b)/(c), joint T18 = IUT over the three informative steps
+DL8/DL16/DL32 (s81 rule 3(d): the row's own multiplicity
+convention). THE CONVENTION IS NAMED EXPLICITLY (the s83
+requirement): the post-shift band is the closed interval
+[MIN, MAX] of {2*L_s38, 2*L_s39, 2*L_s51} -- MIN..MAX, NOT the
+s82 publication's printed min..median (the s83 correction
+record) -- and every band placement is descriptive, never a
+test. Standing gates (real runs == the s83 pins): classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 85:
+the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- now the only gate between this freeze
+and its analysis half --, then the T18 analysis half, the
+fourth day slot (its own future freeze), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3w6dlrep-20261030/ (protocol.txt,
+freeze-record-s84.txt).
+
+## Dated note (2026-10-29, JUN-59 session 85: the fourth
+## counted-day bar measurement pre-registration (W7))
+
+The s84 record section-6(c) carry-forward item "the fourth
+counted-day bar measurement (its own future freeze; its day
+follows W6's actual run day)" taken to its DESIGN half; NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO ledger
+line; the row's MEASUREMENT half is slot-gated behind W6's
+ledger line -- STARTED, NOT FINISHED. protocol.txt (freeze
+stamp 2026-10-29T06:39:16Z, before any W6 quantity exists and
+before any W7 quantity exists; pre-freeze freshness greps over
+docs/evidence/gpu: "anv-b3w7daybar"/"20261031"/"2*L_W7"/
+whole-word "W7"/"W7 =" all 0 hits) pre-registers W7 = the
+window whose 78 fresh processes run in the first measurement
+session that starts at or after 00:00:00Z of the first UTC day
+STRICTLY AFTER the UTC day named on W6's ledger line (planned
+2026-10-31 if W6's line takes 2026-10-30; follows W6's actual
+run day if the runs slip): ONE ledger line = hi block A (the
+frozen L12 single bar candidate) at the settle-bar.txt
+section-2 READING, COUNTED iff the first qualifying reading of
+its UTC day, FLAGGED construction named and consuming no slot;
+the s57 section-6 route UNCHANGED (custody 3/3 + corpus 16/16
+before the GO stamp; the four s51-frozen build pins 4/4
+BYTE-IDENTICAL; the 78 runs in the frozen run order). THE
+THREE CONTINGENCIES FROZEN (named, not hidden): (i) W6 slips
+-> W7's day follows W6's actual line day; (ii) W6 FLAGGED ->
+ W7's line delivers the THIRD counted reading and the rest is
+NEW pre-registered work (no silent extension); (iii) W6's
+ledger line ABSENT -> this freeze STANDS DOWN (fail-closed).
+NO analysis row rides this freeze (T18 binds only (s36, W6);
+W7 is in no frozen pair or contrast); the minimal 9-run
+bar-only alternative RE-REJECTED on the s80 4(b) reasons
+adopted here. Standing gates (real runs == the s84 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: nothing moves;
+accelerator-targets defaults stay :measured? false; NO vendor
+optimization exists for Intel. Carry-forward to session 86:
+the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half and
+this freeze's measurement half --, then the T18 analysis half,
+the W7 measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and the tail-side
+vocabulary (named limitation). Evidence:
+docs/evidence/gpu/anv-b3w7daybar-20261031/ (protocol.txt,
+freeze-record-s85.txt).
+
+## Dated note (2026-10-29, JUN-59 session 86: the tail-side
+## half-pair vocabulary)
+
+The s81 DL freeze's named limitation 4(b) ("probing which tail
+moves needs a SEPARATE future vocabulary (asymmetric pairs)"),
+queued at s85 carry-forward (e), taken to its DESIGN half; NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO ledger
+line, NO statistic of any run log. vocabulary.txt (freeze
+stamp 2026-10-29T07:22:17Z; pre-freeze freshness greps
+07:18:55Z-07:19:25Z: 24 tokens x 0 hits -- pair forms, name
+tokens TS-L4..TS-R32, pair tokens; bare rank tokens NOT
+claimed fresh, named not hidden) freezes the TAIL-SIDE
+HALF-PAIRS: per k in the DL k set {4,8,16,32} (named ONLY
+from s81 -- no new k selection), TS-Lk = (x_(38-k), x_(38))
+and TS-Rk = (x_(38), x_(38+k)); span control (the s81 4(a)
+conflation objection answered by construction), mirror
+closure (r <-> 76-r), DL decomposition (HL_k + HR_k = D_k
+exactly), disjoint from all 20 named pairs, closed at eight
+pairs. The selection rule for future rows is frozen (s81
+rule 3 adopted). NAMED, NOT HIDDEN: NO direction is
+pre-registered (the s61/s62/s63 asymmetry is quote-only
+motivation); the narrow-span caveat (s81 4(c)) extends to
+half-pairs (TS-L4/TS-R4 and TS-L8/TS-R8 in the noise band;
+informative families k=16/32); estimators/contrast stay
+per-row. Standing gates (real runs == the s85 pins):
+tailpair-vocab-s86.py run twice byte-identical (3,188 bytes,
+sha256 7c9d9892... both) + self-test 271/0; classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff
+-- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice ==
+pins -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` ->
+0. The bar: NO reading -> NO ledger line, NO day-slot
+consumption (settle-bar-ledger.txt == HEAD). Rule 4 binds:
+nothing moves; the ADR-0358 row states are unchanged; NO
+vendor optimization exists for Intel. Carry-forward to
+session 87: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half
+and W7's measurement half --, then the T18 analysis half,
+the W7 measurement half (behind W6's ledger line), any
+further counted-day slot (its own freeze), any tail-side row
+(this vocabulary is the route; a NEW pre-registration).
+Evidence: docs/evidence/gpu/anv-b3tailvocab-20261029/
+(vocabulary.txt, tailpair-vocab-s86.py/.txt,
+tailvocab-s86-selftest.txt/.err, freeze-record-s86.txt, the
+s86 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 87: the tail-side
+## half-pair descriptive reference row)
+
+The s86 tail-side vocabulary's FIRST STATISTIC (T19) taken to
+its DESCRIPTIVE half over the 390 committed run logs of the
+five fixed windows; NO hardware runs, NO builds, NO compiles,
+NO GO stamp, NO ledger line, NO letter, NO null, NO direction.
+protocol.txt (freeze stamp 2026-10-29T07:40:02Z, file finalized
+07:40:27Z; pre-freeze freshness greps
+2026-10-29T07:38:25Z-07:38:39Z: 0 hits on every row-name token;
+bare "T19"'s 64 hits are all UTC-hour timestamps -- named not
+hidden) freezes the row; analysis-s87.py (pure stdlib, no RNG)
+run twice byte-identical (publication-s87.txt 13,188 bytes,
+sha256 ebe4daa7... both, cmp exit 0). The five-window 2*L
+vectors (s36/s38/s39/s51/s73) at the tw arm's named cell
+(max,128,S=default): TS-L4 23/30/21/24/20; TS-R4
+19/16/22/18/19; TS-L8 50/51/52/47/42; TS-R8 48/32/49/38/41;
+TS-L16 118/103/115/103/90; TS-R16 94/82/100/85/77; TS-L32
+418/342/397/362/439; TS-R32 213/186/183/204/214. The s86
+decomposition identity HL_k+HR_k = D_k verified EXACT at all
+240 block checks. DESCRIPTIVE PICTURE, NAMED NOT HIDDEN, NO
+LETTER: at the two INFORMATIVE families (k=4/8 tagged
+UNINFORMATIVE-BY-S86-CAVEAT) the LEFT half-spread level
+exceeds the RIGHT at all five windows (k=16 R-L level
+difference -24/-21/-15/-18/-13; k=32 -205/-156/-214/-158/
+-225) -- the direction of the s61/s62/s63 quote-only
+motivation is visible in these descriptive vectors; NOT a
+test, mechanism UNMEASURED, no tail is claimed to move. The
+2*L levels do NOT add (published section 5b names it). Parser
+validity pins EXACT 6/6 (publication-s78 INNER/OUTER +
+publication-s82 DL vectors). Standing gates (real runs == the
+s86 pins): classify 2649/0 (17,925 bytes == pin); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes == pins); FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green
+full suite claimed; settle-bar self-test 38/0 + ledger eval
+twice == pins -> VERDICT: PENDING 2/4 unchanged; `find ...
+'*.sh'` -> 0. The bar: NO reading -> NO ledger line, NO
+day-slot consumption (settle-bar-ledger.txt == HEAD). Rule 4
+binds: NOTHING MOVES; the ADR-0358 row states are unchanged;
+NO vendor optimization exists for Intel. Carry-forward to
+session 88: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half and
+W7's measurement half --, then the T18 analysis half, the W7
+measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and a future inferential
+tail-side row (the s86 vocabulary + T19's vectors are the
+route; its own pre-registration). Evidence:
+docs/evidence/gpu/anv-b3tailprofile-20261029/ (protocol.txt,
+analysis-s87.py, publication-s87.txt, freeze-record-s87.txt,
+the s87 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 88: the inferential
+## tail-side row's pre-registration -- T20)
+
+The s87 carry-forward's item 6(e) -- "a FUTURE inferential
+tail-side row (the s86 vocabulary + T19's vectors are the
+route; its own pre-registration)" -- taken to its DESIGN half
+(the s84/s85/s86 pattern: freeze before any target-window
+quantity exists). NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO ledger line, NO statistic of any run log; the
+row's ANALYSIS half is gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T08:1xZ, ~15.7h before the slot opens) -- STARTED,
+NOT FINISHED. protocol.txt (freeze stamp 2026-10-29T08:16:54Z;
+pre-freeze freshness greps 08:16:12Z-08:16:22Z: 0 hits on all
+eight row-name tokens; "2^12"/"4,096" hits unrelated, bare
+"T20" hits UTC-hour timestamps -- named not hidden) freezes
+T20 = the tail-side half-pair asymmetry replication at W6: does
+the LEFT-greater-RIGHT asymmetry the T19 quote-only
+five-window vectors show at all five windows at the two
+INFORMATIVE families (k=16: 118/103/115/103/90 vs
+94/82/100/85/77; k=32: 418/342/397/362/439 vs
+213/186/183/204/214) replicate at the fresh window? Per family
+C_obs = 2*L({HL_k}) - 2*L({HR_k}) (the T19 estimator held
+fixed) at the named cell (max,128,S=default), tw arm, 12
+blocks of 3. NULL: WITHIN-BLOCK SIDE-EXCHANGEABILITY (the s86
+mirror closure r <-> 76-r swaps HL_k/HR_k per block); EXACT
+randomization over all 2^12 = 4,096 whole-block side-swap
+assignments, p = count(C* >= C_obs)/4,096 one-sided, NO RNG
+(the T15/T18 seeded Monte Carlo convention considered and
+rejected -- 2^12 is exactly enumerable). Letters per family (a)
+ASYMMETRY-LEFT-GREATER-REPLICATED (C_obs > 0 AND p <= 0.05) /
+(b) NOT-REPLICATED / (c) NOT EVALUABLE; JOINT T20 = IUT over
+k=16/k=32 (k=4/8 excluded by the s86 section-4(c) caveat,
+tagged UNINFORMATIVE-BY-S86-CAVEAT, never in the joint).
+NAMED, NOT HIDDEN: direction fixed by T19's committed vectors
+alone (quote-only priors, the s53/s54/s82 pattern -- no
+double-dipping: the test data is W6 alone and does not exist at
+freeze); which tail MOVES across days is NOT claimed (a
+cross-day tail-movement row is its own future pre-registration,
+not queued); still low power (n=12 blocks, one window, one
+host, one cell); a (b) is not evidence of tail symmetry;
+mechanism UNMEASURED. STATE: ACCEPTED DESIGN ONLY (protocol.txt
++ freeze-record-s88.txt + this note); every T20 quantity is
+UNMEASURED. Standing gates (real runs == the s87 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization
+exists for Intel. Carry-forward to session 89: the W6
+measurement half (first session at/after 2026-10-30T00:00:00Z)
+-- the gate for T18's analysis half, T20's analysis half and
+W7's measurement half --, then the T18 analysis half, T20's
+analysis half, the W7 measurement half (behind W6's ledger
+line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6tailrep-20261030/ (protocol.txt,
+freeze-record-s88.txt, the s88 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 89: the T19
+## derivation census)
+
+The publication-s87.txt section-5 queued item ("the 12 W5 block
+values (for a future census)") taken as a verification slice --
+the s82->s83 census precedent, applied to the T19 vectors the
+frozen T18/T20 rows quote at W6. NO hardware runs, NO builds,
+NO compiles, NO GO stamp, NO ledger line, NO day-slot
+consumption. derivation-census-s87.py (the INDEPENDENT second
+parser: no re module; estimators on the numpy np.partition kth
+paths -- analysis-s87.py is pure stdlib sorted()-based -- cross-
+checked in-loop against pure-Python sorted(); NO RNG, no clock)
+re-derives every published computed value from the 390 committed
+run logs and matches the committed bytes on EVERY row: 92/92
+two-way rows, 0 mismatched; run twice byte-identical (29,790
+bytes, sha256 ebf261dd...1463c both). Section B: 1,080 pair-
+spread + 2,255 pooled-median + 90 2*L cross-check comparisons
+and 240 decomposition block checks, 0 mismatched everywhere.
+THE ONE SUBSTANTIVE FINDING, NAMED NOT HIDDEN: the publication's
+band lines print sorted[0]..sorted[1] (min..median) of
+{s38,s39,s51} and judge W5 vs sorted[1] while protocol.txt
+section 5 AND the printed label freeze [MIN,MAX] -- all 8
+interval tops understated; under the frozen convention 2 of 8
+verdicts CHANGE (TS-R4 OUTSIDE-ABOVE -> INSIDE in 16..22; TS-R8
+OUTSIDE-ABOVE -> INSIDE in 32..49), BOTH in the
+UNINFORMATIVE-BY-S86-CAVEAT k=4/8 families; the four
+informative-family verdicts (TS-L16/TS-R16/TS-L32/TS-R32) are
+INVARIANT (0 changed). IMPACT ON FROZEN ROWS: NONE -- T20's
+direction rests only on the five-window 2*L vectors (verified
+EXACT) and T18's freeze already names [MIN,MAX]; the band
+subsection is descriptive, quoted by NO frozen row.
+publication-s87.txt stands as published bytes; record-s89.txt
+is its correction record; any future band placement uses
+[MIN,MAX] and names it. Standing gates (real runs == the s88
+pins): classify 2649/0 (17,925 bytes == pin); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes == pins); FULL run-tests
+.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside this
+diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0. The
+bar: NO reading -> NO ledger line, NO day-slot consumption
+(settle-bar-ledger.txt == HEAD). Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization
+exists for Intel. Carry-forward to session 90: the W6
+measurement half (first session at/after 2026-10-30T00:00:00Z)
+-- the gate for T18's analysis half, T20's analysis half and
+W7's measurement half --, then the T18 analysis half, T20's
+analysis half, the W7 measurement half (behind W6's ledger
+line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3tailprofile-20261029/
+(derivation-census-s87.py/.txt, record-s89.txt, the s89 gate
+captures).
+
+## Dated note (2026-10-29, JUN-59 session 90: the W6 reading
+## pre-build)
+
+The s89 carry-forward item (a) (the W6 measurement half, the s80
+freeze) taken to its IMPLEMENTATION preparation half (the s69
+pre-build precedent): reading-prego.py + derivation-census-prego.py,
+the s80 protocol section-6 bar-reading path (hi block A anchor
+reading -- (sum,128,S=16) pooled median, 18-cell min..max, bar class
+vs the frozen refs 1,129/1,132/1,131 -- plus the section-3 integrity
+rows), pre-built BEFORE any W6 quantity exists (the W6 run logs do
+not exist; the measurement half stays day-slot-gated, first session
+at/after 2026-10-30T00:00:00Z). The W6 session adopts the pair as
+reading-s<NN>.py / derivation-census-s<NN>.py. VALIDATED at the five
+committed windows against publication-s73.txt: 14/14 two-way rows
+EXACT under BOTH parsers independently (the generator: regex +
+stdlib statistics.median; the census twin: NO re module,
+split()/find-split parsing, numpy np.partition kth estimators
+cross-checked in-loop against sorted() explicit order statistics --
+124 dual computations, 0 mismatched); both run twice byte-identical
+(2,930 bytes sha256 8509d52a...00e9; 3,246 bytes sha256
+395f4dda...ff51). NO W6 quantity computed; the W6-dependent parts
+stay UNVALIDATED until the W6 logs exist. Standing gates (real runs
+== the s88 pins): classify 2649/0 (17,925 bytes == pin); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes == pins); FULL run-tests
+.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed; settle-
+bar self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0. The bar: NO reading -> NO
+ledger line, NO day-slot consumption (settle-bar-ledger.txt ==
+HEAD). Rule 4 binds: NOTHING MOVES; the ADR-0358 row states are
+unchanged; NO vendor optimization exists for Intel. Carry-forward
+to session 91: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half, T20's
+analysis half and W7's measurement half --, then the T18 analysis
+half, T20's analysis half, the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6prego-20261029/ (reading-prego.py +
+compat-prego-validation.txt, derivation-census-prego.py +
+derivation-census-prego.txt, record.txt, the s90 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 91: the W6 route/custody
+## pre-flight)
+
+The s90 carry-forward item (a) (the W6 measurement half, the s80
+freeze) taken to its ROUTE/CUSTODY PRE-FLIGHT half (the s67
+precedent -- the W5 row's preparation half was exactly this
+pre-flight): the W6 route's local custody inputs re-verified
+against the s51 host-verify digests BEFORE the slot opens (this
+tick runs 2026-10-29T10:0xZ, ~13.8h before the first session
+at/after 2026-10-30T00:00:00Z; the measurement half stays
+day-slot-gated -- STARTED, NOT FINISHED). LOCAL CUSTODY INPUTS
+(shasum -a 256 over the committed bytes): instrument source
+gpu-subgroup-reduce-anv-ndiv.c a5e539f0ad1c5d73... MATCH (==
+s51 host-verify local=/host=); expected-corpus.sha256
+eefba52e7be052d6... MATCH; manifest cases-s51-a.txt
+c568e32ef0363165... MATCH; the 24 non-comment cell lines digest
+873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+reproduces the chain's 873025d650afae23... prefix EXACTLY and the
+cell lines are byte-equal to cases-s36-a.txt's (the fresh-header
+manifest rule the W6 session must reproduce); corpus 16/16 local
+verify (8 OK + 8 OK across the two corpus dirs). HOST ROUTE PROBE
+(read-only ssh, NO GPU submission): route reachable
+(murakumo-ci-6600hs -> aiueos-6600hs, user murakumo-ci), host
+clock sane, render group holds, gcc present, /dev/dri/card0 +
+renderD128 present; the W6 workdir ~/anv-b3w6daybar-20261030 is
+NOT YET STAGED (NO-WORKDIR, named not hidden -- staging is the W6
+session's own pre-GO custody step). NAMED LIMITS: no host-side 3/3
+comparison, no corpus sha256sum -c host-side, no GO stamp, no
+builds, no runs, no statistics of any kind (a pre-flight computes
+no statistics). Standing gates (real runs == the s88 pins):
+classify 2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk exit
+1 RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING 2/4
+unchanged; `find ... '*.sh'` -> 0. The bar: NO reading -> NO ledger
+line, NO day-slot consumption (settle-bar-ledger.txt == HEAD).
+Rule 4 binds: NOTHING MOVES; the ADR-0358 row states are
+unchanged; NO vendor optimization exists for Intel. Carry-forward
+to session 92: the W6 measurement half (first session at/after
+2026-10-30T00:00:00Z) -- the gate for T18's analysis half, T20's
+analysis half and W7's measurement half --, then the T18 analysis
+half, T20's analysis half, the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6routepreflight-20261029/ (record.txt +
+the s91 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 92: the T18 analysis
+## pre-build)
+The T18 row's ANALYSIS machinery preparation half (the s69/s90
+pre-build precedent applied to the s84-frozen analysis path;
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line). The analysis
+half itself REMAINS day-slot-gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T10:4xZ-11:0xZ, ~12.9h before the slot opens) --
+STARTED, NOT FINISHED. analysis-t18-prego.py implements the
+complete frozen T18 row -- the construction (named cell
+(max,128,S=default), tw arm, 12 blocks of 3, per-block pooled-75
+EXACT-INTEGER D at the closed DL vocabulary), the frozen null
+(the s78 two-window run-exchangeability machinery verbatim, ONE
+random.Random(2026102918), 20,000 trials per probe, probe order
+DL4/DL8/DL16/DL32), the letters and the IUT joint (DL4 excluded
+per the s81 section-4(c) caveat), the invalidation machinery and
+the D-family (D3 band under the s83/s89 corrected [MIN,MAX]
+convention). Full mode is unreachable under the pre-build name;
+the T18 session adopts it as analysis-s<NN>.py. PROVENANCE
+(named): the file arrived as this bot's own interrupted-run
+scaffold (mtime 2026-10-29T10:40Z) and was reviewed line by line
+and repaired this tick -- four real defects found by running it
+(pair-table construction crash; missing s73 block-min constants +
+wrong anchor-loop width; two wrong self-test fixtures), all named
+in record.txt section 2. VERIFIED (real tool output): --self-test
+99/0 run-twice byte-identical (fixture suite; MOCK numbers are
+fixtures, never measurements); --compat 37 rows / 0 mismatched
+run-twice byte-identical -- the s84 section-6 parser validity
+pins recomputed over the five committed windows (390 logs) and
+two-way-checked against committed publication bytes (want
+PARSED, never transcribed), INCLUDING the s78 NULL REPRODUCTION:
+the same frozen engine reproduces publication-s78.txt's PUBLISHED
+T15 counts/p EXACTLY (INNER count 1477 p 0.073896; OUTER 11558 p
+0.577921). NO T18 quantity exists or is computed. Standing gates
+== the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0; settle-bar-ledger.txt ==
+HEAD. The bar: NO reading -> NO ledger line, NO day-slot
+consumption. Rule 4 binds: NOTHING MOVES; the ADR-0358 row
+states are unchanged; NO vendor optimization exists for Intel.
+Carry-forward to session 93: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (this pre-build + the s84 freeze
+bind), T20's analysis half (the s88 freeze binds), the W7
+measurement half (behind W6's ledger line), any further
+counted-day slot (its own freeze), and a cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3t18prego-20261029/ (record.txt +
+analysis-t18-prego.py + compat-prego-validation.txt +
+t18prego-selftest.txt/.err + the s92 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 93: the T20 analysis
+## pre-build)
+The T20 row's ANALYSIS machinery preparation half (the s69/s90/s92
+pre-build precedent applied to the s88-frozen analysis path;
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line). The analysis
+half itself REMAINS day-slot-gated behind the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T11:2xZ-11:4xZ, ~12.4h before the slot opens) --
+STARTED, NOT FINISHED. analysis-t20-prego.py implements the
+complete frozen T20 row -- the construction (named cell
+(max,128,S=default), tw arm, 12 blocks of 3, per-block pooled-75
+EXACT-INTEGER HL_k/HR_k at the closed s86 vocabulary), the frozen
+null (WITHIN-BLOCK SIDE-EXCHANGEABILITY: all 2^12 = 4,096
+whole-block side-swap assignments enumerated EXACTLY, one shared
+mask across the four families, NO RNG, p = count(C* >= C_obs) /
+4,096 one-sided, identity included), the letters and the IUT joint
+(k=4/8 excluded per the s86 section-4(c) caveat), the invalidation
+machinery (incl. the s86 decomposition identity) and the D-family
+(D3 band under the s83/s89 corrected [MIN,MAX] convention). Full
+mode is unreachable under the pre-build name; the T20 session
+adopts it as analysis-s<NN>.py. VERIFIED (real tool output):
+--self-test 184/0 run-twice byte-identical (fixture suite; hand-
+computable exact cases at the full 4,096 assignments -- the
+identical-block fixture count 1,586 = sum_{m=0..5} C(12,m) -- plus
+an independent pure-Python twin cross-checked in-loop; MOCK numbers
+are fixtures, never measurements); --compat 52 rows / 0 mismatched
+run-twice byte-identical -- the s88 section-6 parser validity pins
+recomputed over the five committed windows (390 logs) and
+two-way-checked against committed publication bytes (want PARSED,
+never transcribed), INCLUDING the eight TS five-window vectors and
+W5 block value vectors EXACT against publication-s87.txt and the
+decomposition identity's 240 prior checks "EXACT everywhere".
+NAMED, NOT HIDDEN: the exact-enumeration null has NO published
+reproduction target (T19 is descriptive-only) -- no p is computed
+on any real window in this pre-build. NO T20 quantity exists or is
+computed. Standing gates == the s88 pins: classify 2649/0 (17,925
+bytes); scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes);
+FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green full
+suite claimed; settle-bar self-test 38/0 + ledger eval twice ==
+pins -> VERDICT: PENDING 2/4 unchanged; `find ... '*.sh'` -> 0;
+settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO ledger
+line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES; the
+ADR-0358 row states are unchanged; NO vendor optimization exists
+for Intel. Carry-forward to session 94: the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (the s92 pre-build + the s84 freeze
+bind), the T20 analysis half (this pre-build + the s88 freeze
+bind), the W7 measurement half (behind W6's ledger line), any
+further counted-day slot (its own freeze), and a cross-day
+tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3t20prego-20261029/ (record.txt +
+analysis-t20-prego.py + compat-prego-validation.txt +
+t20prego-selftest.txt/.err + the s93 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 94: the W7 route/custody
+## pre-flight)
+The W7 measurement row's ROUTE preparation half (the per-window
+precedent: s67 -> W5, s91 -> W6, this tick -> W7; NO runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line). The measurement half itself REMAINS
+day-slot-gated behind W6's ledger line (STARTED, NOT FINISHED):
+W7's run day is UNKNOWN at this tick (W7 = the first measurement
+session at/after 00:00:00Z of the first UTC day strictly after
+W6's ledger-line day; W6's line does not exist -- the W6 slot
+opens 2026-10-30T00:00:00Z and this tick runs ~12.0h before it).
+LOCAL CUSTODY INPUTS re-verified this tick against the s51/s57-
+frozen digests (tool: shasum -a 256): instrument source
+a5e539f0ad1c5d73..., expected-corpus.sha256 eefba52e7be052d6...,
+manifest cases-s51-a.txt c568e32ef0363165..., the 24-cell-line
+digest 873025d650afae23... (reproduces the chain prefix; diff vs
+cases-s36-a.txt cell lines EMPTY), corpus 16/16 LOCAL (8 OK in
+anv-subgroupsize-81632-20261027/shaders + 8 OK in
+anv-subgroupsize-batch64-20261027/shaders). HOST ROUTE PROBE
+(read-only ssh, verbatim in the record; NO GPU submission, NO
+vulkaninfo): 2026-10-29T12:02:58Z / aiueos-6600hs / murakumo-ci
+nix-users render kvm / NO-WORKDIR / /usr/bin/gcc / by-path card0
+renderD128, ssh_rc=0 -- route reachable, host clock sane, the s27
+render-group fix holds, gcc present (no compile before GO), dri
+nodes present; the W7 workdir (~/anv-b3w7daybar-<ACTUAL-RUN-DAY,
+default 20261031>) is NOT YET STAGED (probed by glob because the
+day component is unknown before W6's line day) -- staging is the
+W7 session's own pre-GO custody step (s51/s73 precedent). NAMED
+LIMITS: no host-side 3/3 or corpus 16/16 (local halves only), no
+GO stamp, no build-census, no run-window, no publication, NO
+STATISTICS OF ANY KIND; the s85 contingencies bind unchanged
+(W6 slips -> W7's day follows W6's actual line day; W6 FLAGGED ->
+W7 delivers the bar's THIRD counted reading and the remaining slot
+is NEW pre-registered work; W6's line ABSENT -> s85 STANDS DOWN
+and this pre-flight stands inert with it). Reading machinery stays
+s90's pre-build; the W7 adoption edit is named (reading-prego.py's
+single window constant W6_DIR, line 65). VERIFIED (real tool
+output, byte-compared to the s88 committed pins): classify
+2649/0 (17,925 bytes == pin); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes == pins); FULL run-tests.cljk exit
+1 RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test 38/0 + ledger eval twice == pins -> VERDICT: PENDING
+2/4 unchanged; `find ... '*.sh'` -> 0; settle-bar-ledger.txt ==
+HEAD. The bar: NO reading -> NO ledger line, NO day-slot
+consumption. Rule 4 binds: NOTHING MOVES; the ADR-0358 row
+states are unchanged; NO vendor optimization exists for Intel.
+Carry-forward to session 95: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (the s92 pre-build + the s84 freeze
+bind), the T20 analysis half (the s93 pre-build + the s88 freeze
+bind), the W7 measurement half (behind W6's ledger line; its
+route/custody preparation half is this pre-flight), any further
+counted-day slot (its own freeze), and a cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w7routepreflight-20261029/ (record.txt +
+the s94 gate captures).
+
+## Dated note (2026-10-29, JUN-59 session 95: the W6 run-window
+## driver pre-build)
+The W6 measurement row's RUN-PATH IMPLEMENTATION preparation half
+(the s69/s90 pre-build precedent applied to the s80 protocol
+section-2 RUN path; NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO host writes, NO day-slot consumption, NO ledger
+line). The measurement half itself REMAINS day-slot-gated (first
+session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T12:1xZ-12:4xZ, ~11.5h before the slot opens) -- STARTED,
+NOT FINISHED. run-window-prego.py (pure stdlib, NO RNG, no clock;
+submits nothing to any GPU): --plan emits the frozen 78-run order
+(c2 r1-3, k=1..12 hi block k then tw block k, c8 r1-3) with per-run
+artifact names and the invocation ./anv-bb-<arm> <manifest>; --rebuild
+constructs run-window.txt's 78 per-run lines + the frozen 3-line
+trailer from run logs + the LIVE-FIELDS capture (rc and host-date are
+live-only, quoted as input at compat time, named not hidden; every
+other field re-derived from committed bytes). FAIL-CLOSED: single-
+quote tail, non-uniform trailer, missing/extra runs are hard errors.
+VERIFIED (real tool output): --compat over the three committed 78-run
+run-window transcripts (s36/s51/W5 -- s38/s39 committed none): plan
+order == committed order 78/78 all three; rebuilt bytes BYTE-EQUAL
+78/78 at s36 and 81/81 (table+trailer) at s51 and W5 -- TOTAL 243
+rows 0 mismatched, twice byte-identical; --self-test TOTAL 18/0
+twice byte-identical (MOCK fixtures, never measurements). NAMED, NOT
+HIDDEN: s36's transcript predates the s57 route freeze (session-prose
+trailer); the trailer comparison covers the s57-route windows s51/W5
+only. ADOPTION: the frozen route names no driver filename -- the W6
+session adopts this file as its run-window driver and owns its record;
+the execution path (ssh, live capture, staging, GO) stays session-
+owned as at s51/s73. Standing gates == the s88 pins: classify 2649/0
+(17,925 bytes); scoped GPU gate GREEN 123/12162/0/0 twice (919
+bytes); FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362,
+outside this diff -- touches NO .cljk namespace) -- no green full
+suite claimed; settle-bar self-test 38/0 + ledger eval twice == pins
+-> VERDICT: PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh'
+-> 0; settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO ledger
+line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES; the
+ADR-0358 row states are unchanged; NO vendor optimization exists for
+Intel. Carry-forward to session 96: the W6 measurement half (first
+session at/after 2026-10-30T00:00:00Z) -- the gate for T18's analysis
+half, T20's analysis half and W7's measurement half --, then the T18
+analysis half (s92 pre-build + s84 freeze), the T20 analysis half
+(s93 pre-build + s88 freeze), the W7 measurement half (behind W6's
+ledger line), any further counted-day slot (its own freeze), and a
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6runprego-20261029/ (run-window-prego.py +
+runwindow-prego-selftest.txt/.err + compat-prego-validation.txt/.err +
+runwindow-prego-plan.txt/.err + record.txt + the s95 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 96: the W6 pre-GO custody
+## checker pre-build)
+The W6 measurement row's CUSTODY-PATH IMPLEMENTATION preparation
+half (the s69/s90/s95 pre-build precedent applied to the s80
+protocol section-2 CUSTODY surface and the settle-bar.txt section-2
+FLAGGED criteria's custody/build half; NO hardware runs, NO builds,
+NO compiles, NO GO stamp, NO host writes, NO network connections,
+NO day-slot consumption, NO ledger line). The measurement half
+itself REMAINS day-slot-gated (first session at/after
+2026-10-30T00:00:00Z; this tick runs 2026-10-29T13:4xZ-14:0xZ,
+~10.0h before the slot opens) -- STARTED, NOT FINISHED.
+custody-prego.py (pure stdlib, NO RNG, no clock; submits nothing to
+any GPU) checks the eight named custody surfaces of a window's
+record text (host-verify MATCH lines + chain digests, manifest cell
+chain 873025d6..., corpus census 16/16 both committed shapes, GO
+ordering vs builds/runs, the four pinned compiles at the frozen knob
+sets, the s51-frozen build pins BYTE-IDENTICAL, the 78-run window,
+VERIFY 1872/mismatch total) and derives the frozen FLAGGED criteria
+(2)(3)(4) fail-closed in frozen precedence ((1) C1 is the s90
+reading pair's surface -- named scope cut); any other failing row
+refuses with REFUSED-RECORD-INCONSISTENT, never a qualifying line.
+VERIFIED (real tool output): --compat over the three committed 78-run
+windows (s36/s51/W5) TOTAL 81 rows 0 mismatched, flags none none
+none, twice byte-identical (7,716 bytes, sha256 54bd8175...);
+--self-test TOTAL 42/0 twice byte-identical (2,404 bytes, sha256
+1f757c19...; MOCK fixtures, never measurements). NAMED, NOT HIDDEN:
+the source draft (this session's earlier interrupted segment,
+13:39Z) had never run -- first execution found three defects, fixed
+and named in the record (chain parameter computed but unused
+[engine]; fixture row count 28 vs the engine's 27 [fixture]; the
+loader assumed per-window artifact bytes where W5 committed none --
+now a named canonical-copy fallback with artifact-provenance lines,
+manifest absence still a hard error). ADOPTION: the W6 session
+adopts this file as its custody checker (custody-s<NN>.py), re-runs
+--compat in its own record and checks its fresh records BEFORE the
+ledger line; W7 the same (surface window-generic per s80/s85). The
+execution path (ssh, staging, GO) stays session-owned as at s51/s73.
+Standing gates == the s88 pins: classify 2649/0 (17,925 bytes);
+scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes); FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff -- touches NO .cljk namespace) -- no green full suite
+claimed; settle-bar self-test 38/0 + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh'
+-> 0; settle-bar-ledger.txt == HEAD. The bar: NO reading -> NO
+ledger line, NO day-slot consumption. Rule 4 binds: NOTHING MOVES;
+the ADR-0358 row states are unchanged; NO vendor optimization exists
+for Intel. Carry-forward to session 97: the W6 measurement half
+(first session at/after 2026-10-30T00:00:00Z) -- the gate for T18's
+analysis half, T20's analysis half and W7's measurement half --,
+then the T18 analysis half (s92 pre-build + s84 freeze), the T20
+analysis half (s93 pre-build + s88 freeze), the W7 measurement half
+(behind W6's ledger line), any further counted-day slot (its own
+freeze), and a cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3w6custodyrego-20261029/ (custody-prego.py +
+custody-prego-selftest-run1/2.txt/.err + custody-prego-compat-run1/2
+.txt/.err + record.txt + the s96 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 97: the W6 ledger-line
+## pre-build)
+The W6 measurement row's LEDGER-PATH IMPLEMENTATION preparation half
+(the s69/s90/s95/s96 pre-build precedent applied to the
+settle-bar-ledger.txt line surface of the s80 protocol sections 1/5;
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line; the measurement half
+REMAINS day-slot-gated -- first session at/after 2026-10-30T00:00:00Z;
+this tick runs 2026-10-29T14:4xZ-15:0xZ, ~9h before the slot opens)
+-- STARTED, NOT FINISHED.  ledger-prego.py (pure stdlib, NO RNG, no
+clock; emits text, appends nothing) derives the one s80 section-5
+ledger line (day from run-window host-date= fields, single distinct
+day; class/median/min from hi block A under the frozen F3 estimator;
+flag from the frozen FLAGGED join in frozen precedence c1-b >
+verify-mismatch > pin-missing > custody-go) -- closing s96's named
+scope cut: criterion (1) C1 is re-derived from the run logs here;
+criteria (3)/(4) are the s96 custody checker's surface, explicit
+inputs that REFUSE fail-closed when undecided.  VERIFIED (real tool
+output): --compat over the NINE committed bar-executing windows
+(5 shapes: 9/9/12/42/78 runs) TOTAL 9 rows 0 mismatched -- all nine
+committed settle-bar-ledger.txt lines re-derived BYTE-EXACT from
+committed run-log bytes (want parsed from the ledger, never
+transcribed; day derived from run-window host-dates at 7 windows,
+quoted for s38/s39 which committed no run-window.txt; pin/go quoted
+inputs, named) -- twice byte-identical (3,038 bytes, sha256
+818ac303...); --self-test (MOCK fixtures, never measurements) TOTAL
+27/0 twice byte-identical (2,656 bytes, sha256 4d1394cf...) -- every
+criterion alone, precedence at every overlap, fail-closed refusals
+(undecided input, missing anchor run, two-day window, day
+missing/unparseable, cell-map drift, short sample census, no
+(sum,128,S=16) cell), line-grammar conformance.  Standing gates == the
+s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test 38/0 +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt == HEAD.
+The bar: preparation session -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel.  ADOPTION: the W6 session adopts this
+file as ledger-s<NN>.py (name-gated --emit path emits the one line,
+never appends; the append follows the standing gates -- s80 section
+5) and wires the custody checker's (3)/(4) + its own C1 cross-check
+into the line; W7 the same.  Carry-forward to session 98: the W6
+measurement half (the s80 freeze; the W6 session adopts s90's reading
+pair, s91's custody baseline, s95's run-window driver, s96's custody
+checker and this emitter) -- the gate for T18's analysis half (s92 +
+s84), T20's analysis half (s93 + s88) and W7's measurement half
+(s85) --, then any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6ledgerrego-20261029/ (ledger-prego.py +
+selftest/compat run1/2 .txt/.err + record.txt + the s97 gate
+captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 98: the W6 pre-GO custody
+## fresh-entry pre-build)
+The W6 measurement row's CUSTODY-CHECK IMPLEMENTATION preparation half
+(the s69/s90/s95/s96/s97 pre-build precedent applied to the surface
+the adoption contracts assumed but no code path served; NO hardware
+runs, NO builds, NO GO stamp, NO host writes, NO day-slot consumption,
+NO ledger line; the measurement half REMAINS day-slot-gated -- first
+session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T15:1xZ-15:5xZ, ~8.4h before the slot) -- STARTED, NOT
+FINISHED.  custody-check-prego.py (the s96 checker + this session's
+extension; the s96 original committed unchanged) adds the fresh-window
+entry --check <dir> <tag> <manifest> (the s96 main() served only
+--self-test and the hardwired three-window --compat) and
+decide_ledger_inputs -- the pin/go explicit inputs of
+ledger-s<NN>.py --emit, derived from the checker's own rows alone,
+ROW-BASED (a verify-mismatch flag never masks a bad pin row).
+REFUSED-RECORD-INCONSISTENT -> both halves UNDECIDED, fail-closed: the
+ledger emitter refuses and NO line derives from the record -- a NAMED
+tightening of the s96 prose ("can only lead to a FLAGGED ledger line"):
+the frozen FLAGGED list is exhaustive-four, the ledger grammar admits
+no fifth token, and a false-token FLAGGED line would misattribute inside
+the bar's own data; a refused record that also fired C1 loses its c1-b
+line (named conservative loss; the mapping cannot see C1).  VERIFIED
+(real tool output): --check over the three committed 78-run windows
+exits 0 (flag none, pin=ok go=ok) at all three, twice byte-identical,
+its 27 rows BYTE-EQUAL to the --compat blocks at each window and flags
+EQUAL (check-vs-compat-proof.txt, twice byte-identical); --self-test
+TOTAL 68/0 twice byte-identical (4,528 bytes; the s96 42-line prefix
+BYTE-EQUAL to the s96 capture) incl. every mapping case and the
+UNDECIDED-iff-REFUSED equivalence; --compat twice byte-identical AND
+byte-identical to the s96 pin (7,716 bytes).  Standing gates == the
+s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test 38/0 +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt == HEAD.
+The bar: preparation session -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel.  ADOPTION (amended): the W6 session
+adopts this copy as custody-s<NN>.py and feeds --check's ledger-pin/
+ledger-go to ledger-s<NN>.py --emit verbatim (UNDECIDED -> no line);
+W7 the same.  Carry-forward to session 99: the W6 measurement half
+(the s80 freeze; the W6 session adopts s90's reading pair, s91's
+custody baseline, s95's run-window driver, this checker and s97's
+emitter) -- the gate for T18's analysis half (s92 + s84), T20's
+analysis half (s93 + s88) and W7's measurement half (s85) --, then any
+further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6custodycheckrego-20261029/ (custody-check-
+prego.py + selftest/compat/check run1/2 captures + check-vs-compat-
+proof.txt + record.txt + the s98 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 99: the W6 adoption-chain
+## reconciliation pre-build)
+The W6 measurement row's CROSS-TOOL RECONCILIATION preparation half
+(the s90/s95/s96/s97/s98 pre-build precedent applied to the surface
+between the adopted tools -- the residual the s98 note named and left
+session-owned: "the W6 session cross-checks this checker's verify-
+mismatch-total row against the ledger emitter's own criterion-(2)
+derivation (two parsers over the same run logs)"; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line; the measurement half REMAINS day-slot-
+gated -- first session at/after 2026-10-30T00:00:00Z; this tick runs
+2026-10-29T15:4xZ-16:2xZ, ~7.6h before the slot) -- STARTED, NOT
+FINISHED.  reconcile-prego.py runs the five adopted W6 tools (reading,
+census twin, run-window driver, custody checker --check, ledger
+emitter --compat) over the three common committed 78-run windows
+(s36/s51/W5=s73) and cross-checks their overlapping derived
+quantities: reading-vs-ledger median/min/class (the two published
+artifacts' shared fields), reading-vs-census median/min/max (the s90
+independence pair, cross-compared), the s98-named verify-mismatch
+residual at the numeric level, the 78-run census four ways, the
+decide_ledger_inputs flag join end-to-end, the day derivation
+(host-date vs emitted), and the C1 boolean; plus --line
+<publication> <ledger> <tag> for the W6-fresh pair and a fixture
+--self-test.  VERIFIED (real tool output): --compat run twice
+BYTE-IDENTICAL (3,591 bytes) -- STAGE 7/0, CROSS 31 rows 0
+mismatched, VERDICT CONSISTENT (median/min 1142/991, 1137/988,
+1131/998; census == reading at all three windows); --line on the
+committed publication-s73.txt vs the s73 ledger line twice
+byte-identical (469 bytes) CONSISTENT, and a MOCK negative fixture
+(perturbed median) rc 1 MISMATCH detected; --self-test 17/0 twice
+byte-identical (708 bytes).  One engine defect found by first
+execution and named: the row comparator conflated equality with join
+semantics (15 false MISMATCH on consistent data) -- fixed with
+explicit per-row predicates at source before capture.  Standing
+gates == the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU
+gate GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff --
+touches NO .cljk namespace) -- no green full suite claimed;
+settle-bar self-test 38/0 + ledger eval twice == pins -> VERDICT:
+PENDING 2/4 unchanged; find docs/evidence/gpu -name '*.sh' -> 0;
+settle-bar-ledger.txt == HEAD.  The bar: preparation session -> NO
+reading -> NO ledger line, NO day-slot consumption.  Rule 4 binds:
+NOTHING MOVES; NO vendor optimization exists for Intel.  ADOPTION:
+the W6 session adopts this file as reconcile-s<NN>.py, re-runs
+--compat/--self-test in its own record and reconciles its fresh
+publication against its ledger line with --line; W7 the same.
+Carry-forward to session 100: the W6 measurement half (the s80
+freeze; the W6 session adopts s90's reading pair, s91's custody
+baseline, s95's run-window driver, s98's checker, s97's emitter and
+this reconciler) -- the gate for T18's analysis half (s92 + s84),
+T20's analysis half (s93 + s88) and W7's measurement half (s85) --,
+then any further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6reconcilerego-20261029/ (reconcile-prego.py
++ compat/selftest/line/negative captures + record.txt + the s99 gate
+captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 100: the W6 reading-block
+## reconciliation pre-build)
+The W6 measurement row's READING-SHAPE preparation half (the s90
+reading w6-block extension closing the reconciliation surface s99's
+--line exposed; NO hardware runs, NO builds, NO compiles, NO GO
+stamp, NO host writes, NO day-slot consumption, NO ledger line; the
+measurement half REMAINS day-slot-gated -- first session at/after
+2026-10-30T00:00:00Z; this tick runs 2026-10-29T17:46Z-18:0xZ,
+~6.2h before the slot) -- STARTED, NOT FINISHED (the fresh-window
+census-check duty stays queued).  Provenance named not hidden (the
+s92 precedent): the slice was drafted by an interrupted tick of
+this same job (reading-s1000.py + rehearsal captures + the final
+reading-s1001.py edit, never run to completion, never committed)
+and completed by this continuation tick.  FINDING (verified by
+real tool output): the s90 w6 block printed its five section-4
+prior rows WITH class tokens, and reconcile-prego.py --line's
+parse_pub_tuples treats every class-bearing "median N min..max
+N..N" row as a bar tuple -- a fully consistent pair parsed 6
+tuples / 5 distinct -> pub-rows-agree=False -> FALSE INCONSISTENT
+at the W6 session's own reconciliation gate (demonstrated on the
+W5-stand-in rehearsal pair, rehearsal-line-unfixed captures, twice
+byte-identical).  The fix (reading-s1001.py / reading-
+prego-fixed.py, the s98 provenance pattern; the s90 original
+committed UNCHANGED): (a) prior rows in the frozen
+publication-s73 section-3b row shape, want values PARSED from the
+committed publication-s73.txt bytes, NO class token on a prior
+row; (b) a section-6 D4-shape bar row equal to section 3's fresh
+row by construction; (c) the ok-map label names its 0-based index
+base; (d) the verifier-twin note corrected -- derivation-census-
+prego.py is --compat-only, the fresh-window "every published
+integer cross-checked" duty is a NAMED gap (queued).  VERIFIED:
+reading-prego-fixed.py --compat twice byte-identical AND
+byte-identical to the s90 pin (2,930 bytes) -- the edits touch w6
+mode only; the fixed w6 rehearsal (W5 stand-in; every number a
+FIXTURE, never a measurement) twice byte-identical (4,009 bytes),
+five prior rows all reproduction EXACT: True; reconcile-prego
+--line on the fixed pair twice byte-identical (469 bytes)
+CONSISTENT (rows parsed 2, agree True, median/min/class MATCH) and
+byte-identical to the s99 committed-pair capture -- the defect is
+closed at the rehearsal level.  Standing gates == the s88 pins:
+classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt ==
+HEAD.  The bar: preparation session -> NO reading -> NO ledger
+line, NO day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO
+vendor optimization exists for Intel.  ADOPTION: the W6 session
+adopts reading-prego-fixed.py as reading-s<NN>.py (superseding the
+s90 copy; provenance named) with the s90 census twin, s91's
+custody baseline, s95's run-window driver, s98's checker, s97's
+emitter and s99's reconciler; W7 the same (the s94 W7_DIR
+repoint).  Carry-forward to session 101: the W6 measurement half
+(the s80 freeze) -- the gate for T18's analysis half (s92 + s84),
+T20's analysis half (s93 + s88) and W7's measurement half (s85)
+--; if a tick runs before the slot opens, the queued fresh-window
+census-check pre-build is the honest preparation row; then any
+further counted-day slot (its own freeze) and a cross-day tail-
+movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6censuscheckrego-20261029/ (reading-
+s1000.py + reading-s1001.py + reading-prego-fixed.py + the
+rehearsal run captures + record.txt + the s100 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+## Dated note (2026-10-29, JUN-59 session 101: the W6 fresh-window
+## census-check pre-build)
+The W6 measurement row's FRESH-RECORD-CHECK preparation half (the
+s100 named gap "the fresh-window 'every published integer
+cross-checked' duty is QUEUED" now closed; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line; the measurement half REMAINS
+day-slot-gated -- first session at/after 2026-10-30T00:00:00Z;
+this tick runs 2026-10-29T19:16Z-19:4xZ, ~4.5h before it) --
+STARTED, NOT FINISHED.  Provenance named not hidden (the s92/s100
+precedent): fresh-census-prego.py was DRAFTED by an interrupted
+tick of this same job (created 19:13Z, never run to completion,
+never committed) and COMPLETED by this continuation tick.
+FINDING (verified by real tool output): the duty exists as
+machinery -- fresh-census-prego.py --w6 re-derives EVERY published
+integer of the publication body from the six windows' run logs
+plus named committed want sources (parsed from committed bytes,
+never transcribed) in two-way claim rows and enforces digit-SPAN
+COVERAGE (every body digit run inside a claim or a NAMED
+structural span), fail-closed; NO re module (split()/find
+parsing), numpy estimators cross-checked in-loop against
+pure-Python order statistics, NO RNG, no clock.  Thirteen defects
+found by first execution (the draft had never run -- an
+unreachable note-line branch, seven unregistered/over-wide
+coverage spans, a delta extraction from the wrong "(", the
+distinct-count/day parse, the "(NEW)" prior tag, unregistered
+sec1 spans, the report written to argv[3] instead of argv[4],
+two miscounted fixtures), all fixed at source and named in the
+record.  VERIFIED: --self-test 51/0 twice byte-identical (7,400
+bytes); --w6 rehearsal (W5 stand-in + the committed s100 rehearsal
+publication; every number a FIXTURE, never a measurement) twice
+byte-identical (9,240 bytes): 66 claim rows 0 mismatched, 125
+body digit runs 0 UNCLAIMED, 530 dual computations 0 mismatched,
+VERDICT CONSISTENT; a MOCK negative (median 1131 -> 1132 in a
+scratch copy) rc 1 twice byte-identical, caught at the claim row
+(sec3 median 1132 vs 1131) -> INCONSISTENT.  Standing gates == the
+s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt ==
+HEAD.  The bar: preparation session -> NO reading -> NO ledger
+line, NO day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO
+vendor optimization exists for Intel.  ADOPTION: the W6 session
+adopts this file as fresh-census-s<NN>.py alongside
+reading-prego-fixed.py (as reading-s<NN>.py), the s90 census twin,
+s91's custody baseline, s95's run-window driver, s98's checker,
+s97's emitter and s99's reconciler; VERDICT INCONSISTENT => no
+ledger line derives from the reading; W7 the same.  Carry-forward
+to session 102: the W6 measurement half (the s80 freeze) -- the
+gate for T18's analysis half (s92 + s84), T20's analysis half (s93
++ s88) and W7's measurement half (s85) --; then any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6freshcensusprego-20261029/
+(fresh-census-prego.py + selftest/rehearsal/negative run captures
++ record.txt + the s101 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 102 (JUN-59): the W6 ADOPTION-MANIFEST PRE-BUILD
+-- the adoption surface (eight prose contracts, two supersession
+chains) bound to exact committed bytes: adoption-manifest.txt (7
+tool slots + 4 frozen s91 custody rows, digests from committed
+bytes; the cell-line chain 873025d6... re-derived by the named
+construction, reproduced exactly) + adoption-check-prego.py
+(fail-closed --check; pure stdlib).  Verified: --self-test 42/0
+twice byte-identical (MOCK fixtures only); --check over the real
+tree VERDICT CONSISTENT (matched 25, mismatched 0) twice
+byte-identical -- the s100-named line-95 relation holds
+mechanically; MOCK negative rc 1 twice byte-identical (row 3 named)
+-> INCONSISTENT.  Three first-execution defects fixed and named
+(format-arg arity; two fixture refits).  Standing gates == the s88
+pins: classify 2649/0 (17,925 bytes); scoped GPU gate GREEN
+123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace) -- no green full suite claimed; settle-bar self-test +
+ledger eval twice == pins -> VERDICT: PENDING 2/4 unchanged; find
+docs/evidence/gpu -name '*.sh' -> 0; settle-bar-ledger.txt == HEAD.
+The bar: preparation session -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel.  Named limits: provenance is
+presence-checked (no positional binding); the manifest guards
+adoption mistakes, not repository compromise.  Carry-forward to
+session 103: the W6 measurement half (the s80 freeze; the first
+measurement session at/after 2026-10-30T00:00:00Z adopts the seven
+tools manifest-checked) -- the gate for T18's analysis half (s92 +
+s84), T20's analysis half (s93 + s88) and W7's measurement half
+(s85) --; then any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6adoptionprego-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 103 (JUN-59): the W6 CUSTODY-TO-LEDGER
+WIRING REHEARSAL -- the s97/s98 contracts' one hand-wired
+composition (decide_ledger_inputs ledger-pin/ledger-go VERBATIM
+into ledger-s<NN>.py --emit) executed on real committed window
+bytes for the first time (previously MOCK-only): the three
+committed 78-run windows each re-derive their committed
+settle-bar-ledger.txt line BYTE-EXACT through the full
+checker-to-emitter path (s36 1142/991, s51 1137/988, s73
+1131/998), and the frozen precedence (pin-missing over custody-go)
+and fail-closed REFUSED-INPUT-UNDECIDED refusals hold on real
+bytes.  ZERO defects found.  Verified: composition run twice
+BYTE-IDENTICAL (25 capture pairs, 0 differing; 31 claim rows, 0
+mismatched); adoption gate CONSISTENT (matched 25, mismatched 0)
+twice byte-identical; adoption copies sha256 == the manifest
+ledger token (scratch, created/run/deleted).  Standing gates ==
+the s88 pins: classify 2649/0 (17,925 bytes); scoped GPU gate
+GREEN 123/12162/0/0 twice (919 bytes); FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff -- touches
+NO .cljk namespace) -- no green full suite claimed; settle-bar
+self-test + ledger eval twice == pins -> VERDICT: PENDING 2/4
+unchanged; find docs/evidence/gpu -name '*.sh' -> 0;
+settle-bar-ledger.txt == HEAD.  The bar: preparation session ->
+NO reading -> NO ledger line, NO day-slot consumption.  Rule 4
+binds: NOTHING MOVES; NO vendor optimization exists for Intel.
+Named limits: flag=none is the only positive flag path with
+committed data (the flagged input paths replayed as explicit
+--emit inputs on the s73 stand-in); driver and adoption copies
+were scratch and are deleted.  Carry-forward to session 104: the
+W6 measurement half (the s80 freeze; the first measurement
+session at/after 2026-10-30T00:00:00Z adopts the seven tools
+manifest-checked) -- the gate for T18's analysis half (s92 +
+s84), T20's analysis half (s93 + s88) and W7's measurement half
+(s85) --; then any further counted-day slot (its own freeze) and
+a cross-day tail-movement row (not queued).  With s102+s103 no
+honest pre-slot preparation row remains; a pre-slot tick should
+say so rather than pad.  Evidence:
+docs/evidence/gpu/anv-b3w6wiringrehearsal-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-29 session 104 (JUN-59): the PRE-SLOT STAND-DOWN -- NO
+row taken (the s103 pre-registration's "say so rather than pad"
+tick; NO design slice, NO implementation slice, NO measurement).
+W6 is defined (s80) by SESSION START at/after
+2026-10-30T00:00:00Z; this session started 22:31:38Z, 1h28m22s
+(5,302 s) before the slot opens (state-s104.txt: "session
+qualifies as W6 session? False") -- running the 78 processes
+here would be an UNREGISTERED window whose ledger line would
+still consume the 2026-10-30 day slot under the frozen
+first-qualifying-reading rule.  Verified this tick: blocker-
+first 0 hermes/ head PRs; exactly one chain PR (#1665,
+MERGEABLE); git diff empty; settle-bar-ledger.txt == HEAD;
+find docs/evidence/gpu -name '*.sh' -> 0.  Standing gates ==
+the s88 pins: classify 2649/0 (17,925 bytes, cmp exit 0);
+scoped GPU gate GREEN 123/12162/0/0 twice (919 bytes == each
+other == both pins); FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff -- touches NO .cljk
+namespace; .err 879 bytes == pin) -- no green full suite
+claimed; settle-bar self-test + ledger eval twice == pins ->
+VERDICT: PENDING 2/4 unchanged (counted day=2026-10-28
+session=s31; counted day=2026-10-29 session=s73).  The bar: NO
+row -> NO hardware runs -> NO reading -> NO ledger line, NO
+day-slot consumption.  Rule 4 binds: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  NAMED:
+this record is a stand-down, not a preparation row; ONE
+stand-down record suffices (further pre-slot ticks report
+without committing).  Carry-forward: the W6 measurement half to
+the FIRST session starting at/after 2026-10-30T00:00:00Z (the
+s80 freeze; adoption-check-prego.py --check first, fail-closed)
+-- the gate for T18's analysis half (s92 + s84), T20's analysis
+half (s93 + s88) and W7's measurement half (s85) --; then any
+further counted-day slot (its own freeze) and a cross-day
+tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6preslotstanddown-20261029/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 105, JUN-59 -- the W6 MEASUREMENT session, the
+s80 freeze's named first session at/after 2026-10-30T00:00:00Z):
+the anchor-class settling bar's third counted-day measurement RAN
+on aiueos-6600hs (78 fresh processes, frozen order, GO stamp
+2026-10-30T00:19:52Z, build pins 4/4 BYTE-IDENTICAL, window
+00:20:33Z-00:20:51Z).  Reading (reading-s105.py, twice byte-
+identical): s105 median 1133 min..max 993..1449, class
+INTERMEDIATE/MIXED, in-band True; C1 branch (a) (c2 FLOOR; c8 32821
+vs 32,915 = 0.29% delta).  Cross-check (fresh-census-s105.py --w6):
+CONSISTENT, 66 claim rows 0 mismatched, 125 digit runs 0 UNCLAIMED.
+Custody wiring (s103-rehearsed, first real-window execution):
+flag=none, pin=ok, go=ok -> ledger line EMITTED byte-pinned
+("day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133
+min=993 flag=none") -- NOT APPENDED: the standing gate set's (b)
+scoped GPU gate and (c) FULL run-tests.cljk were not run before the
+runtime budget cutoff (a/d/e verified == s88 pins; bar PENDING 2/4
+unchanged).  RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor).  STARTED, NOT FINISHED:
+carry-forward s106 -- gates (b)+(c), then the append, the post-
+append evaluator pair and reconcile-s105.py --line.  Evidence:
+docs/evidence/gpu/anv-b3w6daybar-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
+
+2026-10-30 (session 106, JUN-59 -- the W6 LEDGER-LANDING, the s105
+tail completed): the standing gate set's missing halves ran and
+verified byte-equal to the s88 pins -- (b) scoped GPU gate GREEN
+123 tests / 12162 assertions / 0 failures / 0 errors twice, (c)
+FULL run-tests.cljk exit 1 RED AT BASE kotoba.form (.err == pin;
+NO green full suite) -- and the byte-pinned s105 line was APPENDED
+to settle-bar-ledger.txt (exactly one insertion): "day=2026-10-30
+session=s105 class=INTERMEDIATE/MIXED median=1133 min=993
+flag=none".  Post-append evaluator pair (twice byte-identical):
+VERDICT: PENDING 3/4 (counted days 2026-10-28 s31 / 2026-10-29
+s73 / 2026-10-30 s105; the evaluator is the only verdict source).
+reconcile-s105.py --line on the fresh pair: RECONCILE VERDICT:
+CONSISTENT (median/min/class all MATCH, twice byte-identical).
+FINDING (named, first post-append execution): the s97 frozen
+ledger-prego.py --compat asserts the ledger's frozen NINE sessions
+and REFUSES any appended row (REFUSED-LEDGER-SHAPE exit 2; the
+reconcile --compat chain fails closed X0 PARSE-MISSING ->
+INCONSISTENT) -- the s99 adoption contract's "re-runs --compat in
+its own record" clause is structurally unsatisfiable AFTER the
+first append (it can only run green pre-append; the s99 committed
+pin stands where the proof was taken, --self-test still == pin).
+Resolution PROPOSED only, nothing accepted (carry-forward s107).
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor).  Evidence:
+docs/evidence/gpu/anv-b3w6ledgerappend-20261030/.  (JUN-55,
+JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 107, JUN-59 -- the T18 ANALYSIS half, the s84-
+frozen DL ladder cross-day level replication at W6 COMPUTED): the
+s92 pre-build adopted as analysis-s107.py (byte-identical, sha256
+425c7541...) and run twice byte-identically over the six committed
+windows (the five prior + anv-b3w6daybar-20261030 = the s80-frozen
+W6 window, tag s105).  FINDING (publication-s107.txt, 7,832
+bytes): JOINT T18 = (b) NOT-REPLICATED (IUT over DL8/DL16/DL32;
+named failing: DL8 (b) DIRECTION-CONSISTENT-NOT-SIGNIFICANT p
+0.122694 | DL32 (b) DIRECTION-REVERSED p 0.512824, 2*C_obs -1 --
+the demanding axis has now missed twice: W5 exception, W6
+reversal).  Per-pair: DL4 46->40 (2*C_obs 6) p 0.251787 (b)
+[UNINFORMATIVE-BY-S81-CAVEAT]; DL8 97->85 (12) p 0.122694 (b);
+DL16 238->184 (54) p 0.000650 (a) LEVEL-NARROWING-REPLICATED-
+CONTINUED (the one step carrying the replication); DL32 655->656
+(-1) p 0.512824 (b).  Invalidation CLEAN (six windows 78/0 all;
+named cell ok-map cell 5; C1 at W6 branch (a) -- c2 FLOOR band
+31..32, c8 32821 vs 32915 = 0.29%); prior-window reproduction +
+parser validity pins ALL EXACT (10/10, 4/4, 6/6+4/4).  D3 band
+(the s83/s89 [MIN,MAX] convention): DL16 OUTSIDE-BELOW, DL32
+OUTSIDE-ABOVE (descriptive, never a test).  Standing gate set all
+== s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 twice == pins; (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form .err == pin -- NO green full suite claimed; (d)
+evaluator self-test == pin + ledger eval pair == the s106 post-
+append pins, VERDICT: PENDING 3/4 -- the pre-append s88 eval pin
+differs by exactly the s106 append, named not hidden; (e) find
+'*.sh' -> 0).  THE BAR: ANALYSIS session -> NO hardware runs -> NO
+reading -> NO ledger line, NO day-slot consumption.  RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); these are derived inferential quantities over
+committed measurements, not new measurements.  Carry-forward
+s108: the T20 analysis half (s93 + s88, next unblocked), the
+--compat post-append design decision (PROPOSED only), the W7
+measurement half (s85; the 2026-10-31 day slot; faces the same
+--compat refusal until the design decision lands), any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3w6dlrep-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
+
+2026-10-30 (session 108, JUN-59 -- the T20 ANALYSIS half, the
+s88-frozen tail-side asymmetry replication at W6 COMPUTED): the
+s93 pre-build adopted as analysis-s108.py (byte-identical, sha256
+f6c81ef1...) and run twice byte-identically over the six committed
+windows (the five prior + anv-b3w6daybar-20261030 = the s80-frozen
+W6 window, tag s105).  FINDING (publication-s108.txt, 10,354
+bytes): JOINT T20 = (b) NOT-REPLICATED (IUT over k=16/k=32; named
+failing: k=16 (b) DIRECTION-CONSISTENT-NOT-SIGNIFICANT p
+0.1328125000).  Per family (the s88 exact-enumeration null, all
+2^12 = 4,096 whole-block side-swap assignments, NO RNG, p one-
+sided in the pre-registered direction C_obs > 0): k=4 C_obs 0
+count 2240/4,096 p 0.546875 (b) [UNINFORMATIVE-BY-S86-CAVEAT];
+k=8 C_obs 1 count 1632/4,096 p 0.398437 (b)
+[UNINFORMATIVE-BY-S86-CAVEAT]; k=16 C_obs 15 count 544/4,096 p
+0.132812 (b); k=32 C_obs 265 count 8/4,096 p 0.0019531250 (a)
+ASYMMETRY-LEFT-GREATER-REPLICATED -- the one family carrying the
+asymmetry replication; the joint's (b) does not erase its letter
+(named, not hidden).  Invalidation CLEAN (six windows 78/0 all;
+named cell ok-map cell 5; C1 at W6 branch (a) -- c2 FLOOR band
+31..32, c8 32821 vs 32915 = 0.29%); prior-window reproduction +
+parser validity pins ALL EXACT (10/10, 4/4, 14/14+14/14); s86
+decomposition identity HL_k+HR_k = D_DLk EXACT at 288 checks.
+D3 band (the s83/s89 [MIN,MAX] convention, descriptive): all four
+TS-L levels OUTSIDE their post-shift bands (L4/L8/L16 below, L32
+above) while all four TS-R levels sit INSIDE.  Standing gate set
+all == s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate
+GREEN 123/12162/0/0 twice == pins; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form .err == pin -- NO green full suite
+claimed; (d) evaluator self-test == pin + ledger eval pair == the
+s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' ->
+0).  THE BAR: ANALYSIS session -> NO hardware runs -> NO reading
+-> NO ledger line, NO day-slot consumption.  RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); these are derived inferential quantities over committed
+measurements, not new measurements.  Carry-forward s109: the
+--compat post-append design decision (PROPOSED only), the W7
+measurement half (s85; the 2026-10-31 day slot; faces the same
+--compat refusal until the design decision lands), any further
+counted-day slot (its own freeze) and a cross-day tail-movement
+row (not queued) -- with T18 (s107) and T20 (s108) computed, the
+s84/s88-frozen analysis rows are complete.  Evidence:
+docs/evidence/gpu/anv-b3w6tailrep-20261030/.  (JUN-55, JUN-59;
+Linear tracking JUN-499)
+
+2026-10-30 (session 109, JUN-59 -- the --COMPAT POST-APPEND DESIGN
+DECISION, ACCEPTED DESIGN ONLY): how the measuring record
+re-validates parser agreement post-append is now DECIDED (was
+PROPOSED at s106).  Problem (re-verified live this tick): the
+frozen ledger-prego.py --compat asserts the live ledger's day=
+session order EQUALS the frozen nine (WIN9); the s105 append made
+the ledger ten rows and every --compat run since refuses
+fail-closed (REFUSED-LEDGER-SHAPE, exit 2, twice byte-identical
+this tick) -- the s99 clause "the measuring session re-runs
+--compat in its own record" is structurally unsatisfiable after
+the first qualifying append.  ACCEPTED: (a) STEADY STATE -- the
+cohort assertion is corrected to COHORT-PREFIX (the frozen nine
+must be the exact first nine day= rows, each re-deriving
+byte-exact; every day= row must satisfy the line grammar
+fail-closed; post-cohort rows are shape-validated, not
+re-derived) and lands as a SUPERSESSION under its own freeze (s97
+bytes never edited; ledger tool v2 + reconcile driver v2 +
+adoption-manifest update + self-test/negative rows) -- NOT YET
+IMPLEMENTED, spawned as its own unqueued row; (b) W7 INTERIM (if
+the supersession has not landed and verified before the W7 session
+starts, first session at/after 2026-10-31T00:00:00Z per s85): the
+W7 record records the frozen chain's --compat refusal as the named
+structural fact, verifies the live cohort rows == the s97 pin want
+rows byte-exact (9/9 verified this tick), and carries the s99
+pre-append pin + the s102 manifest digests as the parser-agreement
+proof labeled CITED -- never claiming a post-append green.
+Premise executed-verified this tick (D2, twice byte-identical):
+frozen tool bytes over a cohort-only ledger stand-in reproduce the
+committed s97 --compat pin BYTE-IDENTICALLY (3,038 bytes) -- the
+appended row is not an input to any cohort quantity.  REJECTED:
+the scratch staged-cohort stand-in as the standing mechanism
+(per-record ceremony, unrehearsed under slot pressure; unqueued
+option only) and keeping whole-ledger equality with permanent pin-
+carrying (conflates cohort integrity with append-only growth -- the
+defect itself).  Standing gate set all == s88 pins ((a) 2649/0
+17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0 twice ==
+pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form .err
+== pin -- NO green full suite claimed; (d) evaluator self-test ==
+pin + ledger eval pair == the s106 post-append pins, VERDICT:
+PENDING 3/4; (e) find '*.sh' -> 0).  THE BAR: design session ->
+NO hardware runs -> NO reading -> NO ledger line, NO day-slot
+consumption.  RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  Carry-forward
+s110: the supersession freeze + implementation (first unblocked
+row), the W7 measurement half (s85; 2026-10-31 slot; interim
+governs if supersession not landed), any further counted-day slot
+(its own freeze) and a cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3compatdecision-20261030/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (sessions 110-111, JUN-59 -- THE LEDGER --COMPAT
+COHORT-PREFIX SUPERSESSION, IMPLEMENTED): the s109 decision
+section 3(a) is now IMPLEMENTED (code + tests), not design only.
+The s97 frozen ledger-prego.py --compat's whole-ledger equality is
+superseded -- under its own freeze (freeze-record-s110.txt, stamp
+2026-10-30T03:35:36Z; the s97/s99 bytes never edited) -- by
+ledger-prego-v2.py (db1cb000...) asserting COHORT-PREFIX: the
+frozen nine (WIN9) must be the exact first nine day= rows, each
+re-deriving byte-exact (a difference reports MISMATCH and fails);
+EVERY day= row must satisfy the frozen line grammar fail-closed
+(REFUSED-LEDGER-GRAMMAR); post-cohort rows are shape-validated,
+NOT re-derived, and named in the POST-COHORT report row.  The
+post-append GREEN --compat now exists: over the live ten-row
+ledger the v2 tool exits 0 twice byte-identical ('TOTAL: 9 rows,
+0 mismatched', 'POST-COHORT: 1 row(s) shape-validated, not
+re-derived: s105') -- the s106-named structurally-unsatisfiable
+clause ("the measuring session re-runs --compat in its own
+record") is satisfiable again.  reconcile-prego-v2.py
+(fc359fcb...; only the LEDGER stage path + 4 self-identity
+strings differ from the s99 tool) runs its chain --compat over the
+live post-append ledger CONSISTENT (stage rows 7 failed 0 | cross
+rows 31 mismatched 0) and --line on the committed s73 pair
+CONSISTENT (perturbed-scratch negative fires MISMATCH/INCONSISTENT
+rc 1).  adoption-manifest-v2.txt rebinds exactly the
+ledger+reconcile slots to the v2 bytes (s97/s99 digests in
+superseded= chains; all other rows byte-identical to the frozen
+s102 manifest); the adoption contract for every future measurement
+session is adoption-check-prego.py --check .../adoption-manifest-
+v2.txt . fail-closed before any adoption copy.  Self-test
+batteries: ledger v2 42/0 (the s97 battery + 15 new rows:
+post-append GREEN / dropped REFUSED / altered MISMATCH / renamed
+REFUSED / reordered REFUSED / malformed REFUSED / determinism),
+reconcile v2 17/0, adoption check CONSISTENT 27/0 + negative
+INCONSISTENT 26/1 -- every capture twice byte-identical, every
+tool re-run at s111 byte-identical to its s110 capture.  Standing
+gate set all == s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 twice == pins; (c) FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form .err == pin -- NO green full suite
+claimed; (d) evaluator self-test == pin + ledger eval pair == the
+s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' ->
+0).  THE BAR: implementation session -> NO hardware runs -> NO
+reading -> NO ledger line, NO day-slot consumption.  RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor).  The s109 section 3(b) W7 INTERIM is now
+UNNEEDED (the supersession lands before the W7 session starts,
+first session at/after 2026-10-31T00:00:00Z per s85) and must not
+be cited as governing.  Carry-forward s112: the W7 measurement
+half (s85; 2026-10-31 slot; adopts the v2 chain via
+adoption-manifest-v2 and re-runs the v2 --compat GREEN post-append
+in its own record), any further counted-day slot (its own freeze)
+and a cross-day tail-movement row (not queued).  Evidence:
+docs/evidence/gpu/anv-b3ledgersupersede-20261030/.  (JUN-55,
+JUN-59; Linear tracking JUN-499)
+
+2026-10-30 (session 112, JUN-59 -- THE PRE-W7-SLOT STAND-DOWN, NO
+ROW TAKEN): the s111 carry-forward's only queued row, the W7
+measurement half, is day-slot-gated to the first measurement
+session starting at or after 2026-10-31T00:00:00Z (the s85
+freeze: W7's day is the first UTC day strictly after W6's
+committed ledger line day=2026-10-30 session=s105), and this
+session started 2026-10-30T04:01:53Z -- 71,887 s (19 h 58 m 07 s)
+before the slot opens (state-s112.txt).  Running the 78 processes
+now would produce an UNREGISTERED window outside the frozen W7
+definition; carry-forward (b) is explicitly not queued (further
+counted-day slots need their own pre-registration freeze -- s85
+protocol section 4(c); the cross-day tail-movement row not
+queued); every W7 record composition is already bound to
+committed bytes or byte-pinned expectations (s102/s110 adoption
+byte binding + adoption-manifest-v2 CONSISTENT 27/0, s103
+custody-to-ledger wiring on real bytes, s100/s101 reading/census
+rehearsals, the s110/s111 v2 --compat post-append GREEN twice
+byte-identical -- the exact step the W7 record re-runs), so per
+the s103 closing rule NO honest preparation row remains and this
+tick stands down rather than pads.  ONE stand-down record
+suffices for the W7 pre-slot period (the s104 rule extended):
+further ticks starting before the slot stand down report-only
+([SILENT]) unless the state changes; the first tick whose START
+is at/after 2026-10-31T00:00:00Z is the W7 session.  Standing
+gate set all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 twice == the s88 pins; (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form .err 879 bytes ==
+pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + ledger eval pair twice byte-identical == the s106
+post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' -> 0;
+(f) settle-bar-ledger.txt == HEAD).  THE BAR: stand-down session
+-> NO hardware runs -> NO reading -> NO ledger line, NO day-slot
+consumption.  RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).  This is
+gate-state verification at stand-down, not a measurement.
+Carry-forward s113: the W7 measurement half (s85; the first
+session at/after 2026-10-31T00:00:00Z; adopts the v2 chain via
+adoption-manifest-v2 fail-closed and re-runs the v2 --compat
+GREEN post-append in its own record; the s109 interim must not
+be cited as governing), any further counted-day slot (its own
+freeze) and a cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3w7preslotstanddown-20261030/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (sessions 113-116, JUN-59 -- THE W7 MEASUREMENT (the s85-
+frozen W7 window, the settle-bar's FOURTH counted-day reading) AND ITS
+DERIVATION CHAIN -- the record's identity session is s113 the measuring
+session, started 2026-10-31T00:02:31Z, 151 s after the slot opens;
+s114/s115/s116 continuations after budget cutoffs; the ledger APPEND is
+NOT made -- it is the s117 tick's row): 78/78 rc=0 frozen-order runs
+(host window 00:24:19Z..00:24:35Z on aiueos-6600hs; the first burst
+failed 78/78 rc=1 on a cwd error, preserved as w7-attempt1-*, named),
+GO stamp 00:20:08Z precedes builds and all runs, build pins 4/4
+BYTE-IDENTICAL; adoption-manifest-v2 CONSISTENT 27/0 twice byte-
+identical before any copy, seven tools adopted as *-s113.py (six
+digest-equal, reading one-line W6_DIR repoint 95c95); reading pair
+twice byte-identical (publication-s113.txt sha256 2d0534e7...): s113
+median 1137 min..max 986..1459 class INTERMEDIATE/MIXED, in-band True
+vs frozen refs 1,129/1,132/1,131; C1 branch (a) both controls
+replicate (c2 FLOOR 31..32; c8 pooled median 32804 vs committed 32915
+= 0.34% delta); five prior windows reproduce EXACTLY; day=2026-10-31;
+fresh census VERDICT CONSISTENT (66 claim rows / 125 digit runs / 530
+dual computations, 0 mismatched 0 UNCLAIMED) twice byte-identical;
+custody check all rows OK -> flag=none ledger-pin=ok ledger-go=ok
+(host-verify-s113.txt/build-census-s113.txt are s115 transcript
+reconstructions with named provenance, verified by the checker);
+ledger line emitted twice byte-identical (83 bytes) -- day=2026-10-31
+session=s113 class=INTERMEDIATE/MIXED median=1137 min=986 flag=none --
+NOT appended, day slot not yet consumed. Standing gates all == pins:
+(a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0
+twice == the s88 pins; (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO green
+full suite claimed; (d) evaluator self-test 38/0 == pin + eval pair ==
+the s106 post-append pins, VERDICT: PENDING 3/4; (e) find '*.sh' -> 0;
+(f) settle-bar-ledger.txt == HEAD.  RULE 4 unchanged: NOTHING MOVES;
+NO vendor optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them.  Carry-forward s117: the
+append tail (the s105/s106 split -- the byte-pinned line's append, the
+post-append evaluator pair evaluator-only verdict, reconcile-s113.py
+--line, the v2 --compat GREEN post-append re-run behind the fail-closed
+adoption check), any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 117, JUN-59 -- THE W7 LEDGER-LANDING: the append
+tail of the s105/s106 split): the standing gate set verified == the
+s88 pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 twice == the s88 pins; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff) .err 879 ==
+pin -- NO green full suite claimed; (d) evaluator self-test 38/0 ==
+pin + pre-append eval pair == the s106 post-append pins, PENDING
+3/4; (e) find '*.sh' -> 0; (f) ledger == HEAD pre-append), then the
+byte-pinned s113 line appended VERBATIM (git diff exactly ONE
+insertion): day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED
+median=1137 min=986 flag=none. THE FINDING -- the evaluator (the
+only verdict source) prints VERDICT: SETTLED INTERMEDIATE/MIXED over
+the four counted readings of four distinct UTC days (s31 1142 /
+s73 1131 / s105 1133 / s113 1137, all INTERMEDIATE/MIXED, in band,
+mutually within 5%): THE ANCHOR-CLASS SETTLING BAR SETTLES
+INTERMEDIATE/MIXED (settle-bar.txt V3). NAMED: the s116 carry-
+forward's "expected PENDING 4/4" does not realize -- the frozen
+check order prints PENDING only below four counted. WHAT IT SETTLES
+(frozen scope): ONLY the frozen class of the (1024,4033) anchor at
+n=253,906, B=3 at the frozen section-4 threshold -- no flip-bracket
+narrowing, no interpolation, no (2048,8066) twin judgment, NO Rule
+4 row or :measured? flag touched, no causal claim. reconcile-s113.py
+--line on the fresh pair RECONCILE VERDICT: CONSISTENT (median/min/
+class all MATCH) twice byte-identical; --self-test 17/0 == the s111
+v2 pin; adoption-manifest-v2 check CONSISTENT 27/0 twice byte-
+identical before any copy; the v2 --compat GREEN post-append re-run:
+ledger-prego-v2.py --compat rc 0 twice byte-identical (9 cohort rows
+re-derive MATCH, "POST-COHORT: 2 row(s) shape-validated: s105 s113")
++ reconcile-s113.py --compat RECONCILE VERDICT: CONSISTENT twice
+byte-identical (7/7 stages OK, cross rows 31 mismatched 0). RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); the workgroup rows stay as ADR-0358 left them.
+The 2026-10-31 day slot is CONSUMED (first qualifying reading).
+Carry-forward s118: the V3-named bisect re-open (NEW pre-registered
+cut session, NOT queued), any further counted-day slot (its own
+freeze) and the cross-day tail-movement row (not queued) -- no
+queued row remains. Evidence:
+docs/evidence/gpu/anv-b3w7ledgerappend-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 120, JUN-59 -- THE EIGHTH CUT
+PRE-REGISTRATION: completing the interrupted s118/s119 slice, the
+V3-named bisect re-open's design half): the knob-search (d1) regex
+defects fixed at source and knob-search-s119.py re-run twice
+BYTE-IDENTICAL (3,463 bytes, ZERO NOT PARSED -- the s27
+section-3 citation "1,166 / 1,166 / 1,156 CAPTURED" and the s24
+C3 (b) "1,000 vs 994 at n=255,208" both parse; self-validation
+MATCH x3 vs s27's committed census). THE FINDING -- THE EIGHTH
+CUT IS PRE-REGISTERED: the settle-bar V3 settled class
+(INTERMEDIATE/MIXED at the (1024,4033) anchor, n=253,906, B=3)
+re-opens the B=3 flip bracket toward the next committed CAPTURED
+point -- the (1213,4753) pair at n=255,208 (three committed
+readings, all CAPTURED: s24 mid 1,166 / s25 hi 1,166 / s26 hi
+1,156; the s118 "single quote reading" phrasing stands corrected
+-- named) -- so the flip is bracketed in (253,906, 255,208]
+n-units and the eighth cut measures its exact floor midpoint
+n=254,557 (31 in-box knob pairs, smallest (405,1591), eq3 double
+(810,3182), gcd 1; 255,208's smallest in-box pair IS the
+committed (1213,4753)). protocol.txt written once (freeze stamp
+2026-10-31T03:53:30Z) + freeze-record-s120.txt: arm table
+c2/lo/mid/eq3/hi/b2m/c8, build pins as parsed, C1/C2/C3/W1/W2/W3/
+X1 letters, BAR NON-INTERFERENCE clause, frozen limitations.
+ACCEPTED DESIGN ONLY -- not implemented compiler code, not a
+measurement; every eighth-cut quantity is UNMEASURED until the
+measurement half (21 fresh processes) runs in a future session
+(NOT queued). Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 twice == the s88
+pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair ==
+the s117 post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor); the workgroup rows stay as ADR-0358 left
+them.  Carry-forward s121: the eighth cut's measurement half
+(its own session under the frozen protocol), any further
+counted-day slot (its own freeze) and the cross-day tail-movement
+row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect8prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 122, JUN-59 -- THE EIGHTH CUT MEASUREMENT HALF
+LANDING: the s121 measurement half (21 fresh processes under the
+frozen protocol.txt, freeze stamp 2026-10-31T03:53:30Z) completed
+and landed; s121 hit its budget cutoff before the landing tail and
+s122 completed exactly that tail with named provenance; all s121
+claims byte-re-verified in s122). FINDING (publication-s121.txt):
+C1 (a)=True; C2 (a)=True; C3 (a)=True; W1 (b) MID-INTERMEDIATE --
+mid at n=254,557 (405,1591) class INTERMEDIATE/MIXED (pooled
+median 1,156, 18-cell 986..1,459) -- THE B=3 CLASS FLIP SITS IN
+(254,557, 255,208] n-units = (0.2545562, 0.2552072] work-units:
+the eighth cut NARROWS the flip bracket from (253,906, 255,208] to
+(254,557, 255,208]; b2m FLOOR extends 'B=2 never captures' to
+n=254,557 (total work 0.5091125); eq3 (810,3182) class-identical
+to mid (C3 (a), scoreboard s24 (b) / s25 (a) / s26 (b) / s27 (a) /
+s121 (a)). Build pins 4/4 byte-identical (c2 e5ed903e..., c8
+480925e5..., (1024,4033) triple a6c31b6c..., (1213,4753) triple
+123e8f73...). BAR NON-INTERFERENCE held: no ledger append, no
+day-slot consumption, no bar/Rule-4/:measured? movement. Standing
+gates: (a)(b)(d) run in s121 and byte-verified in s122 against the
+s88 pins; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (e) find '*.sh' -> 0; (f) ledger == HEAD.
+analysis-s121.py third run byte-identical to publication-s121.txt.
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); measured on ONE host (aiueos-6600hs),
+not a workgroup-default measurement. Carry-forward s123: any ninth
+cut only through a NEW pre-registered cut session (its own freeze),
+any further counted-day slot (its own freeze) and the cross-day
+tail-movement row -- none queued. Evidence:
+docs/evidence/gpu/anv-b3bisect8-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 123, JUN-59 -- THE NINTH CUT PRE-REGISTRATION:
+the s122 carry-forward (a), the ninth cut's DESIGN HALF -- the
+knob-search derivation + the write-once protocol.txt (freeze stamp
+2026-10-31T05:42:23Z) + freeze-record-s123.txt + the standing gate
+set; NO hardware runs, NO builds, NO compiles, NO GO stamp, NO
+day-slot consumption, NO ledger line). FINDING (verified by real
+tool output): THE NINTH CUT IS PRE-REGISTERED -- the eighth cut's
+committed W1 (b) verdict (INTERMEDIATE/MIXED at n=254,557
+((405,1591), s121 pooled median 1,156), publication-s121.txt)
+brackets the B=3 class flip in (254,557, 255,208] n-units (next
+committed CAPTURED point n=255,208 ((1213,4753): s24 mid 1,166 /
+s25 hi 1,166 / s26 hi 1,156, parsed from committed bytes)), and
+the ninth cut measures the EXACT floor midpoint n=254,882 (bracket
+midpoint 254,882.5 -- NOT an integer this cut, the floor is taken
+and named; 35 in-box knob pairs, smallest (248,973), eq3 in-box
+double (496,1946), gcd(254,882, 1,000,003) = 1; the search
+SELF-VALIDATES against s27's committed census (253,255 MATCH x3)
+AND s119's committed run (254,557 MATCH x3; 255,208 MATCH x2);
+knob-search-s123.py twice byte-identical 5,014 bytes, zero NOT
+PARSED). Build pins as parsed: c2 e5ed903e..., c8 480925e5...,
+lo (405,1591) triple 0ce4616c... (s121 build census, the pair's
+first measured digest), hi (1213,4753) triple 123e8f73...; the
+ninth cut's mid/eq3/b2m (3,248,973)/(3,496,1946)/(2,248,973) are
+NEW knob triples (named). ACCEPTED DESIGN ONLY -- not implemented
+compiler code, not a measurement; every ninth-cut quantity is
+UNMEASURED until the measurement half (21 fresh processes under
+this frozen protocol) runs in a future session (NOT queued).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 twice == the s88 pins; (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err 879 == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s124: the ninth cut's measurement half (its own
+session under the frozen protocol), any further counted-day slot
+(its own freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect9prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (s125): the ninth cut MEASUREMENT half landed
+(docs/evidence/gpu/anv-b3bisect9-20261031/): C1 (a) / C2 (b) / C3 (a)
+/ W1 (d) FLAGGED -- the lo anchor class DISAGREED with the eighth
+cut at the same pair/grid (CAPTURED vs INTERMEDIATE/MIXED, boundary
+min 986 -> 1,005 at overlapping medians), so NO bracket narrowing is
+claimed; mid at n=254,882 measured INTERMEDIATE/MIXED.
+
+2026-10-31 (sessions 126/127/128, JUN-59 -- THE TENTH CUT
+PRE-REGISTRATION (POINT-CLASS STABILITY CUT) + its LANDING: the
+s125 carry-forward (a) confrontation of the C2 (b) class-
+instability at n=254,557). FINDING (verified by real tool output):
+THE TENTH CUT IS PRE-REGISTERED AND LANDED -- the design half
+(s126: knob-search-s126.py twice byte-identical 5,625 bytes,
+zero NOT PARSED, self-validates against the s119/s123 committed
+censuses; protocol.txt freeze stamp 2026-10-31T07:35:39Z +
+freeze-record-s126.txt) and the landing tail (s128 completing the
+interrupted s126/s127 slices, named provenance the
+s92/s100/s101/s120/s122 precedent). The cut measures NO new grid
+point (the first cut in the chain that does not): 42 fresh
+processes at the three committed bisect points at byte-identical
+pinned binaries (lo (405,1591) n=254,557 x12 the disputed point,
+mid (248,973) n=254,882 x12, hi (1213,4753) n=255,208 x12, c2/c8
+x3 each), classified in 4 frozen-method blocks of 3 runs plus
+pooled-12; the RESUMABILITY RULE (narrowing re-opens only if the
+stability precondition HOLDS); the committed bracket stays exactly
+(254,557, 255,208]. Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 ==
+both s88 pins (run 2 RE-RUN at s128 after s126/s127 cutoffs; the
+50-byte interrupted stubs preserved per the w7-attempt1 precedent;
+scratch runner deleted after run 2 -- freeze-record-s126.txt 3(e)'s
+"run twice, deleted this tick" was VOID as written and is corrected
+in record.txt/commit, the freeze-record being write-once); (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err 879 == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117 post-append
+pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find
+'*.sh' -> 0; (f) ledger == HEAD. ACCEPTED DESIGN ONLY -- every
+tenth-cut quantity (block classes, pooled-12 classes, dispersion,
+host_ns) is UNMEASURED until a future measurement-half session runs
+(NOT queued). RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the workgroup
+rows stay as ADR-0358 left them. Carry-forward s129: the tenth
+cut's measurement half (its own session, NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect10prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 130, JUN-59 -- TENTH CUT MEASUREMENT HALF
+LANDING; completing the interrupted s129 landing tail with named
+provenance, the s92/s100/s101/s120/s122/s128 precedent): the
+tenth cut is MEASURED at its pre-registered letters and LANDED --
+C1 (a) True (c2 FLOOR 31 in band 31..32; c8 32,948 vs committed
+32,915 +0.10%); C2 (a) STABLE-INTERMEDIATE at lo (405,1591)
+n=254,557 (blocks 1,138/1,138/1,155/1,146, pooled-12 1,141,
+18-cell minima 985..998; the s125 CAPTURED reading is named tail
+content); C3 (c) BLOCK-UNSTABLE at mid (248,973) n=254,882
+(blocks 1/2/3 INTERMEDIATE/MIXED, block4 CAPTURED min 1,023;
+pooled-12 INTERMEDIATE/MIXED 1,139); W1 (c) BLOCK-UNSTABLE at hi
+(1213,4753) n=255,208 (block1 INTERMEDIATE/MIXED min 988, blocks
+2-4 CAPTURED; pooled-12 CAPTURED 1,154). CUT VERDICT: the
+stability precondition DOES NOT HOLD; L9 BINDS at mid AND hi --
+the class label is block-run-unstable at the frozen 1,000-tick
+threshold at two of the three committed points including the
+bracket's upper anchor; the RESUMABILITY RULE's re-open condition
+(C2 in {(a),(b)} AND C3 in {(a),(b)} AND W1 == (a)) did NOT fire.
+NO bracket movement under any outcome: the committed bracket
+stays exactly (254,557, 255,208]. WHY is UNMEASURED; NO causal
+mechanism is claimed. 42 fresh processes at the three committed
+bisect points (x12 each) plus c2/c8 (x3 each) at byte-identical
+pinned binaries (build pins 5/5, ZERO new knob triples), run on
+aiueos-6600hs under the frozen protocol (freeze stamp
+2026-10-31T07:35:39Z), analysis-s129.py publication sha256
+87a02b47... reproduced a third time at s130. Standing gates all
+== pins: (a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted after run 2); (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s131: any eleventh cut ONLY
+through a NEW pre-registered cut session confronting the L9
+block-run-instability content (NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued) -- NO queued row
+remains. Evidence:
+docs/evidence/gpu/anv-b3bisect10-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 131, JUN-59 -- ELEVENTH CUT PRE-REGISTRATION,
+the s130 carry-forward (a)'s design half: the MULTI-BLOCK STABILITY
+REQUIREMENT CUT -- the tenth cut's "named here, not specified here"
+multi-block stability requirement is now SPECIFIED and frozen):
+protocol.txt (freeze stamp 2026-10-31T13:50:45Z) confronts the L9
+block-run-instability the tenth cut confirmed at mid (248,973)
+n=254,882 and hi (1213,4753) n=255,208 (C3 (c)/W1 (c),
+publication-s129.txt) at 8 blocks of 3 (k=24 per point, 54 fresh
+processes with c2/c8 controls -- double the tenth cut's block
+count, confronting L10's named coarseness; ZERO new knob triples,
+4/4 pinned binaries, both B=3 pins rebuilt byte-identical at
+s129). A point PASSES (8-block form) iff all 8 block classes AND
+the pooled-24 class are equal under the frozen method -- the
+direct extension of the frozen unanimity criterion, NO new
+threshold; the narrowing channel re-opens at a point ONLY via a
+NEW pre-registered cut and ONLY if that point passed here (W1
+letters (a) both pass / (b) one passes / (c) neither / (d)
+INVALID). lo is NOT re-measured (its tenth-cut STABLE-INTERMEDIATE
+stands). ACCEPTED DESIGN ONLY -- every eleventh-cut quantity is
+UNMEASURED until a future measurement-half session runs (NOT
+queued). knob-search-s131.py twice byte-identical (6,896 bytes,
+self-validates against committed runs s123 AND s126; boundary-
+crossing counts computed from the tenth cut's committed
+trajectories: lo 1/12, mid 2/12, hi 5/12 at min >= 1,000 --
+descriptive). Standing gates all == pins: (a) 2649/0 17,925
+bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 ==
+both s88 pins (scratch runner deleted after run 2); (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form (ADR-0362, outside
+this diff) .err == pin -- NO green full suite claimed; (d)
+evaluator self-test 38/0 == pin + eval pair == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s132: the eleventh cut's measurement half (its own
+session, NOT queued), any further counted-day slot (next slot is a
+NEW UTC day, its own freeze) and the cross-day tail-movement row
+(not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect11prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (session 132, JUN-59 -- ELEVENTH CUT MEASUREMENT HALF
+LANDING: the MULTI-BLOCK STABILITY REQUIREMENT CUT measured, 54
+fresh processes on aiueos-6600hs under the frozen protocol, GO
+2026-10-31T14:22:08Z; builds 4/4 pins BYTE-IDENTICAL, ZERO NEW
+KNOB TRIPLES; runs 54/54 rc=0 stderr 0, VERIFY mismatch 0; 108
+logs byte-identical host==local (aggregate ff8cffd3...).
+publication-s132.txt (analysis-s132.py twice byte-identical,
+sha256 9937ba53...): C1 (a) (c2 FLOOR 32; c8 32,850 -0.20%);
+C2 (a) STABLE-INTERMEDIATE at mid n=254,882 -- all 8 blocks +
+pooled-24 INTERMEDIATE/MIXED (pooled-24 1,133) -- PASSES the
+multi-block stability requirement (the tenth cut's block4 CAPTURED
+is named tail content); C3 (c) BLOCK-UNSTABLE at hi n=255,208 (5x
+INTERMEDIATE/MIXED + 3x CAPTURED blocks, pooled-24 CAPTURED
+1,150) -- FAILS; W1 (b) EXACTLY ONE PASSES: the narrowing channel
+re-opens at mid ONLY (a NEW pre-registered cut, NOT queued) and
+L9 CONTINUES to bind at hi at 8-block granularity. NO bracket
+movement: (254,557, 255,208] stands. WHY UNMEASURED (L2).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins
+(scratch runner deleted); (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s133: a twelfth cut at mid only
+through a NEW pre-registered cut (NOT queued), any further
+counted-day slot (next is a NEW UTC day, its own freeze) and the
+cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect11-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-10-31 (sessions 133-135, JUN-59 -- TWELFTH CUT
+PRE-REGISTRATION LANDING: THE MID-ONLY NARROWING CUT, the first
+cut through the channel the eleventh cut's W1 (b) re-opened at
+mid; the claim THE B=3 CLASS FLIP LIES ABOVE n=254,882 -- bracket
+narrows at mid to (254,882, 255,208] iff W1 (a) = C3 (a), the
+claim rests on C3 alone, named; lower endpoint 254,557 -> 254,882
+only; NO claim at hi, NO claim at 255,045 under any outcome. NEW
+bisect point: the exact floor midpoint of (254,882, 255,208] =
+255,045.0, NEW knob pair (WORK_MUL=316, NDIV=1239) -- 33 in-box
+pairs map to 255,045, smallest (316, 1239), 8 in-box same-ratio
+doubles, gcd = 1, (1,000,003*316)//1239 == 255,045 (L8 named; NO
+prior binary, NO byte-identity pin; NAMED: no committed prior
+run exists at n=255,045 so no committed-run self-validation
+exists for the new target by construction -- the search
+self-validates against s123 AND s131 for 254,882/255,208, MATCH
+x2 per run). ARM TABLE c2/mid/bis/c8 k=3/24/24/3 = 54 fresh
+processes (mid (3,248,973) the claimed anchor in-window
+replication at its byte-identical pinned binary cabff942...; bis
+(3,316,1239) the new grid point; hi NOT measured, channel
+closed). Design derivation s133 (state only), freeze s134
+(protocol.txt write-once, freeze stamp 2026-10-31T15:33:51Z, NO
+run log of this cut exists at freeze + freeze-record-s133.txt;
+knob-search-s133.py twice byte-identical 9,582 bytes), landing
+tail s135 (gates (d)(e)(f) live + this note + record.txt; all
+s134 claims byte-re-verified from the committed captures first).
+ACCEPTED DESIGN ONLY -- every twelfth-cut quantity and the truth
+of the MID-ONLY NARROWING CLAIM are UNMEASURED until a future
+measurement-half session runs 54 fresh processes under the
+frozen protocol (NOT queued). Standing gates all == pins:
+(a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted); (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err == pin -- NO green full suite
+claimed; (d) evaluator self-test 38/0 == pin + eval pair twice
+byte-identical == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger
+== HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s136: the twelfth cut's
+measurement half (its own session, NOT queued), any further
+counted-day slot (next slot is a NEW UTC day, its own freeze) and
+the cross-day tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect12prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-10-31 (session 136, JUN-59 -- TWELFTH CUT MEASUREMENT HALF,
+the s135 carry-forward (a)): the MID-ONLY NARROWING CUT is
+MEASURED at its pre-registered letters (publication-s136.txt,
+analysis-s136.py twice byte-identical): C1 (a) True (c2 FLOOR 32;
+c8 32,771 vs 32,915 -0.44%); C2 (c) BLOCK-UNSTABLE at the NEW
+grid point bis (3,316,1239) n=255,045 (7x CAPTURED + 1x
+INTERMEDIATE/MIXED blocks, pooled-24 CAPTURED 1,147) -- the
+channel does NOT re-open at 255,045, L9 binds there; C3 (c)
+BLOCK-UNSTABLE at mid (248,973) n=254,882 (3x CAPTURED + 5x
+INTERMEDIATE/MIXED blocks, pooled-24 CAPTURED 1,148) -- the
+eleventh cut's STABLE-INTERMEDIATE does NOT replicate in-window
+at the byte-identical pinned binary cabff942...; W1 (c)
+SUSPENDED (named, not claimed). NO bracket movement: the
+committed bracket stays EXACTLY (254,557, 255,208]. 54 fresh
+processes on aiueos-6600hs (GO 2026-10-31T16:09:32Z), builds
+3/3 pins byte-identical + bis NEW triple
+440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440
+(first measured digest, future pin), 108 logs byte-identical
+(aggregate 56936e87...), VERIFY mismatch 0. WHY is UNMEASURED
+(L2 binds); X1 host_ns excursions named (mid 856%, bis 274%).
+Standing gates all == pins: (a) 2649/0 17,925 bytes; (b) scoped
+GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins
+(scratch runner deleted); (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err 879 == pin
+-- NO green full suite claimed; (d) evaluator self-test 38/0 ==
+pin + eval pair twice == the s117 post-append pin, VERDICT:
+SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0;
+(f) ledger == HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them. Carry-forward s137:
+any thirteenth cut ONLY through a NEW pre-registered cut session
+confronting this cut's 8-block instability content (NOT queued),
+any further counted-day slot (next slot is a NEW UTC day, its own
+freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect12-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 137-138, JUN-59 -- THIRTEENTH CUT
+PRE-REGISTRATION + LANDING, the s136 carry-forward (a)): THE
+16-BLOCK STABILITY CONFRONTATION CUT is PRE-REGISTERED AND FROZEN
+(ACCEPTED DESIGN ONLY): the s137 design half (knob-search-s137.py
+twice byte-identical 9,848 bytes; protocol.txt write-once, freeze
+stamp 2026-10-31T16:52:54Z, NO run log of this cut exists at
+freeze), landing tail s138 (freeze-record-s137.txt + gates
+(a)-(f) live + record.txt + this note; all s137 claims
+byte-re-verified from the committed captures first). The cut
+confronts the twelfth cut's 8-block BLOCK-UNSTABLE content at mid
+(248,973) n=254,882 AND bis (3,316,1239) n=255,045 at 16 blocks
+of 3 at byte-identical pinned binaries (mid cabff942... 4-way;
+bis 440604ef... == s136 first measured digest, DECLARED the pin),
+ZERO NEW KNOB TRIPLES: arms c2/mid/bis/c8 k=3/48/48/3 = 102 fresh
+processes, 16 blocks of 3 per B=3 arm + pooled-48 (named
+extension). Letters re-defined for the 16-block confrontation; the
+pre-named cross-window disagreement at mid (s132 pooled-24 1,133
+I/M vs s136 pooled-24 1,148 CAPTURED at the same binary) is named
+content confronted in W3. Under ALL outcomes NO bracket movement
+(254,557, 255,208] and the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed). Every thirteenth-cut quantity is
+UNMEASURED until a future measurement-half session runs 102 fresh
+processes under the frozen protocol (NOT queued). Standing gates
+all == pins: (a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins (scratch runner
+deleted); (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair
+twice byte-identical == the s117 post-append pin, VERDICT:
+SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0;
+(f) ledger == HEAD. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the workgroup
+rows stay as ADR-0358 left them. Carry-forward s139: the
+thirteenth cut's measurement half (its own session, NOT queued),
+any further counted-day slot (next slot is a NEW UTC day, its own
+freeze) and the cross-day tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect13prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 139-140, JUN-59 -- THE THIRTEENTH CUT
+MEASUREMENT HALF + LANDING, the s137/s139 carry-forwards): THE
+16-BLOCK STABILITY CONFRONTATION CUT IS MEASURED AND LANDED: 102
+fresh processes on aiueos-6600hs under the frozen
+anv-b3bisect13prereg-20261031/protocol.txt (freeze stamp
+2026-10-31T16:52:54Z), GO 2026-10-31T17:40:26Z, builds 4/4 pins
+BYTE-IDENTICAL (mid cabff942... 5-way; bis 440604ef... == the
+declared pin), rc=0 102/102, VERIFY mismatch 0, 204 logs
+byte-identical (aggregate 338a212c...). analysis-s139.py ran
+twice byte-identical -> publication-s139.txt (sha256 b6eb79cb...).
+Letters: C1 (a) (controls replicate; c8 32,853 -0.19%); C2 (c)
+BLOCK-UNSTABLE at bis (3,316,1239) n=255,045 (7x CAPTURED + 9x
+I/M blocks, pooled-48 CAPTURED 1,148); C3 (c) BLOCK-UNSTABLE at
+mid (248,973) n=254,882 (7x CAPTURED + 9x I/M, pooled-48
+CAPTURED 1,140); W1 (c) NEITHER PASSES -- L9 binds at BOTH
+points at 16-block granularity; any future narrowing claim at
+either point must confront this cut's 16-block content first.
+Under ALL outcomes NO bracket movement (254,557, 255,208]); the
+MID-ONLY NARROWING CLAIM stays SUSPENDED (named, not claimed).
+W2 boundary crossings 13/48 mid, 14/48 bis; W3: the pre-named
+cross-window disagreement at mid PERSISTS at the third reading;
+X1: the twelfth cut's host_ns excursions (856.0%/273.6%) do NOT
+replicate (2.0%/2.4%). WHY any class occurs is UNMEASURED (L2
+binds). Standing gates all == pins: (a) 2649/0 17,925 bytes;
+(b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 == the
+s88 pin (scratch runner deleted); (c) FULL run-tests.cljk exit
+1 RED AT BASE kotoba.form (ADR-0362, outside this diff) .err
+879 == pin -- NO green full suite claimed; (d) evaluator
+self-test 38/0 == pin + eval pair twice byte-identical == the
+s117 post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay as ADR-0358
+left them. Carry-forward s141: a fourteenth cut ONLY through a
+NEW pre-registered cut session confronting this cut's 16-block
+instability content (NOT queued), any further counted-day slot
+(next slot is a NEW UTC day, its own freeze) and the cross-day
+tail-movement row (not queued).
+Evidence: docs/evidence/gpu/anv-b3bisect13-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 141-142, JUN-59 -- THE CONFRONTATION SPEC, the
+s139/s140 branch texts' "named here, not specified here" gap): what
+"confront this cut's 16-block content first" requires of any future
+narrowing claim at mid (n=254,882) or bis (n=255,045) is now
+SPECIFIED (ACCEPTED DESIGN ONLY -- a design specification, not a
+measurement and not a cut pre-registration; freeze stamp
+2026-10-31T18:37:55Z, write-once): (a) CONTENT CONFRONTATION (quote
+the claimed point's s139 16-block content and name which letter
+supersedes which reading); (b) BLOCK-GRANULARITY FLOOR (>= 16
+disjoint blocks of 3 at byte-identical pinned binaries;
+single-class across all blocks AND the pooled arm -- the s139
+C2/C3 (a)/(b) shape); (c) STATISTIC CONFRONTATION (the frozen
+class rule rides CAPTURED-vs-not on the block's 18-cell MIN at the
+frozen 1,000-tick threshold, and that statistic is measured
+within-window unstable at byte-identical binaries near the
+boundary -- so pre-register BEFORE RUNS a different statistic, or
+a tolerance rule confronting the measured wander band block-unit
+981..1,015 / per-run 974..1,023, or points single-class stable
+outside that band); (d) CLAIM-FORM CONFRONTATION (quote the
+dual-class content and the cross-window disagreement; the MID-ONLY
+NARROWING CLAIM stays SUSPENDED, named not claimed). Every number
+the spec cites is QUOTE-ONLY re-derived from committed
+publication-s139.txt / publication-s34.txt bytes by
+confrontation-census-s141.py (pure stdlib, fail-closed; run twice
+byte-identical and byte-re-verified again at s142); analysis-s139.py
+re-run twice reproduces the committed publication-s139.txt
+BYTE-IDENTICALLY (repro-identity-s141.txt). Under the spec NOTHING
+MOVES: the committed bracket stays EXACTLY (254,557, 255,208]; L9
+binds at both points at 16-block granularity (and at hi n=255,208
+at 8-block granularity); no boundary between grid points is claimed
+(L5); WHY any class occurs is UNMEASURED (L2 binds); NO causal
+mechanism is claimed; the spec queues NO cut. The landing tail
+(s142): standing gates (a)-(f) run live, all == pins ((a) 2649/0
+17,925 bytes; (b) scoped GPU gate GREEN 123/12162/0/0 run 1 == run
+2 == both s88 pins, scratch runner deleted; (c) FULL run-tests.cljk
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff) .err
+879 == pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+(e) find '*.sh' -> 0; (f) ledger == HEAD). RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay as ADR-0358 left them.
+Carry-forward s143: a fourteenth cut ONLY through a NEW
+pre-registered cut session (its own freeze) whose pre-registration
+must satisfy this spec and confront the s139 16-block content
+first -- NOT queued; any further counted-day slot (the 2026-10-31
+slot is consumed at s117; the next slot is a NEW UTC day and its
+own freeze) and the cross-day tail-movement row (not queued) -- NO
+queued row remains.
+Evidence: docs/evidence/gpu/anv-b3confrontation-spec-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-01 (sessions 143-146, JUN-59 -- THE FOURTEENTH CUT
+PRE-REGISTRATION, THE WANDER-BAND TOLERANCE CUT AT MID): the first
+pre-registration written under the confrontation spec's four arms
+(ACCEPTED DESIGN ONLY -- a cut pre-registration, not a measurement
+and not implemented compiler code; freeze stamp
+2026-10-31T19:54:33Z, write-once; NO run log of the cut existed at
+freeze): mid (248,973) n=254,882 only (bis NOT measured -- no
+claim at 255,045 from this cut), the MID-ONLY NARROWING CLAIM's
+realization attempt. (a) CONTENT CONFRONTATION: mid's s139 16-block
+content quoted from committed bytes + the named supersession (this
+cut's C2 tolerant classes supersede the committed frozen-rule
+labels AT MID FOR THIS CLAIM'S DECISION ONLY; every committed label
+rode the 18-cell MIN at the frozen 1,000-tick threshold -- the
+statistic named unstable); (b) BLOCK-GRANULARITY FLOOR: 16 disjoint
+blocks of 3 + pooled-48 at the byte-identical pinned binary
+cabff942... (5-way MATCH), single-class across ALL blocks AND the
+pooled arm; (c) STATISTIC CONFRONTATION option (ii) -- THE
+WANDER-BAND TOLERANCE RULE (frozen thresholds, pre-registered
+BEFORE runs): 18-cell min <= 980 TOLERANT-INTERMEDIATE/MIXED,
+>= 1,016 TOLERANT-CAPTURED, 981..1,015 (the measured wander band)
+IN-BAND-UNDECIDED; (d) CLAIM-FORM CONFRONTATION: the dual-class
+content + the cross-window disagreement at cabff942... (s132/s136/
+s139) confronted in W3 (the FOURTH window at the pinned binary).
+W1: (a) C2 (a) -> THE MID-ONLY NARROWING CLAIM IS REALIZED,
+bracket narrows AT MID to (254,882, 255,208]; (b)/(c) NOTHING
+MOVES, claim SUSPENDED; (d) INVALID. Quote-only census
+(pre-reg-census-s143.py, fail-closed, run twice byte-identical):
+all 34 committed minima are IN-BAND -> every committed block/pooled
+arm is IN-BAND-UNDECIDED under the tolerance rule (the supersession
+content); knob arithmetic (1,000,003*248)//973 == 254,882.
+MEASUREMENT HALF NOT RUN: 54 fresh processes (c2/mid/c8 k=3/48/3,
+ZERO NEW KNOB TRIPLES) are frozen for a future session (NOT
+queued); every fourteenth-cut quantity is UNMEASURED and the
+MID-ONLY NARROWING CLAIM stays SUSPENDED (named, not claimed).
+The landing tail (s146): standing gates (a)-(f) run live, all ==
+pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate GREEN
+123/12162/0/0 run 1 == run 2 == both s88 pins, scratch runner
+deleted; (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+(ADR-0362, outside this diff) .err 879 == pin -- NO green full
+suite claimed; (d) evaluator self-test 38/0 == pin + eval pair
+twice byte-identical == the s117 post-append pin, VERDICT: SETTLED
+INTERMEDIATE/MIXED (unchanged); (e) find '*.sh' -> 0; (f) ledger ==
+HEAD). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the workgroup rows stay as
+ADR-0358 left them. Carry-forward s147: the fourteenth cut's
+MEASUREMENT half ONLY through its own session under the frozen
+protocol (NOT queued); any further counted-day slot (the 2026-10-31
+slot is consumed at s117; the next slot is a NEW UTC day and its
+own freeze) and the cross-day tail-movement row (not queued) -- NO
+queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect14prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 147-149, JUN-59 -- THE FOURTEENTH CUT,
+THE WANDER-BAND TOLERANCE CUT AT MID, MEASURED AND ANALYZED;
+the s146/s147/s148 carry-forwards): the pre-registered cut is
+now MEASURED (s147: 54 fresh processes c2/mid/c8 k=3/48/3 on
+aiueos-6600hs under the frozen protocol, freeze stamp
+2026-10-31T19:54:33Z; GO 2026-10-31T21:08:06Z; rc=0 54/54,
+VERIFY mismatch 0, 108 logs byte-identical host==local
+8c8ef864...; BUILD PINS 3/3 BYTE-IDENTICAL, mid cabff942...
+the sixth byte-identical mid build) AND ANALYZED (s148 wrote
+analysis-s147.py at a runtime-budget cutoff, committed UNRUN;
+s149 ran it TWICE BYTE-IDENTICAL -> publication-s147.txt
+29,876 bytes sha256 d41df35a..., input rule verified from the
+8 open() sites). THE FROZEN LETTERS: C1 (a) True (c2 31 FLOOR
+in band 31..32; c8 32,842 vs 32,915 -0.22%); C2 (c)
+TOLERANCE-UNRESOLVED at mid (248,973) n=254,882 -- ALL 16
+block 18-cell minima and the pooled-48 min 1,005 are
+IN-BAND-UNDECIDED under THE WANDER-BAND TOLERANCE RULE (the
+thresholds frozen BEFORE runs), both stable-tolerant branches
+FAIL, L9 binds at mid under the tolerance rule too; W1 (c)
+NOTHING MOVES -- the committed bracket stays EXACTLY
+(254,557, 255,208] and the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed), NO claim at 255,045 (bis NOT
+measured this cut), NO claim at hi/lo, no boundary between
+grid points (L5); W2 (descriptive) crossings 13/48 at
+>= 1,000, in-band 48/48; W3 (descriptive) the FOURTH window at
+cabff942... (pooled-48 1,148) confronts the named cross-window
+disagreement, cause UNMEASURED (L2 binds); X1 (descriptive)
+mid spread 2.3% -- the s136 excursions do NOT replicate, cause
+UNMEASURED. The landing tail (s149): standing gates (a)-(f)
+run live, all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU
+gate GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins,
+scratch runner deleted; (c) FULL run-tests.cljk exit 1 RED AT
+BASE kotoba.form (ADR-0362, outside this diff) .err 879 ==
+pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD).
+BAR NON-INTERFERENCE held (bisect content: no ledger append,
+no day-slot, no bar/Rule-4/:measured? movement); RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay as ADR-0358
+left them. Carry-forward s150: a fifteenth cut ONLY through a
+NEW pre-registered cut session (its own freeze; the
+confrontation spec's four arms apply, this cut's
+TOLERANCE-UNRESOLVED content confronted first) -- NOT queued;
+any further counted-day slot (the 2026-10-31 slot is consumed
+at s117; the next slot is a NEW UTC day and its own freeze)
+and the cross-day tail-movement row (not queued) -- NO queued
+row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect14-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 152-156, JUN-59 -- THE FIFTEENTH CUT
+PRE-REGISTRATION, THE DEEP-POOLING CI CUT AT BIS, AND ITS
+LANDING, the s151..s155 carry-forwards): the second pre-
+registration written under the confrontation spec's four arms
+(ACCEPTED DESIGN ONLY -- a cut pre-registration, not a
+measurement and not implemented compiler code; freeze stamp
+2026-11-01T01:27:58Z, write-once; NO run log of the cut existed
+at freeze): the cut's point bis (3,316,1239) n=255,045 (mid NOT
+re-measured; interior: both C2 outcomes narrow; largest committed
+pooled margin), the deep-pooling instrument variant. (a) CONTENT
+CONFRONTATION: FIRST the 14th cut's TOLERANCE-UNRESOLVED mid
+content (C2 (c) at mid (248,973) n=254,882 at cabff942...; all
+16 block minima and the pooled-48 min 1,005 IN-BAND-UNDECIDED
+under the wander-band tolerance rule) with the frozen statement
+that NO letter of this cut supersedes it; THEN the committed bis
+content at 440604ef... (s136 8-block 7x C + 1x I/M pooled-24
+1,147 C; s139 16-block 7x C + 9x I/M, pooled-48 1,148 C, min
+published 1,006 = exact half-integer 1,005.5); (b) BLOCK-
+GRANULARITY FLOOR: 16 disjoint blocks of 3 + pooled-48 at this
+cut's NEW first-measured binary (the ROUNDS6400 variant, build
+digests recorded by the measuring session, never transcribed);
+(c) STATISTIC CONFRONTATION option (i) THE DEEP-POOLING CI CLASS
+STATISTIC: h_c = 3.6420 * MAD_c / sqrt(N) (3.6420 = 1.96 * 1.2533
+* 1.4826), N = 3R = 19,200 per block / 48R = 307,200 per
+pooled-48, unit classes at the FROZEN 1,000-tick threshold
+(CAPTURED iff all m_c - h_c >= 1,000 / FLOOR iff all m_c + h_c
+<= 100 / I/M iff some m_c + h_c < 1,000 and some m_c - h_c > 100
+/ IN-BAND-UNDECIDED otherwise), R = 6,400 fixed by the pre-
+registered derivation BEFORE the freeze (ladder max-h R=3,200
+2.6949 fails / R=6,400 1.9056 passes; binding idx 22 MAD 72.5;
+s147-mid cross-check R* = 6,400; NAMED: the 2.0-tick target first
+met only at the ladder top; chosen with committed margins
+visible, the new binaries' margins UNMEASURED); the instrument
+variant gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt at source
+pin c2704aaa... (one line '#define ROUNDS 25' -> '#define ROUNDS
+6400', shader corpus BYTE-IDENTICAL); (d) CLAIM-FORM
+CONFRONTATION: the dual-class content (lo 254,557 2 rows / mid
+254,882 3 rows + pooled 1,141 I/M / 1,140 C) + the cross-window
+disagreement at cabff942... (s132 1,133 I/M / s136 1,148 C /
+s139 1,140 C / s147 1,148 FOURTH window); NO letter touches
+lo/mid (cause UNMEASURED, L2). W1: (a) C2 (b) -> bracket narrows
+to (254,557, 255,045]; (b) C2 (a) -> (255,045, 255,208] (implies
+F > 254,882); (c) NOTHING MOVES; (d) INVALID (frozen
+INVALIDATION criterion: > 0 VERIFY mismatches -> arm INVALID).
+ARM TABLE c2 k=3 / bis k=48 / c8 k=3 = 54 processes, ZERO NEW
+KNOB TRIPLES ((1,000,003*316)//1239 = 255,045, gcd 1), frozen
+order c2-r01..03, bis-r01..48, c8-r01..03, block partition 16
+blocks of 3 + pooled-48. Quote-only census (pre-reg-census-
+s152.py, fail-closed, run twice byte-identical, 6,111 bytes
+each); s152 D5's "block minima 1,002..990" corrected against
+committed rows (max block6 1,011). MEASUREMENT HALF NOT RUN: 54
+fresh processes are frozen for a future session (NOT queued);
+every fifteenth-cut quantity is UNMEASURED and the MID-ONLY
+NARROWING CLAIM stays SUSPENDED (named, not claimed); the
+bracket stays EXACTLY (254,557, 255,208]. The landing tail
+(s155 gates + s156 this record): standing gates (a)-(f) run
+live, all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate
+GREEN 123/12162/0/0 run 1 == run 2 == both s88 pins, scratch
+runner deleted; (c) FULL run-tests.cljk exit 1 RED AT BASE
+kotoba.form (ADR-0362, outside this diff) .err 879 == pin -- NO
+green full suite claimed; (d) evaluator self-test 38/0 == pin +
+eval pair twice byte-identical == the s117 post-append pin,
+VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find '*.sh'
+-> 0; (f) ledger == HEAD). BAR NON-INTERFERENCE held (sessions
+152-156 ran NO hardware, NO builds, NO compiles, NO GO stamp, NO
+day-slot, NO ledger line); RULE 4 unchanged: NOTHING MOVES; NO
+vendor optimization exists for Intel (or for any vendor); the
+workgroup rows stay as ADR-0358 left them. Carry-forward s157:
+the fifteenth cut MEASUREMENT half ONLY through its own session
+under the frozen protocol (NOT queued); any further counted-day
+slot (the 2026-10-31 slot is consumed at s117; the next slot is
+a NEW UTC day and its own freeze) and the cross-day tail-
+movement row (not queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect15prereg-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 157-163, JUN-59 -- THE FIFTEENTH CUT, THE
+DEEP-POOLING CI CUT AT BIS, MEASURED AND ANALYZED; the
+s156..s162 carry-forwards): the pre-registered cut is now
+MEASURED (s157-s160: 54 fresh processes c2/bis/c8 k=3/48/3 on
+aiueos-6600hs under the frozen protocol, freeze stamp
+2026-11-01T01:27:58Z; GO 2026-11-01T03:15:22Z; rc=0 54/54,
+115,200 SAMPLE lines = 18 ok cells x R=6,400 every run,
+VERIFY mismatch total 0; 108 logs byte-identical host==local
+97bd3d33...; FIRST-MEASURED BINARY PINS -- the ROUNDS6400
+variant c2704aaa..., NEW binaries, no committed pins to match:
+c2 b791b71a... bis 52fb68b6... c8 2f25d678...) AND ANALYZED
+(s161 wrote analysis-s158.py at a runtime-budget cutoff,
+committed UNRUN with named defects; s162 repaired the named
+four + two new run-time defects and ran it TWICE BYTE-
+IDENTICAL -> publication-s158.txt 56,588 bytes sha256
+45538ad7...). THE FROZEN LETTERS: C1 (a) True (c2 31 FLOOR in
+band 31..32; c8 32,952 vs 32,915 +0.11%); C2 (b)
+STABLE-CAPTURED at bis (3,316,1239) n=255,045 -- ALL 16 block
+classes AND the pooled-48 arm CAPTURED under THE PRE-
+REGISTERED DEEP-POOLING CI CLASS STATISTIC (R = 6,400; block
+binding min(m-h) 1005.8..1008.8, pooled-48 binding 1009.69),
+the 16-block class-stability requirement PASSES at bis under
+the deep-pooling statistic; W1 (a) THE BRACKET NARROWS TO
+(254,557, 255,045] ("THE B=3 CLASS FLIP LIES AT OR BELOW
+n=255,045"; upper endpoint 255,208 -> 255,045, lower endpoint
+carried on lo's content) and the MID-ONLY NARROWING CLAIM
+stays SUSPENDED (named, not claimed), NO claim at hi/lo, no
+boundary between grid points (L5); the 14th cut's
+TOLERANCE-UNRESOLVED mid content stands (arm (a)), NO letter
+of this cut touched lo or mid; W2 (descriptive) crossings
+48/48 at >= 1,000, in-band 48/48; W3 (descriptive) the NEW
+first-measured binary confronts the committed bis windows at
+440604ef... (block-level class mix disagrees with s139's;
+NAMED CROSS-BINARY HAZARD, cause UNMEASURED, L2 binds); X1
+(descriptive) bis host_ns spread 63.0% -- named, cause
+UNMEASURED (L3). The landing tail (s163): standing gates
+(a)-(f) run live, all == pins ((a) 2649/0 17,925 bytes; (b)
+scoped GPU gate GREEN 123/12162/0/0 run 1 == run 2 == both s88
+pins, scratch runner deleted; (c) FULL run-tests.cljk exit 1
+RED AT BASE kotoba.form (ADR-0362, outside this diff) .err 879
+== pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair twice byte-identical == the s117
+post-append pin, VERDICT: SETTLED INTERMEDIATE/MIXED
+(unchanged); (e) find '*.sh' -> 0; (f) ledger == HEAD).
+BAR NON-INTERFERENCE held (bisect content: no ledger append,
+no day-slot, no bar/Rule-4/:measured? movement); RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay as ADR-0358
+left them. Carry-forward s164: a sixteenth cut ONLY through a
+NEW pre-registered cut session (its own freeze; the
+confrontation spec's four arms apply, this cut's content
+confronted first) -- NOT queued; any further counted-day slot
+(the 2026-10-31 slot is consumed at s117; the next slot is a
+NEW UTC day and its own freeze) and the cross-day tail-
+movement row (not queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect15-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 164-168, JUN-59 -- THE SIXTEENTH CUT
+PRE-REGISTRATION, the s163..s167 carry-forwards): the cut is now
+FROZEN PRE-REGISTRATION as THE CLEAN-BISECTION CUT AT THE FLOOR
+MIDPOINT (345, 1354) n=254,801 -- ACCEPTED DESIGN ONLY, NOT
+MEASURED, NO sixteenth-cut quantity exists. The census (s165,
+knob-search-s164.py run TWICE BYTE-IDENTICAL sha256 49892344...):
+254,801 has 31 in-box knob pairs, smallest (345, 1354), 7 in-box
+same-ratio doubles NONE measured, gcd(254,801, 1,000,003) = 1,
+and ZERO committed content (VIRGIN -- never measured) vs mid
+254,882 (248, 973) with 35 pairs and the full dual-class +
+14th-cut TOLERANCE-UNRESOLVED record (that verdict line "(c)
+TOLERANCE-UNRESOLVED ... FAILS" STANDS as confrontation content);
+s27 census anchor MATCH. The decisions (s166, D1-D5): D1 the
+symmetric-narrowing criterion (both stable-class outcomes narrow
+by bisection at the virgin point; a CAPTURED outcome at mid
+cannot narrow -- lo dual-class), mid NOT re-measured, the 14th
+cut's content confronted FIRST in arm (a) with NO supersession,
+arm (d) tracking the MID-ONLY NARROWING CLAIM (W1 (a) REFUTES it
+by implication -- F <= 254,801 < 254,882 -- else SUSPENDED);
+D2/D3 the deep-pooling CI statistic + R = 6,400 ADOPTED UNCHANGED
+(NOT re-derived; the point's MADs UNMEASURED); D4 the arm table
+c2/fm/c8 = 54 fresh processes (self-check 3+48+3), ONE NEW KNOB
+TRIPLE fm (B=3, WM=345, NDIV=1,354) (the s131 ZERO-NEW-TRIPLES
+precedent does NOT hold -- NAMED; L8 APPLIES); D5 C2/W1/W3 letter
+shapes frozen (W3 re-scoped: virgin point -- cross-binary AND
+cross-point). FREEZE: protocol.txt write-once BEFORE any run log
+of this cut (freeze stamp 2026-11-01T08:05:17Z; 17,002 bytes
+sha256 a2da5d62...), freeze verification twice byte-identical
+(sha256 b34fd9d0..., 25/25 ok: wants). The landing tail: s167
+standing gates (a)-(f) all == pins (scoped GPU gate GREEN
+123/12162/0/0; FULL run-tests.cljk RED AT BASE kotoba.form
+ADR-0362 OUTSIDE this diff -- NO green full suite claimed); s168
+record.txt + record-verify-s168.py twice byte-identical (sha256
+86ea91da..., 43 ok / 0 failed; NAMED: its draft-1 repeated the
+s165 comma-free bracket regex defect family, kept visible, no
+evidence value). BAR NON-INTERFERENCE held s164-s168 (no
+hardware, no builds, no compiles, no GO, no day slot, no ledger
+line). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor). Carry-forward s169: the
+sixteenth cut MEASUREMENT half ONLY through its own session under
+the frozen protocol -- NOT queued (every sixteenth-cut quantity
+UNMEASURED until then); any further counted-day slot (the
+2026-11-01 UTC slot needs its own freeze) and the cross-day
+tail-movement row (not queued). Evidence:
+docs/evidence/gpu/anv-b3bisect16prereg-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-01 (sessions 169-174, JUN-59 -- THE SIXTEENTH CUT
+MEASUREMENT + ANALYSIS + LANDING, the s168 carry-forward (a) and
+the s173 landing tail): THE CLEAN-BISECTION CUT AT THE FLOOR
+MIDPOINT (345, 1354) n=254,801 RAN UNDER THE FROZEN
+anv-b3bisect16prereg-20261101/protocol.txt AND LANDED -- CUT
+VERDICT: INVALID; NOTHING MOVES. Measurement (s169-s171,
+aiueos-6600hs, INSTRUMENT channel): GO 2026-11-01T09:31:52Z,
+3/3 builds rc=0 at NEW first-measured binary pins (fm 8c568de5...
+is the ONE NEW KNOB TRIPLE, the s166 NAMED L8 combination-risk
+class), the frozen-order 54-run window c2/fm/c8 = 3/48/3 all
+clean (115,200 samples = 18 cells x R = 6,400 every run), the
+108 run logs closed host==local 108/108 at the canonical
+aggregate f8c08e16... (construction pinned by two known-answer
+tests + one negative control), committed as the gzip -n form
+(54 raw digests recorded, fidelity checked=54 mismatch=0).
+Analysis (s172-s173): analysis-s169.py run TWICE BYTE-IDENTICAL
+-> publication-s169.txt (56,352 bytes, sha256 c9aab750...). THE
+FROZEN LETTERS: C1 (b) CONTROL REPLICATION DISCREPANCY (c2
+pooled median m 30 vs the committed floor band 31..32; c8 32,820
+within +/-5% of committed 32,915 = -0.29%; controls
+VERIFY-mismatch-free; cause UNMEASURED); C2 (c) CLASS-UNRESOLVED
+at fm (345, 1,354) n=254,801 (16 blocks: 10x CAPTURED + 3x
+INTERMEDIATE/MIXED + 3x IN-BAND-UNDECIDED, pooled-48 class
+CAPTURED; block binding min(m-h) 997.0538..1006.7909, pooled
+1,002.7437); W1 (d) INVALID (fired by C1 (b)) -> CUT VERDICT:
+INVALID; NOTHING MOVES -- the committed bracket stays EXACTLY
+(254,557, 255,045]; the MID-ONLY NARROWING CLAIM stays SUSPENDED
+(W1 (a) did not fire; named, not claimed). W2 (descriptive):
+34/48 fm runs at per-run 18-cell min >= 1,000, 48/48 in
+981..1,015. W3 (descriptive): every comparison cross-binary AND
+cross-point (the point is VIRGIN; NAMED CROSS-BINARY HAZARD --
+this cut's binaries are NEW first-measured digests, cause
+UNMEASURED (L2 binds); the frozen prose "binding min(m-h)
+1,006.8..1,008.8" matches NO committed byte -- the parsed
+publication-s158.txt bytes 1005.8172..1008.7909 govern; W3
+reaches no class and no letter). X1 (descriptive): fm host_ns
+per-run median spread 62.9% of min (k=48), NAMED, not a C
+criterion. Landing (s174-s175): standing gates (a)-(f) all ==
+the s88/s117 pins (scoped GPU gate GREEN 123/12162/0/0 twice;
+FULL run-tests.cljk RED AT BASE kotoba.form ADR-0362 OUTSIDE
+this diff -- NO green full suite claimed); record.txt +
+record-verify-s175.py run twice byte-identical (run identity in
+record.txt) + this note. BAR NON-INTERFERENCE held: NO
+settle-bar-ledger line, NO day-slot consumption (the 2026-11-01
+UTC slot needs its own freeze; the bar verdict stays over the
+FIRST four counted readings), the bar's SETTLED
+INTERMEDIATE/MIXED verdict unmoved. RULE 4 unchanged: NOTHING
+MOVES; NO vendor optimization exists for Intel (or for any
+vendor); the workgroup rows stay exactly as ADR-0358 left them
+(:measured? true scoped to each row's one named measured device
+for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+provisional, :measured? false) -- the sixteenth-cut letters are
+bisect machinery measurements on ONE host, NOT workgroup-default
+measurements. Carry-forward s176: standing, not queued: any
+further counted-day slot (its own freeze) and the cross-day
+tail-movement row; any seventeenth cut ONLY through a NEW
+pre-registered cut session (NOT queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect16-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 176-183, JUN-59 -- THE SEVENTEENTH CUT
+PRE-REGISTRATION: ROW + RECONNAISSANCE + CENSUS + DESIGN
+DECISIONS + DESIGN-VERIFY + PROTOCOL FREEZE + LANDING, the s175
+carry-forward chain): THE CLEAN-BISECTION CUT AT THE VIRGIN
+QUARTER POINT (313, 1229) n=254,679 PRE-REGISTERED AND FROZEN
+-- NOT MEASURED. Census (s177-s178): knob-search-s177.py run
+TWICE BYTE-IDENTICAL; q1 n=254,679 ((1,000,003*313)//1,229,
+gcd 1) VIRGIN; q2 = 254,801 is the 16th cut's fm point (the
+arm-(b) re-read hazard binds literally there); the disputed
+record uncontested between its sources. Design (s179) D1-D5
+frozen (s182, protocol.txt 19,974 bytes sha256 ad8ace96...,
+freeze stamp 2026-11-01T16:20:57Z, before any run log): arm
+(a) NO letter supersedes the 16th cut's 254,801 content, C1
+(b) confronted at arm (a) AND named as a limitation; arm (b)
+16 blocks of 3 + pooled-48 at NEW first-measured binaries
+(ROUNDS6400 pin c2704aaa... re-hashed at freeze, MATCH); arm
+(c) option (i) the deep-pooling CI class statistic, R=6,400;
+arm (d) the MID-ONLY NARROWING CLAIM tracked by implication
+(W1 (a) REFUTES by implication F <= 254,679 < 254,882; else
+SUSPENDED); ARM TABLE c2/q1/c8 = 54 processes (3+48+3);
+ONE NEW KNOB TRIPLE q1 (313, 1229), L8 APPLIES. Design-verify
+(s181): design-verify-s179.py run TWICE BYTE-IDENTICAL
+(70 ok / 0 failed). Landing (s183): standing gates (a)-(f)
+all == the s88/s117 pins (scoped GPU gate GREEN 123/12162/0/0
+twice; FULL run-tests.cljk RED AT BASE kotoba.form ADR-0362
+OUTSIDE this diff -- NO green full suite claimed); record.txt
++ this note; NAMED: an environment incident at s183 (23 git-
+dep mirrors absent in ~/.gitlibs AND their upstream GitHub
+repos unreachable -- repaired from local sibling checkouts,
+user cache only; details and the kept fail captures in
+record.txt section 4; cause of the mirror loss UNMEASURED).
+BAR NON-INTERFERENCE held: NO settle-bar-ledger line, NO day-
+slot consumption, the bar's SETTLED INTERMEDIATE/MIXED verdict
+unmoved. RULE 4 unchanged: NOTHING MOVES -- the committed
+bracket stays EXACTLY (254,557, 255,045]; the MID-ONLY
+NARROWING CLAIM stays SUSPENDED; NO vendor optimization exists
+for Intel (or for any vendor); the workgroup rows stay exactly
+as ADR-0358 left them -- every seventeenth-cut quantity is
+UNMEASURED until a future measuring session runs 54 fresh
+processes under the frozen protocol (NOT queued). Carry-
+forward s184: standing, not queued: the 17th cut MEASUREMENT
+half (its own pre-registered session), any further counted-day
+slot (its own freeze) and the cross-day tail-movement row.
+Evidence: docs/evidence/gpu/anv-b3bisect17prereg-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 185-189, landing s190, JUN-59 -- THE
+SEVENTEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the
+MEASUREMENT half at s185-s188 on aiueos-6600hs under the frozen
+anv-b3bisect17prereg-20261101/protocol.txt, the ANALYSIS half at
+s189, the landing gates + record at s190): THE QUARTER-POINT CUT
+AT THE VIRGIN POINT (313, 1,229) n=254,679 MEASURED -- CUT
+VERDICT: NOTHING MOVES. Measurement (s185-s188): 54 fresh
+processes (c2/q1/c8 = 3/48/3) in frozen order, ALL 54 runs clean
+(samples 115,200 = 18 pipeline-ok cells x frozen R = 6,400 every
+run, VERIFY mismatch total 0); GO 2026-11-01T17:25:48Z; 3/3
+builds; FIRST-MEASURED binary pins q1 f22502bd... (NEW, the one
+new knob triple of this cut, L8) with c2/c8 reproducing the s169
+digests byte-identically (capture observation); 108/108 run logs
+host==local byte-identical at the canonical raw aggregate
+acad342c... (construction pinned THREE independent ways before
+use), committed under the gzip -n form with the 54 raw digests
+recorded; pull-verify-s185.py twice byte-identical at s188 and
+re-run byte-identical at s190. Analysis (s189): analysis-s185.py
+(sha256 d2e856b4...) run TWICE BYTE-IDENTICAL ->
+publication-s185.txt (59,777 bytes sha256 c62c01e1...). FROZEN
+LETTERS: C1 (a) -- c2 pooled median m 31 FLOOR in the committed
+floor band 31..32 (True), c8 32,775 within +/-5% of committed
+32,915 (True, -0.43%); D2 SUPERSESSION: this cut's C1 (a)
+SUPERSEDES the 16th cut's C1 (b) AS THE CURRENT CONTROL STATE
+(the 16th's (b) remains committed history; the discrepancy cause
+UNMEASURED). C2 (c) CLASS-UNRESOLVED at q1 (313, 1,229)
+n=254,679 (VIRGIN point) under the pre-registered deep-pooling CI
+class statistic (R = 6,400): 12x CAPTURED + 4x IN-BAND-UNDECIDED
+blocks, pooled-48 CAPTURED (arm differs); block binding min(m-h)
+999.0012..1002.9224, pooled 1,001.7437; L9 binds at n=254,679
+(D3 (ii)). W1 (c) -> NOTHING MOVES -- the committed bracket stays
+EXACTLY (254,557, 255,045]; the MID-ONLY NARROWING CLAIM stays
+SUSPENDED (named, not claimed). W2 (descriptive) 44/48 runs at
+per-run 18-cell min >= 1,000, 48/48 in 981..1,015; W3 names the
+cross-binary hazard (NEW first-measured binaries; cause
+UNMEASURED) and L8 (8 in-box same-ratio doubles, NONE measured);
+X1 (descriptive) q1 host_ns spread 0.7% of min (k=48). Landing
+(s190): standing gates (a)-(f) all == the s88/s117 pins (scoped
+GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk RED AT
+BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green full
+suite claimed); record.txt + this note. BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay exactly as
+ADR-0358 left them -- the seventeenth-cut letters are bisect
+machinery measurements on ONE host, NOT workgroup-default
+measurements. Carry-forward s191: standing, not queued: any
+further counted-day slot (its own freeze), the cross-day
+tail-movement row, and any eighteenth cut ONLY through a NEW
+pre-registered cut session (NOT queued) -- NO queued row remains.
+Evidence: docs/evidence/gpu/anv-b3bisect17-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 191-195, landing s196, JUN-59 -- THE
+EIGHTEENTH CUT PRE-REGISTRATION: ROW DECISION + CUT-POINT
+CONFRONTATION CENSUS + DESIGN DECISIONS + DESIGN-VERIFY + PROTOCOL
+FREEZE + STANDING GATES + THIS RECORD): THE QUARTER-POINT CUT AT
+q3 (B=3, WM=246, NDIV=965) n=254,923 PRE-REGISTERED AND FROZEN
+-- NOT MEASURED. Census (s192): knob-search-s192.py run TWICE
+BYTE-IDENTICAL (9,477 bytes sha256 78fe5a96...) over the
+remaining bracket (254,557, 255,045], the 17th cut's content and
+the disputed record -- the quarter-grid enumeration RE-DERIVED
+(q3 n=254,923 34 pairs / (246, 965) / 10 doubles), the 17th
+cut's C2 (c) content at q1 parsed from publication-s185.txt with
+the re-read hazard's second edge CLOSED and binding there, and
+q3 RE-CONFIRMED STILL VIRGIN (0 occurrences in every parsed
+publication source). Design (s193, D1-D5): the cut's point q3
+254,923 ((1,000,003*246)//965 = 254,923, gcd 1) -- the ONLY
+remaining virgin candidate, vacuous-at-point for the re-read
+hazard, both stable-class outcomes narrow (W1 (a) -> (254,557,
+254,923]; W1 (b) -> (254,923, 255,045]; clips 122 top / 366 low);
+arm (a) the 17th cut's content confronted FIRST with the frozen
+supersession statement + the C1 control-state confrontation;
+arm (b) 16 blocks at NEW first-measured binaries (ROUNDS6400
+variant, source pin c2704aaa...) with the re-read hazard named on
+every binding edge (254,801 literal / 254,679 closed / mid
+disputed / q3 second-edge shape anew); arm (c) option (i) the
+deep-pooling CI class statistic ADOPTED UNCHANGED (R = 6,400),
+(ii) considered and not chosen (deadlock), (iii) unavailable at a
+virgin point, the NAMED GAP (the 981..1,015 wander band bounds
+the RAW min's within-window wander only -- (i)'s binding min(m-h)
+within-window wander is UNMEASURED, NOT claimed); arm (d) the
+disputed record, the MID-ONLY NARROWING CLAIM SUSPENDED (W1 (b)
+would CONFIRM its location BY IMPLICATION F > 254,923 > 254,882
+-- pre-registered letter SHAPES, not claims). ROW QUESTION: AT
+FIXED B=3, IS THE CLASS AT (246, 965) n=254,923 SINGLE-CLASS
+STABLE AT 16-BLOCK GRANULARITY UNDER THE PRE-REGISTERED
+DEEP-POOLING CI CLASS STATISTIC (R = 6,400) AT ITS NEW FIRST-
+MEASURED BINARY (THE ROUNDS6400 INSTRUMENT VARIANT)? ARM TABLE
+c2/q3/c8 = 54 fresh processes (3+48+3). Design-verify (s194):
+design-verify-s193.py run TWICE BYTE-IDENTICAL (154 ok / 0
+failed; 154 wants: 9 file pins + 1 pair pin + 120 line-pinned
+quotes + 15 arithmetic re-derivations + 9 DERIVED re-computations
+from committed bytes). Freeze (s195): protocol.txt written ONCE
+at freeze stamp 2026-11-01T21:48:48Z BEFORE any run log of this
+cut exists (24,242 bytes sha256 97364eb1...), freeze-record-
+s193.txt. Landing (s196): standing gates (a)-(f) all == the
+s88/s117 pins (scoped GPU gate GREEN 123/12162/0/0 twice;
+FULL run-tests.cljk RED AT BASE kotoba.form ADR-0362 OUTSIDE
+this diff -- NO green full suite claimed); record.txt + this
+note. BAR NON-INTERFERENCE held: NO settle-bar-ledger line, NO
+day-slot consumption, the bar's SETTLED INTERMEDIATE/MIXED
+verdict unmoved. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the workgroup
+rows stay exactly as ADR-0358 left them. Three-state: the
+eighteenth-cut pre-registration is ACCEPTED DESIGN ONLY, FROZEN
+-- NOT implemented compiler code, NOT a measurement; every
+eighteenth-cut quantity is UNMEASURED until a FUTURE measuring
+session runs 54 fresh processes under the frozen protocol (NOT
+queued -- its own act). Carry-forward s197: standing, not
+queued: the eighteenth cut MEASUREMENT half (NOT queued), any
+further counted-day slot (its own freeze), the cross-day
+tail-movement row. Evidence: docs/evidence/gpu/
+anv-b3bisect18prereg-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 196-200, landing s201, JUN-59 -- THE
+EIGHTEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the MEASUREMENT
+half at s197-s199 on aiueos-6600hs under the frozen
+anv-b3bisect18prereg-20261101/protocol.txt, the ANALYSIS half at
+s200, the landing gates + record at s201): THE QUARTER-POINT CUT
+AT q3 (B=3, WM=246, NDIV=965) n=254,923 MEASURED -- CUT VERDICT:
+THE BRACKET NARROWS TO (254,923, 255,045]. Measurement (s197-
+s199): 54 fresh processes (c2/q3/c8 = 3/48/3) in frozen order, ALL
+54 runs clean (samples 115,200 = 18 pipeline-ok cells x frozen R =
+6,400 every run, VERIFY mismatch total 0); GO
+2026-11-01T22:45:52Z; 3/3 builds; FIRST-MEASURED binary pins q3
+c7ba9c86... (NEW, the one new knob triple of this cut, L8) with
+c2/c8 reproducing the s169 digests byte-identically (capture
+observation); 108/108 run logs host==local byte-identical at the
+canonical raw aggregate 03511dbf... (construction pinned THREE
+independent ways before use), committed under the gzip -n form
+with the 54 raw digests recorded; pull-verify-s197.py twice byte-
+identical at s199 and re-run byte-identical at s201. Analysis
+(s200): analysis-s197.py (sha256 ed47823d...) run TWICE BYTE-
+IDENTICAL -> publication-s197.txt (62,811 bytes sha256
+f3d7465a...); ONE verification-script defect named, not hidden
+(the binary-pin regex name-first vs the committed sha256sum line
+form; caught fail-closed before any number, fixed once, draft
+kept). FROZEN LETTERS: C1 (a) -- c2 pooled median m 31 FLOOR in
+the committed floor band 31..32 (True), c8 32,778 within +/-5% of
+committed 32,915 (True, -0.42%); D2 CONFRONTATION: the current
+control state (the 17th cut's C1 (a)) REPLICATES at back-to-back
+cuts -- no supersession needed (named). C2 (a) STABLE-
+INTERMEDIATE at q3 (246, 965) n=254,923 (VIRGIN point) under the
+pre-registered deep-pooling CI class statistic (R = 6,400): all
+16 block classes AND the pooled-48 arm class INTERMEDIATE/MIXED;
+block binding min(m-h) 995.1326..998.0538, pooled 997.7700. W1
+(b) -> THE BRACKET NARROWS TO (254,923, 255,045] ("THE B=3 CLASS
+FLIP LIES ABOVE n=254,923") -- THE FIRST BRACKET NARROWING IN THE
+SERIES (lower endpoint 254,557 -> 254,923; upper endpoint carried
+unchanged on hi's content; top clip 122 / low clip 366); the
+MID-ONLY NARROWING CLAIM's location statement is CONFIRMED BY
+IMPLICATION (F > 254,923 > 254,882 -- named, not claimed, by
+implication only). W2/W3/X1 descriptive; X1 (q3 host_ns spread
+62.4% of min, k=48) NAMED, cause UNMEASURED, not a C criterion.
+Landing (s201): standing gates (a)-(f) all == the s88/s117 pins
+(scoped GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk
+RED AT BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green
+full suite claimed); record.txt + this note. BAR NON-
+INTERFERENCE held: NO settle-bar-ledger line, NO day-slot
+consumption, the bar's SETTLED INTERMEDIATE/MIXED verdict
+unmoved. RULE 4 unchanged: NOTHING MOVES in the workgroup rows --
+they stay exactly as ADR-0358 left them; NO vendor optimization
+exists for Intel (or for any vendor); the bracket narrowing is
+BISECT-RECORD content per the frozen pre-registration -- the
+eighteenth-cut letters are bisect machinery measurements on ONE
+host, NOT workgroup-default measurements. Carry-forward s202:
+standing, not queued: any further counted-day slot (its own
+freeze), the cross-day tail-movement row; any nineteenth cut ONLY
+through a NEW pre-registered cut session (NOT queued) -- NO
+queued row remains. Evidence: docs/evidence/gpu/
+anv-b3bisect18-20261101/.
+(JUN-55, JUN-59; Linear tracking JUN-499)

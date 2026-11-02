@@ -1,0 +1,178 @@
+== JUN-59 session 136 record -- TWELFTH CUT MEASUREMENT HALF       ==
+== (the s135 carry-forward (a): 54 fresh processes under the frozen ==
+== anv-b3bisect12prereg-20261031/protocol.txt; ONE iteration, ONE   ==
+== row) ==
+
+0. THE ROW: the twelfth cut's MEASUREMENT half. The cut was
+   pre-registered and frozen at s133/s134 (protocol.txt freeze
+   stamp 2026-10-31T15:33:51Z) and landed at s135. This tick runs
+   the 54 fresh processes the frozen protocol demands and
+   evaluates the pre-registered letters exactly as frozen.
+
+1. THE FINDING (verified by real tool output,
+   docs/evidence/gpu/anv-b3bisect12-20261031/, publication-s136.txt
+   sha256 ea0da7630e12e7bac2ff19c4060cfac2e8181e393d53c8ebada20fe3463e21dd,
+   produced ONLY by analysis-s136.py run twice byte-identical):
+   C1 (a) True (c2 FLOOR 32 in committed band 31..32; c8 32,771
+   vs committed 32,915 -- 0.44%, within +/-5%).
+   C2 (c) BLOCK-UNSTABLE at bis (3,316,1239) n=255,045 -- 7x
+   CAPTURED + 1x INTERMEDIATE/MIXED blocks (block medians
+   1,138/1,145/1,142/1,155/1,155/1,137/1,144/1,154; block6 the
+   INTERMEDIATE/MIXED block), pooled-24 CAPTURED 1,147 -- the
+   multi-block stability requirement FAILS at the new grid point;
+   the narrowing channel does NOT re-open at 255,045 and L9 binds
+   there at the finer granularity (any future narrowing claim at
+   255,045 must confront this cut's 8-block content first).
+   C3 (c) BLOCK-UNSTABLE at mid (248,973) n=254,882 -- 3x
+   CAPTURED (blocks 1/4/8) + 5x INTERMEDIATE/MIXED (block medians
+   1,144/1,143/1,142/1,141/1,159/1,147/1,146/1,189), pooled-24
+   CAPTURED 1,148 -- the eleventh cut's STABLE-INTERMEDIATE does
+   NOT replicate in-window (the pre-named named-content
+   disagreement is real content: at the same byte-identical
+   pinned binary the s132 window classified all 8 blocks +
+   pooled-24 INTERMEDIATE/MIXED (pooled-24 1,133) and this window
+   classifies BLOCK-UNSTABLE with pooled-24 CAPTURED).
+   W1 (c) SUSPENDED (named, not claimed): NO bracket movement --
+   the committed bracket stays EXACTLY (254,557, 255,208]. L9 now
+   binds at mid at 8-block granularity too. The MID-ONLY
+   NARROWING CLAIM is NOT made by this cut. WHY any class occurs
+   is UNMEASURED (L2 binds); NO causal mechanism is claimed.
+   W2 (descriptive): boundary crossings 9/24 at mid, 10/24 at
+   bis (the eleventh cut's counts were mid 2/24, hi 5/24 -- all
+   computed from the committed per-run 18-cell min trajectories,
+   quote-only). The new grid point n=255,045 is placed on the
+   committed row with its FIRST reading (pooled-24 CAPTURED
+   1,147). W3 (descriptive): this window's mid block medians sit
+   1,141..1,189 against the same binary's three committed
+   readings (s125 1,129 I/M min 982..1,452; s129 block medians
+   1,136/1,137/1,141/1,144, pooled-12 1,139 I/M; s132 block
+   medians 1,129/1,139/1,121/1,132/1,128/1,148/1,135/1,135,
+   pooled-24 1,133 I/M). X1 (descriptive, named NOT hidden):
+   host_ns per-run median spread mid 856.0% of min
+   (305,530..2,920,988) and bis 273.6% (305,550..1,141,639) --
+   large excursions vs the eleventh cut's X1 content (mid 1.8%,
+   hi 2.6%); cause UNMEASURED.
+
+2. THE MEASUREMENT HALF (real tool output, host-side,
+   aiueos-6600hs / murakumo-ci-6600hs 100.98.24.37, user
+   murakumo-ci, groups include render):
+   - ZERO derivation: instrument = s26's committed NDIV-derived
+     source byte-identical (digest a5e539f0... local == host,
+     == the knob-search-s133-run1.txt parsed pin), a-set =
+     archived spv 16-digest corpus (16/16 sha256sum -c OK,
+     corpus_rc=0, shaders/ byte-copy from ~/anv-b3bisect11-
+     20261031's verified corpus), cases-s136-a.txt cell lines a
+     BYTE-COPY of s27's (block sha256 873025d6... == s27 == s132,
+     derivation-census-s136.txt).
+   - GO=2026-10-31T16:09:32Z before the build loop and all runs
+     (all run stamps strictly later, 16:10:09Z..16:10:22Z).
+   - builds 4/4 rc=0 stderr 0 bytes; BUILD PINS: c2 e5ed903e...
+     == s27 pin, mid cabff942... == s125 pin (3-way cross-check
+     s129/s132 MATCH -- all three committed mid readings AND this
+     one at byte-identical binaries), c8 480925e5... == s27 pin
+     (3/3 pinned OLD binaries BYTE-IDENTICAL); bis (3,316,1239)
+     NEW knob triple built fresh: 440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440
+     -- NO prior binary, NO byte-identity pin (L8 named); THIS
+     DIGEST is the pair's first measured digest and becomes the
+     future pin (build-census-s136.txt).
+   - runs rc=0 54/54 in the frozen order (c2 bookend, 24
+     interleaved mid/bis pairs, c8 bookend), stderr 0 bytes
+     54/54, 450 SAMPLE + 24 VERIFY + 24 CELL each, tail
+     '# done cells=24' 54/54, VERIFY mismatch total 0 (the frozen
+     INVALIDATION criterion did not fire), forcing reality
+     972/972, S=8 fail-closed 324/324.
+   - 108 logs pulled byte-identical: canonical aggregate
+     56936e872de0fda1e6906414ae024a674aab176a3231f768d2360fee4ae25089
+     host == local over the sorted UNIQUE 108 log names both
+     sides (host-digests-s136.txt).
+   - analysis-s136.py ran twice rc 0, out/err 0 bytes,
+     publication-s136.txt byte-identical both runs (23,769
+     bytes); integrity all True over the 54 logs (cell map,
+     headers, knob fields, spv identity, sample counts).
+
+3. STANDING GATES (real runs this tick, byte-compared to the s88
+   committed pins in anv-b3w6tailrep-20261030/ and the s117
+   post-append eval pin in anv-b3w7ledgerappend-20261031/):
+   (a) classify --self-test rc 0, "TOTAL: 2649 assertions passed,
+       0 failed", capture gate-s136-classify.txt 17,925 bytes ==
+       pin (cmp exit 0), .err 0;
+   (b) scoped GPU gate GREEN "Ran 123 tests containing 12162
+       assertions. 0 failures, 0 errors." run 1 == run 2 == both
+       s88 pins (gate-s136-run1.txt == gate-s136-run2.txt == 919
+       bytes, cmp exit 0 x3), .err 0 x2 (scratch runner
+       scratch/scoped-gpu-gate.cljk created/run twice/DELETED,
+       never committed -- final state deleted);
+   (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+       ('Could not find namespace: kotoba.form', ADR-0362,
+       outside this diff -- this diff touches NO committed .cljk
+       namespace), gate-s136-full.out 0 bytes == pin, .err 879
+       bytes == pin (cmp exit 0) -- NO green full suite claimed;
+   (d) evaluator --self-test rc 0 38/0 3,590 bytes == the s88 pin
+       (cmp exit 0) + ledger eval pair twice BYTE-IDENTICAL
+       (1,006 bytes, cmp exit 0) == the s117 post-append pin
+       (cmp exit 0) -> VERDICT: SETTLED INTERMEDIATE/MIXED
+       (unchanged);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 (gate-s136-nosh.txt
+       0 bytes);
+   (f) settle-bar-ledger.txt == HEAD (git diff --exit-code rc 0 --
+       no append this cut; BAR NON-INTERFERENCE held).
+
+4. NAMED, NOT HIDDEN:
+   - My own parse defect in analysis-s136.py (the publication-
+     s132 arm-section scan matched section 2's per-run arm header
+     instead of section 3's "nominal total units" header) was
+     fixed at source and re-run clean twice byte-identical -- no
+     measurement capture was touched (the analysis-s136-run1.err
+     capture of the failing run was overwritten by the clean run
+     per the s129/s131 fixed-at-source precedent; the defect is
+     recorded here).
+   - The raw driver capture host-runs-s136.txt carries its first
+     aggregate under a '108 logs' label; that first command
+     double-counted the 54 .stderr.txt logs (glob run-*.txt also
+     matches run-*.stderr.txt -- the same glob defect s132 named,
+     no capture touched); the double-counted intermediate
+     5f5c93ec31cd4abf570ffc835bdd7589a67f035cbf6b1d438f2669be05794bea
+     is named and never used as evidence; the canonical aggregate
+     is 56936e87... (unique 108 logs, host==local).
+   - The measuring host alias aiueos-6600hs-1 of prior records
+     does not resolve in this session's ssh config; the same host
+     is reached as murakumo-ci-6600hs (host-verify-s136.txt).
+   - The host-stage-s136.txt capture RE-RUNS the deterministic
+     staging checks (digests + sha256sum -c) live and is labeled
+     as such; the staging itself was a byte-copy from
+     ~/anv-b3bisect11-20261031's verified corpus.
+   - The X1 host_ns excursions (mid 856%, bis 274% spread) are
+     named content, cause UNMEASURED.
+
+5. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor); this is bisect measurement
+   machinery on ONE host (aiueos-6600hs), not a workgroup-default
+   measurement, and no workgroup-default row is replaced by these
+   numbers. BAR NON-INTERFERENCE held (no ledger append, no
+   day-slot consumption, no bar/Rule-4/:measured? movement -- the
+   runs are BISECT CONTENT, frozen protocol section 6). The
+   measurement ran on UTC day 2026-10-31 (the freeze's own UTC
+   day; L4 named the day UNDETERMINED at freeze and cross-UTC-day
+   replication of this cut is NOT pre-registered).
+
+6. BLOCKER-FIRST: checked immediately before the push
+   (prlist-s136-prepush.json): 0 open kotoba-lang/amu PRs with a
+   hermes/ head; chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4 -- the one this commit pushes to).
+
+7. Carry-forward to s137: (a) any thirteenth cut ONLY through a
+   NEW pre-registered cut session (its own freeze; this cut's
+   8-block BLOCK-UNSTABLE content at mid AND at 255,045 is named
+   content any re-open or narrowing claim must confront first)
+   -- NOT queued; (b) unchanged: any further counted-day slot
+   (the 2026-10-31 slot is consumed at s117; the next slot is a
+   NEW UTC day and its own pre-registration freeze) and the
+   cross-day tail-movement row (not queued) -- NO queued row
+   remains; s137 takes a row only if one is queued or frozen to
+   run, else stands down.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)
