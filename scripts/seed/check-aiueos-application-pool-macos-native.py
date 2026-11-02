@@ -175,8 +175,9 @@ def main(args):
     for row in receipt['sources']:
         assert pin(ROOT / row['name']) == {k: row[k] for k in ('bytes', 'sha256')}
     reference_descriptor = json.loads((ROOT / 'seed/bootstrap/aarch64-macos/root.json').read_text())
-    reference = ROOT / reference_descriptor['compiler']['path']
-    assert mac.verify_macho(reference) == {k: reference_descriptor['compiler'][k] for k in ('bytes', 'sha256')}
+    reference_info = reference_descriptor['kernelV3ReferenceCompiler']
+    reference = ROOT / reference_info['path']
+    assert mac.verify_macho(reference) == {k: reference_info[k] for k in ('bytes', 'sha256')}
     for name in ('qemu', 'firmware'):
         path = getattr(args, name).resolve(strict=True)
         assert pin(path)['sha256'] == getattr(args, name + '_sha256')

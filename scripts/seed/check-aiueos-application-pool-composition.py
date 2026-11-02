@@ -32,7 +32,8 @@ for row in build['sources']:
 F=args.mac_build/f"F{build['generations'][-1]['number']}-signed.macho"
 assert m.verify_macho(F)==build['generations'][-1]['signed']
 descriptor=json.loads((R/'seed/bootstrap/aarch64-macos/root.json').read_text())
-O=R/descriptor['compiler']['path'];assert m.verify_macho(O)=={k:descriptor['compiler'][k] for k in ['bytes','sha256']}
+reference_info=descriptor['kernelV3ReferenceCompiler']
+O=R/reference_info['path'];assert m.verify_macho(O)=={k:reference_info[k] for k in ['bytes','sha256']}
 for name in ['qemu','firmware']:
  path=getattr(args,name).resolve(strict=True);setattr(args,name,path)
  assert m.pin(path)['sha256']==getattr(args,name+'_sha256')

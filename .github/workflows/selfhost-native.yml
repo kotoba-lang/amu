@@ -258,6 +258,14 @@ jobs:
           python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
         run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
+      - name: Explicit application pool v4/v7 matches the executed Mac/QEMU bytes (arm64, native)
+        run: python3 scripts/seed/check-aiueos-application-pool-artifacts-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/aiueos-application-pool-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: aiueos-application-pool-arm
+          path: ${{ runner.temp }}/aiueos-application-pool-arm
+          if-no-files-found: warn
       - name: Static runtime stdin, wire 41 (arm64, native)
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
@@ -462,6 +470,8 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Explicit application pool v4/v7 matches the executed Mac/QEMU bytes (x86_64, native)
+        run: python3 scripts/seed/check-aiueos-application-pool-artifacts-native.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/aiueos-application-pool-x86"
       - name: Public native product and aliases
         run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -473,6 +483,7 @@ jobs:
             ${{ runner.temp }}/x86
             ${{ runner.temp }}/public-product
             ${{ runner.temp }}/aiueos-user-elf-x86
+            ${{ runner.temp }}/aiueos-application-pool-x86
           if-no-files-found: error
 
   qualify-x86-shards:
