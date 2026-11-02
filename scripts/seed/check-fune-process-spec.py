@@ -19,7 +19,7 @@ fixture_test = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(fixture_test)
 
 
-def observe(worker, fixture, args, env):
+def observe(worker, fixture, args, env, expected_args=None, expected_env=None):
     f = fixture_test
     spec = f.spec(args, env, b'/work')
     wire = (f.frame(b'M', 'work', 0) + f.frame(b'F', 'app', len(fixture), fixture)
@@ -27,8 +27,10 @@ def observe(worker, fixture, args, env):
             + b'T' + (4).to_bytes(2, 'big') + len(spec).to_bytes(4, 'big') + spec + b'OX')
     proc = subprocess.run([str(worker)], input=wire, capture_output=True,
                           env={'PATH': '/nonexistent'}, timeout=35)
-    expected = (b''.join(b'A:' + x[:1024] + b'\n' for x in args)
-                + b''.join(b'E:' + x[:1024] + b'\n' for x in env) + b'C:/work\n')
+    actual_args = args if expected_args is None else expected_args
+    actual_env = env if expected_env is None else expected_env
+    expected = (b''.join(b'A:' + x[:1024] + b'\n' for x in actual_args)
+                + b''.join(b'E:' + x[:1024] + b'\n' for x in actual_env) + b'C:/work\n')
     frame = b'K\x07' + len(expected).to_bytes(4, 'big') + expected
     return (proc.returncode == 0 and proc.stdout == f.READY + b'KKKKD' + frame and not proc.stderr)
 
@@ -43,6 +45,7 @@ def main(worker, mutant, fixture, output):
              ('large-arg', [b'/app', b'z' * 65000], [b'X=1'])]
     for name, args, env in cases:
         assert observe(worker, binary, args, env), name
+    assert observe(mutant, binary, cases[0][1], cases[0][2], [b'/app'], []), 'argument-drop mutant did not run as expected'
     assert not observe(mutant, binary, cases[0][1], cases[0][2]), 'argument-drop mutant was not detected'
     report = {'status': 'PASS_FUNE_PROCESS_SPEC_OBSERVATION', 'workerSHA256': sha(worker),
               'mutantSHA256': sha(mutant), 'fixtureSHA256': sha(fixture),
