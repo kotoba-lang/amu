@@ -12,6 +12,8 @@ on:
       - "scripts/seed/check-definition-build-native.py"
       - "scripts/seed/sealed_image.py"
       - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/bounded_cache_bundle.py"
+      - "scripts/seed/test_bounded_cache_bundle.py"
       - "scripts/seed/check_bounded_producer_attestation.py"
       - "scripts/seed/test_bounded_producer_attestation.py"
       - ".github/workflows/bounded-cache-producer.yml"
@@ -38,12 +40,22 @@ jobs:
         run: >-
           python3 scripts/seed/check-definition-build-native.py
           --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/bounded-producer"
-      - name: Stage only the candidate image from this run
+      - name: Native artifact round trip and hostile archive refusals
+        env:
+          AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
+        run: python3 scripts/seed/test_bounded_cache_bundle.py -v
+      - name: Bundle only the candidate and its private object artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: >-
+          python3 scripts/seed/bounded_cache_bundle.py
+          --producer "$RUNNER_TEMP/bounded-producer/producer.elf"
+          --cache "$RUNNER_TEMP/bounded-producer/cache" --output "$RUNNER_TEMP/bounded-cache.tar"
+      - name: Stage only the candidate bundle from this run
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: experimental-bounded-kir-producer-${{ github.sha }}
-          path: ${{ runner.temp }}/bounded-producer/producer.elf
+          path: ${{ runner.temp }}/bounded-cache.tar
           if-no-files-found: error
           retention-days: 7
   attest:
@@ -63,10 +75,10 @@ jobs:
         with:
           name: experimental-bounded-kir-producer-${{ github.sha }}
           path: ${{ runner.temp }}/bounded-producer
-      - name: Attest the bounded image
+      - name: Attest the bounded image and object bundle
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
-          subject-path: ${{ runner.temp }}/bounded-producer/producer.elf
+          subject-path: ${{ runner.temp }}/bounded-producer/bounded-cache.tar
       - name: Download and verify the pinned provenance verifier
         env:
           RUNNER_TMP: ${{ runner.temp }}
@@ -90,9 +102,9 @@ jobs:
           tool.write_bytes(data)
           tool.chmod(0o500)
           PY
-      - name: Verify the exact sealed candidate and signer
+      - name: Verify and freshly execute the signed candidate and its objects
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python3 scripts/seed/check_bounded_producer_attestation.py
-          --artifact "$RUNNER_TEMP/bounded-producer/producer.elf" --gh "$RUNNER_TEMP/pinned-gh"
+          --artifact "$RUNNER_TEMP/bounded-producer/bounded-cache.tar" --gh "$RUNNER_TEMP/pinned-gh"
