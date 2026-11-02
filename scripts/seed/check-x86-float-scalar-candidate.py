@@ -90,6 +90,22 @@ def main():
         elif result.returncode != 0 or result.stderr or result.stdout != value.to_bytes(8, "little", signed=True):
             raise SystemExit(name + ": boundary result mismatch")
 
+    # Preserve all historical out-of-range f32 inputs as separate traps under
+    # ADR 0395/0398; a single aggregate fixture would stop at the first one.
+    for name, bits in (("qnan", 2143289345), ("snan", 2139095041),
+                       ("pos-inf", 2139095040), ("neg-inf", -8388608),
+                       ("pos-overflow", 1593835520), ("neg-overflow", -553648127)):
+        src, image = output / ("f32-trap-" + name + ".kotoba"), output / ("f32-trap-" + name + ".elf")
+        src.write_text("(ns f32-trap (:export [main]))\n"
+                       + "(defn main [] :i64 (f32-to-i64-truncating (f32-from-bits " + str(bits) + ")))\n")
+        built = run("f32-trap-" + name + "-compile", [compiler, "compile", src, "--target", "x86_64-linux", "--output", image])
+        if built.returncode != 0 or not image.is_file():
+            raise SystemExit(name + ": trap fixture compilation failed")
+        image.chmod(0o700)
+        result = run("f32-trap-" + name + "-run", [image], guest=True)
+        if result.returncode != -signal.SIGILL or result.stdout or result.stderr:
+            raise SystemExit(name + ": expected SIGILL trap missing")
+
     cases = json.loads((ROOT / "seed/float-cases.json").read_text())["cases"]
     examples = [(row["name"], row["source"], row["result"]) for row in cases]
     examples.append(("full-x86-float", (FIXTURES / "native/x86_float_test.kotoba").read_text(), 511))

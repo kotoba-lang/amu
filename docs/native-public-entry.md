@@ -1,29 +1,86 @@
 # Current Amu selfhost native entries
 
-`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve directly to the
-selfhost-built macOS ARM64 Mach-O in
-`seed/bootstrap/aarch64-macos/amu-full-root.macho`. Its source and image
-pins are in `seed/bootstrap/aarch64-macos/root.json`. There is no launcher
-or platform fallback. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md)
-for explicit FD3 scope, check, compile, native packaging and execution.
-The bounded first run does not qualify the complete Mac runtime or release.
+`bin/amu`, `bin/kotoba` and `bin/kotoba-compiler` resolve to the
+Amu-built native Mac ARM64 host CLI at
+`seed/bootstrap/aarch64-macos/amu-cli.macho`, pinned by `cli.json` in that
+directory. It implements ordinary `check`, `compile` and `run`, selects the
+Mac target explicitly, and manages a private source snapshot, KSL1 lock,
+native compilation, packaging and platform signing. The user supplies no
+FD3. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md).
 
-The unchanged static Linux x86_64 ELF is `bin/amu-linux-x86_64`, with
-`bin/kotoba-linux-x86_64` and `bin/kotoba-compiler-linux-x86_64` aliases.
+The CLI contains the exact adopted lexer/reader/namer/checker to validate
+one exported `main [] :i64`; it delegates compilation to the hash-pinned full
+root. The low-level compiler at `amu-full-root.macho` and packager remain
+pinned by `root.json`, retain their FD3-scoped bootstrap interfaces, and are
+not substituted by another compiler or hosted launcher. Their native fixed
+points and the public CLI's fresh native payload reproduction are checked
+separately. A changed root, packager or CLI source invalidates the public
+CLI gate until it is rebuilt and repinned.
+
+The native CLI host has filesystem/process authority for its explicit local
+operations. Generated programs have only CLI/stdout/stderr grants. Children
+receive a minimal environment and no inherited FD >=3; compiler helpers alone
+receive the private work directory as FD3. An exec-preserved kernel timer
+bounds guests to5s, compiler helpers to120s and platform signing to30s.
+The original compiler/runtime resource limits and Linux gates remain intact.
+
+`compile` includes the exact source in an LC_NOTE-named region of the signed
+Mach-O. `run PROGRAM` treats supplied bytes as untrusted data: it recompiles
+the embedded source with the pinned compiler, checks the entire signed image
+against the input, and executes the regenerated private image. It never
+executes an arbitrary supplied program. Program output includes the complete
+signed i64 result followed by a newline; successful return exits0.
+`run ... --receipt FILE` (JUN-282) captures stdout, prints it after the program
+ends and writes `amu.run-receipt.v1` JSON: SHA-256 of the source, the pinned
+compiler and packager, the regenerated program and stdout, plus the exit status.
+An existing receipt file refuses with `ERECEIPT`. The commands the C-loader
+removal took away (`measure-runtime`, `package-ios`, `package-macos`, `test`)
+refuse with `EREMOVED`.
+Source is limited to1MiB, raw code to4MiB. Symlink/nonregular input, unsupported
+flags, incompatible main ABI and existing output paths refuse. Import/project
+CLI parity, full Darwin runtime and independent-user release remain open.
+
+Native Darwin ABI provenance: Apple's [syscall declarations](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/syscalls.master),
+[process information implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c),
+and [ARM64 fork return registers](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/arm64/status.c).
+`seed/macos-fs2-runtime-packager.kotoba` emits the adapter using the existing
+native Kotoba packager, with no assembler, C compiler or loader dependency.
+
+The engine-neutral static Linux x86_64 compiler is `bin/amu-linux-x86_64`,
+with `bin/kotoba-linux-x86_64` and `bin/kotoba-compiler-linux-x86_64` aliases.
+It is the CDCI producer, and like every root it refuses an omitted target with E2.
 `native-product.json` remains the Linux descriptor and names those entries;
-its Linux qualification flags do not qualify the Mac entry. The separate
+its Linux qualification flags do not qualify the Mac entry.
+
+## Omitted target: each public entry names its host (KOTOBA-174, ADR 0396)
+
+| public entry | host chosen when `--target` is omitted |
+|---|---|
+| `bin/amu`, `bin/kotoba`, `bin/kotoba-compiler` | `aarch64-macos` (an explicit `--target` is a usage error) |
+| `bin/x86_64-linux/amu`, `bin/x86_64-linux/kotoba`, `bin/x86_64-linux/kotoba-compiler` | `x86_64-linux` (`native-product.json` `hostEntry`) |
+
+The Linux x86_64 host entry is the same complete compiler, built with
+`--format host-entry`. A `compile` without any `--target` word is read as
+`compile SRC --target x86_64-linux ...` and gives byte-identical output.
+Every other command line, including any explicit `--target`, behaves exactly
+as on `bin/amu-linux-x86_64`. Its FS2 grant (`KEXE_CAP_RESOURCES_35`) is
+unchanged. The roots stay engine-neutral and refuse an omitted target with E2;
+Linux ARM64 has a root but no public entry. Nothing defaults to Kototama or
+Wasm. `scripts/seed/check-host-default-target.py` gates this on native x86_64,
+ARM64 and Mac. The separate
 Linux ARM root is pinned by `seed/bootstrap/aarch64-linux-static-root.json`.
 
-The complete source manifest has 49 modules, including all18 normal adopted
-core modules. The core adoption image is unchanged.
-The static compiler profile is TOK786432/NODE786432/MM-WORDS31064064,
+The complete source manifest has 59 modules, including all18 normal adopted
+core modules and the native definition-identity layer (04-09, `definition-cids`, JUN-584).
+The core adoption image is unchanged.
+The static compiler profile is TOK1048576/NODE786432/MM-WORDS32505856 (TOK raised from786432 by JUN-737),
 LitB1MiB/OUT12MiB/heap1765120 words. No compiler, target or declaration is
 removed to reduce the graph. No new comparative performance score is claimed.
 
 ## Native qualification
 
 The [historical 48-module qualification record](qualification/starter-native-20261029.json)
-does not qualify the current 49-module image in `native-product.json`. The record binds native CI receipts and their
+does not qualify the current 59-module image in `native-product.json`. The record binds native CI receipts and their
 artifact digests to exact source and compiler bytes. It distinguishes
 compiler reproduction, controller execution, workflow completion and
 independent user/host qualification. A new image needs its own record;
@@ -35,7 +92,8 @@ shared-component execution, then merge/main/pin readback. Pending CI does not
 qualify a new public image. Current controller and role identities are in
 `native-product.json` and `seed/cdci/policy.json`; historical digests are not
 current pins. `sourceRevision` identifies a Git tree whose complete compiler
-sources were reproduced. It does not identify the historical first producer
+sources were reproduced; `null` (the regenerated state, ADR 0388) means the
+descriptor's own commit. It does not identify the historical first producer
 or establish independent clean-host qualification.
 
 The controller's two roles and fixed24 corpus remain. Python and GitHub Actions

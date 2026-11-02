@@ -22,16 +22,20 @@ class NativeIterationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def test_independent_wrappers_share_two_slots(self):
+    def wrappers_peak(self, capacity_env):
+        # Five independent wrappers on one slot directory; returns the most that ever held a slot at once.
         events = self.root / "events.jsonl"
         program = ("import fcntl,json,time,sys; "
                    "f=open(sys.argv[1],'a'); "
                    "fcntl.flock(f,fcntl.LOCK_EX); f.write(json.dumps([time.monotonic(),1])+'\\n'); f.flush(); "
                    "fcntl.flock(f,fcntl.LOCK_UN); time.sleep(.35); "
                    "fcntl.flock(f,fcntl.LOCK_EX); f.write(json.dumps([time.monotonic(),-1])+'\\n'); f.flush()")
+        env = {k: v for k, v in os.environ.items() if k != "KOTOBA_NATIVE_SLOT_CAPACITY"}
+        if capacity_env is not None:
+            env["KOTOBA_NATIVE_SLOT_CAPACITY"] = capacity_env
         processes = [subprocess.Popen([sys.executable, str(QUEUE), "--slot-dir", str(self.root / "slots"),
                                       "--", sys.executable, "-c", program, str(events)],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
                      for _ in range(5)]
         for process in processes:
             self.assertEqual(process.wait(timeout=15), 0)
@@ -39,8 +43,16 @@ class NativeIterationTests(unittest.TestCase):
         for _, delta in sorted(json.loads(line) for line in events.read_text().splitlines()):
             active += delta
             peak = max(peak, active)
-            self.assertLessEqual(active, 2)
-        self.assertEqual((peak, active), (2, 0))
+        self.assertEqual(active, 0)
+        return peak
+
+    def test_independent_wrappers_share_two_slots(self):
+        # the default, whatever the caller's environment (a CI job sets KOTOBA_NATIVE_SLOT_CAPACITY)
+        self.assertEqual(self.wrappers_peak(None), 2)
+
+    def test_slot_capacity_comes_from_the_environment(self):
+        # JUN-629: a 4-vCPU CI runner sets the capacity for every call in its job
+        self.assertEqual(self.wrappers_peak("4"), 4)
 
     def test_capacity_mismatch_refuses(self):
         with build_slot(self.root / "slots", 2):

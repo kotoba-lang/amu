@@ -1,11 +1,17 @@
 name: native-definition-cids
-# Candidate `definition-cids` command (JUN-583/JUN-584), qualified independently. It does not replace any
-# selfhost gate or change MANIFEST/FULL-MANIFEST/compiler-core.json. Amu native images only; no JVM/nbb/Node.
+# `definition-cids` (JUN-583/JUN-584): the full compiler (FULL-MANIFEST, 04-09 promoted by JUN-584) and the smaller
+# DEFINITION-CIDS-MANIFEST harness must give the same report, against an independent oracle, with per-definition
+# refusal and negative controls. It does not replace any selfhost gate or change MANIFEST/compiler-core.json.
+# Amu native images only; no JVM/nbb/Node.
 on:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
   pull_request:
     paths:
-      - "seed/0[3-6]-*.kotoba"
+      - "seed/0[3-9]-*.kotoba"
+      - "seed/78-full-entry.kotoba"
+      - "seed/FULL-MANIFEST"
       - "seed/99-definition-cids-entry.kotoba"
       - "seed/DEFINITION-CIDS-MANIFEST"
       - "seed/CORE-STATIC-MANIFEST"
@@ -13,13 +19,17 @@ on:
       - "seed/bootstrap/**"
       - "bin/amu-linux-x86_64"
       - "scripts/seed/check-definition-cids-native.py"
+      - "scripts/seed/macos_native_image.py"
       - ".github/workflows/native-definition-cids.yml"
   push:
     branches: [main]
     paths:
+      - "seed/0[3-9]-*.kotoba"
+      - "seed/FULL-MANIFEST"
       - "seed/DEFINITION-CIDS-MANIFEST"
       - "seed/99-definition-cids-entry.kotoba"
       - "scripts/seed/check-definition-cids-native.py"
+      - "scripts/seed/macos_native_image.py"
       - ".github/workflows/native-definition-cids.yml"
 permissions:
   contents: read

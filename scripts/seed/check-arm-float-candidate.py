@@ -78,6 +78,23 @@ def main():
             raise SystemExit(name + ": guest result mismatch")
         artifacts.append({"name": name, "source": digest(src), "image": digest(image), "expected": expected})
 
+    # The full fixture used to expect f32 saturation. ADR 0398 instead
+    # requires each invalid operand to trap; keep every old case as its own
+    # executable so a first trap cannot mask later cases.
+    for name, bits in (("qnan", 2143289345), ("snan", 2139095041),
+                       ("pos-inf", 2139095040), ("neg-inf", -8388608),
+                       ("pos-overflow", 1593835520), ("neg-overflow", -553648127)):
+        src, image = output / ("f32-trap-" + name + ".kotoba"), output / ("f32-trap-" + name + ".elf")
+        src.write_text("(ns f32-trap (:export [main]))\n"
+                       + "(defn main [] :i64 (f32-to-i64-truncating (f32-from-bits " + str(bits) + ")))\n")
+        built = run("f32-trap-" + name + "-compile", [compiler, "compile", src, "--target", "aarch64-linux", "--output", image, "--format", "static"], env)
+        if built.returncode != 0 or not image.is_file():
+            raise SystemExit(name + ": trap fixture compilation failed")
+        image.chmod(0o700)
+        result = run("f32-trap-" + name + "-run", [image], guest_env)
+        if result.returncode != 120 or b"SIGTRAP" not in result.stderr:
+            raise SystemExit(name + ": expected SIGTRAP missing")
+
     src = output / "negative.kotoba"
     src.write_text("(ns negative-float (:export [main]))\n"
                    "(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))\n")

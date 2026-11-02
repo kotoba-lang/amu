@@ -132,10 +132,15 @@
 ;; The full compiler plus identity/resource observer now exceeds 491520 SIR
 ;; records. The static profile reserves 589824 records, moving later regions
 ;; by 393216 words without changing the normal core or heap capacity.
+;; TOK growth (2026-11-01, JUN-737, owner decision): FULL-MANIFEST plus a test harness (the kir-execution and definition-graph
+;; static builds) left 1,698 (aarch64) / 1,922 (x86) tokens of the 786432-entry table, below the ~4,200 the JUN-730 protocol
+;; forms need. The static profile raises TOK by 262144 entries (+1048576 words); every later base, MM-HEAP-END and MM-WORDS shift
+;; equally (heap size unchanged, MM-WORDS 32505856 < 2^25). 1310720 would need MM-WORDS = 2^25, which the vector bound refuses.
+;; scripts/seed/check-token-headroom-native.py reports the remaining token headroom of those builds and fails below its floor.
 ;; These seven rows are consumed by seed/gen-static-ns.kotoba. That native
 ;; generator derives every downstream base and checks the2^25 vector bound.
 ;; BEGIN STATIC OVERRIDES
-;; [:s MM-TOK-CAP 786432]
+;; [:s MM-TOK-CAP 1048576]
 ;; [:s MM-NODE-CAP 786432]
 ;; [:s MM-SIR-CAP 589824]
 ;; [:s MM-CODE-CAP 2097152]

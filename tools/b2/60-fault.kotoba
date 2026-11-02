@@ -3,9 +3,7 @@
 ;; and names the fault: the signal, the faulting address, the instruction pointer as an object and an offset,
 ;; and the code addresses found on the stack (candidate return addresses). The process then exits 128 + the signal.
 
-(def SYS-SIGACTION 13)
-(def SYS-SIGALTSTACK 131)
-(def SYS-MINCORE 27)
+;; The system call numbers, the ucontext offsets and the signals are the target's (01-arch-*.kotoba).
 (def FAULT-STACK 65536)
 
 ;; the loaded object that contains addr, or 0
@@ -28,22 +26,23 @@
       (let [w (l64 (+ sp (* 8 i))) hit (not= (lib-of w) 0)
             z (if hit (warn (string-concat "b2:   stack+" (string-concat (dec-str (* 8 i)) (string-concat " " (where-is w))))) 0)]
         (recur (inc i) (if hit (inc shown) shown))))))
-;; the frame chain of the image's own (Kotoba) code: return addresses by rbp, up to 16 deep; a frame pointer
-;; that is not above the stack pointer, not 8-aligned or not mapped ends the walk (C code uses rbp freely)
+;; the frame chain of the image's own (Kotoba) code: return addresses by the frame pointer (rbp, x29: the saved
+;; frame pointer at [fp], the return address at [fp + 8]), up to 16 deep; a frame pointer that is not above the
+;; stack pointer, not 8-aligned or not mapped ends the walk (C code may use it freely)
 (defn- frames [rbp :i64 sp :i64] :i64
   (loop [b rbp i 0]
     (if (or (>= i 16) (< b sp) (> b (+ sp 1048576)) (not= (bit-and b 7) 0) (not (mapped? b)) (not (mapped? (+ b 8)))
             (< (l64 (+ b 8)) 4198400))
       i
       (let [z (warn (string-concat "b2:   frame 0x" (hex-str (l64 (+ b 8)))))] (recur (l64 b) (inc i))))))
-;; the handler: signal, siginfo, ucontext. ucontext_t: gregs at 40; REG_RSP is 15, REG_RIP 16
+;; the handler: signal, siginfo (si_addr at 16), ucontext
 (defn- cx-b2_fault [sig :i64 info :i64 uc :i64] :i64
-  (let [rip (l64 (+ uc 168)) rsp (l64 (+ uc 160)) addr (l64 (+ info 16))
-        w0 (warn (string-concat "b2: fatal signal " (string-concat (dec-str (i32 sig)) (string-concat " at " (where-is rip)))))
-        w1 (warn (string-concat "b2:   fault address 0x" (string-concat (hex-str addr) (string-concat ", rsp 0x" (hex-str rsp)))))
-        w2 (warn (string-concat "b2:   rdi 0x" (string-concat (hex-str (l64 (+ uc 104))) (string-concat " rsi 0x" (string-concat (hex-str (l64 (+ uc 112))) (string-concat " rdx 0x" (hex-str (l64 (+ uc 136)))))))))
-        w3 (frames (l64 (+ uc 120)) rsp)
-        w4 (stack-hits rsp)]
+  (let [pc (uc-pc uc) sp (uc-sp uc) addr (l64 (+ info 16))
+        w0 (warn (string-concat "b2: fatal signal " (string-concat (dec-str (i32 sig)) (string-concat " at " (where-is pc)))))
+        w1 (warn (string-concat "b2:   fault address 0x" (string-concat (hex-str addr) (string-concat ", " (string-concat (sp-name) (string-concat " 0x" (hex-str sp)))))))
+        w2 (warn (string-concat "b2:   " (uc-args uc)))
+        w3 (frames (uc-fp uc) sp)
+        w4 (stack-hits sp)]
     (sys1 SYS-EXIT-GROUP (+ 128 (i32 sig)))))
 (defn- fault-install [] :i64
   (let [handler (exp-named "b2_fault") stack (sys6 SYS-MMAP 0 FAULT-STACK 3 34 -1 0)
@@ -51,6 +50,5 @@
         a (s64 ss stack) b (s64 (+ ss 8) 0) c (s64 (+ ss 16) FAULT-STACK)
         d (sys2 SYS-SIGALTSTACK ss 0)
         e (s64 act handler) f (s64 (+ act 8) 201326596) g (s64 (+ act 16) handler) h (s64 (+ act 24) 0)
-        i (sys4 SYS-SIGACTION 11 act 0 8) j (sys4 SYS-SIGACTION 7 act 0 8)
-        k (sys4 SYS-SIGACTION 4 act 0 8) l (sys4 SYS-SIGACTION 8 act 0 8)]
+        i (fault-signals act)]
     0))

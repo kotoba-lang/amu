@@ -30,12 +30,17 @@ functions=['(defn- c%d [] :bool (and %s))'%(i,' '.join(c)) for i,c in enumerate(
 main='42'
 for i in range(len(chunks)-1,-1,-1):main='(if (c%d) %s %d)'%(i,main,100+i)
 source='(ns native.arm-float-random (:export [main]))\n'+'\n'.join(functions)+'\n(defn main [] :i64 '+main+')\n';src=p/'cases.kotoba';src.write_text(source); rows=[]
+control=p/'negative-control.kotoba';control.write_text('(ns negative-float (:export [main]))\n(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))\n')
 for name,compiler in [('candidate',cc),('negative',negative)]:
  out=p/(name+'-cases.elf');out.unlink(missing_ok=True)
  r=subprocess.run([str(compiler),'compile',str(src),'--target','aarch64-linux','--output',str(out),'--format','static'],env=env,capture_output=True,timeout=300);(p/(name+'.stdout')).write_bytes(r.stdout);(p/(name+'.stderr')).write_bytes(r.stderr)
  row={'name':name,'compileExit':r.returncode,'elfExists':out.exists()}
  if name=='candidate':
   assert r.returncode==0 and out.exists(),(row,r.stderr);out.chmod(0o700);g=subprocess.run([str(out)],env={'KEXE_ALLOW':'-','KEXE_FUEL':'1000000','KEXE_STRUCTURED_REPORT':'1'},capture_output=True,timeout=120);(p/'guest.stdout').write_bytes(g.stdout);(p/'guest.stderr').write_bytes(g.stderr);row.update(guestExit=g.returncode,guestStdout=g.stdout.decode());assert g.returncode==0 and b':result 42 ' in g.stdout,row
- else:assert r.returncode!=0 and b'E7101' in r.stderr and not out.exists(),(row,r.stderr)
+ else:
+  assert r.returncode!=0 and (b'E7101' in r.stderr or (b'E7102' in r.stderr and b'detail 26' in r.stderr)) and not out.exists(),(row,r.stderr)
+  control_out=p/'negative-control.elf'; control_run=subprocess.run([str(compiler),'compile',str(control),'--target','aarch64-linux','--output',str(control_out),'--format','static'],env=env,capture_output=True,timeout=300); (p/'negative-control.stdout').write_bytes(control_run.stdout); (p/'negative-control.stderr').write_bytes(control_run.stderr)
+  assert control_run.returncode!=0 and b'E7101' in control_run.stderr and not control_out.exists(),(control_run.returncode,control_run.stderr)
+  row.update(controlExit=control_run.returncode,controlRefusal='E7101')
  rows.append(row);print(json.dumps(row),flush=True)
-receipt={'status':'PASS_LIMITED_RANDOM_COMPARISONS','seed':16120261029,'pairs':pairs_count,'checks':len(checks),'sourceSHA256':hashlib.sha256(src.read_bytes()).hexdigest(),'compilerSHA256':hashlib.sha256(cc.read_bytes()).hexdigest(),'rows':rows};(p/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+receipt={'status':'PASS_LIMITED_RANDOM_COMPARISONS','seed':16120261029,'pairs':pairs_count,'checks':len(checks),'sourceSHA256':hashlib.sha256(src.read_bytes()).hexdigest(),'negativeControlSourceSHA256':hashlib.sha256(control.read_bytes()).hexdigest(),'compilerSHA256':hashlib.sha256(cc.read_bytes()).hexdigest(),'rows':rows};(p/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')

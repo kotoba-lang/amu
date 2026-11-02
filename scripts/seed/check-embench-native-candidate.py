@@ -200,7 +200,7 @@ def main(args):
                    entry=pin(source), sourceLock=pin(lock), status="building")
         flags = ["--source-path", root, "--source-lock", lock, "--source-lock-sha256", pin(lock)["sha256"]]
         argv = [compiler, "compile", source, "--target", "aarch64-macos" if machine == 183 else target,
-                "--output", image] + ([] if machine == 183 else ["--format", "kx64-v1"]) + flags
+                "--output", image] + (["--no-crypto-hw"] if machine == 183 else ["--format", "kx64-v1"]) + flags
         code, _, stderr = call(name + "-compile", argv, compile_env)
         if code or stderr or not image.is_file():
             row.update(status="rejected-native-compile")

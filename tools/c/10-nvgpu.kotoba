@@ -1,0 +1,47 @@
+;; tools/c/10-nvgpu.kotoba -- route C on Tegra's nvgpu (ADR 0375 route C, JUN-701): the Kotoba program talks to the GPU's
+;; kernel driver itself, through its device nodes and ioctls. No vendor user-space code and no C is in the route.
+;;
+;; The interface is nvgpu's uapi (include/uapi/linux/nvgpu-ctrl.h of the L4T kernel, JetPack 35.4.1 / kernel
+;; 5.10.120-tegra). The ioctl numbers and the byte offsets below are that header's; a field this file reads is named
+;; with its C name.
+
+(def NVGPU-CTRL "/dev/nvgpu/igpu0/ctrl")
+(def O-RDWR-CLOEXEC 524290)
+
+;; _IOWR('G', 5, struct nvgpu_gpu_get_characteristics {u64 buf_size; u64 buf_addr}): 16 bytes
+(def NVGPU-GPU-IOCTL-GET-CHARACTERISTICS 0xC0104705)
+(def NVGPU-CHAR-BUF 1024)
+
+;; a raw ioctl: the result, or -errno
+(defn- ioctl [fd :i64 req :i64 arg :i64] :i64 (sys3 SYS-IOCTL fd req arg))
+
+;; open a device node read-write; the descriptor, or a named refusal
+(defn- nv-open [path :string] :i64
+  (let [m (kxrt-b-alloc 4096) z (put-str m path) fd (sys4 SYS-OPENAT -100 m O-RDWR-CLOEXEC 0)]
+    (if (< fd 0) (refuse path (string-concat "cannot open: " (dec-str fd))) fd)))
+
+;; struct nvgpu_gpu_characteristics, filled by the kernel at buf; the size the kernel reports
+(defn- nv-characteristics [ctrl :i64 buf :i64] :i64
+  (let [a (kxrt-b-alloc 4096) x (s64 a NVGPU-CHAR-BUF) y (s64 (+ a 8) buf)
+        r (ioctl ctrl NVGPU-GPU-IOCTL-GET-CHARACTERISTICS a)]
+    (if (< r 0) (refuse "nvgpu" (string-concat "GET_CHARACTERISTICS failed: " (dec-str r))) (l64 a))))
+
+;; the fields, by their offsets in struct nvgpu_gpu_characteristics
+(defn- ch-arch [c :i64] :i64 (l32 c))
+(defn- ch-impl [c :i64] :i64 (l32 (+ c 4)))
+(defn- ch-rev [c :i64] :i64 (l32 (+ c 8)))
+(defn- ch-num-gpc [c :i64] :i64 (l32 (+ c 12)))
+(defn- ch-l2-size [c :i64] :i64 (l64 (+ c 16)))
+(defn- ch-num-tpc-per-gpc [c :i64] :i64 (l32 (+ c 32)))
+(defn- ch-big-page-size [c :i64] :i64 (l32 (+ c 40)))
+(defn- ch-compute-class [c :i64] :i64 (l32 (+ c 72)))
+(defn- ch-gpfifo-class [c :i64] :i64 (l32 (+ c 76)))
+(defn- ch-dma-copy-class [c :i64] :i64 (l32 (+ c 84)))
+(defn- ch-gpc-mask [c :i64] :i64 (l32 (+ c 88)))
+(defn- ch-sm-version [c :i64] :i64 (l32 (+ c 92)))
+(defn- ch-spa-version [c :i64] :i64 (l32 (+ c 96)))
+(defn- ch-warp-count [c :i64] :i64 (l32 (+ c 100)))
+(defn- ch-va-bits [c :i64] :i64 (l8 (+ c 114)))
+;; chipname[8] at 152, NUL-padded
+(defn- ch-chipname [c :i64] :string
+  (str-at (+ c 152) (loop [i 0] (if (or (= i 8) (= (l8 (+ c 152 i)) 0)) i (recur (inc i))))))

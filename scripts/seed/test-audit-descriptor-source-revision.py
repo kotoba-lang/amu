@@ -59,6 +59,20 @@ class AuditTests(unittest.TestCase):
         self.assertFalse(result["comparedDeclaredSourceRevision"])
         self.assertEqual(result["descriptorSourceRevision"], self.source)
 
+    def test_null_declared_revision_audits_the_descriptor_commit(self):
+        descriptor = json.loads((self.root / "native-product.json").read_text())
+        descriptor["sourceRevision"] = None
+        (self.root / "native-product.json").write_text(json.dumps(descriptor))
+        (self.root / "seed/00-test.kotoba").write_bytes(b"first\n")
+        implicit = self.commit("regenerated descriptor")
+        result = audit.audit(implicit, None)
+        self.assertEqual(result["status"], "MATCH")
+        self.assertTrue(result["sourceRevisionImplicit"])
+        self.assertEqual(result["sourceRevisionTested"], implicit)
+        (self.root / "seed/00-test.kotoba").write_bytes(b"third\n")
+        stale = self.commit("source without regenerated descriptor")
+        self.assertEqual(audit.audit(stale, None)["status"], "MISMATCH")
+
     def test_changed_source_does_not_match(self):
         result = audit.audit(self.good, self.changed)
         self.assertEqual(result["status"], "MISMATCH")

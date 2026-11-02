@@ -116,8 +116,8 @@ def native_run(image, directory, *args, expected=0, timeout=1200):
 def stage_unity(directory):
     names = [line for line in MANIFEST.read_text().splitlines()
              if line and not line.startswith("#")]
-    if len(names) != 50 or len(set(names)) != 50:
-        raise ValueError("FULL-MANIFEST must contain 50 unique modules")
+    if len(names) != 61 or len(set(names)) != 61:
+        raise ValueError("FULL-MANIFEST must contain 61 unique modules")
     sources = []
     with (directory / "full-unity.kotoba").open("wb") as stream:
         for name in names:

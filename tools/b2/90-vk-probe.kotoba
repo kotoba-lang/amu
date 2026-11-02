@@ -3,10 +3,8 @@
 ;; vkEnumerateInstanceExtensionProperties. No ICD is loaded: dlopen refuses everything but the loaded
 ;; objects. Usage: image [PATH-OF-libvulkan.so.1]  (default: the first of the system paths that exists).
 
-(defn- vk-path-1 [] :string "/usr/lib/x86_64-linux-gnu/libvulkan.so.1")
-(defn- vk-path-2 [] :string "/lib/x86_64-linux-gnu/libvulkan.so.1")
-(defn- vk-path-3 [] :string "/usr/lib64/libvulkan.so.1")
-(defn- exists? [p :i64] :bool (= (sys2 SYS-ACCESS p 4) 0))
+;; the system paths are the target's (vk-path-1..3, 01-arch-*.kotoba)
+(defn- exists? [p :i64] :bool (= (sys-access p 4) 0))
 (defn- vk-find [] :i64
   (let [m (malloc-alloc 256)]
     (cond (let [z (put-str m (vk-path-1))] (exists? m)) m
