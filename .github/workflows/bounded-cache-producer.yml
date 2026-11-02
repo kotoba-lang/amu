@@ -14,6 +14,8 @@ on:
       - "scripts/seed/verified_attestation.py"
       - "scripts/seed/bounded_cache_bundle.py"
       - "scripts/seed/test_bounded_cache_bundle.py"
+      - "scripts/seed/fetch_bounded_cache.py"
+      - "scripts/seed/test_fetch_bounded_cache.py"
       - "scripts/seed/check_bounded_producer_attestation.py"
       - "scripts/seed/test_bounded_producer_attestation.py"
       - ".github/workflows/bounded-cache-producer.yml"
@@ -44,6 +46,10 @@ jobs:
         env:
           AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
         run: python3 scripts/seed/test_bounded_cache_bundle.py -v
+      - name: Exact source selection, hostile ZIP and fresh native consumer
+        env:
+          AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
+        run: python3 scripts/seed/test_fetch_bounded_cache.py -v
       - name: Bundle only the candidate and its private object artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: >-
