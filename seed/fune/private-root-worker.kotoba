@@ -307,6 +307,57 @@
               end (kxrt-store8 (+ dst n) 0)]
           (recur (+ i 1) (+ input n) (+ dst n 1)))))))
 
+;; Bounded static ELF admission observation. This checks the frozen inode
+;; named by FPS1, but neither authenticates the producer nor executes it.
+(defn- fw-le16 [p :i64] :i64 (+ (kxrt-load8 p) (* 256 (kxrt-load8 (+ p 1)))))
+(defn- fw-le32 [p :i64] :i64 (+ (fw-le16 p) (* 65536 (fw-le16 (+ p 2)))))
+(defn- fw-pread-exact? [fd :i64 p :i64 n :i64 off :i64] :bool
+  (loop [at 0]
+    (if (= at n) true
+      (let [r (kxrt-syscall 67 fd (+ p at) (- n at) (+ off at) 0 0)]
+        (cond (= r -4) (recur at) (<= r 0) false :else (recur (+ at r)))))))
+(defn- fw-static-phdrs? [fd :i64 h :i64 ph :i64 size :i64] :bool
+  (let [entry (kxrt-load64 (+ h 24)) off (kxrt-load64 (+ h 32))
+        count (fw-le16 (+ h 56))]
+    (if (or (< off 64) (< entry 0) (< count 1) (> count 128)
+            (> off size) (> count (quot (- size off) 56))) false
+      (loop [i 0 entry-ok false loads 0]
+        (if (= i count) (and entry-ok (> loads 0))
+          (if (not (fw-pread-exact? fd ph 56 (+ off (* i 56)))) false
+            (let [typ (fw-le32 ph) flags (fw-le32 (+ ph 4))
+                  fileoff (kxrt-load64 (+ ph 8)) addr (kxrt-load64 (+ ph 16))
+                  filesz (kxrt-load64 (+ ph 32)) memsz (kxrt-load64 (+ ph 40))
+                  align (kxrt-load64 (+ ph 48)) load (= typ 1)
+                  bad (or (= typ 2) (= typ 3)
+                          (and load (or (< fileoff 0) (< addr 0) (< filesz 0) (< memsz 0)
+                                        (< align 0) (> fileoff size) (> filesz (- size fileoff))
+                                        (> filesz memsz) (> memsz (- 9223372036854775807 addr))
+                                        (= (bit-and flags 3) 3)
+                                        (and (> align 1) (or (not= (bit-and align (- align 1)) 0)
+                                                            (not= (bit-and fileoff (- align 1))
+                                                                  (bit-and addr (- align 1))))))))]
+              (if bad false
+                (recur (+ i 1)
+                  (or entry-ok (and load (not= (bit-and flags 1) 0) (>= entry addr) (< (- entry addr) filesz)))
+                  (if load (+ loads 1) loads))))))))))
+(defn- fw-static-elf? [root :i64 exe :i64 spec :i64 buf :i64] :bool
+  (let [arg (+ spec (+ 10 (fw-u16 (+ spec 8)))) n (fw-u32 arg)
+        path (+ buf 2048) how (+ buf 2304) st (+ buf 4096) xt (+ buf 4352)
+        h (+ buf 1024) ph (+ buf 1152) copy (fw-spec-path (+ arg 4) n path)
+        fd (fw-openat2 root path 524288 0 how)]
+    (if (< fd 0) false
+      (let [a (kxrt-syscall 80 fd st 0 0 0 0) b (kxrt-syscall 80 exe xt 0 0 0 0)
+            size (if (= a 0) (kxrt-load64 (+ st 48)) -1)
+            same (and (= a 0) (= b 0) (= (kxrt-load64 st) (kxrt-load64 xt))
+                      (= (kxrt-load64 (+ st 8)) (kxrt-load64 (+ xt 8))))
+            valid (and same (>= size 64) (<= size 1048576) (fw-pread-exact? fd h 64 0)
+                       (= (kxrt-load64 h) 0x00010102464c457f) (= (kxrt-load64 (+ h 8)) 0)
+                       (= (fw-le16 (+ h 16)) 2) (= (fw-le16 (+ h 18)) 183)
+                       (= (fw-le32 (+ h 20)) 1) (= (fw-le16 (+ h 52)) 64)
+                       (= (fw-le16 (+ h 54)) 56) (fw-static-phdrs? fd h ph size))
+            closed (kxrt-close fd)]
+        (and valid (= closed 0))))))
+
 (defn- fw-fixture-hash? [root :i64 exe :i64 buf :i64 variant :i64] :bool
   (let [h buf w (+ buf 64) data (+ buf 1024) path (+ buf 2048) how (+ buf 2304)
         st (+ buf 4096) xt (+ buf 4352)
@@ -417,6 +468,7 @@
 ;; N checks namespace syscall refusals and ordinary clone/wait.
 ;; G verifies the held root/cwd and probes that /proc/self/status is absent.
 ;; E and O execute only fixed, digest-pinned diagnostic ELFs; neither is admission.
+;; A inspects the retained ELF inode but does not grant or launch execution.
 ;; Initial modes are 0700/0600.
 ;; Malformed requests and I/O errors terminate the whole worker, not just a
 ;; command. The controller must discard the tree on all errors.
@@ -471,6 +523,11 @@
                       header (if (= (kxrt-write-all 1 head 6) 1) 0 (fw-die 18))
                       payload (if (= (kxrt-write-all 1 out count) 1) 0 (fw-die 18))
                       unmap (if (< (kxrt-syscall 215 out 8192 0 0 0 0) 0) (fw-die 27) 0)]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 65) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [exe (kxrt-load64 (+ mem 520))
+                      checked (if (fw-static-elf? root exe spec buf) 0 (fw-die 28))
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
                   (recur operations mode committed (+ reads 1) finalizing finals specsize)))
               (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (bit-and (u64-shift-right specsize 24) 255))

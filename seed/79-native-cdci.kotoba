@@ -50,7 +50,7 @@
         (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
         (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
-          (if (string=? (sh-text host) "0bbcedf144ff37832cf4907f080e20ef0c3215d86fec3fbac9e3478abb7d8268")
+          (if (string=? (sh-text host) "c6ab3377396b824828564c6c784c5054ac4483b1c3848a505b1ef8c3574899bc")
             (let [guest "(ns fune-private-root (:export [main]))\n(defn main [] :i64 0)\n"
                   rt (string-concat (xa-rt-core-profile 0) host)
                   text (string-concat guest rt)
@@ -100,7 +100,7 @@
         (= (io-exists (io-arg 2)) 0) (drv-fail0 E-READ)
         (= (io-exists (io-arg 3)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))]
-          (if (string=? (sh-text host) "e5c7568d93f7c27b419ba85a39f0511c49543454e91ea9340e819dcfd953c912")
+          (if (string=? (sh-text host) "a121ba73fc2e3b16138d809a380fe6d0003bd8e7abe128acad9dbfb06b012887")
             (let [guest "(ns fune-fixed-driver (:export [main]))\n(defn main [] :i64 0)\n"
                   rt (string-concat (xa-rt-core-profile 0) host)
                   text (string-concat guest rt)
