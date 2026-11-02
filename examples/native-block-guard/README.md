@@ -13,11 +13,24 @@ records, independently obtains and revalidates device identity and exclusive
 access, obtains a trusted human decision, and prevents a guest from providing,
 modifying, reusing or fabricating either record. Consuming a mutable vector in
 this single-threaded fixture is not atomicity under races or across processes.
-There is no OS I/O, capability grant, trusted prompt, locking, filesystem or
-raw-device path, flush, reopen, cache protection or app integration here. Do
+There is no raw-device I/O, capability grant, trusted prompt, locking,
+flush, reopen, cache protection or app integration here. Do
 not use this candidate to write to any disk. A passing fixture cannot qualify
 JUN-767 or prove the safety of attached SSDs.
 
 Run `AMU=/absolute/path/to/bin/amu TMPDIR=/workspace/scratch ./check.sh`. The
 actual selfhost native Kotoba program runs 21 positive/refusal assertions; two
 independently compiled mutants must be detected. This is a component check only.
+
+## Scoped regular-file exercise
+
+`TMPDIR=/workspace/scratch ./check-file-host.sh` compiles the exact guard and
+a synthetic host fixture using the pinned native macOS Amu root, extracts and
+packages the generated code, ad-hoc signs it and executes it with a fresh
+FD3-scoped directory per case. An external observer checks the file itself:
+the synthetic allowed case writes four bytes, and nine synthetic denials plus
+a missing FD3 produce no fixture file. These records and choices are created
+by the test program itself: they are not trusted user approval, device identity
+or an OS authorization boundary. This exercises a real regular-file effect,
+not arbitrary-offset block I/O or physical storage. The public CLI still
+does not grant its ordinary guests filesystem or device access.
