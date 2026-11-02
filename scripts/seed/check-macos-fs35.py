@@ -25,6 +25,7 @@ macos = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(macos)
 PACKAGER_SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
 TEST_SOURCE = ROOT / "seed/tests/macos-fs35.kotoba"
+FS2_ATOMIC_SOURCE = ROOT / "seed/tests/macos-fs2-atomic.kotoba"
 CASES = ["roundtrip", "durable", "lock", "paths"]
 TRAPS = ["trap-read-missing", "trap-read-link", "trap-write-dotdot", "trap-unknown", "trap-trailing"]
 
@@ -65,6 +66,8 @@ def main(out):
     packager, _ = macos.build(compiler, bootstrap, build, "packager.kotoba", "packager")
     shutil.copyfile(TEST_SOURCE, build / "fs35.kotoba")
     image, unsigned = macos.build(compiler, packager, build, "fs35.kotoba", "fs35")
+    shutil.copyfile(FS2_ATOMIC_SOURCE, build / "fs2-atomic.kotoba")
+    atomic_image, atomic_unsigned = macos.build(compiler, packager, build, "fs2-atomic.kotoba", "fs2-atomic")
     # Negative control: a packager whose general mode does not branch to the FS35
     # helper (the one changed binding) leaves the same request to the FS2 chain.
     source = PACKAGER_SOURCE.read_text()
@@ -75,7 +78,8 @@ def main(out):
     control, _ = macos.build(compiler, packager_control, build, "fs35.kotoba", "fs35-control")
     report = dict(schema="amu.macos-fs35.v1", host=["Darwin", os.uname().machine], compiler=pin(compiler),
                   bootstrapPackager=pin(bootstrap), packagerSource=pin(PACKAGER_SOURCE), testSource=pin(TEST_SOURCE),
-                  stagedPackager=pin(packager), image=pin(unsigned), calls=[])
+                  fs2AtomicTestSource=pin(FS2_ATOMIC_SOURCE), stagedPackager=pin(packager), image=pin(unsigned),
+                  fs2AtomicImage=pin(atomic_unsigned), calls=[])
 
     def observe(name, img, args, scope_name, expect=None, trap=False):
         s, outside = scope(out, scope_name)
@@ -98,6 +102,25 @@ def main(out):
         observe(case, image, [case], case, expect=0)
     for case in TRAPS:
         observe(case, image, [case], case, trap=True)
+    atomic_failures = []
+    for case in ["n", "j", "b", "file-fsync", "rename", "root-fsync", "roundtrip"]:
+        atomic_scope, outside = scope(out, "fs2-atomic-" + case)
+        if case == "j":
+            (atomic_scope / "known.tmp").write_bytes(b"SQLite fixture")
+        atomic_run = launch(atomic_image, atomic_scope, [case])
+        atomic_stdout, atomic_stderr = atomic_run.communicate(timeout=120)
+        report["calls"].append(dict(name="fs2-atomic-" + case, exit=atomic_run.returncode,
+                                    stderrSHA256=hashlib.sha256(atomic_stderr).hexdigest()))
+        (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
+        if atomic_run.returncode != 0:
+            atomic_failures.append((case, atomic_run.returncode, atomic_stdout[-300:], atomic_stderr[-300:]))
+        assert (outside / "file").read_text() == "outside", (case, "outside file changed")
+        if case == "j":
+            assert not (atomic_scope / "known.tmp").exists(), (case, "J did not unlink the file")
+        if case in ["rename", "root-fsync", "roundtrip"]:
+            assert (atomic_scope / "atomic.db").read_bytes() == b"SQLite fixture"
+        print("fs2-atomic-" + case, atomic_run.returncode, flush=True)
+    assert not atomic_failures, ("FS2 atomic filesystem failures", atomic_failures)
     # Exclusive lock across processes: a holder keeps it, a second process is refused, death releases it.
     s, _ = scope(out, "hold")
     holder = launch(image, s, ["hold"])

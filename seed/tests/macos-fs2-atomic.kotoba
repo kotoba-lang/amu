@@ -1,0 +1,78 @@
+(ns seed.tests.macos-fs2-atomic (:export [main]) (:capabilities [:fs/app-data :cli/args]))
+;; Exercise the native filesystem sequence used by Kotoba's staged SQLite
+;; image replacement: exclusive N, binary B, file fsync, rename, root fsync,
+;; readback, and J cleanup. The caller gives each run a fresh FD3 scope.
+(defn- frame [letter :string path :string tail :string] :string
+  (string-concat "\u0000FS2\u0000"
+    (string-concat letter (string-concat path (string-concat "\u0000" tail)))))
+(defn- fs [request :string] :string
+  (typed-cap-call :fs/app-data :string :string request))
+(defn- acknowledged? [reply :string] :bool
+  (and (>= (string-byte-length reply) 5)
+       (= (string-code-point-at reply 0) 0)
+       (= (string-substring reply 1 5) "FS2\u0000")))
+(defn- one? [reply :string] :bool
+  (= reply "1"))
+(defn- fs2-one? [reply :string] :bool
+  (and (acknowledged? reply)
+       (= (string-substring reply 5 (string-length reply)) "1")))
+(defn- payload [reply :string] :string
+  (string-substring reply 5 (string-length reply)))
+(defn- named-temp? [reply :string prefix :string] :bool
+  (let [name (payload reply)]
+    (and (acknowledged? reply)
+         (= (string-length name) (+ (string-length prefix) 12))
+         (= (string-substring name 0 (string-length prefix)) prefix))))
+(defn- bytes-equal? [a :bytes b :bytes] :bool
+  (and (= (bytes-count a) (bytes-count b))
+       (loop [index 0]
+         (cond (= index (bytes-count a)) true
+               (not= (bytes-at a index) (bytes-at b index)) false
+               :else (recur (+ index 1))))))
+(defn- arg [index :string] :string
+  (typed-cap-call :cli/args :string :string index))
+(defn main [] :i64
+  (let [case (arg "0")
+        static-path? (or (= case "j") (= case "b") (= case "file-fsync")
+                         (= case "rename") (= case "root-fsync") (= case "roundtrip"))
+        temp-reply (if static-path? "\u0000FS2\u0000" (fs (frame "N" "." "kotoba-")))
+        temp (if static-path? "known.tmp" (payload temp-reply))]
+    (cond
+      (= case "j") (let [removed (fs (frame "J" temp ""))
+                          absent (fs (frame "J" temp ""))]
+                      (if (and (fs2-one? removed) (not (fs2-one? absent))) 0 2))
+      (= case "n") (cond (named-temp? temp-reply "kotoba-") 0
+                          (not (acknowledged? temp-reply)) 11
+                          (= temp "M") 17
+                          (= temp "Z") 18
+                          (= temp "P") 12 (= temp "E") 13
+                          (= temp "O") 14 (= temp "C") 15
+                          :else (+ 30 (string-byte-length temp-reply)))
+      (and (not static-path?) (not (named-temp? temp-reply "kotoba-"))) 10
+      :else
+      (let [final "atomic.db"
+            body (bytes-from-vector-i64 [83 81 76 105 116 101 32 102 105 120 116 117 114 101])
+            write (typed-cap-call :fs/app-data :bytes :bytes
+                    (bytes-concat (string-to-utf8 (frame "B" temp "")) body))]
+        (cond
+          (= case "b") (if (and (= (bytes-count write) (+ 5 (bytes-count body)))
+                               (acknowledged? (string-from-utf8 write))) 0 3)
+          (or (not= (bytes-count write) (+ 5 (bytes-count body)))
+              (not (acknowledged? (string-from-utf8 write)))) 30
+          (= case "file-fsync")
+          (if (one? (fs (string-concat (string-concat "/" temp) "FSYNC_SEP"))) 0 4)
+          :else
+          (let [file-sync (fs (string-concat (string-concat "/" temp) "FSYNC_SEP"))
+                renamed (fs (string-concat (string-concat "/" temp)
+                                (string-concat "RENAME_SEP/" final)))]
+            (cond
+              (not (one? file-sync)) 40
+              (not (one? renamed)) 41
+              (= case "rename") 0
+              (not (one? (fs "/FSYNC_SEP"))) 42
+              (= case "root-fsync") 0
+              :else
+              (let [read (typed-cap-call :fs/app-data :string :bytes (frame "A" final ""))]
+                (if (and (>= (bytes-count read) 5)
+                         (bytes-equal? (bytes-slice read 5 (bytes-count read)) body))
+                  0 5)))))))))
