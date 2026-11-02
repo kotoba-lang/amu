@@ -1,7 +1,7 @@
 // User-side local stdin queue for wasm32-browser-static-host.js. It does not
 // handle broker messages, grant capabilities, fetch, or authenticate workers.
 // The embedding application owns the Worker, validates its artifact and
-// descriptor, and is responsible for handling streamed output/backpressure.
+// descriptor. Acknowledged output waits for the embedding callback to settle.
 "use strict";
 function createKotobaLocalStdio(worker, options = {}) {
   const max = options.maxQueuedBytes === undefined ? 1048576 : options.maxQueuedBytes;
@@ -9,7 +9,7 @@ function createKotobaLocalStdio(worker, options = {}) {
       !Number.isSafeInteger(max) || max < 1 || max > 1048576 || typeof options.onOutput !== "function") {
     throw new Error("invalid local stdio configuration");
   }
-  let queued = new Uint8Array(), pending = null, ended = false, disposed = false;
+  let queued = new Uint8Array(), pending = null, pendingOutput = null, ended = false, disposed = false;
   const encoder = new TextEncoder(), decoder = new TextDecoder("utf-8", {fatal: true});
   function reply(id, ok, content = "") { worker.postMessage({localReadReply: {id, ok, content}}); }
   function drain() {
@@ -37,10 +37,27 @@ function createKotobaLocalStdio(worker, options = {}) {
       pending = {id, request};
       drain();
     } else if (data && data.localOutput) {
-      const {fd, bytes} = data.localOutput;
-      if ((fd !== 1 && fd !== 2) || !(bytes instanceof Uint8Array)) throw new Error("invalid local output");
-      options.onOutput(fd, bytes.slice());
+      const {id, fd, bytes} = data.localOutput;
+      if (id === undefined) {
+        if ((fd !== 1 && fd !== 2) || !(bytes instanceof Uint8Array)) throw new Error("invalid local output");
+        options.onOutput(fd, bytes.slice());
+        return;
+      }
+      const valid = typeof id === "string" && /^output-[1-9][0-9]*$/.test(id) &&
+                    (fd === 1 || fd === 2) && bytes instanceof Uint8Array && bytes.length <= 65536;
+      if (!valid || pendingOutput || disposed) {
+        if (typeof id === "string") worker.postMessage({localOutputReply: {id, ok: false}});
+        return;
+      }
+      pendingOutput = id;
+      Promise.resolve().then(() => options.onOutput(fd, bytes.slice())).then(
+        () => finishOutput(id, true), () => finishOutput(id, false));
     }
+  }
+  function finishOutput(id, ok) {
+    if (pendingOutput !== id) return;
+    pendingOutput = null;
+    worker.postMessage({localOutputReply: {id, ok}});
   }
   worker.addEventListener("message", onMessage);
   return Object.freeze({
@@ -63,6 +80,7 @@ function createKotobaLocalStdio(worker, options = {}) {
     dispose() {
       if (disposed) return;
       if (pending) { reply(pending.id, false); pending = null; }
+      if (pendingOutput) finishOutput(pendingOutput, false);
       disposed = true; queued = new Uint8Array();
       worker.removeEventListener("message", onMessage);
     },

@@ -45,6 +45,9 @@
 // same time be bound to a broker operation. Without JSPI reads fail closed.
 // For localStdio, only the last 64 KiB of each stream is retained in the final
 // result; stdoutTruncated/stderrTruncated indicate earlier streamed data.
+// localOutputAck opts into JSPI backpressure: at most one 64 KiB output
+// chunk is in flight, and a negative acknowledgement traps the guest. It
+// requires localStdio and JSPI; no unbounded fallback is used in this mode.
 //
 // Imports (module "kotoba:host"), all i64:
 //   write(fd, ptr, len) -> len   fd 1 = stdout, 2 = stderr; other fds -> -9 (EBADF)
@@ -109,6 +112,12 @@ function kotobaWasm32BrowserStaticHost() {
     const fuel = msg.fuel || 0;
     const { argv, fs } = inputs(msg.args, msg.files);
     const localStdio = msg.localStdio === true && msg.js === undefined;
+    const outputAck = msg.localOutputAck === true;
+    const supportsJspi = typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function";
+    if (outputAck && (!localStdio || !supportsJspi)) {
+      return { exit: 120, stdout: "", stderr: "", output: "", report: null,
+               wasmTrap: "local output acknowledgement requires localStdio and JSPI", capLog: [] };
+    }
     const requestedBindings = (msg.bind || []).map(Number);
     if (localStdio && requestedBindings.includes(41)) {
       return { exit: 120, stdout: "", stderr: "", output: "", report: null,
@@ -117,7 +126,7 @@ function kotobaWasm32BrowserStaticHost() {
     const local = localStdio ? [35, 37, 38, 39, 41] : [35, 37, 38, 39];
     const allow = new Set((msg.allow || []).map(Number).filter((w) => local.includes(w)));
     const bound = new Set((msg.bind || []).map(Number).filter((w) => Number.isInteger(w) && w >= 0 && w < 64 && !local.includes(w)));
-    const jspi = msg.js === undefined && (bound.size > 0 || (localStdio && allow.has(41))) && typeof WebAssembly.Suspending === "function" && typeof WebAssembly.promising === "function";
+    const jspi = msg.js === undefined && (bound.size > 0 || (localStdio && allow.has(41)) || outputAck) && supportsJspi;
     const capLog = [];
     let localReadLogCount = 0, localReadLogTruncated = false;
     let capAnswer = undefined;
@@ -145,7 +154,19 @@ function kotobaWasm32BrowserStaticHost() {
     };
     const imports = {
       "kotoba:host": {
-        write(fd, ptr, len) {
+        write: outputAck ? new WebAssembly.Suspending(async (fd, ptr, len) => {
+          if (fd !== 1n && fd !== 2n) return -9n;
+          const start = Number(ptr), length = Number(len);
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 0 ||
+              start + length > memory.buffer.byteLength) throw new Error("invalid local output range");
+          for (let offset = 0; offset < length; offset += 65536) {
+            const chunk = new Uint8Array(memory.buffer, start + offset, Math.min(65536, length - offset)).slice();
+            const reply = await self.kotobaLocalOutput(Number(fd), chunk);
+            if (!reply || reply.ok !== true) throw new Error("local output refused");
+            capture(Number(fd), chunk);
+          }
+          return len;
+        }) : function write(fd, ptr, len) {
           if (fd !== 1n && fd !== 2n) return -9n;
           const chunk = new Uint8Array(memory.buffer, Number(ptr), Number(len)).slice();
           capture(Number(fd), chunk);
@@ -259,7 +280,7 @@ function kotobaWasm32BrowserStaticHost() {
     return result;
   }
   // cap requests in flight: id -> resolve (one at a time: the guest is suspended)
-  const pendingCaps = new Map(), pendingLocalReads = new Map();
+  const pendingCaps = new Map(), pendingLocalReads = new Map(), pendingLocalOutputs = new Map();
   let nextCap = 0;
   self.kotobaCapRequest = (cap) => new Promise((resolve) => {
     const id = "cap-" + (++nextCap);
@@ -271,13 +292,19 @@ function kotobaWasm32BrowserStaticHost() {
     pendingLocalReads.set(id, resolve);
     self.postMessage({ localRead: { id, request } });
   });
+  self.kotobaLocalOutput = (fd, bytes) => new Promise((resolve) => {
+    const id = "output-" + (++nextCap);
+    pendingLocalOutputs.set(id, resolve);
+    self.postMessage({ localOutput: { id, fd, bytes } });
+  });
   let started = false;
   self.onmessage = async (e) => {
     const capReply = e.data && e.data.capReply;
     const localReply = e.data && e.data.localReadReply;
-    if (capReply || localReply) {
-      const reply = capReply || localReply;
-      const pending = capReply ? pendingCaps : pendingLocalReads;
+    const outputReply = e.data && e.data.localOutputReply;
+    if (capReply || localReply || outputReply) {
+      const reply = capReply || localReply || outputReply;
+      const pending = capReply ? pendingCaps : localReply ? pendingLocalReads : pendingLocalOutputs;
       const resolve = pending.get(reply.id);
       if (resolve) { pending.delete(reply.id); resolve(reply); }
       return;

@@ -66,7 +66,7 @@ def main():
         pipe.close()
     (out / 'results.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
     rows = {row['name']: row for row in result['results']}
-    assert set(rows) == {'success', 'queued', 'queue-abort', 'queue-read-all', 'denied', 'not-local', 'no-jspi', 'conflict', 'oversized', 'lone-surrogate', 'read-refused', 'bounded-output', 'bounded-read-log', 'broker-isolation'}
+    assert set(rows) == {'success', 'queued', 'queue-abort', 'queue-read-all', 'ack-output', 'ack-large-output', 'ack-rejected', 'ack-aborted', 'ack-no-jspi', 'denied', 'not-local', 'no-jspi', 'conflict', 'oversized', 'lone-surrogate', 'read-refused', 'bounded-output', 'bounded-read-log', 'broker-isolation'}
     success = rows['success']
     assert success['exit'] == 0 and ':status :ok :result 42' in success['report'], success
     assert success['output'] == 'READY\nDONE\n', success
@@ -82,6 +82,18 @@ def main():
     assert rows['queue-abort']['exit'] == 120 and ':status :trap' in rows['queue-abort']['report']
     assert rows['queue-read-all']['exit'] == 0 and ':status :ok :result 42' in rows['queue-read-all']['report']
     assert [event['request'] for event in rows['queue-read-all']['events'] if event['kind'] == 'read'] == ['']
+    ack = rows['ack-output']
+    assert ack['exit'] == 0 and ':status :ok :result 42' in ack['report'], ack
+    assert ack['maxActiveOutput'] == 1 and ack['settledOutput'] == len(ack['queueOutput']) == 3, ack
+    assert ''.join(item['text'] for item in ack['queueOutput']) == ack['stdout'], ack
+    large_ack = rows['ack-large-output']
+    assert large_ack['exit'] == 0 and large_ack['maxActiveOutput'] == 1 and large_ack['stdoutTruncated'], large_ack
+    assert [len(x['text']) for x in large_ack['queueOutput'][:2]] == [65536, 4464], large_ack
+    for name in ('ack-rejected', 'ack-aborted'):
+        refused = rows[name]
+        assert refused['exit'] == 120 and 'local output refused' in refused['wasmTrap'] and len(refused['events']) == 1, refused
+    no_jspi = rows['ack-no-jspi']
+    assert no_jspi['exit'] == 120 and 'requires localStdio and JSPI' in no_jspi['wasmTrap'] and not no_jspi['events'], no_jspi
     assert not any(event['kind'] == 'broker' for name, row in rows.items() if name != 'broker-isolation' for event in row['events'])
     for name in ('denied', 'not-local', 'no-jspi', 'oversized', 'lone-surrogate', 'read-refused'):
         assert rows[name]['exit'] == 120 and ':status :trap' in (rows[name]['report'] or ''), rows[name]
