@@ -596,8 +596,8 @@ assert KS203_Q2[2:5] == (307, 1204, 6), f"ks203 q2 fields {KS203_Q2}"
 assert math.gcd(307, 1204) == 1, "q2 knob gcd"
 assert (N_BASE * 307) // 1204 == 254984, "knob arithmetic"
 assert (BRACKET_LO + BRACKET_HI) // 2 == 254984, "floor midpoint"
-assert BRACKET_LO + KS_WIDTH // 4 == 254953, "q1 quarter"
-assert BRACKET_LO + 3 * (KS_WIDTH // 4) == 255014, "q3 quarter"
+assert BRACKET_LO + (1 * KS_WIDTH) // 4 == 254953, "q1 quarter"
+assert BRACKET_LO + (3 * KS_WIDTH) // 4 == 255014, "q3 quarter"
 assert KS197_LETTERS == S197_LETTERS == KS197_LETTERS_VS, (
     f"letters disagreement {KS197_LETTERS} {S197_LETTERS} {KS197_LETTERS_VS}")
 assert KS197_C1_BRANCH == S197_C1_BRANCH, (
@@ -628,7 +628,7 @@ assert KS197_C1C2_FIELDS == (fmt(S197_C1C2[0]), S197_C1C2[1], S197_C1C2[2],
                              S197_C1C2[3]), (
     f"ks203 C1 c2 fields {KS197_C1C2_FIELDS} vs pub197 {S197_C1C2}")
 assert KS197_C1C8_FIELDS == (fmt(S197_C1C8[0]), S197_C1C8[1], S197_C1C8[2],
-                             S197_C1C8[3] + "%"), (
+                             S197_C1C8[3]), (
     f"ks203 C1 c8 fields {KS197_C1C8_FIELDS} vs pub197 {S197_C1C8}")
 
 
@@ -1083,8 +1083,8 @@ P(f"   knob arithmetic (record): (1,000,003*307)//1204 = "
 P(f"   quarter-grid derivation (record): width {KS_WIDTH}, q=2 floor")
 P(f"   midpoint ({BRACKET_LO}+{BRACKET_HI})//2 = "
   f"{(BRACKET_LO + BRACKET_HI) // 2} == Q2_N; q=1 = "
-  f"{BRACKET_LO + KS_WIDTH // 4} (NOT cut), q=3 = "
-  f"{BRACKET_LO + 3 * (KS_WIDTH // 4)} (NOT cut); mid n={MID_N} sits")
+  f"{BRACKET_LO + (1 * KS_WIDTH) // 4} (NOT cut), q=3 = "
+  f"{BRACKET_LO + (3 * KS_WIDTH) // 4} (NOT cut); mid n={MID_N} sits")
 P("   below the bracket's lower endpoint (outside; the disputed")
 P("   record, arm (d)).")
 P(f"   every CELL spv= name is an archived .emitted.spv (no .iter -- the "

@@ -1,0 +1,194 @@
+2026-11-02 (sessions 209-214, landing s214, JUN-59 -- THE
+NINETEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the MEASUREMENT
+half at s209-s212 (window on aiueos-6600hs, closure census, the
+108-log pull + custody), the ANALYSIS half at s213-s214 (the
+script written s213, RUN TWICE BYTE-IDENTICAL s214), and the
+landing gates + this record at s214)
+== THE FLOOR-MIDPOINT CUT AT q2 (B=3, WM=307, NDIV=1204)
+n=254,984, MEASURED UNDER THE FROZEN PROTOCOL -- CUT VERDICT:
+INVALID; NOTHING MOVES (C1 (b); C2 (c); W1 (d)); the committed
+bracket stays EXACTLY (254,923, 255,045] ==
+
+ROW: (s207/s208, prior rows) the nineteenth-cut pre-registration
+FROZEN and landed (../anv-b3bisect19prereg-20261102/); (s209) the
+measurement half LAUNCHED on aiueos-6600hs under the frozen
+anv-b3bisect19prereg-20261102/protocol.txt (freeze stamp
+2026-11-02T04:07:06Z), GO 2026-11-02T04:55:20Z + 3 clean builds +
+the frozen-order window opened (STARTED, NOT FINISHED at cutoff);
+(s210) the window polled to 54/54 completion + the driver
+aggregate tail (host-runs-s209.txt whole, 59 lines sha256
+f86c574e... both sides); (s211) the FULL-FILE clean census of all
+54 run lines + the post-window binary re-census 3/3 (census-
+s211.txt); (s212) the 108-run-log pull with host==local byte-
+identity at the canonical raw aggregate 805a308b8a7fe379a5440d6
+6e223198ebc7b6a9cae656d07944a3f855ccbc91e + the gzip -n commit
+form + fail-closed pull-verify run twice byte-identical
+(host-digests-s209.txt, raw-digests-s209.txt, pull-verify-s209-
+identity.txt); (s213) analysis-s209.py WRITTEN (STARTED, NOT
+FINISHED -- two write-time defects named and fixed before any
+run; NOT run that tick); (s214, this record) the analysis half
+RUN: TWO run defects named, fail-closed, fixed by patch with the
+draft pairs kept visible; the official run TWICE BYTE-IDENTICAL
+-> publication-s209.txt + publication-s209-run{1,2}.txt + the
+stdout/stderr pair + analysis-s209-identity.txt; the frozen
+letters parsed from the publication (never transcribed); the
+standing gates (a)-(f) run LIVE with s214 captures, all == pins;
+this record + the ADR-0355 dated note; the landing tail.
+
+1. THE MEASUREMENT HALF (sessions 209-212, real tool output, this
+   directory): the frozen arm table c2/q2/c8 = 54 fresh processes
+   (3+48+3) ran to completion 2026-11-02T04:57:35Z..05:41:35Z on
+   aiueos-6600hs; ALL 54 runs clean (run_rc=0, stderr 0 bytes,
+   samples 115,200 = 18 pipeline-ok cells x frozen R = 6,400
+   every run, verifies 24, cells=24, tail '# done cells=24'
+   54/54; the full-file census at s211 0 mismatches); first-
+   measured binary pins (parsed from host-build-s209.txt, never
+   transcribed): c2 b791b71a... (== the s169=s185=s197 digest,
+   capture observation), q2 af9999e1c15eb735e64e0315eb56c81d767
+   826c5acbfc9e27b87ee56a6e641f6 (NEW -- q2's first build, L8
+   applies), c8 2f25d678... (== the standing digest); post-window
+   re-census 3/3 == the first-measured pins (census-s211.txt).
+   The pull (s212): 108/108 logs host==local byte-identical at
+   the canonical raw aggregate 805a308b... (the KAT-1/KAT-2
+   negative-control re-pins all re-derived fresh); gzip -n commit
+   form (54 run-<tag>-r<NN>.txt.gz + 54 empty .stderr.txt);
+   pull-verify-s209.py run TWICE BYTE-IDENTICAL (rc 0, stdout
+   1,315 bytes sha256 ed360c93... both) fail-closed over
+   committed bytes only. Q2 header census: n=254,984 rounds=6400
+   warmup=3 batch=3 work_mul=307 ndiv=1204 48/48 uniform == the
+   frozen knob arithmetic ((1,000,003*307)//1204 = 254,984,
+   gcd(307,1204) = 1).
+
+2. THE ANALYSIS HALF (sessions 213-214): analysis-s209.py (the
+   s197 precedent shape; reads the 54 committed gzip logs + the
+   NAMED COMMITTED WANT SOURCES only; deterministic) RUN TWICE
+   BYTE-IDENTICAL: publication-s209.txt 66,774 bytes sha256
+   d3a338f39a9cdb75938da3a412fee7ec299813d38bc46f1f7b9cb773bc2c
+   2ebe both runs, stdout/stderr pairs empty and byte-identical,
+   cmp exit 0 x3 (analysis-s209-identity.txt). THE FROZEN LETTERS
+   (parsed from publication-s209.txt, never transcribed):
+     C1 (control replication): (b) -- the c2 control pooled
+       median m 30 is OUT of the committed floor band 31..32
+       (False); c8 pooled median m 32,559 within +/-5% of the
+       committed 32,915 (True, -1.08%); control arms free of
+       VERIFY mismatches (True). VERDICT branch (b) replication
+       discrepancy; W1 (d) INVALID fires; cause UNMEASURED (L2
+       binds). The D2 confrontation: NOTHING is superseded in the
+       prior cuts' favour and the control question RE-OPENS as a
+       named open control question carried forward -- a three-
+       state control record on the ROUNDS6400 instrument (the
+       16th cut's (b), the 17th cut's (a), the 18th cut's (a),
+       this cut's (b)). NAMED LIMITATION (the D2 shape): this cut
+       cannot resolve the historical discrepancy cause by design.
+     C2 (q2 class stability at 16-block granularity): (c)
+       CLASS-UNRESOLVED at q2 (307, 1204) n=254,984 -- block
+       classes ['CAPTURED','IN-BAND-UNDECIDED','CAPTURED',
+       'IN-BAND-UNDECIDED' x9,'INTERMEDIATE/MIXED' x4] (2 CAPTURED,
+       10 IN-BAND-UNDECIDED, 4 INTERMEDIATE/MIXED); pooled-48
+       class IN-BAND-UNDECIDED; block binding min(m-h)
+       1000.8961..995.9749 (16 values, publication line 680);
+       pooled-48 binding min(m-h) 999.7306; (sum,128,S=16) m
+       1132..1139 blocks, pooled-48 1136. C2 (c) binds L9 at
+       n=254,984 (the D3 (v) clause): any future narrowing claim
+       at 254,984 must confront this cut's content first; a
+       same-shape re-run there would re-read, not confront.
+     W1 (cut verdict): (d) INVALID (C1 (b)); NOTHING MOVES; the
+       committed bracket stays EXACTLY (254,923, 255,045].
+       NAMED, NOT HIDDEN (label reading, publication lines
+       704-712): the protocol's W1 (c) text reads "C2 (c)/(d) ->
+       NOTHING MOVES" while record.txt maps W1 (d) to the frozen
+       INVALIDATION criterion and the protocol header says W1 (d)
+       also fires on C1 (b); the publication reports C2 (c)/C1
+       (b) as W1 (d) INVALID (record.txt's explicit mapping),
+       which also satisfies "NOTHING MOVES" -- the bracket
+       outcome is identical under every reading.
+     W2 (descriptive): q2 per-run 18-cell min trajectory 48 runs
+       (publication line 743); 25/48 runs min >= 1,000; 48/48 in
+       981..1,015 (COMPUTED; descriptive only, never classifies).
+     W3 (descriptive): the point is VIRGIN -- this window's q2
+       content is the FIRST at n=254,984; NAMED CROSS-BINARY
+       HAZARD (the q2 binary af9999e1... is NEW first-measured;
+       the bracketing content straddles the 1,000 threshold
+       ACROSS BINARIES: lo binding 995.1326..998.0538 entirely
+       below, hi 1005.8172..1008.7909 entirely above); L8
+       APPLIES (q2 (307, 1204) NEW knob pair; 6 in-box same-ratio
+       doubles enumerated, NONE measured).
+     X1 (descriptive): q2 per-run host_ns median min..max
+       306,963..309,447, spread 2,484 = 0.8% of min (k=48) --
+       NAMED, NOT HIDDEN, cause UNMEASURED, NOT a C criterion.
+
+3. STANDING GATES (a)-(f) run LIVE at s214 (captures gate-s214-*,
+   bar-s214-* in this directory; the s88 pins in
+   ../anv-b3w6tailrep-20261030/ and the s117 post-append eval pin
+   in ../anv-b3w7ledgerappend-20261031/), every capture byte-
+   compared to its pin (cmp exit 0, tool output this tick):
+   (a) gpu_regime_classify.py --self-test rc 0, 17,925 bytes ==
+       the s88 pin (cmp exit 0), .err 0 bytes.
+   (b) scoped GPU gate (scratch/scoped-gpu-gate.cljk -- the eight
+       GPU-owned test namespaces of run-tests.cljk, same engine
+       and classpath; created, run twice, DELETED, never
+       committed -- 'No such file or directory' tool-checked):
+       GREEN 'Ran 123 tests containing 12162 assertions. 0
+       failures, 0 errors.' run 1 == run 2 == both s88 pins (919
+       bytes, cmp exit 0 x5), rc 0 both, .err 0 bytes both.
+   (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+       ('Could not find namespace: kotoba.form', ADR-0362,
+       outside this diff -- touches NO committed .cljk
+       namespace), .out 0 bytes == pin, .err 879 bytes == pin
+       (cmp exit 0 x2) -- NO green full suite claimed.
+   (d) settle-bar evaluator (../anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test rc 0, 3,590
+       bytes == the s88 pin (cmp exit 0); the LEDGER EVAL pair
+       (settle-bar-eval.py docs/evidence/gpu/settle-bar-
+       ledger.txt) twice BYTE-IDENTICAL (1,006 bytes) == the
+       s117 post-append pins (cmp exit 0 x2) -> VERDICT: SETTLED
+       INTERMEDIATE/MIXED (unchanged).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 lines.
+   (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+       ledger.txt rc 0 (no append this row).
+
+4. NAMED, NOT HIDDEN:
+   - TWO analysis-script run defects, both fail-closed asserts
+     caught before any publication was trusted; both fixed by
+     patch; the draft pairs are kept visible and named in
+     analysis-s209-identity.txt: (i) the q3 quarter-grid
+     derivation divided before multiplying (3*(122//4) = 255,013
+     vs the committed census 255,014) -- fixed to floor-of-
+     product at the assert AND the publication's derivation line
+     (draft1 pair, rc 1 x2); (ii) the C1 c8 cross-check assert
+     appended '%' although neither parse produces the sign char
+     -- fixed to compare parsed fields directly (draft2 pair,
+     rc 1 x2).
+   - The first rc=0 run's publication copy was not saved before a
+     mis-ordered comparison step consumed its outputs (the
+     identity record names it); the official run-twice pair was
+     RE-TAKEN fresh; run2-vs-run3 publication cmp exit 0 is kept
+     as corroboration outside the pair.
+   - The kbb classpath printed the standing 2 Maven-jar skip
+     notice on the terminal at each kbb invocation; the gate
+     captures' .err files are 0 bytes as pinned.
+   - Untracked scratch/, deps.edn and .DS_Store files are not
+     this row's and are NOT staged or committed; the scratch
+     scoped-gpu-gate.cljk runner was created, run twice and
+     DELETED this session.
+
+5. THREE-STATE / RULE 4 / BAR: the nineteenth-cut letters are
+   MEASURED QUANTITIES derived from the s209-s212 hardware runs
+   on aiueos-6600hs under the frozen protocol -- NOT workgroup-
+   default measurements, NOT implemented compiler code. CUT
+   VERDICT: INVALID; NOTHING MOVES -- the committed bracket stays
+   EXACTLY (254,923, 255,045]; L9 binds at n=254,984 (C2 (c),
+   D3 (v)); the control question RE-OPENS as a named three-state
+   record on the ROUNDS6400 instrument (16th cut (b), 17th (a),
+   18th (a), 19th (b)); the discrepancy cause stays UNMEASURED
+   (L2 binds). The MID-ONLY NARROWING CLAIM stays SUSPENDED (no
+   claim made by this cut). Sessions 209-214 ran hardware ONCE
+   (the measurement window on aiueos-6600hs, the INSTRUMENT
+   channel); NO settle-bar-ledger line, NO day-slot consumption,
+   the bar's SETTLED INTERMEDIATE/MIXED verdict unmoved -- BAR
+   NON-INTERFERENCE held. RULE 4 unchanged: NOTHING MOVES in the
+   accelerator-targets workgroup rows -- they stay exactly as
+   ADR-0358 left them (:measured? false rows remain provisional
+   -- NOT optimization evidence); NO vendor optimization exists
+   for Intel (or for any vendor).
+(JUN-55, JUN-59; Linear tracking JUN-499)

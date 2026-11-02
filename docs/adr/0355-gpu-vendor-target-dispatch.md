@@ -6902,3 +6902,55 @@ MEASUREMENT half (NOT queued), any further counted-day slot (its
 own freeze), the cross-day tail-movement row. Evidence:
 docs/evidence/gpu/anv-b3bisect19prereg-20261102/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+
+2026-11-02 (sessions 209-214, landing s214, JUN-59 -- THE
+NINETEENTH CUT MEASUREMENT + ANALYSIS + LANDING: the MEASUREMENT
+half at s209-s212 on aiueos-6600hs under the frozen protocol, the
+ANALYSIS half at s213-s214, standing gates + record at s214): THE
+FLOOR-MIDPOINT CUT AT q2 (B=3, WM=307, NDIV=1204) n=254,984
+MEASURED -- CUT VERDICT: INVALID; NOTHING MOVES (C1 (b); C2 (c);
+W1 (d)); the committed bracket stays EXACTLY (254,923, 255,045].
+C1 (b): the c2 control pooled median m 30 is OUT of the committed
+floor band 31..32 (c8 within +/-5% at -1.08%, control arms
+VERIFY-clean) -- branch (b) replication discrepancy, W1 (d)
+INVALID fires, cause UNMEASURED (L2 binds); the control question
+RE-OPENS as a named three-state record on the ROUNDS6400
+instrument (16th cut (b), 17th (a), 18th (a), 19th (b)); NAMED
+LIMITATION (the D2 shape): this cut cannot resolve the historical
+discrepancy cause by design. C2 (c) at q2 (307, 1204): block
+classes 2 CAPTURED / 10 IN-BAND-UNDECIDED / 4 INTERMEDIATE/MIXED,
+pooled-48 IN-BAND-UNDECIDED -- CLASS-UNRESOLVED; L9 binds at
+n=254,984 (D3 (v)): any future narrowing claim there must
+confront this cut's content first; a same-shape re-run would
+re-read, not confront. W2 (descriptive): 25/48 runs min >= 1,000,
+48/48 in 981..1,015. W3 (descriptive): the point was VIRGIN --
+this window's content is the FIRST at n=254,984; NAMED
+CROSS-BINARY HAZARD (q2 binary af9999e1... NEW first-measured;
+the bracketing content straddles the 1,000 threshold ACROSS
+BINARIES); L8 APPLIES (q2 (307, 1204) NEW knob pair; 6 in-box
+same-ratio doubles, NONE measured). X1 (descriptive): q2
+host_ns spread 0.8% of min (k=48). The analysis half
+(analysis-s209.py, deterministic over the 54 committed gzip run
+logs + the NAMED COMMITTED WANT SOURCES) ran TWICE BYTE-
+IDENTICAL (publication-s209.txt 66,774 bytes sha256
+d3a338f39a9cdb75938da3a412fee7ec299813d38bc46f1f7b9cb773bc2c2ebe
+both runs; TWO run defects named, fail-closed, fixed by patch
+with the draft pairs kept visible -- analysis-s209-identity.txt).
+Landing (s214): standing gates (a)-(f) all == the s88/s117 pins
+(scoped GPU gate GREEN 123/12162/0/0 twice; FULL run-tests.cljk
+RED AT BASE kotoba.form ADR-0362 OUTSIDE this diff -- NO green
+full suite claimed); record.txt + this note. BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor); the workgroup rows stay exactly as
+ADR-0358 left them. Three-state: the nineteenth-cut letters are
+MEASURED QUANTITIES (hardware runs on aiueos-6600hs under the
+frozen protocol) -- NOT workgroup defaults, NOT implemented
+compiler code; NO vendor optimization evidence exists for any
+vendor. Carry-forward s215: standing, not queued: the open
+control question (a three-state record on the ROUNDS6400
+instrument -- its resolution is its own act), any further
+counted-day slot (its own freeze), the cross-day tail-movement
+row. Evidence: docs/evidence/gpu/anv-b3bisect19-20261102/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
