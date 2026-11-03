@@ -571,3 +571,10 @@ probe on one Mac covers common modes, special bits, directory and symlink,
 scoped refusal, missing metadata and E/F regressions. It also fixes a prior
 one-character path refusal. See docs/evidence/awai154-darwin-fs2-ou-20261103.
 This is not a complete FS2 provider, a deployed checkpoint or a release gate.
+
+The diagnostic Darwin handler additionally implements FS2 H (chmod with a
+bounded octal argument) and M (fsync) using scoped no-follow descriptors.
+It checks output capacity before mutation. A one-Mac framed probe and O/U
+regression test are in docs/evidence/awai154-darwin-fs2-hm-20261103. A
+successful fsync syscall is not a power-loss durability qualification;
+I, L, T and the complete checkpoint/runtime are still unqualified.

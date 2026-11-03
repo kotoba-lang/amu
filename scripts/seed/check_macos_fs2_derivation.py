@@ -18,7 +18,7 @@ CASES = (
     ("fs2-da-helper-words", EVIDENCE / "fs2-da-virtual-root.derivation.s", 184, {27, 179}),
     ("fs2-lock-helper-words", EVIDENCE / "ksl1-lock.derivation.s", 198, {197}),
     ("fs2-ef-helper-words",
-     ROOT / "docs/evidence/awai154-darwin-fs2-ou-20261103/fs2-efou.derivation.s", 344, {342, 343}),
+     ROOT / "docs/evidence/awai154-darwin-fs2-hm-20261103/fs2-efouhm.derivation.s", 429, {427, 428}),
 )
 
 
