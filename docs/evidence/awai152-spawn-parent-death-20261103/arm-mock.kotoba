@@ -1,0 +1,9 @@
+(ns awai152-arm-parent-bound-check (:export [main]))
+(defn- kxrt-syscall [n :i64 a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+ (cond (= n 167) (if (and (= a 1) (= b 9)) 0 -1) (= n 173) 42 :else -1))
+(defn- kxrt-sp-parent-bound? [parent :i64] :bool
+  (and (> parent 0) (>= (kxrt-syscall 167 1 9 0 0 0 0) 0)
+       (= (kxrt-syscall 173 0 0 0 0 0 0) parent)))
+;; the child: stdio, every other descriptor close-on-exec, no new privileges,
+
+(defn main [] :i64 (if (and (kxrt-sp-parent-bound? 42) (not (kxrt-sp-parent-bound? 43)) (not (kxrt-sp-parent-bound? 0))) 0 1))

@@ -51,6 +51,7 @@ def cases():
     add("shift-arithmetic", f"(i64-shift-right {MIN} 65)", -(1 << 62))
     add("signed-compare", f"(if (and (< {MIN} {MAX}) (> {MAX} -1) (<= -5 -5) (>= 7 7) (= 9 9)) 42 -1)", 42)
     add("boolean", "(if (or false (not false)) 42 -1)", 42)
+    add("float-basic", "(f64-to-i64-truncating (f64-add 1.0 2.0))", 3)
     add("loop", "(loop [i 0 s 0] (if (< i 100) (recur (inc i) (+ s i)) s))", 4950)
     add("parallel-recur", "(loop [i 0 a 3 b 7] (if (< i 5) (recur (inc i) b a) (- a b)))", 4)
     add("five-args", "(mix 1 2 3 4 5)", 54321,
@@ -137,7 +138,7 @@ def main(compiler, output, seccomp_if_available=False):
     refusals = {
         "vector": "(ns refused (:export [main])) (defn main [] :i64 (vector-count [1 2]))",
         "string": '(ns refused (:export [main])) (defn main [] :i64 (string-length "hello"))',
-        "float": "(ns refused (:export [main])) (defn main [] :i64 (f64-to-i64-truncating (f64-add 1.0 2.0)))",
+        "scalar-handle": '(ns refused (:export [main])) (defn main [] :string "not-a-scalar")',
         "unused-vector": "(ns refused (:export [main])) (defn- unused [v :vector-i64] :i64 (vector-count v)) (defn main [] :i64 42)",
         "six-params": "(ns refused (:export [main])) (defn- six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (+ a b c d e f)) (defn main [] :i64 42)",
         "main-arity": "(ns refused (:export [main])) (defn main [x :i64] :i64 x)",
@@ -147,6 +148,8 @@ def main(compiler, output, seccomp_if_available=False):
     for name, source in refusals.items():
         elf, r = compile_("refuse-" + name, source)
         assert r.returncode != 0 and not elf.exists() and b"E710" in r.stderr, (name, r.stdout, r.stderr)
+        if name == "scalar-handle":
+            assert b"E7102" in r.stderr, (name, r.stderr)
         refused.append(name)
     for name, extra in [("policy", ["--policy", "unknown"]), ("source-path", ["--source-path", "unknown"]),
                         ("zero-fuel", ["--fuel", "0"]), ("negative-fuel", ["--fuel", "-1"]),

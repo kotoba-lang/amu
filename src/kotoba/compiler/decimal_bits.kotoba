@@ -268,7 +268,7 @@
           false
           (recur (+ index 1)))))))
 
-(defn decimal-f64-bits [text :string] [:option :i64]
+(defn- decimal-f64-bits-internal [text :string] [:option :i64]
   "Parse the sealed decimal subset and return raw binary64 bits, if finite."
   (let [length (string-byte-length text)]
     (if (or (= length 0) (> length 64) (not (ascii-only? text length)))
@@ -311,3 +311,9 @@
           (decimal-value-bits (= first 45) digits
                               (- signed-exponent (- fraction-end fraction-start)))
           (option-none-of [:option :i64]))))))
+
+;; -1 is an all-ones NaN, so it cannot be the result of a finite parse.
+;; Return the scalar out of the arena before allocating the public option.
+(defn decimal-f64-bits [text :string] [:option :i64]
+  (let [bits (arena-scope (option-value-of [:option :i64] (decimal-f64-bits-internal text) -1))]
+    (if (= bits -1) (option-none-of [:option :i64]) (option-some-of [:option :i64] bits))))

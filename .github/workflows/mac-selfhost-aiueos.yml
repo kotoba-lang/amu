@@ -32,6 +32,8 @@ on:
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
       - 'scripts/seed/check-js-browser.py'
+      - 'scripts/seed/check-browser-keyword-intern.py'
+      - 'seed/tests/browser-keyword-intern.kotoba'
       - 'runtime/js-browser-static-run.html'
       - 'runtime/wasm32-browser-static-host.js'
       - 'seed/81-js-esm.kotoba'
@@ -90,23 +92,32 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: mac-selfhost-aiueos-mac-root
       - name: Verify Apple Silicon host
+        if: steps.gate.outputs.skip != 'true'
         run: |
           test "$(uname -s)" = Darwin
           test "$(uname -m)" = arm64
       - name: Check native CLI host grants, descriptor closure and deadlines
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-macos-cli-host-native.py
           --output "$RUNNER_TEMP/mac-cli-host"
       - name: Rebuild the public Mac CLI and execute ordinary check compile run
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-public-macos-product.py
           --output "$RUNNER_TEMP/public-macos-product"
       - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-host-default-target.py --isa macos
           --output "$RUNNER_TEMP/host-default-mac"
       - name: Rebuild Amu root and AIUEOS user target
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/native_build_queue.py \
             --phase mac-aiueos-user-root \
@@ -115,43 +126,51 @@ jobs:
             python3 scripts/seed/check-aiueos-user-macos-native.py \
               --output "$RUNNER_TEMP/mac-root"
       - name: Check bounded user-v3 local-model target
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-user-v3-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v3"
       - name: Check candidate user-v5 ELF and slot-v4 boundaries
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-user-v5-layout-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v5"
       - name: Check kernel-v3 guest artifact and slot-v4 admission
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-kernel-v3"
       - name: Check the boot packager's layout admission rule and its controls
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-layout-rule-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-layout-rule"
       - name: Check the SHA-256 crypto-hardware option (on by default, --no-crypto-hw scalar)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-crypto-hw-option-macos-native.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-crypto-hw"
       - name: T2 derives no whole-program facts from import stubs (JUN-595)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 -I scripts/seed/check-macos-import-stub-facts.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-import-stub-facts"
       - name: Verify the selected 18-module core adoption on Mac
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-macos-core-adoption.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-core"
       - name: Native Darwin bounded I/O and error refusal probe
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/native_build_queue.py \
             --phase mac-exec-smoke \
@@ -160,201 +179,246 @@ jobs:
               --mac-build "$RUNNER_TEMP/mac-root" \
               --output "$RUNNER_TEMP/mac-smoke"
       - name: Mac runtime implements arena-scope (JUN-546)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-macos-arena-scope.py \
             --output "$RUNNER_TEMP/mac-scope"
       - name: Mac runtime implements the keyword graph and intern rows (JUN-707, JUN-710)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-macos-keyword-intern.py \
             --output "$RUNNER_TEMP/mac-keyword-intern"
       - name: js-browser target, 24 cases identical to wasm32-browser in headless Chrome (ADR 0397, JUN-706)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-js-browser.py \
             --compiler seed/bootstrap/aarch64-macos/amu-full-root.macho \
             --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
             --output "$RUNNER_TEMP/mac-js-browser"
+      - name: Browser keyword interning and negative control (JUN-772)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-browser-keyword-intern.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+            --output "$RUNNER_TEMP/mac-browser-keyword-intern"
       - name: document-edn-read treats comma, newline, tab, comments and edge whitespace as EDN delimiters (JUN-650)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-document-edn-read.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-document-edn-read"
       - name: keyword map literals are closed records and record fields may be :f64 (JUN-728)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-keyword-map-record.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-keyword-map-record"
       - name: destructuring is reader sugar with the pure form's Definition CID (JUN-729)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-destructuring.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-destructuring"
       - name: def vector/map literals, variadic assoc and typed-map get (JUN-734)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-def-assoc-get.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-def-assoc-get"
       - name: closed multimethods and protocols are static dispatch; reify is refused (JUN-730)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-closed-dispatch.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-closed-dispatch"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-exports.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-exports"
       - name: AIUEOS kernel object route u8 / u16 / u64 window accesses (JUN-556 B)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows"
       - name: AIUEOS kernel object route u8 / u16 / u64 window accesses at the 16 KiB tier (JUN-556 C)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-windows16.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows16"
       - name: AIUEOS kernel object route u8 / u16 / u32 / u64 window accesses at the 4 KiB tier (JUN-708)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-windows4k.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows4k"
       - name: AIUEOS kernel object route emits lfence / sfence / mfence (JUN-708)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-fence.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-fence"
       - name: AIUEOS user-plc-v1 -- cap-call against the declared set, PLC ELF layout (KOTOBA-175)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-user-plc-native.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-user-plc"
       - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-cpu.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-cpu"
       - name: AIUEOS kernel object route reads and writes listed MSRs and reads the PCI data port, literal-bounded (JUN-600)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-msr.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-msr"
       - name: AIUEOS kernel object route writes only listed output ports, literal-bounded per width (JUN-600)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-outport.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-outport"
       - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-xstate.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
       - name: AIUEOS kernel object route truncates f32 to i64, trapping NaN and out of range (JUN-633 slice 7)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-f2i.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-f2i"
       - name: aarch64 route truncates f32 to i64 with the same traps as x86 (JUN-633, ADR 0398)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-a64-f2i.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-a64-f2i"
       - name: AIUEOS kernel object route emits the fused f32 reductions (JUN-633 slice 6)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-fused-dot.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-fused-dot"
       - name: AIUEOS kernel object route emits the spin-wait hint (JUN-633 slice 5)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-pause.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-pause"
       - name: AIUEOS kernel object route waits for an interrupt (JUN-633 slice 4)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-halt.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-halt"
       - name: AIUEOS kernel object route emits scalar SSE floats (JUN-633 slice 3)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-f32.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-f32"
       - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-externs.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-externs"
       - name: AIUEOS kernel object route has 8-byte data cells (JUN-556 D3)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-cells.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-cells"
       - name: AIUEOS kernel object route has fixed-address MMIO accesses (JUN-556 D4)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-mmio.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-mmio"
       - name: AIUEOS kernel object route exports data cells as GLOBAL symbols (JUN-556 D3b)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-globals.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-globals"
       - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 -I scripts/seed/check-macos-fs35.py \
             --output "$RUNNER_TEMP/mac-fs35"
       - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 -I scripts/seed/check-definition-cid-native.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-definition-cid"
       - name: Native definition-cids on the Mac fixed point (JUN-586)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 -I scripts/seed/check-definition-cids-native.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-definition-cids"
       - name: AIUEOS kernel object route reads and writes fixed-size records (JUN-556 D5)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-records.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-records"
       - name: AIUEOS kernel object route hands out the address of a data cell (JUN-556 D6)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-celladdr.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-celladdr"
       - name: AIUEOS kernel object route hands out the address of a .bss / .high_bss array (JUN-556 C)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-arrays.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-arrays"
       - name: AIUEOS kernel object route windows on its own .bss / .high_bss arrays (JUN-553)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-object-array-windows.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-array-windows"
       - name: AIUEOS kernel window access above its tier maximum refused at compile time (JUN-483)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-aiueos-kernel-tier-maximum.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-kernel-tier-maximum"
       - name: Cross-build Linux compiler candidates from Mac fixed point
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-macos-cross-linux-candidates.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-cross"
       - name: Descriptor writer controls on disposable receipt-derived fixture
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-descriptor-writer-ci.py \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --cross-build "$RUNNER_TEMP/mac-cross"
       - name: Summarize native crash if the root gate failed
-        if: failure()
+        if: steps.gate.outputs.skip != 'true' && (failure())
         run: |
           python3 scripts/seed/collect-macos-crash-summary.py \
             --process amu-full-root \
             --output "$RUNNER_TEMP/mac-root-crash-summary.json"
       - name: Upload source-bound Mac receipts
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-aiueos-user-root
@@ -369,7 +433,7 @@ jobs:
             ${{ runner.temp }}/mac-root-crash-summary.json
           if-no-files-found: warn
       - name: Upload Mac definition-cids receipts (JUN-586)
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-definition-cids
@@ -379,39 +443,44 @@ jobs:
             ${{ runner.temp }}/mac-fs35/observations.json
           if-no-files-found: warn
       - name: Upload user-v3 Mac receipt
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-aiueos-user-v3
           path: ${{ runner.temp }}/mac-user-v3/mac-aiueos-user-v3-local-call.json
           if-no-files-found: warn
       - name: Upload user-v5 layout receipt
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-aiueos-user-v5-layout
           path: ${{ runner.temp }}/mac-user-v5/mac-aiueos-user-v5-layout.json
           if-no-files-found: warn
       - name: Upload kernel-v3 layout receipt
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-aiueos-kernel-v3-layout
           path: ${{ runner.temp }}/mac-kernel-v3/mac-aiueos-kernel-v3-layout.json
           if-no-files-found: warn
       - name: Upload selected core adoption receipt
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-aiueos-core-adoption
           path: ${{ runner.temp }}/mac-core/mac-core-adoption.json
           if-no-files-found: warn
       - name: Upload Mac-produced Linux candidates
+        if: steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-cross-linux-candidates
           path: ${{ runner.temp }}/mac-cross/
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   native-cross-arm64:
     needs: mac-root
     runs-on: ubuntu-24.04-arm
@@ -420,28 +489,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: mac-selfhost-aiueos-native-cross-arm64
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: mac-cross-linux-candidates
           path: ${{ runner.temp }}/mac-cross
       - name: Execute Mac-produced ARM root and verify native fixed point
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-macos-cross-linux-native.py
           --candidate "$RUNNER_TEMP/mac-cross"
           --output "$RUNNER_TEMP/cross-arm"
           --isa aarch64
       - name: The Linux ARM64 root refuses an omitted target with E2 (KOTOBA-174)
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-host-default-target.py --isa aarch64
           --output "$RUNNER_TEMP/host-default-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: mac-cross-native-arm64
           path: |
             ${{ runner.temp }}/cross-arm/native-fixed-point.json
             ${{ runner.temp }}/host-default-arm/host-default-target.json
           if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   native-cross-x86_64:
     needs: mac-root
     runs-on: ubuntu-latest
@@ -450,25 +530,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: mac-selfhost-aiueos-native-cross-x86_64
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: mac-cross-linux-candidates
           path: ${{ runner.temp }}/mac-cross
       - name: Execute Mac-produced x86 compiler and verify native fixed point
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-macos-cross-linux-native.py
           --candidate "$RUNNER_TEMP/mac-cross"
           --output "$RUNNER_TEMP/cross-x86"
           --isa x86_64
       - name: The Linux x86_64 host entry names x86_64-linux; the compiler refuses an omitted target (KOTOBA-174)
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/check-host-default-target.py --isa x86_64 --reproduce
           --output "$RUNNER_TEMP/host-default-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: mac-cross-native-x86_64
           path: |
             ${{ runner.temp }}/cross-x86/native-fixed-point.json
             ${{ runner.temp }}/host-default-x86/host-default-target.json
           if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
