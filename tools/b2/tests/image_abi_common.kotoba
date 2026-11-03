@@ -1,0 +1,47 @@
+;; tools/b2/tests/image_abi_common.kotoba -- the exports and call helpers of the E1 tests, shared by
+;; image_abi_t.kotoba (x86_64, SysV) and image_abi_a64_t.kotoba (aarch64, AAPCS64).
+;; Run by scripts/seed/check-b2-image.py after image_helpers.kotoba and before the target's test.
+(defn- cx-zero [] :i64 42)
+(defn- cx-add5-TESTV1 [a :i64 b :i64 c :i64 d :i64 e :i64] :i64
+  (+ a (+ (* 2 b) (+ (* 3 c) (+ (* 4 d) (* 5 e))))))
+(defn- cx-six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64
+  (+ (cx-add5-TESTV1 a b c d e) (* 6 f)))
+(defn- cx-mix14-GLIBC_2.2.5 [a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64 a13 :i64] :i64
+  (+ a0 (+ (* 2 a1) (+ (* 3 a2) (+ (* 4 a3) (+ (* 5 a4) (+ (* 6 a5) (+ (* 7 a6) (+ (* 8 a7) (+ (* 9 a8) (+ (* 10 a9) (+ (* 11 a10) (+ (* 12 a11) (+ (* 13 a12) (* 14 a13)))))))))))))))
+(defn- cx-sixteen [a0 :i64 a1 :i64 a2 :i64 a3 :i64 a4 :i64 a5 :i64 a6 :i64 a7 :i64 a8 :i64 a9 :i64 a10 :i64 a11 :i64 a12 :i64 a13 :i64 a14 :i64 a15 :i64] :i64
+  (cx-mix14-GLIBC_2.2.5 a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13))
+(defn- cx-flag [a :i64] :bool (= a 7))
+(defn- cx-neg [a :i64] :i64 (- 0 a))
+;; calls the C function p (an address in the test's code page) with no arguments, from inside a call from C
+(defn- cx-probe [p :i64] :i64
+  (let [argv (kxrt-b-alloc 4096)] (kxrt-b-ccall p argv)))
+;; spins n times
+(defn- cx-spin [n :i64] :i64 (loop [i 0] (if (>= i n) i (recur (inc i)))))
+
+(defn- cstr-eq [p :i64 s :string] :bool
+  (let [n (string-length s)]
+    (and (= (kxrt-b-load8 (+ p n)) 0)
+         (loop [i 0] (cond (= i n) true (= (kxrt-b-load8 (+ p i)) (string-code-point-at s i)) (recur (inc i)) :else false)))))
+(defn- find-export [name :string ver :string] :i64
+  (let [t (kxrt-b-exports) n (kxrt-b-load64 t)]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [r (+ t (+ 8 (* 24 i)))]
+          (if (and (cstr-eq (kxrt-b-load64 (+ r 8)) name) (cstr-eq (kxrt-b-load64 (+ r 16)) ver))
+            (kxrt-b-load64 r) (recur (inc i))))))))
+;; call fp with the words w0..w13 in argv
+(defn- call14 [fp :i64 w0 :i64 w1 :i64 w2 :i64 w3 :i64 w4 :i64 w5 :i64 w6 :i64 w7 :i64 w8 :i64 w9 :i64 w10 :i64 w11 :i64 w12 :i64 w13 :i64] :i64
+  (let [a (kxrt-b-alloc 4096)
+        s0 (kxrt-b-store64 a w0) s1 (kxrt-b-store64 (+ a 8) w1) s2 (kxrt-b-store64 (+ a 16) w2) s3 (kxrt-b-store64 (+ a 24) w3)
+        s4 (kxrt-b-store64 (+ a 32) w4) s5 (kxrt-b-store64 (+ a 40) w5) s6 (kxrt-b-store64 (+ a 48) w6) s7 (kxrt-b-store64 (+ a 56) w7)
+        s8 (kxrt-b-store64 (+ a 64) w8) s9 (kxrt-b-store64 (+ a 72) w9) s10 (kxrt-b-store64 (+ a 80) w10) s11 (kxrt-b-store64 (+ a 88) w11)
+        s12 (kxrt-b-store64 (+ a 96) w12) s13 (kxrt-b-store64 (+ a 104) w13)]
+    (kxrt-b-ccall fp a)))
+(defn- expect [name :string got :i64 want :i64] :i64
+  (if (= got want) (let [w (say (string-concat name " ok"))] 0)
+    (let [w (say (string-concat name " FAIL")) x (say-int got)] 1)))
+(defn- magic [i :i64] :i64 (* i 1229782938247303441))
+(defn- cx-pair [a :i64 b :i64] :i64 (+ (* 100 a) b))
+
+(defn- arg1-is [s :string] :bool
+  (and (> (kxrt-b-argc) 0) (cstr-eq (kxrt-b-load64 (kxrt-b-argv)) s)))

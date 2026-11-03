@@ -1,0 +1,43 @@
+(ns apic (:export [aiueos_apic_timer_mask aiueos_apic_timer_unmask aiueos_apic_timer_initialize]))
+
+;; kernel/apic.c as a Kotoba object (JUN-556): MSR access is the existing Kotoba objects,
+;; the two globals entry.S links by name are data cells, the registers are fixed MMIO.
+(defn- extern-kotoba_aiueos_msr_read [index :i64] :i64 0)
+(defn- extern-kotoba_aiueos_msr_write [index :i64 value :i64] :i64 0)
+
+(defn- cell-store-0 [v :i64] :i64 0)
+(defn- cell-name-0-aiueos_apic_timer_ticks [] :i64 0)
+(defn- cell-store-1 [v :i64] :i64 0)
+(defn- cell-name-1-aiueos_apic_mmio_base [] :i64 0)
+
+(defn- mmio-load32-fee00020 [] :i64 0)
+(defn- mmio-load32-fee000f0 [] :i64 0)
+(defn- mmio-store32-fee000f0 [v :i64] :i64 0)
+(defn- mmio-load32-fee00320 [] :i64 0)
+(defn- mmio-store32-fee00320 [v :i64] :i64 0)
+(defn- mmio-store32-fee00380 [v :i64] :i64 0)
+(defn- mmio-store32-fee003e0 [v :i64] :i64 0)
+
+;; write_register(): the store, then the read of the ID register that orders it
+(defn- flush [] :i64 (mmio-load32-fee00020))
+(defn- wr-f0 [v :i64] :i64 (+ (mmio-store32-fee000f0 v) (* 0 (flush))))
+(defn- wr-320 [v :i64] :i64 (+ (mmio-store32-fee00320 v) (* 0 (flush))))
+(defn- wr-380 [v :i64] :i64 (+ (mmio-store32-fee00380 v) (* 0 (flush))))
+(defn- wr-3e0 [v :i64] :i64 (+ (mmio-store32-fee003e0 v) (* 0 (flush))))
+
+(defn aiueos_apic_timer_mask [] :i64
+  (wr-320 (bit-or (mmio-load32-fee00320) 65536)))
+(defn aiueos_apic_timer_unmask [] :i64
+  (wr-320 (bit-and (mmio-load32-fee00320) 4294901759)))
+
+(defn aiueos_apic_timer_initialize [] :i64
+  (let [base (extern-kotoba_aiueos_msr_read 27)]
+    (if (not= (bit-and base 4294963200) 4276092928) 0
+      (if (= (extern-kotoba_aiueos_msr_write 27 (bit-or base 2048)) 0) 0
+        (let [a (cell-store-1 4276092928) b (cell-store-0 0)
+              c (wr-f0 (bit-or (bit-or (bit-and (mmio-load32-fee000f0) 4294967040) 256) 255))
+              d (wr-3e0 3)
+              e (wr-320 (bit-or 131072 32))
+              f (wr-380 100000)]
+          (if (and (= (bit-and (mmio-load32-fee000f0) 511) 511)
+                   (= (bit-and (mmio-load32-fee00320) 131327) 131104)) 1 0))))))

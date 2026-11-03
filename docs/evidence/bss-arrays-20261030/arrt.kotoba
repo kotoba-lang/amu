@@ -1,0 +1,14 @@
+(ns arrt (:export [a0 a1 h0 fill]))
+(defn- extern-memset [p :i64 v :i64 n :i64] :i64 0)
+(defn- extern-sumbytes [p :i64 n :i64] :i64 0)
+(defn- bss-addr-0-1280 [] :i64 0)
+(defn- bss-addr-1-24 [] :i64 0)
+(defn- highbss-addr-0-1536 [] :i64 0)
+(defn a0 [] :i64 (bss-addr-0-1280))
+(defn a1 [] :i64 (bss-addr-1-24))
+(defn h0 [] :i64 (highbss-addr-0-1536))
+(defn fill [] :i64
+  (let [x (extern-memset (bss-addr-0-1280) 90 1280)
+        y (extern-memset (bss-addr-1-24) 17 24)
+        z (extern-memset (highbss-addr-0-1536) 34 1536)]
+    (+ (extern-sumbytes (bss-addr-0-1280) 1312) (* 1000000 (extern-sumbytes (highbss-addr-0-1536) 1536)))))

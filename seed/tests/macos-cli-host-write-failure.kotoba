@@ -1,0 +1,10 @@
+(ns seed.macos-cli-host-write-failure (:export [main]))
+
+(defn main [] :i64
+  (let [path (hc-arg 0) expected (if (string=? (hc-arg 1) "fchmod") 9 27)
+        wrote (hc-write path [0 255 128 42 10])
+        after (hc-read path)]
+    (cond (hc-ok? wrote) 1
+          (not= (hc-errno wrote) expected) 2
+          (or (hc-ok? after) (not= (hc-errno after) 2)) 3
+          :else (hc-out "PASS_NATIVE_WRITE_FAILURE_CLEANUP\n"))))

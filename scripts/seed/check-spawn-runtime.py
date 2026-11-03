@@ -107,7 +107,7 @@ def main(compiler, output, target, seccomp_if_available=False):
         src, out = art / (name + ".kotoba"), art / (name + ".elf")
         src.write_text(source)
         r = subprocess.run([str(prod), "compile", str(src), "--target", tgt, "--output", str(out), "--format", "static"],
-                           cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art)},
+                           cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art), "KEXE_STACK_BYTES": "8388608"},
                            capture_output=True, timeout=1800)
         (raw / (name + ".compile.stdout")).write_bytes(r.stdout)
         (raw / (name + ".compile.stderr")).write_bytes(r.stderr)
@@ -238,7 +238,7 @@ def main(compiler, output, target, seccomp_if_available=False):
                   controlCompiler={"mutation": "no read rule for the helper's answer fd, in both runtimes", "pin": pin(control)},
                   controlCompilerSigpipe={"mutation": "the child keeps the helper's ignored SIGPIPE, in both runtimes", "pin": pin(control_pipe)},
                   unity=unity_pins, cCompilerOrLoader=False,
-                  notCovered=(["spawn/isolation-unavailable and spawn/setup-failed: no case drives close_range, prctl, dup3 or fchdir to fail",
+                  notCovered=(["spawn/isolation-unavailable and spawn/setup-failed: no case here drives the child's setup to fail; check-spawn-fault-injection.py covers close_range and fchdir under injected seccomp faults, not prctl or dup3",
                                "the stdin payload's deadline: a request holds at most 65536 bytes, which a default 64 KiB pipe takes whole, so no case blocks the feeding"]
                               + ([] if enforced else ["control-no-read-rule: this kernel does not enforce seccomp (KEXE_SECCOMP=if-available)"])))
     (output / "spawn-runtime.json").write_text(json.dumps(report, indent=2) + "\n")

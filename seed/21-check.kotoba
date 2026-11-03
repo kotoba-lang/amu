@@ -176,7 +176,7 @@
           M1 (ck-tform M (nm-next M k))
           ty (ck-r M1)]
       (cond (= ty 0) (ck-err M1 E-CHECK-SCHEMA k 0)
-            (or (= ty TY-F64) (= ty ck-ty-f32)) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA k 0)
             :else (ck-sch-fields (ck-blk-put M1 blk i ks ty) nx blk (+ i 1))))))
 
@@ -315,7 +315,7 @@
       (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
             (nm-failed M1) (ck-touch M1)
             (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
-            (or (= ty TY-F64) (= ty ck-ty-f32)) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: stage-0 refuses an :f64 record field natively (r1 neg n32)
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
             :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
 (defn- ck-rec-fields [M :vector-i64 S :string c :i64 blk :i64 i :i64] :vector-i64
@@ -1188,53 +1188,38 @@
           (= code 7) (ck-r6m-map2 M n)
           (>= code 5) (ck-r6m-i32sh M n code)
           :else (ck-r6m-ods1 M n code))))
-;; a decimal literal [-]d+.d+ (the lexer reads it as a symbol): with m = its digits as an integer and k
-;; its fraction digits, m below 2^53 (at most 15 digits) and 10^k exact (k <= 15), the f64 value is the correctly rounded
-;; quotient m / 10^k, i.e. (f64-div (i64-to-f64-rounded m) (i64-to-f64-rounded 10^k)) (both conversions exact, the division
-;; rounded once), usable wherever an :f64 is (f64-add 1.5 x). Any other spelling stays a symbol (E2102). The reference's
-;; + = < .. on :f64 (dual-backend 10-f64) stay refused: R6C pins them as recorded narrowings (seed/tests/r6c/feat n02 n03;
-;; lang/guest-grammar.edn :equality). R0 of the scanner: m * 32 + k, or -1.
-(defn- ck-r6m-flscan [S :string a :i64 b :i64] :i64
-  (let [neg (and (< a b) (= (string-code-point-at S a) 45))
-        a1 (if neg (+ a 1) a)]
-    (loop [i a1 m 0 nd 0 k -1]
-      (if (>= i b)
-        (if (and (pos? k) (> nd k) (<= nd 15)) (+ (* (if neg (- 0 m) m) 32) k) -1)
-        (let [c (string-code-point-at S i)]
-          (cond (and (>= c 48) (<= c 57)) (recur (+ i 1) (+ (* m 10) (- c 48)) (+ nd 1) (if (>= k 0) (+ k 1) k))
-                (and (= c 46) (< k 0) (pos? nd)) (recur (+ i 1) m nd 0)
-                :else -1))))))
+;; Decimal literals are rounded to their final binary64 bits at compile
+;; time by the same canonical integer parser as the native Form reader.
+;; No emitted division or runtime text parse participates. The typed option
+;; retains signed zero; unsupported/malformed/non-finite tokens remain E2102.
+(defn- ck-r6m-flscan [S :string a :i64 b :i64] [:option :i64]
+  (dc-literal-bits (string-substring S a b)))
 (defn- ck-r6m-flit? [M :vector-i64 S :string n :i64] :bool
   (let [s (nm-sym-of M n)
         a (nm-sf M s SF-START)
         b (nm-sf M s SF-END)]
-    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN)) (> b a) (< b (+ a 24)) (nm-ne (ck-r6m-flscan S a b) -1))))
-(defn- ck-r6m-pow10 [k :i64] :i64 (loop [i 0 p 1] (if (>= i k) p (recur (+ i 1) (* p 10)))))
-;; a call node (h x) whose head symbol is a gensym spelled by hash hh (a FLOAT operation of ck-fl-code); R0 = the list
-(defn- ck-r6m-hcall [M :vector-i64 tok :i64 hh :i64 x :i64 y :i64] :vector-i64
-  (let [M1 (nm-gensym M (nm-tf M tok TF-START) 0)
-        g (ck-r M1)
-        M2 (ck-n-ref (nm-set-sf M1 g SF-HASH hh) tok g)
-        hn (ck-r M2)
-        M3 (if (pos? y) (ck-chain3 M2 hn x y) (ck-chain2 M2 hn x))]
-    (ck-n-list M3 tok hn)))
+    (and (zero? (nm-sf M s SF-HEAD)) (zero? (nm-sf M s SF-FN))
+         (> b a) (<= (- b a) 64)
+         (option-some?-of [:option :i64] (ck-r6m-flscan S a b)))))
 (defn- ck-r6m-flit [M :vector-i64 S :string n :i64] :vector-i64
   (let [s (nm-sym-of M n)
-        v (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
-        k (bit-and v 31)
-        m (quot (- v k) 32)
-        tok (nm-nf M n NF-TOK)
-        M1 (ck-n-int M tok m)
-        mi (ck-r M1)
-        M2 (ck-r6m-hcall M1 tok 7348910623852123541 mi 0)   ; i64-to-f64-rounded
-        mf (ck-r M2)
-        M3 (ck-n-int M2 tok (ck-r6m-pow10 k))
-        pi (ck-r M3)
-        M4 (ck-r6m-hcall M3 tok 7348910623852123541 pi 0)
-        pf (ck-r M4)
-        M5 (ck-r6m-hcall M4 tok 4429907561435325029 mf pf)   ; f64-div
-        d (ck-r M5)]
-    (ck-become M5 n d)))
+        parsed (ck-r6m-flscan S (nm-sf M s SF-START) (nm-sf M s SF-END))
+        tok (nm-nf M n NF-TOK)]
+    (if (not (option-some?-of [:option :i64] parsed))
+      (ck-err M E-CHECK-SYM n 0)
+      (let [bits (option-value-of [:option :i64] parsed 0)
+            M1 (ck-n-int M tok bits)
+            value (ck-r M1)
+            ;; Cache254 is reserved for the f64 type;233 is the existing
+            ;; __r6-as head. Avoid the overlapping head/keyword cache indexes.
+            M2 (ck-r6b-nkw M1 tok KW-F64 254)
+            type (ck-r M2)
+            M3 (ck-r6b-nhead M2 tok HD-R6-AS 233)
+            head (ck-r M3)
+            M4 (ck-chain3 M3 head type value)
+            M5 (ck-n-list M4 tok head)
+            expression (ck-r M5)]
+        (ck-become M5 n expression)))))
 
 ;; list (code a b c) of fresh nodes (0 = absent; a b c are linked in order); R0 = the list
 (defn- ck-r6m-l [M :vector-i64 tok :i64 code :i64 a :i64 b :i64 c :i64] :vector-i64
@@ -1457,16 +1442,374 @@
         M2 (ck-chain2 M1 c x)]
     (ck-rehead M2 n HD-SUB c)))
 
+;; ---------------------------------------------------------------------------------------------------------
+;; JUN-729: destructuring is reader sugar (lang/guest-grammar.edn :nested-destructuring, L2: "sequential temp-bound
+;; pair/map lookups"; lang/surface-equivalence-corpus.edn :destructuring). It is expanded here, before typing, into the
+;; plain form a programmer would write, so both spell one canonical form (and one Definition CID):
+;;   (let [[a b] e] ..)              -> (let [g e a (nth g 0) b (nth g 1)] ..)
+;;   [p0 p1 & r :as v]               -> pi (nth g i), r (vector-drop g i) (a :vector-i64 rest), v g; nested patterns
+;;                                      take a fresh temporary each; `_` inside a pattern binds nothing
+;;   {:keys [x] y :k :or {x d} :as v} -> x (get g :x d), y (get g :k), v g (a default only where :or names it); a nested
+;;                                      pattern q :k takes (get g :k); entries in written order
+;;   (defn f [[a b] :T c] ..)        -> (defn f [g :T c] (let [a (nth g 0) b (nth g 1)] ..)) (also a variadic rest)
+;;   (loop [p e x e2] ..)            -> clojure.core/loop: (let [g e p g x e2] (loop [g g x x] (let [p g x x] ..)))
+;; g is a gensym (no spelling names it), so a pattern over a gensym needs no further temporary. The lookups are the
+;; native heads: nth traps out of range (no nil), get on a record takes no default, get on a typed map needs one;
+;; the checker refuses the rest by type (E2104). Refused here with E2111: a keyword other than :as in a vector pattern,
+;; anything after `& r` but :as, :strs / :syms / ::k / other keyword keys, a :keys item that is not a symbol or whose
+;; keyword is not spelled in the module (the keyword value is its spelling), a malformed :or or :as.
+;; ---------------------------------------------------------------------------------------------------------
+(def ck-dx-h-vector-drop 6494910307221814324)   ; FNV-1a of "vector-drop" (ck-r6b-name-bit)
+
+;; a let binder that is a pattern
+(defn- ck-dx-binder? [M :vector-i64 b :i64] :bool (or (= (nm-kind M b) ND-VEC) (= (nm-kind M b) ND-MAP)))
+;; a parameter that is a pattern: a map, or a vector that is not a type form ([:list ..] starts with a keyword)
+(defn- ck-dx-pat? [M :vector-i64 p :i64] :bool
+  (or (= (nm-kind M p) ND-MAP)
+      (and (= (nm-kind M p) ND-VEC) (or (zero? (nm-first M p)) (nm-ne (nm-kind M (nm-first M p)) ND-KW)))))
+
+;; true when list n is (let|loop [.. pattern e ..] ..)
+(defn- ck-dx-let? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)]
+    (if (or (zero? h) (nm-ne (nm-kind M h) ND-SYM) (and (nm-ne (nm-head-of M h) HD-LET) (nm-ne (nm-head-of M h) HD-LOOP)))
+      false
+      (let [v (nm-next M h)]
+        (and (pos? v) (= (nm-kind M v) ND-VEC)
+             (loop [b (nm-first M v)]
+               (cond (zero? b) false
+                     (ck-dx-binder? M b) true
+                     (zero? (nm-next M b)) false
+                     :else (recur (nm-next M (nm-next M b))))))))))
+
+(defn- ck-dx [M :vector-i64 S :string n :i64] :vector-i64
+  (if (= (nm-head-of M (nm-first M n)) HD-LOOP) (ck-dx-loop M n) (ck-dx-let M S n)))
+
+;; true when node e refers to a fresh local (a gensym: empty span, no head code)
+(defn- ck-dx-gref? [M :vector-i64 e :i64] :bool
+  (if (nm-ne (nm-kind M e) ND-SYM)
+    false
+    (let [s (nm-sym-of M e)]
+      (and (pos? s) (= (nm-sf M s SF-START) (nm-sf M s SF-END)) (zero? (nm-sf M s SF-HEAD))))))
+
+;; true when node k is the keyword spelled t
+(defn- ck-dx-kw? [M :vector-i64 S :string k :i64 t :string] :bool
+  (if (nm-ne (nm-kind M k) ND-KW)
+    false
+    (let [s (nm-sym-of M k)]
+      (string=? (string-substring S (nm-sf M s SF-START) (nm-sf M s SF-END)) t))))
+
+;; the pair (b e) after node tail; R0 = e, the new tail
+(defn- ck-dx-pair [M :vector-i64 tail :i64 b :i64 e :i64] :vector-i64
+  (nm-put (ck-link (ck-link M tail b) b e) MM-R0 e))
+
+;; (nth g i)
+(defn- ck-dx-nth [M :vector-i64 tok :i64 g :i64 i :i64] :vector-i64
+  (let [M1 (ck-n-ref M tok g)
+        r (ck-r M1)
+        M2 (ck-n-int M1 tok i)
+        M3 (ck-chain2 M2 r (ck-r M2))]
+    (ck-mkh M3 tok HD-NTH r)))
+;; (vector-drop g i), a call of the library defn (seed library group vec); E2111 at node a when it is absent
+(defn- ck-dx-drop [M :vector-i64 a :i64 g :i64 i :i64] :vector-i64
+  (let [f (ck-r6b-fn M ck-dx-h-vector-drop)
+        tok (nm-nf M a NF-TOK)]
+    (if (zero? f)
+      (ck-err M E-CHECK-BINDINGS a 0)
+      (let [M1 (ck-n-ref M tok (nm-ff M f FF-SYM))
+            h (ck-r M1)
+            M2 (ck-n-ref M1 tok g)
+            r (ck-r M2)
+            M3 (ck-n-int M2 tok i)
+            M4 (ck-chain3 M3 h r (ck-r M3))]
+        (ck-n-list M4 tok h)))))
+;; (get g k) or (get g k d'); k a keyword node, d 0 for none, d' a copy of d (the :or map is read again later)
+(defn- ck-dx-get [M :vector-i64 tok :i64 g :i64 k :i64 d :i64] :vector-i64
+  (let [M0 (if (zero? d) (nm-put M MM-R0 0) (ck-dx-copy M d))
+        dc (ck-r M0)
+        M1 (ck-n-ref M0 tok g)
+        r (ck-r M1)
+        M2 (if (zero? dc) (ck-chain2 M1 r k) (ck-chain3 M1 r k dc))]
+    (ck-mkh M2 tok HD-GET r)))
+
+;; bind pattern p to the value of expression e after tail; R0 = the new tail. A symbol is one pair (`_` binds nothing
+;; inside a pattern, top = false); a vector or map pattern reads a fresh temporary bound to e (none when e is one)
+(defn- ck-dx-bind [M :vector-i64 S :string tail :i64 p :i64 e :i64 top :bool] :vector-i64
+  (cond (nm-failed M) (nm-put M MM-R0 tail)
+        (= (nm-kind M p) ND-SYM) (if (and (not top) (ck-let-wild? M p)) (nm-put M MM-R0 tail) (ck-dx-pair M tail p e))
+        (not (ck-dx-binder? M p)) (ck-err M E-CHECK-BINDINGS p 0)
+        (ck-dx-gref? M e) (ck-dx-pat M S tail p (nm-sym-of M e))
+        :else (let [tok (nm-nf M p NF-TOK)
+                    M1 (nm-gensym M (nm-tf M tok TF-START) 0)
+                    g (ck-r M1)
+                    M2 (ck-n-ref M1 tok g)
+                    M3 (ck-dx-pair M2 tail (ck-r M2) e)]
+                (ck-dx-pat M3 S (ck-r M3) p g))))
+(defn- ck-dx-pat [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (if (= (nm-kind M p) ND-VEC) (ck-dx-vec M S tail p g) (ck-dx-map M S tail p g)))
+
+;; [p0 p1 .. & r :as v] read from g, in written order
+(defn- ck-dx-vec [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (loop [M1 M t tail c (nm-first M p) i 0 after false]
+    (if (or (nm-failed M1) (zero? c))
+      (nm-put M1 MM-R0 t)
+      (let [x (nm-next M1 c)
+            nx (if (zero? x) 0 (nm-next M1 x))
+            tok (nm-nf M1 c NF-TOK)]
+        (cond (ck-dx-kw? M1 S c ":as")
+              (if (or (zero? x) (nm-ne (nm-kind M1 x) ND-SYM))
+                (ck-err M1 E-CHECK-BINDINGS c 0)
+                (let [M2 (ck-n-ref M1 tok g)
+                      M3 (ck-dx-pair M2 t x (ck-r M2))]
+                  (recur M3 (ck-r M3) nx i after)))
+              after (ck-err M1 E-CHECK-BINDINGS c 0)
+              (and (= (nm-kind M1 c) ND-SYM) (= (nm-head-of M1 c) HD-AMP))
+              (if (zero? x)
+                (ck-err M1 E-CHECK-BINDINGS c 0)
+                (let [M2 (ck-dx-drop M1 c g i)
+                      M3 (ck-dx-bind M2 S t x (ck-r M2) false)]
+                  (recur M3 (ck-r M3) nx i true)))
+              (= (nm-kind M1 c) ND-KW) (ck-err M1 E-CHECK-BINDINGS c 0)
+              :else
+              (let [M2 (ck-dx-nth M1 tok g i)
+                    M3 (ck-dx-bind M2 S t c (ck-r M2) false)]
+                (recur M3 (ck-r M3) x (inc i) after)))))))
+
+;; the value of the :or entry of map pattern p (0 when none); E2111 when it is not a map of symbol keys
+(defn- ck-dx-or [M :vector-i64 S :string p :i64] :vector-i64
+  (let [o (loop [k (nm-first M p)]
+            (cond (zero? k) 0
+                  (zero? (nm-next M k)) 0
+                  (ck-dx-kw? M S k ":or") (nm-next M k)
+                  :else (recur (nm-next M (nm-next M k)))))
+        bad (if (zero? o)
+              0
+              (if (nm-ne (nm-kind M o) ND-MAP)
+                o
+                (loop [k (nm-first M o)]
+                  (cond (zero? k) 0
+                        (or (nm-ne (nm-kind M k) ND-SYM) (zero? (nm-next M k))) k
+                        :else (recur (nm-next M (nm-next M k)))))))]
+    (if (pos? bad) (ck-err M E-CHECK-BINDINGS bad 0) (nm-put M MM-R0 o))))
+;; the default for binder symbol node s in :or map o (0 when none; the last entry for s wins, as `into {}`)
+(defn- ck-dx-or-of [M :vector-i64 o :i64 s :i64] :i64
+  (if (or (zero? o) (nm-ne (nm-kind M s) ND-SYM))
+    0
+    (loop [k (nm-first M o) d 0]
+      (if (zero? k)
+        d
+        (recur (nm-next M (nm-next M k)) (if (= (nm-sym-of M k) (nm-sym-of M s)) (nm-next M k) d))))))
+
+;; {k v ..} read from g, entries in written order
+(defn- ck-dx-map [M :vector-i64 S :string tail :i64 p :i64 g :i64] :vector-i64
+  (let [M0 (ck-dx-or M S p)
+        o (ck-r M0)]
+    (loop [M1 M0 t tail k (nm-first M0 p)]
+      (if (or (nm-failed M1) (zero? k))
+        (nm-put M1 MM-R0 t)
+        (let [v (nm-next M1 k)
+              nk (if (zero? v) 0 (nm-next M1 v))
+              tok (nm-nf M1 k NF-TOK)]
+          (cond (zero? v) (ck-err M1 E-CHECK-BINDINGS k 0)
+                (ck-dx-kw? M1 S k ":or") (recur M1 t nk)
+                (ck-dx-kw? M1 S k ":as")
+                (if (nm-ne (nm-kind M1 v) ND-SYM)
+                  (ck-err M1 E-CHECK-BINDINGS k 0)
+                  (let [M2 (ck-n-ref M1 tok g)
+                        M3 (ck-dx-pair M2 t v (ck-r M2))]
+                    (recur M3 (ck-r M3) nk)))
+                (ck-dx-kw? M1 S k ":keys")
+                (if (nm-ne (nm-kind M1 v) ND-VEC)
+                  (ck-err M1 E-CHECK-BINDINGS k 0)
+                  (let [M2 (ck-dx-keys M1 S t v g o)]
+                    (recur M2 (ck-r M2) nk)))
+                (= (nm-kind M1 k) ND-KW) (ck-err M1 E-CHECK-BINDINGS k 0)   ; :strs :syms ::k :ns/keys ..
+                (nm-ne (nm-kind M1 v) ND-KW) (ck-err M1 E-CHECK-BINDINGS v 0)
+                :else
+                (let [M2 (ck-dx-get M1 tok g v (ck-dx-or-of M1 o k))
+                      M3 (ck-dx-bind M2 S t k (ck-r M2) false)]
+                  (recur M3 (ck-r M3) nk))))))))
+;; :keys [s ..]: s <- (get g :s [d]); the keyword :s must be spelled in the module (its value is its spelling)
+(defn- ck-dx-keys [M :vector-i64 S :string tail :i64 v :i64 g :i64 o :i64] :vector-i64
+  (loop [M1 M t tail s (nm-first M v)]
+    (if (or (nm-failed M1) (zero? s))
+      (nm-put M1 MM-R0 t)
+      (let [nx (nm-next M1 s)
+            tok (nm-nf M1 s NF-TOK)
+            ks (if (= (nm-kind M1 s) ND-SYM) (ck-find-kw M1 S (nm-tf M1 tok TF-START) (nm-tf M1 tok TF-END)) 0)]
+        (if (zero? ks)
+          (ck-err M1 E-CHECK-BINDINGS s 0)
+          (let [M2 (ck-new M1 ND-KW (ck-dx-kwtok M1 ks tok) 0 ks)
+                M3 (ck-dx-get M2 tok g (ck-r M2) (ck-dx-or-of M2 o s))
+                M4 (ck-dx-pair M3 t s (ck-r M3))]
+            (recur M4 (ck-r M4) nx)))))))
+
+;; the token of a keyword node with symbol ks (a written :s, so the node prints as the keyword), else tok
+(defn- ck-dx-kwtok [M :vector-i64 ks :i64 tok :i64] :i64
+  (loop [x 1]
+    (cond (>= x (vector-at M MM-NODE-N)) tok
+          (and (= (nm-kind M x) ND-KW) (= (nm-sym-of M x) ks)) (nm-nf M x NF-TOK)
+          :else (recur (inc x)))))
+
+;; (let [.. b e ..] ..): every pattern pair is expanded in place, in order; the other pairs are kept
+(defn- ck-dx-let [M :vector-i64 S :string n :i64] :vector-i64
+  (let [v (nm-next M (nm-first M n))
+        M1 (ck-new M ND-INT (nm-nf M v NF-TOK) 0 0)   ; a scratch head for the new chain
+        d (ck-r M1)
+        M2 (loop [M2 M1 t d b (nm-first M1 v)]
+             (cond (nm-failed M2) M2
+                   (zero? b) (ck-link M2 t 0)
+                   (zero? (nm-next M2 b)) (ck-err M2 E-CHECK-BINDINGS b 0)
+                   :else (let [e (nm-next M2 b)
+                               nb (nm-next M2 e)
+                               M3 (ck-dx-bind M2 S t b e true)]
+                           (recur M3 (ck-r M3) nb))))]
+    (if (nm-failed M2) M2 (nm-set-nf M2 v NF-FIRST (nm-next M2 d)))))
+
+;; a copy of node x and its children (kind, token, aux, symbol); R0 = the copy
+(defn- ck-dx-copy [M :vector-i64 x :i64] :vector-i64
+  (let [M1 (ck-new M (nm-kind M x) (nm-nf M x NF-TOK) (nm-nf M x NF-AUX) (nm-nf M x NF-SYM))
+        y (ck-r M1)
+        M2 (loop [M2 M1 c (nm-first M1 x) t 0]
+             (if (or (zero? c) (nm-failed M2))
+               M2
+               (let [M3 (ck-dx-copy M2 c)
+                     z (ck-r M3)
+                     M4 (if (zero? t) (nm-set-nf M3 y NF-FIRST z) (ck-link M3 t z))]
+                 (recur M4 (nm-next M4 c) z))))]
+    (nm-put M2 MM-R0 y)))
+
+;; (loop [b e ..] body) with a pattern binder, as clojure.core/loop:
+;; (let [g e b' g x e2 ..] (loop [g g x x ..] (let [b g x x ..] body))); g fresh for a pattern, x itself for a symbol,
+;; b' a copy of pattern b (the outer let gives later inits the destructured names)
+(defn- ck-dx-loop [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        v (nm-next M h)
+        body (nm-next M v)
+        tok (nm-nf M h NF-TOK)
+        M1 (ck-new M ND-INT tok 0 0)   ; scratch heads of the three chains
+        o (ck-r M1)
+        M2 (ck-new M1 ND-INT tok 0 0)
+        l (ck-r M2)
+        M3 (ck-new M2 ND-INT tok 0 0)
+        i (ck-r M3)
+        M4 (loop [M4 M3 b (nm-first M3 v) to o tl l ti i]
+             (cond (nm-failed M4) M4
+                   (zero? b) (ck-link (ck-link (ck-link M4 to 0) tl 0) ti 0)
+                   (zero? (nm-next M4 b)) (ck-err M4 E-CHECK-BINDINGS b 0)
+                   :else
+                   (let [e (nm-next M4 b)
+                         nb (nm-next M4 e)
+                         bt (nm-nf M4 b NF-TOK)
+                         sym (= (nm-kind M4 b) ND-SYM)
+                         M5 (if sym (nm-put M4 MM-R0 (nm-sym-of M4 b)) (nm-gensym M4 (nm-tf M4 bt TF-START) 0))
+                         g (ck-r M5)
+                         M6 (ck-n-ref M5 bt g)
+                         M7 (ck-dx-pair M6 to (ck-r M6) e)
+                         to1 (ck-r M7)
+                         M8 (if sym
+                              M7
+                              (let [M9 (ck-dx-copy M7 b)
+                                    bc (ck-r M9)
+                                    M10 (ck-n-ref M9 bt g)]
+                                (ck-dx-pair M10 to1 bc (ck-r M10))))
+                         to2 (ck-r M8)
+                         M11 (ck-n-ref M8 bt g)
+                         a1 (ck-r M11)
+                         M12 (ck-n-ref M11 bt g)
+                         M13 (ck-dx-pair M12 tl a1 (ck-r M12))
+                         tl2 (ck-r M13)
+                         M14 (ck-n-ref M13 bt g)
+                         M15 (ck-dx-pair M14 ti b (ck-r M14))]
+                     (recur M15 nb to2 tl2 (ck-r M15)))))]
+    (if (nm-failed M4)
+      M4
+      (let [M5 (ck-n-vec M4 tok (nm-next M4 i))
+            iv (ck-r M5)
+            M6 (ck-link M5 iv body)
+            M7 (ck-mkh M6 tok HD-LET iv)
+            il (ck-r M7)
+            M8 (ck-n-vec M7 tok (nm-next M7 l))
+            lv (ck-r M8)
+            M9 (ck-chain2 M8 lv il)
+            M10 (ck-mkh M9 tok HD-LOOP lv)
+            lp (ck-r M10)
+            M11 (ck-n-vec M10 tok (nm-next M10 o))
+            ov (ck-r M11)
+            M12 (ck-chain2 M11 ov lp)]
+        (ck-rehead M12 n HD-LET ov)))))
+
+;; each pattern parameter of vector p is replaced by a fresh parameter g (a type form after it stays); R0 = the binding
+;; vector [pattern g ..] for the body, 0 when no parameter is a pattern
+(defn- ck-dx-params [M :vector-i64 p :i64] :vector-i64
+  (let [M1 (ck-new M ND-INT (nm-nf M p NF-TOK) 0 0)
+        d (ck-r M1)]
+    (loop [M2 M1 prev 0 c (nm-first M1 p) t d]
+      (cond (zero? c)
+            (let [M3 (ck-link M2 t 0)]
+              (if (= t d) (nm-put M3 MM-R0 0) (ck-n-vec M3 (nm-nf M3 p NF-TOK) (nm-next M3 d))))
+            (ck-dx-pat? M2 c)
+            (let [nx (nm-next M2 c)
+                  tok (nm-nf M2 c NF-TOK)
+                  M3 (nm-gensym M2 (nm-tf M2 tok TF-START) 0)
+                  g (ck-r M3)
+                  M4 (ck-n-ref M3 tok g)
+                  gp (ck-r M4)
+                  M5 (ck-link M4 gp nx)
+                  M6 (if (zero? prev) (nm-set-nf M5 p NF-FIRST gp) (ck-link M5 prev gp))
+                  M7 (ck-n-ref M6 tok g)
+                  M8 (ck-dx-pair M7 t c (ck-r M7))]
+              (recur M8 gp nx (ck-r M8)))
+            :else (recur M2 c (nm-next M2 c) t)))))
+;; the normalized (defn NAME [..] :R body) n gets body (let pv body)
+(defn- ck-dx-wrap [M :vector-i64 n :i64 pv :i64] :vector-i64
+  (let [rt (nm-nth M n 3)
+        body (nm-next M rt)
+        tok (nm-nf M pv NF-TOK)
+        M1 (ck-chain2 M pv body)
+        M2 (ck-mkh M1 tok HD-LET pv)
+        l (ck-r M2)]
+    (ck-link (ck-link M2 rt l) l 0)))
+
+;; Direct quoted symbols are data. Store their UTF-8 spelling as a string literal;
+;; NF-SYM = -1 marks the synthetic literal as :symbol for type checking.
+(defn- ck-q-symbol? [M :vector-i64 S :string n :i64] :bool
+  (let [h (nm-first M n) x (nm-next M h)
+        ht (nm-nf M h NF-TOK) xt (nm-nf M x NF-TOK)
+        a (nm-tf M ht TF-START) b (nm-tf M ht TF-END)
+        xa (nm-tf M xt TF-START) xb (nm-tf M xt TF-END)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-count M n) 2)
+         (= (nm-kind M h) ND-SYM) (= (nm-kind M x) ND-SYM)
+         (ck-r6b-is? S a b "quote")
+         (not (or (ck-r6b-is? S xa xb "nil") (ck-r6b-is? S xa xb "true") (ck-r6b-is? S xa xb "false"))))))
+(defn- ck-q-lit [M :vector-i64 S :string n :i64] :vector-i64
+  (let [x (nm-next M (nm-first M n)) tok (nm-nf M x NF-TOK)
+        a (nm-tf M tok TF-START) b (nm-tf M tok TF-END)
+        lit (vector-at M MM-LIT-N) lb (vector-at M MM-LITB-N) p (+ MM-LIT-BASE (* lit MM-LIT-W))]
+    (cond (>= lit MM-LIT-CAP) (ck-err M E-HEAP-REGION n 2)
+          (> (+ lb (- b a)) MM-LITB-CAP) (ck-err M E-HEAP-REGION n 3)
+          :else
+          (let [M1 (loop [M2 M i a]
+                     (if (>= i b) M2
+                       (let [cp (string-code-point-at S i)]
+                         (recur (lx-utf8-push M2 cp) (+ i (lx-cpw cp))))))
+                M2 (-> M1 (nm-put (+ p LF-B) lb) (nm-put (+ p LF-LEN) (- b a))
+                            (nm-put (+ p LF-TOK) tok) (nm-put MM-LIT-N (+ lit 1)))]
+            (-> M2 (nm-set-nf n NF-KIND ND-STR) (nm-set-nf n NF-AUX lit) (nm-set-nf n NF-SYM -1))))))
 ;; rewrite n until it is no sugar, then walk its children
-(defn- ck-ds-walk [M :vector-i64 S :string n :i64] :vector-i64
+(defn- ck-ds-walk[M :vector-i64 S :string n :i64] :vector-i64
   (let [k (nm-kind M n)
         hd (ck-ds-hd M n)]
     (cond (= n 0) (ck-touch M)
           (nm-failed M) (ck-touch M)
           (> hd 0) (ck-ds-walk (ck-ds-one M n hd) S n)
+          (ck-q-symbol? M S n) (ck-q-lit M S n)
+          (and (= k ND-LIST) (ck-dx-let? M n)) (ck-ds-walk (ck-dx M S n) S n)   ; JUN-729: destructuring
+          (ck-vassoc? M n) (ck-ds-walk (ck-vassoc M n) S n)   ; JUN-734: variadic assoc
+          (ck-pr-wrap? M n) (ck-ds-walk (ck-pr-wrap M n) S n)   ; JUN-730: a protocol call's receiver is a fresh local
           (ck-r6f-dinl? M n) (ck-ds-walk (ck-r6f-dinl M S n) S n)   ; R6F (before R6B's document folds)
           (pos? (ck-r6b-ds-code M n)) (ck-ds-walk (ck-r6b-ds M S n) S n)   ; R6B
           (pos? (ck-r6m-ods-code M n)) (ck-ds-walk (ck-r6m-ods M n) S n)   ; R6M: if-some when-some if-let when-let
+          (ck-kwmkeys? M n) (ck-ds-walk (ck-kwmkeys M S n) S n)
           (ck-r6f-ksnth? M n) (ck-ds-walk (ck-r6f-ksnth M S n) S n)   ; R6F
           (ck-r6f-adb3? M n) (ck-ds-walk (ck-r6f-adb3 M S n) S n)   ; R6F
           (ck-r6f-exi3? M n) (ck-ds-walk (ck-r6f-exi3 M S n) S n)   ; R6F
@@ -1475,9 +1818,118 @@
           (ck-fn-form? M n) (ck-ds-list (ck-ds-fn M n) S n)
           (= k ND-LIST) (ck-ds-list (ck-ds-ctor M S n) S n)
           (= k ND-VEC) (ck-ds-kids M S (nm-first M n))
-          (= k ND-MAP) (ck-ds-kids M S (nm-first M n))
+          (= k ND-MAP) (let [M1 (ck-kwmap-sort M S n)] (ck-ds-kids M1 S (nm-first M1 n)))   ; JUN-728
           (= k ND-SET) (ck-ds-kids M S (nm-first M n))
           :else (ck-touch M))))
+;; JUN-730: closed static protocol dispatch (20-names nm-dp-norm). Each implementation of protocol method m for record R is a
+;; top-level (defn- G [this [:ref R] ..] ..) whose list node carries NF-SYM = m. A call (m x ..) of such an m (no module
+;; definition, no head, not a local) gets its receiver bound to a fresh local first, (let [g x] (m g ..)) -- x is evaluated
+;; once, before the other arguments, as before -- and pass B then calls the implementation for g's static record type
+;; (ck-pr-call); a receiver of any other type is E2180, never a runtime type test (ADR 0204).
+;; the FN implementing method symbol s for record block blk (blk 0: any record), 0 when there is none
+(defn- ck-pr-impl [M :vector-i64 s :i64 blk :i64] :i64
+  (if (zero? (vector-at M (+ MM-STAT-BASE 21)))
+    0
+    (loop [f 1]
+      (let [d (nm-ff M f FF-NODE)]
+        (cond (>= f (vector-at M MM-FN-N)) 0
+              (and (= (nm-ff M f FF-KIND) FK-PRIV) (= (nm-kind M d) ND-LIST) (= (nm-nf M d NF-SYM) s)
+                   (or (zero? blk) (= (nm-sf M (nm-sym-of M (nm-nth M (nm-nth M (nm-nth M d 2) 1) 1)) SF-REC) blk)))
+              f
+              :else (recur (+ f 1)))))))
+;; 1 when list n calls a protocol method: its head is a symbol with no module definition and no head code
+(defn- ck-pr-head? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n)
+        s (nm-sym-of M h)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (zero? (nm-sf M s SF-FN)) (zero? (nm-sf M s SF-HEAD))
+         (pos? (ck-pr-impl M s 0)))))
+;; a call whose receiver is not yet a gensym local
+(defn- ck-pr-wrap? [M :vector-i64 n :i64] :bool
+  (and (ck-pr-head? M n)
+       (let [a (nm-next M (nm-first M n))]
+         (and (pos? a) (not (and (= (nm-kind M a) ND-SYM) (zero? (nm-sf M (nm-sym-of M a) SF-HASH))))))))
+;; (m x a ..) -> (let [g x] (m g a ..))
+(defn- ck-pr-wrap [M :vector-i64 n :i64] :vector-i64
+  (let [tok (ck-htok M n)
+        h (nm-first M n)
+        x (nm-next M h)
+        rs (nm-next M x)
+        M1 (nm-gensym M (nm-tf M tok TF-START) 0)
+        g (ck-r M1)
+        M2 (ck-n-ref M1 tok g)
+        gc (ck-r M2)
+        M3 (ck-link (ck-link M2 h gc) gc rs)
+        M4 (ck-n-list M3 tok h)
+        cl (ck-r M4)
+        M5 (ck-n-ref M4 tok g)
+        b (ck-r M5)
+        M6 (ck-chain2 M5 b x)
+        M7 (ck-n-vec M6 tok b)
+        v (ck-r M7)
+        M8 (ck-chain2 M7 v cl)]
+    (ck-rehead M8 n HD-LET v)))
+;; pass B: the call n of protocol method h on receiver local g -> a call of the implementation for g's record type
+(defn- ck-pr-call [M :vector-i64 n :i64 fx :i64 ctx :i64] :vector-i64
+  (let [h (nm-first M n)
+        a (nm-next M h)
+        M1 (if (= (nm-kind M a) ND-SYM) (ck-expr M a fx 0) (ck-err M E-CHECK-DISPATCH h 0))
+        blk (if (nm-failed M1) 0 (ck-blk M1 (ck-ty M1)))
+        f (if (zero? blk) 0 (ck-pr-impl M1 (nm-sym-of M1 h) blk))]
+    (cond (nm-failed M1) M1
+          (zero? f) (ck-err M1 E-CHECK-DISPATCH h 0)
+          :else (ck-list (nm-set-nf M1 h NF-SYM (nm-ff M1 f FF-SYM)) n fx ctx))))
+;; JUN-734: (assoc m k1 v1 k2 v2 ..) -> (assoc (assoc m k1 v1) k2 v2 ..), clojure.core/assoc's variadic arity folded
+;; left; each step is then the record / typed-map / document assoc its type selects. The arguments keep their order. An
+;; odd number of keys and values stays E2103 (the 4-child check); a module defn named assoc is not the head.
+(defn- ck-vassoc? [M :vector-i64 n :i64] :bool
+  (and (= (nm-kind M n) ND-LIST) (= (nm-kind M (nm-first M n)) ND-SYM) (= (nm-head-of M (nm-first M n)) HD-ASSOC)
+       (zero? (nm-sf M (nm-sym-of M (nm-first M n)) SF-FN)) (>= (nm-count M n) 6) (zero? (bit-and (nm-count M n) 1))))
+(defn- ck-vassoc [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n)
+        m (nm-next M h)
+        v1 (nm-next M (nm-next M m))
+        k2 (nm-next M v1)
+        M1 (ck-n-copy M h)
+        h2 (ck-r M1)
+        M2 (ck-link (ck-link M1 h2 m) v1 0)
+        M3 (ck-n-list M2 (nm-nf M2 h NF-TOK) h2)
+        l (ck-r M3)]
+    (ck-link (ck-link M3 h l) l k2)))
+;; JUN-728: the entries of a keyword-keyed map literal {:k e ..} (every key a keyword) are put in the printed-text order
+;; of their keys, the order the reference gives the closed record it lowers to (lang/guest-grammar.edn :map-literal
+;; :value-types :keyword-keys); the values are evaluated in that order, as record-new evaluates its fields. Any other
+;; map literal is unchanged. A repeated key stays (ck-kwrec refuses it, E2128).
+(defn- ck-kwmap-key< [M :vector-i64 S :string a :i64 b :i64] :bool
+  (let [sa (nm-sym-of M a)
+        sb (nm-sym-of M b)]
+    (neg? (string-compare (string-substring S (nm-sf M sa SF-START) (nm-sf M sa SF-END))
+                          (string-substring S (nm-sf M sb SF-START) (nm-sf M sb SF-END))))))
+(defn- ck-kwmap-sort [M :vector-i64 S :string n :i64] :vector-i64
+  (let [ks (loop [k (nm-first M n) acc (vector-i64)]
+             (cond (zero? k) acc
+                   (zero? (nm-next M k)) (vector-i64)
+                   (nm-ne (nm-kind M k) ND-KW) (vector-i64)
+                   :else (recur (nm-next M (nm-next M k)) (vector-conj acc k))))
+        m (vector-count ks)]
+    (if (< m 2)
+      (ck-touch M)
+      ;; insertion sort of the key nodes (stable: equal keys keep their order)
+      (let [sorted (loop [i 1 v ks]
+                     (if (>= i m)
+                       v
+                       (let [x (vector-at v i)
+                             v2 (loop [j i w v]
+                                  (if (and (pos? j) (ck-kwmap-key< M S x (vector-at w (dec j))))
+                                    (recur (dec j) (vector-assoc w j (vector-at w (dec j))))
+                                    (vector-assoc w j x)))]
+                         (recur (inc i) v2))))
+            M1 (loop [M2 M i 0]
+                 (if (>= i m)
+                   M2
+                   (let [k (vector-at sorted i)
+                         v (nm-next M2 k)]
+                     (recur (ck-link M2 v (if (< (inc i) m) (vector-at sorted (inc i)) 0)) (inc i)))))]
+        (nm-set-nf M1 n NF-FIRST (vector-at sorted 0))))))
 (defn- ck-ds-list [M :vector-i64 S :string n :i64] :vector-i64 (ck-ds-kids M S (nm-first M n)))
 (defn- ck-ds-kids [M :vector-i64 S :string c :i64] :vector-i64
   (if (= c 0)
@@ -1492,6 +1944,9 @@
   (let [nx (nm-next M c)]
     (cond (= c 0) (ck-touch M)
           (nm-ne (nm-kind M c) ND-SYM) (ck-ds-params M nx tok)
+          ;; JUN-734: a defrecord's bare name is no type spelling (a type is a keyword or a type vector; [s S] would
+          ;; read S as a second parameter): E2105 there, the record type is [:ref :<ns>/S]
+          (pos? (nm-sf M (nm-sym-of M c) SF-REC)) (ck-err M E-CHECK-TYPENAME c 0)
           (= (ck-is-tform M nx) 1) (ck-ds-params M (nm-next M nx) tok)
           :else
           (let [M1 (ck-n-kw M tok KW-PINFER)   ; R6C: provisional :i64 (refinable, see ck-hint-*)
@@ -1507,7 +1962,11 @@
         :else 1))
 
 (defn- ck-ds-defn [M :vector-i64 n :i64] :vector-i64
-  (let [p (nm-nth M n 2)] (ck-ds-defn1 (ck-r5b-ceiling-take (if (= (nm-kind M p) ND-VEC) (ck-ds-rest M p) M) n) n)))
+  (let [p (nm-nth M n 2)
+        M0 (if (= (nm-kind M p) ND-VEC) (ck-dx-params M p) (nm-put M MM-R0 0))   ; JUN-729: pattern parameters
+        pv (ck-r M0)
+        M1 (ck-ds-defn1 (ck-r5b-ceiling-take (if (= (nm-kind M0 p) ND-VEC) (ck-ds-rest M0 p) M0) n) n)]
+    (if (or (zero? pv) (nm-failed M1) (nm-ne (nm-count M1 n) 5)) M1 (ck-dx-wrap M1 n pv))))
 (defn- ck-ds-defn1 [M :vector-i64 n :i64] :vector-i64
   (let [h (nm-first M n)
         p (nm-nth M n 2)
@@ -1745,7 +2204,7 @@
   (let [k (nm-kind M n)]
     (cond (nm-failed M) (ck-touch M)
           (= k ND-INT) (ck-mark M n TY-I64 0)
-          (= k ND-STR) (ck-mark M n TY-STR 0)
+          (= k ND-STR) (ck-mark M n (if (= (nm-nf M n NF-SYM) -1) TY-SYM TY-STR) 0)
           (= k ND-KW) (ck-mark M n TY-KW 0)
           (and (= k ND-SYM) (ck-r6d-opaque-ref? M n)) (ck-expr (ck-r6d-inline-def M n) n fx ctx)   ; R6D
           (and (= k ND-SYM) (ck-r6f-cdef-ref? M n)) (ck-expr (ck-r6f-cdef-call M n) n fx ctx)   ; R6F: a computed def
@@ -1868,6 +2327,8 @@
           (= (ck-callable M fi) 1) (ck-call M n fi fx)
           (> hd 0) (ck-head (nm-set-nf M h NF-RES (+ (* RES-HEAD RES-SCALE) hd)) n hd fx ctx)
           (pos? (ck-fl-code (nm-sf M s SF-HASH))) (ck-fl-op M n h (+ ck-fl-base (ck-fl-code (nm-sf M s SF-HASH))) fx)   ; FLOAT
+          (ck-pr-head? M n) (ck-pr-call M n fx ctx)   ; JUN-730: a protocol method
+          (= (nm-sf M s SF-HASH) -3568532113232994950) (ck-err M E-CHECK-REIFY h 0)   ; JUN-730: reify (FNV-1a)
           :else (ck-err M E-CHECK-HEAD h 0))))
 
 (defn- ck-head [M :vector-i64 n :i64 hd :i64 fx :i64 ctx :i64] :vector-i64
@@ -2511,7 +2972,20 @@
                     M4 (ck-chain3 M3 gh d dk)
                     M5 (nm-set-nf M4 n NF-FIRST gh)]
                 (ck-expr M5 n fx 0))))
+          (= (ck-tcon M1 (ck-ty M1)) TC-MAP) (ck-gget2 M1 n fx)   ; JUN-734
           :else (ck-get-rec M1 n fx))))
+;; JUN-734: (get m k) on a typed map -> [:option V] (lang/guest-grammar.edn :def :value :quoted-not-widened: lookup is
+;; get on the typed map, [:option V], or V with a default); lowered as typed-map-get (4 hidden slots)
+(defn- ck-gget2 [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [h (nm-first M n)
+        M1 (ck-hide M h NF-TYPE 4 fx)
+        fx2 (ck-ty M1)
+        M2 (ck-expr M1 (nm-nth M1 n 1) fx2 0)
+        ty (ck-ty M2)
+        M3 (ck-want M2 (nm-nth M2 n 2) fx2 (ck-ta M2 ty) h)
+        M4 (if (nm-failed M3) M3 (ck-ct-intern M3 TC-OPTION (ck-tb M3 ty) 0))
+        ot (ck-r M4)]
+    (if (nm-failed M4) (ck-touch M4) (ck-mark (ck-fuel M4 (ck-fx-f fx)) n ot HD-GET))))
 (defn- ck-get-rec [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
         r (nm-next M h)
@@ -2553,9 +3027,22 @@
 (defn- ck-kwget [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [kw (nm-first M n)
         r (nm-next M kw)]
-    (if (= (nm-count M n) 2)
-      (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-KWGET)
-      (ck-err M E-CHECK-ARITY kw 1))))
+    (cond (= (nm-count M n) 2) (ck-access-end (ck-access M n r kw 0 fx) n r kw HD-KWGET)
+          (= (nm-count M n) 3) (ck-kwget3 M n fx)   ; JUN-734
+          :else (ck-err M E-CHECK-ARITY kw 1))))
+;; JUN-734: (:k m d) on a typed map is (get m :k d) (clojure.core keyword invocation with a default). A record has no
+;; absent field, so a default there is refused (E2103 at :k, as before), and so is any other type
+(defn- ck-kwget3 [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [kw (nm-first M n)
+        r (nm-next M kw)
+        d (nm-next M r)
+        M1 (ck-expr M r fx 0)]
+    (cond (nm-failed M1) (ck-touch M1)
+          (nm-ne (ck-tcon M1 (ck-ty M1)) TC-MAP) (ck-err M1 E-CHECK-ARITY kw 1)
+          :else (let [M2 (ck-n-head M1 (nm-nf M1 kw NF-TOK) HD-GET)
+                      gh (ck-r M2)
+                      M3 (ck-link (ck-link (ck-link (ck-link M2 gh r) r kw) kw d) d 0)]
+                  (ck-expr (nm-set-nf M3 n NF-FIRST gh) n fx 0)))))
 
 ;; ---------------------------------------------------------------------------------------------------------
 ;; pass A: signatures and def literals
@@ -2595,16 +3082,18 @@
         (< t TY-REC-BASE) false
         (< t TY-COMP-BASE) true
         :else (or (= (ck-tcon M t) TC-FN) (= (ck-tcon M t) ck-r6m-tc-var))))
-(defn- ck-r6m-xparams? [M :vector-i64 f :i64] :bool
+(defn- ck-r6m-xparams? [M :vector-i64 f :i64 most :i64] :bool
   (loop [k 0]
-    (cond (> (nm-ff M f FF-NPARAMS) 5) false
+    (cond (> (nm-ff M f FF-NPARAMS) most) false
           (= k (nm-ff M f FF-NPARAMS)) true
-          (ck-r6m-xty? M (nm-ff M f (+ FF-PT0 k))) (recur (+ k 1))
+          (ck-r6m-xty? M (ck-pt M f k)) (recur (+ k 1))   ; ck-pt: FF-PT0..4, then the parameter vector (R4B)
           :else false)))
 ;; 1 when f can be exported (R6M: value types in and out)
 (defn- ck-exportable [M :vector-i64 f :i64] :i64
   (let [rt (nm-ff M f FF-RTYPE)]
-    (cond (not (ck-r6m-xparams? M f)) 0
+    ;; an implicit export (R1, no :export clause) stays at 5 parameters: a defn of 6..8 is not
+    ;; silently promoted to an export by JUN-556's raise, which only explicit exports get
+    (cond (not (ck-r6m-xparams? M f 5)) 0
           (ck-r6m-xty? M rt) 1
           :else 0)))
 
@@ -2614,8 +3103,8 @@
   (let [rt (nm-ff M f FF-RTYPE)]
     (cond (nm-ne (nm-ff M f FF-EXPORT) 1) (ck-touch M)
           (< rt 1) (ck-touch M)
-          (> (nm-ff M f FF-NPARAMS) 5) (ck-err M E-CHECK-PARAMS nm 0)   ; R4B: an export takes at most 5
-          (not (ck-r6m-xparams? M f)) (ck-err M E-CHECK-TYPE nm TY-I64)
+          (> (nm-ff M f FF-NPARAMS) 8) (ck-err M E-CHECK-PARAMS nm 0)   ; R4B: an export takes at most 8 (JUN-556)
+          (not (ck-r6m-xparams? M f 8)) (ck-err M E-CHECK-TYPE nm TY-I64)
           (ck-r6m-xty? M rt) (ck-touch M)   ; R6M: any value type (was i64 / bool)
           :else (ck-err M E-CHECK-TYPE nm TY-I64))))
 
@@ -2627,8 +3116,9 @@
     (cond (nm-ne (nm-kind M p) ND-VEC) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (bit-and (nm-count M p) 1) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
           (> (nm-count M p) 32) (ck-err M E-CHECK-PARAMS16 nm 0)
-          ;; R4B: a clause takes up to 16 parameters; an explicit export or a variadic clause up to 5
-          (and (> (nm-count M p) 10) (or (= (nm-ff M f FF-EXPORT) 1) (= (nm-nf M p NF-TYPE) 1))) (ck-err M E-CHECK-PARAMS nm 0)
+          ;; R4B: a clause takes up to 16 parameters, an explicit export up to 8 (JUN-556), a variadic clause up to 5
+          (and (> (nm-count M p) 16) (= (nm-ff M f FF-EXPORT) 1)) (ck-err M E-CHECK-PARAMS nm 0)
+          (and (> (nm-count M p) 10) (= (nm-nf M p NF-TYPE) 1)) (ck-err M E-CHECK-PARAMS nm 0)
           (= (ck-is-tform M r) 0) (ck-err M E-CHECK-SIGNATURE nm 0)
           (nm-ne (nm-count M n) 5) (ck-err M E-CHECK-BODY nm 0)
           (= (ck-is-infer M r) 1) (ck-sig-defn2 (nm-put M MM-R0 -1) f p nm)
@@ -3173,6 +3663,73 @@
 ;; {k v ..}: [:map K V] from the first entry, K :i64 or :string (the reference reads a keyword-keyed literal as a pair
 ;; list or a record), at most 31 entries (7 hidden slots: the first in NF-SYM of the node)
 (defn- ck-maplit [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (if (= (nm-kind M (nm-first M n)) ND-KW) (ck-kwrec M n fx) (ck-maplit2 M n fx)))   ; JUN-728
+;; JUN-728: a keyword-keyed literal {:k e ..} is a closed record (lang/guest-grammar.edn :map-literal :value-types
+;; :keyword-keys; docs/language-ladder.edn :literal-typing: wherever it is written, also when every value is :i64). Its
+;; fields are its keys (1..32, every key a keyword: E2105 at another key kind, E2128 at a repeated key), typed by the
+;; values' checked types (a fn value, an :f32 or a value without a type is refused: E2128 / E2133). Literals with the same
+;; keys and field types are one anonymous record type: a block whose identity is a gensym (SF-HASH 0, RB-ID = itself),
+;; found again by its key set. The key nodes' NF-RES = their field index; the node is marked HD-RECORD-NEW (30-lower
+;; lw-kwrec builds the pair chain, the values in field order). (:k m), get and assoc of a present key are the record heads.
+(defn- ck-kwrec [M :vector-i64 n :i64 fx :i64] :vector-i64
+  (let [nc (nm-count M n)]
+    (cond (nm-ne (bit-and nc 1) 0) (ck-err M E-READ-MAP n 0)
+          (> nc 64) (ck-err M E-CHECK-SCHEMA n 0)
+          :else
+          (let [M1 (loop [M2 (ck-touch M) k (nm-first M n)]
+                     (cond (zero? k) M2
+                           (nm-failed M2) M2
+                           (nm-ne (nm-kind M2 k) ND-KW) (ck-err M2 E-CHECK-TYPENAME k 0)
+                           (ck-kwrec-dup? M2 n k) (ck-err M2 E-CHECK-SCHEMA k 0)
+                           :else
+                           (let [M3 (ck-expr M2 (nm-next M2 k) fx 0)
+                                 ty (ck-ty M3)]
+                             (cond (nm-failed M3) M3
+                                   (zero? ty) (ck-err M3 E-CHECK-ABORT-INFER n 0)
+                                   (or (= ty (ck-poison)) (= ty ck-ty-f32) (= (ck-tcon M3 ty) TC-FN)) (ck-err M3 E-CHECK-SCHEMA k 0)
+                                   :else (recur (nm-set-nf M3 k NF-TYPE ty) (nm-next M3 (nm-next M3 k)))))))]
+            (if (nm-failed M1) (ck-touch M1) (ck-kwrec-type M1 n))))))
+;; 1 when key node k repeats a key of literal n before it
+(defn- ck-kwrec-dup? [M :vector-i64 n :i64 k :i64] :bool
+  (loop [x (nm-first M n)]
+    (cond (= x k) false
+          (= (nm-sym-of M x) (nm-sym-of M k)) true
+          :else (recur (nm-next M (nm-next M x))))))
+;; 1 when block b has exactly the keys of literal n, each with the type its value checked to (NF-TYPE of the key node)
+(defn- ck-kwrec-same? [M :vector-i64 b :i64 n :i64] :bool
+  (and (= (ck-blk-n M b) (quot (nm-count M n) 2))
+       (loop [k (nm-first M n)]
+         (if (zero? k)
+           true
+           (let [j (ck-field M b (nm-sym-of M k))]
+             (if (and (>= j 0) (= (ck-blk-ty M b j) (nm-nf M k NF-TYPE)))
+               (recur (nm-next M (nm-next M k)))
+               false))))))
+;; the anonymous record block of literal n's shape, 0 when there is none yet
+(defn- ck-kwrec-find [M :vector-i64 n :i64] :i64
+  (loop [s 1]
+    (let [b (nm-sf M s SF-REC)]
+      (cond (>= s (vector-at M MM-SYM-N)) 0
+            (and (pos? b) (zero? (nm-sf M s SF-HASH)) (= (vector-at M (+ b RB-ID)) s) (ck-kwrec-same? M b n)) b
+            :else (recur (inc s))))))
+(defn- ck-kwrec-type [M :vector-i64 n :i64] :vector-i64
+  (let [old (ck-kwrec-find M n)
+        M1 (if (pos? old)
+             (nm-put M MM-R0 old)
+             (let [M2 (nm-gensym M 0 0)
+                   s (ck-r M2)
+                   M3 (ck-blk-new M2 (quot (nm-count M2 n) 2) s)
+                   b (ck-r M3)
+                   M4 (loop [M5 M3 k (nm-first M3 n) i 0]
+                        (if (zero? k) M5 (recur (ck-blk-put M5 b i (nm-sym-of M5 k) (nm-nf M5 k NF-TYPE)) (nm-next M5 (nm-next M5 k)) (inc i))))]
+               (if (nm-failed M4) M4 (nm-put (nm-set-sf M4 s SF-REC b) MM-R0 b))))
+        b (ck-r M1)]
+    (if (or (nm-failed M1) (zero? b))
+      (ck-touch M1)
+      (let [M2 (loop [M3 M1 k (nm-first M1 n)]
+                 (if (zero? k) M3 (recur (nm-set-nf M3 k NF-RES (ck-field M3 b (nm-sym-of M3 k))) (nm-next M3 (nm-next M3 k)))))]
+        (ck-mark M2 n (ck-blk-type M2 b) HD-RECORD-NEW)))))
+(defn- ck-maplit2 [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [c (nm-first M n)
         M1 (ck-hide M n NF-SYM 7 fx)
         fx2 (ck-ty M1)]
@@ -4768,6 +5325,7 @@
             :else (recur (+ i (mem-cpw (string-code-point-at t i))))))))
 (defn- ck-r6b-head-bit [S :string a :i64 b :i64] :i64
   (cond (and (> (- b a) 9) (ck-r6b-is? S a (+ a 9) "document-")) ck-r6b-g-doc
+        (ck-kwmkeys-text? S a b) (bit-or ck-kwm-g ck-r6f-g-kwo)
         (ck-r6f-ksnth-text? S a b) ck-r6f-g-kwo   ; R6F
         (or (ck-r6b-is? S a b "f32-to-bits") (ck-r6b-is? S a b "f32-from-bits")) ck-r6f-g-f32   ; R6F
         (pos? (ck-r6f-name-bit S a b)) (ck-r6f-name-bit S a b)   ; R6F
@@ -4778,26 +5336,38 @@
 
 ;; the library groups module text S needs: the groups it spells, minus single-function groups it defines; exi needs doc,
 ;; doc needs kw
+;; JUN-729: st is a stack of the open brackets, one bit each (1 for [ and {, 0 for ( ), low bit innermost. A `&` whose two
+;; innermost brackets are both [ or { is the rest marker of a destructuring pattern ([[a & r] ..], {[a & r] :k}), which
+;; 21-check expands to (vector-drop g i): it needs the vec group. The `&` of a parameter vector [p & r] sits in a (.
+(defn- ck-r6b-push [st :i64 b :i64] :i64 (bit-and (bit-or (* st 2) b) 4611686018427387903))
 (defn- ck-r6b-scan [S :string] :i64
   (let [n (string-length S)
-        r (loop [i 0 used 0 defd 0 pd false]
+        r (loop [i 0 used 0 defd 0 pd false st 0]
             (if (>= i n)
               (bit-and used (bit-not (bit-and defd (bit-not (bit-or ck-r6b-g-kw ck-r6b-g-doc)))))
               (let [c (string-code-point-at S i)]
-                (cond (= c 59) (recur (lx-eol S i) used defd false)
-                      (= c 34) (recur (ck-r6b-strend S i) used defd false)
-                      (= c 92) (recur (ck-r6b-charend S i) used defd false)
+                (cond (= c 59) (recur (lx-eol S i) used defd false st)
+                      (= c 34) (recur (ck-r6b-strend S i) used defd false st)
+                      (= c 92) (recur (ck-r6b-charend S i) used defd false st)
                       (= c 40) (let [b (ck-r6b-symend S (+ i 1))]
                                  (if (= b (+ i 1))
-                                   (recur b used defd false)
-                                   (recur b (bit-or used (ck-r6b-head-bit S (+ i 1) b)) defd (ck-r6b-defhead? S (+ i 1) b))))
+                                   (recur b used defd false (ck-r6b-push st 0))
+                                   (recur b (bit-or used (ck-r6b-head-bit S (+ i 1) b)) defd (ck-r6b-defhead? S (+ i 1) b) (ck-r6b-push st 0))))
                       (= c 58) (let [b (ck-r6b-symend S (+ i 1))]
-                                 (recur b (if (ck-r6b-is? S i b ":document") (bit-or used ck-r6b-g-doc) used) defd false))
+                                 (recur b (if (ck-r6b-is? S i b ":document") (bit-or used ck-r6b-g-doc) used) defd false st))
                       (lx-symch? c) (let [b (ck-r6b-symend S i)]
-                                      (recur b used (if pd (bit-or defd (bit-or (ck-r6b-name-bit (nm-hash S i b)) (bit-or (ck-r6f-name-bit S i b) (ck-r6m-name-bit S i b)))) defd) false))
-                      :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false))))))
+                                      (recur b (if (and (= c 38) (= b (+ i 1)) (= (bit-and st 3) 3)) (bit-or used ck-r6b-g-vec) used)
+                                             (if pd (bit-or defd (bit-or (ck-r6b-name-bit (nm-hash S i b)) (bit-or (ck-r6f-name-bit S i b) (ck-r6m-name-bit S i b)))) defd) false st))
+                      (or (= c 91) (= c 123)) (recur (+ i 1) used defd false (ck-r6b-push st 1))
+                      (or (= c 41) (= c 93) (= c 125)) (recur (+ i 1) used defd false (quot st 2))
+                      :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false) st)))))
         r2 (if (pos? (bit-and r (bit-or ck-r6b-g-exi ck-r6f-g-symp))) (bit-or r ck-r6b-g-doc) r)]   ; R6F: symbol? needs doc
-    (if (pos? (bit-and r2 (bit-or ck-r6b-g-doc ck-r6f-g-kwo))) (bit-or r2 ck-r6b-g-kw) r2)))   ; R6F: kwo needs kw
+    ;; Document f64 and canonical codecs use the existing exact decimal and
+    ;; UTF-8 groups. Their source is appended after scanning the user module.
+    (let [r3 (if (pos? (bit-and r2 ck-r6b-g-doc))
+               (bit-or r2 (bit-or ck-r6b-g-dec ck-r6b-g-utf8)) r2)]
+      (if (pos? (bit-and r3 (bit-or ck-r6b-g-doc ck-r6f-g-kwo)))
+        (bit-or r3 ck-r6b-g-kw) r3))))   ; R6F: kwo needs kw
 
 ;; the module's keyword table: " :k1 :k2 .. " (each spelling once), the 11 document kinds first
 ;; R6D: table acc0 plus the spellings of module text S it does not have yet (first occurrence order)
@@ -4821,7 +5391,11 @@
 
 (defn- ck-r6b-pick [m :i64 g :i64 t :string] :string (if (zero? (bit-and m g)) "" t))
 
-(defn- ck-r6b-kwtab [S :string] :string (ck-r6b-kwadd " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map " S))
+(defn- ck-r6b-kwtab [S :string] :string
+  (ck-r6b-kwadd
+    (if (pos? (bit-and (ck-r6b-scan S) ck-r6b-g-doc))
+      " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map :f64-text/non-finite :f64-text/no-roundtrip "
+      " :null :bool :i64 :f64 :string :keyword :symbol :vector :list :set :map ") S))
 ;; R6D (agent R6D, 2026-10-03): the keyword TEXT table is a link-time union. A keyword made in one module and turned into
 ;; text in another trapped (the R6B table was per module). 60-proj gives the ENTRY module the union T of every linked
 ;; module's spellings (ck-r6b-kwmerge in compile order; separate mode: the cumulative K lines of the objects), forces its
@@ -4861,7 +5435,8 @@
           (string-concat (ck-r6b-pick m ck-r6b-g-f64 (ck-r6b-t-f64)))   ; R6C
           (string-concat (ck-r6b-pick m ck-r6b-g-oi64 (ck-r6b-t-oi64)))   ; R6D
           (string-concat (ck-r6b-pick m ck-r6b-g-dec (ck-r6b-t-dec)))   ; R6D
-          (string-concat (ck-r6b-pick m ck-r6f-g-kwo (ck-r6f-t-kwo)))   ; R6F
+          (string-concat (ck-r6b-pick m ck-r6f-g-kwo (ck-r6f-t-kwo)))
+          (string-concat (ck-r6b-pick m ck-kwm-g (ck-kwmkeys-lib)))   ; R6F
           (string-concat (ck-r6b-pick m ck-r6f-g-f32 (ck-r6f-t-f32)))   ; R6F
           (string-concat (ck-r6f-t-str m))   ; R6F
           (string-concat (ck-r6m-t-lib m))   ; R6M
@@ -5393,6 +5968,147 @@
 (defn- ck-r6b-t-kw3 [] :string
   "(defn- __r6-kwreg [t :string] :i64 (let [h (__r6-kwh t)] (if (< (__r6-kiget h 1897424841649887629) -1) (let [x (if (= (__r6-kwhas (__r6-kwtab) h 0) 1) (__r6-kiput h 1897424841649887629 -1) (__r6-kwput t h 0 0 0))] h) h)))\n")
 (defn- ck-r6b-t-kw [] :string (string-concat (ck-r6b-t-kw0) (string-concat (ck-r6b-t-kw1) (string-concat (ck-r6b-t-kw2) (ck-r6b-t-kw3)))))
+;; Canonical runtime fragments: source bindings in seed/runtime/document-runtime.json.
+(defn- ck-r6b-t-doc-runtime0 [] :string
+  (string-concat ";; Runtime source fragment embedded in seed/21-check.kotoba, not a unity module.\n" (string-concat ";; The formatter is an alpha-renamed copy of compiler/f64_text.kotoba, with\n" (string-concat ";; its exact decimal parser imported from the seed's existing decimal group.\n" (string-concat ";; No host printer/parser or C runtime is involved. See document-runtime.json\n" (string-concat ";; for source bindings; this candidate has not been executed or qualified.\n" "(defn- __krft_decimal-bits-internal [text :string] [:option :i64]\n"))))))
+(defn- ck-r6b-t-doc-runtime1 [] :string
+  (string-concat "  (let [parsed (decimal-f64-parse text)]\n" (string-concat "    (if (option-some?-of [:option :f64] parsed)\n" (string-concat "      (option-some-of [:option :i64]\n" (string-concat "        (__r6-as :i64 (option-value-of [:option :f64] parsed (__r6-as :f64 0))))\n" (string-concat "      (option-none-of [:option :i64]))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime2 [] :string
+  (string-concat ";; Generate exact decimal digits with integer arithmetic, then choose the first\n" (string-concat ";; ties-to-even rounded prefix that parses back to the original bits. Every\n" (string-concat ";; finite binary64 has such a prefix by17 significant digits. No host float\n" (string-concat ";; printer, float arithmetic, platform locale, C runtime or numeric cast is used.\n" (string-concat "(defn- __krft_decimal-bits [text :string] [:option :i64]\n" "  (let [bits (arena-scope (option-value-of [:option :i64] (__krft_decimal-bits-internal text) -1))]\n"))))))
+(defn- ck-r6b-t-doc-runtime3 [] :string
+  (string-concat "    (if (= bits -1) (option-none-of [:option :i64]) (option-some-of [:option :i64] bits))))\n" (string-concat "\n" (string-concat "(defn- __krft_finite-bits? [bits :i64] :bool\n" (string-concat "  (not (= (bit-and (u64-shift-right bits 52) 2047) 2047)))\n" (string-concat "\n" "(defn- __krft_digit [value :i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime4 [] :string
+  (string-concat "  (string-substring \"0123456789\" value (+ value 1)))\n" (string-concat ";; Decimal digits are kept least-significant first in a single mutable vector.\n" (string-concat ";; Slot 0 is the used length; binary64 requires fewer than 1100 digits.\n" (string-concat "(defn- __krft_decimal-init [text :string] :vector-i64\n" (string-concat "  (let [n (string-byte-length text) v (vector-assoc! (vector-alloc 1101) 0 n)]\n" "    (loop [i 0 m v]\n"))))))
+(defn- ck-r6b-t-doc-runtime5 [] :string
+  (string-concat "      (if (= i n) m\n" (string-concat "        (recur (+ i 1) (vector-assoc! m (+ i 1) (string-code-point-at text (- (- n 1) i))))))))\n" (string-concat "(defn- __krft_decimal-times [v :vector-i64 factor :i64] :vector-i64\n" (string-concat "  (let [n (vector-at v 0)]\n" (string-concat "    (loop [i 1 carry 0 m v]\n" "      (if (> i n)\n"))))))
+(defn- ck-r6b-t-doc-runtime6 [] :string
+  (string-concat "        (if (= carry 0) m\n" (string-concat "          (vector-assoc! (vector-assoc! m (+ n 1) (+ 48 carry)) 0 (+ n 1)))\n" (string-concat "        (let [value (+ (* (- (vector-at m i) 48) factor) carry)\n" (string-concat "              next-carry (quot value 10)]\n" (string-concat "          (recur (+ i 1) next-carry (vector-assoc! m i (+ 48 (- value (* next-carry 10))))))))))\n" "(defn- __krft_decimal-render [v :vector-i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime7 [] :string
+  (string-concat "  (let [n (vector-at v 0) result (vector-alloc n)]\n" (string-concat "    (loop [i 0 out result]\n" (string-concat "      (if (= i n) (string-from-utf8 (bytes-from-vector-i64 out))\n" (string-concat "        (recur (+ i 1) (vector-assoc! out i (vector-at v (- n i))))))))\n" (string-concat "(defn- __krft_multiply-power [text :string factor :i64 exponent :i64] :string\n" "  (loop [i 0 v (__krft_decimal-init text)]\n"))))))
+(defn- ck-r6b-t-doc-runtime8 [] :string
+  (string-concat "    (if (>= i exponent) (__krft_decimal-render v)\n" (string-concat "      (recur (+ i 1) (__krft_decimal-times v factor)))))\n" (string-concat "(defn- __krft_zeros [count :i64] :string\n" (string-concat "  (loop [i 0 out \"\"]\n" (string-concat "    (if (>= i count) out (recur (+ i 1) (string-concat out \"0\")))))\n" "(defn- __krft_increment [text :string] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime9 [] :string
+  (string-concat "  (loop [i (- (string-byte-length text) 1) suffix \"\"]\n" (string-concat "    (if (< i 0)\n" (string-concat "      (string-concat \"1\" suffix)\n" (string-concat "      (let [d (- (string-code-point-at text i) 48)]\n" (string-concat "        (if (= d 9)\n" "          (recur (- i 1) (string-concat \"0\" suffix))\n"))))))
+(defn- ck-r6b-t-doc-runtime10 [] :string
+  (string-concat "          (string-concat (string-substring text 0 i)\n" (string-concat "            (string-concat (__krft_digit (+ d 1)) suffix)))))))\n" (string-concat "(defn- __krft_nonzero-after? [text :string start :i64] :bool\n" (string-concat "  (loop [i start]\n" (string-concat "    (if (>= i (string-byte-length text)) false\n" "      (if (not (= (string-code-point-at text i) 48)) true (recur (+ i 1))))))\n"))))))
+(defn- ck-r6b-t-doc-runtime11 [] :string
+  (string-concat "(defn- __krft_round-prefix [text :string count :i64 mode :i64] :string\n" (string-concat "  (let [length (string-byte-length text)\n" (string-concat "        prefix (string-substring text 0 (if (< count length) count length))]\n" (string-concat "    (if (>= count length)\n" (string-concat "      prefix\n" "      (let [next (- (string-code-point-at text count) 48)\n"))))))
+(defn- ck-r6b-t-doc-runtime12 [] :string
+  (string-concat "            last (- (string-code-point-at text (- count 1)) 48)\n" (string-concat "            up (cond (= mode -1) false\n" (string-concat "                     (= mode 1) (__krft_nonzero-after? text count)\n" (string-concat "                     :else (or (> next 5)\n" (string-concat "                               (and (= next 5)\n" "                                    (or (__krft_nonzero-after? text (+ count 1)) (= (bit-and last 1) 1)))))\n"))))))
+(defn- ck-r6b-t-doc-runtime13 [] :string
+  (string-concat "            rounded (if up (__krft_increment prefix) prefix)]\n" (string-concat "        rounded))))\n" (string-concat "(defn- __krft_trim-zeroes [text :string] :string\n" (string-concat "  (loop [n (string-byte-length text)]\n" (string-concat "    (if (and (> n 1) (= (string-code-point-at text (- n 1)) 48))\n" "      (recur (- n 1))\n"))))))
+(defn- ck-r6b-t-doc-runtime14 [] :string
+  (string-concat "      (string-substring text 0 n))))\n" (string-concat "(defn- __krft_render [rounded :string original-order :i64 count :i64 negative :bool] :string\n" (string-concat "  (let [carry (> (string-byte-length rounded) count)\n" (string-concat "        digits (__krft_trim-zeroes (if carry (string-substring rounded 0 count) rounded))\n" (string-concat "        order (if carry (+ original-order 1) original-order)\n" "        length (string-byte-length digits)\n"))))))
+(defn- ck-r6b-t-doc-runtime15 [] :string
+  (string-concat "        point (+ order 1)\n" (string-concat "        body (cond\n" (string-concat "               (or (< order -6) (>= order 21))\n" (string-concat "               (string-concat (string-substring digits 0 1)\n" (string-concat "                 (string-concat\n" "                   (if (> length 1) (string-concat \".\" (string-substring digits 1 length)) \"\")\n"))))))
+(defn- ck-r6b-t-doc-runtime16 [] :string
+  (string-concat "                   (string-concat \"e\" (string-from-i64 order))))\n" (string-concat "               (<= point 0)\n" (string-concat "               (string-concat \"0.\" (string-concat (__krft_zeros (- 0 point)) digits))\n" (string-concat "               (>= point length)\n" (string-concat "               (string-concat digits (string-concat (__krft_zeros (- point length)) \".0\"))\n" "               :else\n"))))))
+(defn- ck-r6b-t-doc-runtime17 [] :string
+  (string-concat "               (string-concat (string-substring digits 0 point)\n" (string-concat "                              (string-concat \".\" (string-substring digits point length))))]\n" (string-concat "    (if negative (string-concat \"-\" body) body)))\n" (string-concat "(defn- __krft_shortest [digits :string order :i64 bits :i64] [:result :string :keyword]\n" (string-concat "  (loop [count 1]\n" "    (if (> count 17)\n"))))))
+(defn- ck-r6b-t-doc-runtime18 [] :string
+  (string-concat "      (result-err-of [:result :string :keyword] :f64-text/no-roundtrip)\n" (string-concat "      ;; At a power-of-two boundary the rounding interval is asymmetric.\n" (string-concat "      ;; Check both adjacent decimal lattice points as well as the nearest\n" (string-concat "      ;; ties-to-even point; the nearest alone may miss a shorter spelling.\n" (string-concat "      (let [nearest (__krft_render (__krft_round-prefix digits count 0) order count (< bits 0))\n" "            low (__krft_render (__krft_round-prefix digits count -1) order count (< bits 0))\n"))))))
+(defn- ck-r6b-t-doc-runtime19 [] :string
+  (string-concat "            high (__krft_render (__krft_round-prefix digits count 1) order count (< bits 0))\n" (string-concat "            parsed (__krft_decimal-bits nearest)\n" (string-concat "            low-parsed (__krft_decimal-bits low)\n" (string-concat "            high-parsed (__krft_decimal-bits high)]\n" (string-concat "        (cond\n" "          (and (option-some?-of [:option :i64] parsed)\n"))))))
+(defn- ck-r6b-t-doc-runtime20 [] :string
+  (string-concat "               (= (option-value-of [:option :i64] parsed 0) bits))\n" (string-concat "          (result-ok-of [:result :string :keyword] nearest)\n" (string-concat "          (and (option-some?-of [:option :i64] low-parsed)\n" (string-concat "               (= (option-value-of [:option :i64] low-parsed 0) bits))\n" (string-concat "          (result-ok-of [:result :string :keyword] low)\n" "          (and (option-some?-of [:option :i64] high-parsed)\n"))))))
+(defn- ck-r6b-t-doc-runtime21 [] :string
+  (string-concat "               (= (option-value-of [:option :i64] high-parsed 0) bits))\n" (string-concat "          (result-ok-of [:result :string :keyword] high)\n" (string-concat "          :else (recur (+ count 1)))))))\n" (string-concat "\n" (string-concat "(defn- __krft_format-bits [bits :i64] [:result :string :keyword]\n" "  \"Shortest round-trip finite decimal; integral values retain an EDN float\n"))))))
+(defn- ck-r6b-t-doc-runtime22 [] :string
+  (string-concat "  marker. Signed zero is preserved here; document identity normalizes it at\n" (string-concat "  the canonical-byte boundary. NaN and infinities return a typed refusal.\"\n" (string-concat "  (if (not (__krft_finite-bits? bits))\n" (string-concat "    (result-err-of [:result :string :keyword] :f64-text/non-finite)\n" (string-concat "    (let [magnitude (bit-and bits 9223372036854775807)]\n" "      (if (= magnitude 0)\n"))))))
+(defn- ck-r6b-t-doc-runtime23 [] :string
+  (string-concat "        (result-ok-of [:result :string :keyword] (if (< bits 0) \"-0.0\" \"0.0\"))\n" (string-concat "        (let [exponent (bit-and (u64-shift-right bits 52) 2047)\n" (string-concat "              fraction (bit-and bits 4503599627370495)\n" (string-concat "              mantissa (if (= exponent 0) fraction (+ fraction 4503599627370496))\n" (string-concat "              binary-exponent (if (= exponent 0) -1074 (- exponent 1075))\n" "              places (if (< binary-exponent 0) (- 0 binary-exponent) 0)\n"))))))
+(defn- ck-r6b-t-doc-runtime24 [] :string
+  (string-concat "              digits (__krft_multiply-power (string-from-i64 mantissa)\n" (string-concat "                                     (if (< binary-exponent 0) 5 2)\n" (string-concat "                                     (if (< binary-exponent 0) (- 0 binary-exponent) binary-exponent))\n" (string-concat "              order (- (- (string-byte-length digits) places) 1)]\n" (string-concat "          (__krft_shortest digits order bits))))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime25 [] :string
+  (string-concat "(defn- __kr_df64text [bits :i64] :string\n" (string-concat "  (let [result (__krft_format-bits bits)]\n" (string-concat "    (if (result-ok?-of [:result :string :keyword] result)\n" (string-concat "      (result-value-of [:result :string :keyword] result \"\")\n" (string-concat "      (__kr_dtraps))))\n" "(defn- __kr_df64canon [d :string i :i64 end :i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime26 [] :string
+  (string-concat "  (let [parsed (__krft_decimal-bits (string-substring d i end))]\n" (string-concat "    (if (option-some?-of [:option :i64] parsed)\n" (string-concat "      (let [bits (option-value-of [:option :i64] parsed 0)\n" (string-concat "            normalized (if (= (bit-and bits 9223372036854775807) 0) 0 bits)]\n" (string-concat "        (string-concat \"f\" (string-concat (string-from-i64 normalized) \";\")))\n" "      (__kr_dtraps))))\n"))))))
+(defn- ck-r6b-t-doc-runtime27 [] :string
+  (string-concat "(defn- document-f64 [value :f64] :document\n" (string-concat "  (__r6-dd (__kr_df64text (__r6-as :i64 value))))\n" (string-concat "(defn- document-f64-value [d :document] [:option :f64]\n" (string-concat "  (let [text (__r6-ds d)]\n" (string-concat "    (if (= (__kr_dkindn text) 3)\n" "      (decimal-f64-parse text)\n"))))))
+(defn- ck-r6b-t-doc-runtime28 [] :string
+  (string-concat "      (option-none-of [:option :f64]))))\n" (string-concat ";; Runtime source fragment embedded in 21-check, not a seed unity module.\n" (string-concat ";; The wire contract is osaho document-canonical-bytes, not DAG-CBOR.\n" (string-concat ";; State is local to a single read: [byte-cursor, nodes, aggregate-text-bytes].\n" (string-concat ";; This candidate is not executed or qualified; SHA-256 is a separate fragment.\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime29 [] :string
+  (string-concat "(defn- __kr_drcharge [state :vector-i64 slot :i64 amount :i64 limit :i64] :i64\n" (string-concat "  (let [next (+ (vector-at state slot) amount)]\n" (string-concat "    (if (or (< amount 0) (> next limit))\n" (string-concat "      (__kr_dtrap)\n" (string-concat "      (let [written (vector-assoc! state slot next)] next))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime30 [] :string
+  (string-concat "(defn- __kr_drtake [text :string state :vector-i64] :i64\n" (string-concat "  (let [cursor (vector-at state 0)]\n" (string-concat "    (if (>= cursor (string-byte-length text))\n" (string-concat "      (__kr_dtrap)\n" (string-concat "      (let [point (string-code-point-at text cursor)\n" "            written (vector-assoc! state 0 (+ cursor 1))]\n"))))))
+(defn- ck-r6b-t-doc-runtime31 [] :string
+  (string-concat "        point))))\n" (string-concat "\n" (string-concat "(defn- __kr_drdecimal [text :string state :vector-i64 separator :i64] :i64\n" (string-concat "  (let [first (__kr_drtake text state)\n" (string-concat "        negative (= first 45)\n" "        signed (or negative (= first 43))]\n"))))))
+(defn- ck-r6b-t-doc-runtime32 [] :string
+  (string-concat "    (loop [point (if signed (__kr_drtake text state) first) value 0 digits 0]\n" (string-concat "      (if (= point separator)\n" (string-concat "        (cond (= digits 0) (__kr_dtrap)\n" (string-concat "              negative value\n" (string-concat "              (= value -9223372036854775808) (__kr_dtrap)\n" "              :else (- 0 value))\n"))))))
+(defn- ck-r6b-t-doc-runtime33 [] :string
+  (string-concat "        (if (or (< point 48) (> point 57)\n" (string-concat "                (< value -922337203685477580)\n" (string-concat "                (and (= value -922337203685477580) (> point 56)))\n" (string-concat "          (__kr_dtrap)\n" (string-concat "          (recur (__kr_drtake text state)\n" "                 (- (* value 10) (- point 48)) (+ digits 1)))))))\n"))))))
+(defn- ck-r6b-t-doc-runtime34 [] :string
+  (string-concat "\n" (string-concat "(defn- __kr_drtext [text :string state :vector-i64] :string\n" (string-concat "  (let [length (__kr_drdecimal text state 58)\n" (string-concat "        start (vector-at state 0)]\n" (string-concat "    (if (or (< length 0) (> length 65536)\n" "            (> length (- (string-byte-length text) start)))\n"))))))
+(defn- ck-r6b-t-doc-runtime35 [] :string
+  (string-concat "      (__kr_dtraps)\n" (string-concat "      (let [payload (string-substring text start (+ start length))\n" (string-concat "            charged (__kr_drcharge state 2 length 65536)\n" (string-concat "            written (vector-assoc! state 0 (+ start length))]\n" (string-concat "        payload))))\n" "\n"))))))
+(defn- ck-r6b-t-doc-runtime36 [] :string
+  (string-concat "(defn- __kr_drkeyword [text :string state :vector-i64] :string\n" (string-concat "  (let [keyword (__kr_drtext text state)\n" (string-concat "        length (string-byte-length keyword)]\n" (string-concat "    (if (and (> length 0) (<= length 512)\n" (string-concat "             (= (string-code-point-at keyword 0) 58)\n" "             (__kr_dsymsok keyword 1))\n"))))))
+(defn- ck-r6b-t-doc-runtime37 [] :string
+  (string-concat "      keyword\n" (string-concat "      (__kr_dtraps))))\n" (string-concat "\n" (string-concat "(defn- __kr_drsequence [text :string state :vector-i64 depth :i64 tag :i64] :string\n" (string-concat "  (let [count (__kr_drdecimal text state 58)\n" "        empty (cond (= tag 118) \"[]\" (= tag 108) \"()\" :else \"#{}\")]\n"))))))
+(defn- ck-r6b-t-doc-runtime38 [] :string
+  (string-concat "    (if (or (< count 0) (> count 32))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (loop [index 0 output empty previous \"\"]\n" (string-concat "        (if (>= index count) output\n" (string-concat "          (let [value (__kr_drwalk text state (+ depth 1) false)\n" "                canonical (if (= tag 101) (__kr_dcanon value) \"\")]\n"))))))
+(defn- ck-r6b-t-doc-runtime39 [] :string
+  (string-concat "            (if (and (= tag 101) (> index 0)\n" (string-concat "                     (>= (string-compare previous canonical) 0))\n" (string-concat "              (__kr_dtraps)\n" (string-concat "              (recur (+ index 1) (__kr_dvadd output value) canonical))))))))\n" (string-concat "\n" "(defn- __kr_drmap [text :string state :vector-i64 depth :i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime40 [] :string
+  (string-concat "  (let [count (__kr_drdecimal text state 58)]\n" (string-concat "    (if (or (< count 0) (> count 32))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (loop [index 0 output \"{}\" previous \"\"]\n" (string-concat "        (if (>= index count) output\n" "          (let [marker (__kr_drtake text state)\n"))))))
+(defn- ck-r6b-t-doc-runtime41 [] :string
+  (string-concat "                key (cond (= marker 75) (__kr_drkeyword text state)\n" (string-concat "                          (= marker 68) (__kr_drwalk text state (+ depth 1) true)\n" (string-concat "                          :else (__kr_dtraps))\n" (string-concat "                value (__kr_drwalk text state (+ depth 1) false)]\n" (string-concat "            (if (and (> index 0)\n" "                     (>= (__kr_dkeycmp previous key 0 (string-byte-length key)) 0))\n"))))))
+(defn- ck-r6b-t-doc-runtime42 [] :string
+  (string-concat "              (__kr_dtraps)\n" (string-concat "              (recur (+ index 1)\n" (string-concat "                     (__kr_dvadd output (string-concat key (string-concat \" \" value)))\n" (string-concat "                     key))))))))\n" (string-concat "\n" "(defn- __kr_drwalk [text :string state :vector-i64 depth :i64 map-key :bool] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime43 [] :string
+  (string-concat "  (let [tag (__kr_drtake text state)\n" (string-concat "        keyword-key (and map-key (= tag 107))]\n" (string-concat "    (if (and (not keyword-key) (> depth 8))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (let [charged (if keyword-key 0 (__kr_drcharge state 1 1 4096))]\n" "        (cond\n"))))))
+(defn- ck-r6b-t-doc-runtime44 [] :string
+  (string-concat "          (= tag 110) \"nil\"\n" (string-concat "          (= tag 98) (let [value (__kr_drtake text state)]\n" (string-concat "                       (cond (= value 116) \"true\" (= value 102) \"false\"\n" (string-concat "                             :else (__kr_dtraps)))\n" (string-concat "          (= tag 105) (string-from-i64 (__kr_drdecimal text state 59))\n" "          (= tag 102) (__kr_df64text (__kr_drdecimal text state 59))\n"))))))
+(defn- ck-r6b-t-doc-runtime45 [] :string
+  (string-concat "          (= tag 115) (__kr_desc (__kr_drtext text state))\n" (string-concat "          (= tag 107) (__kr_drkeyword text state)\n" (string-concat "          (= tag 121) (let [value (__kr_drtext text state)]\n" (string-concat "                       (if (> (string-byte-length value) 512) (__kr_dtraps)\n" (string-concat "                         (__kr_dsym value)))\n" "          (or (= tag 118) (= tag 108) (= tag 101))\n"))))))
+(defn- ck-r6b-t-doc-runtime46 [] :string
+  (string-concat "          (__kr_drsequence text state depth tag)\n" (string-concat "          (= tag 109) (__kr_drmap text state depth)\n" (string-concat "          :else (__kr_dtraps))))))\n" (string-concat "\n" (string-concat "(defn- __kr_drdecode [text :string] :string\n" "  (let [state (vector-alloc 3)\n"))))))
+(defn- ck-r6b-t-doc-runtime47 [] :string
+  (string-concat "        document (__kr_drwalk text state 0 false)]\n" (string-concat "    (if (= (vector-at state 0) (string-byte-length text))\n" (string-concat "      document\n" (string-concat "      (__kr_dtraps))))\n" (string-concat "\n" "(defn- __kr_drhexval [point :i64] :i64\n"))))))
+(defn- ck-r6b-t-doc-runtime48 [] :string
+  (string-concat "  (cond (and (>= point 48) (<= point 57)) (- point 48)\n" (string-concat "        (and (>= point 97) (<= point 102)) (- point 87)\n" (string-concat "        :else (__kr_dtrap)))\n" (string-concat "\n" (string-concat "(defn- __kr_drhex [hex :string] :string\n" "  (let [length (string-byte-length hex)]\n"))))))
+(defn- ck-r6b-t-doc-runtime49 [] :string
+  (string-concat "    (if (or (> length 1048576) (not (= (bit-and length 1) 0)))\n" (string-concat "      (__kr_dtraps)\n" (string-concat "      (let [decoded (loop [cursor 0 bytes (vector-alloc 0)]\n" (string-concat "                      (if (>= cursor length) bytes\n" (string-concat "                        (let [high (__kr_drhexval (string-code-point-at hex cursor))\n" "                              low (__kr_drhexval (string-code-point-at hex (+ cursor 1)))]\n"))))))
+(defn- ck-r6b-t-doc-runtime50 [] :string
+  (string-concat "                          (recur (+ cursor 2) (vector-conj bytes (+ (* high 16) low))))))]\n" (string-concat "        (string-from-utf8 (bytes-from-vector-i64 decoded))))))\n" (string-concat "\n" (string-concat "(defn- __kr_dprint [document :string] :string\n" (string-concat "  (let [canonical (__kr_dcanon document)\n" "        validated (__kr_drdecode canonical)\n"))))))
+(defn- ck-r6b-t-doc-runtime51 [] :string
+  (string-concat "        bytes (string-to-utf8 canonical)\n" (string-concat "        count (bytes-count bytes)]\n" (string-concat "    (if (> count 32768) (__kr_dtraps)\n" (string-concat "      (loop [index 0 output \"\"]\n" (string-concat "        (if (>= index count) output\n" "          (let [value (bytes-at bytes index)]\n"))))))
+(defn- ck-r6b-t-doc-runtime52 [] :string
+  (string-concat "            (recur (+ index 1)\n" (string-concat "                   (string-concat output\n" (string-concat "                     (string-concat (__kr_dhexd (quot value 16))\n" (string-concat "                                    (__kr_dhexd (bit-and value 15)))))))))))\n" (string-concat "\n" "(defn- document-print [document :document] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime53 [] :string
+  (string-concat "  (__kr_dprint (__r6-ds document)))\n" (string-concat "(defn- document-read [hex :string] :document\n" (string-concat "  (__r6-dd (__kr_drdecode (__kr_drhex hex))))\n" (string-concat ";; Runtime fragment embedded literally in 21-check; no runtime source reads.\n" (string-concat ";; FIPS 180-4 sections 4.1.2, 4.2.2, 5.1.1, 5.3.3 and 6.2.\n" ";; Integer words carry unsigned 32-bit values in i64. Read input bytes without\n"))))))
+(defn- ck-r6b-t-doc-runtime54 [] :string
+  (string-concat ";; changing them; only the fresh, private state/schedule vectors are mutated.\n" (string-concat ";; Padding is virtual, so neither a padded input copy nor a per-block schedule\n" (string-concat ";; allocation is needed. Existing typed-byte/resource bounds apply unchanged.\n" (string-concat ";; No hash capability, host crypto, text conversion or C runtime is called.\n" (string-concat "(defn- __krsh_u32 [x :i64] :i64 (bit-and x 4294967295))\n" "(defn- __krsh_rotate [x :i64 n :i64] :i64\n"))))))
+(defn- ck-r6b-t-doc-runtime55 [] :string
+  (string-concat "  (__krsh_u32 (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n)))))\n" (string-concat "(defn- __krsh_padded-byte [data :bytes length :i64 total :i64 at :i64] :i64\n" (string-concat "  (cond (< at length) (bytes-at data at)\n" (string-concat "        (= at length) 128\n" (string-concat "        (>= at (- total 8))\n" "        (bit-and (u64-shift-right (* length 8) (* 8 (- (- total 1) at))) 255)\n"))))))
+(defn- ck-r6b-t-doc-runtime56 [] :string
+  (string-concat "        :else 0))\n" (string-concat "(defn- __krsh_word [data :bytes length :i64 total :i64 at :i64] :i64\n" (string-concat "  (+ (i64-shift-left (__krsh_padded-byte data length total at) 24)\n" (string-concat "     (i64-shift-left (__krsh_padded-byte data length total (+ at 1)) 16)\n" (string-concat "     (i64-shift-left (__krsh_padded-byte data length total (+ at 2)) 8)\n" "     (__krsh_padded-byte data length total (+ at 3))))\n"))))))
+(defn- ck-r6b-t-doc-runtime57 [] :string
+  (string-concat "(defn- __krsh_schedule [data :bytes at :i64 total :i64 work :vector-i64] :vector-i64\n" (string-concat "  (let [length (bytes-count data)\n" (string-concat "        first (loop [i 0 current work]\n" (string-concat "                (if (= i 16) current\n" (string-concat "                  (recur (+ i 1) (vector-assoc! current i (__krsh_word data length total (+ at (* i 4)))))))]\n" "    (loop [i 16 current first]\n"))))))
+(defn- ck-r6b-t-doc-runtime58 [] :string
+  (string-concat "      (if (= i 64) current\n" (string-concat "        (let [a (vector-at current (- i 15)) b (vector-at current (- i 2))\n" (string-concat "              small0 (bit-xor (bit-xor (__krsh_rotate a 7) (__krsh_rotate a 18)) (u64-shift-right a 3))\n" (string-concat "              small1 (bit-xor (bit-xor (__krsh_rotate b 17) (__krsh_rotate b 19)) (u64-shift-right b 10))\n" (string-concat "              next (__krsh_u32 (+ (vector-at current (- i 16)) small0\n" "                           (vector-at current (- i 7)) small1))]\n"))))))
+(defn- ck-r6b-t-doc-runtime59 [] :string
+  (string-concat "          (recur (+ i 1) (vector-assoc! current i next)))))))\n" (string-concat "(defn- __krsh_compress [state :vector-i64 work :vector-i64 constants :vector-i64] :vector-i64\n" (string-concat "  (loop [i 0 a (vector-at state 0) b (vector-at state 1)\n" (string-concat "         c (vector-at state 2) d (vector-at state 3)\n" (string-concat "         e (vector-at state 4) f (vector-at state 5)\n" "         g (vector-at state 6) h (vector-at state 7)]\n"))))))
+(defn- ck-r6b-t-doc-runtime60 [] :string
+  (string-concat "    (if (= i 64)\n" (string-concat "      (-> state\n" (string-concat "          (vector-assoc! 0 (__krsh_u32 (+ (vector-at state 0) a)))\n" (string-concat "          (vector-assoc! 1 (__krsh_u32 (+ (vector-at state 1) b)))\n" (string-concat "          (vector-assoc! 2 (__krsh_u32 (+ (vector-at state 2) c)))\n" "          (vector-assoc! 3 (__krsh_u32 (+ (vector-at state 3) d)))\n"))))))
+(defn- ck-r6b-t-doc-runtime61 [] :string
+  (string-concat "          (vector-assoc! 4 (__krsh_u32 (+ (vector-at state 4) e)))\n" (string-concat "          (vector-assoc! 5 (__krsh_u32 (+ (vector-at state 5) f)))\n" (string-concat "          (vector-assoc! 6 (__krsh_u32 (+ (vector-at state 6) g)))\n" (string-concat "          (vector-assoc! 7 (__krsh_u32 (+ (vector-at state 7) h))))\n" (string-concat "      (let [big1 (bit-xor (bit-xor (__krsh_rotate e 6) (__krsh_rotate e 11)) (__krsh_rotate e 25))\n" "            choose (bit-xor (bit-and e f) (bit-and (__krsh_u32 (bit-not e)) g))\n"))))))
+(defn- ck-r6b-t-doc-runtime62 [] :string
+  (string-concat "            first (__krsh_u32 (+ h big1 choose (vector-at constants i) (vector-at work i)))\n" (string-concat "            big0 (bit-xor (bit-xor (__krsh_rotate a 2) (__krsh_rotate a 13)) (__krsh_rotate a 22))\n" (string-concat "            majority (bit-xor (bit-xor (bit-and a b) (bit-and a c)) (bit-and b c))\n" (string-concat "            second (__krsh_u32 (+ big0 majority))]\n" (string-concat "        (recur (+ i 1) (__krsh_u32 (+ first second)) a b c (__krsh_u32 (+ d first)) e f g)))))\n" "(defn- __krsh_hex-state [state :vector-i64] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime63 [] :string
+  (string-concat "  (loop [i 0 output \"\"]\n" (string-concat "    (if (= i 32) output\n" (string-concat "      (let [byte (bit-and (u64-shift-right (vector-at state (quot i 4))\n" (string-concat "                                         (* 8 (- 3 (bit-and i 3)))) 255)\n" (string-concat "            high (quot byte 16) low (bit-and byte 15)]\n" "        (recur (+ i 1)\n"))))))
+(defn- ck-r6b-t-doc-runtime64 [] :string
+  (string-concat "          (string-concat output\n" (string-concat "            (string-concat (string-substring \"0123456789abcdef\" high (+ high 1))\n" (string-concat "                           (string-substring \"0123456789abcdef\" low (+ low 1)))))))))\n" (string-concat "(defn- __krsh_sha256-hex [data :bytes] :string\n" (string-concat "  (let [length (bytes-count data)\n" "        total (bit-and (+ length 72) -64)\n"))))))
+(defn- ck-r6b-t-doc-runtime65 [] :string
+  (string-concat "        initial [0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a\n" (string-concat "                 0x510e527f 0x9b05688c 0x1f83d9ab 0x5be0cd19]\n" (string-concat "        constants [0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5 0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5\n" (string-concat "                   0xd807aa98 0x12835b01 0x243185be 0x550c7dc3 0x72be5d74 0x80deb1fe 0x9bdc06a7 0xc19bf174\n" (string-concat "                   0xe49b69c1 0xefbe4786 0x0fc19dc6 0x240ca1cc 0x2de92c6f 0x4a7484aa 0x5cb0a9dc 0x76f988da\n" "                   0x983e5152 0xa831c66d 0xb00327c8 0xbf597fc7 0xc6e00bf3 0xd5a79147 0x06ca6351 0x14292967\n"))))))
+(defn- ck-r6b-t-doc-runtime66 [] :string
+  (string-concat "                   0x27b70a85 0x2e1b2138 0x4d2c6dfc 0x53380d13 0x650a7354 0x766a0abb 0x81c2c92e 0x92722c85\n" (string-concat "                   0xa2bfe8a1 0xa81a664b 0xc24b8b70 0xc76c51a3 0xd192e819 0xd6990624 0xf40e3585 0x106aa070\n" (string-concat "                   0x19a4c116 0x1e376c08 0x2748774c 0x34b0bcb5 0x391c0cb3 0x4ed8aa4a 0x5b9cca4f 0x682e6ff3\n" (string-concat "                   0x748f82ee 0x78a5636f 0x84c87814 0x8cc70208 0x90befffa 0xa4506ceb 0xbef9a3f7 0xc67178f2]\n" (string-concat "        work (vector-alloc 64)\n" "        final (loop [at 0 state initial scratch work]\n"))))))
+(defn- ck-r6b-t-doc-runtime67 [] :string
+  (string-concat "                (if (= at total) state\n" (string-concat "                  (let [prepared (__krsh_schedule data at total scratch)]\n" (string-concat "                    (recur (+ at 64) (__krsh_compress state prepared constants) prepared))))]\n" (string-concat "    (__krsh_hex-state final)))\n" (string-concat "\n" "(defn- document-sha256 [document :document] :string\n"))))))
+(defn- ck-r6b-t-doc-runtime68 [] :string
+  (string-concat "  (let [canonical (__kr_dcanon (__r6-ds document))\n" (string-concat "        checked (__kr_drdecode canonical)]\n" "    (__krsh_sha256-hex (string-to-utf8 (__kr_dcanon checked)))))\n")))
+(defn- ck-r6b-t-doc-runtime [] :string (string-concat (ck-r6b-t-doc-runtime0) (string-concat (ck-r6b-t-doc-runtime1) (string-concat (ck-r6b-t-doc-runtime2) (string-concat (ck-r6b-t-doc-runtime3) (string-concat (ck-r6b-t-doc-runtime4) (string-concat (ck-r6b-t-doc-runtime5) (string-concat (ck-r6b-t-doc-runtime6) (string-concat (ck-r6b-t-doc-runtime7) (string-concat (ck-r6b-t-doc-runtime8) (string-concat (ck-r6b-t-doc-runtime9) (string-concat (ck-r6b-t-doc-runtime10) (string-concat (ck-r6b-t-doc-runtime11) (string-concat (ck-r6b-t-doc-runtime12) (string-concat (ck-r6b-t-doc-runtime13) (string-concat (ck-r6b-t-doc-runtime14) (string-concat (ck-r6b-t-doc-runtime15) (string-concat (ck-r6b-t-doc-runtime16) (string-concat (ck-r6b-t-doc-runtime17) (string-concat (ck-r6b-t-doc-runtime18) (string-concat (ck-r6b-t-doc-runtime19) (string-concat (ck-r6b-t-doc-runtime20) (string-concat (ck-r6b-t-doc-runtime21) (string-concat (ck-r6b-t-doc-runtime22) (string-concat (ck-r6b-t-doc-runtime23) (string-concat (ck-r6b-t-doc-runtime24) (string-concat (ck-r6b-t-doc-runtime25) (string-concat (ck-r6b-t-doc-runtime26) (string-concat (ck-r6b-t-doc-runtime27) (string-concat (ck-r6b-t-doc-runtime28) (string-concat (ck-r6b-t-doc-runtime29) (string-concat (ck-r6b-t-doc-runtime30) (string-concat (ck-r6b-t-doc-runtime31) (string-concat (ck-r6b-t-doc-runtime32) (string-concat (ck-r6b-t-doc-runtime33) (string-concat (ck-r6b-t-doc-runtime34) (string-concat (ck-r6b-t-doc-runtime35) (string-concat (ck-r6b-t-doc-runtime36) (string-concat (ck-r6b-t-doc-runtime37) (string-concat (ck-r6b-t-doc-runtime38) (string-concat (ck-r6b-t-doc-runtime39) (string-concat (ck-r6b-t-doc-runtime40) (string-concat (ck-r6b-t-doc-runtime41) (string-concat (ck-r6b-t-doc-runtime42) (string-concat (ck-r6b-t-doc-runtime43) (string-concat (ck-r6b-t-doc-runtime44) (string-concat (ck-r6b-t-doc-runtime45) (string-concat (ck-r6b-t-doc-runtime46) (string-concat (ck-r6b-t-doc-runtime47) (string-concat (ck-r6b-t-doc-runtime48) (string-concat (ck-r6b-t-doc-runtime49) (string-concat (ck-r6b-t-doc-runtime50) (string-concat (ck-r6b-t-doc-runtime51) (string-concat (ck-r6b-t-doc-runtime52) (string-concat (ck-r6b-t-doc-runtime53) (string-concat (ck-r6b-t-doc-runtime54) (string-concat (ck-r6b-t-doc-runtime55) (string-concat (ck-r6b-t-doc-runtime56) (string-concat (ck-r6b-t-doc-runtime57) (string-concat (ck-r6b-t-doc-runtime58) (string-concat (ck-r6b-t-doc-runtime59) (string-concat (ck-r6b-t-doc-runtime60) (string-concat (ck-r6b-t-doc-runtime61) (string-concat (ck-r6b-t-doc-runtime62) (string-concat (ck-r6b-t-doc-runtime63) (string-concat (ck-r6b-t-doc-runtime64) (string-concat (ck-r6b-t-doc-runtime65) (string-concat (ck-r6b-t-doc-runtime66) (string-concat (ck-r6b-t-doc-runtime67) (ck-r6b-t-doc-runtime68))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+
 (defn- ck-r6b-t-doc0 [] :string
   (string-concat "(defn- __kr_dw [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n"
   (string-concat "(defn- __kr_dcloser [c :i64] :bool (or (= c 93) (or (= c 41) (= c 125))))\n"
@@ -5452,12 +6168,12 @@
 (defn- ck-r6b-t-doc8 [] :string
   (string-concat "(defn- __kr_dlenrange [acc :string tag :string d :string i :i64 e :i64] :string (string-concat (string-concat (string-concat (string-concat acc tag) (string-from-i64 (- e i))) \":\") (string-substring d i e)))\n"
   (string-concat "(defn- __kr_dcanonitems [acc :string d :string i :i64 mp :bool ky :bool] :string (let [c (string-code-point-at d i)] (cond (= c 32) (__kr_dcanonitems acc d (+ i 1) mp ky) (__kr_dcloser c) acc :else (let [e (__kr_dend d i) a2 (if ky (if (__kr_dkwat d i) (__kr_dlenrange acc \"K\" d i e) (__kr_dcanonat (string-concat acc \"D\") d i)) (__kr_dcanonat acc d i))] (__kr_dcanonitems a2 d e mp (and mp (not ky)))))))\n"
-  (string-concat "(defn- __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc \"n\") (= k 1) (string-concat acc (if (__kr_dregeq d i e \"true\" 0) \"bt\" \"bf\")) (= k 2) (string-concat (string-concat (string-concat acc \"i\") (string-substring d i e)) \";\") (= k 3) (__kr_dtraps) (= k 4) (__kr_dlentext acc \"s\" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc \"k\" d i e) (= k 6) (__kr_dlenrange acc \"y\" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) \"v\" (= k 8) \"l\" (= k 9) \"e\" :else \"m\")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) \":\")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))\n"
+  (string-concat "(defn- __kr_dcanonat [acc :string d :string i :i64] :string (let [e (__kr_dend d i) k (__kr_dkindat d i e)] (cond (= k 0) (string-concat acc \"n\") (= k 1) (string-concat acc (if (__kr_dregeq d i e \"true\" 0) \"bt\" \"bf\")) (= k 2) (string-concat (string-concat (string-concat acc \"i\") (string-substring d i e)) \";\") (= k 3) (string-concat acc (__kr_df64canon d i e)) (= k 4) (__kr_dlentext acc \"s\" (__kr_dunescfrom (__kr_dempty) d (+ i 1) (- e 1))) (= k 5) (__kr_dlenrange acc \"k\" d i e) (= k 6) (__kr_dlenrange acc \"y\" d i e) :else (let [open (+ i (if (= k 9) 2 1)) forms (__kr_dcountfrom d open 0) head (string-concat (string-concat (string-concat acc (cond (= k 7) \"v\" (= k 8) \"l\" (= k 9) \"e\" :else \"m\")) (string-from-i64 (if (= k 10) (quot forms 2) forms))) \":\")] (__kr_dcanonitems head d open (= k 10) (= k 10))))))\n"
   (string-concat "(defn- __kr_dcanon [d :string] :string (__kr_dcanonat (__kr_dempty) d 0))\n"
   (string-concat "(defn- __kr_drcmp [a :string i :i64 b :string k :i64 l :i64] :i64 (cond (= i (string-length a)) (if (= k l) 0 -1) (= k l) 1 :else (let [x (string-code-point-at a i) y (string-code-point-at b k)] (cond (< x y) -1 (> x y) 1 :else (__kr_drcmp a (+ i (__kr_dw x)) b (+ k (__kr_dw y)) l)))))\n"
   "(defn- __kr_dkeycmp [key :string m :string i :i64 e :i64] :i64 (if (and (= (string-code-point-at key 0) 58) (__kr_dkwat m i)) (__kr_drcmp key 0 m i e) (string-compare (__kr_dcanon key) (__kr_dcanonat (__kr_dempty) m i))))\n"))))))
 (defn- ck-r6b-t-doc9 [] :string
-  (string-concat "(defn- __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (__kr_dregeq m i ke key 0) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))\n"
+  (string-concat "(defn- __kr_dmapfind [m :string key :string i :i64] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapfind m key (+ i 1)) (__kr_dcloser c) -1 :else (let [ke (__kr_dend m i)] (if (string=? (__kr_dcanonat (__kr_dempty) m i) (__kr_dcanon key)) i (__kr_dmapfind m key (__kr_dend m (+ ke 1))))))))\n"
   (string-concat "(defn- __kr_dmapslot [m :string key :string i :i64 u :bool] :i64 (let [c (string-code-point-at m i)] (cond (= c 32) (__kr_dmapslot m key (+ i 1) u) (__kr_dcloser c) i :else (let [ke (__kr_dend m i) o (__kr_dkeycmp key m i ke)] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_dmapslot m key (__kr_dend m (+ ke 1)) u))))))\n"
   (string-concat "(defn- __kr_dinsert [m :string q :i64 entry :string] :string (cond (= q (__kr_dclose m)) (if (= q (__kr_dopen m)) (string-concat (string-substring m 0 q) (string-concat entry (string-substring m q (string-length m)))) (string-concat (string-concat (string-substring m 0 q) \" \") (string-concat entry (string-substring m q (string-length m))))) :else (string-concat (string-substring m 0 q) (string-concat (string-concat entry \" \") (string-substring m q (string-length m))))))\n"
   (string-concat "(defn- __kr_dmapput [m :string key :string value :string u :bool] :string (__kr_dbounded (__kr_dinsert m (__kr_dmapslot m key 1 u) (string-concat (string-concat key \" \") value))))\n"
@@ -5480,7 +6196,7 @@
 (defn- ck-r6b-t-doc12 [] :string
   (string-concat "(defn- __kr_dvremove [v0 :string i :i64] :string (let [v (__kr_dreq v0 7 7) p (if (< i 0) -1 (__kr_ditem v 1 i))] (if (< p 0) (__kr_dtraps) (__kr_dcut v p (__kr_dend v p)))))\n"
   (string-concat "(defn- __kr_dvdrop [v0 :string n :i64] :string (let [v (__kr_dreq v0 7 7)] (cond (< n 0) (__kr_dtraps) (> n (__kr_dforms v)) (__kr_dtraps) (= n 0) v :else (let [p (__kr_ditem v 1 n)] (if (< p 0) \"[]\" (string-concat \"[\" (string-substring v p (string-length v))))))))\n"
-  (string-concat "(defn- __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (__kr_dregeq s i e x 0) (= 0 0) (__kr_dsetcontains s x e))))))\n"
+  (string-concat "(defn- __kr_dsetcontains [s :string x :string i :i64] :bool (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_dsetcontains s x (+ i 1)) (__kr_dcloser c) (= 0 1) :else (let [e (__kr_dend s i)] (if (string=? (__kr_dcanonat (__kr_dempty) s i) (__kr_dcanon x)) (= 0 0) (__kr_dsetcontains s x e))))))\n"
   (string-concat "(defn- __kr_dsetc [s :string x :string] :bool (__kr_dsetcontains (__kr_dreq s 9 9) x 2))\n"
   (string-concat "(defn- __kr_ditemslot [s :string cx :string i :i64 u :bool] :i64 (let [c (string-code-point-at s i)] (cond (= c 32) (__kr_ditemslot s cx (+ i 1) u) (__kr_dcloser c) i :else (let [o (string-compare cx (__kr_dcanonat (__kr_dempty) s i))] (cond (< o 0) i (and u (= o 0)) (__kr_dtrap) :else (__kr_ditemslot s cx (__kr_dend s i) u))))))\n"
   "(defn- __kr_dsetput [s :string x :string] :string (__kr_dbounded (__kr_dinsert s (__kr_ditemslot s (__kr_dcanon x) 2 (= 0 0)) x)))\n"))))))
@@ -5497,7 +6213,7 @@
   (string-concat "(defn- __kr_dmz [] :string \"{}\")\n"
   (string-concat "(defn- __kr_dcount [d0 :string] :i64 (let [d (__kr_dreq d0 7 10)] (if (= (__kr_dkindn d) 10) (quot (__kr_dforms d) 2) (__kr_dforms d))))\n"
   (string-concat "(defn- __kr_dkind [d :string] :string (let [k (__kr_dkindn d)] (cond (= k 0) \":null\" (= k 1) \":bool\" (= k 2) \":i64\" (= k 3) \":f64\" (= k 4) \":string\" (= k 5) \":keyword\" (= k 6) \":symbol\" (= k 7) \":vector\" (= k 8) \":list\" (= k 9) \":set\" :else \":map\")))\n"
-  "(defn- __kr_deq [a :string b :string] :bool (string=? a b))\n"))))))
+  "(defn- __kr_deq [a :string b :string] :bool (string=? (__kr_dcanon a) (__kr_dcanon b)))\n"))))))
 (defn- ck-r6b-t-doc15 [] :string
   (string-concat "(defn- __kr_dcontains [m :string k :string] :bool (>= (__kr_dmapfind (__kr_dreq m 10 10) k 1) 0))\n"
   (string-concat "(defn- __kr_dassocop [m :string k :string v :string] :string (__kr_dassoc (__kr_dreq m 10 10) k v))\n"
@@ -5535,7 +6251,7 @@
   "(defn- document-count [d :document] :i64 (__kr_dcount (__r6-ds d)))\n"))))))
 (defn- ck-r6b-t-doc20 [] :string
   (string-concat "(defn- document-kind [d :document] :keyword (__r6-as :keyword (__r6-kwh (__kr_dkind (__r6-ds d)))))\n"
-  (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__r6-ds a) (__r6-ds b)))\n"
+  (string-concat "(defn- document-equal? [a :document b :document] :bool (string=? (__kr_dcanon (__r6-ds a)) (__kr_dcanon (__r6-ds b))))\n"
   (string-concat "(defn- document-set-contains? [s :document x :document] :bool (__kr_dsetc (__r6-ds s) (__r6-ds x)))\n"
   (string-concat "(defn- document-contains [m :document k :document] :bool (__kr_dcontains (__r6-ds m) (__r6-ds k)))\n"
   (string-concat "(defn- document-get [m :document k :document] [:option :document] (__r6-dopt (__kr_dget (__r6-ds m) (__r6-ds k))))\n"
@@ -5558,7 +6274,7 @@
   (string-concat "(defn- document-bool-value [d :document] [:option :bool] (__kr_dboolval (__r6-ds d)))\n"
   (string-concat "(defn- document-i64-value [d :document] [:option :i64] (__kr_di64val (__r6-ds d)))\n"
   (string-concat "(defn- document-edn-print [d :document] :string (__r6-ds d))\n"
-  (string-concat "(defn- document-edn-read [s :string] :document (__r6-dd s))\n"
+  (string-concat "(defn- document-edn-read [s :string] :document (__r6-dd (__kr_dnorm s)))\n"
   (string-concat "(defn- nil? [d :document] :bool (= (__kr_dkindn (__r6-ds d)) 0))\n"
   "(defn- some? [d :document] :bool (not= (__kr_dkindn (__r6-ds d)) 0))\n"))))))
 (defn- ck-r6b-t-doc24 [] :string
@@ -5581,7 +6297,17 @@
   (string-concat "(defn- rest [d :document] :document (loop [i 1 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-item d i))))))\n"
   (string-concat "(defn- __r6-dkeys [d :document] :document (loop [i 0 acc (document-vector)] (if (>= i (document-count d)) acc (recur (+ i 1) (document-vector-conj acc (__r6-dnth (__r6-item d i) 0))))))\n"
   "(defn- __r6-dnth [d :document i :i64] :document (let [o (if (= (__kr_dkindn (__r6-ds d)) 8) (document-list-at d i) (document-vector-at d i))] (if (option-some?-of [:option :document] o) (option-value-of [:option :document] o (document-null)) (__r6-dd (__r6-traps)))))\n")))))
-(defn- ck-r6b-t-doc [] :string (string-concat (ck-r6b-t-doc0) (string-concat (ck-r6b-t-doc1) (string-concat (ck-r6b-t-doc2) (string-concat (ck-r6b-t-doc3) (string-concat (ck-r6b-t-doc4) (string-concat (ck-r6b-t-doc5) (string-concat (ck-r6b-t-doc6) (string-concat (ck-r6b-t-doc7) (string-concat (ck-r6b-t-doc8) (string-concat (ck-r6b-t-doc9) (string-concat (ck-r6b-t-doc10) (string-concat (ck-r6b-t-doc11) (string-concat (ck-r6b-t-doc12) (string-concat (ck-r6b-t-doc13) (string-concat (ck-r6b-t-doc14) (string-concat (ck-r6b-t-doc15) (string-concat (ck-r6b-t-doc16) (string-concat (ck-r6b-t-doc17) (string-concat (ck-r6b-t-doc18) (string-concat (ck-r6b-t-doc19) (string-concat (ck-r6b-t-doc20) (string-concat (ck-r6b-t-doc21) (string-concat (ck-r6b-t-doc22) (string-concat (ck-r6b-t-doc23) (string-concat (ck-r6b-t-doc24) (string-concat (ck-r6b-t-doc25) (ck-r6b-t-doc26))))))))))))))))))))))))))))
+;; JUN-650: document-edn-read canonicalizes its text, since every __kr_d reader assumes one space between items:
+;; EDN whitespace (space, tab, LF, VT, FF, CR and comma) and ; comments are delimiters; no space after an opener,
+;; before a closer or at either end; strings and \c character tokens are copied verbatim. Canonical text is a fixed point.
+(defn- ck-r6b-t-doc27 [] :string
+  (string-concat "(defn- __kr_dnws [c :i64] :bool (or (= c 32) (or (= c 44) (and (>= c 9) (<= c 13)))))\n"
+  (string-concat "(defn- __kr_dnstop [c :i64] :bool (or (__kr_dnws c) (or (__kr_dcloser c) (or (= c 91) (or (= c 40) (or (= c 123) (or (= c 34) (= c 59))))))))\n"
+  (string-concat "(defn- __kr_dntok [s :string i :i64 n :i64] :i64 (loop [j i] (if (>= j n) n (let [c (string-code-point-at s j)] (if (__kr_dnstop c) j (recur (+ j (__kr_dw c))))))))\n"
+  (string-concat "(defn- __kr_dnstr [s :string i :i64 n :i64] :i64 (loop [j i] (if (>= j n) n (let [c (string-code-point-at s j)] (cond (= c 34) (+ j 1) (= c 92) (recur (if (< (+ j 1) n) (+ (+ j 1) (__kr_dw (string-code-point-at s (+ j 1)))) n)) :else (recur (+ j (__kr_dw c))))))))\n"
+  (string-concat "(defn- __kr_dneol [s :string i :i64 n :i64] :i64 (loop [j i] (if (>= j n) n (let [c (string-code-point-at s j)] (if (= c 10) (+ j 1) (recur (+ j (__kr_dw c))))))))\n"
+  "(defn- __kr_dnorm [s :string] :string (let [n (string-length s)] (loop [i 0 acc (__kr_dempty) sep 0] (if (>= i n) acc (let [c (string-code-point-at s i)] (cond (__kr_dnws c) (recur (+ i 1) acc sep) (= c 59) (recur (__kr_dneol s i n) acc sep) (__kr_dcloser c) (recur (+ i 1) (string-concat acc (string-substring s i (+ i 1))) 1) :else (let [a (if (= sep 1) (string-concat acc \" \") acc)] (cond (= c 34) (let [j (__kr_dnstr s (+ i 1) n)] (recur j (string-concat a (string-substring s i j)) 1)) (or (= c 91) (or (= c 40) (= c 123))) (recur (+ i 1) (string-concat a (string-substring s i (+ i 1))) 0) (and (= c 35) (and (< (+ i 1) n) (= (string-code-point-at s (+ i 1)) 123))) (recur (+ i 2) (string-concat a (string-substring s i (+ i 2))) 0) :else (let [j (__kr_dntok s (if (and (= c 92) (< (+ i 1) n)) (+ (+ i 1) (__kr_dw (string-code-point-at s (+ i 1)))) (+ i (__kr_dw c))) n)] (recur j (string-concat a (string-substring s i j)) 1))))))))))\n"))))))
+(defn- ck-r6b-t-doc [] :string (string-concat (string-concat (ck-r6b-t-doc0) (string-concat (ck-r6b-t-doc1) (string-concat (ck-r6b-t-doc2) (string-concat (ck-r6b-t-doc3) (string-concat (ck-r6b-t-doc4) (string-concat (ck-r6b-t-doc5) (string-concat (ck-r6b-t-doc6) (string-concat (ck-r6b-t-doc7) (string-concat (ck-r6b-t-doc8) (string-concat (ck-r6b-t-doc9) (string-concat (ck-r6b-t-doc10) (string-concat (ck-r6b-t-doc11) (string-concat (ck-r6b-t-doc12) (string-concat (ck-r6b-t-doc13) (string-concat (ck-r6b-t-doc14) (string-concat (ck-r6b-t-doc15) (string-concat (ck-r6b-t-doc16) (string-concat (ck-r6b-t-doc17) (string-concat (ck-r6b-t-doc18) (string-concat (ck-r6b-t-doc19) (string-concat (ck-r6b-t-doc20) (string-concat (ck-r6b-t-doc21) (string-concat (ck-r6b-t-doc22) (string-concat (ck-r6b-t-doc23) (string-concat (ck-r6b-t-doc24) (string-concat (ck-r6b-t-doc25) (string-concat (ck-r6b-t-doc26) (ck-r6b-t-doc27)))))))))))))))))))))))))))) (ck-r6b-t-doc-runtime)))
 (defn- ck-r6b-t-sfb0 [] :string
   "(defn- string-find-byte [s :string b :i64 i :i64] :i64 (cond (< b 0) (vector-at [0] 1) (> b 127) (vector-at [0] 1) (< i 0) (vector-at [0] 1) (> i (string-length s)) (vector-at [0] 1) :else (loop [j i] (if (>= j (string-length s)) -1 (let [c (string-code-point-at s j)] (if (= c b) j (recur (+ j (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4)))))))))\n")
 (defn- ck-r6b-t-sfb [] :string (ck-r6b-t-sfb0))
@@ -5876,7 +6602,9 @@
 ;; Now `(typed-set-nth [:set :keyword] s i)` (the type argument spelled exactly so; a template's text after instantiation,
 ;; clojure.set / kotoba.lang.coll) desugars to `(__r6-kwsnth s i)`, a library defn (group kwo, which needs kw) that answers
 ;; the item of text rank i: the reference's answer, O(n^2) text comparisons per call (n <= 32). Index out of range traps.
-;; keys/vals of a keyword-keyed map and typed-set-nth with a type alias stay refused (ck-order-head?).
+;; Keyword-map keys are admitted below for the explicit [:map :keyword :string]
+;; spelling. Other keyword-map keys/vals and typed-set-nth with a type alias
+;; remain refused (ck-order-head?).
 (def ck-r6f-g-kwo 16384)
 ;; S[a, b) spells typed-set-nth and the next form is [:set :keyword]
 (defn- ck-r6f-ksnth-text? [S :string a :i64 b :i64] :bool
@@ -5908,6 +6636,39 @@
 (defn- ck-r6f-t-kwo [] :string
   (string-concat "(defn- __r6-kwrank [v :vector-i64 t :string] :i64 (loop [k 0 r 0] (if (>= k (vector-count v)) r (recur (+ k 1) (if (< (string-compare (__r6-kwtext (__r6-as :keyword (vector-at v k))) t) 0) (+ r 1) r)))))\n"
   "(defn- __r6-kwsnth [s [:set :keyword] i :i64] :keyword (let [v (__r6-as :vector-i64 s)] (loop [j 0] (cond (>= j (vector-count v)) (__r6-as :keyword (__r6-trap)) (= (__r6-kwrank v (__r6-kwtext (__r6-as :keyword (vector-at v j)))) i) (__r6-as :keyword (vector-at v j)) :else (recur (+ j 1))))))\n"))
+;; UTF-16 printed-order keys for [:map :keyword :string]. Other value types
+;; remain refused. This does not change existing typed-set-nth behavior.
+(def ck-kwm-g 65536)
+(defn- ck-kwmkeys-text? [S :string a :i64 b :i64] :bool
+  (let [q (lx-sk-ws S b) n (string-length S)]
+    (if (and (or (ck-r6b-is? S a b "typed-map-keys") (ck-r6b-is? S a b "clojure.core/typed-map-keys"))
+             (< q n) (= (string-code-point-at S q) 91))
+      (let [a1 (lx-sk-ws S (+ q 1))]
+        (if (and (< a1 n) (= (string-code-point-at S a1) 58))
+          (let [b1 (ck-r6b-symend S (+ a1 1)) a2 (lx-sk-ws S b1)]
+            (if (and (ck-r6b-is? S a1 b1 ":map") (< a2 n) (= (string-code-point-at S a2) 58))
+              (let [b2 (ck-r6b-symend S (+ a2 1)) a3 (lx-sk-ws S b2)]
+                (if (and (ck-r6b-is? S a2 b2 ":keyword") (< a3 n) (= (string-code-point-at S a3) 58))
+                  (let [b3 (ck-r6b-symend S (+ a3 1)) end (lx-sk-ws S b3)]
+                    (and (ck-r6b-is? S a3 b3 ":string") (< end n) (= (string-code-point-at S end) 93)))
+                  false))
+              false))
+          false))
+      false)))
+(defn- ck-kwmkeys? [M :vector-i64 n :i64] :bool
+  (let [h (nm-first M n) ta (nm-next M h)]
+    (and (= (nm-kind M n) ND-LIST) (= (nm-kind M h) ND-SYM) (= (nm-count M n) 3)
+         (zero? (nm-sf M (nm-sym-of M h) SF-FN)) (= (nm-sf M (nm-sym-of M h) SF-HEAD) HD-MAP-KEYS)
+         (= (nm-kind M ta) ND-VEC) (= (nm-count M ta) 3)
+         (= (nm-head-of M (nm-first M ta)) KW-MAP) (= (nm-head-of M (nm-nth M ta 1)) KW-KEYWORD)
+         (= (nm-head-of M (nm-nth M ta 2)) KW-STRING))))
+(defn- ck-kwmkeys [M :vector-i64 S :string n :i64] :vector-i64
+  (let [h (nm-first M n) tok (nm-nf M h NF-TOK) x (nm-next M (nm-next M h))
+        s (ck-r6b-sym M S "__r6-kwmkeys")]
+    (if (zero? s) (ck-err M E-CHECK-HEAD h 0)
+      (let [M1 (ck-n-ref M tok s) hn (ck-r M1) M2 (ck-link M1 hn x)]
+        (nm-set-nf M2 n NF-FIRST hn)))))
+(defn- ck-kwmkeys-lib [] :string "(defn- __r6-kwm-rank [c :i64] :i64 (cond (>= c 65536) (+ 55296 (- c 65536)) (>= c 57344) (+ c 1048576) :else c))\n(defn- __r6-kwm-width [c :i64] :i64 (cond (< c 128) 1 (< c 2048) 2 (< c 65536) 3 :else 4))\n(defn- __r6-kwm-less [a :string b :string] :bool\n  (loop [i 0 j 0]\n    (cond (>= i (string-length a)) (< j (string-length b))\n          (>= j (string-length b)) false\n          :else (let [x (string-code-point-at a i) y (string-code-point-at b j)\n                      rx (__r6-kwm-rank x) ry (__r6-kwm-rank y)]\n                  (cond (< rx ry) true (> rx ry) false\n                        :else (recur (+ i (__r6-kwm-width x)) (+ j (__r6-kwm-width y))))))))\n(defn- __r6-kwm-textrank [v :vector-i64 t :string] :i64\n  (loop [k 0 r 0] (if (>= k (vector-count v)) r\n    (recur (+ k 1) (if (__r6-kwm-less (__r6-kwtext (__r6-as :keyword (vector-at v k))) t) (+ r 1) r)))))\n(defn- __r6-kwm-at [v :vector-i64 i :i64] :keyword\n  (loop [j 0] (cond (>= j (vector-count v)) (__r6-as :keyword (__r6-trap))\n    (= (__r6-kwm-textrank v (__r6-kwtext (__r6-as :keyword (vector-at v j)))) i) (__r6-as :keyword (vector-at v j))\n    :else (recur (+ j 1)))))\n(defn- __r6-kwmkeys [m [:map :keyword :string]] [:list :keyword]\n  (let [v (__r6-as :vector-i64 m)\n        raw (loop [j 0 acc (vector-alloc 0)]\n              (if (>= j (vector-count v)) acc (recur (+ j 2) (vector-conj acc (vector-at v j)))))]\n    (loop [i 0 acc (typed-list-new [:list :keyword])]\n      (if (>= i (vector-count raw)) acc\n        (recur (+ i 1) (typed-list-conj [:list :keyword] acc (__r6-kwm-at raw i)))))))\n")
 ;; R6F: :f32, an opaque binary32 carrier (as R6C's :f64): the value is its IEEE-754 bit pattern sign-extended from 32 bits in
 ;; an i64 (the KIR route's representation, 12-kirread KIR5: (f32-to-bits -1.0f) = -1082130432). f32-to-bits is the identity;
 ;; f32-from-bits b traps unless b is a signed i32 (the reference oracle refuses a pattern above Integer/MAX_VALUE,
@@ -5916,7 +6677,7 @@
 (def ck-r6f-g-f32 32768)
 (defn- ck-r6f-t-f32 [] :string
   (string-concat "(defn- f32-to-bits [x :f32] :i64 (__r6-as :i64 x))\n"
-  "(defn- f32-from-bits [b :i64] :f32 (if (or (< b -2147483648) (> b 2147483647)) (__r6-as :f32 (vector-at [0] 1)) (__r6-as :f32 b)))\n"))
+  "(defn- f32-from-bits [b :i64] :f32 (do (assert (and (>= b -2147483648) (<= b 2147483647))) (__r6-as :f32 b)))\n"))
 ;; R6F: reference string-kit heads (lang/guest-grammar.edn, context ABI v7/v8/v10) and `mod` as library defn-s, one group
 ;; bit per function (a module that defines a function of the same name keeps its own: ck-r6b-scan's defd rule). Byte
 ;; offsets throughout (the seed's strings are UTF-8, string-code-point-at reads at a byte offset).
@@ -6524,8 +7285,16 @@
 ;; reference NAME (not a local) is the call (NAME). A def of a SYMBOL ((def windows? false), an alias) is the same: the value is recomputed per use, which no program can tell from a constant
 ;; (the expressions are pure: a def body runs no capability -- an effectful one is refused as in any defn without the
 ;; capability declared). A reference from a def ABOVE it is E2126 (the result is not inferred yet), the reference's order rule.
+;; JUN-734: also a vector literal that is not R0's integer vector and a map literal that is not R6B's opaque constant
+;; data -- a vector / map of literals with f64 or boolean values, or of map literals (lang/guest-grammar.edn :def :value
+;; :literal); the value is typed as that literal is in a body
 (defn- ck-r6f-cdef-form? [M :vector-i64 c :i64] :bool
-  (and (= (nm-count M c) 3) (or (= (nm-kind M (nm-nth M c 2)) ND-LIST) (= (nm-kind M (nm-nth M c 2)) ND-SYM)) (= (nm-kind M (nm-nth M c 1)) ND-SYM)))
+  (and (= (nm-count M c) 3) (= (nm-kind M (nm-nth M c 1)) ND-SYM)
+       (let [v (nm-nth M c 2)
+             k (nm-kind M v)]
+         (or (= k ND-LIST) (= k ND-SYM)
+             (and (= k ND-VEC) (zero? (ck-def-vec M v)))
+             (and (= k ND-MAP) (not (ck-r6b-const? M v)))))))
 (defn- ck-r6f-cdef [M :vector-i64 c :i64] :vector-i64
   (let [h (nm-first M c)
         nmn (nm-next M h)

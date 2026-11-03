@@ -4,6 +4,10 @@
 This audits locally available tree content only. Missing objects are refused;
 Git must support --no-lazy-fetch. Replacement refs are not used. A match does
 not establish compiler build provenance, qualification, or release readiness.
+
+A null sourceRevision is the regenerated-descriptor state (JUN-631): the
+descriptor's own commit is then the source tree audited, so no follow-up
+commit has to name a squash commit after merge.
 """
 import argparse
 import hashlib
@@ -38,7 +42,13 @@ def blob(revision, path):
 def audit(descriptor_revision, source_override):
     descriptor_revision = commit(descriptor_revision)
     d = json.loads(blob(descriptor_revision, "native-product.json"))
-    source_revision = commit(source_override if source_override is not None else d["sourceRevision"])
+    declared = d["sourceRevision"]
+    if source_override is not None:
+        source_revision = commit(source_override)
+    elif declared is None:
+        source_revision = descriptor_revision
+    else:
+        source_revision = commit(declared)
     if d["sourceManifest"] != "seed/FULL-MANIFEST":
         raise ValueError("unexpected manifest path")
     lines = blob(descriptor_revision, d["sourceManifest"]).decode("utf-8").splitlines()
@@ -57,7 +67,8 @@ def audit(descriptor_revision, source_override):
     matched = actual == expected
     return {"status": "MATCH" if matched else "MISMATCH", "descriptorRevision": descriptor_revision,
             "descriptorSourceRevision": d["sourceRevision"], "sourceRevisionTested": source_revision,
-            "comparedDeclaredSourceRevision": source_revision == d["sourceRevision"],
+            "comparedDeclaredSourceRevision": source_revision == (declared or descriptor_revision),
+            "sourceRevisionImplicit": declared is None,
             "modules": len(paths), "expectedUnity": expected, "actualUnity": actual,
             "compilerBuildProvenanceVerified": False, "publicReleaseQualified": False}
 

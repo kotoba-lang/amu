@@ -262,7 +262,8 @@ def main(compiler, out, benchmark_scc=False):
     ]
     for name, old, new, probe, detection in mutations:
         occurrences = original.count(old)
-        assert occurrences == (2 if name == "binder-counter" else 1), (name, occurrences)
+        # binder-counter: the scope restore in let, in the match branches and (B1, JUN-588) in fn
+        assert occurrences == (3 if name == "binder-counter" else 1), (name, occurrences)
         image = build("mutant-" + name, original.replace(old, new))
         if detection == "equivalence-reject":
             assert not run("detect-" + name, [image, "equivalence", sources[probe]], 1)

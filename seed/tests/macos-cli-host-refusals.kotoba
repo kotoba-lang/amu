@@ -1,0 +1,13 @@
+(ns seed.macos-cli-host-refusals (:export [main]))
+(defn main [] :i64
+  (let [missing (hc-read (hc-arg 0))
+        bad (vector-i64-from-bytes (typed-cap-call :fs/app-data-bytes :bytes :bytes
+              (bytes-from-vector-i64 [0 65 77 85 72 2 0])))
+        fs-exec (hc-call 9 [])
+        wrong-wire (hc-proc-reply (typed-cap-call :process/spawn :string :string (hc-text (hc-frame 1 []))))]
+    (cond (hc-ok? missing) 1
+          (or (hc-ok? bad) (not= (hc-errno bad) 22)) 2
+          (or (hc-ok? fs-exec) (not= (hc-errno fs-exec) 13)) 3
+          (or (hc-ok? wrong-wire) (not= (hc-errno wrong-wire) 13)) 4
+          :else (hc-out (string-concat "PASS_NATIVE_HOST_REFUSALS errno="
+                         (string-concat (hc-dec (hc-errno missing)) "\n"))))))

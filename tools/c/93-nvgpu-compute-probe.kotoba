@@ -1,0 +1,106 @@
+;; JUN-714 C4 probe: one SM 7.2 EXIT encoded by Amu, launched through a
+;; Volta QMD. This is a bring-up probe, not the dot numerical gate.
+
+(def C4-SIZE 0x100000)
+(def C4-QMD 0x1000)
+(def C4-CODE 0x2000)
+(def C4-SEM 0x3000)
+(def C4-HOST-SEM 0x3004)
+
+(defn- c4-show [name :string v :i64] :i64
+  (say (string-concat name (string-concat " 0x" (hex-str v)))))
+
+;; Set a QMDV02_02 field of at most 32 bits. This probe uses only fields that
+;; fit in a single 32-bit word; the offsets come from NVIDIA clc3c0qmd.h.
+(defn- qmd-field [q :i64 bit :i64 width :i64 value :i64] :i64
+  (let [word (+ q (* 4 (quot bit 32))) shift (bit-and bit 31)
+        mask (- (i64-shift-left 1 width) 1)
+        old (l32 word) clear (bit-not (i64-shift-left mask shift))
+        next (bit-or (bit-and old clear) (i64-shift-left (bit-and value mask) shift))]
+    (s32 word next)))
+
+(defn- qmd-probe [q :i64 code-va :i64 sem-va :i64] :i64
+  (let [zero (loop [i 0] (if (= i 64) 0 (let [x (s32 (+ q (* 4 i)) 0)] (recur (inc i)))))
+        a (qmd-field q 134 1 1)       ;; SM_GLOBAL_CACHING_ENABLE
+        b (qmd-field q 138 1 1)       ;; SEMAPHORE_RELEASE_ENABLE0
+        c (qmd-field q 190 1 1)       ;; INVALIDATE_INSTRUCTION_CACHE
+        d (qmd-field q 366 1 1)       ;; RELEASE_MEMBAR_TYPE FE_SYSMEMBAR
+        e (qmd-field q 378 1 1)       ;; API_VISIBLE_CALL_LIMIT NO_CHECK
+        f (qmd-field q 384 32 1)      ;; CTA_RASTER_WIDTH
+        g (qmd-field q 416 16 1)      ;; CTA_RASTER_HEIGHT
+        h (qmd-field q 448 16 1)      ;; CTA_RASTER_DEPTH
+        i (qmd-field q 562 7 3)       ;; MIN_SM_CONFIG_SHARED_MEM_SIZE 8 KiB
+        j (qmd-field q 569 7 25)      ;; MAX_SM_CONFIG_SHARED_MEM_SIZE 96 KiB
+        k (qmd-field q 576 4 2)       ;; QMD_VERSION 2
+        l (qmd-field q 580 4 2)       ;; QMD_MAJOR_VERSION 2
+        m (qmd-field q 592 16 1)      ;; CTA_THREAD_DIMENSION0
+        n (qmd-field q 608 16 1)      ;; CTA_THREAD_DIMENSION1
+        o (qmd-field q 624 16 1)      ;; CTA_THREAD_DIMENSION2
+        p (qmd-field q 648 9 2)       ;; REGISTER_COUNT_V
+        r (qmd-field q 657 7 3)       ;; TARGET_SM_CONFIG_SHARED_MEM_SIZE
+        s (qmd-field q 736 32 (bit-and sem-va 0xFFFFFFFF))
+        t (qmd-field q 768 8 (bit-and (u64-shift-right sem-va 32) 0xFF))
+        u (qmd-field q 799 1 1)       ;; RELEASE0_STRUCTURE_SIZE ONE_WORD
+        v (qmd-field q 800 32 0xC4C40001)
+        w (qmd-field q 1536 32 (bit-and code-va 0xFFFFFFFF))
+        x (qmd-field q 1568 17 (u64-shift-right code-va 32))]
+    0))
+
+(defn- c4-pb [p :i64 qmd-va :i64 host-sem-va :i64] :i64
+  (let [a (s32 p (inc-method 0 0 1))
+        b (s32 (+ p 4) 0xC3C0)
+        c (s32 (+ p 8) (inc-method 0 0x2B4 1))
+        d (s32 (+ p 12) (u64-shift-right qmd-va 8))
+        e (s32 (+ p 16) (inc-method 0 0x2BC 1))
+        f (s32 (+ p 20) 3) ;; invalidate and schedule
+        g (pb-sem-release (+ p 24) host-sem-va 0xC3C30001)]
+    12))
+
+(defn main [] :i64
+  (let [nv (nv-open NVMAP)
+        h (nvmap-create nv C4-SIZE)
+        a (nvmap-alloc nv h NVMAP-HEAP-IOVMM NVMAP-HANDLE-WRITE-COMBINE 4096)
+        dfd (nvmap-get-fd nv h)
+        cpu (cpu-map dfd C4-SIZE)
+        ctrl (nv-open NVGPU-CTRL)
+        chars (kxrt-b-alloc NVGPU-CHAR-BUF)
+        chars-size (nv-characteristics ctrl chars)
+        check (if (= (ch-compute-class chars) 0xC3C0) 0 (refuse "nvgpu" "not Volta compute class"))
+        as (nv-alloc-as ctrl)
+        mapping (as-map as dfd)
+        va (map-va mapping)
+        tsg (nv-open-tsg ctrl)
+        ch (nv-open-channel ctrl)
+        bind-as (as-bind-channel as ch)
+        bind-tsg (tsg-bind-channel tsg ch)
+        obj (ch-alloc-obj-ctx ch 0xC3C0)
+        setup (ch-setup-bind ch C3-GPFIFO-ENTRIES)
+        M (sm70-exit (sm70-new 1) (sm70-guard 7 0) (sm70-ctl 5 1 7 7 0 0))
+        check-code (if (and (= (sm70-error M) 0) (= (sm70-count M) 1)) 0 (refuse "sm70" "EXIT encoding"))
+        lo (s64 (+ cpu C4-CODE) (sm70-lo M 0))
+        hi (s64 (+ cpu (+ C4-CODE 8)) (sm70-hi M 0))
+        q (qmd-probe (+ cpu C4-QMD) (+ va C4-CODE) (+ va C4-SEM))
+        sem0 (s32 (+ cpu C4-SEM) 0)
+        sem1 (s32 (+ cpu C4-HOST-SEM) 0)
+        words (c4-pb cpu (+ va C4-QMD) (+ va C4-HOST-SEM))
+        gp (kxrt-b-alloc 4096)
+        clock (kxrt-b-alloc 4096)
+        start (now-ns clock)
+        retries (ch-submit ch gp va words 1000)
+        finish2 (wait-word (+ cpu C4-HOST-SEM) 0xC3C30001 clock start 1000000000)
+        done2 (c4-show "host_release" (l32 (+ cpu C4-HOST-SEM)))
+        before (c4-show "compute_before_wait" (l32 (+ cpu C4-SEM)))
+        finish (wait-word (+ cpu C4-SEM) 0xC4C40001 clock start 1000000000)
+        done (c4-show "compute_release" (l32 (+ cpu C4-SEM)))
+        unmap (as-unmap as va)
+        close-ch (sys1 SYS-CLOSE ch)
+        close-tsg (sys1 SYS-CLOSE tsg)
+        close-as (sys1 SYS-CLOSE as)
+        close-ctrl (sys1 SYS-CLOSE ctrl)
+        munmap (sys2 SYS-MUNMAP cpu C4-SIZE)
+        close-dfd (sys1 SYS-CLOSE dfd)
+        free (nvmap-free nv h)
+        close-nv (sys1 SYS-CLOSE nv)]
+    (c4-show "unmap" unmap)
+    (c4-show "free" free)
+    0))

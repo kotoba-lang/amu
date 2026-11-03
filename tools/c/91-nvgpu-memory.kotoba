@@ -1,0 +1,61 @@
+;; tools/c/91-nvgpu-memory.kotoba -- route C step 2 (JUN-712 C2): allocate a buffer through nvmap, map it into the CPU
+;; through its dma-buf fd, create a GPU address space and map the buffer at a GPU VA; write a pattern from the CPU and
+;; read it back through a second CPU mapping and through the kernel (NVMAP_IOC_READ). One `name value` line each
+;; (scripts/seed/check-c-nvgpu-memory.py compares them with an oracle). That the GPU sees the pattern is step C3's.
+
+(def C2-SIZE 0x100000)
+(def C2-WORDS 0x20000)
+
+(defn- show [name :string v :i64] :i64 (say (string-concat name (string-concat " 0x" (hex-str v)))))
+
+;; word i of the pattern: i in the high half, 0xA5A5A5A5 - i in the low half
+(defn- pattern [i :i64] :i64 (+ (i64-shift-left i 32) (- 0xA5A5A5A5 i)))
+(defn- fill [p :i64] :i64 (loop [i 0] (if (= i C2-WORDS) 0 (let [x (s64 (+ p (* 8 i)) (pattern i))] (recur (inc i))))))
+;; how many words of p differ from the pattern
+(defn- mismatches [p :i64] :i64
+  (loop [i 0 n 0] (if (= i C2-WORDS) n (recur (inc i) (if (= (l64 (+ p (* 8 i))) (pattern i)) n (inc n))))))
+;; the number of trailing zero bits of v (v > 0)
+(defn- tz [v :i64] :i64 (loop [k 0] (if (= (bit-and (u64-shift-right v k) 1) 1) k (recur (inc k)))))
+
+(defn main [] :i64
+  (let [nv (nv-open NVMAP)
+        h (nvmap-create nv C2-SIZE)
+        a (nvmap-alloc nv h NVMAP-HEAP-IOVMM NVMAP-HANDLE-WRITE-COMBINE 4096)
+        dfd (nvmap-get-fd nv h)
+        b (say (string-concat "nvmap buffer size 0x" (string-concat (hex-str C2-SIZE)
+                (string-concat " heap 0x" (string-concat (hex-str NVMAP-HEAP-IOVMM) (string-concat " flags 0x" (hex-str NVMAP-HANDLE-WRITE-COMBINE)))))))
+        cpu (cpu-map dfd C2-SIZE)
+        c (fill cpu)
+        cpu2 (cpu-map dfd C2-SIZE)
+        k (kxrt-b-alloc C2-SIZE)
+        r (nvmap-read nv h 0 k C2-SIZE)
+        d (show "pattern_words" C2-WORDS)
+        e (show "mismatches_cpu_mapping" (mismatches cpu))
+        f (show "mismatches_second_cpu_mapping" (mismatches cpu2))
+        g (show "mismatches_kernel_read" (mismatches k))
+        i (show "last_word" (l64 (+ cpu2 (* 8 (dec C2-WORDS)))))
+        ctrl (nv-open NVGPU-CTRL)
+        as (nv-alloc-as ctrl)
+        rb (kxrt-b-alloc 4096)
+        nr (as-va-regions as rb 8)
+        j (show "va_regions" nr)
+        l (loop [x 0] (if (= x nr) 0
+            (let [y (say (string-concat "va_region " (string-concat (dec-str x)
+                     (string-concat " offset 0x" (string-concat (hex-str (va-region-offset rb x))
+                     (string-concat " page_size 0x" (string-concat (hex-str (va-region-page-size rb x))
+                     (string-concat " pages 0x" (hex-str (va-region-pages rb x))))))))))]
+              (recur (inc x)))))
+        m (as-map as dfd)
+        va (map-va m)
+        n (show "gpu_va" va)
+        o (show "gpu_va_alignment_log2" (tz va))
+        p (show "gpu_va_in_region" (if (and (>= va (va-region-offset rb 0))
+                                           (<= (+ va C2-SIZE) (+ (va-region-offset rb 0) (* (va-region-pages rb 0) (va-region-page-size rb 0))))) 1 0))
+        q (show "map_page_size" (map-page-size m))
+        s (show "map_flags" (map-flags m))
+        t (show "unmap" (as-unmap as va))
+        u (sys2 SYS-MUNMAP cpu C2-SIZE) v (sys2 SYS-MUNMAP cpu2 C2-SIZE)
+        w (sys1 SYS-CLOSE dfd) x (sys1 SYS-CLOSE as) y (sys1 SYS-CLOSE ctrl)
+        z (show "free" (nvmap-free nv h))
+        zz (sys1 SYS-CLOSE nv)]
+    0))

@@ -153,7 +153,7 @@ def main(compiler, output, target, seccomp_if_available=False):
         src, out = art / (name + ".kotoba"), art / (name + ".elf")
         src.write_text(source)
         r = subprocess.run([str(prod), "compile", str(src), "--target", tgt, "--output", str(out), "--format", "static"],
-                           cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art)},
+                           cwd=art, env={"PATH": "/usr/bin:/bin", "KEXE_CAP_RESOURCES_35": str(art), "KEXE_STACK_BYTES": "8388608"},
                            capture_output=True, timeout=1800)
         (raw / (name + ".compile.stdout")).write_bytes(r.stdout)
         (raw / (name + ".compile.stderr")).write_bytes(r.stderr)

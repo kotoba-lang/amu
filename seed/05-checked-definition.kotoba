@@ -223,6 +223,20 @@
                           (typed-list-conj [:list :string] out renamed) value)))))
             value (dcp-form M S A body R depth) restore (vector-assoc! A 2 scope)]
         (dcp-list (typed-list-new [:list :string] (dcp-sym "let") (dcp-vec pairs) value))))))
+;; B1 (JUN-588): (fn [p ..] body), parameters all :i64 (the source syntax has no annotation; the bridge refuses any
+;; other checked type). Parameters take the next binder indices left to right before the body, like let binders;
+;; the scope is restored afterwards and the counter is not. Free names in the body resolve through the enclosing
+;; environment, so a captured outer local is the outer binder's k-name and a top-level definition is a dependency
+;; edge/reference as anywhere else. The sealed form is (fn [kN ..] body) with the head spelled as the symbol "fn".
+(defn- dcp-fn-binder [M :vector-i64 A :vector-i64 n :i64] :string (dcp-bind M A n))
+(defn- dcp-fn [M :vector-i64 S :string A :vector-i64 n :i64 R [:list :string] depth :i64] :string
+  (let [params (dcp-child M n 1) body (dcp-child M n 2) scope (vector-at A 2)]
+    (if (or (not= (kr-count M n) 3) (not= (kr-kind M params) ND-VEC)) (dcp-bad A)
+      (let [names (loop [p (kr-first M params) out (typed-list-new [:list :string])]
+                    (if (or (= p 0) (not= (vector-at A 0) 0)) out
+                      (recur (kr-next M p) (typed-list-conj [:list :string] out (dcp-fn-binder M A p)))))
+            value (dcp-form M S A body R depth) restore (vector-assoc! A 2 scope)]
+        (dcp-list (typed-list-new [:list :string] (dcp-sym "fn") (dcp-vec names) value))))))
 (defn- dcp-branch [M :vector-i64 S :string A :vector-i64 binder :i64 body :i64 R [:list :string] depth :i64] [:list :string]
   (let [scope (vector-at A 2) name (dcp-bind M A binder)
         value (dcp-form M S A body R depth) restore (vector-assoc! A 2 scope)]
@@ -271,6 +285,7 @@
     (= (kr-kind M n) ND-LIST)
       (let [head (dcp-text M S (kr-first M n))]
         (cond (= head "let") (dcp-let M S A n R (inc depth))
+              (= head "fn") (dcp-fn M S A n R (inc depth))
               (or (= head "result-match-of") (= head "option-match") (= head "variant-match")) (dcp-match M S A n R (inc depth))
               :else (dcp-list (dcp-sequence M S A (kr-first M n) R (inc depth)))))
     :else (dcp-bad A)))

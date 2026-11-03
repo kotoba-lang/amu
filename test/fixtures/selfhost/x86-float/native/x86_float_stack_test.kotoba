@@ -1,0 +1,10 @@
+(ns native.x86-float-stack-test (:export [main]))
+;; Runtime profile: six raw-bit parameters exercise the first stack argument.
+(defn- six-wide [a :f64 b :f64 c :f64 d :f64 e :f64 f :f64] :f64
+  (f64-add (f64-add (f64-add (f64-add (f64-add a b) c) d) e) f))
+(defn- six-narrow [a :f32 b :f32 c :f32 d :f32 e :f32 f :f32] :f32
+  (f32-add (f32-add (f32-add (f32-add (f32-add a b) c) d) e) f))
+(defn- f [x :f64] :f32 (f64-to-f32-rounded x))
+(defn main [] :i64
+  (+ (if (f64-eq (f64-add (six-wide 1.0 2.0 3.0 4.0 5.0 6.0) 1.0) 22.0) 1 0)
+     (if (f32-eq (f32-add (six-narrow (f 1.0) (f 2.0) (f 3.0) (f 4.0) (f 5.0) (f 6.0)) (f 1.0)) (f 22.0)) 2 0)))

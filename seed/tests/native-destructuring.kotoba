@@ -1,0 +1,60 @@
+;; JUN-729: destructuring is reader sugar (lang/guest-grammar.edn :nested-destructuring, L2) that seed/21-check expands
+;; into the plain temp-bound nth / vector-drop / get bindings before typing.
+;; main returns 0, or the number of the first failing case.
+(ns native-destructuring (:export [main]))
+
+(defrecord P [a :i64 b :i64])
+
+;; a pattern parameter (with its type form), a plain one after it
+(defn- psum [[a b] :vector-i64 c :i64] :i64 (+ a (+ b c)))
+;; a map pattern parameter over a typed map, with :or defaults
+(defn- pmap [{:keys [x y] :or {x 0 y 40}} [:map :keyword :i64]] :i64 (+ x y))
+;; a pattern over the variadic rest
+(defn- prest [a & [b c]] :i64 (+ a (+ b c)))
+;; patterns in two clauses of one defn
+(defn- pmulti ([[a b] :vector-i64] :i64 (+ a b)) ([[a] :vector-i64 c] :i64 (* a c)))
+
+;; sum of a vector by a loop over [x & xs]
+(defn- lsum [v :vector-i64] :i64
+  (loop [[x & xs] v s 0]
+    (if (zero? (count xs)) (+ s x) (recur xs (+ s x)))))
+;; a later loop init reads a name the earlier pattern bound (clojure.core/loop's outer let)
+(defn- lseed [] :i64
+  (loop [[a b] [3 4] n a]
+    (if (> n 5) (+ (* 100 a) (+ (* 10 b) n)) (recur [b a] (+ n 1)))))
+
+;; a :keys name needs its keyword written somewhere in the module (its value is its spelling): :j only here
+(def absent-key :j)
+(defn- zmap [] [:map :keyword :i64] (typed-map-new [:map :keyword :i64] :q 1 :z 26))
+
+(defn main [] :i64
+  (let [[a b] [1 2]
+        [c d & r :as all] [5 6 7 8 9]
+        [_ f _] [10 11 12]
+        [[g h] [i]] (typed-list-new [:list :vector-i64] [13 14] [15])
+        {:keys [x y] :as m} {:x 16 :y 17}
+        {w :y [p q] :v} {:y 18 :v [19 20]}
+        {:keys [k j] :or {k 0 j 21}} (typed-map-new [:map :keyword :i64] :k 22)
+        {:keys [z] :or {z 0}} (zmap)
+        {pa :a pb :b} (->P 23 24)
+        [] [27]]
+    (cond (not= (+ a b) 3) 1
+          (not= (+ c d) 11) 2
+          (not= (+ (count r) (nth r 0)) 10) 3
+          (not= (count all) 5) 4
+          (not= f 11) 5
+          (not= (+ g (+ h i)) 42) 6
+          (not= (+ x (+ y (:x m))) 49) 7
+          (not= (+ w (+ p q)) 57) 8
+          (not= (+ k j) 43) 9
+          (not= z 26) 10
+          (not= (+ pa pb) 47) 11
+          (not= (let [t [25 26]] (let [[t u] t] (+ t u))) 51) 12
+          (not= (psum [1 2] 3) 6) 13
+          (not= (pmap (typed-map-new [:map :keyword :i64] :x 2)) 42) 14
+          (not= (prest 1 2 3) 6) 15
+          (not= (+ (pmulti [1 2]) (pmulti [3] 4)) 15) 16
+          (not= (lsum [1 2 3 4]) 10) 17
+          (not= (lseed) 436) 18
+          (not= (let [[d e] [1 2]] (let [[d] [e]] d)) 2) 19
+          :else 0)))

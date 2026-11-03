@@ -152,7 +152,24 @@
         (xg-rel 0x820f 2 2 small)
         (uv-context (uv-pd) 7) (uv-context (uv-small) 0) (iv-hex "31c9")
         (xg-label refine) (iv-hex "4889c24883ca07488914cf480500100000ffc183f904")
-        (xg-rel 0x820f 2 2 refine))))
+        (xg-rel 0x820f 2 2 refine)
+        (cond-> (uv-v5?) (uv-framebuffer-high)))))
+;; The sealed GOP framebuffer may lie in a 64-bit BAR above the v5 256-GiB
+;; identity bound (AMD 6600H: 0x7fe0000000, AWAI-118); wg-seal already admits
+;; it below 512 GiB inside an allocated BAR. Map exactly the 1-GiB PDPT slots
+;; it touches above 256 GiB as supervisor RW/NX 1-GiB leaves, uncached
+;; (PWT|PCD, as the RTL8125 BAR directory uses): device memory must never be
+;; write-back, and MTRRs need not cover a BAR this high. Nothing else above
+;; 256 GiB is mapped, and an unsealed or low framebuffer adds nothing.
+(defn- uv-framebuffer-high [M :vector-i64] :vector-i64
+  (let [done (vector-at M MM-LABEL-N) next (inc done)]
+    (-> M (iv-reserve 2)
+        (iv-hex "4981b9") (xg-bytes WG-READY 4) (xg-bytes WG-MAGIC 4) (xg-rel 0x850f 2 2 done)
+        (iv-mem 139 0 9 WG-BASE) (iv-hex "4889c248c1ea1e4881fa00010000") (xg-rel 0x820f 2 2 done)
+        (iv-mem 139 6 9 WG-SIZE) (iv-hex "488d7430ff48c1ee1e4881feff010000") (xg-rel 0x870f 2 2 done)
+        (uv-context (uv-pdpt) 7) (iv-hex "48b9") (xg-bytes -9223372036854775653 8)
+        (xg-label next) (iv-hex "4889d048c1e01e4809c8488904d748ffc24839f2") (xg-rel 0x860f 2 2 next)
+        (xg-label done))))
 (defn- uv-idt [M :vector-i64] :vector-i64
   (let [again (vector-at M MM-LABEL-N)]
     (-> M (iv-reserve 1) (iv-hex "498b91") (xg-bytes IV-CONTEXT-ENTRY 4)

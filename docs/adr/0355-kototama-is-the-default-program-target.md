@@ -1,9 +1,15 @@
 # ADR 0355: Kototama is the default program target
 
 - Date: 2026-10-14
-- Status: Accepted
+- Status: Superseded by [ADR 0396](0396-each-public-entry-names-its-own-host-target.md) (2026-10-31, KOTOBA-174)
 - Deciders: repository owner
 - Related: ADR 0351 (superseded historical native-default decision), Kototama VM program contract
+
+> **Superseded (2026-10-31, KOTOBA-174, ADR 0396).** No current entry selects Kototama for an omitted
+> `--target`, and none ever will. Each public entry names its own host target: `bin/amu` uses `aarch64-macos`
+> and `bin/x86_64-linux/amu` uses `x86_64-linux`. The compiler roots refuse an omitted target with E2.
+> Kototama exists only as the explicit `compile-kototama*` commands. The text below is kept as the record
+> of the 2026-10-14 decision.
 
 ## Context
 

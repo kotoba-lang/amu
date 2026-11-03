@@ -98,3 +98,81 @@ a qualified one. The Mac root's status stays `diagnostic-candidate`; updating th
 remaining pinned descriptors is receipt-driven (`scripts/seed/write-bootstrap-descriptors.py`,
 JUN-545 and JUN-547); the AIUEOS release bundle's own build is tracked separately
 (JUN-548); physical hardware and release qualification are separate gates.
+
+## Status update, 2026-10-31 (JUN-707)
+
+The same failure shape as JUN-546, at context ABI slots 96 and 104. Every
+prelude keyword path through `__r6-kwreg` (`keyword-from-string`,
+`keyword-name` on a new name, `document-keyword-value`) calls them: they are
+the private keyword intern rows, `seed/73-keyword-intern.kotoba` on Linux.
+The Mac wrapper installed neither, so a `bin/amu run` program that interned a
+keyword died of SIGSEGV (exit 139). `document-kind` and `keyword?` never
+reached the slots and kept working, which is why the gap stayed hidden.
+
+The slice-setup stub now branches to `ki-words` at `KI-START` (3720, in the
+free span after the CLI helper in every mode). That block installs both slots
+and holds the two routines:
+
+- **Put** appends `(entity, attribute, value)` rows to a private 6 MiB
+  anonymous mapping made on first use. The base is at ctx+1800 and the count
+  at ctx+1808, the Linux G+776/G+784. The mapping is outside every arena, so
+  arena-scope rollback never changes an interned name.
+- **Get** returns the newest matching value or INT64_MIN.
+
+There are at most 262144 rows, as on Linux. A wrong context tag, a failed
+mapping or a full table writes `seed: keyword intern failed (Mac runtime)` to
+stderr and exits 70.
+
+`scripts/seed/check-macos-keyword-intern.py` (Mac CI job) runs four programs:
+
+| Program | What it checks | Exit |
+|---|---|---|
+| `seed/tests/macos-keyword-intern.kotoba` main | 1,800 Unicode keywords interned twice, with identity and name round trips; a literal keyword; `document-keyword-value`; a keyword interned inside arena-scope | 0 |
+| exhaust-main | more names than 262144 rows hold | 70 |
+| raw main | slot 96 called with a context whose tag is not 11 | 70 |
+| plain positive control | a program without keywords | 0 |
+
+The pins moved the same way as for JUN-546:
+
+1. A staged packager run (the old packager builds the new one).
+2. `--phase source`.
+3. The descriptor-bound Mac gate.
+4. The cross check (the Linux images are unchanged).
+5. `--phase final`.
+6. `repin-derived-pins.py`, which rebuilt the public CLI.
+
+The compiler container fixed point is unchanged (`7d09635f…`). Before the
+change, a `bin/amu run` of the keyword probe exited 139; after it, the probe
+prints 1.
+
+## Status update, 2026-10-31 (JUN-710)
+
+The public keyword graph, context ABI slots 80/88 (`__r6-kgput` /
+`__r6-kgget`, seed/77 on Linux), had the same gap, so the repository's own
+`seed/tests/native-keyword-intern.kotoba` still died on the Mac.
+
+The intern block became `kg-words` at `KG-START` (3720). It installs all four
+slots, and both tables share one put and one get. Each entry sets the table's
+context offset (x15) and row limit (x14):
+
+| Table | Base | Count | Row limit | Linux |
+|---|---|---|---|---|
+| graph | ctx+1760 | ctx+1768 | 4096 | G+736/G+744 |
+| intern rows | ctx+1800 | ctx+1808 | 262144 | G+776/G+784 |
+
+Each table gets its own anonymous mapping of limit*24 bytes on first use, so
+the tables never share rows and arena-scope never rolls either back. The
+refusal line is now `seed: keyword table failed (Mac runtime)` (exit 70). It
+is placed at `KG-MSG-START` (4944, the free span before the vector runtime),
+and the layout patches its `adr` (`adr-x1`).
+
+`check-macos-keyword-intern.py` now also runs the Linux oracle:
+
+| Program | Exit |
+|---|---|
+| main | 0 |
+| graph-full-main (4096 datoms beside the intern rows) | 0 |
+| graph-overflow-main (datom 4097) | 70 |
+
+It also has a wrong-tag control for slot 80, alongside the slot-96 one. Pins
+moved through the staged run, `--phase source`, and `repin-derived-pins.py`.

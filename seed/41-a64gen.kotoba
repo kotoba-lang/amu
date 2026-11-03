@@ -1932,6 +1932,10 @@
   (let [ns (gn-g M1 gn-f-ns)
         dp (gn-g M1 gn-f-dp)]
     (cond (> np 16) (gn-err M1 E-GEN-OP OP-FN)
+          ;; JUN-556 (R4B raised to 8): parameters past the fifth arrive on the stack internally, where AAPCS64
+          ;; passes them in x5..x7, and no aarch64 entry shim converts them yet. Refuse such an explicit export
+          ;; rather than emit an entry a native caller would call with the wrong arguments.
+          (and (= (gn-fnf M1 f FF-EXPORT) 1) (> np 5)) (gn-err M1 E-GEN-OP OP-FN)
           :else
           (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
                 M2 (sl-assign (gn-vmode (gn-assign MM) i) i f np)
@@ -2100,6 +2104,23 @@
 (defn- gn-fl-un-ok? [uop :i64] :bool
   (or (and (>= uop UOP-F64-NEG) (<= uop UOP-F64-SQRT)) (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT))
       (and (>= uop UOP-F64-TO-I64) (<= uop UOP-F32-TO-I64))))
+;; f32 -> i64 (UOP-F32-TO-I64, JUN-633, ADR 0398): ADR 0395's semantics, as on the x86 object route. In range
+;; (-2^63 <= x < 2^63) fcvtzs truncates toward zero; NaN, +-Inf and every other |x| >= 2^63 reach brk #0 (the SIR trap
+;; convention) instead of fcvtzs's saturated answer. d is the scratch for the bound: x is consumed by the first fmov.
+;;   fmov s0,wX ; movz xD,#0xdf00,lsl #16 ; fmov s1,wD (-2^63) ; fcmp s0,s1 ; b.lt trap (below, or unordered) ;
+;;   fneg s1,s1 (2^63) ; fcmp s1,s0 ; b.gt ok (2^63 > x, ordered) ; trap: brk #0 ; ok: fcvtzs xD,s0
+(defn- gn-fl-f32-to-i64 [M :vector-i64 d :i64 x :i64] :vector-i64
+  (-> M
+      (gn-emit (enc-fmov-to-fp 0 0 x))
+      (gn-emit (enc-movz d 0xdf00 1))
+      (gn-emit (enc-fmov-to-fp 0 1 d))
+      (gn-emit (enc-fcmp 0 0 1))
+      (gn-emit (enc-bcond (enc-cond-lt) 4))
+      (gn-emit (enc-fop1 0 0 1 1))
+      (gn-emit (enc-fcmp 0 1 0))
+      (gn-emit (enc-bcond (enc-cond-gt) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-fcvtzs 0 d 0))))
 ;; d := (uop) x
 (defn- gn-fl-un [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
   (cond (<= uop UOP-F64-SQRT) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fop1 (- uop UOP-F64-NEG) 1 0 0)) (gn-fl-out 1 d))
@@ -2109,7 +2130,7 @@
         (= uop UOP-F64-TO-F32) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 0 0)) (gn-fl-out 0 d))
         (= uop UOP-F32-TO-F64) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvt 0 0 0)) (gn-fl-out 1 d))
         (= uop UOP-I64-TO-F32) (-> M (gn-emit (enc-scvtf 0 0 x)) (gn-fl-out 0 d))
-        :else (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvtzs 0 d 0)))))
+        :else (gn-fl-f32-to-i64 M d x)))
 (defn- gn-fl-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
   (if (gn-fl-un-ok? uop)
     (let [s (gn-co M i t)
@@ -9926,7 +9947,7 @@
        ;; Exclude its whole backing: terminal finish may read beyond schedule.
        G (vector-alloc 6) ranges (-> m3 (sphase-away 3 true G 0)
                          (sphase-away 4 false G 3))
-       fast (sphase2-ok? M p n) hw (and fast kb-sha-hw (sphase-hw? M p))
+       fast (sphase2-ok? M p n) hw (and fast (kb-sha-hw) (sphase-hw? M p))
        m4 (cond-> (gn-ld ranges 5 11) fast (sphase2-init p ri) hw (sphase-hw-state true)) chunk (vector-at m4 MM-CODE-N)
        ;; fast: 0 <= i < n here, so n - i >= 4 iff i <= n - 4 (signed)
        m5 (if fast (gn-emit m4 (enc-cmp-i ri (- n 4)))
@@ -9952,10 +9973,15 @@
        end (vector-at m13 MM-CODE-N)]
   (-> m13 (sphase-away-patch G 0 original-at) (gn-dot-patch no32 end (enc-cond-ne))
       (gn-dot-patch tail tail-at (if fast (enc-cond-gt) (enc-cond-lo))) (gn-dot-patch done done-at (enc-cond-eq)))))
-;; kb-sha-hw: the SHA-256 crypto-instruction paths (sha256h / h2 rounds, sha256su0 / su1 schedule). Off for the
-;; same-algorithm round (the crypto decision is open); the scalar rounds (sphase2-body) and the carried-pair schedule
-;; (srx-carry-body) run instead. true turns them back on.
-(def kb-sha-hw false)
+;; kb-sha-hw: the SHA-256 crypto-instruction paths (sha256h / h2 rounds, sha256su0 / su1 schedule). On for an
+;; ordinary compile (owner decision 2026-10-29: real compiles use the hardware). A benchmark that compares with
+;; C, which does not use the instructions, passes `compile ... --no-crypto-hw`: the scalar rounds (sphase2-body) and
+;; the carried-pair schedule (srx-carry-body) run instead. The flag is accepted only by `compile` (78-full-entry).
+(defn- kb-sha-hw [] :bool
+  (loop [index 1]
+    (cond (>= index (io-argc)) true
+          (string=? (io-arg index) "--no-crypto-hw") false
+          :else (recur (+ index 1)))))
 ;; ror on the low 32 bits (extr w)
 (defn- srx-ror32 [d :i64 n :i64 s :i64] :i64 (+ (enc-rrr 0x13800000 d n n) (* (bit-and s 31) 1024)))
 ;; one scalar round of the four-round chunk (see sphase2-ok? below): Sigma1 / Sigma0 as three ror32 each, ch, maj from
@@ -10271,7 +10297,7 @@
 ;; the masked sums), stored zero-extended at &v[base + i]; else the scalar pairs below.
 (defn- srx-hw-ok? [M :vector-i64 p :i64] :bool
  (let [base (gn-sir M (+ p 21) IF-B)]
-  (and kb-sha-hw (= (gn-sir M (+ p 23) IF-B) 2) (= (gn-sir M (+ p 31) IF-B) 7) (= (gn-sir M (+ p 39) IF-B) 15)
+  (and (kb-sha-hw) (= (gn-sir M (+ p 23) IF-B) 2) (= (gn-sir M (+ p 31) IF-B) 7) (= (gn-sir M (+ p 39) IF-B) 15)
        (= (gn-sir M (+ p 47) IF-B) 16) (>= base 16) (<= base 500)
        (= (srx-sigma M (gn-sir M (+ p 27) IF-A)) 42193) (= (srx-sigma M (gn-sir M (+ p 43) IF-A)) 13447))))
 (defn- srx-hw [M :vector-i64 p :i64] :vector-i64
@@ -21228,7 +21254,7 @@
 (defn- t2-obj [M :vector-i64 v :i64] :i64 (let [o (if (> v 0) (t2-g M (+ t2-a-obj v)) 0)] (if (> o 0) o v)))
 (defn- t2-ret0? [M :vector-i64 g :i64] :bool
   (or (and (= g (t2-g M t2-s-f)) (= (t2-g M t2-s-ret0self) 1))
-      (and (> g 0) (< g MM-FN-CAP) (not= g (t2-g M t2-s-f)) (= (t2-g M (+ t2-a-ret0 g)) 1))))
+      (and (> g 0) (< g MM-FN-CAP) (not= g (t2-g M t2-s-f)) (= (t2-g M (+ t2-a-ret0 g)) 1) (not (gn-clamp-open M g)))))
 ;; meet of the current obj o of v with a computed object x (0 = no information)
 (defn- t2-obj-meet [o :i64 x :i64 v :i64] :i64 (cond (= x 0) o (= o 0) x (= o x) o :else v))
 (defn- t2-obj-new [M :vector-i64 v :i64] :i64
@@ -24721,7 +24747,9 @@
   (if (or (>= g (vector-at M MM-FN-N)) (>= g MM-FN-CAP)) (t2-s M t2-s-last changed)
     (if (= (t2-g M (+ t2-a-mcd g)) 1) (t2-mcd-pass M (inc g) changed)
       (let [p (gn-fnf M g FF-SIR)
-            x (if (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g)) (t2-mcd-scan M (inc p)) 1)]
+            ;; an import stub's SIR is a typing self call, not the export's code (JUN-595): may change descriptors
+            x (if (and (> p 0) (< p (vector-at M MM-SIR-N)) (= (gn-op M p) OP-FN) (= (gn-sir M p IF-A) g) (not (gn-clamp-open M g)))
+                (t2-mcd-scan M (inc p)) 1)]
         (if (= x 1) (t2-mcd-pass (t2-s M (+ t2-a-mcd g) 1) (inc g) 1) (t2-mcd-pass M (inc g) changed))))))
 (defn- t2-mcd-init [M :vector-i64] :vector-i64
   (let [M0 (-> M (t2-wzero t2-a-mcd 0 MM-FN-CAP) (t2-wzero t2-a-ret0 0 MM-FN-CAP) (t2-s t2-a-mcd 1))]
@@ -24864,7 +24892,9 @@
   (let [n (gn-min (vector-at M MM-FN-N) MM-FN-CAP)
         ;; private functions start at "no call seen", everything else (public, lambdas, adapters) unknown
         M0 (loop [f 0 m M] (if (>= f MM-FN-CAP) m
-                             (recur (inc f) (let [v (if (and (< f n) (= (gn-fnf m f FF-KIND) FK-PRIV) (not (lw-tmpl? m f)) (not (lw-spec? m f)))
+                             ;; import stubs (JUN-595) are unknown: their SIR is not the export's code
+                             (recur (inc f) (let [v (if (and (< f n) (= (gn-fnf m f FF-KIND) FK-PRIV) (not (lw-tmpl? m f)) (not (lw-spec? m f))
+                                                             (not (gn-clamp-open m f)))
                                                       t2-mlinf 0)]
                                               (-> m (t2-wfill (+ t2-a-pmin (* 4 f)) 0 4 v) (t2-s (+ t2-a-rmin f) v)
                                                   (t2-wfill (+ t2-a-prng (* 8 f)) 0 8 (if (= v 0) t2-rg-unk t2-mlinf)))))))]
@@ -24901,7 +24931,7 @@
 (defn- t2-r0-fn [M :vector-i64 f :i64] :vector-i64
   (let [p (gn-fnf M f FF-SIR)]
     (if (or (<= p 0) (>= p (vector-at M MM-SIR-N)) (not= (gn-op M p) OP-FN) (not= (gn-sir M p IF-A) f) (< (gn-sir M p IF-B) 1)
-            (lw-spec? M f) (lw-tmpl? M f))
+            (lw-spec? M f) (lw-tmpl? M f) (gn-clamp-open M f))   ; JUN-595: an import stub's SIR is no proof
       (t2-s M t2-s-last 0)
       (let [ns (gn-sir M p IF-C)
             M0 (loop [s 1 m M] (if (or (> s ns) (>= s 256)) m (recur (inc s) (t2-s m (+ t2-a-hmin 512 s) (if (= s 1) 1 (if (<= s (gn-sir M p IF-B)) 0 2))))))

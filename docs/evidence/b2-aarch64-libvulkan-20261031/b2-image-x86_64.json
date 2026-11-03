@@ -1,0 +1,285 @@
+{
+  "status": "PASS_B2_IMAGE_BUILD_AND_RUN",
+  "target": "x86_64-linux",
+  "compiler": {
+    "bytes": 10105344,
+    "sha256": "2a6951c3a8e1842fab68ef0fcaf3e1bd3f07e11a2ebc2d974459d26e645839f1"
+  },
+  "host": [
+    "Linux",
+    "x86_64",
+    "7.0.0-31-generic"
+  ],
+  "sources": {
+    "seed/98-x86_64-b2.kotoba": {
+      "bytes": 11417,
+      "sha256": "de5ed7e3cb8664b0c9ca33b671fc34f02d43793a6a2e5508bac171c3231c1307"
+    },
+    "seed/75-x86_64-static.kotoba": {
+      "bytes": 14690,
+      "sha256": "fb5c707b4d4f2e0487f2b266ab406cfb087c2bb20418c49f246cd051beb76a54"
+    },
+    "seed/76-x86_64-static-rt.kotoba": {
+      "bytes": 174219,
+      "sha256": "28f2e7f6b883c4ca0caafb465e01317f9be8deb0a591ddce03fa8f267a06f1b0"
+    },
+    "seed/70-x86_64-linux.kotoba": {
+      "bytes": 24331,
+      "sha256": "ab537bc0b7026838c9490f3d7535136df4b7815c00880278209d8334991de66d"
+    },
+    "tools/b2/tests/image_abi_t.kotoba": {
+      "bytes": 3349,
+      "sha256": "188f1048db0ef285503b2980e1b9656bccf34fab7729996d9bf8102bd606051a"
+    },
+    "tools/b2/tests/image_arch_x86_64.kotoba": {
+      "bytes": 258,
+      "sha256": "48abd352c0213e2beefa73ef3c96d63918baf64661c13bfbc62cc916d4e466fd"
+    }
+  },
+  "images": {
+    "hello": "artifacts/hello.elf",
+    "mem": "artifacts/mem.elf",
+    "abi": "artifacts/abi.elf"
+  },
+  "results": {
+    "structure": {
+      "hello": {
+        "image": {
+          "bytes": 389632,
+          "sha256": "a6ab69c017dfa0a64f95e76235f6ac321071de548fc0c1eec9a44261a4d4a223"
+        },
+        "exports": 0,
+        "table": 0
+      },
+      "mem": {
+        "image": {
+          "bytes": 389632,
+          "sha256": "6ee4a3d299161c871c9d4791ce2e7515d0c0c354e383c0334e60f5ee03cfb358"
+        },
+        "exports": 0,
+        "table": 0
+      },
+      "abi": {
+        "image": {
+          "bytes": 410112,
+          "sha256": "7e50fed136e03cecd77431d477f8875b8b9e1fd6ac1d564fc7be625712e24fff"
+        },
+        "exports": 10,
+        "table": "0x462fb8",
+        "thunks": [
+          {
+            "name": "zero",
+            "version": "",
+            "parameters": 0,
+            "thunk": "0x462cf2",
+            "thunkBytes": 53,
+            "callee": "0x402019"
+          },
+          {
+            "name": "add5",
+            "version": "TESTV1",
+            "parameters": 5,
+            "thunk": "0x462d27",
+            "thunkBytes": 53,
+            "callee": "0x402046"
+          },
+          {
+            "name": "six",
+            "version": "",
+            "parameters": 6,
+            "thunk": "0x462d5c",
+            "thunkBytes": 58,
+            "callee": "0x4021d3"
+          },
+          {
+            "name": "mix14",
+            "version": "GLIBC_2.2.5",
+            "parameters": 14,
+            "thunk": "0x462d96",
+            "thunkBytes": 130,
+            "callee": "0x4022fb"
+          },
+          {
+            "name": "sixteen",
+            "version": "",
+            "parameters": 16,
+            "thunk": "0x462e18",
+            "thunkBytes": 148,
+            "callee": "0x4027d6"
+          },
+          {
+            "name": "flag",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x462eac",
+            "thunkBytes": 53,
+            "callee": "0x402a3f"
+          },
+          {
+            "name": "neg",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x462ee1",
+            "thunkBytes": 53,
+            "callee": "0x402a9f"
+          },
+          {
+            "name": "probe",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x462f16",
+            "thunkBytes": 53,
+            "callee": "0x402af9"
+          },
+          {
+            "name": "spin",
+            "version": "",
+            "parameters": 1,
+            "thunk": "0x462f4b",
+            "thunkBytes": 53,
+            "callee": "0x402b98"
+          },
+          {
+            "name": "pair",
+            "version": "",
+            "parameters": 2,
+            "thunk": "0x462f80",
+            "thunkBytes": 53,
+            "callee": "0x403be7"
+          }
+        ]
+      },
+      "negativeControls": {
+        "thunk-epilogue": "refused",
+        "thunk-fuel": "refused",
+        "export-name": "refused",
+        "context-mode": "refused"
+      }
+    },
+    "refusals": {
+      "runtime-call-outside-the-api": "E7101",
+      "api-in-format-static": "E2101 (the name is not defined outside --format b2)",
+      "export-string-parameter": "E7102",
+      "export-empty-name": "E7102",
+      "export-empty-version": "E7102",
+      "export-seventeen-parameters": "E2178"
+    },
+    "cxOutsideB2": {
+      "bytes": 389632,
+      "sha256": "053634599f773b8559b55a69f7fe616f466b87350418feabbba810c2273ba9c5"
+    }
+  },
+  "calls": [
+    {
+      "name": "hello",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "mem",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "abi",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "refuse-runtime",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-b-api-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-string-parameter",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-empty-name",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-empty-version",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "refuse-export-seventeen-parameters",
+      "format": "b2",
+      "target": "x86_64-linux",
+      "exit": 1
+    },
+    {
+      "name": "cx-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    },
+    {
+      "name": "dx-static",
+      "format": "static",
+      "target": "x86_64-linux",
+      "exit": 0
+    }
+  ],
+  "cCompilerOrLoader": false,
+  "run": {
+    "host": [
+      "Linux",
+      "x86_64",
+      "7.0.0-31-generic"
+    ],
+    "rows": {
+      "hello": {
+        "exit": 7,
+        "stdout": "hello b2\n"
+      },
+      "hello-argc": {
+        "exit": 9,
+        "stdout": "hello b2\n"
+      },
+      "mem": {
+        "exit": 0,
+        "stdout": "0\n"
+      },
+      "abi": {
+        "exit": 0,
+        "stdout": "zero ok\nadd5 ok\nsix ok\nmix14 ok\nsixteen ok\nflag ok\nneg ok\nmissing-version ok\nA returns ok\nrbx ok\nr12 ok\nr13 ok\nr14 ok\nr15 ok\ncontrol returns ok\ncontrol rbx ok\naligned probe ok\n"
+      },
+      "abi-alignment-control": {
+        "exit": -11,
+        "stdout": ""
+      },
+      "fuel-own-budget": {
+        "exit": 0,
+        "stdout": "3000000\n"
+      },
+      "fuel-caller-meter-restored": {
+        "exit": -4,
+        "stdout": "3000000\n"
+      },
+      "fuel-unmetered": {
+        "exit": 0,
+        "stdout": "3000000\n"
+      }
+    },
+    "notRun": [
+      "the libvulkan image: GPU hosts only (tools/b2/90-vk-probe.kotoba, check-b2-libvulkan.py)"
+    ]
+  }
+}

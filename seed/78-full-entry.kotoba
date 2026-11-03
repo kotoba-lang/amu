@@ -1,6 +1,7 @@
 ;; seed/78-full-entry.kotoba -- the entry of the combined compiler (seed/FULL-MANIFEST, JUN-331): the adopted core
 ;; (ADR 0370) plus the loaderless Linux targets in one image. An explicit --target aarch64-linux, x86_64-linux,
-;; x86_64-aiueos-kernel-v1, x86_64-aiueos-user-v1/v2 or wasm32-browser goes to its emitter; every other command (check, the core's aarch64-macos compile, project
+;; x86_64-aiueos-kernel-v1, x86_64-aiueos-user-v1/v2, wasm32-browser or js-browser goes to its emitter; `definition-cids` goes to the
+;; native definition-identity layer (04-09); every other command (check, the core's aarch64-macos compile, project
 ;; compile, extract-native, compile-kir) is the core driver, unchanged.
 (defn- full-target? [t :string] :i64
   (if (and (>= (io-argc) 4) (string=? (io-arg 0) "compile") (string=? (io-arg 2) "--target") (string=? (io-arg 3) t)) 1 0))
@@ -16,7 +17,8 @@
       (= (full-target? "x86_64-aiueos-user-v2") 1)
       (= (full-target? "x86_64-aiueos-user-v3") 1)
       (= (full-target? "x86_64-aiueos-user-v4") 1)
-      (= (full-target? "x86_64-aiueos-user-v5") 1)))
+      (= (full-target? "x86_64-aiueos-user-v5") 1)
+      (= (full-target? "x86_64-aiueos-user-plc-v1") 1)))
 (defn- full-value-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
     (cond (full-native?)
@@ -24,6 +26,8 @@
               (string=? flag "--payload") (string=? flag "--fuel")
               (and (or (= (full-target? "x86_64-linux") 1) (= (full-target? "aarch64-linux") 1))
                    (string=? flag "--runtime-profile"))
+              ;; KOTOBA-175 (ADR 0402): the declared capability set of the PLC user target
+              (and (= (full-target? "x86_64-aiueos-user-plc-v1") 1) (string=? flag "--capabilities"))
               (and (or (= (full-target? "x86_64-aiueos-kernel-v1") 1)
                        (= (full-target? "x86_64-aiueos-kernel-v2") 1)
                        (= (full-target? "x86_64-aiueos-kernel-v3") 1))
@@ -44,12 +48,13 @@
           (string=? command "compile-kir") (or (string=? flag "--output") (and module (string=? flag "--ns")))
           (string=? command "link") (or (string=? flag "--object-dir") (string=? flag "--output"))
           (string=? command "modules") (string=? flag "--source-path")
-          (string=? command "package-aiueos-boot") (or (string=? flag "--output") (string=? flag "--payload") (string=? flag "--font") (string=? flag "--user-slot") (string=? flag "--pci-resources"))
+          (string=? command "package-aiueos-boot") (or (string=? flag "--output") (string=? flag "--payload") (string=? flag "--font") (string=? flag "--user-slot") (string=? flag "--pci-resources") (string=? flag "--netlog") (string=? flag "--watchdog") (string=? flag "--install"))
           (string=? command "package-aiueos-user-payload") (or (string=? flag "--output") (string=? flag "--version"))
           :else false)))
 (defn- full-word-flag? [flag :string] :bool
   (let [command (io-arg 0) module (= (drv-pj-has 1 (io-argc) "--emit-module") 1)]
     (or (string=? flag "--unpinned")
+        (and (string=? command "compile") (string=? flag "--no-crypto-hw"))
         (and (or (string=? command "compile") (string=? command "compile-kir")) (string=? flag "--emit-module"))
         (and (string=? command "compile") module (string=? flag "--entry"))
         (and (string=? command "compile-kir") (not module) (string=? flag "--metered")))))
@@ -96,12 +101,22 @@
     (and (>= index 0) (string=? (io-arg index) "platform-linked"))))
 ;; malformed x86_64-linux arguments (70's xg-main) are a usage error, as in 73
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
+;; `definition-cids <file.kotoba> [--groups]` (ADR 0300, JUN-584): one row per top-level definition in declaration
+;; order, `name<TAB>CID` or `name<TAB>REFUSED:<marker>`, then `SCANNED<TAB><identified>/<total>`. No admission runs
+;; and nothing is granted: a CID is identity, never authority. Exit 0 = report, 66 = no identity could be computed
+;; (stdout empty, a DSB:* line on stderr), 2 = usage. Identity: payload-v2, profile 6 / desugar 2.
+(defn- full-definition-cids [format :i64] :i64
+  (if (= (dsr-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
 (defn- seed-main [] :i64
   (cond (> (io-argc) 256) (drv-usage)
         (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)
         (string=? (io-arg 0) "compile-kototama-cache") (k3-command)
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
+        (string=? (io-arg 0) "definition-cids")
+          (cond (= (io-argc) 2) (full-definition-cids 1)
+                (and (= (io-argc) 3) (string=? (io-arg 2) "--groups")) (full-definition-cids 2)
+                :else (drv-usage))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)
         (not (full-argv-ok? 1)) (drv-usage)
         (not (full-lock-ok?)) (drv-fail0 E-PROJ-UNPINNED)
@@ -125,9 +140,17 @@
         (= (full-target? "x86_64-aiueos-user-v3") 1) (xu-command)
         (= (full-target? "x86_64-aiueos-user-v4") 1) (xu-command)
         (= (full-target? "x86_64-aiueos-user-v5") 1) (xu-command)
+        (= (full-target? "x86_64-aiueos-user-plc-v1") 1) (xpl-command)
         (= (full-target? "aarch64-linux") 1) (xa-command)
         ;; JUN-353: guest and runtime in a browser Wasm module.
         (= (full-target? "wasm32-browser") 1) (xw-command)
+        ;; ADR 0397 (JUN-706): the same SIR as one restricted ES module.
+        (= (full-target? "js-browser") 1) (xj-command)
+        ;; KOTOBA-174 (ADR 0396): build the public Linux x86_64 host entry, the
+        ;; --format static image whose start names x86_64-linux for a compile
+        ;; that omits --target. This entry's own omitted target still refuses E2.
+        (and (= (full-target? "x86_64-linux") 1) (= (io-argc) 8)
+             (string=? (io-arg 6) "--format") (string=? (io-arg 7) "host-entry")) (xs-command 6)
         (= (full-target? "x86_64-linux") 1)
           (if (or (= (drv-pj-has 1 (io-argc) "--source-path") 1)
                   (= (drv-pj-has 1 (io-argc) "--source-lock") 1)) (xpj-command) (xg-main))

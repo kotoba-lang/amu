@@ -1,0 +1,562 @@
+(ns sm70-encode (:export [sm70-new sm70-count sm70-error sm70-lo sm70-hi sm70-ctl sm70-guard
+                          sm70-nop sm70-exit sm70-bra sm70-mov sm70-mov-imm sm70-mov-cb sm70-s2r
+                          sm70-iadd3 sm70-iadd3-imm sm70-imad sm70-imad-imm sm70-imad-wide-imm sm70-isetp
+                          sm70-fadd sm70-fadd-imm sm70-fmul sm70-fmul-imm sm70-ffma sm70-ffma-imm
+                          sm70-ldg sm70-stg sm70-lds sm70-sts sm70-bar sm70-bssy sm70-bsync sm70-shr-imm
+                          sm70-fadd-neg sm70-iadd3-neg sm70-fsetp sm70-fsetp-imm sm70-fmnmx sm70-imnmx
+                          sm70-sel sm70-sel-imm sm70-mufu sm70-i2f sm70-f2i sm70-lop3 sm70-lop3-imm
+                          sm70-shf sm70-shf-imm sm70-imad-wide sm70-sgxt-imm sm70-plop3 sm70-f2f-f16]))
+
+;; NVIDIA Volta instruction encoder, SM 7.0 / 7.2 (route C, JUN-713). Xavier's
+;; iGPU (gv11b) is SM 7.2. Each instruction is 128 bits, held as two i64
+;; halves: lo = bits 0..63, hi = bits 64..127. Bit numbers below are those of
+;; the 128-bit word, as in the reference.
+;;
+;; There is no NVIDIA specification. The layouts are transcribed from Mesa
+;; NAK's SM70 encoder, src/nouveau/compiler/nak/sm70_encode.rs at Mesa
+;; fd8ef2befafd01190e33f12dbfd109b924c8ebc3 (README.md has the file digests).
+;; SM 7.2 is below NAK's has_ugpr (sm >= 73), so LDG/STG use the pre-Turing
+;; forms 0x381/0x386 and no uniform register appears anywhere.
+;;
+;; A program under construction is a vector M: M[0] the number of
+;; instructions, M[1] the first refusal (0 = none), instruction k at
+;; M[2 + 2k] (lo) and M[3 + 2k] (hi). An emitter that refuses its operands
+;; records the code and emits nothing; later emitters still run, so the
+;; caller checks sm70-error once at the end.
+;;
+;; A unit that uses this file prepends its own ns line and drops this one
+;; (scripts/seed/check-sm70-encode.py).
+
+;; ---------------------------------------------------------------------
+;; Refusals (M[1]).
+
+(def SM70-E-REG 1)    ;; a register outside R0..R254 / RZ (255)
+(def SM70-E-PRED 2)   ;; a predicate outside P0..P6 / PT (7), or a not flag outside 0/1
+(def SM70-E-CTL 3)    ;; control bits outside their 21-bit field (sm70-ctl answers -1)
+(def SM70-E-IMM 4)    ;; an immediate that is not a 32-bit value
+(def SM70-E-OFF 5)    ;; a memory offset outside the signed 24-bit field
+(def SM70-E-BRA 6)    ;; a branch target outside the signed 48-bit word offset
+(def SM70-E-ENUM 7)   ;; a modifier code outside its table (type, order, eviction, rounding, flag)
+(def SM70-E-CAP 8)    ;; the program is full
+(def SM70-E-CB 9)     ;; a constant-bank operand outside its field (bank 0..31, offset 0..0xfffc, aligned to 4)
+(def SM70-E-BAR 10)   ;; a convergence barrier outside B0..B15
+
+;; ---------------------------------------------------------------------
+;; The program.
+
+(defn sm70-new [cap :i64] :vector-i64 (vector-alloc (+ 2 (* 2 cap))))
+(defn sm70-count [M :vector-i64] :i64 (vector-at M 0))
+(defn sm70-error [M :vector-i64] :i64 (vector-at M 1))
+(defn sm70-lo [M :vector-i64 k :i64] :i64 (vector-at M (+ 2 (* 2 k))))
+(defn sm70-hi [M :vector-i64 k :i64] :i64 (vector-at M (+ 3 (* 2 k))))
+
+(defn- sm-fail [M :vector-i64 code :i64] :vector-i64
+  (if (= (vector-at M 1) 0) (vector-assoc! M 1 code) M))
+
+;; ---------------------------------------------------------------------
+;; Fields. (sm-f w off len v) replaces bits [off, off+len) of the word w
+;; with the low len bits of v (len < 64). lf takes a 128-bit bit number in
+;; the low half, hf one in the high half, so the numbers match NAK's.
+
+(defn- sm-mask [len :i64] :i64 (- (i64-shift-left 1 len) 1))
+
+(defn- sm-f [w :i64 off :i64 len :i64 v :i64] :i64
+  (let [m (sm-mask len)]
+    (bit-or (bit-and w (bit-not (i64-shift-left m off))) (i64-shift-left (bit-and v m) off))))
+
+(defn- lf [w :i64 bit :i64 len :i64 v :i64] :i64 (sm-f w bit len v))
+(defn- hf [w :i64 bit :i64 len :i64 v :i64] :i64 (sm-f w (- bit 64) len v))
+
+;; ---------------------------------------------------------------------
+;; Operands.
+
+(def SM70-RZ 255)
+(def SM70-PT 7)
+
+(defn- reg? [r :i64] :bool (and (>= r 0) (<= r 255)))
+(defn- pred? [p :i64] :bool (and (>= p 0) (<= p 7)))
+(defn- flag? [b :i64] :bool (or (= b 0) (= b 1)))
+(defn- in? [v :i64 lo :i64 hi :i64] :bool (and (>= v lo) (<= v hi)))
+;; a 32-bit value, written either signed or unsigned
+(defn- imm? [v :i64] :bool (in? v -2147483648 4294967295))
+
+;; the guard predicate (NAK set_pred, bits 12..15): register p, inverted when inv = 1
+(defn sm70-guard [p :i64 inv :i64] :i64
+  (if (and (pred? p) (flag? inv)) (bit-or p (i64-shift-left inv 3)) -1))
+
+;; the scheduling control (NAK set_instr_deps, sm < 120), contiguous from bit
+;; 105: stall cycles 105..108, yield 109, write barrier 110..112, read barrier
+;; 113..115 (7 = none), wait mask 116..121, operand reuse 122..125
+(defn sm70-ctl [delay :i64 yld :i64 wr :i64 rd :i64 wait :i64 reuse :i64] :i64
+  (if (and (in? delay 0 15) (flag? yld) (pred? wr) (pred? rd) (in? wait 0 63) (in? reuse 0 15))
+    (bit-or delay (bit-or (i64-shift-left yld 4) (bit-or (i64-shift-left wr 5)
+      (bit-or (i64-shift-left rd 8) (bit-or (i64-shift-left wait 11) (i64-shift-left reuse 17))))))
+    -1))
+
+;; ---------------------------------------------------------------------
+;; Emitting: guard and control are common to every instruction.
+
+(defn- sm-emit [M :vector-i64 g :i64 ctl :i64 lo :i64 hi :i64] :vector-i64
+  (let [n (vector-at M 0) at (+ 2 (* 2 n))]
+    (cond (not (in? g 0 15)) (sm-fail M SM70-E-PRED)
+          (not (in? ctl 0 2097151)) (sm-fail M SM70-E-CTL)
+          (> (+ at 2) (vector-count M)) (sm-fail M SM70-E-CAP)
+          :else
+          (let [lo1 (lf lo 12 4 g)
+                hi1 (hf hi 105 21 ctl)]
+            (vector-assoc! (vector-assoc! (vector-assoc! M at lo1) (+ at 1) hi1) 0 (+ n 1))))))
+
+;; an ALU word (NAK encode_alu_base): opcode 0..8, form 9..11, dst 16..23,
+;; src0 24..31. Form 1: src1 a register at 32..39, src2 a register at 64..71;
+;; form 4: src1 an immediate at 32..63, src2 a register; form 2: src2 an
+;; immediate at 32..63, src1 a register at 64..71. The abs/neg bits (src0
+;; 72/73, src1 62/63, src2 74/75) stay 0: no source modifiers here.
+(defn- alu-lo [op :i64 form :i64 d :i64 a :i64] :i64
+  (-> 0 (lf 0 9 op) (lf 9 3 form) (lf 16 8 d) (lf 24 8 a)))
+
+(defn- regs? [d :i64 a :i64 b :i64 c :i64] :bool (and (reg? d) (reg? a) (reg? b) (reg? c)))
+
+;; ---------------------------------------------------------------------
+;; Control flow and moves.
+
+;; NOP (OpNop): opcode 0x918
+(defn sm70-nop [M :vector-i64 g :i64 ctl :i64] :vector-i64
+  (sm-emit M g ctl (lf 0 0 12 0x918) 0))
+
+;; EXIT (OpExit): opcode 0x94d, predicate 87..89 = PT, not 90 = 0, 84/85 = 0
+(defn sm70-exit [M :vector-i64 g :i64 ctl :i64] :vector-i64
+  (sm-emit M g ctl (lf 0 0 12 0x94d) (hf 0 87 3 SM70-PT)))
+
+;; BRA (OpBra, sm < 100): opcode 0x947, .U (bit 32) = 0, condition 87..89 and
+;; its not bit 90, and the target. rel counts instructions from the one after
+;; the branch (0 = the next instruction, -1 = the branch itself). NAK stores
+;; target_ip - ip - 4 in 32-bit words, i.e. 4 * rel, in bits 34..81: 30 bits
+;; in lo and 18 in hi.
+(defn sm70-bra [M :vector-i64 g :i64 ctl :i64 cp :i64 cnot :i64 rel :i64] :vector-i64
+  (let [w (* 4 rel)]
+    (cond (not (and (pred? cp) (flag? cnot))) (sm-fail M SM70-E-PRED)
+          (not (in? w -140737488355328 140737488355327)) (sm-fail M SM70-E-BRA)
+          :else
+          (sm-emit M g ctl
+            (-> 0 (lf 0 12 0x947) (lf 32 1 0) (lf 34 30 w))
+            (-> 0 (hf 64 18 (i64-shift-right w 30)) (hf 87 3 cp) (hf 90 1 cnot))))))
+
+;; BSSY (OpBSSy): opcode 0x945, the convergence barrier B0..B15 at 16..19,
+;; the reconvergence point at 34..63 (target_ip - ip - 4 in 32-bit words, as
+;; for BRA: 4 * rel, rel from the next instruction), condition 87..89 = PT
+;; and its not bit 90 = 0. BSYNC (OpBSync): opcode 0x941, the barrier at
+;; 16..19, condition PT. A warp that diverged after BSSY B waits at BSYNC B
+;; until its threads arrive.
+(defn sm70-bssy [M :vector-i64 g :i64 ctl :i64 b :i64 rel :i64] :vector-i64
+  (let [w (* 4 rel)]
+    (cond (not (in? b 0 15)) (sm-fail M SM70-E-BAR)
+          (not (in? w -536870912 536870911)) (sm-fail M SM70-E-BRA)
+          :else (sm-emit M g ctl (-> 0 (lf 0 12 0x945) (lf 16 4 b) (lf 34 30 w)) (-> 0 (hf 87 3 SM70-PT) (hf 90 1 0))))))
+
+(defn sm70-bsync [M :vector-i64 g :i64 ctl :i64 b :i64] :vector-i64
+  (if (not (in? b 0 15)) (sm-fail M SM70-E-BAR)
+    (sm-emit M g ctl (-> 0 (lf 0 12 0x941) (lf 16 4 b)) (-> 0 (hf 87 3 SM70-PT) (hf 90 1 0)))))
+
+;; BAR.SYNC 0 (OpBar): NAK writes the opcode 0xb1d and nothing else
+;; (barrier 0, every thread of the workgroup)
+(defn sm70-bar [M :vector-i64 g :i64 ctl :i64] :vector-i64
+  (sm-emit M g ctl (lf 0 0 12 0xb1d) 0))
+
+;; MOV (OpMov): ALU opcode 0x002 with src1 only; quad lanes 72..75 = 0xf
+(defn sm70-mov [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64] :vector-i64
+  (if (not (and (reg? d) (reg? a))) (sm-fail M SM70-E-REG)
+    (sm-emit M g ctl (-> 0 (lf 0 9 0x002) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a)) (hf 0 72 4 15))))
+
+(defn sm70-mov-imm [M :vector-i64 g :i64 ctl :i64 d :i64 imm :i64] :vector-i64
+  (cond (not (reg? d)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x002) (lf 9 3 4) (lf 16 8 d) (lf 32 32 imm)) (hf 0 72 4 15))))
+
+;; MOV from the constant bank (form 5, NAK encode_alu_cb, set_src_cb at
+;; 32..58): the byte offset at 38..53, the bank at 54..58, bit 91 (cx: a
+;; bindless bank) 0, abs/neg 62/63 0
+(defn- cb? [bank :i64 off :i64] :bool (and (in? bank 0 31) (in? off 0 65532) (= (bit-and off 3) 0)))
+
+(defn sm70-mov-cb [M :vector-i64 g :i64 ctl :i64 d :i64 bank :i64 off :i64] :vector-i64
+  (cond (not (reg? d)) (sm-fail M SM70-E-REG)
+        (not (cb? bank off)) (sm-fail M SM70-E-CB)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x002) (lf 9 3 5) (lf 16 8 d) (lf 38 16 off) (lf 54 5 bank))
+                (-> 0 (hf 72 4 15) (hf 91 1 0)))))
+
+;; S2R (OpS2R): opcode 0x919, dst 16..23, special register 72..79
+;; (NAK nak_private.h: SR_TID_X 0x21, SR_TID_Y 0x22, SR_TID_Z 0x23,
+;; SR_CTAID_X 0x25, SR_CTAID_Y 0x26, SR_CTAID_Z 0x27, SR_LANEID 0x00)
+(def SM70-SR-LANEID 0x00)
+(def SM70-SR-TID-X 0x21)
+(def SM70-SR-TID-Y 0x22)
+(def SM70-SR-TID-Z 0x23)
+(def SM70-SR-CTAID-X 0x25)
+(def SM70-SR-CTAID-Y 0x26)
+(def SM70-SR-CTAID-Z 0x27)
+
+(defn sm70-s2r [M :vector-i64 g :i64 ctl :i64 d :i64 sr :i64] :vector-i64
+  (cond (not (reg? d)) (sm-fail M SM70-E-REG)
+        (not (in? sr 0 255)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 12 0x919) (lf 16 8 d)) (hf 0 72 8 sr))))
+
+;; ---------------------------------------------------------------------
+;; Integer arithmetic.
+
+;; IADD3 (OpIAdd3): d = a + b + c. ALU opcode 0x010; the two carry-in
+;; predicates are !PT (87..89 = 7 with not 90, 77..79 = 7 with not 80) and
+;; the two carry-out destinations PT (81..83, 84..86 = 7).
+(defn- iadd3-hi [c :i64] :i64
+  (-> 0 (hf 64 8 c) (hf 77 3 7) (hf 80 1 1) (hf 81 3 7) (hf 84 3 7) (hf 87 3 7) (hf 90 1 1)))
+
+(defn sm70-iadd3 [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64] :vector-i64
+  (if (not (regs? d a b c)) (sm-fail M SM70-E-REG)
+    (sm-emit M g ctl (lf (alu-lo 0x010 1 d a) 32 8 b) (iadd3-hi c))))
+
+(defn sm70-iadd3-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64] :vector-i64
+  (cond (not (regs? d a c 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x010 4 d a) 32 32 imm) (iadd3-hi c))))
+
+;; IMAD (OpIMad): d = a * b + c (32-bit). ALU opcode 0x024, carry-out 81..83
+;; = PT, .SIGNED bit 73 (NAK sets it after the sources, over src0's abs bit)
+(defn- imad-hi [c :i64 sgn :i64] :i64 (-> 0 (hf 64 8 c) (hf 81 3 7) (hf 73 1 sgn)))
+
+(defn sm70-imad [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a b c)) (sm-fail M SM70-E-REG)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x024 1 d a) 32 8 b) (imad-hi c sgn))))
+
+(defn sm70-imad-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a c 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x024 4 d a) 32 32 imm) (imad-hi c sgn))))
+
+;; IMAD.WIDE (OpIMad64): the register pair d:d+1 = a * imm + the pair
+;; c:c+1. ALU opcode 0x025 in form 4, carry-out 81..83 = PT, .SIGNED bit 73.
+;; d and c name the low register of a pair, so they are even and below 254.
+(defn- pair? [r :i64] :bool (and (in? r 0 252) (= (bit-and r 1) 0)))
+
+(defn sm70-imad-wide-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64 sgn :i64] :vector-i64
+  (cond (not (and (pair? d) (pair? c) (reg? a))) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x025 4 d a) 32 32 imm) (imad-hi c sgn))))
+
+;; ISETP (OpISetP): the predicate pd = (a cmp b) AND PT. ALU opcode 0x00c,
+;; no register destination; low_cmp 68..70 = PT (not 71 = 0), .EX 72 = 0,
+;; .S32 73 (sgn), set op 74..75 = AND (0), cmp 76..78, pd 81..83, the second
+;; destination 84..86 = PT, the accumulator 87..89 = PT (not 90 = 0).
+;; cmp (NAK set_int_cmp_op): 1 LT, 2 EQ, 3 LE, 4 GT, 5 NE, 6 GE.
+(defn sm70-isetp [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 b :i64 cmp :i64 sgn :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? b))) (sm-fail M SM70-E-REG)
+        (not (pred? pd)) (sm-fail M SM70-E-PRED)
+        (not (and (in? cmp 1 6) (flag? sgn))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x00c) (lf 9 3 1) (lf 24 8 a) (lf 32 8 b))
+                (-> 0 (hf 68 3 7) (hf 71 1 0) (hf 72 1 0) (hf 73 1 sgn) (hf 74 2 0) (hf 76 3 cmp)
+                      (hf 81 3 pd) (hf 84 3 7) (hf 87 3 7) (hf 90 1 0)))))
+
+;; a >> imm, 32-bit (NAK builder shr on sm >= 70: OpShf with low = RZ, high =
+;; a, right, wrap, dst_high): ALU opcode 0x019 in form 4, src0 RZ, the shift
+;; at 32..63, src2 a at 64..71, data type 73..74 (S32 2, U32 3), .W 75, .R
+;; 76, .HI 80. NAK wraps an immediate shift to 0..31; here one outside is
+;; refused.
+(defn sm70-shr-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (in? imm 0 31)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x019 4 d SM70-RZ) 32 32 imm)
+                (-> 0 (hf 64 8 a) (hf 73 2 (- 3 sgn)) (hf 75 1 1) (hf 76 1 1) (hf 80 1 1)))))
+
+;; ---------------------------------------------------------------------
+;; f32 arithmetic. rnd: 0 RN, 1 RM, 2 RP, 3 RZ (78..79); ftz 80; sat 77.
+
+(defn- fmods? [rnd :i64 ftz :i64 sat :i64] :bool (and (in? rnd 0 3) (flag? ftz) (flag? sat)))
+
+(defn- fmods [w :i64 rnd :i64 ftz :i64 sat :i64] :i64
+  (-> w (hf 77 1 sat) (hf 78 2 rnd) (hf 80 1 ftz)))
+
+;; FADD (OpFAdd): ALU opcode 0x021. A register b is src1 (form 1, no src2);
+;; an immediate b becomes src2 (form 2) with src1 = RZ in 64..71.
+(defn sm70-fadd [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x021 1 d a) 32 8 b) (fmods 0 rnd ftz sat))))
+
+(defn sm70-fadd-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x021 2 d a) 32 32 imm) (fmods (hf 0 64 8 SM70-RZ) rnd ftz sat))))
+
+;; FMUL (OpFMul): ALU opcode 0x020, src2 = RZ, .dnz 76 = 0, 84..86 = 4 (NAK: PDIV)
+(defn- fmul-hi [rnd :i64 ftz :i64 sat :i64] :i64
+  (fmods (-> 0 (hf 64 8 SM70-RZ) (hf 76 1 0) (hf 84 3 4)) rnd ftz sat))
+
+(defn sm70-fmul [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x020 1 d a) 32 8 b) (fmul-hi rnd ftz sat))))
+
+(defn sm70-fmul-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x020 4 d a) 32 32 imm) (fmul-hi rnd ftz sat))))
+
+;; FFMA (OpFFma): d = a * b + c. ALU opcode 0x023, .dnz 76 = 0
+(defn sm70-ffma [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a b c)) (sm-fail M SM70-E-REG)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x023 1 d a) 32 8 b) (fmods (hf 0 64 8 c) rnd ftz sat))))
+
+(defn sm70-ffma-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64 rnd :i64 ftz :i64 sat :i64] :vector-i64
+  (cond (not (regs? d a c 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (fmods? rnd ftz sat)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x023 4 d a) 32 32 imm) (fmods (hf 0 64 8 c) rnd ftz sat))))
+
+;; ---------------------------------------------------------------------
+;; Global memory (NAK OpLd / OpSt, MemSpace::Global, sm < 73).
+;; mtype (73..75): 0 U8, 1 S8, 2 U16, 3 S16, 4 32, 5 64, 6 128.
+;; order: 0 constant, 1 weak, 2 strong.CTA, 3 strong.GPU, 4 strong.SYS; on
+;; sm < 80 NAK writes it as a scope (77..78: CTA 0, GPU 2, SYS 3; constant
+;; is SYS, weak is CTA) and an order (79..80: constant 0, weak 1, strong 2).
+;; evict (84..86): 0 EF, 1 normal, 2 EL, 3 LU, 4 unchanged, 5 no-allocate.
+;; a64 (72, .E): the address register pair is 64-bit. off: signed 24 bits (40..63).
+
+(defn- mem-scope [order :i64] :i64
+  (cond (= order 0) 3 (= order 1) 0 (= order 2) 0 (= order 3) 2 :else 3))
+(defn- mem-order [order :i64] :i64 (cond (= order 0) 0 (= order 1) 1 :else 2))
+
+(defn- mem? [mtype :i64 order :i64 evict :i64 a64 :i64] :bool
+  (and (in? mtype 0 6) (in? order 0 4) (in? evict 0 5) (flag? a64)))
+
+(defn- mem-hi [w :i64 mtype :i64 order :i64 evict :i64 a64 :i64] :i64
+  (-> w (hf 72 1 a64) (hf 73 3 mtype) (hf 77 2 (mem-scope order)) (hf 79 2 (mem-order order))
+        (hf 84 3 evict) (hf 91 1 0)))
+
+;; LDG: opcode 0x381, dst 16..23, address 24..31, carry-out 81..83 = PT
+(defn sm70-ldg [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 off :i64 mtype :i64 order :i64 evict :i64 a64 :i64] :vector-i64
+  (cond (not (and (reg? d) (reg? a))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (mem? mtype order evict a64)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x381) (lf 16 8 d) (lf 24 8 a) (lf 40 24 off))
+                (mem-hi (hf 0 81 3 7) mtype order evict a64))))
+
+;; STG: opcode 0x386, address 24..31, data 32..39 (dst field 16..23 stays 0)
+(defn sm70-stg [M :vector-i64 g :i64 ctl :i64 a :i64 off :i64 v :i64 mtype :i64 order :i64 evict :i64 a64 :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? v))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (mem? mtype order evict a64)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x386) (lf 24 8 a) (lf 32 8 v) (lf 40 24 off))
+                (mem-hi 0 mtype order evict a64))))
+
+;; ---------------------------------------------------------------------
+;; Shared memory (NAK OpLd / OpSt, MemSpace::Shared, sm < 73). LDS is opcode
+;; 0x984 (NAK writes it for every SM), STS 0x388 below has_ugpr. The address
+;; register 24..31 holds a byte offset into the workgroup's shared window,
+;; the signed offset is at 40..63, mtype at 73..75 and the stride 78..79 is
+;; X1 (0); LDS has its destination at 16..23 and .ZD 87 = 0, STS its data at
+;; 32..39. NAK requires strong.CTA and normal eviction and writes neither.
+
+(defn sm70-lds [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 off :i64 mtype :i64] :vector-i64
+  (cond (not (and (reg? d) (reg? a))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (in? mtype 0 6)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x984) (lf 16 8 d) (lf 24 8 a) (lf 40 24 off))
+                (-> 0 (hf 73 3 mtype) (hf 78 2 0) (hf 87 1 0) (hf 91 1 0)))))
+
+(defn sm70-sts [M :vector-i64 g :i64 ctl :i64 a :i64 off :i64 v :i64 mtype :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? v))) (sm-fail M SM70-E-REG)
+        (not (in? off -8388608 8388607)) (sm-fail M SM70-E-OFF)
+        (not (in? mtype 0 6)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl
+                (-> 0 (lf 0 12 0x388) (lf 24 8 a) (lf 32 8 v) (lf 40 24 off))
+                (-> 0 (hf 73 3 mtype) (hf 78 2 0) (hf 91 1 0)))))
+
+;; ---------------------------------------------------------------------
+;; The decode kernels' instructions (JUN-739), from the same NAK revision.
+
+;; FADD with negated sources (NAK OpFAdd, src0's neg bit 72, src1's 63):
+;; d = (na ? -a : a) + (nb ? -b : b), RN, no ftz. NAK writes fneg(x) as
+;; FADD -RZ, -x and x - y as FADD x, -y.
+(defn sm70-fadd-neg [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 na :i64 nb :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? na) (flag? nb))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> (alu-lo 0x021 1 d a) (lf 32 8 b) (lf 63 1 nb)) (hf 0 72 1 na))))
+
+;; IADD3 with negated sources (NAK INeg: src0 72, src1 63, src2 75); NAK
+;; writes x - y as IADD3 x, -y, RZ. At most one of na and nb may be set
+;; (NAK: the hardware needs src0 or src1 unmodified).
+(defn sm70-iadd3-neg [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64 na :i64 nb :i64 nc :i64] :vector-i64
+  (cond (not (regs? d a b c)) (sm-fail M SM70-E-REG)
+        (not (and (flag? na) (flag? nb) (flag? nc) (< (+ na nb) 2))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> (alu-lo 0x010 1 d a) (lf 32 8 b) (lf 63 1 nb))
+                (-> (iadd3-hi c) (hf 72 1 na) (hf 75 1 nc)))))
+
+;; FSETP (OpFSetP): pd = (a cmp b) AND PT. ALU opcode 0x00b; set op AND at
+;; 74..75, the compare at 76..79, ftz 80, pd 81..83, the second destination
+;; 84..86 = PT, the accumulator 87..89 = PT (not 90 = 0). cmp (NAK
+;; set_float_cmp_op): ordered 1 LT, 2 EQ, 3 LE, 4 GT, 5 NE, 6 GE; 7 NUM, 8
+;; NAN; unordered 9 LTU, 10 EQU, 11 LEU, 12 GTU, 13 NEU, 14 GEU. b is a
+;; register (form 1) or an immediate (form 4).
+(defn- fsetp-hi [pd :i64 cmp :i64 ftz :i64] :i64
+  (-> 0 (hf 74 2 0) (hf 76 4 cmp) (hf 80 1 ftz) (hf 81 3 pd) (hf 84 3 7) (hf 87 3 7) (hf 90 1 0)))
+
+(defn sm70-fsetp [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 b :i64 cmp :i64 ftz :i64] :vector-i64
+  (cond (not (and (reg? a) (reg? b))) (sm-fail M SM70-E-REG)
+        (not (pred? pd)) (sm-fail M SM70-E-PRED)
+        (not (and (in? cmp 1 14) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x00b) (lf 9 3 1) (lf 24 8 a) (lf 32 8 b)) (fsetp-hi pd cmp ftz))))
+
+(defn sm70-fsetp-imm [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 imm :i64 cmp :i64 ftz :i64] :vector-i64
+  (cond (not (reg? a)) (sm-fail M SM70-E-REG)
+        (not (pred? pd)) (sm-fail M SM70-E-PRED)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (and (in? cmp 1 14) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x00b) (lf 9 3 4) (lf 24 8 a) (lf 32 32 imm)) (fsetp-hi pd cmp ftz))))
+
+;; FMNMX (OpFMnMx): d = min (mn = 1) or max (mn = 0) of a and b. ALU opcode
+;; 0x009; the min predicate at 87..89 = PT, its not bit 90 = 1 - mn; ftz 80;
+;; bit 65 (.IS_A, SM90+) 0.
+(defn sm70-fmnmx [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 mn :i64 ftz :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? mn) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x009 1 d a) 32 8 b)
+                (-> 0 (hf 65 1 0) (hf 80 1 ftz) (hf 87 3 7) (hf 90 1 (- 1 mn))))))
+
+;; IMNMX (OpIMnMx, sm < 120): ALU opcode 0x017, the min predicate as for
+;; FMNMX, .S32 at 73
+(defn sm70-imnmx [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 mn :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? mn) (flag? sgn))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x017 1 d a) 32 8 b)
+                (-> 0 (hf 73 1 sgn) (hf 87 3 7) (hf 90 1 (- 1 mn))))))
+
+;; SEL (OpSel): d = p ? a : b (p inverted when pinv = 1). ALU opcode 0x007,
+;; the condition at 87..89 and its not bit 90; b a register or an immediate.
+(defn sm70-sel [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 p :i64 pinv :i64] :vector-i64
+  (cond (not (regs? d a b 0)) (sm-fail M SM70-E-REG)
+        (not (and (pred? p) (flag? pinv))) (sm-fail M SM70-E-PRED)
+        :else (sm-emit M g ctl (lf (alu-lo 0x007 1 d a) 32 8 b) (-> 0 (hf 87 3 p) (hf 90 1 pinv)))))
+
+(defn sm70-sel-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 p :i64 pinv :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (and (pred? p) (flag? pinv))) (sm-fail M SM70-E-PRED)
+        :else (sm-emit M g ctl (lf (alu-lo 0x007 4 d a) 32 32 imm) (-> 0 (hf 87 3 p) (hf 90 1 pinv)))))
+
+;; MUFU (OpMuFu): d = fn(a), f32. ALU opcode 0x108 with src1 only (32..39;
+;; src0 24..31 stays 0), .F16 bit 73 = 0, the function at 74..79: 0 COS,
+;; 1 SIN, 2 EX2, 3 LG2, 4 RCP, 5 RSQ, 8 SQRT (6 and 7, the 64-bit halves,
+;; and 9 TANH, not on SM70, are refused). SIN and COS take the angle in
+;; turns (NAK: fsin_normalized_2_pi).
+(defn sm70-mufu [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 func :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (or (in? func 0 5) (= func 8))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x108) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a))
+                (-> 0 (hf 73 1 0) (hf 74 6 func)))))
+
+;; I2F (OpI2F, 32-bit): d = float(a). ALU opcode 0x106, src1 at 32..39,
+;; subop 60..61 = 0, source signed 74, destination size 75..76 = 2 (4
+;; bytes), rounding 78..79, source size 84..85 = 2.
+(defn sm70-i2f [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 sgn :i64 rnd :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? sgn) (in? rnd 0 3))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x106) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a) (lf 60 2 0))
+                (-> 0 (hf 74 1 sgn) (hf 75 2 2) (hf 78 2 rnd) (hf 84 2 2)))))
+
+;; F2I (OpF2I, 32-bit): d = int(a). ALU opcode 0x105, src1 at 32..39, the
+;; destination signed 72, its size 75..76 = 2, .NTZ 77 = 0, rounding 78..79
+;; (NAK's conversions use 3, toward zero), ftz 80, source size 84..85 = 2.
+(defn sm70-f2i [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 sgn :i64 rnd :i64 ftz :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? sgn) (in? rnd 0 3) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x105) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a))
+                (-> 0 (hf 72 1 sgn) (hf 75 2 2) (hf 77 1 0) (hf 78 2 rnd) (hf 80 1 ftz) (hf 84 2 2)))))
+
+;; LOP3 (OpLop3): d = lut(a, b, c), bit i of lut the result for (a, b, c) =
+;; (bit 2, bit 1, bit 0 of i) as NAK's LogicOp3 (0xf0 a, 0xcc b, 0xaa c).
+;; ALU opcode 0x012, the table 72..79, .PAND 80 = 0, the predicate
+;; destination 81..83 = PT, the predicate source 87..89 = PT with not 90 = 1
+;; (false). b a register or an immediate.
+(defn- lop3-hi [c :i64 lut :i64] :i64
+  (-> 0 (hf 64 8 c) (hf 72 8 lut) (hf 80 1 0) (hf 81 3 7) (hf 87 3 7) (hf 90 1 1)))
+
+(defn sm70-lop3 [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64 lut :i64] :vector-i64
+  (cond (not (regs? d a b c)) (sm-fail M SM70-E-REG)
+        (not (in? lut 0 255)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x012 1 d a) 32 8 b) (lop3-hi c lut))))
+
+(defn sm70-lop3-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 imm :i64 c :i64 lut :i64] :vector-i64
+  (cond (not (regs? d a c 0)) (sm-fail M SM70-E-REG)
+        (not (imm? imm)) (sm-fail M SM70-E-IMM)
+        (not (in? lut 0 255)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x012 4 d a) 32 32 imm) (lop3-hi c lut))))
+
+;; SHF (OpShf): the funnel shift of the pair hi:lo. ALU opcode 0x019, lo
+;; src0, the shift src1 (a register, form 1, or an immediate, form 4), hi
+;; src2; type 73..74 (0 S64, 1 U64, 2 S32, 3 U32), .W 75, .R 76 (right),
+;; .HI 80 (the high word of the result). NAK's shl(x, s) is SHF.L.W.S32 x,
+;; s, RZ; shr(x, s) is SHF.R.W.HI RZ, s, x. An immediate shift outside
+;; 0..63 is refused.
+(defn- shf? [ty :i64 wrap :i64 right :i64 high :i64] :bool
+  (and (in? ty 0 3) (flag? wrap) (flag? right) (flag? high)))
+
+(defn- shf-hi [hi :i64 ty :i64 wrap :i64 right :i64 high :i64] :i64
+  (-> 0 (hf 64 8 hi) (hf 73 2 ty) (hf 75 1 wrap) (hf 76 1 right) (hf 80 1 high)))
+
+(defn sm70-shf [M :vector-i64 g :i64 ctl :i64 d :i64 lo :i64 s :i64 hi :i64 ty :i64 wrap :i64 right :i64 high :i64] :vector-i64
+  (cond (not (regs? d lo s hi)) (sm-fail M SM70-E-REG)
+        (not (shf? ty wrap right high)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x019 1 d lo) 32 8 s) (shf-hi hi ty wrap right high))))
+
+(defn sm70-shf-imm [M :vector-i64 g :i64 ctl :i64 d :i64 lo :i64 s :i64 hi :i64 ty :i64 wrap :i64 right :i64 high :i64] :vector-i64
+  (cond (not (regs? d lo hi 0)) (sm-fail M SM70-E-REG)
+        (not (in? s 0 63)) (sm-fail M SM70-E-IMM)
+        (not (shf? ty wrap right high)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x019 4 d lo) 32 32 s) (shf-hi hi ty wrap right high))))
+
+;; IMAD.WIDE with a register multiplier (OpIMad64, form 1): d:d+1 = a * b +
+;; c:c+1, c a pair or RZ (zero). NAK's umul_high(x, y) is the high word of
+;; IMAD.WIDE.U32 x, y, RZ.
+(defn sm70-imad-wide [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 b :i64 c :i64 sgn :i64] :vector-i64
+  (cond (not (and (pair? d) (or (pair? c) (= c SM70-RZ)) (reg? a) (reg? b))) (sm-fail M SM70-E-REG)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x025 1 d a) 32 8 b) (imad-hi c sgn))))
+
+;; SGXT (OpSgxt): the low bits of a, sign- (sgn = 1) or zero-extended. ALU
+;; opcode 0x01a, the bit count an immediate in form 4, .S32 73, .W 75 = 0.
+;; NAK's bitfield_extract(x, off, n) on SM70 is SHF.R by off, then SGXT n.
+(defn sm70-sgxt-imm [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 bits :i64 sgn :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (in? bits 0 32)) (sm-fail M SM70-E-IMM)
+        (not (flag? sgn)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (lf (alu-lo 0x01a 4 d a) 32 32 bits) (-> 0 (hf 73 1 sgn) (hf 75 1 0)))))
+
+;; PLOP3 (OpPLop3, the warp form): pd = lut(a, b, c) over predicates, each
+;; source inverted by its not flag. Opcode 0x81c; src0 a at 87..89 (not 90),
+;; src1 b at 77..79 (not 80), src2 c at 68..70 (not 71); the table of pd is
+;; split, bits 0..2 at 64..66 and 3..7 at 72..76; the second destination
+;; 84..86 = PT with the table 16..23 = 0 (NAK: a constant false); bit 67 (a
+;; uniform src2) 0. lut as for LOP3 (a 0xf0, b 0xcc, c 0xaa).
+(defn sm70-plop3 [M :vector-i64 g :i64 ctl :i64 pd :i64 a :i64 na :i64 b :i64 nb :i64 c :i64 nc :i64 lut :i64] :vector-i64
+  (cond (not (and (pred? pd) (pred? a) (pred? b) (pred? c) (flag? na) (flag? nb) (flag? nc))) (sm-fail M SM70-E-PRED)
+        (not (in? lut 0 255)) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 12 0x81c) (lf 16 8 0))
+                (-> 0 (hf 64 3 (bit-and lut 7)) (hf 67 1 0) (hf 68 3 c) (hf 71 1 nc) (hf 72 5 (u64-shift-right lut 3))
+                      (hf 77 3 b) (hf 80 1 nb) (hf 81 3 pd) (hf 84 3 7) (hf 87 3 a) (hf 90 1 na)))))
+
+;; F2F.F32.F16 (OpF2F, src F16, dst F32): d = the half h (0 low, 1 high) of
+;; a as an f32. ALU opcode 0x104 with src1 only (32..39) and its F16 swizzle
+;; at 60..61 (NAK set_swizzle: Xx 0, Yy 1), destination size 75..76 = 2,
+;; rounding 78..79 = 0 (exact anyway), ftz 80, source size 84..85 = 1.
+(defn sm70-f2f-f16 [M :vector-i64 g :i64 ctl :i64 d :i64 a :i64 h :i64 ftz :i64] :vector-i64
+  (cond (not (regs? d a 0 0)) (sm-fail M SM70-E-REG)
+        (not (and (flag? h) (flag? ftz))) (sm-fail M SM70-E-ENUM)
+        :else (sm-emit M g ctl (-> 0 (lf 0 9 0x104) (lf 9 3 1) (lf 16 8 d) (lf 32 8 a) (lf 60 2 h))
+                (-> 0 (hf 75 2 2) (hf 78 2 0) (hf 80 1 ftz) (hf 84 2 1)))))
