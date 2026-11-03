@@ -1,0 +1,13 @@
+{
+  "kind": "awai.linux-parent-death-race-observation/1",
+  "recordedAt": "2026-11-03 Asia/Tokyo",
+  "host": "disposable one-CPU ARM64 Linux VM, kernel 7.2.7-200.fc44.aarch64",
+  "observer": "race-observer.py",
+  "observerSha256": "9cc3787ef99d83e1961cae6abe1621c3cd169633dd0d84753098d43b97e7efaa",
+  "observed": [
+    {"checkParent": true, "prctlResult": 0, "parentChanged": true, "decision": "refused"},
+    {"checkParent": false, "prctlResult": 0, "parentChanged": true, "decision": "would-dispatch"}
+  ],
+  "method": "The observer paused a forked helper before PR_SET_PDEATHSIG, killed and reaped its parent, then allowed the helper to set the signal. The helper compared getppid with the saved parent in the first case; the control omitted that comparison. The dedicated VM was stopped and removed.",
+  "scope": "This one-off Python kernel experiment demonstrates the already-dead-parent race and a possible detection mechanism. It does not execute the changed Kotoba runtime, cover all scheduling races, prove process-tree cleanup or qualify a governor."
+}

@@ -1,0 +1,81 @@
+(ns examples.native-block-guard (:export [main]))
+
+;; Pure candidate for a HOST-OWNED native block broker. These numeric fields
+;; are not authority when supplied by a guest. No OS device access exists here.
+;; ticket: [session id-hi id-lo sectors block-bytes expiry approved consumed]
+;; device: [session id-hi id-lo sectors block-bytes external mounted exclusive]
+;; Only the native host may create/hold a ticket, attest device fields and
+;; consume approval. Missing/negative/truncated data refuses.
+(defn valid-block-size [n]
+  (or (= n 512) (= n 4096)))
+
+(defn guard [ticket :vector-i64 device :vector-i64 now]
+  (if (or (not= (vector-count ticket) 8) (not= (vector-count device) 8)) 0
+    (let [session (vector-at ticket 0) hi (vector-at ticket 1)
+          lo (vector-at ticket 2) sectors (vector-at ticket 3)
+          block (vector-at ticket 4) expiry (vector-at ticket 5)]
+      (if (and (> session 0) (> hi 0) (> lo 0) (> sectors 1)
+               (<= sectors 2251799813685247) (valid-block-size block)
+               (> now 0) (> expiry now)
+               (= (vector-at ticket 6) 1) (= (vector-at ticket 7) 0)
+               (= (vector-at device 0) session) (= (vector-at device 1) hi)
+               (= (vector-at device 2) lo) (= (vector-at device 3) sectors)
+               (= (vector-at device 4) block) (= (vector-at device 5) 1)
+               (= (vector-at device 6) 0) (= (vector-at device 7) 1)) 1 0))))
+
+;; Must be called by host on private state before dispatching one write.
+;; Tests below model one-shot consumption but do not implement trusted input,
+;; open/close, identity discovery, kernel exclusion or a device capability.
+(defn consume [ticket :vector-i64 device :vector-i64 now] :vector-i64
+  (if (= (guard ticket device now) 1)
+    (vector-assoc! ticket 7 1) ticket))
+
+;; Reject overflow without multiplying block count or adding offset+length.
+;; Geometry has already been attested; an offset is expressed in sectors.
+(defn range-ok [sectors start count]
+  (if (or (< sectors 2) (> sectors 2251799813685247)
+          (< start 0) (<= count 0) (> count 64) (>= start sectors)) 0
+    (if (<= count (- sectors start)) 1 0)))
+
+;; Checked byte translation for a future host: validate the complete sector
+;; interval before multiplying. A negative result must never be used as I/O.
+(defn byte-offset [sectors block start count]
+  (if (or (not (valid-block-size block)) (not= (range-ok sectors start count) 1)) -1
+    (* start block)))
+
+(defn byte-count [sectors block start count]
+  (if (or (not (valid-block-size block)) (not= (range-ok sectors start count) 1)) -1
+    (* count block)))
+
+(defn main [] :i64
+  (let [good [7 11 13 4096 4096 100 1 0]
+        dev [7 11 13 4096 4096 1 0 1]
+        consumed (consume [7 11 13 4096 4096 100 1 0] dev 99)]
+    (+ (if (= (guard good dev 99) 1) 0 1)
+       (if (= (guard good dev 100) 0) 0 1)
+       (if (= (guard good dev 0) 0) 0 1)
+       (if (= (guard [7 11 13 4096 4096 100 0 0] dev 99) 0) 0 1)
+       (if (= (guard [7 11 13 4096 4096 100 1 1] dev 99) 0) 0 1)
+       (if (= (guard good [8 11 13 4096 4096 1 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 12 13 4096 4096 1 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 14 4096 4096 1 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 13 4097 4096 1 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 13 4096 512 1 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 13 4096 4096 0 0 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 13 4096 4096 1 1 1] 99) 0) 0 1)
+       (if (= (guard good [7 11 13 4096 4096 1 0 0] 99) 0) 0 1)
+       (if (= (guard [7 11] dev 99) 0) 0 1)
+       (if (= (guard good [] 99) 0) 0 1)
+       (if (= (guard consumed dev 99) 0) 0 1)
+       (if (= (range-ok 4096 4095 1) 1) 0 1)
+       (if (= (range-ok 4096 4095 2) 0) 0 1)
+       (if (= (range-ok 4096 -1 1) 0) 0 1)
+       (if (= (range-ok 4096 0 65) 0) 0 1)
+       (if (= (range-ok 4096 0 0) 0) 0 1)
+       (if (= (byte-offset 4096000000 4096 4095999999 1) 16777215995904) 0 1)
+       (if (= (byte-count 4096000000 4096 4095999999 1) 4096) 0 1)
+       (if (= (byte-offset 4096000000 4096 4095999999 2) -1) 0 1)
+       (if (= (byte-offset 4096 513 0 1) -1) 0 1)
+       (if (= (byte-count 4096 4096 0 65) -1) 0 1)
+       (if (= (byte-offset 2251799813685248 4096 0 1) -1) 0 1)
+       (if (= (byte-offset 2251799813685247 4096 2251799813685246 1) 9223372036854767616) 0 1))))

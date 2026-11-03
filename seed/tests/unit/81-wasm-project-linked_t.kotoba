@@ -1,0 +1,49 @@
+;; Compile two independently checked function sets, link their Wasm indices,
+;; and emit a module; the second calls the first through an imported stub.
+(defn- xg-default [] :i64 2)
+(defn- seed-main [] :i64
+  (let [source "(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (+ x 1))\n"
+        L (pj-new-l) V (vector-alloc 2)
+        P (pj-padd L (pj-padd L (pj-new-p L) "dep") "/dep.kotoba")
+        registered (pj-add-mod L 0 1)
+        trailer1 (pj-trailer L P 0)
+        trail (pj-ls L pj-k-trail (string-length source))
+        S1 (string-concat source trailer1)
+        M1 (xw-project-front (mem-new) L P S1 0)
+        a1 (mem-set M1 197 (string-length S1))
+        refused (xw-project-compile-library a1 L V P S1 1 0 4 0)
+        failure (vector-at M1 MM-ERR) no-iface (pj-l L pj-k-nif) no-image (pj-l L pj-k-img)
+        clear (mem-set M1 MM-ERR 0)
+        iface (xw-project-compile-library clear L V P S1 1 0 5 0)]
+    (if (or (= failure 0) (not= no-iface 0) (not= no-image 0)) 19
+      (if (not (pj-ok M1)) 11
+      (let [app-id (pj-n L) P2 (pj-padd L iface "app") path-id (pj-n L) P3 (pj-padd L P2 "/app.kotoba")
+            ref-id (pj-n L) P4 (pj-padd L P3 "dep")
+            app (pj-add-mod L app-id path-id)
+            edge (-> L (pj-ls pj-k-errmod 1) (pj-mset 1 pj-mf-entry 1) (pj-mset 1 pj-mf-req0 0) (pj-mset 1 pj-mf-nreq 1)
+                     (pj-rset 0 pj-rf-mod 0) (pj-rset 0 pj-rf-alias -1) (pj-rset 0 pj-rf-ref0 0) (pj-rset 0 pj-rf-nref 1)
+                     (pj-ls pj-f-base ref-id))
+            source2 "(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (dep 41))\n"
+            trailer (pj-trailer L P4 1) trail2 (pj-ls L pj-k-trail (string-length source2))
+            S2 (string-concat source2 trailer)
+            M2 (xw-project-front (mem-new) L P4 S2 1) stub (pj-fn-named M2 S2 "dep") main (pj-fn-named M2 S2 "main")
+            a2 (mem-set M2 197 (string-length S2))
+            save2 (xw-project-compile-unit a2 L V S2 stub 1 6)
+            entry (xw-idx M2 main)]
+        (cond (not (pj-ok M1)) 15 (not= (pj-l L pj-k-nif) 1) 16
+              (not= (pj-l L pj-k-nstub) 1) 17 (not= (pj-l L pj-t-base) 5) 18
+              (not (pj-ok save2)) 12 (not= entry 6) 13
+              :else (let [wasm (xw-project-module M2 L V 2 entry)
+                          bad-source "(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (dep true))\n"
+                          bad-trail (pj-ls L pj-k-trail (string-length bad-source))
+                          bad (xw-project-front M1 L P4 (string-concat bad-source trailer) 1)
+                          bad-ok (pj-ok bad)
+                          cap-source "(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string \"x\")] (dep 41)))\n"
+                          cap-trail (-> L (pj-ls pj-k-trail (string-length cap-source)) (pj-mset 1 pj-mf-caps 1))
+                          cap (xw-project-front M1 L P4 (string-concat cap-source trailer) 1)
+                          cap-error (vector-at cap MM-ERR)]
+                      (cond (not (pj-ok wasm)) 14 bad-ok 20 (not= cap-error E-CAP-UNDECLARED) 21
+                            :else (let [start (io-out "LINKED-BEGIN\n")
+                                        bytes (io-write-hex M2 (+ MM-OUT-BASE 1) (- (vector-at M2 MM-OUT-N) 1))
+                                        end (io-out "LINKED-END\n")]
+                                    0)))))))))

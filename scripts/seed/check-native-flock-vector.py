@@ -63,6 +63,33 @@ def main(compiler, out):
         return [scope / name, str(scope) + "//" + name, scope / "link.lock", out / "outside.lock"]
 
     run("lock-vector-rollback-and-unlock", [good, *fixture_args("good.lock")])
+    keyword_fixture = ROOT / "seed/tests/native-keyword-flock.kotoba"
+    keyword_source = out / "keyword-flock.kotoba"
+    keyword_source.write_bytes(keyword_fixture.read_bytes())
+    keyword_image = build("keyword-flock", compiler, keyword_source)
+    run("keyword-lock-interleaving", [keyword_image, scope / "keyword.lock"])
+    keyword_parts = []
+    for p in paths:
+        text = (ROOT / p).read_text()
+        if p == "seed/73-keyword-intern.kotoba":
+            assert text.count("kxrt-gl 800") == 3 and text.count("kxrt-gs 800") == 1
+            assert text.count("kxrt-gl 808") == 2 and text.count("kxrt-gs 808") == 2
+            text = text.replace("kxrt-gl 800", "kxrt-gl 776").replace("kxrt-gs 800", "kxrt-gs 776")
+            text = text.replace("kxrt-gl 808", "kxrt-gl 784").replace("kxrt-gs 808", "kxrt-gs 784")
+        keyword_parts.append(text + "\n")
+    keyword_mutant_source = out / "keyword-alias.kotoba"
+    keyword_mutant_source.write_text("".join(keyword_parts))
+    keyword_mutant_compiler = build("keyword-alias-compiler", compiler, keyword_mutant_source)
+    keyword_mutant = build("keyword-alias-fixture", keyword_mutant_compiler, keyword_source)
+    bad = subprocess.run([str(keyword_mutant), str(scope / "keyword-mutant.lock")], cwd=out,
+                         env={**env, "KEXE_CAP_RESOURCES_35": str(scope), "KEXE_ALLOW": "35,38"},
+                         capture_output=True, timeout=900)
+    (out / "detect-keyword-alias.stdout").write_bytes(bad.stdout)
+    (out / "detect-keyword-alias.stderr").write_bytes(bad.stderr)
+    assert bad.returncode == 120 and b"SIGSEGV" in bad.stderr, (bad.returncode, bad.stderr[-800:])
+    report["keywordFlock"] = dict(fixture=pin(keyword_fixture), image=pin(keyword_image),
+                                   mutantCompiler=pin(keyword_mutant_compiler), mutantImage=pin(keyword_mutant),
+                                   mutantExit=bad.returncode, detectedBy="SIGSEGV")
     parts = []
     changed = 0
     for p in paths:
