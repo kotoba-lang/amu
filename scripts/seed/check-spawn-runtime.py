@@ -50,6 +50,11 @@ S = "ARG_SEP"
 T = "STDIN_SEP"
 NO_READ_RULE = ("(if (> (kxrt-gl 2096) 2) (kxrt-allow-read-fd p i4 (kxrt-gl 2096)) i4)", "i4", 2)
 NO_SIGPIPE_RESET = ("        dfl (kxrt-signal 13 q)\n", "        dfl 0\n", 2)
+OUTPUT_READ_ERROR_ARM = ("m (kxrt-syscall 63 fd (+ o got) (- 16385 got) 0 0 0)",
+                         "m (if (> got 0) -5 (kxrt-syscall 63 fd (+ o got) (- 16385 got) 0 0 0))")
+OUTPUT_READ_ERROR_X86 = ("m (kxrt-syscall 0 fd (+ o got) (- 16385 got) 0 0 0)",
+                         "m (if (> got 0) -5 (kxrt-syscall 0 fd (+ o got) (- 16385 got) 0 0 0))")
+OUTPUT_READ_ERROR_OLD = ("(< m 0) -5", "(< m 0) got", 2)
 SIGPIPE_BIT = "m=$(grep SigIgn /proc/self/status | cut -f2); echo $(( (0x$m >> 12) & 1 ))"
 
 PLAIN = "(ns t (:export [main]))\n(defn main [] :i64 42)\n"
@@ -230,6 +235,15 @@ def main(compiler, output, target, seccomp_if_available=False):
             stderr_has=[b":signal :SIGSYS"])
     control_pipe = compile_(producer, "control-compiler-no-sigpipe-reset", patched(text, [NO_SIGPIPE_RESET]), host)
     e2e("control-no-sigpipe-reset", guest(lit("/bin/sh", "-c", SIGPIPE_BIT)), prod=control_pipe, stdout_is=b"0\n1\n")
+    # Inject a read error after a real stdout chunk. The old EOF treatment
+    # returned that partial chunk as success; the candidate must refuse it.
+    read_error = [OUTPUT_READ_ERROR_ARM, OUTPUT_READ_ERROR_X86]
+    error_compiler = compile_(producer, "compiler-output-read-error", patched(text, read_error), host)
+    e2e("output-read-error", guest(lit("/bin/echo", "partial")), prod=error_compiler,
+        want_exit=126, stderr_has=[trap + b"setup-failed}\n"])
+    old_compiler = compile_(producer, "control-compiler-output-read-error", patched(text, read_error + [OUTPUT_READ_ERROR_OLD]), host)
+    e2e("control-output-read-error", guest(lit("/bin/echo", "partial")), prod=old_compiler,
+        stdout_is=b"0\npartial\n")
     report = dict(status="PASS_SPAWN_RUNTIME", target=target, compiler=pin(compiler),
                   host=[platform.system(), platform.machine(), platform.release()],
                   executionNative=target.split("-")[0] == {"arm64": "aarch64", "AMD64": "x86_64"}.get(platform.machine(), platform.machine()),
@@ -237,6 +251,8 @@ def main(compiler, output, target, seccomp_if_available=False):
                   grant=grant, knob=knob_rows, wire=rows,
                   controlCompiler={"mutation": "no read rule for the helper's answer fd, in both runtimes", "pin": pin(control)},
                   controlCompilerSigpipe={"mutation": "the child keeps the helper's ignored SIGPIPE, in both runtimes", "pin": pin(control_pipe)},
+                  outputReadErrorCompiler={"mutation": "read error after a stdout chunk, in both runtimes", "pin": pin(error_compiler)},
+                  outputReadErrorOldControl={"mutation": "read error treated as EOF, in both runtimes", "pin": pin(old_compiler)},
                   unity=unity_pins, cCompilerOrLoader=False,
                   notCovered=(["spawn/isolation-unavailable and spawn/setup-failed: no case here drives the child's setup to fail; check-spawn-fault-injection.py covers close_range and fchdir under injected seccomp faults, not prctl or dup3",
                                "the stdin payload's deadline: a request holds at most 65536 bytes, which a default 64 KiB pipe takes whole, so no case blocks the feeding"]

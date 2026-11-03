@@ -267,7 +267,8 @@ host's limits (not the image's), a 10 s deadline (SIGKILL). Answer
 `timeout` `exec-failed` `isolation-unavailable` `setup-failed`. A NUL byte, an
 empty program, a request over 65536 bytes or a helper that is gone trap (exit
 120). The checker admits wire 20; `scripts/seed/check-spawn-runtime.py`
-qualifies it.
+qualifies it. An output read error is a `setup-failed` refusal, not EOF or a
+successful partial answer. This applies to the matching Linux ARM64 runtime.
 
 ### KX64V1 runner (`--format kx64-runner`)
 
