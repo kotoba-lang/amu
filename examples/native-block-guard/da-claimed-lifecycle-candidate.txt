@@ -1,0 +1,269 @@
+.text
+.globl _main
+_main:
+ sub sp, sp, #512
+ mov x16, #-28
+ svc #0x80
+ cbz w0, fail
+ mov w19, w0
+ mov x16, #-26
+ svc #0x80
+ cbz w0, fail
+ mov w20, w0
+ mov w8, #0x1513
+ str w8, [sp, #0]
+ mov w8, #36
+ str w8, [sp, #4]
+ str w19, [sp, #8]
+ str w20, [sp, #12]
+ str wzr, [sp, #16]
+ mov w8, #3409
+ str w8, [sp, #20]
+ str wzr, [sp, #24]
+ mov w8, #1
+ str w8, [sp, #28]
+ mov w8, #4
+ str w8, [sp, #32]
+ mov x0, sp
+ mov x1, #0x103
+ movk x1, #2, lsl #32
+ mov x2, #0x1513
+ movk x2, #36, lsl #32
+ lsl x3, x20, #32
+ orr x3, x3, x19
+ mov x4, #3409
+ lsl x4, x4, #32
+ lsl x5, x20, #32
+ mov x6, #256
+ mov x7, #1000
+ mov x16, #-47
+ svc #0x80
+ cbnz w0, fail
+ ldr w8, [sp, #20]
+ mov w9, #3509
+ cmp w8, w9
+ b.ne fail
+ ldr w8, [sp, #0]
+ tbz w8, #31, fail
+ ldr w8, [sp, #4]
+ cmp w8, #40
+ b.ne fail
+ ldr w8, [sp, #24]
+ cmp w8, #1
+ b.ne fail
+ ldr w8, [sp, #28]
+ cbz w8, fail
+ mov w19, w8
+ mov x9, #0
+clear:
+ str xzr, [sp, x9]
+ add x9, x9, #8
+ cmp x9, #512
+ b.ne clear
+ mov w8, #0x1513
+ str w8, [sp, #0]
+ mov w8, #188
+ str w8, [sp, #4]
+ str w19, [sp, #8]
+ str w20, [sp, #12]
+ mov w8, #404
+ str w8, [sp, #20]
+ mov w8, #1
+ str w8, [sp, #28]
+ adr x9, service
+ add x10, sp, #32
+copy:
+ ldrb w8, [x9], #1
+ strb w8, [x10], #1
+ cbnz w8, copy
+ mov x8, #8
+ stur x8, [sp, #180]
+ mov x0, sp
+ mov x1, #0x103
+ movk x1, #0x300, lsl #16
+ movk x1, #4, lsl #32
+ mov x2, #0x1513
+ movk x2, #188, lsl #32
+ lsl x3, x20, #32
+ orr x3, x3, x19
+ mov x4, #404
+ lsl x4, x4, #32
+ lsl x5, x20, #32
+ mov x6, #256
+ mov x7, #1000
+ mov x16, #-47
+ svc #0x80
+ cbnz w0, fail
+ ldr w8, [sp, #20]
+ cmp w8, #504
+ b.ne fail
+ ldr w8, [sp, #0]
+ tbz w8, #31, fail
+ ldr w8, [sp, #4]
+ cmp w8, #40
+ b.ne fail
+ ldr w8, [sp, #24]
+ cmp w8, #1
+ b.ne fail
+ ldr w8, [sp, #28]
+ cbz w8, fail
+ ldr w8, [sp, #40]
+ cbnz w8, fail
+ ldr w8, [sp, #44]
+ cmp w8, #52
+ b.lo fail
+ ldr w8, [sp, #64]
+ cbnz w8, fail
+ ldr w19, [sp, #28]
+ mov x16, #-50
+ svc #0x80
+ cbz w0, fail
+ mov w20, w0
+ mov x9, #0
+clear_session:
+ str xzr, [sp, x9]
+ add x9, x9, #8
+ cmp x9, #512
+ b.ne clear_session
+ mov w8, #0x1513
+ str w8, [sp, #0]
+ mov w8, #52
+ str w8, [sp, #4]
+ str w19, [sp, #8]
+ str w20, [sp, #12]
+ mov w8, #8
+ str w8, [sp, #20]
+ mov w8, #1
+ str w8, [sp, #28]
+ mov w8, #11
+ str w8, [sp, #36]
+ adr x9, session_name
+ add x10, sp, #40
+copy_session:
+ ldrb w8, [x9], #1
+ strb w8, [x10], #1
+ cbnz w8, copy_session
+ mov x0, sp
+ mov x1, #0x4103
+ movk x1, #0x30, lsl #16
+ movk x1, #4, lsl #32
+ mov x2, #0x1513
+ movk x2, #52, lsl #32
+ lsl x3, x20, #32
+ orr x3, x3, x19
+ mov x4, #8
+ lsl x4, x4, #32
+ lsl x5, x20, #32
+ mov x6, #256
+ mov x7, #1000
+ mov x16, #-47
+ svc #0x80
+ cbnz w0, fail
+ ldr w8, [sp, #20]
+ cmp w8, #108
+ b.ne fail
+ ldr w8, [sp, #0]
+ tbz w8, #31, fail
+ ldr w8, [sp, #4]
+ cmp w8, #40
+ b.ne fail
+ ldr w8, [sp, #24]
+ cmp w8, #1
+ b.ne fail
+ ldr w19, [sp, #28]
+ cbz w19, fail
+ mov x16, #-50
+ svc #0x80
+ cbz w0, fail
+ mov w20, w0
+ mov x9, #0
+clear_query:
+ str xzr, [sp, x9]
+ add x9, x9, #8
+ cmp x9, #512
+ b.ne clear_query
+ mov x0, #0
+ add x1, sp, #40
+ mov x2, #64
+ movz x16, #3
+ movk x16, #0x200, lsl #16
+ svc #0x80
+ b.cs fail
+ cbz x0, fail
+ cmp x0, #64
+ b.hi fail
+ sub x9, x0, #1
+ add x10, sp, #40
+ ldrb w8, [x10, x9]
+ cbnz w8, fail
+ str w0, [sp, #36]
+ add x21, x0, #3
+ and x21, x21, #0xfffffffffffffffc
+ add x21, x21, #40
+ mov w8, #0x1513
+ str w8, [sp, #0]
+ str w21, [sp, #4]
+ str w19, [sp, #8]
+ str w20, [sp, #12]
+ mov w8, #3
+ str w8, [sp, #20]
+ mov w8, #1
+ str w8, [sp, #28]
+ mov x0, sp
+ mov x1, #0x4103
+ movk x1, #0x30, lsl #16
+ movk x1, #4, lsl #32
+ lsl x2, x21, #32
+ mov x8, #0x1513
+ orr x2, x2, x8
+ lsl x3, x20, #32
+ orr x3, x3, x19
+ mov x4, #3
+ lsl x4, x4, #32
+ lsl x5, x20, #32
+ mov x6, #256
+ mov x7, #1000
+ mov x16, #-47
+ svc #0x80
+ cbnz w0, fail
+ ldr w8, [sp, #20]
+ cmp w8, #103
+ b.ne fail
+ ldr w8, [sp, #0]
+ tbnz w8, #31, fail
+ ldr w8, [sp, #4]
+ cmp w8, #40
+ b.ne fail
+ ldr w8, [sp, #32]
+ cbnz w8, fail
+ ldr w23, [sp, #36]
+ cmp w23, #1
+ b.hi fail
+ ;; Do not send server session-release RPC. The process owns only a send right.
+ str w23, [sp, #200]
+ mov x0, #1
+ add x1, sp, #200
+ mov x2, #4
+ movz x16, #4
+ movk x16, #0x200, lsl #16
+ svc #0x80
+ b.cs fail
+ cmp x0, #4
+ b.ne fail
+ mov x0, #0
+ b end
+fail:
+ mov x0, #1
+end:
+ movz x16, #1
+ movk x16, #0x200, lsl #16
+ svc #0x80
+ brk #0
+
+service:
+.asciz "com.apple.DiskArbitration.diskarbitrationd"
+.p2align 2
+
+session_name:
+.asciz "amu-jun767"
+.p2align 2
