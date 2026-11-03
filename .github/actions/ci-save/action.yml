@@ -1,0 +1,24 @@
+name: ci-save
+description: >-
+  JUN-759: save a marker (kind marker) or the derived artifacts (kind derive) under the key ci-gate computed.
+  Call only after the job's steps succeeded; a failed or skipped job never saves.
+inputs:
+  key:
+    required: true
+  kind:
+    default: marker
+  path:
+    description: derive only.
+    default: ""
+runs:
+  using: composite
+  steps:
+    - if: inputs.kind == 'marker'
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/ci-marker"
+        printf 'job passed on %s run %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/ci-marker/ok"
+    - uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ inputs.kind == 'marker' && format('{0}/ci-marker', runner.temp) || inputs.path }}
+        key: ${{ inputs.key }}
