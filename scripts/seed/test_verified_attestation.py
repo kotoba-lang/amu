@@ -33,10 +33,17 @@ class PolicyControls(unittest.TestCase):
     def test_unbounded_policy_inputs_are_refused(self):
         invalid = [("repository", "kotoba-lang/amu/other"), ("repository_id", "0"),
                    ("workflow", ".github/workflows/../../producer.yml"), ("ref", "refs/pull/1/merge"),
+                   ("ref", "refs/heads/../main"), ("ref", "refs/heads/main//other"),
+                   ("ref", "refs/heads/main.lock"),
                    ("source_sha", "a" * 39), ("signer_sha", "b" * 39), ("trigger", "pull_request")]
         for field, value in invalid:
             with self.subTest(field=field), self.assertRaises(ValueError):
                 _validate(replace(self.policy, **{field: value}))
+
+    def test_explicit_task_branch_is_not_main(self):
+        branch = replace(self.policy, ref="refs/heads/codex/task-branch")
+        _validate(branch)
+        self.assertFalse(_certificate_matches(self.certificate, branch))
 
 
 if __name__ == "__main__":
