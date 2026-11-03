@@ -8,15 +8,19 @@
 (def KG-SBASE (+ KG-FBASE (* MM-FN-CAP KG-FW)))
 (def KG-XFIRST (+ 2 KM-INTR-N))
 (def KG-FIRST (+ KG-XFIRST XK-WINDOW-N))
+;; v5 has one more kernel root. Keep window intrinsics and imported function
+;; IDs disjoint; old profiles retain their exact collector numbering.
+(defn- kg-xfirst [] :i64 (if (km-transmit?) 111 KG-XFIRST))
+(defn- kg-first [] :i64 (+ (kg-xfirst) XK-WINDOW-N))
 (defn- kg-new [] :vector-i64
   (let [G (vector-alloc (+ KG-SBASE (* MM-SIR-CAP MM-SIR-W)))]
-    (-> G (vector-assoc! 0 KG-FIRST) (vector-assoc! 1 1))))
+    (-> G (vector-assoc! 0 (kg-first)) (vector-assoc! 1 1))))
 (defn- kg-f [G :vector-i64 f :i64 k :i64] :i64
   (vector-at G (+ KG-FBASE (* f KG-FW) k)))
 (defn- kg-fset [G :vector-i64 f :i64 k :i64 value :i64] :vector-i64
   (vector-assoc! G (+ KG-FBASE (* f KG-FW) k) value))
 (defn- kg-target [G :vector-i64 addr :i64] :i64
-  (loop [f KG-FIRST]
+  (loop [f (kg-first)]
     (cond (>= f (vector-at G 0)) -1
           (= (kg-f G f 2) addr) f
           :else (recur (inc f)))))
@@ -24,7 +28,7 @@
   (let [stub (pj-l L pj-k-stub0) k (km-intr M f) x (xk-intr M f)]
     (cond (and (> f 0) (< f stub)) (+ base (dec f))
           (>= k 0) (inc k)
-          (>= x 0) (+ KG-XFIRST x)
+          (>= x 0) (+ (kg-xfirst) x)
           (and (>= f stub) (< f (+ stub (pj-l L pj-k-nstub))))
             (kg-target G (pj-l L (+ pj-t-base (- f stub))))
           :else -1)))
@@ -70,7 +74,7 @@
 (defn- kg-diag-n [label :string n :i64] :i64
   (io-err (string-concat label (string-concat (if (< n 0) "unknown" (mem-u2dec n)) "\n"))))
 (defn- kg-diag-name [M :vector-i64 L :vector-i64 G :vector-i64 P :string f :i64] :i64
-  (if (or (< f KG-FIRST) (>= f (vector-at G 0))) 0
+  (if (or (< f (kg-first)) (>= f (vector-at G 0))) 0
     (let [S (pj-src M L P (kg-f G f 3))]
       (io-err (string-concat "  caller " (string-concat
         (string-substring S (kg-f G f 5) (kg-f G f 6)) "\n"))))))
@@ -130,7 +134,7 @@
   (loop [i 1]
     (if (>= i (vector-at M MM-SIR-N)) M
       (let [f (xg-si M i IF-A)]
-        (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST)
+        (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f (kg-first))
                  (= (xg-f M f FF-EXPORT) 0))
           (let [n (xg-f M f FF-NPARAMS) t (xg-si M i IF-B)
                 checked (loop [p 1]
@@ -175,7 +179,7 @@
                                a (mem-set M (+ (vector-at M 206) i) st)
                                b (if begin (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-SIR) i) M)]
                            (recur (inc i) st))))
-            identities (loop [f KG-FIRST]
+            identities (loop [f (kg-first)]
                          (if (>= f (vector-at M MM-FN-N)) M
                            (let [w (loop [p 1]
                                      (if (> p (xg-f M f FF-NPARAMS)) M
@@ -186,17 +190,17 @@
             identity-base (mem-set M 205 (+ base (* words 2)))
             ;; During this bounded prepass the now-unused FN fuel field is an
             ;; incoming-call marker. Emitted code and ABI fuel are unaffected.
-            no-call (loop [f KG-FIRST]
+            no-call (loop [f (kg-first)]
                       (if (>= f (vector-at M MM-FN-N)) M
                         (let [w (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 0)]
                           (recur (inc f)))))
             callers (loop [i 1]
                       (if (>= i (vector-at M MM-SIR-N)) M
                         (let [f (xg-si M i IF-A)
-                              w (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f KG-FIRST))
+                              w (if (and (= (xg-si M i IF-OP) OP-CALL) (>= f (kg-first)))
                                   (mem-set M (+ MM-FN-BASE (* f MM-FN-W) FF-FUEL) 1) M)]
                           (recur (inc i)))))
-            seeds (loop [f KG-FIRST]
+            seeds (loop [f (kg-first)]
                     (if (>= f (vector-at M MM-FN-N)) M
                       (let [w (if (and (= (xg-f M f FF-FUEL) 0) (= (xg-f M f FF-EXPORT) 0))
                                 (loop [p 1]
@@ -209,13 +213,13 @@
 (defn- kg-check [M :vector-i64 L :vector-i64 G :vector-i64 P :string] :vector-i64
   (let [functions (loop [f 1]
                     (if (>= f (vector-at G 0)) M
-                      (let [k (- f KG-XFIRST)
-                            n (cond (< f KG-XFIRST) (km-arity (dec f))
-                                    (< f KG-FIRST) (if (= k 2) 4 (if (= k 1) 4 3))
+                      (let [k (- f (kg-xfirst))
+                            n (cond (< f (kg-xfirst)) (km-arity (dec f))
+                                    (< f (kg-first)) (if (= k 2) 4 (if (= k 1) 4 3))
                                     :else (kg-f G f 0))
                             w (-> M (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-NPARAMS) n)
                                     (mem-set (+ MM-FN-BASE (* f MM-FN-W) FF-EXPORT)
-                                             (if (< f KG-FIRST) 0 (kg-f G f 1))))]
+                                             (if (< f (kg-first)) 0 (kg-f G f 1))))]
                         (recur (inc f)))))
         instructions (loop [i 1]
                        (if (>= i (vector-at G 1)) M
@@ -226,7 +230,7 @@
                                        (recur (inc k)))))]
                            (recur (inc i)))))
         prepared (-> M (mem-set MM-FN-N (vector-at G 0)) (mem-set MM-SIR-N (vector-at G 1))
-                       (mem-set 197 0) (mem-set 200 KG-XFIRST) (mem-set 201 1)
+                       (mem-set 197 0) (mem-set 200 (kg-xfirst)) (mem-set 201 1)
                        (mem-set 202 0) (mem-set 203 0) (mem-set 205 0) (mem-set 206 0)
                        (mem-set 207 0) (mem-set 209 0) (lv-link-contracts G) (kg-contracts))
         checked (-> prepared (xk-check 1) (km-check 1))
@@ -234,7 +238,7 @@
                 (let [i (vector-at checked MM-ERR-N)
                       diagnostic (kg-diag checked L G P i)
                       f (xg-si checked (xk-fn-start checked i) IF-A)]
-                  (if (and (>= f KG-FIRST) (< f (vector-at G 0)))
+                  (if (and (>= f (kg-first)) (< f (vector-at G 0)))
                     (-> L (pj-ls pj-k-errmod (kg-f G f 3))
                           (pj-ls KP-ERR-NAME-START (kg-f G f 5))
                           (pj-ls KP-ERR-NAME-END (kg-f G f 6))) L)) L)]

@@ -40,7 +40,7 @@
 (def KR-PCI-READY 320)
 (def KR-PCI-MAGIC 0x31494350)
 
-;; v4 kernel / v7 boot only. The fixed grant follows the complete v6 BAR
+;; v4/v7 uses8MiB; v5/v8 uses8MiB receive plus1MiB transmit. The fixed grant follows the complete v6 BAR
 ;; capacity, before the payload. All addresses are sealed before main, after
 ;; the ordinary map/PCI seals. Private cells33536..33559 are below the stack,
 ;; after the user-fault record and before the non-evicting domain table.
@@ -51,14 +51,14 @@
     (-> M (iv-reserve 5) (iv-mem 139 1 9 80)
         (iv-hex "488db1c060000048b8") (xg-bytes 0x314c4f4f5050414b 8)
         (iv-hex "483906") (xg-rel 0x850f 2 2 fail)
-        (iv-hex "48837e0801") (xg-rel 0x850f 2 2 fail)
-        (iv-hex "48817e1800008000") (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48837e08") (xg-byte (if (km-transmit?) 2 1)) (xg-rel 0x850f 2 2 fail)
+        (iv-hex "48817e18") (xg-bytes (km-application-bytes) 4) (xg-rel 0x850f 2 2 fail)
         (iv-hex "48837e2001") (xg-rel 0x850f 2 2 fail)
         (iv-hex "48837e3800") (xg-rel 0x850f 2 2 fail)
         (iv-mem 139 10 6 16)
         (iv-hex "4981fa00000001") (xg-rel 0x820f 2 2 fail)
         (iv-hex "49f7c2ff0f0000") (xg-rel 0x850f 2 2 fail)
-        (iv-hex "4d89d34981c300008000") (xg-rel 0x820f 2 2 fail)
+        (iv-hex "4d89d34981c3") (xg-bytes (km-application-bytes) 4) (xg-rel 0x820f 2 2 fail)
         (iv-hex "48b800000000010000004939c3") (xg-rel 0x870f 2 2 fail)
         ;; A bounded, page-aligned loader interval enclosing this header.
         (iv-mem 139 8 6 40) (iv-mem 139 2 6 48)
@@ -89,8 +89,8 @@
         (iv-mem 43 2 9 KR-MAP-STRIDE) (xg-rel 0x820f 2 2 fail)
         (xg-rel 0xe9 1 2 scan)
         (xg-label found) (iv-mem 137 10 9 KM-APP-BASE)
-        (iv-hex "49c781") (xg-bytes KM-APP-SIZE 4) (xg-bytes KM-APP-BYTES 4)
-        (iv-hex "49c781") (xg-bytes KM-APP-READY 4) (xg-bytes KM-APP-MARKER 4))))
+        (iv-hex "49c781") (xg-bytes KM-APP-SIZE 4) (xg-bytes (km-application-bytes) 4)
+        (iv-hex "49c781") (xg-bytes KM-APP-READY 4) (xg-bytes (km-application-marker) 4))))
 
 (defn- kr-pci-protected [M :vector-i64 fail :i64] :vector-i64
   (let [again (vector-at M MM-LABEL-N) next (inc again) done (+ again 2)]

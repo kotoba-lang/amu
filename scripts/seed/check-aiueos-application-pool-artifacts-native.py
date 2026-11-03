@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Bind v4/v7 artifacts to actual native Linux compiler generations.
+"""Bind v4/v7 and v5/v8 artifacts to native Linux compiler generations.
 
 Amu checks, links and packages. Python only stages the already-QEMU-tested
 source, observes processes and compares complete bytes to the Mac producer.
 This does not execute a guest or replace any existing native/CDCI gate.
 """
 import argparse
+import gzip
 import hashlib
 import json
 import platform
@@ -32,7 +33,26 @@ def main(build, complete, out):
     unity = b''.join((ROOT / p).read_bytes() + b'\n'
                      for p in (ROOT / 'seed/FULL-MANIFEST').read_text().splitlines()
                      if p and not p.startswith('#'))
-    assert dict(bytes=len(unity), sha256=hashlib.sha256(unity).hexdigest()) == reference['reports']['compiler']['observations']['source']
+    # The old v4 runtime evidence remains immutable. Bind the current native
+    # producer to its new complete source proof, then require complete old
+    # artifact equality rather than relabeling that old boot as a new one.
+    current_path = ROOT / 'docs/evidence/aiueos-application-transmit-pool-20261103/receipt.json'
+    current = json.loads(current_path.read_text())
+    assert current['state'] == 'PASS_NATIVE_APPLICATION_TRANSMIT_ALLOCATION'
+    for name, expected_pin in current['nativeSourcePins'].items():
+        assert pin(ROOT / name) == expected_pin
+    def original_report(name):
+        row = current['runs'][name]
+        path = current_path.parent / row['file']
+        assert pin(path) == row['compressed']
+        raw = gzip.decompress(path.read_bytes())
+        assert dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest()) == row['original']
+        return json.loads(raw)
+    assert dict(bytes=len(unity), sha256=hashlib.sha256(unity).hexdigest()) == original_report('mac')['source']
+    transmit_expected = original_report('pool')
+    assert transmit_expected['state'] == 'PASS_NATIVE_APPLICATION_TRANSMIT_POOLS'
+    transmit_fixture = ROOT / 'seed/tests/aiueos-application-transmit-pool.kotoba'
+    assert pin(transmit_fixture) == current['fixture'] == transmit_expected['fixture']
     expected = reference['reports']['pool']['observations']
     assert expected['state'] == 'PASS_NATIVE_APPLICATION_POOL'
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
@@ -40,6 +60,7 @@ def main(build, complete, out):
     report = dict(schema='amu.native-application-pool-artifacts.v1', state='TESTING',
                   host=[platform.system(), platform.machine()], sourceGraph=graph,
                   evidence=pin(evidence), fixture=pin(fixture), routes=routes,
+                  currentCompilerEvidence=pin(current_path), transmitFixture=pin(transmit_fixture),
                   guestExecution=False, physical=False, appConnection=False,
                   nativeCDCI=False, observer=pin(Path(__file__)))
 
@@ -110,11 +131,35 @@ def main(build, complete, out):
             forged = scope / 'forged.elf'
             run('forged-region', [*arguments(), '--output', forged], 1, b'E7106', forged)
             route['refusals'] = 4
+            src.write_bytes(transmit_fixture.read_bytes())
+            make_lock()
+            tx_kernel, tx_efi = scope / 'transmit.elf', scope / 'transmit.efi'
+            run('transmit-kernel', [*arguments('v5'), '--output', tx_kernel])
+            run('transmit-efi', ['package-aiueos-boot', tx_kernel, '--output', tx_efi,
+                                 '--pci-resources', 'v1'])
+            assert pin(tx_kernel) == transmit_expected['kernel']
+            assert pin(tx_efi) == transmit_expected['efi']
+            artifacts.update(transmitKernel=pin(tx_kernel), transmitEFI=pin(tx_efi))
+            tx_old = scope / 'transmit-old-target.elf'
+            run('transmit-old-target', [*arguments('v4'), '--output', tx_old], 1,
+                b"E2101 unknown or unsupported form 'kernel-application-transmit-pool'", tx_old)
+            tx_no_pci = scope / 'transmit-no-pci.efi'
+            run('transmit-no-pci', ['package-aiueos-boot', tx_kernel, '--output', tx_no_pci],
+                1, b'E7111', tx_no_pci)
+            tx_wrong_lock = scope / 'transmit-wrong-lock.elf'
+            run('transmit-wrong-lock', [*arguments('v5', lock_digest='0'*64), '--output', tx_wrong_lock],
+                1, b'E6015', tx_wrong_lock)
+            src.write_bytes(b'(ns forged-transmit (:export [main]))\n(defn main [] :i64 (kernel-load-u32-64k 16777216 65536 0))\n')
+            make_lock()
+            tx_forged = scope / 'transmit-forged.elf'
+            run('transmit-forged-region', [*arguments('v5'), '--output', tx_forged],
+                1, b'E7106', tx_forged)
+            route['transmitRefusals'] = 4
             save()
         assert len(routes) == 2 and routes[0]['artifacts'] == routes[1]['artifacts']
         report.update(state='PASS_NATIVE_APPLICATION_POOL_ARTIFACTS', crossProducerBytesMatch=True)
         save()
-        print(report['state'], platform.machine(), 'two actual generations, four refusals each; guest separate')
+        print(report['state'], platform.machine(), 'two actual generations, eight refusals each; guest separate')
     except BaseException as error:
         report.update(state='FAILED', failure=str(error))
         save()

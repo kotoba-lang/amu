@@ -27,16 +27,23 @@
 (def KM-WBINVD 107)
 (def KM-INTR-N 108)
 (def KM-APP-POOL 108)
+(def KM-APP-TRANSMIT 109)
 (def KM-APP-BYTES 8388608)
+(def KM-APP-TRANSMIT-BYTES 1048576)
 (def KM-APP-MARKER 0x314d5041)
+(def KM-APP-TRANSMIT-MARKER 0x324d5041)
 (def KM-APP-BASE 33536)
 (def KM-APP-SIZE 33544)
 (def KM-APP-READY 33552)
-(defn- km-application? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v4"))
+(defn- km-transmit? [] :bool (string=? (io-arg 3) "x86_64-aiueos-kernel-v5"))
+(defn- km-application? [] :bool (or (string=? (io-arg 3) "x86_64-aiueos-kernel-v4") (km-transmit?)))
+(defn- km-application-bytes [] :i64 (+ KM-APP-BYTES (if (km-transmit?) KM-APP-TRANSMIT-BYTES 0)))
+(defn- km-application-marker [] :i64 (if (km-transmit?) KM-APP-TRANSMIT-MARKER KM-APP-MARKER))
+(defn- km-application-boot-version [] :i64 (if (km-transmit?) 8 7))
 ;; v1/v2 keep their original intrinsic trailer and exact output bytes.
 ;; Effects/port16 belong to the v3 desktop image contract only.
 (defn- km-count [] :i64
-  (cond (km-application?) 109
+  (cond (km-transmit?) 110 (km-application?) 109
         (string=? (io-arg 3) "x86_64-aiueos-kernel-v3") KM-INTR-N :else 104))
 (def KM-SEALED-SCRATCH 272)
 (def KM-SEALED-PAGES 280)
@@ -82,9 +89,9 @@
       71 "kernel-boot-payload" 72 "kernel-user-slot"
       73 "kernel-rdrand" 74 "kernel-rdseed"
       75 "kernel-out-u16" 76 "kernel-in-u16" 77 "kernel-desktop-effects" 78 "kernel-wbinvd"
-      79 "kernel-application-pool" "")))
+      79 "kernel-application-pool" 80 "kernel-application-transmit-pool" "")))
 (defn- km-arity [k :i64] :i64
-  (cond (= k KM-APP-POOL) 0 (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0 (= k KM-WBINVD) 0
+  (cond (or (= k KM-APP-POOL) (= k KM-APP-TRANSMIT)) 0 (= k KM-OUT16) 2 (= k KM-IN16) 1 (= k KM-EFFECTS) 0 (= k KM-WBINVD) 0
         (< k KM-MEM-N) (if (= (bit-and (km-raw k) 1) 0) 3 4)
         (< k (+ KM-MEM-N 2)) 2
         (< k KM-CPU-FIRST) 1
@@ -127,6 +134,7 @@
 (defn- km-owned-region [M :vector-i64 f :i64 i :i64 t :i64] :i64
   (if (not= (xg-get M 4) 2) -1
     (cond (= (km-intr M f) KM-APP-POOL) (+ 4294967296 KM-APP-BYTES)
+          (= (km-intr M f) KM-APP-TRANSMIT) (+ 4294967296 KM-APP-TRANSMIT-BYTES)
           (= (km-intr M f) KM-EFFECTS) (+ 4294967296 16384)
           (= (km-intr M f) KM-BOOT-INFO) (+ 4294967296 KM-BOOT-BYTES)
           (= (km-intr M f) KM-OWNED-PAGE) (+ 4294967296 4096)
@@ -255,20 +263,22 @@
   (-> M (xg-bytes 0xab9 5) (xg-bytes opcode 4) (xg-bytes 0x0672 2)
         (xg-bytes 0xc9ff 2) (xg-bytes 0xf675 2) (xg-bytes 0xc031 2) (xg-save t)))
 ;; One image-lifetime kernel application owner, not a domain request region
-;; or user mapping. Only the paired v7 loader allocates/zeros these pages.
+;; or user mapping. Paired v7/v8 loaders allocate/zero the explicit profile.
 ;; The pre-main seal is independent of later public-header mutations.
-(defn- km-application-pool [M :vector-i64 t :i64] :vector-i64
+(defn- km-application-pool [M :vector-i64 t :i64 transmit :bool] :vector-i64
   (let [trap (vector-at M MM-LABEL-N) done (inc trap)]
     (-> M (iv-reserve 2)
         (iv-hex "9c5848a900020000") (xg-rel 0x850f 2 2 trap)
         (iv-hex "668cc8a803") (xg-rel 0x850f 2 2 trap)
-        (iv-hex "4981b9") (xg-bytes KM-APP-READY 4) (xg-bytes KM-APP-MARKER 4)
+        (iv-hex "4981b9") (xg-bytes KM-APP-READY 4) (xg-bytes (km-application-marker) 4)
         (xg-rel 0x850f 2 2 trap)
         (iv-mem 139 0 9 KM-APP-BASE)
+        (cond-> transmit (iv-hex "480500008000"))
         (xg-rel 0xe9 1 2 done) (xg-label trap) (iv-hex "0f0b")
         (xg-label done) (xg-save t))))
 (defn- km-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
-  (cond (= k KM-APP-POOL) (km-application-pool M t)
+  (cond (= k KM-APP-POOL) (km-application-pool M t false)
+        (= k KM-APP-TRANSMIT) (km-application-pool M t true)
         (= k KM-OUT16)
           (-> M (xg-load t 0x958b48) (xg-load (inc t) 0x858b48)
               (xg-bytes 0xef66 2) (xg-save t))

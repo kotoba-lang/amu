@@ -1,0 +1,54 @@
+(ns application-transmit-pool-probe (:export [main]))
+
+;; Both roots have their complete declared extents. No header/tail from the
+;; receiving pool is borrowed. Gate also builds the transmit-wipe variant.
+(def WIPE false)
+(defn- inspect [view :i64 bytes :i64 offset :i64 tag :i64] :i64
+  (loop [i 0 n 0]
+    (if (>= i bytes) n
+      (recur (+ i 4) (+ n (if (= (kernel-load-u32-64k view bytes i)
+        (if (= tag 0) 0 (bit-xor (+ offset i) tag))) 0 1))))))
+(defn- fill [view :i64 bytes :i64 offset :i64 tag :i64] :i64
+  (loop [i 0]
+    (if (>= i bytes) 1
+      (let [w (kernel-store-u32-64k view bytes i
+                (if (= tag 0) 0 (bit-xor (+ offset i) tag)))] (recur (+ i 4))))))
+(defn- check-all [pool :i64 bytes :i64 tag :i64] :i64
+  (loop [at 0 errors 0]
+    (if (>= at bytes) errors
+      (let [view (kernel-subregion pool bytes at 65536)]
+        (recur (+ at 65536) (+ errors (inspect view 65536 at tag)))))))
+(defn- fill-all [pool :i64 bytes :i64 tag :i64] :i64
+  (loop [at 0]
+    (if (>= at bytes) 1
+      (let [view (kernel-subregion pool bytes at 65536) written (fill view 65536 at tag)]
+        (recur (+ at 65536))))))
+(defn main [] :i64
+  (let [off (kernel-cli)
+        receive (kernel-application-pool) transmit (kernel-application-transmit-pool)
+        receipt (kernel-owned-page 0)
+        fresh-r (check-all receive 8388608 0) fresh-t (check-all transmit 1048576 0)
+        r (fill-all receive 8388608 0xa55a17c3) t (fill-all transmit 1048576 0x3cc3e19f)
+        good-r (check-all receive 8388608 0xa55a17c3) good-t (check-all transmit 1048576 0x3cc3e19f)
+        wipe (if WIPE (fill-all transmit 1048576 0) 1)
+        kept-r (check-all receive 8388608 0xa55a17c3)
+        final-t (check-all transmit 1048576 (if WIPE 0 0x3cc3e19f))
+        boot (kernel-boot-info)
+        changed (kernel-store-u64-64k boot 16544 8 6)
+        stable (if (and (= receive (kernel-application-pool))
+                       (= transmit (kernel-application-transmit-pool))
+                       (= (+ receive 8388608) transmit)) 0 1)
+        a (kernel-store-u64-4k receipt 4096 8 fresh-r)
+        b (kernel-store-u64-4k receipt 4096 16 fresh-t)
+        c (kernel-store-u64-4k receipt 4096 24 good-r)
+        d (kernel-store-u64-4k receipt 4096 32 good-t)
+        e (kernel-store-u64-4k receipt 4096 40 kept-r)
+        f (kernel-store-u64-4k receipt 4096 48 final-t)
+        g (kernel-store-u64-4k receipt 4096 56 stable)
+        h (kernel-store-u64-4k receipt 4096 64 receive)
+        i (kernel-store-u64-4k receipt 4096 72 8388608)
+        j (kernel-store-u64-4k receipt 4096 80 transmit)
+        k (kernel-store-u64-4k receipt 4096 88 1048576)
+        l (kernel-store-u64-4k receipt 4096 96 (if WIPE 1 0))
+        done (kernel-store-u64-4k receipt 4096 0 0x31545345544e5354)]
+    (loop [spin 0] (let [pause (kernel-pause)] (recur (inc spin))))))

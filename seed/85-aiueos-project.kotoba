@@ -112,12 +112,12 @@
         (recur (inc k) (kp-module-h M L P G (pj-l L (+ pj-o-base k)) (ck-hint-new)))))))
 
 (defn- kp-isr-target [G :vector-i64 v :i64] :i64
-  (loop [f KG-FIRST]
+  (loop [f (kg-first)]
     (cond (>= f (vector-at G 0)) -1
           (and (= (kg-f G f 1) 2) (= (kg-f G f 4) (inc v))) (kg-f G f 2)
           :else (recur (inc f)))))
 (defn- kp-has-isr? [G :vector-i64] :bool
-  (loop [f KG-FIRST]
+  (loop [f (kg-first)]
     (cond (>= f (vector-at G 0)) false
           (= (kg-f G f 1) 2) true :else (recur (inc f)))))
 (defn- kp-needs-isr? [M :vector-i64] :bool
@@ -148,7 +148,7 @@
   (let [reset (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (mem-set MM-LABEL-N 1) (iv-reserve 1))
         checked (-> reset (iv-hex "498b49504885c9") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48b8") (xg-bytes 0x544f4f4245554941 8) (iv-hex "483901") (xg-rel 0x850f 2 2 1)
-                    (iv-hex "48837908") (xg-byte (if (km-application?) 7 (if pci 6 5))) (xg-rel 0x850f 2 2 1)
+                    (iv-hex "48837908") (xg-byte (if (km-application?) (km-application-boot-version) (if pci 6 5))) (xg-rel 0x850f 2 2 1)
                     (iv-hex "488379580f") (xg-rel 0x850f 2 2 1)
                     (iv-hex "488b51504885d2") (xg-rel 0x840f 2 2 1)
                     (iv-hex "48f7c2ff0f0000") (xg-rel 0x850f 2 2 1)
