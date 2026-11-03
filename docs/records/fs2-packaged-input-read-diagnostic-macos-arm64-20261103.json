@@ -51,5 +51,83 @@
     }
   ],
   "command": "native_run(image, cwd, \"compile\", \"scalar.kotoba\", \"--target\", \"aarch64-macos\", \"--output\", output.kseed)",
-  "inference": "The E3 reproduces for a 52-byte source and the 3,983,308-byte full unity. The compiler raw payloads of the two F1 variants are byte-identical; the observed difference is in the packaged runtime. This isolates the failure to the source-changed packaged FS2 input path, but does not identify the faulty instruction or prove the whole Amu root."
+  "inference": "The E3 reproduces for a 52-byte source and the 3,983,308-byte full unity. The compiler raw payloads of the two F1 variants are byte-identical; the observed difference is in the packaged runtime. This isolates the failure to the source-changed packaged FS2 input path, but does not identify the faulty instruction or prove the whole Amu root.",
+  "controlledFs35HelperGraft": {
+    "date": "2026-11-03",
+    "baseline": {
+      "originMainCommit": "7a755126bbd8e75edd196b24391a6953499b878c",
+      "previousFs35HelperSha256": "f02c8f7ca1aae1150f2d1b203e9e3210b3c6cae5835cf9a8e4399d33bf4e5890",
+      "currentFs35HelperSha256": "924caca02b533fa47657e19f932d8fba700606057ab44a310574efaaf94e29b9"
+    },
+    "inputs": {
+      "fullUnity": {
+        "bytes": 3983308,
+        "sha256": "a5f990fcaec2bd762c083374f1112aebcddfd67d3ea0522052f1fa6e09e8d382"
+      },
+      "F1CompilerRaw": {
+        "bytes": 3763312,
+        "sha256": "7d91bb6c15ee2868ecbf398d7d9267fae99b23380e2edad2dbebcbd647bb3724"
+      },
+      "F1EntryOffset": 0,
+      "scalarSource": {
+        "path": "scalar.kotoba",
+        "bytes": 52,
+        "sha256": "4f2600410a7ae58fa0cea13be50195850ee2caac9b2df91ad86dea9d4b9a921d",
+        "source": "(ns scalar (:export [main]))\n(defn main [] :i64 42)\n"
+      }
+    },
+    "pinnedInputs": {
+      "compiler": "2b4ac12a77f156ccc2790eb0cf5453e57b9cac8669a2dce9779095579f7994a2",
+      "bootstrapPackager": "e95284408f091c8979ef74ece57116a4df2250e61e42074da5dc95ca30264142",
+      "currentPackagerSource": "7ddaa056d3f1ecf0a2834b2511c883c7fb2f5e0da414d1f38d95c79b7297ef00"
+    },
+    "variant": {
+      "description": "Current packager source with only fs35-helper-words replaced by origin/main implementation; the historical helper signature was adapted with an unused da-start argument. Other FS2 helpers and current layout constants remain from the branch source.",
+      "source": {
+        "bytes": 96103,
+        "sha256": "5d0f9e3668373b2347b356513f683cdd8c88c7e0781dbbb972eb96683b1c9bfd"
+      },
+      "packagerRaw": {
+        "bytes": 100176,
+        "sha256": "28073b3ef3dd42d4f2404532348eb4a78d2fbdfe53407a4abcd4bed2606e76b2"
+      },
+      "packagerImage": {
+        "bytes": 149600,
+        "sha256": "612a520c4f793d646d0e0a137d3382cbc64778673d652b11cee28745057ca637"
+      },
+      "F1Image": {
+        "bytes": 3826784,
+        "sha256": "3dd238498ef421b74f12addfec74e9c3ad647c5e4e57cdb6094e5cca2b6a58f6"
+      },
+      "result": "PASS",
+      "exit": 0,
+      "output": {
+        "bytes": 34,
+        "sha256": "d9d93e2896184a1eff34a88f79cdfd9d51d96afd2af1f6d1b2020010ebc920bc"
+      }
+    },
+    "current": {
+      "packagerSource": {
+        "bytes": 99347,
+        "sha256": "7ddaa056d3f1ecf0a2834b2511c883c7fb2f5e0da414d1f38d95c79b7297ef00"
+      },
+      "packagerRaw": {
+        "bytes": 103496,
+        "sha256": "ba74fc0f14a7684dd607694e1e46dbda854f7b9d309182caced9934d56f4c6a7"
+      },
+      "packagerImage": {
+        "bytes": 166016,
+        "sha256": "432ab723c3915942e96956bc548deac54364a667cf5a9538f5a2d80fd86cb894"
+      },
+      "F1Image": {
+        "bytes": 3826784,
+        "sha256": "efe0fc49dbae593a8e327b47903829b0f784a789ca7dffe05629916045d8d761"
+      },
+      "result": "REFUSED",
+      "exit": 1,
+      "stderr": "seed: E3 cannot read input file",
+      "outputCreated": false
+    },
+    "inference": "With identical pinned root compiler/bootstrap packager, exact 61-module unity, F1 compiler raw, entry offset and 52-byte source, replacing only the FS35 helper implementation changes the observed compile from E3 refusal to exit 0 and the expected 34-byte KSEED. This localizes the regression to the changed FS35 helper or its interaction with the unchanged current surrounding layout. It does not identify a faulty instruction, qualify the experimental variant as a runtime, or establish SQLite/Amu completion. The graft is diagnostic only and is not used by CI, product runtime, packaging or fallback."
+  }
 }
