@@ -1,5 +1,14 @@
 # Diagnostic launchd command mode with a scoped working directory
 
+The later `amu-cli-host-cwd` source candidate composes the same cwd scope
+startup with the private CLI host service, leaving `amu-cli-host` unchanged.
+It reserves a separate code region for the scope startup and refuses an
+occupied FD 3. The host/FS2 and occupied-FD regression cases are defined in
+`scripts/seed/check-macos-cli-host-native.py` but have not been built or run
+for this candidate. The observations below cover only the earlier
+`fs2-cli-stdio-cwd` image; they do not qualify the combined host image,
+directory identity binding, model loader, runtime or deployment.
+
 The new explicit `fs2-cli-stdio-cwd` diagnostic packager mode opens the
 already selected working directory as FD 3 before installing the existing
 scoped FS2 callback. It refuses if FD 3 is occupied, if standard descriptors
