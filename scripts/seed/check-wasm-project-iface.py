@@ -14,6 +14,7 @@ FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-iface_t.kotoba'
 STUB_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-stubs_t.kotoba'
 MODULE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-module_t.kotoba'
 LINKED_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-linked_t.kotoba'
+GRAPH_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-graph_t.kotoba'
 
 
 def main():
@@ -166,6 +167,52 @@ def main():
     negative = subprocess.run([str(policy_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=120)
     assert not negative.stderr and re.search(rb':status :ok :result 21(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    graph_source = out/'project-graph.kotoba'; graph_source.write_bytes(prefix+GRAPH_FIXTURE.read_bytes())
+    graph_image = out/'project-graph.elf'
+    built = subprocess.run([str(compiler),'compile',str(graph_source),'--target',target,'--output',str(graph_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and graph_image.is_file(), (built.returncode,built.stderr[-1000:])
+    graph_image.chmod(0o755)
+    graph_dir = out/'graph-input'; graph_dir.mkdir()
+    entry = graph_dir/'app.kotoba'; dep = graph_dir/'dep.kotoba'; lock = graph_dir/'source.ksl'
+    entry.write_text('(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (dep 41))\n')
+    dep.write_text('(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (+ x 1))\n')
+    def digest(data): return hashlib.sha256(data).hexdigest()
+    lock_text = f'KSL1\nentry {entry}\nroot {graph_dir}\n' + ''.join(
+        f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))
+    lock.write_text(lock_text); lock_hash = digest(lock_text.encode())
+    graph_env = dict(PATH='/nonexistent',KEXE_ALLOW='35,37,38,39',KEXE_CAP_RESOURCES_35=str(graph_dir),
+                     KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608')
+    def run_graph(digest_value, mapped=False):
+        roots = [] if mapped else ['--source-path',str(graph_dir)]
+        return subprocess.run([str(graph_image),'compile',str(entry),*roots,
+                               '--source-lock',str(lock),'--source-lock-sha256',digest_value],
+                              cwd=out,env=graph_env,capture_output=True,timeout=120)
+    result = run_graph(lock_hash)
+    assert result.returncode == 0 and not result.stderr and re.search(rb':status :ok :result 0(?:\s|})',result.stdout), (result.returncode,result.stdout,result.stderr)
+    match = re.search(rb'GRAPH-BEGIN\n([0-9a-f\n]+)GRAPH-END\n',result.stdout); assert match, result.stdout
+    graph_wasm = bytes.fromhex(match.group(1).decode()); assert graph_wasm[:8] == b'\x00asm\x01\x00\x00\x00'
+    graph_path = out/'project-graph.wasm'; graph_path.write_bytes(graph_wasm)
+    print('WASM_PROJECT_GRAPH_HEX', graph_wasm.hex())
+    bad = run_graph('0'*64)
+    assert not bad.stderr and re.search(rb':status :ok :result 31(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
+    mapped = f'KSL2\nentry {entry}\nmodule app {entry}\nmodule dep {dep}\n' + ''.join(
+        f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))
+    lock.write_text(mapped)
+    mapped_result = run_graph(digest(mapped.encode()), mapped=True)
+    assert mapped_result.returncode == 0 and not mapped_result.stderr and re.search(rb':status :ok :result 0(?:\s|})',mapped_result.stdout), (mapped_result.returncode,mapped_result.stdout,mapped_result.stderr)
+    match = re.search(rb'GRAPH-BEGIN\n([0-9a-f\n]+)GRAPH-END\n',mapped_result.stdout)
+    assert match and bytes.fromhex(match.group(1).decode()) == graph_wasm
+    lock.write_text(lock_text)
+    dep.write_text(dep.read_text()+';; tampered\n')
+    bad = run_graph(lock_hash)
+    assert not bad.stderr and re.search(rb':status :ok :result 31(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
+    dep.write_text('(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (let [s (typed-cap-call :io/write :string :string "x")] x))\n')
+    lock_text = f'KSL1\nentry {entry}\nroot {graph_dir}\n' + ''.join(
+        f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))
+    lock.write_text(lock_text)
+    bad = run_graph(digest(lock_text.encode()))
+    assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -177,6 +224,7 @@ def main():
                'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
                'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
                'projectLinkedSha256':sha(linked_path), 'policyNegativeSha256':sha(policy_image),
+               'projectGraphSha256':sha(graph_path),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

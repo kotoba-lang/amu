@@ -1,0 +1,22 @@
+;; Real locked graph discovery drives the Wasm project unit path. Runtime-
+;; requiring operations stay refused; this is not the public Wasm driver.
+(defn- xg-default [] :i64 2)
+(defn- seed-main [] :i64
+  (let [path (io-arg 1) M (mem-new) L (pj-new-l) V (vector-alloc 2)
+        roots (drv-pj-roots L (pj-new-p L) 1 (io-argc))
+        locked (drv-pj-lock M L roots path)
+        graph (if (pj-ok M) (pj-discover M L (pj-padd L locked path) (- (pj-n L) 1)) locked)]
+    (cond (not (pj-ok M)) 31 (not= (pj-l L pj-k-nord) 2) 32
+          :else (let [lib (pj-l L pj-o-base) entry (pj-l L (+ pj-o-base 1))
+                      p2 (xw-project-load-unit M L V graph lib 5)
+                      next (+ 5 (xg-get M 3))
+                      p3 (if (pj-ok M) (xw-project-load-unit M L V p2 entry next) p2)
+                      idx (xw-idx M (xg-get M 1)) count (xg-get M 3)]
+                  (cond (not (pj-ok M)) 33 (not= lib 1) 34 (not= entry 0) 35
+                        (not= count 2) 36 (not= idx 6) 37
+                        :else (let [module (xw-project-module M L V count idx)]
+                                (if (not (pj-ok module)) 38
+                                  (let [a (io-out "GRAPH-BEGIN\n")
+                                        b (io-write-hex M (+ MM-OUT-BASE 1) (- (vector-at M MM-OUT-N) 1))
+                                        c (io-out "GRAPH-END\n")]
+                                    0))))))))
