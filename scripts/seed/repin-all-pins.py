@@ -56,6 +56,9 @@ PIN_FILES = [
     "seed/bootstrap/aarch64-linux-static-root.json", "seed/bootstrap/aarch64-macos/amu-cli.macho",
     "seed/bootstrap/aarch64-macos/amu-full-root.macho", "seed/bootstrap/aarch64-macos/cli.json",
     "seed/bootstrap/aarch64-macos/root.json",
+    # Rebuilt by the staged packager run when seed/macos-fs2-runtime-packager.kotoba
+    # changes; repin-derived-pins.py installs it, so a merge conflict takes main's.
+    "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
 ]
 # Whole files that are outputs of this command: on a merge conflict take the
 # base's side and regenerate. kotoba-gate.kotoba and controller.kotoba are
@@ -214,6 +217,11 @@ class Sync:
         p79_rel = "seed/79-native-cdci.kotoba"
         t79 = self.path(p79_rel).read_text()
         t79 = re.sub(r'(string=\? role "kotoba-native"\) ")[0-9a-f]{64}', lambda m: m.group(1) + sha(gtxt.encode()), t79)
+
+        # The closed benchmark host/registry sources are pinned by file hash in seed/79 (bench-build).
+        for var, rel in (("host", "seed/bench/host-arm.kotoba"), ("registry", "seed/bench/registry-arm.kotoba")):
+            t79 = re.sub(r'(string=\? \(sh-text %s\) ")[0-9a-f]{64}' % var,
+                         lambda m, rel=rel: m.group(1) + sha(self.path(rel).read_bytes()), t79)
 
         self.stage("entry.kotoba", entry)
         self.stage("runtime.kotoba", runtime)
