@@ -292,9 +292,11 @@
 ;; boundary; this is not a signature or protection against a hostile same UID.
 (defn- kn-rebuild-hit [cached :i64] :i64
   (let [old (kn-record cached) checked (if (not= old 1) (kc-fail 4103) 0)
+        cid-len (kc-len (kc-line 16) 513) bound-len (kc-len (kc-line 17) 513)
+        lengths (if (or (not= cid-len 59) (<= bound-len 0) (> bound-len 6)) (kc-fail 4103) 0)
         expected-cid (+ (kc-g) 22133100) expected-bound (+ (kc-g) 22133200)
-        copy-cid (kc-copy expected-cid (kc-line 16) (inc (kc-len (kc-line 16) 513)))
-        copy-bound (kc-copy expected-bound (kc-line 17) (inc (kc-len (kc-line 17) 513)))
+        copy-cid (kc-copy expected-cid (kc-line 16) (inc cid-len))
+        copy-bound (kc-copy expected-bound (kc-line 17) (inc bound-len))
         root (kc-get 200) mkdir (kxrt-syscall 258 root (kn-token 22) 448 0 0 0)
         admitted (if (< mkdir 0) (kc-fail 4302) 0) dir (kc-open (kn-token 22) 720896 0)
         directory (if (< dir 0) (kc-fail 4302) (kn-private dir true)) changed (kc-set 8 dir)

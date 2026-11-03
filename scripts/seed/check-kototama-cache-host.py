@@ -208,6 +208,20 @@ def main():
         image.write_bytes(initial)
         binding.write_bytes(original_binding)
     observe('forged-rebuild-cleanup', [int((cache / 'building').exists())], [0])
+    # Variable record fields must be bounded before copying to adjacent scratch
+    # buffers. First 15 binding lines remain unchanged; only the unsigned fields
+    # are altered, and every refusal must leave no staging directory behind.
+    for name, index, value in [('long-image-cid', 16, b'b' + b'a' * 500),
+                               ('long-stack-bound', 17, b'1' * 500),
+                               ('empty-stack-bound', 17, b'')]:
+        malformed = original_binding.splitlines(keepends=True)
+        malformed[index] = value + b'\n'
+        try:
+            binding.write_bytes(b''.join(malformed))
+            call(name, code=2, diagnostic=4103)
+            observe(name + '-cleanup', [int((cache / 'building').exists())], [0])
+        finally:
+            binding.write_bytes(original_binding)
     image.write_bytes(initial[:-1] + bytes([initial[-1] ^ 1]))
     call("image-tamper", code=2, diagnostic=4104); image.write_bytes(initial)
     binding.write_bytes(original_binding.replace(b"expression-charge/v1", b"expression-charge/v0"))
