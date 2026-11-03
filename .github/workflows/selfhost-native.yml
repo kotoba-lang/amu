@@ -132,6 +132,12 @@ jobs:
                   assert {row["name"] for row in report["gates"]} == {
                       "local-project-fs", "early-kotoba", "b2-preflight"}
           PY_GATE
+      - name: Capture raw native complete24 fixture observations
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/early-kotoba/cases.kcg" ]; then
+            python3 scripts/seed/capture-native-kotoba24.py "$RUNNER_TEMP/early-kotoba"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -148,6 +154,9 @@ jobs:
             ${{ runner.temp }}/early-kotoba/*.json
             ${{ runner.temp }}/early-kotoba/*.stdout
             ${{ runner.temp }}/early-kotoba/*.stderr
+            ${{ runner.temp }}/early-kotoba/cases.kcg
+            ${{ runner.temp }}/early-kotoba/case-*.kotoba
+            ${{ runner.temp }}/early-kotoba/case-*.elf
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -561,6 +570,7 @@ jobs:
             ${{ runner.temp }}/fs2-x86/native-fs2.json
             ${{ runner.temp }}/fs2-x86/calls.json
             ${{ runner.temp }}/fs2-x86/*/receipt.json
+            ${{ runner.temp }}/fs2-x86/snapshot/snapshot.json
             ${{ runner.temp }}/complete/F1.elf
             ${{ runner.temp }}/complete/F2.elf
             ${{ runner.temp }}/complete/F3.elf

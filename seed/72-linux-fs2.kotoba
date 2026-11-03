@@ -67,11 +67,11 @@
   (and (>= n 8) (= (kxrt-f2-byte kind req 0) 0) (= (kxrt-f2-byte kind req 1) 70)
        (= (kxrt-f2-byte kind req 2) 83) (= (kxrt-f2-byte kind req 3) 50) (= (kxrt-f2-byte kind req 4) 0)))
 (defn- kxrt-f2-form-ok? [kind :i64 sk :i64 form :i64] :bool
-  (cond (or (< form 0) (> form 19)) false
-        (and (= kind 1) (= sk 1)) (or (< form 16) (= form 19))
+  (cond (or (< form 0) (> form 23)) false
+        (and (= kind 1) (= sk 1)) (or (< form 16) (= form 19) (= form 21) (= form 22) (= form 23))
         (and (= kind 8) (= sk 8)) (or (= form 1) (= form 2))
         (and (= kind 11) (= sk 11)) (or (= form 1) (= form 2) (= form 16) (= form 17) (= form 18))
-        (and (= kind 1) (or (= sk 8) (= sk 11))) (or (= form 0) (= form 4)) :else false))
+        (and (= kind 1) (or (= sk 8) (= sk 11))) (or (= form 0) (= form 4) (= form 22)) :else false))
 (defn- kxrt-f2-preflight [sk :i64 n :i64] :i64
   (let [chunks (quot (+ n 5 1048575) 1048576)
         cells (cond (= sk 1) 0 (= sk 8) (+ n 5) :else (+ n 5 (* 2 chunks)))
@@ -129,6 +129,55 @@
               (or (not ok) (< got 0) (and range (not= got n)) (not= closed 0))
           (if range (kxrt-fs-range-unavailable) (kxrt-f2-refused 5))
           :else (kxrt-f2-answer sk dst got))))))
+;; One private sealed input per process. The caller still has to hash and
+;; authenticate the bytes returned by W before consuming them. The source is
+;; copied first, so replacement or in-place writes cannot change that copy.
+;; The kernel closes this anonymous fd on every process exit, including SIGKILL.
+(defn- kxrt-f2-snapshot-open [sk :i64 path :i64 pn :i64 size :i64] :i64
+  (let [s (kxrt-f2-state) m (kxrt-path path pn)
+        valid (if (or (< m 0) (< size 0) (> size 268435456) (not= (kxrt-load64 (+ s 96)) 0)) (kxrt-f2-refused 15) 0)
+        pre (kxrt-f2-preflight sk 1) saved (kxrt-copy (+ s 24576) (kxrt-gl 208) m)
+        fd (kxrt-f2-open path pn (kxrt-f2-flags 0) 0)
+        stat (if (< fd 0) -1 (kxrt-f2-sys 2 fd (+ s 512) 0 0 0 0))
+        ok (and (= stat 0) (= (bit-and (kxrt-f2-mode (+ s 512)) 61440) 32768)
+                (= (kxrt-load64 (+ s 560)) size))
+        z (kxrt-store8 (+ s 640) 0)
+        mf (if ok (kxrt-f2-sys 13 (+ s 640) 3 0 0 0 0) -1)
+        copied (if (< mf 0) -1
+          (loop [total 0]
+            (let [left (- size total) want (if (> left 32768) 32768 left)
+                  n (kxrt-f2-sys 0 fd (+ s 32768) (if (= want 0) 1 want) 0 0 0)]
+              (cond (= n -4) (recur total) (< n 0) -1
+                    (= want 0) (if (= n 0) total -1)
+                    (= n 0) -1
+                    (not= (kxrt-write-all mf (+ s 32768) n) 1) -1
+                    :else (recur (+ total n))))))
+        closed (if (< fd 0) 0 (kxrt-close fd))
+        seal (if (= copied size) (kxrt-f2-sys 14 mf 1033 15 0 0 0) -1)]
+    (if (or (not ok) (< mf 0) (not= copied size) (not= closed 0) (not= seal 0))
+      (let [c (if (< mf 0) 0 (kxrt-close mf))] (kxrt-f2-refused 15))
+      (let [a (kxrt-store64 (+ s 96) (inc mf)) b (kxrt-store64 (+ s 104) m)
+            c (kxrt-store64 (+ s 112) size)] (kxrt-f2-boolean sk true)))))
+(defn- kxrt-f2-snapshot-owned? [path :i64 pn :i64] :bool
+  (let [s (kxrt-f2-state) m (kxrt-path path pn)]
+    (and (> (kxrt-load64 (+ s 96)) 0) (= m (kxrt-load64 (+ s 104)))
+         (kxrt-same (kxrt-gl 208) (+ s 24576) m))))
+(defn- kxrt-f2-snapshot-read [sk :i64 path :i64 pn :i64 offset :i64 count :i64] :i64
+  (let [s (kxrt-f2-state) size (kxrt-load64 (+ s 112))
+        ok (and (kxrt-f2-snapshot-owned? path pn) (>= offset 0) (>= count 0)
+                (<= count 1048576) (<= offset size) (<= count (- size offset)))
+        pre (if ok (kxrt-f2-preflight sk count) (kxrt-f2-refused 15))
+        dst (+ (kxrt-gl 24) (kxrt-gl 32) 5) fd (dec (kxrt-load64 (+ s 96)))
+        n (loop [i 0] (if (= i count) i
+            (let [r (kxrt-f2-sys 1 fd (+ dst i) (- count i) (+ offset i) 0 0)]
+              (cond (= r -4) (recur i) (<= r 0) -1 :else (recur (+ i r))))))]
+    (if (= n count) (kxrt-f2-answer sk dst n) (kxrt-f2-refused 15))))
+(defn- kxrt-f2-snapshot-close [sk :i64 path :i64 pn :i64] :i64
+  (let [s (kxrt-f2-state) ok (kxrt-f2-snapshot-owned? path pn)
+        pre (if ok (kxrt-f2-preflight sk 1) (kxrt-f2-refused 15))
+        fd (dec (kxrt-load64 (+ s 96))) clear (kxrt-store64 (+ s 96) 0)
+        closed (kxrt-close fd)]
+    (if (= closed 0) (kxrt-f2-boolean sk true) (kxrt-f2-refused 15))))
 (defn- kxrt-f2-write-request [fd :i64 kind :i64 req :i64 start :i64 total :i64] :i64
   (cond (= kind 1) (kxrt-write-all fd (+ (kxrt-saddr req) start) (- total start))
         (= kind 8) (kxrt-write-all fd (+ (kxrt-vbytes req) start) (- total start))
@@ -337,11 +386,11 @@
         end (kxrt-f2-end kind req 6 total 4095) pn (- end 6) tail (+ end 1) tn (- total tail)
         path (kxrt-f2-at 1024) copy (kxrt-f2-copy-request path kind req 6 pn)
         utf (if (or (= pn 0) (not= (kxrt-utf8 path pn) 0)) (kxrt-f2-refused 2) 0)
-        tails (if (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16) (= form 19)) 0
+        tails (if (or (= form 1) (= form 2) (= form 4) (= form 7) (= form 11) (= form 13) (= form 16) (= form 19) (= form 21) (= form 22)) 0
                 (if (= tn 0) 0 (kxrt-f2-refused 2)))
         m (kxrt-path path pn) scoped (kxrt-admit m)
         tbuf (kxrt-f2-at 5120)
-        tc (if (or (= form 4) (= form 7) (= form 11) (= form 13) (= form 19))
+        tc (if (or (= form 4) (= form 7) (= form 11) (= form 13) (= form 19) (= form 21) (= form 22))
              (if (> tn 4095) (kxrt-f2-refused 2) (kxrt-f2-copy-request tbuf kind req tail tn)) 0)
         tvalid (if (or (= form 11) (= form 13) (= form 19))
                  (if (or (not= (kxrt-utf8 tbuf tn) 0)
@@ -368,5 +417,11 @@
         16 (kxrt-f2-stage sk kind req path pn tail total)
         17 (kxrt-f2-begin sk path pn) 18 (kxrt-f2-discard sk path pn)
         19 (kxrt-f2-rename sk path pn tbuf tn true)
+        21 (kxrt-f2-snapshot-open sk path pn (kxrt-fs-span tbuf tn))
+        22 (let [colon (loop [i 0] (cond (>= i tn) -1 (= (kxrt-load8 (+ tbuf i)) 58) i :else (recur (inc i))))
+                 off (if (< colon 0) -1 (kxrt-fs-span tbuf colon))
+                 n (if (< colon 0) -1 (kxrt-fs-span (+ tbuf colon 1) (- tn colon 1)))]
+             (kxrt-f2-snapshot-read sk path pn off n))
+        23 (kxrt-f2-snapshot-close sk path pn)
         (kxrt-f2-refused 8)))))
 ")

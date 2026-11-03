@@ -1,0 +1,77 @@
+;; Fixed-source Linux ARM64 cgroup-v2 configuration candidate (JUN-777).
+;; FD 3 is a caller-owned, empty, delegated workload cgroup. This program does
+;; not create a cgroup, attach a process, execute a workload or clean up. The
+;; caller must discard the entire owned cgroup after any refusal or interruption.
+;; A hostile same-UID process can race configuration; this is not a boundary.
+
+(defn- fc-die [stage :i64] :i64
+  (let [b (+ (kxrt-g) 24000) a (kxrt-w b 0 0x3a45535546455246 8)
+        n (+ a (kxrt-dec (+ b a) stage)) z (kxrt-store8 (+ b n) 10)
+        w (kxrt-write-all 2 b (+ n 1))]
+    (kxrt-exit 2)))
+
+(defn- fc-open [dir :i64 path :i64 flags :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0)
+        c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 dir path how 24 0 0)))
+
+(defn- fc-u32 [p :i64] :i64
+  (+ (* 16777216 (kxrt-load8 p)) (* 65536 (kxrt-load8 (+ p 1)))
+     (* 256 (kxrt-load8 (+ p 2))) (kxrt-load8 (+ p 3))))
+
+;; A cgroup controller value is a single write; partial writes fail. Reopen and
+;; compare the kernel's actual value, including its trailing newline.
+(defn- fc-set [path :i64 data :i64 n :i64 how :i64 buf :i64] :i64
+  (let [fd (fc-open 3 path 524289 how)
+        opened (if (< fd 0) (fc-die 5) 0)
+        w (kxrt-syscall 64 fd data n 0 0 0)
+        c (kxrt-close fd)
+        written (if (or (not= w n) (not= c 0)) (fc-die 5) 0)
+        rd (fc-open 3 path 524288 how)
+        read-open (if (< rd 0) (fc-die 6) 0)
+        got (kxrt-syscall 63 rd buf 127 0 0 0)
+        closed (kxrt-close rd)
+        size (if (or (not= got (+ n 1)) (not= closed 0)
+                     (not= (kxrt-load8 (+ buf n)) 10)) (fc-die 6) 0)]
+    (loop [i 0]
+      (if (= i n) 0
+        (if (not= (kxrt-load8 (+ data i)) (kxrt-load8 (+ buf i))) (fc-die 6)
+          (recur (+ i 1)))))))
+
+(defn- kxrt-start [sp :i64] :i64
+  (let [b (+ (kxrt-g) 24576) stat (+ b 512) how (+ b 1024) in (+ b 1100)
+        value (+ b 1200) buf (+ b 1400)
+        argc (kxrt-load64 sp) uid (kxrt-syscall 175 0 0 0 0 0 0)
+        gid (kxrt-syscall 177 0 0 0 0 0 0)
+        args-ok (if (or (not= argc 1) (<= uid 0) (< gid 0)
+                        (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                        (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (fc-die 1) 0)
+        extras (if (< (kxrt-syscall 436 4 4294967295 0 0 0 0) 0) (fc-die 1) 0)
+        fs (kxrt-syscall 44 3 stat 0 0 0 0)
+        fs-ok (if (or (< fs 0) (not= (kxrt-load64 stat) 1667723888)) (fc-die 2) 0)
+        st (kxrt-syscall 80 3 stat 0 0 0 0)
+        mode (bit-and (kxrt-load64 (+ stat 16)) 61440)
+        owner (bit-and (kxrt-load64 (+ stat 24)) 4294967295)
+        st-ok (if (or (< st 0) (not= mode 16384) (not= owner uid)) (fc-die 2) 0)
+        m (kxrt-w b (kxrt-w b 0 0x6d2e79726f6d656d 8) 0x7861 3)
+        p (kxrt-w b (kxrt-w b 32 0x78616d2e73646970 8) 0 1)
+        c (kxrt-w b 64 0x78616d2e757063 8)
+        ;; populated includes descendants; direct cgroup.procs alone is insufficient.
+        events (kxrt-w b (kxrt-w b 96 0x652e70756f726763 8) 0x73746e6576 6)
+        pf (fc-open 3 (+ b 96) 524288 how)
+        pf-ok (if (< pf 0) (fc-die 3) 0)
+        got (kxrt-syscall 63 pf buf 127 0 0 0) close (kxrt-close pf)
+        empty (if (or (< got 12) (not= close 0)
+                      (not= (kxrt-load64 buf) 0x6574616c75706f70)
+                      (not= (kxrt-load8 (+ buf 8)) 100) (not= (kxrt-load8 (+ buf 9)) 32)
+                      (not= (kxrt-load8 (+ buf 10)) 48) (not= (kxrt-load8 (+ buf 11)) 10)) (fc-die 3) 0)
+        read (if (not= (kxrt-read-all 0 in 12) 1) (fc-die 4) 0)
+        memory (fc-u32 in) pids (fc-u32 (+ in 4)) cpu (fc-u32 (+ in 8))
+        limits (if (or (< memory 1048576) (< pids 1) (> pids 4096)
+                       (< cpu 1000) (> cpu 1000000)) (fc-die 4) 0)
+        mn (kxrt-dec value memory) mv (fc-set b value mn how buf)
+        pn (kxrt-dec value pids) pv (fc-set (+ b 32) value pn how buf)
+        cn (kxrt-dec value cpu) rest (kxrt-w value cn 0x30303030303120 7)
+        cv (fc-set (+ b 64) value rest how buf)
+        k (kxrt-store8 buf 75) sent (if (not= (kxrt-write-all 1 buf 1) 1) (fc-die 7) 0)]
+    (kxrt-exit 0)))

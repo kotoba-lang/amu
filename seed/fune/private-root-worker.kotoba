@@ -1,0 +1,733 @@
+;; Fixed-source ARM64 private-root worker candidate (JUN-779).
+;; No OCI input, archive operations or arbitrary workload launch is admitted.
+;; Private root operations are bounded, with X closing the worker and tmpfs.
+;; This text is appended as privileged runtime only by a source-pinned factory.
+
+(defn- fw-die [stage :i64] :i64
+  (let [b (+ (kxrt-g) 24000) a (kxrt-w b 0 0x3a45535546455246 8)
+        n (+ a (kxrt-dec (+ b a) stage)) z (kxrt-store8 (+ b n) 10)
+        w (kxrt-write-all 2 b (+ n 1))]
+    (kxrt-exit 2)))
+
+;; Constant C strings in private memory; no caller-controlled host paths.
+(defn- fw-strings [] :i64
+  (let [b (+ (kxrt-g) 24576)
+        e (kxrt-w b 96 0x2f 2) f (kxrt-w b 112 0x706d742f 5) g (kxrt-w b 128 0x7366706d74 6)
+        h (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b 144 0x3931343d657a6973 8) 0x5f726e2c34303334 8) 0x343d7365646f6e69 8) 0x363930 4)
+        j (kxrt-w b (kxrt-w b 192 0x6f6f722f706d742f 8) 0x736674 4)
+        k (kxrt-w b 224 0x0a796e6564 5)] b))
+
+(defn- fw-write-path [path :i64 data :i64 n :i64 stage :i64] :i64
+  (let [fd (kxrt-open-path path 524289 0)]
+    (if (< fd 0) (fw-die stage)
+      (let [w (kxrt-write-all fd data n) c (kxrt-close fd)]
+        (if (or (not= w 1) (not= c 0)) (fw-die stage) 0)))))
+
+(defn- fw-map [path :i64 id :i64 stage :i64] :i64
+  (let [b (+ (kxrt-g) 25088) a (kxrt-w b 0 0x2030 2)
+        n (+ a (kxrt-dec (+ b a) id)) sep (kxrt-w b n 0x0a3120 3)]
+    (fw-write-path path b sep stage)))
+
+(defn- fw-proc-path [pid :i64 which :i64] :i64
+  (let [b (+ (kxrt-g) 25344) a (kxrt-w b 0 0x2f636f72702f 6)
+        n (+ a (kxrt-dec (+ b a) pid))
+        e (case which
+            0 (kxrt-w b (kxrt-w b n 0x70616d5f6469752f 8) 0 1)
+            1 (kxrt-w b (kxrt-w b n 0x70616d5f6469672f 8) 0 1)
+            (kxrt-w b (kxrt-w b n 0x756f72677465732f 8) 0x7370 3))] b))
+
+(defn- fw-close [fd :i64 stage :i64] :i64
+  (if (< (kxrt-close fd) 0) (fw-die stage) 0))
+(defn- fw-read-one [fd :i64 address :i64] :i64
+  (loop [attempt 0]
+    (let [r (kxrt-syscall 63 fd address 1 0 0 0)]
+      (if (= r -4) (recur (+ attempt 1)) r))))
+
+;; Exact bounded protocol I/O. Unexpected EOF or syscall failure kills the
+;; worker and its private mount: no partially written tree is published.
+(defn- fw-read-exact [fd :i64 address :i64 count :i64 stage :i64] :i64
+  (loop [done 0]
+    (if (= done count) 0
+      (let [r (kxrt-syscall 63 fd (+ address done) (- count done) 0 0 0)]
+        (cond (= r -4) (recur done) (<= r 0) (fw-die stage) :else (recur (+ done r)))))))
+(defn- fw-path-ok? [path :i64 n :i64] :bool
+  (if (or (<= n 0) (> n 255)) false
+    (loop [i 0 start 0]
+      (if (or (= i n) (= (kxrt-load8 (+ path i)) 47))
+        (let [len (- i start)]
+          (cond (= len 0) false
+                (and (= len 1) (= (kxrt-load8 (+ path start)) 46)) false
+                (and (= len 2) (= (kxrt-load8 (+ path start)) 46) (= (kxrt-load8 (+ path start 1)) 46)) false
+                (and (>= len 4) (= (kxrt-load8 (+ path start)) 46)
+                     (= (kxrt-load8 (+ path start 1)) 119) (= (kxrt-load8 (+ path start 2)) 104)
+                     (= (kxrt-load8 (+ path start 3)) 46)) false
+                (= i n) true :else (recur (+ i 1) (+ i 1))))
+        (let [c (kxrt-load8 (+ path i))]
+          (if (or (< c 32) (> c 126)) false (recur (+ i 1) start)))))))
+
+;; openat2: RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS.
+;; No fallback to openat on kernels that do not implement the confinement.
+(defn- fw-openat2 [dir :i64 path :i64 flags :i64 mode :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) mode)
+        c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 dir path how 24 0 0)))
+(defn- fw-last-slash [path :i64 n :i64] :i64
+  (loop [i 0 last -1]
+    (if (= i n) last
+      (recur (+ i 1) (if (= (kxrt-load8 (+ path i)) 47) i last)))))
+;; Optional transport: H as the first byte selects lowercase ASCII hex for
+;; every subsequent protocol byte. This lets a string-only producer stream
+;; arbitrary binary without changing the binary protocol or buffering a layer.
+(defn- fw-nibble [c :i64] :i64
+  (cond (and (>= c 48) (<= c 57)) (- c 48)
+        (and (>= c 97) (<= c 102)) (+ 10 (- c 97))
+        :else (fw-die 16)))
+(defn- fw-read-wire [mode :i64 address :i64 count :i64 scratch :i64] :i64
+  (if (= mode 0) (fw-read-exact 0 address count 16)
+    (let [got (fw-read-exact 0 scratch (* count 2) 16)]
+      (loop [i 0]
+        (if (= i count) 0
+          (let [hi (fw-nibble (kxrt-load8 (+ scratch (* i 2))))
+                lo (fw-nibble (kxrt-load8 (+ scratch (+ (* i 2) 1))))
+                w (kxrt-store8 (+ address i) (+ (* 16 hi) lo))]
+            (recur (+ i 1))))))))
+
+(defn- fw-file-data [fd :i64 buf :i64 size :i64 write? :bool mode :i64 scratch :i64] :i64
+  (loop [left size]
+    (if (= left 0) 0
+      (let [n (if (> left 4096) 4096 left)
+            source (if write? 0 fd) target (if write? fd 1)
+            got (if write? (fw-read-wire mode buf n scratch) (fw-read-exact source buf n 18))
+            sent (if (= (kxrt-write-all target buf n) 1) 0 (fw-die 18))]
+        (recur (- left n))))))
+
+(defn- fw-u16 [p :i64] :i64 (+ (* 256 (kxrt-load8 p)) (kxrt-load8 (+ p 1))))
+(defn- fw-u32 [p :i64] :i64
+  (+ (* 16777216 (kxrt-load8 p)) (* 65536 (kxrt-load8 (+ p 1)))
+     (* 256 (kxrt-load8 (+ p 2))) (kxrt-load8 (+ p 3))))
+(defn- fw-nonzero? [p :i64 n :i64] :bool
+  (loop [i 0] (if (= i n) true (if (= (kxrt-load8 (+ p i)) 0) false (recur (+ i 1))))))
+(defn- fw-absolute? [p :i64 n :i64 root-ok :bool] :bool
+  (if (or (< n 1) (> n 256) (not (= (kxrt-load8 p) 47))) false
+    (if (= n 1) root-ok (fw-path-ok? (+ p 1) (- n 1)))))
+;; This checks bounded framing and path/NUL invariants only. It does not
+;; authenticate the producer or grant permission to execute these bytes.
+(defn- fw-spec-ok? [p :i64 n :i64] :bool
+  (if (or (< n 10) (> n 67500) (not (= (kxrt-load8 p) 70)) (not (= (kxrt-load8 (+ p 1)) 80))
+          (not (= (kxrt-load8 (+ p 2)) 83)) (not (= (kxrt-load8 (+ p 3)) 1))) false
+    (let [argc (fw-u16 (+ p 4)) envc (fw-u16 (+ p 6)) cwdn (fw-u16 (+ p 8)) start (+ 10 cwdn)]
+      (if (or (< argc 1) (> argc 256) (> envc 128) (> start n)
+              (not (fw-absolute? (+ p 10) cwdn true))) false
+        (loop [i 0 at start total cwdn]
+          (if (= i (+ argc envc)) (and (= at n) (<= total 65536))
+            (if (> (+ at 4) n) false
+              (let [len (fw-u32 (+ p at)) begin (+ at 4) end (+ begin len)]
+                (if (or (> len 65536) (> end n) (> (+ total len) 65536)) false
+                  (if (not (fw-nonzero? (+ p begin) len)) false
+                    (if (and (= i 0) (not (fw-absolute? (+ p begin) len false))) false
+                      (recur (+ i 1) end (+ total len)))))))))))))
+(defn- fw-spec-read [mode :i64 p :i64 n :i64 scratch :i64] :i64
+  (loop [at 0]
+    (if (= at n) 0
+      (let [left (- n at) take (if (> left 4096) 4096 left)
+            got (fw-read-wire mode (+ p at) take scratch)]
+        (recur (+ at take))))))
+
+;; The spec has already passed fw-spec-ok?. Resolve only beneath the worker's
+;; root descriptor, with no symlinks, and retain the checked private inodes.
+;; This does not decide UID/GID access, interpreter validity or authorization.
+(defn- fw-spec-path [src :i64 n :i64 dst :i64] :i64
+  (loop [i 1]
+    (if (= i n) (kxrt-store8 (+ dst (- n 1)) 0)
+      (let [w (kxrt-store8 (+ dst (- i 1)) (kxrt-load8 (+ src i)))] (recur (+ i 1))))))
+(defn- fw-spec-target-open [root :i64 src :i64 n :i64 dir? :bool path :i64 how :i64 stat :i64] :i64
+  (let [is-root (and dir? (= n 1)) copy (if is-root 0 (fw-spec-path src n path))
+        fd (if is-root root (fw-openat2 root path 2621440 0 how))]
+    (if (< fd 0) -1
+      (let [st (kxrt-syscall 80 fd stat 0 0 0 0)
+            bits (if (< st 0) 0 (kxrt-load64 (+ stat 16)))
+            kind (bit-and bits 61440)
+            valid (and (= st 0) (if dir? (= kind 16384) (and (= kind 32768) (not (= (bit-and bits 73) 0)))))]
+        (if valid fd (let [close (if is-root 0 (kxrt-close fd))] -1))))))
+(defn- fw-spec-targets [root :i64 spec :i64 path :i64 how :i64 stat :i64 slots :i64] :i64
+  (let [cwdn (fw-u16 (+ spec 8)) argv-head (+ 10 cwdn)
+        argn (fw-u32 (+ spec argv-head)) argv (+ spec (+ argv-head 4))
+        cwd (fw-spec-target-open root (+ spec 10) cwdn true path how stat)]
+    (if (< cwd 0) -1
+      (let [exe (fw-spec-target-open root argv argn false path how stat)]
+        (if (< exe 0) (let [close (if (= cwd root) 0 (kxrt-close cwd))] -1)
+          (let [a (kxrt-store64 slots cwd) b (kxrt-store64 (+ slots 8) exe)] 0))))))
+
+
+;; Remount the entire worker-owned tmpfs read-only, not a bind of rootfs:
+;; pre-existing descriptors then refer to the same now-read-only mount. The
+;; caller must still drop mount authority before treating it as a boundary.
+(defn- fw-freeze-tmpfs [root :i64 stat :i64] :i64
+  (let [b (fw-strings) remount (kxrt-syscall 40 0 (+ b 112) 0 39 0 0)
+        status (if (< remount 0) (fw-die 22) 0)
+        r (kxrt-syscall 44 root stat 0 0 0 0)
+        kind (kxrt-load64 stat) flags (kxrt-load64 (+ stat 80))]
+    (if (or (< r 0) (not= kind 16914836) (not= (bit-and flags 7) 7)) (fw-die 22) 0)))
+
+
+;; Determine the kernel-supported capability range from procfs. An unknown or
+;; unavailable range fails closed instead of treating EINVAL as an empty set.
+(defn- fw-cap-last [buf :i64] :i64
+  (let [path (+ buf 1024) stat (+ buf 1536) data (+ buf 1280)
+        a (kxrt-w path (kxrt-w path (kxrt-w path (kxrt-w path 0 0x79732f636f72702f 8) 0x6c656e72656b2f73 8) 0x73616c5f7061632f 8) 0x7061635f74 6)
+        fd (kxrt-open-path path 524288 0) opened (if (< fd 0) (fw-die 23) 0)
+        fs (kxrt-syscall 44 fd stat 0 0 0 0)
+        proc (if (or (< fs 0) (not= (kxrt-load64 stat) 40864)) (fw-die 23) 0)
+        n (kxrt-syscall 63 fd data 8 0 0 0) close (kxrt-close fd)
+        size (if (or (not= close 0) (< n 2) (> n 3) (not= (kxrt-load8 (+ data (- n 1))) 10)) (fw-die 23) 0)
+        first (kxrt-load8 data) second (if (= n 3) (kxrt-load8 (+ data 1)) 48)
+        digits (if (or (< first 48) (> first 57) (< second 48) (> second 57)) (fw-die 23) 0)
+        value (if (= n 3) (+ (* 10 (- first 48)) (- second 48)) (- first 48))]
+    (if (> value 63) (fw-die 23) value)))
+
+;; Enter only the already checked root and cwd. Compare opened / and . with
+;; the retained inode identities before capability drop. No host directory FD
+;; is retained by this worker; this is still not workload admission.
+(defn- fw-root-identity [expected :i64 path :i64 buf :i64] :i64
+  (let [fd (kxrt-open-path path 2621440 0)
+        valid (if (< fd 0) (fw-die 25) 0)
+        a (kxrt-syscall 80 expected buf 0 0 0 0)
+        b (kxrt-syscall 80 fd (+ buf 256) 0 0 0 0)
+        same (if (or (< a 0) (< b 0) (not= (kxrt-load64 buf) (kxrt-load64 (+ buf 256)))
+                     (not= (kxrt-load64 (+ buf 8)) (kxrt-load64 (+ buf 264)))) (fw-die 25) 0)
+        close (fw-close fd 25)] 0))
+
+(defn- fw-enter-root [root :i64 cwd :i64 buf :i64] :i64
+  (let [dot (+ buf 768) slash (+ buf 776)
+        a (kxrt-store64 dot 46) b (kxrt-store64 slash 47)
+        c (if (< (kxrt-syscall 50 root 0 0 0 0 0) 0) (fw-die 25) 0)
+        chroot (if (< (kxrt-syscall 51 dot 0 0 0 0 0) 0) (fw-die 25) 0)
+        dir (if (< (kxrt-syscall 49 slash 0 0 0 0 0) 0) (fw-die 25) 0)
+        rootcheck (fw-root-identity root slash buf)
+        cd (if (< (kxrt-syscall 50 cwd 0 0 0 0 0) 0) (fw-die 25) 0)
+        cwdcheck (fw-root-identity cwd dot buf)] 0))
+
+;; Drop bounding capabilities before losing CAP_SETPCAP, then clear ambient,
+;; effective, permitted and inheritable sets. Every capability in the range
+;; reported by procfs must be dropped and independently read back as zero.
+(defn- fw-cap-range [option :i64 ambient? :bool last :i64] :i64
+  (loop [cap 0]
+    (if (> cap last) 0
+      (let [r (if ambient? (kxrt-syscall 167 47 option cap 0 0 0)
+                (kxrt-syscall 167 option cap 0 0 0 0))]
+        (if (= r 0) (recur (+ cap 1)) (fw-die 23))))))
+(defn- fw-drop-caps [buf :i64 last :i64] :i64
+  (let [drop (fw-cap-range 24 false last)
+        ambient (if (not= (kxrt-syscall 167 47 4 0 0 0 0) 0) (fw-die 23) 0)
+        hdr (+ buf 512) data (+ buf 528)
+        h (kxrt-store64 hdr 537396514)
+        a (kxrt-store64 data 0) b (kxrt-store64 (+ data 8) 0) c (kxrt-store64 (+ data 16) 0)
+        set (if (not= (kxrt-syscall 91 hdr data 0 0 0 0) 0) (fw-die 23) 0)
+        get (if (not= (kxrt-syscall 90 hdr data 0 0 0 0) 0) (fw-die 23) 0)
+        zeros (if (or (not= (kxrt-load64 data) 0) (not= (kxrt-load64 (+ data 8)) 0)
+                      (not= (kxrt-load64 (+ data 16)) 0)) (fw-die 23) 0)
+        bounding (fw-cap-range 23 false last) amcheck (fw-cap-range 1 true last)
+        nnp (if (not= (kxrt-syscall 167 39 0 0 0 0 0) 1) (fw-die 23) 0)] 0))
+
+
+;; Narrow ARM64 namespace filter. The wrong syscall architecture kills the
+;; process; clone3 returns ENOSYS to permit non-namespace legacy fallback.
+;; This is not a general syscall sandbox.
+(defn- fw-namespace-filter [buf :i64] :i64
+  (let [code (+ buf 1024) desc (+ buf 900)
+        i0a (kxrt-w code 0 0x20 4) i0b (kxrt-w code 4 0x4 4)
+        i1a (kxrt-w code 8 0x10015 4) i1b (kxrt-w code 12 0xc00000b7 4)
+        i2a (kxrt-w code 16 0x6 4) i2b (kxrt-w code 20 0x80000000 4)
+        i3a (kxrt-w code 24 0x20 4) i3b (kxrt-w code 28 0x0 4)
+        i4a (kxrt-w code 32 0x70015 4) i4b (kxrt-w code 36 0x61 4)
+        i5a (kxrt-w code 40 0x60015 4) i5b (kxrt-w code 44 0x10c 4)
+        i6a (kxrt-w code 48 0x40015 4) i6b (kxrt-w code 52 0x1b3 4)
+        i7a (kxrt-w code 56 0x2000015 4) i7b (kxrt-w code 60 0xdc 4)
+        i8a (kxrt-w code 64 0x20 4) i8b (kxrt-w code 68 0x10 4)
+        i9a (kxrt-w code 72 0x20045 4) i9b (kxrt-w code 76 0x7e020000 4)
+        i10a (kxrt-w code 80 0x6 4) i10b (kxrt-w code 84 0x7fff0000 4)
+        i11a (kxrt-w code 88 0x6 4) i11b (kxrt-w code 92 0x50026 4)
+        i12a (kxrt-w code 96 0x6 4) i12b (kxrt-w code 100 0x50001 4)
+        d0 (kxrt-store64 desc 13) d1 (kxrt-store64 (+ desc 8) code)
+        install (if (not= (kxrt-syscall 277 1 0 desc 0 0 0) 0) (fw-die 24) 0)
+        active (if (not= (kxrt-syscall 167 21 0 0 0 0 0) 2) (fw-die 24) 0)] 0))
+
+;; Offline candidate: forbid creation of sockets, including AF_UNIX, and
+;; io_uring setup/use. This reduces network surface; it is not a complete
+;; syscall sandbox or a guarantee about caller-supplied descriptors.
+(defn- fw-offline-filter [buf :i64] :i64
+  (let [code (+ buf 1024) desc (+ buf 900)
+        i0a (kxrt-w code 0 0x20 4) i0b (kxrt-w code 4 4 4)
+        i1a (kxrt-w code 8 0x10015 4) i1b (kxrt-w code 12 0xc00000b7 4)
+        i2a (kxrt-w code 16 6 4) i2b (kxrt-w code 20 0x80000000 4)
+        i3a (kxrt-w code 24 0x20 4) i3b (kxrt-w code 28 0 4)
+        i4a (kxrt-w code 32 0x50015 4) i4b (kxrt-w code 36 198 4)
+        i5a (kxrt-w code 40 0x40015 4) i5b (kxrt-w code 44 199 4)
+        i6a (kxrt-w code 48 0x30015 4) i6b (kxrt-w code 52 425 4)
+        i7a (kxrt-w code 56 0x20015 4) i7b (kxrt-w code 60 426 4)
+        i8a (kxrt-w code 64 0x10015 4) i8b (kxrt-w code 68 427 4)
+        i9a (kxrt-w code 72 6 4) i9b (kxrt-w code 76 0x7fff0000 4)
+        i10a (kxrt-w code 80 6 4) i10b (kxrt-w code 84 0x50001 4)
+        d0 (kxrt-store64 desc 11) d1 (kxrt-store64 (+ desc 8) code)
+        install (if (not= (kxrt-syscall 277 1 0 desc 0 0 0) 0) (fw-die 24) 0)
+        active (if (not= (kxrt-syscall 167 21 0 0 0 0 0) 2) (fw-die 24) 0)] 0))
+
+;; Controlled smoke tests only: fixed static ARM64 fixtures, not arbitrary
+;; OCI execution. All data is read from the already frozen private root.
+(defn- fw-fixture-spec? [spec :i64 n :i64] :bool
+  (and (= n 19) (= (fw-u16 (+ spec 4)) 1) (= (fw-u16 (+ spec 6)) 0)
+       (= (fw-u16 (+ spec 8)) 1) (= (kxrt-load8 (+ spec 10)) 47)
+       (= (fw-u32 (+ spec 11)) 4) (= (kxrt-load8 (+ spec 15)) 47)
+       (= (kxrt-load8 (+ spec 16)) 97) (= (kxrt-load8 (+ spec 17)) 112)
+       (= (kxrt-load8 (+ spec 18)) 112)))
+
+;; O still admits only the fixed /app fixture, but its already validated
+;; process spec may carry additional arguments, environment and cwd.
+(defn- fw-output-spec? [spec :i64 n :i64] :bool
+  (let [head (+ 10 (fw-u16 (+ spec 8))) p (+ spec head)]
+    (and (fw-spec-ok? spec n) (= (fw-u32 p) 4)
+         (= (kxrt-load8 (+ p 4)) 47) (= (kxrt-load8 (+ p 5)) 97)
+         (= (kxrt-load8 (+ p 6)) 112) (= (kxrt-load8 (+ p 7)) 112))))
+
+;; Copy the validated length-delimited FPS1 arguments and environment into a
+;; private allocation, with distinct NUL terminators and pointer-vector ends.
+(defn- fw-output-argv [spec :i64 block :i64] :i64
+  (let [argc (fw-u16 (+ spec 4)) envc (fw-u16 (+ spec 6))
+        envp (+ block (* 8 (+ argc 1))) strings (+ envp (* 8 (+ envc 1)))
+        first (+ spec (+ 10 (fw-u16 (+ spec 8))))]
+    (loop [i 0 src first dst strings]
+      (if (= i (+ argc envc))
+        (let [a (kxrt-store64 (+ block (* 8 argc)) 0)
+              b (kxrt-store64 (+ envp (* 8 envc)) 0)] envp)
+        (let [n (fw-u32 src) input (+ src 4)
+              slot (if (< i argc) (+ block (* 8 i)) (+ envp (* 8 (- i argc))))
+              p (kxrt-store64 slot dst)
+              copied (loop [j 0] (if (= j n) 0
+                       (let [w (kxrt-store8 (+ dst j) (kxrt-load8 (+ input j)))] (recur (+ j 1)))))
+              end (kxrt-store8 (+ dst n) 0)]
+          (recur (+ i 1) (+ input n) (+ dst n 1)))))))
+
+;; Bounded static ELF admission observation. This checks the frozen inode
+;; named by FPS1, but neither authenticates the producer nor executes it.
+(defn- fw-le16 [p :i64] :i64 (+ (kxrt-load8 p) (* 256 (kxrt-load8 (+ p 1)))))
+(defn- fw-le32 [p :i64] :i64 (+ (fw-le16 p) (* 65536 (fw-le16 (+ p 2)))))
+(defn- fw-pread-exact? [fd :i64 p :i64 n :i64 off :i64] :bool
+  (loop [at 0]
+    (if (= at n) true
+      (let [r (kxrt-syscall 67 fd (+ p at) (- n at) (+ off at) 0 0)]
+        (cond (= r -4) (recur at) (<= r 0) false :else (recur (+ at r)))))))
+(defn- fw-static-phdrs? [fd :i64 h :i64 ph :i64 size :i64] :bool
+  (let [entry (kxrt-load64 (+ h 24)) off (kxrt-load64 (+ h 32))
+        count (fw-le16 (+ h 56))]
+    (if (or (< off 64) (< entry 0) (< count 1) (> count 128)
+            (> off size) (> count (quot (- size off) 56))) false
+      (loop [i 0 entry-ok false loads 0]
+        (if (= i count) (and entry-ok (> loads 0))
+          (if (not (fw-pread-exact? fd ph 56 (+ off (* i 56)))) false
+            (let [typ (fw-le32 ph) flags (fw-le32 (+ ph 4))
+                  fileoff (kxrt-load64 (+ ph 8)) addr (kxrt-load64 (+ ph 16))
+                  filesz (kxrt-load64 (+ ph 32)) memsz (kxrt-load64 (+ ph 40))
+                  align (kxrt-load64 (+ ph 48)) load (= typ 1)
+                  bad (or (= typ 2) (= typ 3)
+                          (and load (or (< fileoff 0) (< addr 0) (< filesz 0) (< memsz 0)
+                                        (< align 0) (> fileoff size) (> filesz (- size fileoff))
+                                        (> filesz memsz) (> memsz (- 9223372036854775807 addr))
+                                        (= (bit-and flags 3) 3)
+                                        (and (> align 1) (or (not= (bit-and align (- align 1)) 0)
+                                                            (not= (bit-and fileoff (- align 1))
+                                                                  (bit-and addr (- align 1))))))))]
+              (if bad false
+                (recur (+ i 1)
+                  (or entry-ok (and load (not= (bit-and flags 1) 0) (>= entry addr) (< (- entry addr) filesz)))
+                  (if load (+ loads 1) loads))))))))))
+(defn- fw-static-elf? [root :i64 exe :i64 spec :i64 buf :i64] :bool
+  (let [arg (+ spec (+ 10 (fw-u16 (+ spec 8)))) n (fw-u32 arg)
+        path (+ buf 2048) how (+ buf 2304) st (+ buf 4096) xt (+ buf 4352)
+        h (+ buf 1024) ph (+ buf 1152) copy (fw-spec-path (+ arg 4) n path)
+        fd (fw-openat2 root path 524288 0 how)]
+    (if (< fd 0) false
+      (let [a (kxrt-syscall 80 fd st 0 0 0 0) b (kxrt-syscall 80 exe xt 0 0 0 0)
+            size (if (= a 0) (kxrt-load64 (+ st 48)) -1)
+            same (and (= a 0) (= b 0) (= (kxrt-load64 st) (kxrt-load64 xt))
+                      (= (kxrt-load64 (+ st 8)) (kxrt-load64 (+ xt 8))))
+            valid (and same (>= size 64) (<= size 1048576) (fw-pread-exact? fd h 64 0)
+                       (= (kxrt-load64 h) 0x00010102464c457f) (= (kxrt-load64 (+ h 8)) 0)
+                       (= (fw-le16 (+ h 16)) 2) (= (fw-le16 (+ h 18)) 183)
+                       (= (fw-le32 (+ h 20)) 1) (= (fw-le16 (+ h 52)) 64)
+                       (= (fw-le16 (+ h 54)) 56) (fw-static-phdrs? fd h ph size))
+            closed (kxrt-close fd)]
+        (and valid (= closed 0))))))
+
+(defn- fw-fixture-hash? [root :i64 exe :i64 buf :i64 variant :i64] :bool
+  (let [h buf w (+ buf 64) data (+ buf 1024) path (+ buf 2048) how (+ buf 2304)
+        st (+ buf 4096) xt (+ buf 4352)
+        p (kxrt-store64 path 0x707061) fd (fw-openat2 root path 524288 0 how)
+        opened (if (< fd 0) (fw-die 26) 0)
+        a (kxrt-syscall 80 fd st 0 0 0 0) b (kxrt-syscall 80 exe xt 0 0 0 0)
+        same (if (or (< a 0) (< b 0) (not= (kxrt-load64 st) (kxrt-load64 xt))
+                     (not= (kxrt-load64 (+ st 8)) (kxrt-load64 (+ xt 8)))) (fw-die 26) 0)
+        init (loop [i 0] (if (= i 8) 0 (let [v (kxrt-store64 (+ h (* i 8)) (kxrt-sha-h0 i))] (recur (+ i 1)))))
+        blocks (loop [i 0] (if (= i 5000) 0
+                 (let [read (fw-read-exact fd data 64 26) hash (kxrt-sha-block h w data)] (recur (+ i 1)))))
+        extra (loop [i 0] (let [r (kxrt-syscall 63 fd data 1 0 0 0)] (if (= r -4) (recur (+ i 1)) r)))
+        closed (fw-close fd 26)
+        zero (loop [i 0] (if (= i 64) 0 (let [v (kxrt-store8 (+ data i) 0)] (recur (+ i 1)))))
+        marker (kxrt-store8 data 128)
+        bits (loop [i 0] (if (= i 8) 0
+               (let [v (kxrt-store8 (+ data (- 63 i)) (bit-and (u64-shift-right 2560000 (* i 8)) 255))] (recur (+ i 1)))))
+        final (kxrt-sha-block h w data)]
+    (and (= extra 0)
+         (loop [i 0] (if (= i 8) true
+           (let [expected (if (= variant 0)
+                            (case i 0 3142250384 1 1908581378 2 3010228737 3 780788070
+                                    4 2867704908 5 3356614750 6 1289681377 1342585609)
+                            (case i 0 3772893843 1 566504159 2 4280254111 3 3834684789
+                                    4 51427483 5 4188647605 6 2010967957 1676433319))]
+             (if (= (kxrt-load64 (+ h (* i 8))) expected) (recur (+ i 1)) false)))))))
+
+(defn- fw-fixture-now [buf :i64] :i64
+  (let [r (kxrt-syscall 113 1 buf 0 0 0 0)]
+    (if (< r 0) -1 (+ (* (kxrt-load64 buf) 1000000000) (kxrt-load64 (+ buf 8))))))
+(defn- fw-fixture-kill [pid :i64 status :i64] :i64
+  (let [k (kxrt-syscall 129 pid 9 0 0 0 0)
+        w (loop [i 0] (let [r (kxrt-syscall 260 pid status 0 0 0 0)] (if (= r -4) (recur (+ i 1)) r)))] -1))
+(defn- fw-fixture-wait [pid :i64 buf :i64] :i64
+  (let [status (+ buf 6000) clock (+ buf 6024) ts (+ buf 6048)
+        z (kxrt-store64 status 0) a (kxrt-store64 ts 0) b (kxrt-store64 (+ ts 8) 10000000)
+        start (fw-fixture-now clock)]
+    (if (< start 0) (fw-fixture-kill pid status)
+      (loop [i 0]
+        (let [r (kxrt-syscall 260 pid status 1 0 0 0) now (fw-fixture-now clock)]
+          (cond (= r pid) (bit-and (kxrt-load64 status) 65535)
+                (= r -4) (recur (+ i 1))
+                (or (< r 0) (< now 0) (> (- now start) 5000000000)) (fw-fixture-kill pid status)
+                :else (let [sleep (kxrt-syscall 73 0 0 ts 0 0 0)] (recur (+ i 1)))))))))
+(defn- fw-fixture-exec-child [exe :i64 buf :i64] :i64
+  (let [text (+ buf 5000) argv (+ buf 5024) env (+ buf 5048) empty (+ buf 5064)
+        x (kxrt-store64 text 0x7070612f) a (kxrt-store64 argv text) b (kxrt-store64 (+ argv 8) 0)
+        c (kxrt-store64 env 0) d (kxrt-store64 empty 0)
+        dup (if (or (= exe 111) (< (kxrt-syscall 24 exe 111 524288 0 0 0) 0)) (kxrt-exit 127) 0)
+        lo (if (< (kxrt-syscall 436 3 110 0 0 0 0) 0) (kxrt-exit 127) 0)
+        hi (if (< (kxrt-syscall 436 112 4294967295 0 0 0 0) 0) (kxrt-exit 127) 0)
+        i (kxrt-close 0) o (kxrt-close 1) e (kxrt-close 2)
+        exec (kxrt-syscall 281 111 empty argv env 4096 0)]
+    (kxrt-exit 127)))
+
+;; Output fixture only: no inherited host descriptors except a bounded stdout
+;; pipe, which is drained while wait4 and the monotonic deadline are polled.
+(defn- fw-output-child [exe :i64 writer :i64 buf :i64 spec :i64] :i64
+  (let [empty (+ buf 5064) argv (kxrt-syscall 222 0 73728 3 34 -1 0)
+        mapped (if (< argv 0) (kxrt-exit 127) 0)
+        env (fw-output-argv spec argv) d (kxrt-store64 empty 0)
+        stdout (if (or (= writer 1) (< (kxrt-syscall 24 writer 1 0 0 0 0) 0)) (kxrt-exit 127) 0)
+        dup (if (or (= exe 111) (< (kxrt-syscall 24 exe 111 524288 0 0 0) 0)) (kxrt-exit 127) 0)
+        lo (if (< (kxrt-syscall 436 3 110 0 0 0 0) 0) (kxrt-exit 127) 0)
+        hi (if (< (kxrt-syscall 436 112 4294967295 0 0 0 0) 0) (kxrt-exit 127) 0)
+        i (kxrt-close 0) e (kxrt-close 2)
+        exec (kxrt-syscall 281 111 empty argv env 4096 0)]
+    (kxrt-exit 127)))
+
+;; Packed return: exit code in high 32 bits and captured length in low 32.
+;; If already reaped, do not signal the numeric PID again on error.
+(defn- fw-output-fail [pid :i64 status :i64 done :bool] :i64
+  (if done -1 (fw-fixture-kill pid status)))
+(defn- fw-output-collect [pid :i64 fd :i64 buf :i64 out :i64] :i64
+  (let [status (+ buf 6000) clock (+ buf 6024) ts (+ buf 6048)
+        z (kxrt-store64 status 0) a (kxrt-store64 ts 0) b (kxrt-store64 (+ ts 8) 10000000)
+        start (fw-fixture-now clock)]
+    (if (< start 0) (fw-fixture-kill pid status)
+      (loop [used 0 done false eof false]
+        (let [n (if eof 0 (kxrt-syscall 63 fd (+ out used) (- 4097 used) 0 0 0))
+              invalid (and (< n 0) (not= n -4) (not= n -11))
+              size (+ used (if (> n 0) n 0))
+              ended (or eof (= n 0))
+              r (if done 0 (kxrt-syscall 260 pid status 1 0 0 0))
+              waited (or done (= r pid)) now (fw-fixture-now clock)
+              bad (or invalid (> size 4096) (and (< r 0) (not= r -4))
+                      (< now 0) (> (- now start) 5000000000))]
+          (cond bad (fw-output-fail pid status waited)
+                (and waited ended) (let [raw (bit-and (kxrt-load64 status) 65535)]
+                                     (if (or (not= (bit-and raw 127) 0) (not= (u64-shift-right raw 8) 7)) -1
+                                       (+ (i64-shift-left 7 32) size)))
+                :else (let [sleep (if (> n 0) 0 (kxrt-syscall 73 0 0 ts 0 0 0))]
+                        (recur size waited ended))))))))
+
+;; Protocol: X closes; M/F/U/R/P/V then two-byte big-endian path length,
+;; four-byte big-endian payload length and ASCII path. M creates a directory;
+;; F creates a new file; U replaces an existing file; R reads the requested
+;; exact number of bytes. F/U are followed by that many bytes. Each successful
+;; command writes K; R follows K with data. C and a two-byte big-endian count
+;; freeze mutations only if the count matches, then write D. One R and X remain
+;; available for diagnostics after C. P uses the payload-length field as a
+;; mode (0..0777), applies it to an existing file/directory, and starts a
+;; finalization phase. T may replace C after finalization and carries the
+;; operation count, four-byte process-spec length and bounded FPS1 bytes.
+;; Q reads back one staged spec; V reads a mode; I checks retained FDs.
+;; W probes whether a create on the held root fails specifically with EROFS.
+;; J probes whether remounting read-write is denied with EPERM.
+;; N checks namespace syscall refusals and ordinary clone/wait.
+;; G verifies the held root/cwd and probes that /proc/self/status is absent.
+;; E and O execute only fixed, digest-pinned diagnostic ELFs; neither is admission.
+;; A inspects the retained ELF inode but does not grant or launch execution.
+;; Initial modes are 0700/0600.
+;; Malformed requests and I/O errors terminate the whole worker, not just a
+;; command. The controller must discard the tree on all errors.
+(defn- fw-commands [root :i64 mem :i64 spec :i64] :i64
+  (let [head mem path (+ mem 1024) how (+ mem 2048) buf (+ mem 4096)]
+    (loop [operations 0 mode 0 committed false reads 0 finalizing false finals 0 specsize 0]
+      (let [got (if (= mode 0) (fw-read-one 0 head) (let [z (fw-read-wire mode head 1 (+ mem 8192))] 1))
+            op (if (= got 1) (kxrt-load8 head) -1)]
+        (cond (and (= operations 0) (= mode 0) (not committed) (= op 72)) (recur 0 1 false 0 false 0 0)
+              (= op 88) (kxrt-exit 0)
+              (= op 84) (if (or committed (not finalizing)) (fw-die 15)
+                (let [read (fw-read-wire mode head 6 (+ mem 8192)) count (fw-u16 head) size (fw-u32 (+ head 2))
+                      valid (if (or (not (= count operations)) (< size 10) (> size 67500)) (fw-die 19) 0)
+                      receive (fw-spec-read mode spec size (+ mem 8192))
+                      checked (if (fw-spec-ok? spec size) 0 (fw-die 20))
+                      targets (if (= (fw-spec-targets root spec path how buf (+ mem 512)) 0) 0 (fw-die 21))
+                      frozen (fw-freeze-tmpfs root buf)
+                      last (fw-cap-last buf)
+                      entered (fw-enter-root root (kxrt-load64 (+ mem 512)) buf)
+                      caps (fw-drop-caps buf last)
+                      filter (fw-namespace-filter buf)
+                      offline (fw-offline-filter buf)
+                      mark (kxrt-store8 head 68) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode true 0 finalizing finals size)))
+              (= op 69) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [shape (if (fw-fixture-spec? spec specsize) 0 (fw-die 26))
+                      exe (kxrt-load64 (+ mem 520))
+                      digest (if (fw-fixture-hash? root exe buf 0) 0 (fw-die 26))
+                      pid (kxrt-syscall 220 17 0 0 0 0 0)
+                      forked (cond (< pid 0) (fw-die 26) (= pid 0) (fw-fixture-exec-child exe buf) :else 0)
+                      status (fw-fixture-wait pid buf)
+                      checked (if (not= status 0) (fw-die 26) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 79) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [shape (if (fw-output-spec? spec specsize) 0 (fw-die 26))
+                      exe (kxrt-load64 (+ mem 520))
+                      preflight (if (fw-static-elf? root exe spec buf) 0 (fw-die 28))
+                      digest (if (fw-fixture-hash? root exe buf 1) 0 (fw-die 26))
+                      out (kxrt-syscall 222 0 8192 3 34 -1 0) allocated (if (< out 0) (fw-die 27) 0)
+                      pair (+ buf 6100) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 27) 0)
+                      both (kxrt-load64 pair) reader (bit-and both 4294967295) writer (u64-shift-right both 32)
+                      pid (kxrt-syscall 220 17 0 0 0 0 0)
+                      forked (cond (< pid 0) (fw-die 27) (= pid 0) (fw-output-child exe writer buf spec) :else 0)
+                      close-w (fw-close writer 27) result (fw-output-collect pid reader buf out)
+                      close-r (fw-close reader 27) valid (if (< result 0) (fw-die 27) 0)
+                      count (bit-and result 4294967295) exit (u64-shift-right result 32)
+                      a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) exit)
+                      c (kxrt-store8 (+ head 2) (bit-and (u64-shift-right count 24) 255))
+                      d (kxrt-store8 (+ head 3) (bit-and (u64-shift-right count 16) 255))
+                      e (kxrt-store8 (+ head 4) (bit-and (u64-shift-right count 8) 255))
+                      f (kxrt-store8 (+ head 5) (bit-and count 255))
+                      header (if (= (kxrt-write-all 1 head 6) 1) 0 (fw-die 18))
+                      payload (if (= (kxrt-write-all 1 out count) 1) 0 (fw-die 18))
+                      unmap (if (< (kxrt-syscall 215 out 8192 0 0 0 0) 0) (fw-die 27) 0)]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 65) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [exe (kxrt-load64 (+ mem 520))
+                      checked (if (fw-static-elf? root exe spec buf) 0 (fw-die 28))
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 81) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (bit-and (u64-shift-right specsize 24) 255))
+                      c (kxrt-store8 (+ head 2) (bit-and (u64-shift-right specsize 16) 255))
+                      d (kxrt-store8 (+ head 3) (bit-and (u64-shift-right specsize 8) 255)) e (kxrt-store8 (+ head 4) (bit-and specsize 255))
+                      sent (if (= (kxrt-write-all 1 head 5) 1) 0 (fw-die 18))
+                      payload (if (= (kxrt-write-all 1 spec specsize) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 73) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [cwd (kxrt-load64 (+ mem 512)) exe (kxrt-load64 (+ mem 520))
+                      a (kxrt-syscall 80 cwd buf 0 0 0 0) b (kxrt-syscall 80 exe (+ buf 256) 0 0 0 0)
+                      valid (if (or (< a 0) (< b 0)) (fw-die 21) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 71) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [dot (+ buf 768) slash (+ buf 776) proc (+ buf 800)
+                      a (kxrt-store64 dot 46) b (kxrt-store64 slash 47)
+                      rootcheck (fw-root-identity root slash buf)
+                      cwdcheck (fw-root-identity (kxrt-load64 (+ mem 512)) dot buf)
+                      path (kxrt-w proc (kxrt-w proc (kxrt-w proc 0 0x65732f636f72702f 8) 0x75746174732f666c 8) 0x73 2)
+                      fd (kxrt-open-path proc 524288 0)
+                      close (if (>= fd 0) (kxrt-close fd) 0)
+                      absent (if (not= fd -2) (fw-die 25) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 87) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [a (kxrt-w path (kxrt-w path (kxrt-w path 0 0x725f656e75665f5f 8) 0x5f65626f72705f6f 8) 0x5f 2)
+                      fd (fw-openat2 root path 655553 384 how)
+                      close (if (>= fd 0) (kxrt-close fd) 0)
+                      valid (if (not= fd -30) (fw-die 22) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 74) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [b (fw-strings) r (kxrt-syscall 40 0 (+ b 96) 0 38 0 0)
+                      denied (if (not= r -1) (fw-die 23) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 78) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
+                (let [unshare (kxrt-syscall 97 268435456 0 0 0 0 0)
+                      checked (if (not= unshare -1) (fw-die 24) 0)
+                      internet (kxrt-syscall 198 2 1 0 0 0 0)
+                      internet6 (kxrt-syscall 198 10 1 0 0 0 0)
+                      local (kxrt-syscall 198 1 1 0 0 0 0)
+                      pair (kxrt-syscall 199 1 1 0 buf 0 0)
+                      ring0 (kxrt-syscall 425 0 0 0 0 0 0)
+                      ring1 (kxrt-syscall 426 -1 0 0 0 0 0)
+                      ring2 (kxrt-syscall 427 -1 0 0 0 0 0)
+                      offline (if (or (not= internet -1) (not= internet6 -1) (not= local -1) (not= pair -1)
+                                      (not= ring0 -1) (not= ring1 -1) (not= ring2 -1)) (fw-die 24) 0)
+                      setns (kxrt-syscall 268 -1 0 0 0 0 0)
+                      c3 (kxrt-syscall 435 0 0 0 0 0 0)
+                      blocked (if (or (not= setns -1) (not= c3 -38)) (fw-die 24) 0)
+                      clones (loop [i 0]
+                               (if (= i 7) 0
+                                 (let [flag (case i 0 131072 1 33554432 2 67108864 3 134217728
+                                                  4 268435456 5 536870912 1073741824)
+                                       n (kxrt-syscall 220 (+ flag 17) 0 0 0 0 0)
+                                       exit (if (= n 0) (kxrt-syscall 93 0 0 0 0 0 0) 0)
+                                       cleanup (if (> n 0) (kxrt-syscall 260 n buf 0 0 0 0) 0)]
+                                   (if (not= n -1) (fw-die 24) (recur (+ i 1))))))
+                      child (kxrt-syscall 220 17 0 0 0 0 0)
+                      cexit (if (= child 0)
+                              (let [probe (kxrt-syscall 198 2 1 0 0 0 0)]
+                                (kxrt-syscall 93 (if (= probe -1) 0 61) 0 0 0 0 0)) 0)
+                      valid (if (< child 0) (fw-die 24) 0)
+                      wait (loop [i 0] (let [r (kxrt-syscall 260 child buf 0 0 0 0)] (if (= r -4) (recur (+ i 1)) r)))
+                      reaped (if (or (not= wait child) (not= (bit-and (kxrt-load64 buf) 65535) 0)) (fw-die 24) 0)
+                      k (kxrt-store8 head 75) sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode committed (+ reads 1) finalizing finals specsize)))
+              (= op 67) (if committed (fw-die 15)
+                (let [read (fw-read-wire mode head 2 (+ mem 8192))
+                      count (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
+                      valid (if (not (= count operations)) (fw-die 19) 0)
+                      mark (kxrt-store8 head 68)
+                      sent (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))]
+                  (recur operations mode true 0 finalizing finals 0)))
+              (or (< got 1) (and (>= operations 640) (not (and committed (or (= op 82) (= op 86)))))
+                  (and (>= operations 512) (not committed) (not (= op 80)))
+                  (and (= op 80) (>= finals 128))
+                  (and committed (not (or (= op 82) (= op 86))))
+                  (and committed (>= reads 1))
+                  (and finalizing (not committed) (not (= op 80)))
+                  (and (= op 86) (not committed))
+                  (not (or (= op 77) (= op 70) (= op 85) (= op 82) (= op 80) (= op 86)))) (fw-die 15)
+              :else (let [header (fw-read-wire mode head 6 (+ mem 8192))
+                          n (+ (* 256 (kxrt-load8 head)) (kxrt-load8 (+ head 1)))
+                          size (+ (* 16777216 (kxrt-load8 (+ head 2))) (* 65536 (kxrt-load8 (+ head 3)))
+                                  (* 256 (kxrt-load8 (+ head 4))) (kxrt-load8 (+ head 5)))
+                          checked (if (or (<= n 0) (> n 255) (> size 1048576) (and (= op 77) (not (= size 0)))
+                                          (and (= op 80) (> size 511)) (and (= op 86) (not (= size 0)))) (fw-die 16) 0)
+                          received (fw-read-wire mode path n (+ mem 8192)) term (kxrt-store8 (+ path n) 0)
+                          valid (if (fw-path-ok? path n) 0 (fw-die 16))
+                          slash (fw-last-slash path n)
+                          cut (if (>= slash 0) (kxrt-store8 (+ path slash) 0) 0)
+                          parent (if (>= slash 0) (fw-openat2 root path 2670592 0 how) root)
+                          parent-ok (if (< parent 0) (fw-die 17) 0)
+                          leaf (if (>= slash 0) (+ path (+ slash 1)) path)
+                          status (if (= op 77)
+                                   (if (< (kxrt-syscall 34 parent leaf 448 0 0 0) 0) (fw-die 17) 0)
+                                   (let [flags (cond (= op 70) 557249 (= op 85) 557057 :else 557056)
+                                         fd (fw-openat2 parent leaf flags (if (= op 70) 384 0) how)
+                                         opened (if (< fd 0) (fw-die 17) 0)
+                                         trunc (if (and (= op 85) (< (kxrt-syscall 46 fd 0 0 0 0 0) 0)) (fw-die 17) 0)
+                                         chmod (if (and (= op 80) (< (kxrt-syscall 52 fd size 0 0 0 0) 0)) (fw-die 17) 0)
+                                         stat (if (= op 86) (if (< (kxrt-syscall 80 fd buf 0 0 0 0) 0) (fw-die 17) 0) 0)
+                                         ack (if (= op 82) (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))) 0)
+                                         transfer (if (or (= op 80) (= op 86)) 0 (fw-file-data fd buf size (not (= op 82)) mode (+ mem 8192)))
+                                         stat-reply (if (= op 86) (let [bits (bit-and (kxrt-load64 (+ buf 16)) 511)
+                                                                       a (kxrt-store8 head 75) b (kxrt-store8 (+ head 1) (u64-shift-right bits 8))
+                                                                       c (kxrt-store8 (+ head 2) (bit-and bits 255))]
+                                                                   (if (= (kxrt-write-all 1 head 3) 1) 0 (fw-die 18))) 0)
+                                         close (fw-close fd 18)] 0))
+                          parent-close (if (>= slash 0) (fw-close parent 18) 0)
+                          reply (if (or (= op 82) (= op 86)) 0 (let [k (kxrt-store8 head 75)] (if (= (kxrt-write-all 1 head 1) 1) 0 (fw-die 18))))]
+                      (recur (if committed operations (+ operations 1)) mode committed (if committed (+ reads 1) reads)
+                             (or finalizing (= op 80)) (if (= op 80) (+ finals 1) finals) specsize)))))))
+
+;; The child has no host directory descriptors, never executes an image and
+;; dies if its parent disappears. It cannot proceed until the original-UID
+;; parent has installed both maps.
+(defn- fw-private-root [b :i64] :i64
+  (let [ns (if (< (kxrt-syscall 97 1073872896 0 0 0 0 0) 0) (fw-die 9) 0)
+        private (if (< (kxrt-syscall 40 0 (+ b 96) 0 278528 0 0) 0) (fw-die 10) 0)
+        mount (if (< (kxrt-syscall 40 (+ b 128) (+ b 112) (+ b 128) 6 (+ b 144) 0) 0) (fw-die 11) 0)
+        dir (if (< (kxrt-syscall 34 -100 (+ b 192) 448 0 0 0) 0) (fw-die 12) 0)
+        nnp (if (< (kxrt-syscall 167 38 1 0 0 0 0) 0) (fw-die 13) 0)
+        out (+ b 256)
+        a (kxrt-w out (kxrt-w out (kxrt-w out 0 0x6972702d656e7566 8) 0x6f6f722d65746176 8) 0x0a79646165722d74 8)
+        announced (if (not= (kxrt-write-all 1 out a) 1) (fw-die 14) 0)
+        root (kxrt-open-path (+ b 192) 2670592 0)
+        root-ok (if (< root 0) (fw-die 14) 0)
+        mem (kxrt-syscall 222 0 16384 3 34 -1 0)
+        mem-ok (if (< mem 0) (fw-die 14) 0)
+        spec (kxrt-syscall 222 0 67500 3 34 -1 0) spec-ok (if (< spec 0) (fw-die 14) 0)]
+    (fw-commands root mem spec)))
+
+
+;; The namespace init is a child of the mapping process. Its parent is outside
+;; the PID namespace, so getppid cannot detect the parent-death race. A
+;; nonblocking pipe closes that race after setting PR_SET_PDEATHSIG.
+(defn- fw-pid-enter [b :i64] :i64
+  (let [ns (if (< (kxrt-syscall 97 536870912 0 0 0 0 0) 0) (fw-die 9) 0)
+        pair (+ b 400) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 9) 0)
+        value (kxrt-load64 pair) reader (bit-and value 4294967295) writer (u64-shift-right value 32)
+        pid (kxrt-syscall 220 17 0 0 0 0 0)]
+    (cond (< pid 0) (fw-die 9)
+          (= pid 0) (let [cw (fw-close writer 9)
+                          death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 9) 0)
+                          live (kxrt-syscall 63 reader (+ b 416) 1 0 0 0)
+                          checked (if (or (not= live -11) (not= (kxrt-syscall 172 0 0 0 0 0 0) 1)) (fw-die 9) 0)
+                          cr (fw-close reader 9)]
+                      (fw-private-root b))
+          :else (let [cr (fw-close reader 9) st (+ b 424)
+                      waited (loop [attempt 0] (let [r (kxrt-syscall 260 pid st 0 0 0 0)] (if (= r -4) (recur (+ attempt 1)) r)))
+                      status (kxrt-load64 st) cw (fw-close writer 9)]
+                  (if (or (not= waited pid) (not= (bit-and status 127) 0)) (kxrt-exit 2)
+                    (kxrt-exit (bit-and (u64-shift-right status 8) 255)))))))
+
+(defn- fw-child [parent :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 b :i64] :i64
+  (let [death (if (< (kxrt-syscall 167 1 9 0 0 0 0) 0) (fw-die 4) 0)
+        alive (if (not= (kxrt-syscall 173 0 0 0 0 0 0) parent) (fw-die 4) 0)
+        c1 (fw-close ready-r 4) c2 (fw-close ack-w 4)
+        user (if (< (kxrt-syscall 97 268435456 0 0 0 0 0) 0) (fw-die 4) 0)
+        buf (+ b 320) marker (kxrt-store8 buf 85)
+        sent (if (not= (kxrt-write-all ready-w buf 1) 1) (fw-die 4) 0)
+        c3 (fw-close ready-w 4) got (fw-read-one ack-r buf) c4 (fw-close ack-r 4)
+        mapped (if (or (not= got 1) (not= (kxrt-load8 buf) 77)) (fw-die 8) 0)
+        nodump2 (if (< (kxrt-syscall 167 4 0 0 0 0 0) 0) (fw-die 8) 0)]
+    (fw-pid-enter b)))
+
+
+(defn- fw-parent [pid :i64 ready-r :i64 ready-w :i64 ack-r :i64 ack-w :i64 uid :i64 gid :i64 b :i64] :i64
+  (let [c1 (fw-close ready-w 5) c2 (fw-close ack-r 5) buf (+ b 320)
+        got (fw-read-one ready-r buf) c3 (fw-close ready-r 5)
+        ready (if (or (not= got 1) (not= (kxrt-load8 buf) 85)) (fw-die 5) 0)
+        umap (fw-map (fw-proc-path pid 0) uid 5)
+        groups (fw-write-path (fw-proc-path pid 2) (+ b 224) 5 6)
+        gmap (fw-map (fw-proc-path pid 1) gid 7)
+        marker (kxrt-store8 buf 77) sent (if (not= (kxrt-write-all ack-w buf 1) 1) (fw-die 8) 0)
+        c4 (fw-close ack-w 8) st (+ b 352)
+        waited (loop [attempt 0] (let [r (kxrt-syscall 260 pid st 0 0 0 0)] (if (= r -4) (recur (+ attempt 1)) r)))
+        status (kxrt-load64 st)]
+    (if (or (not= waited pid) (not= (bit-and status 127) 0)) (kxrt-exit 2)
+      (kxrt-exit (bit-and (u64-shift-right status 8) 255)))))
+
+(defn- kxrt-start [sp :i64] :i64
+  (let [argc (kxrt-load64 sp) b (fw-strings)
+        uid (kxrt-syscall 175 0 0 0 0 0 0) gid (kxrt-syscall 177 0 0 0 0 0 0)
+        valid (if (or (not= argc 1) (<= uid 0) (< gid 0)
+                      (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                      (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (fw-die 1) 0)
+        dumpable (if (< (kxrt-syscall 167 4 1 0 0 0 0) 0) (fw-die 2) 0)
+        close-extra (if (< (kxrt-syscall 436 3 4294967295 0 0 0 0) 0) (fw-die 3) 0)
+        pipes (+ b 384) a (kxrt-syscall 59 pipes 524288 0 0 0 0)
+        z (kxrt-syscall 59 (+ pipes 8) 524288 0 0 0 0)
+        pipes-ok (if (or (< a 0) (< z 0)) (fw-die 3) 0)
+        pair1 (kxrt-load64 pipes) pair2 (kxrt-load64 (+ pipes 8))
+        ready-r (bit-and pair1 4294967295) ready-w (u64-shift-right pair1 32)
+        ack-r (bit-and pair2 4294967295) ack-w (u64-shift-right pair2 32)
+        parent (kxrt-syscall 172 0 0 0 0 0 0) child (kxrt-syscall 220 17 0 0 0 0 0)]
+    (cond (< child 0) (fw-die 3) (= child 0) (fw-child parent ready-r ready-w ack-r ack-w b)
+          :else (fw-parent child ready-r ready-w ack-r ack-w uid gid b))))

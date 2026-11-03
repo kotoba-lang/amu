@@ -1,0 +1,283 @@
+;; Closed-source diagnostic supervisor for a verifier and private-root worker.
+;; The caller authenticates both executables and passes immutable sealed memfds.
+;; This does not publish a rootfs, admit OCI itself, or launch a workload.
+
+(defn- sb-fail [stage :i64] :i64
+  (let [b (+ (kxrt-g) 24000) a (kxrt-w b 0 0x7075732d656e7566 8)
+        d (kxrt-w b a 0x2d726f7369767265 8)
+        c (kxrt-w b d 0x3a64657375666572 8) n (+ c (kxrt-dec (+ b c) stage))
+        z (kxrt-store8 (+ b n) 10) w (kxrt-write-all 2 b (+ n 1))]
+    (kxrt-exit 2)))
+(defn- sb-num [p :i64 limit :i64] :i64
+  (let [n (kxrt-cstrlen p)]
+    (if (or (= n 0) (> n 10)) -1
+      (loop [i 0 out 0]
+        (if (= i n) out
+          (let [c (kxrt-load8 (+ p i))]
+            (if (or (< c 48) (> c 57) (> out (quot (- limit (- c 48)) 10))) -1
+              (recur (+ i 1) (+ (* out 10) (- c 48))))))))))
+(defn- sb-root? [p :i64] :bool
+  (let [n (kxrt-cstrlen p)]
+    (if (or (< n 2) (> n 3000) (not (= (kxrt-load8 p) 47))) false
+      (loop [i 1 start 1]
+        (if (or (= i n) (= (kxrt-load8 (+ p i)) 47))
+          (let [l (- i start)]
+            (cond (= l 0) false
+                  (and (= l 1) (= (kxrt-load8 (+ p start)) 46)) false
+                  (and (= l 2) (= (kxrt-load8 (+ p start)) 46) (= (kxrt-load8 (+ p start 1)) 46)) false
+                  (= i n) true :else (recur (+ i 1) (+ i 1))))
+          (let [c (kxrt-load8 (+ p i))]
+            (if (or (< c 32) (> c 126) (= c 58)) false (recur (+ i 1) start))))))))
+(defn- sb-digest? [p :i64] :bool
+  (and (= (kxrt-cstrlen p) 71)
+       (= (kxrt-load8 p) 115) (= (kxrt-load8 (+ p 1)) 104) (= (kxrt-load8 (+ p 2)) 97)
+       (= (kxrt-load8 (+ p 3)) 50) (= (kxrt-load8 (+ p 4)) 53) (= (kxrt-load8 (+ p 5)) 54)
+       (= (kxrt-load8 (+ p 6)) 58)
+       (loop [i 7] (if (= i 71) true
+         (let [c (kxrt-load8 (+ p i))]
+           (if (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102))) (recur (+ i 1)) false))))))
+(defn- sb-sealed? [fd :i64] :bool
+  (let [s (kxrt-syscall 25 fd 1034 0 0 0 0)] (and (>= s 0) (= (bit-and s 15) 15))))
+(defn- sb-now [m :i64] :i64
+  (let [t (+ m 6024) r (kxrt-syscall 113 1 t 0 0 0 0)]
+    (if (< r 0) -1 (+ (* (kxrt-load64 t) 1000000000) (kxrt-load64 (+ t 8))))))
+(defn- sb-kill-reap [pid :i64 status :i64] :i64
+  (let [k (kxrt-syscall 129 pid 9 0 0 0 0)
+        w (loop [j 0] (let [x (kxrt-syscall 260 pid status 0 0 0 0)] (if (= x -4) (recur (+ j 1)) x)))] -1))
+;; Wait at most 30s. A timeout kills and reaps the direct child, returning -1.
+(defn- sb-wait [pid :i64 m :i64] :i64
+  (let [status (+ m 6000) start (sb-now m) ts (+ m 6048)
+        a (kxrt-store64 ts 0) b (kxrt-store64 (+ ts 8) 10000000)]
+    (if (< start 0) (sb-kill-reap pid status)
+      (loop [i 0]
+        (let [r (kxrt-syscall 260 pid status 1 0 0 0) now (sb-now m)]
+          (cond (= r pid) (bit-and (kxrt-load64 status) 4294967295)
+                (= r -4) (recur (+ i 1))
+                (or (< r 0) (< now 0)) (sb-kill-reap pid status)
+                (> (- now start) 30000000000) (sb-kill-reap pid status)
+                :else (let [z (kxrt-syscall 73 0 0 ts 0 0 0)] (recur (+ i 1)))))))))
+;; Validate a caller-owned, empty cgroup and enter it before worker exec.
+;; The caller remains responsible for cgroup creation, exclusive ownership,
+;; cleanup and keeping the declared limits stable after this check.
+(defn- sb-cg-open [root :i64 path :i64 flags :i64 how :i64] :i64
+  (let [a (kxrt-store64 how flags) b (kxrt-store64 (+ how 8) 0) c (kxrt-store64 (+ how 16) 14)]
+    (kxrt-syscall 437 root path how 24 0 0)))
+(defn- sb-cg-read [root :i64 path :i64 buf :i64 how :i64] :i64
+  (let [fd (sb-cg-open root path 524288 how) ok (if (< fd 0) (sb-fail 5) 0)
+        n (kxrt-syscall 63 fd buf 127 0 0 0) close (kxrt-close fd)]
+    (if (or (< n 0) (not= close 0)) (sb-fail 5) n)))
+(defn- sb-cg-match [root :i64 path :i64 expected :i64 size :i64 buf :i64 how :i64] :i64
+  (let [n (sb-cg-read root path buf how)
+        valid (if (or (not= n (+ size 1)) (not= (kxrt-load8 (+ buf size)) 10)) (sb-fail 5) 0)]
+    (loop [i 0] (if (= i size) 0
+      (if (not= (kxrt-load8 (+ expected i)) (kxrt-load8 (+ buf i))) (sb-fail 5)
+        (recur (+ i 1)))))))
+(defn- sb-cg-join [root :i64 memory :i64 pids :i64 cpu :i64 m :i64] :i64
+  (let [stat (+ m 512) how (+ m 1024) value (+ m 1200) buf (+ m 1400)
+        uid (kxrt-syscall 175 0 0 0 0 0 0) gid (kxrt-syscall 177 0 0 0 0 0 0)
+        identity (if (or (<= uid 0) (< gid 0) (not= uid (kxrt-syscall 174 0 0 0 0 0 0))
+                         (not= gid (kxrt-syscall 176 0 0 0 0 0 0))) (sb-fail 5) 0)
+        fs (kxrt-syscall 44 root stat 0 0 0 0)
+        fsok (if (or (< fs 0) (not= (kxrt-load64 stat) 1667723888)) (sb-fail 5) 0)
+        st (kxrt-syscall 80 root stat 0 0 0 0)
+        mode (bit-and (kxrt-load64 (+ stat 16)) 61440) owner (bit-and (kxrt-load64 (+ stat 24)) 4294967295)
+        stok (if (or (< st 0) (not= mode 16384) (not= owner uid)) (sb-fail 5) 0)
+        n0 (kxrt-w m (kxrt-w m 0 0x6d2e79726f6d656d 8) 0x7861 3)
+        n1 (kxrt-w m (kxrt-w m 32 0x78616d2e73646970 8) 0 1)
+        n2 (kxrt-w m 64 0x78616d2e757063 8)
+        n3 (kxrt-w m (kxrt-w m 96 0x652e70756f726763 8) 0x73746e6576 6)
+        n4 (kxrt-w m (kxrt-w m 128 0x702e70756f726763 8) 0x73636f72 5)
+        events (sb-cg-read root (+ m 96) buf how)
+        empty (if (or (< events 12) (not= (kxrt-load64 buf) 0x6574616c75706f70)
+                      (not= (kxrt-load8 (+ buf 8)) 100) (not= (kxrt-load8 (+ buf 9)) 32)
+                      (not= (kxrt-load8 (+ buf 10)) 48) (not= (kxrt-load8 (+ buf 11)) 10)) (sb-fail 5) 0)
+        mn (kxrt-dec value memory) mv (sb-cg-match root m value mn buf how)
+        pn (kxrt-dec value pids) pv (sb-cg-match root (+ m 32) value pn buf how)
+        cn (kxrt-dec value cpu) rest (kxrt-w value cn 0x30303030303120 7)
+        cv (sb-cg-match root (+ m 64) value rest buf how)
+        fd (sb-cg-open root (+ m 128) 524289 how) fdok (if (< fd 0) (sb-fail 5) 0)
+        zero (kxrt-store8 value 48) wrote (kxrt-syscall 64 fd value 1 0 0 0) close (kxrt-close fd)
+        moved (if (or (not= wrote 1) (not= close 0)) (sb-fail 5) 0)
+        pid (kxrt-syscall 172 0 0 0 0 0 0) pn2 (kxrt-dec value pid)
+        verify (sb-cg-match root (+ m 128) value pn2 buf how)] 0))
+
+(defn- sb-child [parent :i64 exe :i64 input :i64 output :i64 argv :i64 envp :i64 empty :i64 cg :i64 memory :i64 pids :i64 cpu :i64 scratch :i64] :i64
+  (let [p (kxrt-syscall 167 1 9 0 0 0 0)
+        alive (if (or (< p 0) (not= (kxrt-syscall 173 0 0 0 0 0 0) parent)) (kxrt-exit 127) 0)
+        group (if (>= cg 0) (sb-cg-join cg memory pids cpu scratch) 0)
+        a (if (and (>= input 0) (< (kxrt-syscall 24 input 0 0 0 0 0) 0)) (kxrt-exit 127) 0)
+        b (if (< (kxrt-syscall 24 output 1 0 0 0 0) 0) (kxrt-exit 127) 0)
+        c (if (< (kxrt-syscall 436 3 4294967295 4 0 0 0) 0) (kxrt-exit 127) 0)
+        d (if (< (kxrt-syscall 167 38 1 0 0 0 0) 0) (kxrt-exit 127) 0)
+        e (kxrt-syscall 281 exe empty argv envp 4096 0)]
+    (kxrt-exit 127)))
+(defn- sb-sha-init [c :i64] :i64
+  (let [z (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store64 (+ c (* 8 i)) (kxrt-sha-h0 i))] (recur (inc i)))))
+        a (kxrt-store64 (+ c 640) 0)]
+    (kxrt-store64 (+ c 648) 0)))
+(defn- sb-sha-update [c :i64 a :i64 n :i64] :i64
+  (let [t (kxrt-store64 (+ c 648) (+ (kxrt-load64 (+ c 648)) n))]
+    (loop [i 0]
+      (if (>= i n) 0
+        (let [cl (kxrt-load64 (+ c 640))]
+          (if (and (= cl 0) (>= (- n i) 64))
+            (let [z (kxrt-sha-block c (+ c 64) (+ a i))] (recur (+ i 64)))
+            (let [k (if (< (- 64 cl) (- n i)) (- 64 cl) (- n i))
+                  z (kxrt-copy (+ c 576 cl) (+ a i) k)
+                  y (if (= (+ cl k) 64)
+                      (let [x (kxrt-sha-block c (+ c 64) (+ c 576))] (kxrt-store64 (+ c 640) 0))
+                      (kxrt-store64 (+ c 640) (+ cl k)))]
+              (recur (+ i k)))))))))
+;; 64 lowercase hex digits and a NUL at hex
+(defn- sb-sha-final [c :i64 hex :i64] :i64
+  (let [cl (kxrt-load64 (+ c 640)) n (kxrt-load64 (+ c 648)) tail (+ c 656)
+        a (kxrt-copy tail (+ c 576) cl)
+        p (kxrt-store8 (+ tail cl) 128)
+        padded (if (<= (inc cl) 56) 64 128)
+        zz (loop [i (inc cl)] (if (>= i padded) 0 (let [y (kxrt-store8 (+ tail i) 0)] (recur (inc i)))))
+        bits (* n 8)
+        lb (loop [i 0] (if (= i 8) 0 (let [y (kxrt-store8 (+ tail (- padded 1 i)) (bit-and (u64-shift-right bits (* 8 i)) 255))] (recur (inc i)))))
+        b1 (kxrt-sha-block c (+ c 64) tail)
+        b2 (if (= padded 128) (kxrt-sha-block c (+ c 64) (+ tail 64)) 0)]
+    (loop [i 0]
+      (if (= i 32) (kxrt-store8 (+ hex 64) 0)
+        (let [word (kxrt-load64 (+ c (* 8 (quot i 4)))) byte (bit-and (u64-shift-right word (* 8 (- 3 (- i (* 4 (quot i 4)))))) 255)
+              hi (u64-shift-right byte 4) lo (bit-and byte 15)
+              y1 (kxrt-store8 (+ hex (* 2 i)) (if (< hi 10) (+ 48 hi) (+ 87 hi)))
+              y2 (kxrt-store8 (+ hex (inc (* 2 i))) (if (< lo 10) (+ 48 lo) (+ 87 lo)))]
+          (recur (inc i)))))))
+
+;; Compare the sealed image with the caller's explicit expected SHA-256.
+;; pread uses explicit offsets so a shared file offset cannot affect the hash.
+;; The caller must obtain the expected digest from an authenticated source.
+(defn- sb-image-ok? [fd :i64 expected :i64 m :i64] :bool
+  (let [ctx (+ m 6528) hex (+ m 7456) buf (+ m 12000) init (sb-sha-init ctx)
+        count (loop [off 0]
+          (let [r (kxrt-syscall 67 fd buf 4096 off 0 0)]
+            (cond (= r -4) (recur off) (< r 0) -1 (= r 0) off
+                  (> (+ off r) 16777216) -1
+                  :else (let [z (sb-sha-update ctx buf r)] (recur (+ off r))))))]
+    (if (<= count 0) false
+      (let [finish (sb-sha-final ctx hex)]
+        (loop [i 0]
+          (if (= i 64) true
+            (if (= (kxrt-load8 (+ hex i)) (kxrt-load8 (+ expected (+ i 7))))
+              (recur (+ i 1)) false)))))))
+
+;; The worker emits D only after validating the producer's terminal command
+;; count. Verify readiness, zero to 640 K bytes, then exactly one D.
+;; Read after worker exit, so no live child blocks.
+(defn- sb-acks? [fd :i64 m :i64] :bool
+  (let [b (+ m 5000) max 665
+        n (loop [at 0]
+            (if (> at max) -1
+              (let [r (kxrt-syscall 63 fd (+ b at) (- (+ max 1) at) 0 0 0)]
+                (cond (= r -4) (recur at) (< r 0) -1 (= r 0) at :else (recur (+ at r))))))
+        prefix (and (>= n 25) (<= n max)
+          (= (kxrt-load64 b) 0x6972702d656e7566)
+          (= (kxrt-load64 (+ b 8)) 0x6f6f722d65746176)
+          (= (kxrt-load64 (+ b 16)) 0x0a79646165722d74)
+          (= (kxrt-load8 (+ b (- n 1))) 68))]
+    (and prefix (loop [i 24] (if (= i (- n 1)) true (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
+
+;; Fixed O diagnostic response only. The expected stdout/status frame is
+;; small enough that readiness, 640 acks and the frame fit within PIPE_BUF.
+;; No bytes are released to the caller until producer and worker both exit.
+(defn- sb-output-acks? [fd :i64 m :i64] :bool
+  (let [b (+ m 5000) max 682 expected (+ m 4700)
+        a (kxrt-store8 expected 75) c (kxrt-store8 (+ expected 1) 7)
+        d (kxrt-store8 (+ expected 2) 0) e (kxrt-store8 (+ expected 3) 0)
+        f (kxrt-store8 (+ expected 4) 0) g (kxrt-store8 (+ expected 5) 11)
+        h (kxrt-w expected 6 0x6f6d732d656e7566 8)
+        j (kxrt-w expected 14 0x0a656b 3)
+        n (loop [at 0]
+            (if (> at max) -1
+              (let [r (kxrt-syscall 63 fd (+ b at) (- (+ max 1) at) 0 0 0)]
+                (cond (= r -4) (recur at) (< r 0) -1 (= r 0) at :else (recur (+ at r))))))
+        prefix (and (>= n 42) (<= n max)
+                    (= (kxrt-load64 b) 0x6972702d656e7566)
+                    (= (kxrt-load64 (+ b 8)) 0x6f6f722d65746176)
+                    (= (kxrt-load64 (+ b 16)) 0x0a79646165722d74)
+                    (= (kxrt-load8 (+ b (- n 18))) 68)
+                    (kxrt-same (+ b (- n 17)) expected 17))]
+    (and prefix (loop [i 24] (if (= i (- n 18)) true
+                   (if (= (kxrt-load8 (+ b i)) 75) (recur (+ i 1)) false))))))
+
+(defn- sb-output-mode? [p :i64] :bool
+  (and (= (kxrt-load8 p) 79) (= (kxrt-load8 (+ p 1)) 0)))
+
+;; argc: worker fd, worker digest, producer fd, producer digest, layout root,
+;; manifest digest. Both inputs must be sealed. The caller
+;; must obtain image digests from an authenticated source.
+(defn- kxrt-start [sp :i64] :i64
+  (let [argc (kxrt-load64 sp) valid (if (not (or (= argc 7) (= argc 11) (= argc 12))) (sb-fail 1) 0)
+        output (= argc 12) grouped (or (= argc 11) output)
+        mode-ok (if (and output (not (sb-output-mode? (kxrt-load64 (+ sp 96))))) (sb-fail 1) 0)
+        cg (if grouped (sb-num (kxrt-load64 (+ sp 64)) 1023) -1)
+        memory (if grouped (sb-num (kxrt-load64 (+ sp 72)) 4294967295) 0)
+        pids (if grouped (sb-num (kxrt-load64 (+ sp 80)) 4096) 0)
+        cpu (if grouped (sb-num (kxrt-load64 (+ sp 88)) 1000000) 0)
+        worker (sb-num (kxrt-load64 (+ sp 16)) 1023) worker-digest (kxrt-load64 (+ sp 24))
+        producer (sb-num (kxrt-load64 (+ sp 32)) 1023) producer-digest (kxrt-load64 (+ sp 40))
+        root (kxrt-load64 (+ sp 48)) digest (kxrt-load64 (+ sp 56))
+        input-ok (if (or (< worker 3) (< producer 3) (= worker producer)
+                         (not (sb-sealed? worker)) (not (sb-sealed? producer)) (not (sb-root? root))
+                         (not (sb-digest? digest)) (not (sb-digest? worker-digest)) (not (sb-digest? producer-digest))
+                         (and grouped (or (< cg 3) (= cg worker) (= cg producer) (< memory 1048576)
+                                          (< pids 1) (< cpu 1000)))) (sb-fail 1) 0)
+        m (kxrt-syscall 222 0 16384 3 34 -1 0) mapped (if (< m 0) (sb-fail 2) 0)
+        image-ok (if (and (sb-image-ok? worker worker-digest m) (sb-image-ok? producer producer-digest m)) 0 (sb-fail 1))
+        q4096_0 (kxrt-w m 4096 0x4c4c415f4558454b 8)
+        q4096_8 (kxrt-w m 4104 0x37332c35333d574f 8)
+        q4096_16 (kxrt-w m 4112 0x39332c38332c 7)
+        q4160_0 (kxrt-w m 4160 0x4d4f435f4558454b 8)
+        q4160_8 (kxrt-w m 4168 0x313d444e414d 7)
+        q4224_0 (kxrt-w m 4224 0x4555465f4558454b 8)
+        q4224_8 (kxrt-w m 4232 0x3030303030313d4c 8)
+        q4224_16 (kxrt-w m 4240 0x303030303030 7)
+        q4288_0 (kxrt-w m 4288 0x4154535f4558454b 8)
+        q4288_8 (kxrt-w m 4296 0x53455459425f4b43 8)
+        q4288_16 (kxrt-w m 4304 0x383036383833383d 8)
+        q4288_24 (kxrt-w m 4312 0x0 1)
+        q8192_0 (kxrt-w m 8192 0x5041435f4558454b 8)
+        q8192_8 (kxrt-w m 8200 0x4352554f5345525f 8)
+        q8192_16 (kxrt-w m 8208 0x3d35335f5345 7)
+        q4448_0 (kxrt-w m 4448 0x72656b726f77 7)
+        q4480_0 (kxrt-w m 4480 0x7265696669726576 8)
+        q4480_8 (kxrt-w m 4488 0x0 1)
+        q4512_0 (kxrt-w m 4512 0x7075732d656e7566 8)
+        q4512_8 (kxrt-w m 4520 0x2d726f7369767265 8)
+        q4512_16 (kxrt-w m 4528 0xa6b6f 4)
+        grlen (kxrt-cstrlen root) cp (kxrt-copy (+ m 8214) root grlen) z (kxrt-store8 (+ m 8214 grlen) 0)
+        av0 (kxrt-store64 m (+ m 4480)) av1 (kxrt-store64 (+ m 8) root) av2 (kxrt-store64 (+ m 16) digest) av3 (kxrt-store64 (+ m 24) 0)
+        wa0 (kxrt-store64 (+ m 64) (+ m 4448)) wa1 (kxrt-store64 (+ m 72) 0)
+        ev0 (kxrt-store64 (+ m 128) (+ m 4096)) ev1 (kxrt-store64 (+ m 136) (+ m 4160))
+        ev2 (kxrt-store64 (+ m 144) (+ m 4224)) ev3 (kxrt-store64 (+ m 152) (+ m 4288))
+        ev4 (kxrt-store64 (+ m 160) (+ m 8192)) ev5 (kxrt-store64 (+ m 168) 0)
+        empty (kxrt-store64 (+ m 192) 0)
+        sig (+ m 6080) s0 (kxrt-store64 sig 1) s1 (kxrt-store64 (+ sig 8) 0) s2 (kxrt-store64 (+ sig 16) 0) s3 (kxrt-store64 (+ sig 24) 0)
+        si (if (< (kxrt-syscall 134 13 sig 0 8 0 0) 0) (sb-fail 2) 0)
+        pipes (+ m 6200) a (kxrt-syscall 59 pipes 524288 0 0 0 0) b (kxrt-syscall 59 (+ pipes 8) 524288 0 0 0 0)
+        pipes-ok (if (or (< a 0) (< b 0)) (sb-fail 2) 0)
+        pair1 (kxrt-load64 pipes) pair2 (kxrt-load64 (+ pipes 8))
+        in-r (bit-and pair1 4294967295) in-w (u64-shift-right pair1 32)
+        out-r (bit-and pair2 4294967295) out-w (u64-shift-right pair2 32)
+        self (kxrt-syscall 172 0 0 0 0 0 0) wpid (kxrt-syscall 220 17 0 0 0 0 0)]
+    (cond (= wpid 0) (sb-child self worker in-r out-w (+ m 64) (+ m 192) (+ m 4550) cg memory pids cpu (+ m 12000))
+          (< wpid 0) (sb-fail 3)
+          :else (let [gpid (kxrt-syscall 220 17 0 0 0 0 0)]
+            (cond (= gpid 0) (sb-child self producer -1 in-w m (+ m 128) (+ m 4550) -1 0 0 0 (+ m 12000))
+                  (< gpid 0) (let [x (kxrt-close in-w) y (kxrt-close in-r) z (kxrt-close out-w)
+                                   k (kxrt-syscall 129 wpid 9 0 0 0 0) q (sb-wait wpid m)] (sb-fail 3))
+                  :else (let [c1 (kxrt-close in-r) c2 (kxrt-close out-w) c3 (kxrt-close worker) c4 (kxrt-close producer)
+                              gs (sb-wait gpid m)
+                              command (if (= gs 0) (let [b (+ m 4600)
+                                                t (if output (kxrt-w b 0 0x38356634 4) (kxrt-w b 0 0x3835 2))]
+                                            (kxrt-write-all in-w b t)) 0)
+                              c5 (kxrt-close in-w) ws (sb-wait wpid m)
+                              acks (if (= ws 0) (if output (sb-output-acks? out-r m) (sb-acks? out-r m)) false)
+                              c6 (kxrt-close out-r)]
+                          (if (and (= gs 0) (= command 1) (= ws 0) acks)
+                            (let [sent (if output (kxrt-write-all 1 (+ m 4700) 17) (kxrt-write-all 1 (+ m 4512) 19))]
+                              (kxrt-exit (if (= sent 1) 0 2)))
+                            (sb-fail 4))))))))
