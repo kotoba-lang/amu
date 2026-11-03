@@ -155,6 +155,18 @@ def main(out):
     (out / "bad-abi.kotoba").write_text('(ns bad (:export [main]))\n(defn main [] :i64 (let [s (typed-cap-call :fs/app-data :string :string "anything")] 0))\n')
     images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
     run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
+    # String wire 35 must retain both scoped FS2 and the legacy lock grammar.
+    # Use the existing task-owned regular file under this process's cwd scope.
+    (out / "string-fs2-lock.kotoba").write_text(
+        '(ns string-fs2-lock (:export [main]))\n'
+        '(defn main [] :i64\n'
+        '  (let [d (typed-cap-call 35 :string :string "\\u0000FS2\\u0000D/regular\\u0000")\n'
+        '        l (typed-cap-call 35 :string :string "/regularFLOCK_SEP")\n'
+        '        u (typed-cap-call 35 :string :string "/regularUNLOCK_SEP")]\n'
+        '    (if (and (= d "\\u0000FS2\\u00001") (= l "1") (= u "1"))\n'
+        '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2_LOCK\\n")] 0) 1)))\n')
+    images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
+    run("string-fs2-lock", expected=b"PASS_STRING_FS2_LOCK\n")
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},

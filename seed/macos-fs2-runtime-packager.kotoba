@@ -1408,9 +1408,11 @@
     ;; Other capabilities retain the existing CLI/stdio dispatch.
     (mh-cmpi 1 35) (mh-b 0x54000000 116)
     (mh-cmpi 1 20) (mh-b 0x54000000 1) (mh-jump fallback)
-    ;; The private host service uses byte/vector FS requests; ordinary FS2
-    ;; strings and string-to-bytes go to the existing scoped dispatcher.
-    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000000 117)
+    ;; Validate string-to-string wire-35 framing before dispatch. Other
+    ;; string and bytes kinds retain the existing scoped dispatcher.
+    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000001 125)
+    (mh-cmpi 3 1) (mh-b 0x54000000 1) (mh-b 0x14000000 117)
+    (mh-label 125)
     (mh-cmpi 2 9) (mh-b 0x54000000 117) (mh-b 0x14000000 1)
     (mh-label 117) (mh-jump fallback)
     (mh-label 1)
@@ -1428,6 +1430,7 @@
     (mh-imm 8 8388608) (mh-ar 22 21 8 0)
     (mh-imm 8 16777216) (mh-ar 23 21 8 0)
     (mh-cmpi 28 20) (mh-b 0x54000000 8)
+    (mh-cmpi 2 1) (mh-b 0x54000000 8)
     (mh-cmpi 2 8) (mh-b 0x54000001 98)
     (mh-cmpi 3 8) (mh-b 0x54000001 98)
     ;; Validate the complete vector descriptor and every byte before use.
@@ -1465,6 +1468,12 @@
     (mh-lb 8 21 3) (mh-cmpi 8 50) (mh-b 0x54000001 123)
     (mh-lb 8 21 4) (mh-b (bit-or 0xb4000000 8) 122)
     (mh-label 123)
+    ;; Preserve absolute-path legacy lock requests; the scoped dispatcher
+    ;; still validates their grammar. An unframed string is an ABI error.
+    (mh-cmpi 28 35) (mh-b 0x54000001 124)
+    (mh-ldr 8 31 96) (mh-cmpi 8 1) (mh-b 0x54000001 124)
+    (mh-lb 8 21 0) (mh-cmpi 8 47) (mh-b 0x54000000 122) (mh-b 0x14000000 98)
+    (mh-label 124)
     (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
     (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
     (mh-lb 8 21 2) (mh-cmpi 8 77) (mh-b 0x54000001 90)
