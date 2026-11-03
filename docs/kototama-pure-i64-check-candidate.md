@@ -1,12 +1,13 @@
 # Pure-i64 frontend check candidate
 
-JUN-792 adds a candidate `check-kototama` command to the existing selfhost
-compiler. It validates canonical Kototama bytes against one of the two
-bounded pure-i64 frontend profiles without creating a native image:
+JUN-792 adds a candidate `check-kototama` command to the full selfhost
+compiler. The locally built Linux candidate validates canonical Kototama
+bytes against one of the two bounded pure-i64 frontend profiles without
+creating a native image:
 
 ```text
-amu check-kototama PROGRAM.cbor --profile kototama.pure-i64-aot/v1
-amu check-kototama PROGRAM.cbor --profile kototama.pure-i64-receipt/v2
+./candidate-compiler check-kototama PROGRAM.cbor --profile kototama.pure-i64-aot/v1
+./candidate-compiler check-kototama PROGRAM.cbor --profile kototama.pure-i64-receipt/v2
 ```
 
 The candidate requires an explicit profile and rejects extra arguments,
@@ -18,6 +19,8 @@ prints `{:ok true, :phase :pure-i64-frontend-check, :authority :none}`.
 Neither success nor a content digest grants authority, executes a program,
 proves an emitted target will work, or qualifies a host. This is not a
 general Kototama decoder or a full VM conformance declaration.
+The public macOS CLI has a separate command grammar and does not expose this
+command; the macOS CLI must not be inferred from the full compiler route.
 
 ## Candidate validation, 2026-11-03
 
@@ -39,8 +42,20 @@ from exact equality to a lower bound admitted an unknown top-level field; the
 new native gate failed on the mutated compiler. The mutated compiler SHA-256
 was `2572367993e76bcf371993db8378971cde1ef32d7f688270805ded83c71ba854`.
 
-These results apply to this locally built x86-64 candidate and fixed corpus.
-The checked-in public binary and native-product source/image pins are not
-updated by this change; their complete qualification, ARM validation,
-exact-head CI and release are still required. No runtime or production
-cutover is implied.
+On physical Linux ARM64, native F1, F2 and F3 were identical at SHA-256
+`292fce7c4c92250ea7d0ed4517d79a087a4cbe8f95dacff9a9d6f56b2141bcb4`.
+The new check gate passed 255 observations, the v1 gate passed 131 cases,
+and the v2 gate passed 275 cases with corrupted-observation and metering
+removal controls refused. The first-generation image used by the first two
+gates is byte-identical to F3 used by the v2 gate. A separately built compiler
+with the program field-count guard weakened failed the check gate.
+
+The Mac native source and compiler reached fixed points; the repository's
+two-phase writer regenerated and installed candidate Mac, Linux ARM64 packed
+root and Linux x86-64 compiler images, and the ordinary Mac CLI gate passed
+76 observations. The x86-64 image equals the independently self-rebuilt
+Linux image above. The packed ARM root is a different output format from the
+standalone ARM static image and requires its own execution evidence.
+Source-identity preflight and descriptor checks passed. Exact-head CI,
+complete controller/product qualification and release remain open. No
+runtime deployment or production cutover is implied.
