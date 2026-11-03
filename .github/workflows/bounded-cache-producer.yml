@@ -1,0 +1,107 @@
+name: experimental-bounded-cache-producer
+# This publishes a bounded KIR test producer, not an adopted compiler or a
+# cache admission verdict. Main/full and every native gate remain fresh.
+on:
+  merge_group:
+    types: [checks_requested]
+  pull_request:
+    paths:
+      - "seed/**"
+      - "bin/**"
+      - "native-product.json"
+      - "scripts/seed/check-definition-build-native.py"
+      - "scripts/seed/check-native-identities.py"
+      - "scripts/seed/check-native-cdci.py"
+      - "scripts/seed/sealed_image.py"
+      - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/test_verified_attestation.py"
+      - "scripts/seed/bounded_cache_bundle.py"
+      - "scripts/seed/test_bounded_cache_bundle.py"
+      - "scripts/seed/fetch_bounded_cache.py"
+      - "scripts/seed/test_fetch_bounded_cache.py"
+      - "scripts/seed/stage_pinned_gh.py"
+      - "scripts/seed/test_stage_pinned_gh.py"
+      - "scripts/seed/check_bounded_producer_attestation.py"
+      - "scripts/seed/test_bounded_producer_attestation.py"
+      - ".github/workflows/bounded-cache-producer.yml"
+      - ".github/workflows/bounded-cache-consumer.yml"
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: bounded-producer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify adopted identities
+        run: python3 scripts/seed/check-native-identities.py
+      - name: Refuse untrusted producer contexts
+        run: python3 scripts/seed/test_bounded_producer_attestation.py -v
+      - name: Check every attestation policy field
+        run: python3 scripts/seed/test_verified_attestation.py -v
+      - name: Check pinned provenance-verifier staging
+        run: python3 scripts/seed/test_stage_pinned_gh.py -v
+      - name: Fresh native candidate and negative controls
+        run: >-
+          python3 scripts/seed/check-definition-build-native.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/bounded-producer"
+      - name: Native artifact round trip and hostile archive refusals
+        env:
+          AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
+        run: python3 scripts/seed/test_bounded_cache_bundle.py -v
+      - name: Exact source selection, hostile ZIP and fresh native consumer
+        env:
+          AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
+        run: python3 scripts/seed/test_fetch_bounded_cache.py -v
+      - name: Bundle only the candidate and its private object artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: >-
+          python3 scripts/seed/bounded_cache_bundle.py
+          --producer "$RUNNER_TEMP/bounded-producer/producer.elf"
+          --cache "$RUNNER_TEMP/bounded-producer/cache" --output "$RUNNER_TEMP/bounded-cache.tar"
+      - name: Stage only the candidate bundle from this run
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: experimental-bounded-kir-producer-${{ github.sha }}
+          path: ${{ runner.temp }}/bounded-cache.tar
+          if-no-files-found: error
+          retention-days: 7
+  attest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: qualify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: experimental-bounded-kir-producer-${{ github.sha }}
+          path: ${{ runner.temp }}/bounded-producer
+      - name: Attest the bounded image and object bundle
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ runner.temp }}/bounded-producer/bounded-cache.tar
+      - name: Download and verify the pinned provenance verifier
+        run: |
+          curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 --max-filesize 33554432 --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          python3 scripts/seed/stage_pinned_gh.py --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
+      - name: Verify and freshly execute the signed candidate and its objects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/seed/check_bounded_producer_attestation.py
+          --artifact "$RUNNER_TEMP/bounded-producer/bounded-cache.tar" --gh "$RUNNER_TEMP/pinned-gh"
