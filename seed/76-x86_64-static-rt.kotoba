@@ -1279,7 +1279,7 @@
       (if (< k 0) (kxrt-store64 (+ ap (* 8 (inc c))) 0)
         (recur (+ e 7) (+ d (inc (- e st))) (inc c))))))
 ;; the output, until end of file, within the deadline and the budget:
-;; got >= 0, -4 the deadline, -3 the budget
+;; got >= 0, -4 the deadline, -3 the budget, -5 an output read error
 (defn- kxrt-sp-output [fd :i64 o :i64 dl :i64] :i64
   (loop [got 0]
     (let [left (- dl (kxrt-now-ns))]
@@ -1290,7 +1290,8 @@
                 (= r 0) (recur got)
                 :else (let [m (kxrt-syscall 0 fd (+ o got) (- 16385 got) 0 0 0)]
                         (cond (= m -4) (recur got)
-                              (<= m 0) got
+                              (= m 0) got
+                              (< m 0) -5
                               (> (+ got m) 16384) -3
                               :else (recur (+ got m))))))))))
 ;; wait for the exit within the deadline (10 ms slices, op 40): raw status, or -1
@@ -1350,6 +1351,7 @@
                         o (+ io 3145728) got (if (= fed -4) -4 (kxrt-sp-output out-r (+ o 32) dl)) e (kxrt-close out-r)]
                     (cond (= got -4) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 4))
                           (= got -3) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 3))
+                          (= got -5) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 7))
                           :else (let [raw (kxrt-sp-wait pid dl)]
                                   (if (< raw 0) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 4))
                                     (let [ex (if (= (bit-and raw 127) 0) (bit-and (u64-shift-right raw 8) 255) -1)
