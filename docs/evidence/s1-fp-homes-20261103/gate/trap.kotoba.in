@@ -1,0 +1,8 @@
+(ns gate.trap (:export [main]))
+
+;; f32-from-bits of a value read at run time: @V@ is in range (returns its f32 bits plus 1.0 as bits) or one past
+;; the 32-bit range (must trap, as the library assert does).
+(defn main [] :i64
+  (let [v (vector-alloc 2)
+        u (vector-assoc! v 0 @V@)]
+    (f32-to-bits (f32-add (f32-from-bits (vector-at v 0)) (f32-from-bits 1065353216)))))
