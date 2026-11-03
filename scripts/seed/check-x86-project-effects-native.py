@@ -81,6 +81,11 @@ def main():
     entry = out / 'declared/src/x86_project_fs/entry.kotoba'
     root = out / 'declared/src'
     lock = out / 'declared.ksl'
+    reordered = out / 'reordered.kx64'
+    call('option-before-lock', [compiler, 'compile', entry, '--target', 'x86_64-linux',
+         '--project-capabilities', '35,38', '--output', reordered, '--format', 'kx64-v1',
+         '--source-path', root, '--source-lock', lock, '--source-lock-sha256', sha(lock.read_bytes())])
+    assert reordered.read_bytes() == (out / 'declared.kx64').read_bytes()
     args = [compiler, 'compile', entry, '--target', 'x86_64-linux', '--format', 'kx64-v1',
             '--source-path', root, '--source-lock', lock, '--source-lock-sha256', sha(lock.read_bytes())]
     for label, options in [
