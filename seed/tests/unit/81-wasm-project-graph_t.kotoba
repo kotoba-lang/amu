@@ -2,17 +2,22 @@
 ;; requiring operations stay refused; this is not the public Wasm driver.
 (defn- xg-default [] :i64 2)
 (defn- seed-main [] :i64
-  (let [path (io-arg 1) M (mem-new) L (pj-new-l) V (vector-alloc 2)
+  (let [path (io-arg 1) M (mem-new) L (pj-new-l) V (vector-alloc 2) W (vector-alloc 2)
         roots (drv-pj-roots L (pj-new-p L) 1 (io-argc))
         locked (drv-pj-lock M L roots path)
         graph (if (pj-ok M) (pj-discover M L (pj-padd L locked path) (- (pj-n L) 1)) locked)]
     (cond (not (pj-ok M)) 31 (not= (pj-l L pj-k-nord) 2) 32
           :else (let [lib (pj-l L pj-o-base) entry (pj-l L (+ pj-o-base 1))
-                      p2 (xw-project-load-unit M L V graph lib 5)
-                      next (+ 5 (xg-get M 3))
-                      p3 (if (pj-ok M) (xw-project-load-unit M L V p2 entry next) p2)
-                      idx (xw-idx M (xg-get M 1)) count (xg-get M 3)]
-                  (cond (not (pj-ok M)) 33 (not= lib 1) 34 (not= entry 0) 35
+                      sentinel1 (vector-assoc! W 0 99) sentinel2 (vector-assoc! W 1 88)
+                      invalid (pj-ls L pj-o-base 0)
+                      rejected (xw-project-load-graph M L V W graph)
+                      error (vector-at M MM-ERR) old0 (vector-at W 0) old1 (vector-at W 1)
+                      oldimg (pj-l L pj-k-img) oldpool (vector-at V 0)
+                      reset (mem-set M MM-ERR 0) restore (pj-ls L pj-o-base lib)
+                      linked (xw-project-load-graph M L V W graph)
+                      idx (vector-at W 1) count (- (vector-at W 0) 5)]
+                  (cond (or (= error 0) (not= old0 99) (not= old1 88) (not= oldimg 0) (not= oldpool 0)) 39
+                        (not (pj-ok M)) 33 (not= lib 1) 34 (not= entry 0) 35
                         (not= count 2) 36 (not= idx 6) 37
                         :else (let [module (xw-project-module M L V count idx)]
                                 (if (not (pj-ok module)) 38

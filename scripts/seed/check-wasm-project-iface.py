@@ -194,6 +194,17 @@ def main():
     graph_wasm = bytes.fromhex(match.group(1).decode()); assert graph_wasm[:8] == b'\x00asm\x01\x00\x00\x00'
     graph_path = out/'project-graph.wasm'; graph_path.write_bytes(graph_wasm)
     print('WASM_PROJECT_GRAPH_HEX', graph_wasm.hex())
+    order_guard = b'(not (xw-project-order-valid? L))'
+    graph_bytes = graph_source.read_bytes(); assert graph_bytes.count(order_guard) == 1
+    order_source = out/'graph-order-mutant.kotoba'; order_source.write_bytes(graph_bytes.replace(order_guard,b'false'))
+    order_image = out/'graph-order-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(order_source),'--target',target,'--output',str(order_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and order_image.is_file(), (built.returncode,built.stderr[-1000:])
+    order_image.chmod(0o755)
+    bad = subprocess.run([str(order_image),'compile',str(entry),'--source-path',str(graph_dir),
+                          '--source-lock',str(lock),'--source-lock-sha256',lock_hash],cwd=out,env=graph_env,capture_output=True,timeout=120)
+    assert not bad.stderr and re.search(rb':status :ok :result 39(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
     bad = run_graph('0'*64)
     assert not bad.stderr and re.search(rb':status :ok :result 31(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
     mapped = f'KSL2\nentry {entry}\nmodule app {entry}\nmodule dep {dep}\n' + ''.join(
@@ -213,6 +224,12 @@ def main():
     lock.write_text(lock_text)
     bad = run_graph(digest(lock_text.encode()))
     assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
+    dep.write_text('(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (let [s (keyword-name :cat)] x))\n')
+    lock_text = f'KSL1\nentry {entry}\nroot {graph_dir}\n' + ''.join(
+        f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))
+    lock.write_text(lock_text)
+    bad = run_graph(digest(lock_text.encode()))
+    assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -224,7 +241,7 @@ def main():
                'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
                'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
                'projectLinkedSha256':sha(linked_path), 'policyNegativeSha256':sha(policy_image),
-               'projectGraphSha256':sha(graph_path),
+               'projectGraphSha256':sha(graph_path), 'graphOrderNegativeSha256':sha(order_image),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

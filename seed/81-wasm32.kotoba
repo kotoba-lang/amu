@@ -513,7 +513,7 @@
         S (string-concat S1 trailer)
         setup (-> L (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base 0))
         front (if (pj-ok M) (xw-project-front M L P S module) M)
-        unbound (if (pj-ok front) (xw-project-unbound-op front 1) 0)
+        unbound (if (pj-ok front) (if (ck-r6b-needs-kw? S0) OP-RT (xw-project-unbound-op front 1)) 0)
         checked (if (> unbound 0) (xg-err front 7101 unbound) front)
         ready (if (pj-ok checked) (mem-set checked 197 (string-length S)) checked)
         first (pj-l L pj-k-stub0) count (pj-l L pj-k-nstub)]
@@ -521,6 +521,42 @@
       (if (= (pj-mf L module pj-mf-entry) 0)
         (xw-project-compile-library ready L V P S first count start module)
         (let [compiled (xw-project-compile-unit ready L V S first count start)] P)))))
+
+;; Validate the discovered topological order before mutating the archive.
+(defn- xw-project-order-valid? [L :vector-i64] :bool
+  (let [n (pj-l L pj-k-nmod) order (pj-l L pj-k-nord)]
+    (if (or (< n 1) (> n pj-m-cap) (not= order n)) false
+      (let [seen (vector-alloc n)]
+        (loop [i 0]
+          (if (>= i n) true
+            (let [m (pj-l L (+ pj-o-base i))]
+              (if (or (< m 0) (>= m n) (not= (vector-at seen m) 0)
+                      (not= (pj-mf L m pj-mf-entry) (if (= m 0) 1 0))
+                      (and (= m 0) (not= i (- n 1)))) false
+                (let [r0 (pj-mf L m pj-mf-req0) nr (pj-mf L m pj-mf-nreq)
+                      deps (if (or (< r0 0) (< nr 0) (> r0 pj-r-cap) (> nr (- pj-r-cap r0))) false
+                             (loop [k 0]
+                               (if (>= k nr) true
+                                 (let [d (pj-rf L (+ r0 k) pj-rf-mod)]
+                                   (and (>= d 0) (< d n) (= (vector-at seen d) 1) (recur (+ k 1)))))))]
+                  (if (not deps) false
+                    (let [mark (vector-assoc! seen m 1)] (recur (+ i 1)))))))))))))
+;; W[0] is the next Wasm index, W[1] the validated entry function index.
+;; This stage is intentionally not the public compiler: runtime/table binding
+;; still needs to be implemented before a project artifact may be published.
+(defn- xw-project-load-graph [M :vector-i64 L :vector-i64 V :vector-i64 W :vector-i64 P :string] :string
+  (if (or (not (pj-ok M)) (< (vector-count W) 2) (not (xw-project-order-valid? L)))
+    (let [e (xg-err M 7103 0)] P)
+    (let [init (-> W (vector-assoc! 0 XW-NIMPORT) (vector-assoc! 1 0))]
+      (loop [i 0 pool P]
+        (if (or (not (pj-ok M)) (>= i (pj-l L pj-k-nord))) pool
+          (let [m (pj-l L (+ pj-o-base i)) next (vector-at W 0)
+                compiled (xw-project-load-unit M L V pool m next)
+                main (if (and (pj-ok M) (= m 0)) (xg-get M 1) 0)
+                checked (if (and (pj-ok M) (= m 0) (= main 0)) (xg-err M 7102 0) M)
+                update (if (pj-ok checked) (-> W (vector-assoc! 0 (+ XW-NIMPORT (xg-get M 3)))
+                                                  (vector-assoc! 1 (if (= m 0) (xw-idx M main) (vector-at W 1)))) W)]
+            (recur (+ i 1) compiled)))))))
 
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
