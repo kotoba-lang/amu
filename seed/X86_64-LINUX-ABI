@@ -584,3 +584,9 @@ descriptor and mkdirat. It bounds paths to 1023 bytes, components to 255,
 and refuses dot/empty components. One-Mac framed tests and H/M/O/U/E/F
 regressions are recorded under docs/evidence/awai154-darwin-fs2-mkdir-20261103.
 I is a partial, stricter candidate and does not qualify the whole provider.
+
+The Darwin diagnostic adds scoped FS2 L and T through separately opened
+parent descriptors and renameatx_np with NOFOLLOW_ANY; T adds EXCL and has
+no replacing fallback. It keeps the strict bounded path rules used by I.
+One-Mac tests are recorded in docs/evidence/awai154-darwin-fs2-rename-20261103.
+This is not whole-provider or crash-durability qualification.
