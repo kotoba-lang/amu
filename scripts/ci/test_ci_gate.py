@@ -32,13 +32,13 @@ def opener(files, total=1):
 class Inert(unittest.TestCase):
     def test_inert_paths(self):
         for path in ("README.md", "CHANGELOG.md", "docs/notes/a.md", "LICENSE", "bench/.DS_Store",
-                     ".github/workflows/merge-guard.yml", ".github/dependabot.yml"):
+                     ".github/dependabot.yml"):
             self.assertTrue(G.is_inert(path), path)
 
     def test_everything_a_gate_can_read_is_not_inert(self):
         for path in ("docs/evidence/x/README.md", "docs/language-ladder.edn", "seed/README.md", "seed/00-core.kotoba",
                      "scripts/seed/check-io-read.py", "scripts/ci/ci_gate.py", "bin/amu-linux-x86_64",
-                     "native-product.json", ".github/workflows/selfhost-native.yml", ".github/actions/ci-gate/action.yml",
+                     "native-product.json", ".github/workflows/selfhost-native.yml", ".github/workflows/merge-guard.yml", ".github/actions/ci-gate/action.yml",
                      "examples/foundation-starter/MACOS-ARM64.md", "tools/c/sm70/README.md", "src/a.kotoba"):
             self.assertFalse(G.is_inert(path), path)
 

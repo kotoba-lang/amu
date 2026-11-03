@@ -4,7 +4,7 @@
 A job asks this script two questions before its heavy steps:
 
 * docs_only: does the pull request / merge-group entry change only inert files
-  (documentation, other workflows)? Then the native verdict of its base applies
+  (documentation)? Then the native verdict of its base applies
   unchanged and the job reports success without running its steps. The required
   check still runs and reports under its own name.
 * key / restore_keys: the cache key for a marker or a derived-artifact cache,
@@ -41,7 +41,6 @@ INERT = (
     re.compile(r"^docs/(?!evidence/).*\.md$"),
     re.compile(r"(^|/)\.DS_Store$"),
     re.compile(r"^\.github/dependabot\.yml$"),
-    re.compile(r"^\.github/workflows/(?!selfhost-native\.yml$)[^/]+$"),
 )
 TIERS = ("pr", "main", "full")
 SEED = "scripts/seed/"
