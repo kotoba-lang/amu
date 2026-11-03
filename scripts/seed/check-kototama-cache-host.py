@@ -188,10 +188,26 @@ def main():
     try:
         image.write_bytes(fake)
         binding.write_bytes(b''.join(lines))
-        call('zero-spent-receipt-refused', code=2, diagnostic=4402)
+        call('zero-spent-receipt-refused', code=2, diagnostic=4104)
     finally:
         image.write_bytes(initial)
         binding.write_bytes(original_binding)
+    # A forged image can emit a fully consistent receipt with the wrong value.
+    # Rebinding its public CID must not authenticate it as compiler output.
+    forged = bytearray(initial)
+    receipt = struct.pack('<8q', r.MAGIC, 0, 99, 1, 1, 0, 0, bound)
+    forged[entry:entry + len(code) + len(receipt)] = code + receipt
+    forged_cid = 'b' + base64.b32encode(bytes([1, 85, 18, 32]) + hashlib.sha256(forged).digest()).decode().lower().rstrip('=')
+    rebound = original_binding.splitlines(keepends=True)
+    rebound[16] = forged_cid.encode() + b'\n'
+    try:
+        image.write_bytes(forged)
+        binding.write_bytes(b''.join(rebound))
+        call('forged-rebound-image-refused', code=2, diagnostic=4104)
+    finally:
+        image.write_bytes(initial)
+        binding.write_bytes(original_binding)
+    observe('forged-rebuild-cleanup', [int((cache / 'building').exists())], [0])
     image.write_bytes(initial[:-1] + bytes([initial[-1] ^ 1]))
     call("image-tamper", code=2, diagnostic=4104); image.write_bytes(initial)
     binding.write_bytes(original_binding.replace(b"expression-charge/v1", b"expression-charge/v0"))
@@ -218,6 +234,8 @@ def main():
         call(f"slot-{i}", body=r.v.const(i), root=quota, value=i, marker="CACHE_MISS\n")
     call("capacity", body=r.v.const(16), root=quota, code=2, marker="CACHE_MISS\n", diagnostic=4301)
     observe("capacity-count", [len(list(quota.iterdir()))], [16])
+    call('hit-at-capacity', body=r.v.const(0), root=quota, value=0)
+    observe('hit-at-capacity-cleanup', [len(list(quota.iterdir())), int((quota / 'building').exists())], [16, 0])
     if a.deadline_control:
         source = out / "spin.cbor"; source.write_bytes(r.v.encode(r.v.program(["loop", [], ["recur", []]])))
         spin = out / "spin.elf"

@@ -145,7 +145,7 @@
         (or (= (io-exists (io-arg 1)) 0) (= (io-exists (io-arg 2)) 0) (= (io-exists (io-arg 3)) 0)) (drv-fail0 E-READ)
         (= (io-exists (io-arg 9)) 1) (drv-fail0 E-WRITE)
         :else (let [guest (drv-pj-lock-text (io-read-bytes (io-arg 1))) common (drv-pj-lock-text (io-read-bytes (io-arg 2))) host (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
-          (if (and (string=? (sh-text guest) "a0a543a1b0ab45a017aa7abe5cc1b24737a30cd27007a52e00def46879c01d5d") (string=? (sh-text common) "80dd98a427bd22d488aad21cef0ad47fd553ef9c0f57dd32e859763f373c403c") (string=? (sh-text host) "2044df9cf3c0237d7cdc954ef2fdfd9bf21dcb61a8d813af99a049345b1bc4f4"))
+          (if (and (string=? (sh-text guest) "a0a543a1b0ab45a017aa7abe5cc1b24737a30cd27007a52e00def46879c01d5d") (string=? (sh-text common) "80dd98a427bd22d488aad21cef0ad47fd553ef9c0f57dd32e859763f373c403c") (string=? (sh-text host) "69c559e3e568af2d4e7f6e87da1a69c2c25db497acc821f795e5bcb3493d07c6"))
             (let [policy (k3-host-policy (io-arg 5) (io-arg 7)) text (string-concat guest (string-concat common (string-concat host policy)))
                   built (xs-build (xg-front text) text (string-length guest) 3)]
               (if (= (vector-at built MM-ERR) 0) (xs-write built (io-arg 9)) (xg-report built (io-arg 3) (io-arg 9))))
