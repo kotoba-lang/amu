@@ -1273,8 +1273,13 @@
 (defn- mh-service-words [base :i64 fallback :i64] :vector-i64
   (let [s (-> (mh-new base)
     ;; Other capabilities retain the existing CLI/stdio dispatch.
-    (mh-cmpi 1 35) (mh-b 0x54000000 1)
+    (mh-cmpi 1 35) (mh-b 0x54000000 116)
     (mh-cmpi 1 20) (mh-b 0x54000000 1) (mh-jump fallback)
+    ;; The private host service uses byte/vector FS requests; ordinary FS2
+    ;; strings and string-to-bytes go to the existing scoped dispatcher.
+    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000000 117)
+    (mh-cmpi 2 9) (mh-b 0x54000000 117) (mh-b 0x14000000 1)
+    (mh-label 117) (mh-jump fallback)
     (mh-label 1)
     (mh-sub 31 31 128)
     (mh-i 0xa9007bfd) (mh-i 0xa90153f3) (mh-i 0xa9025bf5)
@@ -1320,6 +1325,13 @@
     (mh-ar 10 26 9 0) (mh-lb 8 10 0) (mh-ar 10 21 9 0) (mh-sb 8 10 0)
     (mh-add 9 9 1) (mh-b 0x14000000 9)
     (mh-label 4)
+    ;; Only a complete FS2 prefix is delegated; AMUH remains host-private.
+    (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 123)
+    (mh-lb 8 21 1) (mh-cmpi 8 70) (mh-b 0x54000001 123)
+    (mh-lb 8 21 2) (mh-cmpi 8 83) (mh-b 0x54000001 123)
+    (mh-lb 8 21 3) (mh-cmpi 8 50) (mh-b 0x54000001 123)
+    (mh-lb 8 21 4) (mh-b (bit-or 0xb4000000 8) 122)
+    (mh-label 123)
     (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
     (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
     (mh-lb 8 21 2) (mh-cmpi 8 77) (mh-b 0x54000001 90)
@@ -1576,6 +1588,13 @@
     (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
     (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
     (mh-add 31 31 128) (mh-i 0xd65f03c0)
+    ;; Restore the original call before handing an FS2 byte frame to the
+    ;; scoped dispatcher. No guest image receives this private host service.
+    (mh-label 122) (mh-mov 0 19) (mh-mov 1 28)
+    (mh-ldr 2 31 96) (mh-ldr 3 31 104) (mh-mov 4 27)
+    (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 128) (mh-jump fallback)
     (mh-label 98) (mh-imm 0 2) (mh-b (bit-or 0x10000000 1) 115)
     (mh-imm 2 (string-length "amu: EHOST invalid host ABI or exhausted buffer\n"))
     (mh-sys 4) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000)

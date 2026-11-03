@@ -597,3 +597,12 @@ framed fixture covers binary write, append, 4096-byte chunks, sync and
 no-replace publication; the previous basename-only handler refused the
 nested control. See docs/evidence/awai154-darwin-fs2-bc-nested-20261103.
 The diagnostic is not a full checkpoint or product FS2 qualification.
+
+The Darwin private host adapter now dispatches scoped FS2 string requests
+and framed FS2 byte requests to the existing FS2 callback, while retaining
+the distinct private AMUH host protocol. One Mac fixture runs a bounded Git
+query via the private host API and real checkpoint block helper code using
+FS2; ordinary diagnostic and public program images refuse that host request.
+See docs/evidence/awai154-private-host-fs2-20261103. The private host is
+privileged; this is not a guest spawn boundary, a full checkpoint integration
+or authorization to give bot code host authority.
