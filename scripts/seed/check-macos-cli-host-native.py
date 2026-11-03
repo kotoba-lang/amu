@@ -50,9 +50,11 @@ def main(out):
               for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop", "write-failure")}
     calls = []
 
-    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None):
+    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None, scope_fd=None):
         # Intentionally no inherited directory FD, external environment or PATH.
         def inherited_setup():
+            if scope_fd is not None:
+                os.dup2(scope_fd, 3, inheritable=True)
             if inherited:
                 os.dup2(secret, 3)
                 os.dup2(secret, 91)
@@ -65,8 +67,8 @@ def main(out):
 
         r = subprocess.run([str(images[case]), *map(str, args)], cwd=out,
                            env={"PATH": "/nonexistent", "LANG": "C"},
-                           capture_output=True, timeout=20, close_fds=not inherited,
-                           preexec_fn=inherited_setup if inherited or alarm or file_limit is not None else None)
+                           capture_output=True, timeout=20, close_fds=not (inherited or scope_fd is not None),
+                           preexec_fn=inherited_setup if inherited or alarm or file_limit is not None or scope_fd is not None else None)
         name = f"{len(calls):02d}-{case}"
         (out / (name + ".stdout")).write_bytes(r.stdout)
         (out / (name + ".stderr")).write_bytes(r.stderr)
@@ -156,7 +158,8 @@ def main(out):
     images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
     run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
     # String wire 35 must retain both scoped FS2 and the legacy lock grammar.
-    # Use the existing task-owned regular file under this process's cwd scope.
+    # This diagnostic supplies FD3 explicitly: the host startup does not yet
+    # establish an FS2 scope. It is not evidence of automatic host setup.
     (out / "string-fs2-lock.kotoba").write_text(
         '(ns string-fs2-lock (:export [main]))\n'
         '(defn main [] :i64\n'
@@ -166,11 +169,16 @@ def main(out):
         '    (if (and (= d "\\u0000FS2\\u00001") (= l "1") (= u "1"))\n'
         '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2_LOCK\\n")] 0) 1)))\n')
     images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
-    run("string-fs2-lock", expected=b"PASS_STRING_FS2_LOCK\n")
+    scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.set_inheritable(scope_fd, True)
+        run("string-fs2-lock", expected=b"PASS_STRING_FS2_LOCK\n", scope_fd=scope_fd)
+    finally:
+        os.close(scope_fd)
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
-                  calls=calls, manualFD3=False, linuxProcess=False, hostedFallback=False,
+                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs2DiagnosticManualFD3=True, linuxProcess=False, hostedFallback=False,
                   builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")
