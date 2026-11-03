@@ -1,0 +1,4 @@
+(ns safety.fs-transitive-empty (:export [main]) (:capabilities []))
+(defn- read-size [] :i64 (string-byte-length (typed-cap-call :fs/app-data :string :string "/data")))
+(defn- helper [] :i64 (read-size))
+(defn main [] :i64 (helper))
