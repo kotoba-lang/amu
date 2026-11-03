@@ -26,6 +26,7 @@
               (string=? flag "--payload") (string=? flag "--fuel")
               (and (or (= (full-target? "x86_64-linux") 1) (= (full-target? "aarch64-linux") 1))
                    (string=? flag "--runtime-profile"))
+              (and (= (full-target? "x86_64-linux") 1) (string=? flag "--project-capabilities"))
               ;; KOTOBA-175 (ADR 0402): the declared capability set of the PLC user target
               (and (= (full-target? "x86_64-aiueos-user-plc-v1") 1) (string=? flag "--capabilities"))
               (and (or (= (full-target? "x86_64-aiueos-kernel-v1") 1)
@@ -111,6 +112,7 @@
   (cond (> (io-argc) 256) (drv-usage)
         (string=? (io-arg 0) "kototama-cache-host-build") (k3-host-command)
         (string=? (io-arg 0) "compile-kototama-cache") (k3-command)
+        (string=? (io-arg 0) "check-kototama") (k2-check-command)
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
         (string=? (io-arg 0) "definition-cids")

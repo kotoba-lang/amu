@@ -123,6 +123,35 @@ def main():
     os.symlink(outside, base / 'escape', target_is_directory=True)
     refused = execute('symlink-escape', base / 'escape', '35,38')
     assert re.search(rb':result 91\b', refused.stdout) and not list(outside.iterdir())
+    # A confined directory is not enough if its final leaf is a symlink.
+    # Keep the sentinel outside the granted scope and require it unchanged.
+    sentinel = outside / 'sentinel'
+    sentinel.write_bytes(b'unchanged')
+    os.symlink(sentinel, base / 'pending')
+    refused = execute('symlink-leaf', base, '35,38', 120)
+    assert b'KEXE_TRAP' in refused.stderr and sentinel.read_bytes() == b'unchanged'
+    rename_scope = base / 'rename-scope'
+    rename_scope.mkdir()
+    os.symlink(sentinel, rename_scope / 'final')
+    renamed = execute('symlink-rename-target', rename_scope, '35,38')
+    assert re.search(rb':result 42\b', renamed.stdout)
+    assert sentinel.read_bytes() == b'unchanged' and not (rename_scope / 'final').is_symlink()
+    denied = execute('ungranted-both', base, '-', 120)
+    assert b'KEXE_CAP {:wire 38 :refused :not-granted}' in denied.stderr
+    # Capabilities are declared per module: a declaration in an importer or
+    # imported module must not authorize an undeclared call in the other.
+    cross = dict(original)
+    cross['entry.kotoba'] = cross['entry.kotoba'].replace(
+        b'(:capabilities [:cli/args])', b'(:capabilities [:cli/args :fs/app-data])')
+    cross['io.kotoba'] = cross['io.kotoba'].replace(b'(:capabilities [:fs/app-data])', b'')
+    assert cross['entry.kotoba'] != original['entry.kotoba'] and cross['io.kotoba'] != original['io.kotoba']
+    build('fs-declared-only-by-importer', cross, b'E2176')
+    cross = dict(original)
+    cross['io.kotoba'] = cross['io.kotoba'].replace(
+        b'(:capabilities [:fs/app-data])', b'(:capabilities [:fs/app-data :cli/args])')
+    cross['entry.kotoba'] = cross['entry.kotoba'].replace(b'(:capabilities [:cli/args])', b'')
+    assert cross['entry.kotoba'] != original['entry.kotoba'] and cross['io.kotoba'] != original['io.kotoba']
+    build('cli-declared-only-by-import', cross, b'E2176')
     for label, old, new, diagnostic in [
         ('missing-declaration', b'(:capabilities [:fs/app-data])', b'', b'E2176'),
         ('empty-declaration', b'(:capabilities [:fs/app-data])', b'(:capabilities [])', b'E2176'),

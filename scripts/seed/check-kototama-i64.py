@@ -139,6 +139,21 @@ def vectors():
     p = program(["call", "run", []]); refuse("recursive-method", p)
     p = program(["call", "b", []], {"b": method(["call", "run", []])}); refuse("mutual-recursion", p)
     p = program(const(42), {"unused": method(const(0))}); p[2]["methods"]["unused"]["effects"] = [["fs/read"]]; refuse("unreachable-effects", p)
+    # Admission must inspect the whole artifact, not only code that happens
+    # to execute. Keep a valid unused method/branch as positive controls.
+    good("unreachable-valid-method", const(42), 1, 42, {"unused": method(const(0))})
+    good("unselected-valid-branch", ["if", const(1), const(42), const(0)], 3, 42)
+    p = program(const(42), {"unused": method(const(0))})
+    p[2]["methods"]["unused"]["unexpected"] = "value"
+    refuse("unreachable-unknown-method-field", p)
+    p = program(const(42), {"unused": method(["unknown", []])})
+    refuse("unreachable-unknown-expression", p)
+    refuse("unselected-unknown-expression", program(["if", const(1), const(42), ["unknown", []]]))
+    refuse("unselected-effect", program(["if", const(1), const(42), ["effect", "invoke-capability", [const(35)]]]))
+    p = copy.deepcopy(base); p[2]["methods"]["run"]["unexpected"] = p[2]["methods"]["run"].pop("result")
+    refuse("replace-required-method-field", p)
+    p = copy.deepcopy(base); p[2]["unexpected"] = p[2].pop("value-profile")
+    refuse("replace-required-program-field", p)
     p = program(const(42)); p[2]["methods"]["run"] = method(const(42), ["n"]); refuse("entry-arguments", p)
     refuse("six-params", program(const(42), {"unused": method(const(0), ["a", "b", "c", "d", "e", "f"])}))
     refuse("thirty-three-methods", program(const(42), {f"f{i:02d}": method(const(0)) for i in range(32)}))

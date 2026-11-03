@@ -74,6 +74,17 @@ def vectors():
         body = ["compare", "<", [v.const(2), v.const(1), v.arith("div", v.const(1), v.const(0))]]
         add("eager-failure-budget-" + str(budget), body, budget, 1 if budget < 6 else 2,
             budget + 1 if budget < 6 else 6)
+    # Both operands would fault, but evaluation is left-to-right. A depleted
+    # budget must win before the first fault becomes reachable; the later
+    # fault must never replace an earlier one.
+    zero = v.arith("div", v.const(1), v.const(0))
+    overflow = v.arith("div", v.const(-9223372036854775808), v.const(-1))
+    for first, second, first_status, name in [(zero, overflow, 2, "zero-first"),
+                                               (overflow, zero, 3, "overflow-first")]:
+        for budget in range(6):
+            add("ordered-fault-" + name + "-budget-" + str(budget),
+                v.arith("add", first, second), budget,
+                1 if budget < 4 else first_status, budget + 1 if budget < 4 else 4)
     add("first-failure-stops-do", ["do", [v.arith("div", v.const(1), v.const(0)),
          ["loop", [], ["recur", []]]]], 100, 2, 4)
     chain = {f"f{i:02d}": v.method(v.const(42) if i == 30 else ["call", f"f{i + 1:02d}", []]) for i in range(31)}

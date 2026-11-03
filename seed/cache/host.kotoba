@@ -285,13 +285,56 @@
             restored (kc-set 8 root) renamed (kxrt-syscall 316 root (kn-token 22) root (kn-slot (kc-get 224)) 1 0)
             final (kxrt-syscall 74 root 0 0 0 0 0)]
         (if (or (< mode 0) (< u0 0) (< u1 0) (< flush 0) (< renamed 0) (< final 0)) (kc-fail 4202) dir)))))
+;; A cache record and a public CID are not a compiler attestation. On a hit,
+;; rebuild from the already pinned program and sealed compiler in a private
+;; staging directory. Compare the resulting bytes and bound before execution.
+;; The cache directory and host process are still within the local UID trust
+;; boundary; this is not a signature or protection against a hostile same UID.
+(defn- kn-rebuild-hit [cached :i64] :i64
+  (let [old (kn-record cached) checked (if (not= old 1) (kc-fail 4103) 0)
+        cid-len (kc-len (kc-line 16) 513) bound-len (kc-len (kc-line 17) 513)
+        lengths (if (or (not= cid-len 59) (<= bound-len 0) (> bound-len 6)) (kc-fail 4103) 0)
+        expected-cid (+ (kc-g) 22133100) expected-bound (+ (kc-g) 22133200)
+        copy-cid (kc-copy expected-cid (kc-line 16) (inc cid-len))
+        copy-bound (kc-copy expected-bound (kc-line 17) (inc bound-len))
+        root (kc-get 200) mkdir (kxrt-syscall 258 root (kn-token 22) 448 0 0 0)
+        admitted (if (< mkdir 0) (kc-fail 4302) 0) dir (kc-open (kn-token 22) 720896 0)
+        directory (if (< dir 0) (kc-fail 4302) (kn-private dir true)) changed (kc-set 8 dir)
+        source (kc-newfile (kn-token 18)) written (kc-write source (+ (kc-g) 21000000) (kc-get 208)) sync (kc-sync-close source)
+        output (kc-newfile (kn-token 12)) error (kc-newfile (kn-token 21))
+        input (kxrt-syscall 257 -100 (kc-token 31) 655360 0 0 0)
+        args (+ (kc-g) 22111000)
+        a0 (kxrt-store64 args (kn-request 4)) a1 (kxrt-store64 (+ args 8) (kn-token 23))
+        a2 (kxrt-store64 (+ args 16) (kn-absolute (kn-token 24) 22112000))
+        a3 (kxrt-store64 (+ args 24) (kn-token 25)) a4 (kxrt-store64 (+ args 32) (kn-request 7))
+        a5 (kxrt-store64 (+ args 40) (kn-token 26)) a6 (kxrt-store64 (+ args 48) (kn-absolute (kn-token 27) 22117000))
+        a7 (kxrt-store64 (+ args 56) (kn-token 28)) a8 (kxrt-store64 (+ args 64) (kn-request 5))
+        a9 (kxrt-store64 (+ args 72) (kn-token 29)) a10 (kxrt-store64 (+ args 80) (kn-request 6))
+        a11 (kxrt-store64 (+ args 88) (kn-token 30)) a12 (kxrt-store64 (+ args 96) (kn-token 5))
+        a13 (kxrt-store64 (+ args 104) 0) env (kn-env)
+        job (kn-job (kc-get 256) args input output error 120)
+        ci (kc-close input) co (kc-sync-close output) ce (kc-sync-close error)]
+    (if (not= job 0) (let [cleanup (kn-clean dir)] (kc-fail (if (= job -1) 4203 4204)))
+      (let [match (kn-record dir) file (kc-open (kn-token 19) 655360 0)
+            mode (if (< file 0) -1 (kxrt-syscall 91 file 448 0 0 0 0))
+            private (if (or (< file 0) (< mode 0)) (kc-fail 4103) (kn-private file false))
+            n (kc-readfd file 1048576) close (kc-close file) hash (kc-sha (+ (kc-g) 131072) n)
+            saved (kc-copy (+ (kc-g) 22133000) hash 65)
+            cid (kn-cid 85 hash (+ (kc-g) 22104000))
+            valid (and (= match 1) (kn-text? cid (kc-line 16))
+                       (kn-text? cid expected-cid) (kn-text? (kc-line 17) expected-bound))
+            restored (kc-set 8 root) cleanup (kn-clean dir)]
+        (if (not valid) (kc-fail 4104)
+          (let [active (kc-set 248 1)] cached))))))
 (defn- kn-execute [directory :i64] :i64
   (let [selected (kc-set 8 directory) match (kn-record directory) checked (if (not= match 1) (kc-fail 4103) 0)
         bound (kn-number (kc-line 17) 262144)
         admitted (if (or (< bound 64) (not= (bit-and bound 15) 0) (> bound (kc-get 240))) (kc-fail 4401) 0)
         file (kc-open (kn-token 19) 655360 0) private (if (< file 0) (kc-fail 4103) (kn-private file false))
         n (kc-readfd file 1048576) close (kc-close file) hash (kc-sha (+ (kc-g) 131072) n)
-        cid (kn-cid 85 hash (+ (kc-g) 22104000)) pinned (if (kn-text? cid (kc-line 16)) 0 (kc-fail 4104))
+        cid (kn-cid 85 hash (+ (kc-g) 22104000))
+        pinned (if (and (kn-text? cid (kc-line 16))
+                        (or (= (kc-get 248) 0) (kc-equal hash (+ (kc-g) 22133000) 64))) 0 (kc-fail 4104))
         expected (kc-copy (+ (kc-g) 22104500) hash 65)
         image (kc-image (kn-token 19) (+ (kc-g) 22104500))
         context (+ (kc-g) 22130000) magic (kxrt-store64 context 0x003343343649544b)
@@ -311,7 +354,7 @@
                        (= status (if (= result 0) 0 17920)) (= (kxrt-load64 (+ p 24)) (kc-get 232))
                        (= (kxrt-load64 (+ p 48)) 0) (= (kxrt-load64 (+ p 56)) bound)
                        (= (kxrt-load64 (+ p 32)) (- (kc-get 232) (kxrt-load64 (+ p 40))))
-                       (>= (kxrt-load64 (+ p 32)) 0)
+                       (> (kxrt-load64 (+ p 32)) 0)
                        (or (= result 0) (= (kxrt-load64 (+ p 16)) 0))
                        (if (= result 1) (= (kxrt-load64 (+ p 40)) -1)
                          (and (>= (kxrt-load64 (+ p 40)) 0) (<= (kxrt-load64 (+ p 40)) (kc-get 232))))) 0 (kc-fail 4402))
@@ -349,5 +392,5 @@
             sealed (kc-set 256 (kn-seal compiler (kn-request 5) 16777216)) binding (kn-binding)
             cached (kn-find) marker (if (< cached 0) 37 36)
             log (kc-write 2 (kn-token marker) (kc-len (kn-token marker) 64))
-            selected (if (< cached 0) (kn-compile) cached)]
+            selected (if (< cached 0) (kn-compile) (kn-rebuild-hit cached))]
         (kn-execute selected)))))

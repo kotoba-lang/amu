@@ -170,6 +170,58 @@ def main():
         call("concurrency", code=2, marker="", diagnostic=4302)
     finally:
         os.close(locked)
+    # Test-only cached ELF writes a structurally valid receipt with impossible
+    # zero expression charges. Its image CID is rebound to exercise receipt
+    # admission itself rather than merely the image-tamper check. This does
+    # not establish provenance for a cache controlled by the same user.
+    fake = bytearray(initial)
+    entry = struct.unpack_from('<Q', fake, 24)[0] - 0x400000
+    code = bytes.fromhex('b801000000bf01000000488d3510000000ba400000000f05b83c00000031ff0f05')
+    bound = int(original_binding.splitlines()[17])
+    payload = code + struct.pack('<8q', r.MAGIC, 0, 42, 1, 0, 1, 0, bound)
+    assert entry == 4096 and entry + len(payload) <= len(fake)
+    fake[entry:entry + len(payload)] = payload
+    fake_cid = 'b' + base64.b32encode(bytes([1, 85, 18, 32]) + hashlib.sha256(fake).digest()).decode().lower().rstrip('=')
+    lines = original_binding.splitlines(keepends=True)
+    assert len(lines) == 18 and lines[16].startswith(b'b')
+    lines[16] = fake_cid.encode() + b'\n'
+    try:
+        image.write_bytes(fake)
+        binding.write_bytes(b''.join(lines))
+        call('zero-spent-receipt-refused', code=2, diagnostic=4104)
+    finally:
+        image.write_bytes(initial)
+        binding.write_bytes(original_binding)
+    # A forged image can emit a fully consistent receipt with the wrong value.
+    # Rebinding its public CID must not authenticate it as compiler output.
+    forged = bytearray(initial)
+    receipt = struct.pack('<8q', r.MAGIC, 0, 99, 1, 1, 0, 0, bound)
+    forged[entry:entry + len(code) + len(receipt)] = code + receipt
+    forged_cid = 'b' + base64.b32encode(bytes([1, 85, 18, 32]) + hashlib.sha256(forged).digest()).decode().lower().rstrip('=')
+    rebound = original_binding.splitlines(keepends=True)
+    rebound[16] = forged_cid.encode() + b'\n'
+    try:
+        image.write_bytes(forged)
+        binding.write_bytes(b''.join(rebound))
+        call('forged-rebound-image-refused', code=2, diagnostic=4104)
+    finally:
+        image.write_bytes(initial)
+        binding.write_bytes(original_binding)
+    observe('forged-rebuild-cleanup', [int((cache / 'building').exists())], [0])
+    # Variable record fields must be bounded before copying to adjacent scratch
+    # buffers. First 15 binding lines remain unchanged; only the unsigned fields
+    # are altered, and every refusal must leave no staging directory behind.
+    for name, index, value in [('long-image-cid', 16, b'b' + b'a' * 500),
+                               ('long-stack-bound', 17, b'1' * 500),
+                               ('empty-stack-bound', 17, b'')]:
+        malformed = original_binding.splitlines(keepends=True)
+        malformed[index] = value + b'\n'
+        try:
+            binding.write_bytes(b''.join(malformed))
+            call(name, code=2, diagnostic=4103)
+            observe(name + '-cleanup', [int((cache / 'building').exists())], [0])
+        finally:
+            binding.write_bytes(original_binding)
     image.write_bytes(initial[:-1] + bytes([initial[-1] ^ 1]))
     call("image-tamper", code=2, diagnostic=4104); image.write_bytes(initial)
     binding.write_bytes(original_binding.replace(b"expression-charge/v1", b"expression-charge/v0"))
@@ -196,6 +248,8 @@ def main():
         call(f"slot-{i}", body=r.v.const(i), root=quota, value=i, marker="CACHE_MISS\n")
     call("capacity", body=r.v.const(16), root=quota, code=2, marker="CACHE_MISS\n", diagnostic=4301)
     observe("capacity-count", [len(list(quota.iterdir()))], [16])
+    call('hit-at-capacity', body=r.v.const(0), root=quota, value=0)
+    observe('hit-at-capacity-cleanup', [len(list(quota.iterdir())), int((quota / 'building').exists())], [16, 0])
     if a.deadline_control:
         source = out / "spin.cbor"; source.write_bytes(r.v.encode(r.v.program(["loop", [], ["recur", []]])))
         spin = out / "spin.elf"

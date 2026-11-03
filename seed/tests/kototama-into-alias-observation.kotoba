@@ -1,0 +1,15 @@
+;; Diagnostic input: the three decimal digits report the results of
+;; source-alias, empty-alias and input-alias respectively. This is not a
+;; normative assertion about the semantics of affine mutation.
+(ns kototama-into-alias (:export [main]))
+(defn- source-alias [] :i64
+  (let [b [2] a [1] z (into a b) ignored (vector-assoc! a 0 9)]
+    (vector-at z 0)))
+(defn- empty-alias [] :i64
+  (let [a [1] z (into a []) ignored (vector-assoc! a 0 9)]
+    (vector-at z 0)))
+(defn- input-alias [] :i64
+  (let [a [1] b [2] z (into a b) ignored (vector-assoc! b 0 9)]
+    (vector-at z 1)))
+(defn main [] :i64
+  (+ (* 100 (source-alias)) (* 10 (empty-alias)) (input-alias)))

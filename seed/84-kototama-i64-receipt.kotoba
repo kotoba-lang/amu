@@ -9,6 +9,33 @@
   (if (string=? s "0") 0 (xg-budget s)))
 (defn- k2-stack [M :vector-i64] :i64 (+ 64 (kt-stack M 1 0)))
 
+;; Validate the shared pure-i64 program surface without emitting an image.
+;; This is compiler-front-end validation, not execution authorization or a
+;; claim that a particular target, host, or receipt has been qualified.
+(defn- k2-check-command [] :i64
+  (let [src (io-arg 1) profile (io-arg 3)
+        receipt? (string=? profile "kototama.pure-i64-receipt/v2")]
+    (cond (not (and (= (io-argc) 4) (string=? (io-arg 2) "--profile")
+                    (or receipt? (string=? profile "kototama.pure-i64-aot/v1"))))
+          (kt-refuse "usage/profile refused")
+          (= (io-exists src) 0) (drv-fail0 E-READ)
+          :else (let [V (io-read-bytes src) len (vector-count V)]
+                  (if (or (= len 0) (> len 65536)) (kt-refuse "input byte limit")
+                    (let [D (kt-read (-> (vector-alloc 32784) (vector-assoc! 2 1) (vector-assoc! 3 len)) V 0)]
+                      (if (not (kt-program? D V)) (kt-refuse "noncanonical or outside pure-i64 profile")
+                        (let [S (kt-source D V) M (kt-front S)]
+                          (cond (not= (vector-at M MM-ERR) 0) (drv-fail M src)
+                                (> (if receipt? (k2-stack M) (kt-stack M 1 0)) 262144)
+                                  (kt-refuse "static stack bound")
+                                :else (let [checked (-> M (xg-set 0 0) (xg-set 1 0) (xg-set 2 1) (xg-set 4 0)
+                                                        (xg-check-fns S 1) (xg-check-sir 1))]
+                                        (if (or (not= (vector-at checked MM-ERR) 0)
+                                                (= (xg-get checked 1) 0)
+                                                (not= (vector-at checked MM-CAPS) 0))
+                                          (kt-refuse "scalar admission refused")
+                                          (let [w (io-out "{:ok true, :phase :pure-i64-frontend-check, :authority :none}\n")]
+                                            0))))))))))))
+
 (defn- k2-x-fuel [M :vector-i64 label :i64] :vector-i64
   (-> M (xg-bytes 0x08418b49 4) (xg-bytes 0xc8ff48 3) (xg-bytes 0x08418949 4)
       (xg-bytes 0xc08548 3) (xg-rel 0x8c0f 2 2 label)))
