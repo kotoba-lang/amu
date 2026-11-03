@@ -302,6 +302,8 @@ jobs:
           done
       - name: Independent arm64 gates (bounded native build queue)
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
+      - name: Kototama pure-i64 frontend check (arm64)
+        run: python3 scripts/seed/check-kototama-check.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-check-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
@@ -358,6 +360,10 @@ jobs:
             ${{ runner.temp }}/kototama-i64-arm64/report.json
             ${{ runner.temp }}/kototama-i64-arm64/gate.stdout
             ${{ runner.temp }}/kototama-i64-arm64/gate.stderr
+            ${{ runner.temp }}/kototama-check-arm64/report.json
+            ${{ runner.temp }}/kototama-check-arm64/gate.stdout
+            ${{ runner.temp }}/kototama-check-arm64/gate.stderr
+            ${{ runner.temp }}/kototama-check-arm64/corrupt.stdout
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -517,6 +523,9 @@ jobs:
         run: |
           python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
           python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
+      - name: Kototama pure-i64 frontend check (x86_64)
+        if: matrix.shard == 'core'
+        run: python3 scripts/seed/check-kototama-check.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-check-x86_64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.shard == 'core'
         with:
@@ -576,6 +585,10 @@ jobs:
             ${{ runner.temp }}/kototama-i64-x86_64/report.json
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-i64-x86_64/gate.stderr
+            ${{ runner.temp }}/kototama-check-x86_64/report.json
+            ${{ runner.temp }}/kototama-check-x86_64/gate.stdout
+            ${{ runner.temp }}/kototama-check-x86_64/gate.stderr
+            ${{ runner.temp }}/kototama-check-x86_64/corrupt.stdout
             ${{ runner.temp }}/kototama-receipt-x86_64/report.json
             ${{ runner.temp }}/kototama-receipt-x86_64/gate.stdout
             ${{ runner.temp }}/kototama-receipt-x86_64/gate.stderr
