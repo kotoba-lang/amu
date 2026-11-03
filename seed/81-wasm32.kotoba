@@ -475,6 +475,22 @@
   (let [compiled (xw-project-compile-unit M L V S first count start)]
     (if (pj-ok compiled) (xw-project-iface compiled L P S module) P)))
 
+;; Run the project's normal namespace/reference pipeline before Wasm lowering.
+;; S includes the generated project trailer and L's trail offset is set by the
+;; caller. Retry type refinements before any shared Wasm archive is modified.
+(defn- xw-project-front-h [M :vector-i64 L :vector-i64 P :string S :string module :i64 H :vector-i64] :vector-i64
+  (let [read (pj-read M S)
+        refs (if (pj-ok read) (pj-refcheck (pj-qscan (pj-norm read L S) L P S module) L P module) read)
+        tree (if (pj-ok refs) (pj-splice refs L) refs)
+        names (if (pj-ok tree) (nm-run tree S) tree)
+        stub0 (if (pj-ok names) (pj-ls L pj-k-stub0 (- (vector-at names MM-FN-N) (pj-l L pj-k-nstub))) L)
+        checked (if (pj-ok names) (ck-run-h names S H) names)]
+    (if (and (pj-ok checked) (ck-hint-again? H checked))
+      (xw-project-front-h checked L P S module H)
+      (if (pj-ok checked) (lw-run checked) checked))))
+(defn- xw-project-front [M :vector-i64 L :vector-i64 P :string S :string module :i64] :vector-i64
+  (xw-project-front-h M L P S module (ck-hint-new)))
+
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
 (defn- xw-host-field [M :vector-i64 k :i64] :vector-i64
