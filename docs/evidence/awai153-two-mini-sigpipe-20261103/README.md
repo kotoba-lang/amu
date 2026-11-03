@@ -24,12 +24,10 @@ success. One subsequent protected attempt failed with an SSH banner timeout;
 a retry completed with the parent-observed result above. This is an observed
 behavior of these specific connections, not a claim about every SSH server.
 
-Cleanup was attempted for the two test images and their unique directory on
-Asher, but SSH banner/proxy timeouts prevented confirmation. The exact path
-is `/private/tmp/awai153-native-peer.0tiEPIMx`; it contains only the two
-non-secret test images according to the last successful listing. No cleanup
-of other paths was attempted. Follow-up must verify and remove this exact
-owned directory once SSH is responsive.
+Cleanup initially failed because SSH banner/proxy connections timed out. A
+later connection removed the two exact task-owned images and their unique
+directory on Asher, then checked that the directory no longer existed. No
+other paths were touched.
 
 The task-specific packager changed only the two IP-address immediate words in
 `seed/macos-tcp-nosigpipe-control-packager.kotoba`. Packager source SHA-256
