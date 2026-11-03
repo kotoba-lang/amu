@@ -33,7 +33,10 @@ def _validate(policy):
         raise ValueError("invalid repository ID")
     if not re.fullmatch(r"\.github/workflows/[A-Za-z0-9_.-]+\.ya?ml", policy.workflow):
         raise ValueError("invalid workflow")
-    if not re.fullmatch(r"refs/heads/[A-Za-z0-9_.-]+", policy.ref):
+    branch = policy.ref.removeprefix("refs/heads/")
+    if (not policy.ref.startswith("refs/heads/") or
+        not re.fullmatch(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*", branch) or
+        ".." in branch or any(part.endswith((".", ".lock")) for part in branch.split("/"))):
         raise ValueError("invalid source ref")
     for value in (policy.source_sha, policy.signer_sha):
         if not re.fullmatch(r"[0-9a-f]{40}", value):
