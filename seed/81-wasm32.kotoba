@@ -598,8 +598,24 @@
                  (and (= (vector-at M (+ 200 (quot slot 8))) 0)
                       (or (= word 0) (and (> idx XW-NIMPORT) (< idx (+ XW-NIMPORT count)) (> arity 0) (<= arity 16)))
                       (recur (+ slot 8) (if (= word 0) active (+ active 1)))))))))))
-(defn- xw-project-runtime-bind [M :vector-i64 R :vector-i64] :vector-i64
-  (if (or (not (pj-ok M)) (not (xw-project-runtime-map-valid? R M))) (xg-err M 7102 0)
+;; The metadata must describe actual archived bodies, not just numbers in
+;; range. Call only on the complete runtime archive, before appending guests.
+(defn- xw-project-runtime-arity [L :vector-i64 at :i64 index :i64 target :i64] :i64
+  (if (= index target) (pj-ib L (+ at 4))
+    (xw-project-runtime-arity L (+ at 9 (xw-project-archive-u32 L (+ at 5))) (+ index 1) target)))
+(defn- xw-project-runtime-archive-slots? [L :vector-i64 R :vector-i64 slot :i64] :bool
+  (if (> slot 440) true
+    (let [word (vector-at R (+ 2 (quot (- slot 48) 8)))]
+      (and (or (= word 0)
+               (= (bit-and word 255) (xw-project-runtime-arity L 0 XW-NIMPORT (u64-shift-right word 8))))
+           (xw-project-runtime-archive-slots? L R (+ slot 8))))))
+(defn- xw-project-runtime-archive-valid? [L :vector-i64 R :vector-i64] :bool
+  (and (xw-project-archive-readable? L XW-NIMPORT (vector-at R 0))
+       (= (xw-project-runtime-arity L 0 XW-NIMPORT (vector-at R 1)) 1)
+       (xw-project-runtime-archive-slots? L R 48)))
+(defn- xw-project-runtime-bind [M :vector-i64 R :vector-i64 L :vector-i64] :vector-i64
+  (if (or (not (pj-ok M)) (not (xw-project-runtime-map-valid? R M))
+          (not (xw-project-runtime-archive-valid? L R))) (xg-err M 7102 0)
     (loop [slot 48 next (vector-at M MM-FN-N)]
       (if (> slot 440) (mem-set M MM-FN-N next)
         (let [word (vector-at R (+ 2 (quot (- slot 48) 8)))]

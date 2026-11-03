@@ -2,23 +2,30 @@
 (defn- xg-default [] :i64 2)
 (defn- seed-main [] :i64
   (let [guest "(ns sample (:export [main]))\n(defn main [] :i64 42)\n"
-        S (string-concat guest (xw-rt-src)) M (xg-front S) R (vector-alloc XW-RT-MAP-WORDS)
+        S (string-concat guest (xw-rt-src)) M (xg-front S) R (vector-alloc XW-RT-MAP-WORDS) L (pj-new-l)
         admitted (-> M (xs-clear 197) (mem-set 197 (string-length guest))
                      (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 3 0) (xg-set 4 1)
                      (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))
         assigned (xw-assign admitted S 1 XW-NIMPORT)
         captured (xw-project-runtime-capture assigned R)
+        bodies (-> captured (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xw-pool 1) (xw-tables 1) (xw-code 1))
+        archived (xw-project-archive bodies L XW-NIMPORT)
         expected (xw-idx M (vector-at M 207))
         word-at (+ 2 (quot (- 56 48) 8)) original (vector-at R word-at)
         G (xg-front guest) before (vector-at G MM-FN-N)
         corrupted (vector-assoc! R word-at (bit-or (i64-shift-left XW-NIMPORT 8) (bit-and original 255)))
-        bad (xw-project-runtime-bind G R)]
-    (cond (not (pj-ok captured)) 1 (= expected 0) 2 (= original 0) 3
+        bad (xw-project-runtime-bind G R L)]
+    (cond (not (pj-ok archived)) 1 (= expected 0) 2 (= original 0) 3
           (pj-ok bad) 4 (not= (vector-at G MM-FN-N) before) 5 (not= (vector-at G 207) 0) 6
           :else (let [restore (vector-assoc! R word-at original)
                       clear (-> G (mem-set MM-ERR 0) (mem-set MM-CODE-N 1))
-                      bound (xw-project-runtime-bind clear R)
+                      wrong (vector-assoc! R word-at (bit-or (bit-and original -256) 1))
+                      rejected (xw-project-runtime-bind clear R L)
+                      refusal (pj-ok rejected)
+                      restore-again (vector-assoc! R word-at original)
+                      reset (mem-set G MM-ERR 0)
+                      bound (xw-project-runtime-bind reset R L)
                       slot (xw-slot-fn bound 56 2)
                       emitted (if (> slot 0) (xw-rt bound 56 0 2) bound)]
-                  (cond (not (pj-ok bound)) 7 (= slot 0) 8 (not= (xw-idx bound slot) expected) 9
+                  (cond refusal 12 (not (pj-ok bound)) 7 (= slot 0) 8 (not= (xw-idx bound slot) expected) 9
                         (not (pj-ok emitted)) 10 (<= (xg-pos emitted) 0) 11 :else 0)))))

@@ -241,8 +241,11 @@ def main():
                                     capture_output=True,timeout=300)
     assert runtime_result.returncode == 0 and not runtime_result.stderr and re.search(rb':status :ok :result 0(?:\s|})',runtime_result.stdout), (runtime_result.returncode,runtime_result.stdout,runtime_result.stderr)
     runtime_guard = b'(not (xw-project-runtime-map-valid? R M))'
+    runtime_archive_guard = b'(not (xw-project-runtime-archive-valid? L R))'
     runtime_bytes = runtime_source.read_bytes(); assert runtime_bytes.count(runtime_guard) == 1
-    runtime_mutant_source = out/'runtime-map-mutant.kotoba'; runtime_mutant_source.write_bytes(runtime_bytes.replace(runtime_guard,b'false'))
+    assert runtime_bytes.count(runtime_archive_guard) == 1
+    # Remove both layers to expose the reserved-index map check independently.
+    runtime_mutant_source = out/'runtime-map-mutant.kotoba'; runtime_mutant_source.write_bytes(runtime_bytes.replace(runtime_guard,b'false').replace(runtime_archive_guard,b'false'))
     runtime_mutant = out/'runtime-map-mutant.elf'
     built = subprocess.run([str(compiler),'compile',str(runtime_mutant_source),'--target',target,'--output',str(runtime_mutant),'--format','static'],
                            cwd=out,env=env,capture_output=True,timeout=900)
@@ -251,6 +254,15 @@ def main():
     negative = subprocess.run([str(runtime_mutant)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=300)
     assert not negative.stderr and re.search(rb':status :ok :result 4(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    archive_map_source = out/'runtime-archive-mutant.kotoba'; archive_map_source.write_bytes(runtime_bytes.replace(runtime_archive_guard,b'false'))
+    archive_map_image = out/'runtime-archive-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(archive_map_source),'--target',target,'--output',str(archive_map_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and archive_map_image.is_file(), (built.returncode,built.stderr[-1000:])
+    archive_map_image.chmod(0o755)
+    negative = subprocess.run([str(archive_map_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=300)
+    assert not negative.stderr and re.search(rb':status :ok :result 12(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -264,6 +276,7 @@ def main():
                'projectLinkedSha256':sha(linked_path), 'policyNegativeSha256':sha(policy_image),
                'projectGraphSha256':sha(graph_path), 'graphOrderNegativeSha256':sha(order_image),
                'runtimeMapFixtureSha256':sha(RUNTIME_FIXTURE), 'runtimeMapImageSha256':sha(runtime_image), 'runtimeMapNegativeSha256':sha(runtime_mutant),
+               'runtimeArchiveNegativeSha256':sha(archive_map_image),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
