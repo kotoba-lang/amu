@@ -1131,7 +1131,7 @@
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
           (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
-              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 256) 0)))))
+              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 512) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
@@ -1143,7 +1143,7 @@
                 (or (= words 0) (> (* words 4) 512))))
             (and (string=? mode "fs2-cli-stdio-cwd")
               (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
-                (or (= words 0) (> (* words 4) 256))))
+                (or (= words 0) (> (* words 4) 512))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -1222,6 +1222,10 @@
   (mh-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
 (defn- mh-lb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
+(defn- mh-lh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-lw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
 (defn- mh-sb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
 (defn- mh-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
@@ -1277,11 +1281,12 @@
 ;; Diagnostic launchd command mode: bind FD3 to the already selected working
 ;; directory. Never replace an existing FD3, and require stdin/stdout/stderr to
 ;; be open so open() must return exactly 3. The launcher/host must establish a
-;; private, correctly owned, alias-free WorkingDirectory before exec. This is
-;; not a path-admission policy, a process sandbox or a production runner.
+;; alias-free WorkingDirectory before exec. fstat64 then requires a directory
+;; owned by the process effective UID with exact mode 0700. ACLs and the path
+;; used to enter it remain host duties. This is not a process sandbox.
 (defn- mh-cwd-scope-words [base :i64] :vector-i64
   (mh-finish (-> (mh-new base)
-    (mh-sub 31 31 32) (mh-str 30 31 16)
+    (mh-sub 31 31 192) (mh-str 30 31 16)
     ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
     (mh-imm 0 3) (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92)
     (mh-b 0x54000003 2) (mh-cmpi 0 9) (mh-b 0x54000001 2)
@@ -1289,8 +1294,13 @@
     (mh-imm 8 46) (mh-sb 8 31 0) (mh-sb 31 31 1)
     (mh-add 0 31 0) (mh-imm 1 1048832) (mh-imm 2 0) (mh-sys 5)
     (mh-b 0x54000002 2) (mh-cmpi 0 3) (mh-b 0x54000001 1)
+    ;; fstat64(3): Darwin stat64 mode@4, uid@16. Reject other kinds,
+    ;; special bits and group/other permissions, then require effective UID.
+    (mh-imm 0 3) (mh-add 1 31 32) (mh-sys 339) (mh-b 0x54000002 2)
+    (mh-lh 8 31 36) (mh-imm 9 16832) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-sys 25) (mh-b 0x54000002 2) (mh-lw 8 31 48) (mh-cmp 0 8) (mh-b 0x54000001 2)
     (mh-mov 7 19) (mh-call SLICE-SETUP-START)
-    (mh-ldr 30 31 16) (mh-add 31 31 32) (mh-i 0xd65f03c0)
+    (mh-ldr 30 31 16) (mh-add 31 31 192) (mh-i 0xd65f03c0)
     ;; An unexpected descriptor is ours; close it and refuse.
     (mh-label 1) (mh-sys 6)
     (mh-label 2) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000))))

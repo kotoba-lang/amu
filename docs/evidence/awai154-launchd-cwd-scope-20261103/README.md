@@ -32,6 +32,34 @@ complete FS2 provider, authenticated bot host, process-tree supervisor,
 resource governor, GitHub credential path, selfhost release or Mac mini fleet
 qualification. The test observer is one-off and is not operational tooling.
 
+## Follow-up: owner and permission checks
+
+The later candidate fstats the opened directory before guest execution and
+requires its owner to equal the effective UID and its full file type/mode to
+be exactly directory 0700. On the same local Mac, an owner-matching 0700
+directory succeeded. Modes 0755, 0710, 0770, 0777, 1700 and 4700 refused
+with OS exit 70 before guest output. A request to set 2700 was cleared by the
+filesystem to 0700, so it is not a setgid test. The previous candidate read
+the same 0755 directory; the new candidate refused it. A test-only packager
+mutant substituted UID 0 for `geteuid`; it refused the caller-owned non-root
+directory, while the real candidate succeeded. A true foreign-owned directory
+was not tested.
+
+Two unique user launchd jobs also confirmed 0700 success and 0755 refusal;
+both were booted out and confirmed absent. These checks do not inspect ACLs,
+pin device/inode, validate the path used by launchd, prevent later chmod or
+rename by the same principal, enforce process isolation, or qualify the
+production runner. macOS ACLs require separate handling.
+
+| Follow-up artifact | SHA-256 |
+| --- | --- |
+| Candidate source | `eebbbd6870d4a90b718aaa0d261770455e6aef6448b7b37b4c1c5c2de7b88961` |
+| Signed candidate packager | `c097a95cfa345283a15e9bdce097d2e939f7e2116957db134f4db34a08e6459c` |
+| Signed candidate probe | `93fd76f2405d7c2ed0c07463caca08afc9017d0ec82c904c2bd8787f3e6bdda8` |
+| UID-substitution mutant source | `e919ab7c56436304e10ae0dc6fb8d84562faf5fdfc2f9c6046a481cad5f4d1b4` |
+| Signed mutant packager | `c669f67f79f3d44135ca62f55c64466a7771ba34e409b9e5af2267f050074582` |
+| Signed mutant probe | `35fdea2f74de59ffff0d9994eaf6779efde0ee3620d8c665146ece2a23fb5c9e` |
+
 | Artifact | SHA-256 |
 | --- | --- |
 | Candidate packager source | `a5a90267fb8384d09c32f81a4252d6004643d40c15be75c4634f61ae8fdb45b9` |
