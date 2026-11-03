@@ -1,0 +1,7 @@
+(ns range-check (:export [main]))
+(defn main [] :i64
+ (let [offset (typed-cap-call 38 :string :string "0") expected (typed-cap-call 38 :string :string "1")
+       result (vector-i64-from-bytes (typed-cap-call 35 :string :bytes (str "\u0000FS2\u0000E/range.bin\u0000" offset ":1")))]
+  (if (and (= (vector-count result) 6) (= (vector-at result 0) 0) (= (vector-at result 1) 70)
+           (= (vector-at result 2) 83) (= (vector-at result 3) 50) (= (vector-at result 4) 0)
+           (= (vector-at result 5) (string-code-point-at expected 0))) 0 1)))
