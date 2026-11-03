@@ -1,6 +1,6 @@
 (ns x86-project-fs.entry
   (:export [main])
-  (:capabilities [:clock/now :cli/args])
+  (:capabilities [:clock/now :cli/args :entropy/draw])
   (:require [x86-project-fs.io :as io]))
 (defn- epoch-ms [value :string] :i64
   (if (not= (string-length value) 13) -1
@@ -15,6 +15,7 @@
     (cond
       (= mode "stdout") (if (io/emit-stdout) 0 -1)
       (= mode "stderr") (if (io/emit-stderr) 0 -1)
+      (= mode "entropy") (if (io/entropy-valid) 1 0)
       :else
         (let [now (epoch-ms (typed-cap-call :clock/now :string :string "wall"))]
           (if (<= now 0) -1
