@@ -1,0 +1,207 @@
+{
+  "schema": "kotoba.seed.x86-floating-sir-source-candidate.v1",
+  "state": "source implemented; native type/build/run qualification not achieved",
+  "source-files": [
+    {
+      "path": "seed/70-x86_64-linux.kotoba",
+      "sha256": "fc73ec80f0b9e9a3caec1505c1f4c4d9fbdc695c08295782ac66681fd4c13d0a"
+    },
+    {
+      "path": "seed/74-x86_64-aiueos-object.kotoba",
+      "sha256": "8816eeb91e2545caba3f105c7ecea0fabfe6cb0caca31ff3072bbeff15ae265d"
+    },
+    {
+      "path": "seed/X86_64-LINUX-ABI",
+      "sha256": "63753b36c5c61f9bf01fa614daf5628e020620d0ae7ee0796be65f6a222d6457"
+    },
+    {
+      "path": "seed/tests/unit/x86_float_t.kotoba",
+      "sha256": "7cf18e5a29721a90955d65de4cc6e0f2057ddc07319a66a6eab8956bf4651e39"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/README.md",
+      "sha256": "c3e50081b2e9925b65012d5846b83dc0dfa1a270fa63fa43a58c7cc9f0c7989f"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/native/x86_float_stack_test.kotoba",
+      "sha256": "b4d8ab30861d31e5ba6049c896ca7c25f6c542a263aba03de504b8edebe03467"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/native/x86_float_test.kotoba",
+      "sha256": "e94e5ed06ae54cb14ef39f0cadf62e0a9461b82807534592689475f9ee30395f"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/refusals/kernel-floating-operation.kotoba",
+      "sha256": "532b0196aa6f77935c73a390924b296a1a1f29ce2840b0952a2496fe06944e94"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/refusals/kernel-floating-result.kotoba",
+      "sha256": "d2639aaff6cb635c5e13b1b9dfb3513a26af0d16aa34bebfc7b90296c9bcff99"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/refusals/public-floating-parameter.kotoba",
+      "sha256": "0879fc0215dafd00946cc31327c17443b6136fc35df626bf4b50650d047da992"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/refusals/public-floating-result.kotoba",
+      "sha256": "f48bff8fa0a2072e9a891aa38c63d9f84898a464f7ff182af6c7b915fe28774c"
+    },
+    {
+      "path": "test/fixtures/selfhost/x86-float/refusals/scalar-handle.kotoba",
+      "sha256": "62d1905579b98a182368703092757b76e6b55199ac3530c2432e22b8a7923481"
+    }
+  ],
+  "compiler-manifests": [
+    {
+      "path": "seed/MANIFEST",
+      "sha256": "f886dc89f4dab0f2c5b3e3b71f363fe54cedfafdcff318fcd9e41f3ad086086d",
+      "modules": 17,
+      "unity-sha256": "b2bba850c3c09f47323f134f29d2f57876e7b66264e680051ab7ebf2fddaf0b9"
+    },
+    {
+      "path": "seed/X86_64-LINUX-MANIFEST",
+      "sha256": "9bd28e3738bf816e12098fb44b212b9d76f34c898981bc921389586c8f5c369c",
+      "modules": 20,
+      "unity-sha256": "3a9d70f0d86489d0b56fe4abf08fa157834dab7f57e5fe069ae29bbe6a257f44"
+    },
+    {
+      "path": "seed/X86_64-LINUX-SELFHOST-MANIFEST",
+      "sha256": "295e7404070eb85a2a752199c6723739691e63ae390232a612f1ccbb563c7f6e",
+      "modules": 14,
+      "unity-sha256": "d2281e05e0c2a18f5b0e312709925871e49a8c72b35990711ab9208656d8bcf8"
+    }
+  ],
+  "SIR-contract": {
+    "binary64-binary": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "binary32-binary": [
+      24,
+      25,
+      26,
+      27,
+      28,
+      29
+    ],
+    "binary64-comparison": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "binary32-comparison": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21
+    ],
+    "binary64-unary": [
+      16,
+      17,
+      18
+    ],
+    "binary32-unary": [
+      24,
+      25,
+      26
+    ],
+    "conversion": [
+      32,
+      33,
+      34,
+      35,
+      36,
+      37
+    ],
+    "count": 36,
+    "unknown-tags-and-gaps": "refused, including unreachable SIR",
+    "carriers": "existing GPR ABI, raw i64 binary64 and sign-extended i32 binary32",
+    "scratch-registers": [
+      "xmm0",
+      "xmm1",
+      "rax",
+      "rcx",
+      "rdx"
+    ],
+    "helpers": "no floating runtime calls or external floating ABI"
+  },
+  "numeric-contract": {
+    "MXCSR": "save complete caller state, use 0x1f80 for each operation, restore before leaving operation",
+    "rounding": "nearest ties to even, no contraction",
+    "exceptions": "masked, NaN/infinity arithmetic follows SSE2; no implicit trap",
+    "subnormal": "DAZ/FTZ disabled; gradual underflow",
+    "min-max": "propagate a quieted input NaN; min(-0,+0)=-0 and max(-0,+0)=+0 in either order",
+    "NaN-payload-selection": "no additional language guarantee",
+    "float-to-i64": "truncating saturating conversion, NaN->0, positive overflow->MAX, negative overflow->MIN"
+  },
+  "ABI-boundaries": {
+    "profile0": "integer scalar ELF and kernel object (ADR 0373 windows); no floating types or SIR tags",
+    "profile1": "existing context bit-carrier runtime; six through sixteen stack arguments preserved; no floating types or SIR tags",
+    "profile2": "closed aiueos project; no floating types or SIR tags",
+    "profile3": "scalar ELF; public boundary unchanged main()->i64; internal i64/bool/f64/f32 only; no project frame, five-argument bound",
+    "frame": "16 extra bytes only in a function with floating SIR; included in existing 4096-byte bound",
+    "integer-only-frames": "unchanged",
+    "historical-context-C-loader": "not current acceptance or an authorized fallback"
+  },
+  "corpora": {
+    "scalar": {
+      "path": "test/fixtures/selfhost/x86-float/native/x86_float_test.kotoba",
+      "groups": 9,
+      "expected-full-i64-result": 511,
+      "result-channel": "full eight-byte stdout value; exit status alone cannot verify all nine groups"
+    },
+    "context-stack": {
+      "path": "test/fixtures/selfhost/x86-float/native/x86_float_stack_test.kotoba",
+      "expected-full-i64-result": 3,
+      "arguments": 6
+    },
+    "compiler-unit": {
+      "path": "seed/tests/unit/x86_float_t.kotoba",
+      "expected-result": 15,
+      "manifest": "seed/X86_64-LINUX-MANIFEST",
+      "replacement": "seed/72-x86-cross-entry.kotoba",
+      "modules": 20,
+      "single-mem-new-arena": true,
+      "driver-helper": "original xg-default retained"
+    },
+    "refusal-files": 5,
+    "native-typechecked": false,
+    "native-compiled": false,
+    "native-executed": false
+  },
+  "actual-checks": {
+    "source": "delimiter/private-call/arity review across the complete 20-module cross source; unchanged public entry/int predicate; profile/frame/branch-shape checks",
+    "independent-opcode-review": {
+      "kind": "independent hand-assembled encoding/disassembly review; not emitted Kotoba output or runtime qualification",
+      "cases": 36,
+      "object-sha256": "c6c5551ed3e8e8d8f51c30bf2e8acd4bfd9c59bb75ec7f662245f46859d12fbc",
+      "decoder": "Xcode llvm-objdump, x86-64 Intel syntax",
+      "unknown-instructions": 0,
+      "local-branch-targets": "all land on decoded instruction boundaries inside the same probe",
+      "source-evaluated": false,
+      "executed": false,
+      "product-or-build-dependency": false
+    },
+    "opcode-review-scope": "hand-assembled review fragments; not emitted Kotoba compiler output and not executable native qualification"
+  },
+  "remaining": [
+    "complete qualified Amu-selfhost-produced loaderless compiler, runtime, project/link, package and launch closure",
+    "native type checking, selfbuild generation/source/lock/artifact bindings and forbidden-process trace",
+    "all positive/refusal/fuel/stack/caller-MXCSR controls with real generated artifacts",
+    "unchanged complete literal/document/formatter and five-API Kami component gates",
+    "missing seed frontend heads, top-level float literals and other language/runtime gaps stay refused"
+  ],
+  "adopted-and-preserved-artifact-pins-changed": false,
+  "old-receipts-cannot-qualify-new-closure": true,
+  "execution-foundation-stays-separate": true,
+  "no-archive-or-delete-authorization-from-this-receipt": true
+}

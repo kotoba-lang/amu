@@ -82,6 +82,7 @@ jobs:
           if-no-files-found: warn
       - name: Observer and admission negative controls
         run: |
+          python3 scripts/seed/test_content_reuse_trust.py -v
           python3 scripts/seed/test_native_iteration.py -v
           python3 scripts/seed/test_native_preflight_projects.py -v
           python3 scripts/seed/test_native_gate_shard.py -v
@@ -179,6 +180,26 @@ jobs:
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+      - name: Float result and fuel corpus through the tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-float-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
+      - name: Document and decimal positive and fuel corpus through tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-document-decimal-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-fuel-arm64"
+      - name: Document and decimal refusal corpus through tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-document-decimal-refusals.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-refusals-arm64"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: document-decimal-native-arm64
+          path: |
+            ${{ runner.temp }}/document-decimal-fuel-arm64
+            ${{ runner.temp }}/document-decimal-refusals-arm64
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: float-fuel-arm64
+          path: ${{ runner.temp }}/float-fuel-arm64
+          if-no-files-found: warn
       - name: Fresh one-compiler derivation before independent ISA qualification
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

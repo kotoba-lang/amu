@@ -443,7 +443,9 @@ def wasm32_browser(out, boot):
         src.write_text(case["source"])
         r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
                     scope, success=False)
-        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+        # Decimal literals lower to binary64 before the first refused operation.
+        detail = {"float-f32-conv": 34, "float-f64-unordered": 19}.get(case["name"], case["refusalDetail"])
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {detail}".encode() in r.stderr \
             and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
         float_refusals.append(case["name"])
     modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
@@ -478,6 +480,8 @@ if __name__ == "__main__":
                         help="the wasm32-browser target only (not a native tier): F of --bootstrap compiles the modules")
     parser.add_argument("--bootstrap", type=Path, help="with --wasm32-browser: a passing native bootstrap output")
     a = parser.parse_args()
+    if a.reuse:
+        parser.error("--reuse is disabled until the producer and input closure are independently trusted")
     if a.wasm32_browser:
         assert a.bootstrap and not (a.reuse or a.store), "--wasm32-browser takes --bootstrap and no reuse"
         sys.exit(wasm32_browser(a.output.resolve(), a.bootstrap.resolve()))

@@ -9,14 +9,22 @@ on:
     paths:
       - "seed/**"
       - "bin/amu-linux-x86_64"
+      - "native-product.json"
       - "scripts/seed/check-definition-build-native.py"
+      - "scripts/seed/sealed_image.py"
+      - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/test_verified_attestation.py"
       - ".github/workflows/native-definition-build.yml"
   push:
     branches: [main]
     paths:
       - "seed/**"
       - "bin/amu-linux-x86_64"
+      - "native-product.json"
       - "scripts/seed/check-definition-build-native.py"
+      - "scripts/seed/sealed_image.py"
+      - "scripts/seed/verified_attestation.py"
+      - "scripts/seed/test_verified_attestation.py"
       - ".github/workflows/native-definition-build.yml"
 permissions:
   contents: read
@@ -43,6 +51,8 @@ jobs:
           persist-credentials: false
       - name: Verify adopted source and compiler pins
         run: python3 scripts/seed/check-native-identities.py
+      - name: Verify provenance policy negative controls (not artifact qualification)
+        run: python3 scripts/seed/test_verified_attestation.py -v
       - name: Native object storage, symbolic relink, fresh refusals and executed mutants
         run: >-
           python3 scripts/seed/native_build_queue.py

@@ -47,16 +47,17 @@ F64 = """(ns d2i (:export [f]))
 SIGTRAP = -5
 INT64_MIN = -(1 << 63)
 # float-cases.json entries that do not use f32-to-i64-truncating: their aarch64-macos payloads (extract-native main)
-# must keep these SHA-256s, measured with the main 26833b16 root (af6f23df...)
+# use the main 26833b16 pins except the three decimal-literal cases, whose source now lowers
+# literals directly to f64 bits. Their native results are checked separately in this integration.
 UNCHANGED = {
     "float-f64-basic": "5de1e920cab24ea641e46e653be76b920d25115d5aedf6daed12bab34a11b77a",
-    "float-f64-literal": "ab03f6bc3d32d13fdae53dfc1659dd4dbdef9ddc8ea4d547e3a53d4d1d89259d",
+    "float-f64-literal": "55aeb9e09e9e7f730ac7369a908b7e4c85ddcda39a998ccf73d6f3f259110724",
     "float-f64-div-trunc": "9b1b5fcf9473c38baf3c05d43c8b42bc3f9d718162d55b84df9b9875a5ee4ad8",
     "float-f64-neg-abs-sqrt": "49047a607c6eabfc386825195938dcadcc3b475c65d4ccd9549bcb7cd27fc942",
     "float-f64-cmp": "9f1bc1bec464d34e3e307f7d425f91138fd539a099c07fe98072a6dd6eb6816c",
     "float-f64-min-max": "d517dd209fc58b934ed3a87ca030d49e2814665006e1b288ffa12ed4c26791cc",
-    "float-f32-conv": "786f572150556eda60cf859ede6da7d3cbf9801a2d64d6fd5ba51ffad87f7106",
-    "float-f64-unordered": "47d5322b6119abd6a45ac46dbce57b3416290ffa05d8b5fbb143deb579b6ea86",
+    "float-f32-conv": "22d720d664e004925603ba93ff95e88c0be1438dca12ffd77be847ff5b8c4af8",
+    "float-f64-unordered": "96d77de223bed4e18a5768a5abdb55cc7e2df6c02944ebb082ad2b99b187cc54",
     "float-f32-cmp": "2629d0afcd6fb9520f037a8c40678e735bf00a6eb44912e86163d20422eb3264",
 }
 D64 = "4280a029215d9ebbcc2eed89c1a1ef57e587987c538b610b08ce0ba47e630bb6"   # the F64 payload under the same root
@@ -159,6 +160,17 @@ def main(compiler, output, measure):
     if digests != want:
         raise ValueError(f"payloads without the conversion changed: {digests}")
     report["unchanged"] = digests
+
+    # These literals intentionally lower to different bytes in the decimal
+    # frontend. Execute each result as well as pinning its emitted payload.
+    literal_results = {}
+    for name in ("float-f64-literal", "float-f32-conv", "float-f64-unordered"):
+        expected = next(c["result"] for c in json.loads(FLOAT_CASES.read_text())["cases"] if c["name"] == name)
+        result = program(gate, compiler, output, "execute-" + name, cases[name])
+        if result.returncode != expected or result.stdout or result.stderr:
+            raise ValueError(f"{name}: exit {result.returncode}, expected {expected}; {result.stderr!r}")
+        literal_results[name] = result.returncode
+    report["decimalLiteralResults"] = literal_results
 
     for name, source, symbol, n in (("f2i", SOURCE, "kotoba_aiueos_f32_to_i64", 1), ("f2i2", TWICE, "f", 2)):
         raw, _ = compile_raw(gate, compiler, output, name, source, symbol)

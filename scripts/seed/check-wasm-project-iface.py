@@ -226,6 +226,12 @@ def main():
     lock.write_text(lock_text)
     bad = run_graph(digest(lock_text.encode()))
     assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
+    dep.write_text('(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (f64-to-bits (f64-add (f64-from-bits x) (f64-from-bits x))))\n')
+    lock_text = f'KSL1\nentry {entry}\nroot {graph_dir}\n' + ''.join(
+        f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))
+    lock.write_text(lock_text)
+    bad = run_graph(digest(lock_text.encode()))
+    assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
     dep.write_text('(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (let [s (keyword-name :cat)] x))\n')
     lock_text = f'KSL1\nentry {entry}\nroot {graph_dir}\n' + ''.join(
         f'file {digest(p.read_bytes())} {p}\n' for p in sorted((entry,dep)))

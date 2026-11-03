@@ -1,0 +1,90 @@
+;; Runtime fragment embedded literally in 21-check; no runtime source reads.
+;; FIPS 180-4 sections 4.1.2, 4.2.2, 5.1.1, 5.3.3 and 6.2.
+;; Integer words carry unsigned 32-bit values in i64. Read input bytes without
+;; changing them; only the fresh, private state/schedule vectors are mutated.
+;; Padding is virtual, so neither a padded input copy nor a per-block schedule
+;; allocation is needed. Existing typed-byte/resource bounds apply unchanged.
+;; No hash capability, host crypto, text conversion or C runtime is called.
+(defn- __krsh_u32 [x :i64] :i64 (bit-and x 4294967295))
+(defn- __krsh_rotate [x :i64 n :i64] :i64
+  (__krsh_u32 (bit-or (u64-shift-right x n) (i64-shift-left x (- 32 n)))))
+(defn- __krsh_padded-byte [data :bytes length :i64 total :i64 at :i64] :i64
+  (cond (< at length) (bytes-at data at)
+        (= at length) 128
+        (>= at (- total 8))
+        (bit-and (u64-shift-right (* length 8) (* 8 (- (- total 1) at))) 255)
+        :else 0))
+(defn- __krsh_word [data :bytes length :i64 total :i64 at :i64] :i64
+  (+ (i64-shift-left (__krsh_padded-byte data length total at) 24)
+     (i64-shift-left (__krsh_padded-byte data length total (+ at 1)) 16)
+     (i64-shift-left (__krsh_padded-byte data length total (+ at 2)) 8)
+     (__krsh_padded-byte data length total (+ at 3))))
+(defn- __krsh_schedule [data :bytes at :i64 total :i64 work :vector-i64] :vector-i64
+  (let [length (bytes-count data)
+        first (loop [i 0 current work]
+                (if (= i 16) current
+                  (recur (+ i 1) (vector-assoc! current i (__krsh_word data length total (+ at (* i 4)))))))]
+    (loop [i 16 current first]
+      (if (= i 64) current
+        (let [a (vector-at current (- i 15)) b (vector-at current (- i 2))
+              small0 (bit-xor (bit-xor (__krsh_rotate a 7) (__krsh_rotate a 18)) (u64-shift-right a 3))
+              small1 (bit-xor (bit-xor (__krsh_rotate b 17) (__krsh_rotate b 19)) (u64-shift-right b 10))
+              next (__krsh_u32 (+ (vector-at current (- i 16)) small0
+                           (vector-at current (- i 7)) small1))]
+          (recur (+ i 1) (vector-assoc! current i next)))))))
+(defn- __krsh_compress [state :vector-i64 work :vector-i64 constants :vector-i64] :vector-i64
+  (loop [i 0 a (vector-at state 0) b (vector-at state 1)
+         c (vector-at state 2) d (vector-at state 3)
+         e (vector-at state 4) f (vector-at state 5)
+         g (vector-at state 6) h (vector-at state 7)]
+    (if (= i 64)
+      (-> state
+          (vector-assoc! 0 (__krsh_u32 (+ (vector-at state 0) a)))
+          (vector-assoc! 1 (__krsh_u32 (+ (vector-at state 1) b)))
+          (vector-assoc! 2 (__krsh_u32 (+ (vector-at state 2) c)))
+          (vector-assoc! 3 (__krsh_u32 (+ (vector-at state 3) d)))
+          (vector-assoc! 4 (__krsh_u32 (+ (vector-at state 4) e)))
+          (vector-assoc! 5 (__krsh_u32 (+ (vector-at state 5) f)))
+          (vector-assoc! 6 (__krsh_u32 (+ (vector-at state 6) g)))
+          (vector-assoc! 7 (__krsh_u32 (+ (vector-at state 7) h))))
+      (let [big1 (bit-xor (bit-xor (__krsh_rotate e 6) (__krsh_rotate e 11)) (__krsh_rotate e 25))
+            choose (bit-xor (bit-and e f) (bit-and (__krsh_u32 (bit-not e)) g))
+            first (__krsh_u32 (+ h big1 choose (vector-at constants i) (vector-at work i)))
+            big0 (bit-xor (bit-xor (__krsh_rotate a 2) (__krsh_rotate a 13)) (__krsh_rotate a 22))
+            majority (bit-xor (bit-xor (bit-and a b) (bit-and a c)) (bit-and b c))
+            second (__krsh_u32 (+ big0 majority))]
+        (recur (+ i 1) (__krsh_u32 (+ first second)) a b c (__krsh_u32 (+ d first)) e f g)))))
+(defn- __krsh_hex-state [state :vector-i64] :string
+  (loop [i 0 output ""]
+    (if (= i 32) output
+      (let [byte (bit-and (u64-shift-right (vector-at state (quot i 4))
+                                         (* 8 (- 3 (bit-and i 3)))) 255)
+            high (quot byte 16) low (bit-and byte 15)]
+        (recur (+ i 1)
+          (string-concat output
+            (string-concat (string-substring "0123456789abcdef" high (+ high 1))
+                           (string-substring "0123456789abcdef" low (+ low 1)))))))))
+(defn- __krsh_sha256-hex [data :bytes] :string
+  (let [length (bytes-count data)
+        total (bit-and (+ length 72) -64)
+        initial [0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a
+                 0x510e527f 0x9b05688c 0x1f83d9ab 0x5be0cd19]
+        constants [0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5 0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5
+                   0xd807aa98 0x12835b01 0x243185be 0x550c7dc3 0x72be5d74 0x80deb1fe 0x9bdc06a7 0xc19bf174
+                   0xe49b69c1 0xefbe4786 0x0fc19dc6 0x240ca1cc 0x2de92c6f 0x4a7484aa 0x5cb0a9dc 0x76f988da
+                   0x983e5152 0xa831c66d 0xb00327c8 0xbf597fc7 0xc6e00bf3 0xd5a79147 0x06ca6351 0x14292967
+                   0x27b70a85 0x2e1b2138 0x4d2c6dfc 0x53380d13 0x650a7354 0x766a0abb 0x81c2c92e 0x92722c85
+                   0xa2bfe8a1 0xa81a664b 0xc24b8b70 0xc76c51a3 0xd192e819 0xd6990624 0xf40e3585 0x106aa070
+                   0x19a4c116 0x1e376c08 0x2748774c 0x34b0bcb5 0x391c0cb3 0x4ed8aa4a 0x5b9cca4f 0x682e6ff3
+                   0x748f82ee 0x78a5636f 0x84c87814 0x8cc70208 0x90befffa 0xa4506ceb 0xbef9a3f7 0xc67178f2]
+        work (vector-alloc 64)
+        final (loop [at 0 state initial scratch work]
+                (if (= at total) state
+                  (let [prepared (__krsh_schedule data at total scratch)]
+                    (recur (+ at 64) (__krsh_compress state prepared constants) prepared))))]
+    (__krsh_hex-state final)))
+
+(defn- document-sha256 [document :document] :string
+  (let [canonical (__kr_dcanon (__r6-ds document))
+        checked (__kr_drdecode canonical)]
+    (__krsh_sha256-hex (string-to-utf8 (__kr_dcanon checked)))))
