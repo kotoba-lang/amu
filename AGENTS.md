@@ -444,3 +444,18 @@ Every previous ARM/x86 gate, uncached main/full tier and fresh controller
 verdict remains required. The ARM artifact includes root and final generations
 for unchanged native producer pin checks after transport. No compiler/image
 bytes, limits, case expectations or native gate commands change in this split.
+
+## CI input-hash gate (JUN-759)
+
+Every job of `selfhost-native` and of the other native workflows starts with `./.github/actions/ci-gate`
+(`scripts/ci/ci_gate.py`) and guards its later steps; required check names are never changed or made conditional.
+- Docs-only (pull_request / merge_group whose changed files are only top-level or non-evidence `*.md`, `LICENSE`,
+  `.DS_Store`, `.github/dependabot.yml`) skips the heavy steps. Everything else, including every workflow, action,
+  script, `seed/**`, `docs/evidence/**` and `examples/**`, runs.
+- Marker jobs skip when the same tree already passed that job (cache key = tree hash + runner arch + tier). Derivation
+  jobs (`bootstrap-arm64-root`, `one-compiler-arm64`, `x86-native-qualification`, `x86-complete`) restore the exact
+  derived compiler files when their inputs (tree minus gate-only `check-*`/`test_*` scripts they do not reference)
+  are unchanged. Markers/caches are saved only after a job passed.
+- push to main, the schedule and workflow_dispatch never skip and never restore: they run the full suite and only save.
+- A new gate-only script that a derivation starts to call must be reachable by name from the derivation's roots in
+  the workflow (`roots:`), or its edits will not bust that derivation's key.

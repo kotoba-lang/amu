@@ -114,7 +114,14 @@ def main(a):
                    KEXE_CPU_SECONDS="120", KEXE_WALL_SECONDS="120")
     rows = {r["workload"]: r for r in observed["workloads"]}
     save()
-    for name, workload, refusal, changed in mutations(host.decode()):
+    everything = mutations(host.decode())
+    assert len(everything) == 13 and len({row[0] for row in everything}) == 13
+    # JUN-759: the mutants are independent. --shard I/N runs every N-th one (I from 1); the shards partition all 13,
+    # and each shard asserts that it ran all of its own. Without --shard all 13 run, as before.
+    index, count_shards = a.shard
+    selected = everything[index - 1::count_shards]
+    report["shard"] = dict(index=index, of=count_shards, mutations=[row[0] for row in selected])
+    for name, workload, refusal, changed in selected:
         directory = out / name
         directory.mkdir(mode=0o700)
         mutant_source = directory / "host.kotoba"
@@ -145,7 +152,7 @@ def main(a):
             compilerSource=C.pin(source), compilerContainer=C.pin(container), compiler=C.elf(producer, 183),
             hostSource=C.pin(mutant_source), host=C.elf(image, 183), payload=C.pin(payload)))
         save()
-    assert len(report["mutations"]) == 13
+    assert len(report["mutations"]) == len(selected) and [m["name"] for m in report["mutations"]] == [row[0] for row in selected]
     assert all(C.pin(ROOT / name) == value for name, value in sources.items())
     assert C.pin(ROOT / "seed/bench/host-arm.kotoba") == report["hostSource"]
     report["status"] = "PASS_EXECUTED_NATIVE_BENCHMARK_MUTATIONS"
@@ -158,4 +165,9 @@ if __name__ == "__main__":
     parser.add_argument("--one", type=Path, required=True)
     parser.add_argument("--controls", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    main(parser.parse_args())
+    parser.add_argument("--shard", default="1/1", help="I/N: run mutants I, I+N, ... of the 13 (default 1/1: all)")
+    parsed = parser.parse_args()
+    i, n = map(int, parsed.shard.split("/"))
+    assert 1 <= i <= n <= 13, "shard must be I/N with 1 <= I <= N <= 13"
+    parsed.shard = (i, n)
+    main(parsed)
