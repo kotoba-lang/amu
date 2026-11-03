@@ -1,0 +1,19 @@
+;; Assemble two archived Wasm functions and a shared literal data segment.
+(defn- xg-default [] :i64 2)
+(defn- seed-main [] :i64
+  (let [M (mem-new) L (pj-new-l) V (vector-alloc 2)
+        i0 (pj-put32 L 0 5) a0 (pj-ibset L 4 0) n0 (pj-put32 L 5 4)
+        b0 (-> L (pj-ibset 9 0) (pj-ibset 10 66) (pj-ibset 11 42) (pj-ibset 12 11))
+        i1 (pj-put32 L 13 6) a1 (pj-ibset L 17 0) n1 (pj-put32 L 18 4)
+        b1 (-> L (pj-ibset 22 0) (pj-ibset 23 66) (pj-ibset 24 7) (pj-ibset 25 11))
+        image (pj-ls L pj-k-img 26)
+        pool-len (vector-assoc! V 0 3) pool (-> V (xw-project-pool-set 0 97) (xw-project-pool-set 1 98) (xw-project-pool-set 2 99))
+        invalid (xw-project-module M L V 2 7)]
+    (if (pj-ok invalid) 1
+      (let [clear (mem-set M MM-ERR 0)
+            result (xw-project-module clear L V 2 6)]
+        (if (not (pj-ok result)) 2
+          (let [start (io-out "WASM-BEGIN\n")
+                body (io-write-hex M (+ MM-OUT-BASE 1) (- (vector-at M MM-OUT-N) 1))
+                end (io-out "WASM-END\n")]
+            0))))))

@@ -1,0 +1,63 @@
+;; Route C C3 (JUN-714): submit a Volta host semaphore release through nvgpu.
+;; The buffer is mapped both into this process and the GPU address space. A
+;; distinct payload on each submission makes stale CPU contents a failing case.
+
+(def C3-SIZE 0x100000)
+(def C3-SEM-OFFSET 0x1000)
+(def C3-RUNS 16)
+(def C3-TIMEOUT-NS 1000000000)
+
+(defn- c3-show [name :string v :i64] :i64
+  (say (string-concat name (string-concat " 0x" (hex-str v)))))
+
+(defn main [] :i64
+  (let [nv (nv-open NVMAP)
+        h (nvmap-create nv C3-SIZE)
+        a (nvmap-alloc nv h NVMAP-HEAP-IOVMM NVMAP-HANDLE-WRITE-COMBINE 4096)
+        dfd (nvmap-get-fd nv h)
+        cpu (cpu-map dfd C3-SIZE)
+        ctrl (nv-open NVGPU-CTRL)
+        chars (kxrt-b-alloc NVGPU-CHAR-BUF)
+        chars-size (nv-characteristics ctrl chars)
+        compute (ch-compute-class chars)
+        gpfifo (ch-gpfifo-class chars)
+        c0 (if (= gpfifo C3-GPFIFO-CLASS) 0 (refuse "nvgpu" "not Volta GPFIFO class"))
+        as (nv-alloc-as ctrl)
+        mapping (as-map as dfd)
+        va (map-va mapping)
+        tsg (nv-open-tsg ctrl)
+        ch (nv-open-channel ctrl)
+        c1 (as-bind-channel as ch)
+        c2 (tsg-bind-channel tsg ch)
+        obj (ch-alloc-obj-ctx ch compute)
+        c3 (ch-setup-bind ch C3-GPFIFO-ENTRIES)
+        gp (kxrt-b-alloc 4096)
+        clock (kxrt-b-alloc 4096)
+        pre (c3-show "gpfifo_class" gpfifo)
+        pre2 (c3-show "compute_class" compute)
+        pre3 (c3-show "gpu_va" va)
+        pre4 (c3-show "channel_setup" c3)
+        run (loop [i 1]
+              (if (> i C3-RUNS) 0
+                (let [sem (+ cpu C3-SEM-OFFSET)
+                      payload (+ 0x51430000 i)
+                      reset (s32 sem 0)
+                      words (pb-sem-release cpu (+ va C3-SEM-OFFSET) payload)
+                      start (now-ns clock)
+                      retries (ch-submit ch gp va words 1000)
+                      finish (wait-word sem payload clock start C3-TIMEOUT-NS)
+                      result (c3-show "semaphore" (l32 sem))
+                      timing (c3-show "rt_ns" (- finish start))]
+                  (recur (inc i)))))
+        unmap (as-unmap as va)
+        close-ch (sys1 SYS-CLOSE ch)
+        close-tsg (sys1 SYS-CLOSE tsg)
+        close-as (sys1 SYS-CLOSE as)
+        close-ctrl (sys1 SYS-CLOSE ctrl)
+        munmap (sys2 SYS-MUNMAP cpu C3-SIZE)
+        close-dfd (sys1 SYS-CLOSE dfd)
+        free (nvmap-free nv h)
+        close-nv (sys1 SYS-CLOSE nv)]
+    (c3-show "unmap" unmap)
+    (c3-show "free" free)
+    0))

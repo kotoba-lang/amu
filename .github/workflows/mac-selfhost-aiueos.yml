@@ -1,6 +1,8 @@
 name: mac-selfhost-aiueos
 
 on:
+  merge_group:
+    types: [checks_requested]
   pull_request:
     paths:
       - '.github/workflows/mac-selfhost-aiueos.yml'
@@ -30,6 +32,8 @@ on:
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.py'
       - 'scripts/seed/check-js-browser.py'
+      - 'scripts/seed/check-browser-keyword-intern.py'
+      - 'seed/tests/browser-keyword-intern.kotoba'
       - 'runtime/js-browser-static-run.html'
       - 'runtime/wasm32-browser-static-host.js'
       - 'seed/81-js-esm.kotoba'
@@ -171,6 +175,12 @@ jobs:
             --compiler seed/bootstrap/aarch64-macos/amu-full-root.macho \
             --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
             --output "$RUNNER_TEMP/mac-js-browser"
+      - name: Browser keyword interning and negative control (JUN-772)
+        run: |
+          python3 scripts/seed/check-browser-keyword-intern.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+            --output "$RUNNER_TEMP/mac-browser-keyword-intern"
       - name: document-edn-read treats comma, newline, tab, comments and edge whitespace as EDN delimiters (JUN-650)
         run: |
           python3 scripts/seed/check-document-edn-read.py \
