@@ -1,0 +1,9 @@
+(ns safety.arity-positive (:export [main]))
+;; Exercises the internal-call boundary, not the separate native export ABI.
+(defn five [a :i64 b :i64 c :i64 d :i64 e :i64] :i64 (+ a b c d e))
+(defn six [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64] :i64 (+ a b c d e f))
+(defn sixteen [a :i64 b :i64 c :i64 d :i64 e :i64 f :i64 g :i64 h :i64 i :i64 j :i64 k :i64 l :i64 m :i64 n :i64 o :i64 p :i64] :i64
+ (+ a b c d e f g h i j k l m n o p))
+(defn main [] :i64
+ (if (and (= (five 1 2 3 4 5) 15) (= (six 1 2 3 4 5 6) 21)
+          (= (sixteen 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16) 136)) 42 7))
