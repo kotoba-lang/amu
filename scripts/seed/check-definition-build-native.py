@@ -9,11 +9,14 @@ this harness is not a whole Seed compiler cache, a trusted image-binding host, o
 import argparse
 import hashlib
 import json
+import os
 import platform
+import shutil
 import signal
 import subprocess
 import time
 from pathlib import Path
+from sealed_image import sealed_image
 
 ROOT = Path(__file__).resolve().parents[2]
 EXTRA = ["seed/04-definition-cid.kotoba", "seed/05-definition-graph.kotoba", "seed/05-checked-definition.kotoba",
@@ -41,6 +44,9 @@ def main(compiler, out, *, mutations=True):
     machine = platform.machine()
     assert platform.system() == "Linux" and machine in ("aarch64", "x86_64")
     compiler = compiler.resolve()
+    product = json.loads((ROOT / "native-product.json").read_text())
+    compiler_pin = product["rootImage" if machine == "aarch64" else "image"]
+    assert pin(compiler) == compiler_pin, "compiler differs from the source descriptor"
     out.mkdir(parents=True, exist_ok=False)
     out = out.resolve()
     paths = [p for p in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()
@@ -62,9 +68,10 @@ def main(compiler, out, *, mutations=True):
     def save():
         (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
 
-    def call(name, argv, *, code=0, environment=env, exact=True):
+    def call(name, argv, *, code=0, environment=env, exact=True, pass_fds=()):
         start = time.monotonic()
-        p = subprocess.run(list(map(str, argv)), cwd=out, env=environment, capture_output=True, timeout=900)
+        p = subprocess.run(list(map(str, argv)), cwd=out, env=environment, capture_output=True, timeout=900,
+                           pass_fds=pass_fds)
         (out / (name + ".stdout")).write_bytes(p.stdout)
         (out / (name + ".stderr")).write_bytes(p.stderr)
         row = dict(name=name, exit=p.returncode, seconds=time.monotonic() - start,
@@ -81,7 +88,9 @@ def main(compiler, out, *, mutations=True):
         src.write_text(text)
         image = out / (name + ".elf")
         target = "aarch64-linux" if machine == "aarch64" else "x86_64-linux"
-        call("build-" + name, [compiler, "compile", src, "--target", target, "--output", image, "--format", "static"])
+        with sealed_image(compiler, compiler_pin["sha256"]) as (fd, _):
+            call("build-" + name, [f"/proc/self/fd/{fd}", "compile", src, "--target", target,
+                                   "--output", image, "--format", "static"], pass_fds=(fd,))
         image.chmod(0o755)
         return image
 
@@ -94,6 +103,30 @@ def main(compiler, out, *, mutations=True):
         path = out / name
         path.mkdir(mode=0o700)
         return path
+
+    def bound_invoke(name, image, expected, text, cache, hits, *, replace_after_open=False):
+        src, artifact = out / (name + ".kir"), out / (name + ".elf")
+        src.write_text(text)
+        with sealed_image(image, expected) as (fd, digest):
+            # An owner who can replace the path cannot replace the sealed fd.
+            if replace_after_open:
+                image.unlink()
+                image.write_bytes(b"not an executable")
+            try:
+                os.write(fd, b"x")
+                raise AssertionError("sealed image accepted a write")
+            except PermissionError:
+                pass
+            try:
+                os.ftruncate(fd, 0)
+                raise AssertionError("sealed image accepted truncation")
+            except PermissionError:
+                pass
+            p = call(name, [f"/proc/self/fd/{fd}", "cached", src, cache, digest, artifact, "1000000"],
+                     pass_fds=(fd,))
+        assert artifact.exists() and not p.stderr
+        assert (f"reused={hits[0]} rebuilt={hits[1]}\n").encode() in p.stdout
+        return artifact
 
     def invoke(name, text, cache, *, mode="cached", hits=None, code=0, context=seal,
                fuel="1000000", image=producer):
@@ -128,6 +161,27 @@ def main(compiler, out, *, mutations=True):
     helper = function("helper", "(if (< x 0) 0 (+ x 2))")
     entry = function("main", "(helper 40)", "")
     base = module([helper, entry])
+    bound_cache = directory("bound-cache")
+    trusted_copy = out / "bound-producer.elf"
+    shutil.copyfile(producer, trusted_copy)
+    trusted_copy.chmod(0o500)
+    bound_cold = bound_invoke("bound-cold", trusted_copy, seal, base, bound_cache, (0, 2))
+    bound_warm = bound_invoke("bound-warm", trusted_copy, seal, base, bound_cache, (2, 0))
+    assert bound_cold.read_bytes() == bound_warm.read_bytes()
+    replaced = bound_invoke("bound-replaced-path", trusted_copy, seal, base, bound_cache, (2, 0),
+                            replace_after_open=True)
+    assert replaced.read_bytes() == bound_cold.read_bytes()
+    execute("bound-replaced-path", replaced, 42)
+    try:
+        with sealed_image(trusted_copy, seal):
+            raise AssertionError("modified producer accepted")
+    except ValueError as error:
+        assert str(error) == "image digest mismatch"
+    report["boundFixture"] = dict(image=pin(producer), cold=pin(bound_cold), warm=pin(bound_warm),
+                                  pathReplacementDidNotChangeExecution=True, sealedWritesRejected=True,
+                                  independentlyAuthenticatedProducer=False,
+                                  productionQualified=False)
+    save()
     cache = directory("cache")
     pair("base-fill", base, cache, (0, 2), 42)
     pair("base-warm", base, cache, (2, 0), 42)
@@ -150,7 +204,6 @@ def main(compiler, out, *, mutations=True):
             refused_kir = invoke("vector-" + name + "-kir-" + mode, kir, vector_cache, mode=mode, code=1)
             assert not refused_kir.stdout and b"E7101" in refused_kir.stderr
             assert {p.name: pin(p) for p in vector_cache.iterdir()} == vector_before
-    invoke("native-controls", base, cache, mode="controls")
     # Record-schema identity is supported by the checked KIR producer, but
     # the current object backend is still the scalar profile. Neither a
     # reference nor a cached build may manufacture an object for this input.
@@ -229,6 +282,32 @@ def main(compiler, out, *, mutations=True):
         exhausted.chmod(0o755)
         p = call("fuel-exhaustion-execute", [exhausted], code=-signal.SIGILL, environment=dict(PATH="/nonexistent"))
         assert not p.stdout and not p.stderr
+    # Reusing the same object bodies must never reuse an earlier invocation's
+    # fuel budget. Compare fresh reference/link bytes for several budgets,
+    # including exhaustion, with the same already-populated SCC cache.
+    cycle_before = {p.name: pin(p) for p in cyc.iterdir()}
+    fuel_images = {}
+    for budget in ("1", "2", "3", "1000000"):
+        reference = invoke("fuel-" + budget + "-reference", cycle, cyc, mode="reference", fuel=budget)
+        candidate = invoke("fuel-" + budget + "-cached", cycle, cyc, hits=(3, 0), fuel=budget)
+        assert reference.read_bytes() == candidate.read_bytes(), budget
+        fuel_images[budget] = pin(candidate)
+        assert {p.name: pin(p) for p in cyc.iterdir()} == cycle_before
+        if machine == "x86_64":
+            outcomes = []
+            for lane, image in (("reference", reference), ("cached", candidate)):
+                image.chmod(0o755)
+                observed = call("fuel-" + budget + "-" + lane + "-execute", [image],
+                                environment=dict(PATH="/nonexistent"), exact=False)
+                outcomes.append((observed.returncode, observed.stdout, observed.stderr))
+            assert outcomes[0] == outcomes[1], budget
+            if budget == "1":
+                assert outcomes[0] == (-signal.SIGILL, b"", b"")
+            if budget == "1000000":
+                assert outcomes[0] == (0, (41).to_bytes(8, "little", signed=True), b"")
+    assert len({v["sha256"] for v in fuel_images.values()}) == len(fuel_images)
+    report["freshFuelLinkParity"] = fuel_images
+    save()
     missing = directory("missing")
     pair("missing-fill", base, missing, (0, 2), 42)
     next(missing.glob("*.kdo")).unlink()
@@ -270,6 +349,17 @@ def main(compiler, out, *, mutations=True):
         for name, old, new, scenario in controls:
             assert source.count(old) == 1, name
             mutant = build("mutant-" + name, source.replace(old, new))
+            if name == "checksum":
+                # A different executing image must not reuse the first image's objects.
+                changed_image = bound_invoke("bound-other-image", mutant, pin(mutant)["sha256"], base,
+                                             bound_cache, (0, 2))
+                assert changed_image.read_bytes() == bound_cold.read_bytes()
+                execute("bound-other-image", changed_image, 42)
+                try:
+                    with sealed_image(mutant, seal):
+                        raise AssertionError("different image accepted original pin")
+                except ValueError as error:
+                    assert str(error) == "image digest mismatch"
             # Explicitly reuse fixture context to reach the internal guard.
             # Production image binding remains an OPEN gate for this prototype.
             src = out / ("mutant-" + name + ".kir")

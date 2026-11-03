@@ -66,8 +66,17 @@ def repin_cli(out):
     cli_path = ROOT / "seed/bootstrap/aarch64-macos/cli.json"
     cli = json.loads(cli_path.read_text())
     root = json.loads((ROOT / "seed/bootstrap/aarch64-macos/root.json").read_text())
-    if build["sources"] != cli["sources"]:
-        sys.exit("CLI source list changed; update cli.json sources first")
+    names = []
+    for name in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines():
+        if name and not name.startswith("#"):
+            names.append(name)
+            if name == "seed/90-drv.kotoba":
+                break
+    names += ["seed/macos-cli-api.kotoba", "seed/macos-cli.kotoba"]
+    expected_sources = {name: pin(ROOT / name) for name in names}
+    if len(names) != len(set(names)) or build["sources"] != expected_sources:
+        sys.exit("CLI build sources do not match the current manifest and source bytes")
+    cli["sources"] = expected_sources
     old = cli["image"]["sha256"]
     image = ROOT / cli["image"]["path"]
     shutil.copyfile(out / "cli/amu-cli.macho", image)

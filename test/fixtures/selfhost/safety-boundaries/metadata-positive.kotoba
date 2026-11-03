@@ -1,0 +1,4 @@
+(ns safety.metadata-positive "(attacker-op 1) is inert documentation" (:export [main]))
+(defn answer "(attacker-op 1) is also inert here" {:note "metadata"} [x :i64] :i64 (+ x 1))
+(defn sequence [] :i64 1 2)
+(defn main [] :i64 (if (and (= (answer 41) 42) (= (sequence) 2)) 42 7))
