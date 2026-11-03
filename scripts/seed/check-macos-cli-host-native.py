@@ -50,7 +50,7 @@ def main(out):
               for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop", "write-failure")}
     calls = []
 
-    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None, scope_fd=None):
+    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None, scope_fd=None, cwd=None):
         # Intentionally no inherited directory FD, external environment or PATH.
         def inherited_setup():
             if scope_fd is not None:
@@ -65,7 +65,7 @@ def main(out):
                 signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
                 resource.setrlimit(resource.RLIMIT_FSIZE, (file_limit, file_limit))
 
-        r = subprocess.run([str(images[case]), *map(str, args)], cwd=out,
+        r = subprocess.run([str(images[case]), *map(str, args)], cwd=out if cwd is None else cwd,
                            env={"PATH": "/nonexistent", "LANG": "C"},
                            capture_output=True, timeout=20, close_fds=not (inherited or scope_fd is not None),
                            preexec_fn=inherited_setup if inherited or alarm or file_limit is not None or scope_fd is not None else None)
@@ -184,6 +184,14 @@ def main(out):
     (out / "child.stdout").unlink()
     run("spawn-cwd", out, images["info"], expected=b"PASS_NATIVE_HOST_SPAWN\n")
     assert (out / "child.stdout").read_bytes() == (str(images["info"]) + "\n").encode()
+    (out / "child.stdout").unlink()
+    run("spawn-cwd", out, images["fds"], expected=b"PASS_NATIVE_HOST_SPAWN\n")
+    assert (out / "child.stdout").read_bytes() == b"PASS_NATIVE_CHILD_FDS_CLOSED\n"
+    # Scope startup must refuse a cwd that grants group or other access.
+    unsafe_cwd = out / "unsafe-cwd"
+    unsafe_cwd.mkdir(mode=0o700)
+    unsafe_cwd.chmod(0o755)
+    run("string-fs2-lock-cwd", cwd=unsafe_cwd, exit_code=70)
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
