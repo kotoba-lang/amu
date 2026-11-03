@@ -487,7 +487,12 @@
         checked (if (pj-ok names) (ck-run-h names S H) names)]
     (if (and (pj-ok checked) (ck-hint-again? H checked))
       (xw-project-front-h checked L P S module H)
-      (if (pj-ok checked) (lw-run checked) checked))))
+      (let [lowered (if (pj-ok checked) (lw-run checked) checked)
+            policy (if (pj-ok lowered) (pj-r5b-after lowered L P S module) lowered)]
+        (if (pj-ok policy)
+          (-> policy (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1))
+          policy)))))
 (defn- xw-project-front [M :vector-i64 L :vector-i64 P :string S :string module :i64] :vector-i64
   (xw-project-front-h M L P S module (ck-hint-new)))
 

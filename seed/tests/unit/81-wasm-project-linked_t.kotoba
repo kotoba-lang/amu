@@ -36,8 +36,13 @@
               :else (let [wasm (xw-project-module M2 L V 2 entry)
                           bad-source "(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (dep true))\n"
                           bad-trail (pj-ls L pj-k-trail (string-length bad-source))
-                          bad (xw-project-front M1 L P4 (string-concat bad-source trailer) 1)]
-                      (cond (not (pj-ok wasm)) 14 (pj-ok bad) 20
+                          bad (xw-project-front M1 L P4 (string-concat bad-source trailer) 1)
+                          bad-ok (pj-ok bad)
+                          cap-source "(ns app (:require [dep :refer [dep]]) (:export [main]))\n(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string \"x\")] (dep 41)))\n"
+                          cap-trail (-> L (pj-ls pj-k-trail (string-length cap-source)) (pj-mset 1 pj-mf-caps 1))
+                          cap (xw-project-front M1 L P4 (string-concat cap-source trailer) 1)
+                          cap-error (vector-at cap MM-ERR)]
+                      (cond (not (pj-ok wasm)) 14 bad-ok 20 (not= cap-error E-CAP-UNDECLARED) 21
                             :else (let [start (io-out "LINKED-BEGIN\n")
                                         bytes (io-write-hex M2 (+ MM-OUT-BASE 1) (- (vector-at M2 MM-OUT-N) 1))
                                         end (io-out "LINKED-END\n")]

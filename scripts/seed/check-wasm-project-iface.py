@@ -155,6 +155,17 @@ def main():
     assert linked_wasm[:8] == b'\x00asm\x01\x00\x00\x00'
     linked_path = out/'project-linked.wasm'; linked_path.write_bytes(linked_wasm)
     print('WASM_PROJECT_LINKED_HEX', linked_wasm.hex())
+    policy_guard = b'(pj-r5b-after lowered L P S module)'
+    linked_bytes = linked_source.read_bytes(); assert linked_bytes.count(policy_guard) == 1
+    policy_source = out/'project-policy-mutant.kotoba'; policy_source.write_bytes(linked_bytes.replace(policy_guard,b'lowered'))
+    policy_image = out/'project-policy-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(policy_source),'--target',target,'--output',str(policy_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and policy_image.is_file(), (built.returncode,built.stderr[-1000:])
+    policy_image.chmod(0o755)
+    negative = subprocess.run([str(policy_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=120)
+    assert not negative.stderr and re.search(rb':status :ok :result 21(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -165,7 +176,7 @@ def main():
                'payloadNegativeControls':payload_receipts,
                'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
                'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
-               'projectLinkedSha256':sha(linked_path),
+               'projectLinkedSha256':sha(linked_path), 'policyNegativeSha256':sha(policy_image),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
