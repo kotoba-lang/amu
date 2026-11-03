@@ -189,6 +189,7 @@ def observe(line):
 ENTRY_TEXT = "kotoba \u8a00\u8449 entry\n"
 PROBES = {"spin": dict(exit=120, status="trap", remainingFuel=0),
           "deep": dict(exit=120, status=None, remainingFuel=None),
+          "document": dict(exit=0, status="ok", result=2),
           "entry": dict(exit=0, status="ok", result=len(ENTRY_TEXT.encode())),
           "entry-denied": dict(exit=120, status="trap")}
 PROBE_RUNS = {"entry": [("entry", dict(allow=[35, 37, 38, 39], args=["/data/../data/in.txt"], files={"/data/in.txt": ENTRY_TEXT})),
