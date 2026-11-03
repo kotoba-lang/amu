@@ -1,0 +1,5 @@
+# Linux ARM64 spawn contract samples
+
+On a disposable 1 CPU / 2 GiB VM, compile `normal.kotoba` and `missing.kotoba` with both the pinned base compiler and the test-only byte-patched compiler described in [the parent-death observation](../awai152-spawn-real-runtime-20261103/). Place compilers, sources and `check.py` under `/private/tmp/awai152-contract-check`; compile with `KEXE_CAP_RESOURCES_35` scoped to that directory, `--target aarch64-linux --format static`, and name the four guests `base-normal.elf`, `candidate-normal.elf`, `base-missing.elf`, `candidate-missing.elf`. Run the Python test observer in that VM.
+
+Both variants returned the expected reply from sequential allowed `/usr/bin/printf` and `/usr/bin/false`; a request for a program omitted from the grant exited 126 with `spawn/program-not-granted`; a granted absent executable exited 126 with `spawn/exec-failed`. Hashes and limitations are in `receipt.json`. This samples three contracts, not every security, timeout or race path. The candidate compiler is not a qualified release compiler.
