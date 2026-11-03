@@ -75,6 +75,13 @@ def update_controller_pin(source, index, digest):
     return source
 
 
+def update_factory_role_pin(source, role, digest):
+    pattern = re.compile(rf'(\(string=\? role "{re.escape(role)}"\) ")[0-9a-f]{{64}}(")')
+    source, count = pattern.subn(rf"\g<1>{digest}\g<2>", source)
+    assert count == 1, f"expected one closed CDCI factory pin for {role}, got {count}"
+    return source
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--observations", type=Path, required=True)
@@ -149,6 +156,12 @@ def main():
     for key in before:
         expected = gate_source if key == "kotobaGateSourceSHA256" else policy[key]
         assert after[key] == expected, (key, after[key], expected)
+    factory_path = ROOT / "seed/79-native-cdci.kotoba"
+    factory = factory_path.read_text()
+    factory = update_factory_role_pin(factory, "controller", sha(controller_path))
+    factory = update_factory_role_pin(factory, "kotoba-native", sha(gate_path))
+    assert re.search(r'\(string=\? role "controller"\) "' + re.escape(sha(controller_path)) + r'"', factory)
+    assert re.search(r'\(string=\? role "kotoba-native"\) "' + re.escape(sha(gate_path)) + r'"', factory)
     evidence = dict(schema="amu.native-kotoba24-image-repin.v1", amuHead=args.head,
                     workflowRunId=args.run_id,
                     workflowRunUrl=f"https://github.com/kotoba-lang/amu/actions/runs/{args.run_id}",
@@ -168,6 +181,7 @@ def main():
     gate_path.write_text(gate)
     policy_path.write_text(json.dumps(policy, indent=2) + "\n")
     controller_path.write_text(controller)
+    factory_path.write_text(factory)
     evidence_path.write_text(json.dumps(evidence, indent=2) + "\n")
     print("REFRESHED_NATIVE_KOTOBA24_IMAGE_PINS", len(evidence_rows), "gate source", gate_source)
     print("EVIDENCE", evidence_path)
