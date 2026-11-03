@@ -26,6 +26,8 @@ name: selfhost-native
 # wasm32-browser-chrome (x86_64: the modules in headless Chrome, JUN-353; the
 # arm64 image has no Chrome or Chromium).
 on:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * *"
@@ -49,26 +51,10 @@ on:
       - "runtime/wasm32-browser-*"
       - "runtime/kotoba-client-runtime*"
       - ".github/workflows/selfhost-native.yml"
+  # Required checks must be emitted on every pull request, including docs-only changes.
   pull_request:
     branches: [main]
-    paths:
-      - "bin/amu-linux-x86_64"
-      - "bin/kotoba"
-      - "bin/kotoba-compiler"
-      - "bin/kotoba-linux-x86_64"
-      - "bin/kotoba-compiler-linux-x86_64"
-      - "native-product.json"
-      - "seed/**"
-      - "scripts/seed/**"
-      - "bench/embench/proof-v1/**"
-      - "examples/foundation-starter/**"
-      - "tools/gpu_*.kotoba"
-      - "tools/spirv_*.kotoba"
-      - "tools/static_launcher*.kotoba"
-      - "tools/b2/**"
-      - "runtime/wasm32-browser-*"
-      - "runtime/kotoba-client-runtime*"
-      - ".github/workflows/selfhost-native.yml"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   # A newer PR push supersedes the old run; full runs on main queue instead.
@@ -96,6 +82,7 @@ jobs:
           if-no-files-found: warn
       - name: Observer and admission negative controls
         run: |
+          python3 scripts/seed/test_content_reuse_trust.py -v
           python3 scripts/seed/test_native_iteration.py -v
           python3 scripts/seed/test_native_preflight_projects.py -v
           python3 scripts/seed/test_native_gate_shard.py -v
@@ -191,8 +178,28 @@ jobs:
           if-no-files-found: error
       - name: Loaderless bootstrap from the pinned root (arm64, native)
         env:
-          TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
+          TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+      - name: Float result and fuel corpus through the tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-float-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
+      - name: Document and decimal positive and fuel corpus through tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-document-decimal-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-fuel-arm64"
+      - name: Document and decimal refusal corpus through tiered native bootstrap
+        run: python3 scripts/seed/check-tiered-document-decimal-refusals.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-refusals-arm64"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: document-decimal-native-arm64
+          path: |
+            ${{ runner.temp }}/document-decimal-fuel-arm64
+            ${{ runner.temp }}/document-decimal-refusals-arm64
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: float-fuel-arm64
+          path: ${{ runner.temp }}/float-fuel-arm64
+          if-no-files-found: warn
       - name: Fresh one-compiler derivation before independent ISA qualification
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -447,7 +454,7 @@ jobs:
         run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         env:
-          TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
+          TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -476,7 +483,7 @@ jobs:
       # main, the schedule and a manual dispatch only; on a pull request the arm64 phase runs them, and
       # native_gate_shard.py --tier pr refuses the deferral if it no longer does.
       matrix:
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"}]' || '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"},{"shard":"x86-dupes","receipt":"x86_64-native-dupes-receipt","schedule":"native-scheduling-x86-dupes"}]') }}
+        include: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'merge_group') && '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"}]' || '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"},{"shard":"x86-dupes","receipt":"x86_64-native-dupes-receipt","schedule":"native-scheduling-x86-dupes"}]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
@@ -626,6 +633,22 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: F's wasm32-browser modules of the runtime cases and probes, float refusals (JUN-353)
         run: python3 scripts/seed/selfhost-bootstrap.py --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
+      - name: Locked Wasm project discovery and refusal controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-project-arm"
+      - name: Wasm project interface mapping controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-iface.py
+          --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-iface-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: wasm-project-admission-arm
+          path: |
+            ${{ runner.temp }}/wasm-project-arm/receipt.json
+            ${{ runner.temp }}/wasm-iface-arm/receipt.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: wasm32-browser-modules
@@ -634,6 +657,30 @@ jobs:
             ${{ runner.temp }}/wasm32-target/calls.json
             ${{ runner.temp }}/wasm32-target/wasm32/*.wasm
           if-no-files-found: error
+  wasm32-project-admission-x86:
+    name: wasm32-browser project admission (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Locked Wasm project discovery and refusal controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-project-x86"
+      - name: Wasm project interface mapping controls
+        run: >-
+          python3 scripts/seed/check-wasm-project-iface.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-iface-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: wasm-project-admission-x86
+          path: |
+            ${{ runner.temp }}/wasm-project-x86/receipt.json
+            ${{ runner.temp }}/wasm-iface-x86/receipt.json
+          if-no-files-found: warn
   wasm32-browser-chrome:
     name: wasm32-browser target (headless Chrome, x86_64)
     needs: wasm32-browser-compile
@@ -653,11 +700,16 @@ jobs:
       # kotoba-client-runtime.js on a 127.0.0.1 page; no request leaves the machine)
       - name: wasm32-browser cases in headless Chrome
         run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/wasm32-target/wasm32" --output "$RUNNER_TEMP/wasm32-browser" --browser google-chrome
+      - name: Local Worker stdio in headless Chrome
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/seed/check-wasm32-local-stdio.py --wasm "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-stdio.wasm" --output-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-output-bound.wasm" --read-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-bound.wasm" --broker-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-broker-isolation.wasm" --all-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-all.wasm" --output "$RUNNER_TEMP/wasm32-local-stdio" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: wasm32-browser-receipt
-          path: ${{ runner.temp }}/wasm32-browser/wasm32-browser.json
+          path: |
+            ${{ runner.temp }}/wasm32-browser/wasm32-browser.json
+            ${{ runner.temp }}/wasm32-local-stdio/receipt.json
+            ${{ runner.temp }}/wasm32-local-stdio/results.json
           if-no-files-found: warn
 
   qualify-x86_64:
@@ -678,13 +730,13 @@ jobs:
           name: native-scheduling-x86-extensions
           path: ${{ runner.temp }}/x86-shards/extensions
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
         with:
           name: native-scheduling-x86-dupes
           path: ${{ runner.temp }}/x86-shards/x86-dupes
       - name: Require the original native gates and argv at the bounded capacity per runner (all 19; on a pull request 16, the 3 deferred to main running on arm64)
         env:
-          TIER: ${{ github.event_name == 'pull_request' && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
+          TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --tier "$TIER" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
