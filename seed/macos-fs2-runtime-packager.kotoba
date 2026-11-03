@@ -1538,7 +1538,10 @@
     ;; Minimal environment; no caller secrets or runtime override variables.
     (mh-label 75) (mh-b (bit-or 0x10000000 8) 111) (mh-str 8 23 768)
     (mh-b (bit-or 0x10000000 8) 112) (mh-str 8 23 776)
-    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784) (mh-str 31 23 792)
+    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784)
+    ;; Do not inherit machine-wide Git helpers, URL rewrites or proxies.
+    ;; Per-repository configuration is still checked by the caller.
+    (mh-b (bit-or 0x10000000 8) 118) (mh-str 8 23 792) (mh-str 31 23 800)
     (mh-imm 8 0x003d524944504d54) (mh-str 8 27 0)
     (mh-add 27 27 7) (mh-ldr 26 23 528)
     (mh-label 76) (mh-lb 8 26 0) (mh-sb 8 27 0)
@@ -1602,6 +1605,7 @@
     (mh-label 110) (mh-text ".")
     (mh-label 111) (mh-text "PATH=/usr/bin:/bin")
     (mh-label 112) (mh-text "LANG=C")
+    (mh-label 118) (mh-text "GIT_CONFIG_NOSYSTEM=1")
     (mh-label 114) (mh-text "amu: EHOST child setup/exec failed\n")
     (mh-label 115) (mh-text "amu: EHOST invalid host ABI or exhausted buffer\n"))]
     (mh-finish s)))
