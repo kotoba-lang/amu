@@ -29,9 +29,11 @@ record and argument refusal; it is not an operational or compiler fallback.
 
 This candidate does not authenticate the machine or output, establish fresh
 reservations, control process lifetimes, deploy to a mini, or qualify the
-public CLI. It has no receiver integration or OCI delivery yet. The emitted
-fixed instructions, platform signing, syscall ABI and production source seal
-still require independent review and qualification before use as a host tool.
+public CLI. A separate [Murakumo draft receiver](https://github.com/kotoba-lang/murakumo/pull/578)
+has been tested with this candidate on one mini, using a temporary path and a
+diagnostic SSH host; OCI delivery and production integration remain open. The
+emitted fixed instructions, platform signing, syscall ABI and production source
+seal still require independent review and qualification before use as a host tool.
 
 | Artifact | SHA-256 |
 | --- | --- |
