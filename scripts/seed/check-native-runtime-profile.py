@@ -69,7 +69,8 @@ def main(compiler, out):
             image.chmod(0o700)
             selected = profile or "standard-v1"
             assert f":runtime-profile :{selected}".encode() in r.stdout
-            assert f":vector-descriptors {LARGE if selected == 'large-vectors-v1' else STANDARD}".encode() in r.stdout
+            limit = LARGE if selected == 'large-vectors-v1' else 32768 if selected == 'office-experiment-v1' else STANDARD
+            assert f":vector-descriptors {limit}".encode() in r.stdout
             return image
         assert r.returncode != 0 and not image.exists(), (name, "accepted invalid profile")
 
@@ -81,7 +82,7 @@ def main(compiler, out):
     def bounded(name, n, profile, overflow=False):
         image = build(name, vectors(n), profile)
         r, fields = observe("run-" + name, image)
-        limit = LARGE if profile == "large-vectors-v1" else STANDARD
+        limit = LARGE if profile == "large-vectors-v1" else 32768 if profile == "office-experiment-v1" else STANDARD
         assert fields.get("vectors") == min(n, limit) and fields.get("vector-items") == 0, (name, fields)
         if overflow:
             assert r.returncode != 0 and b"vector-table-exhausted" in r.stderr, (name, r.returncode)
@@ -103,6 +104,9 @@ def main(compiler, out):
     bounded("large-cross-standard", STANDARD + 1, "large-vectors-v1")
     bounded("large-at-limit", LARGE, "large-vectors-v1")
     bounded("large-over-limit", LARGE + 1, "large-vectors-v1", True)
+    if target == 'x86_64-linux':
+        bounded("office-at-limit", 32768, "office-experiment-v1")
+        bounded("office-over-limit", 32769, "office-experiment-v1", True)
 
     for case in json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]:
         image = build("case-" + case["name"], case["source"], "large-vectors-v1")
@@ -118,7 +122,7 @@ def main(compiler, out):
     r, _ = observe("zero-rollback", zero)
     assert r.returncode == 0 and b":status :ok :result 0 " in r.stdout
     unity = b"".join((ROOT / p).read_bytes() + b"\n" for p in paths).decode()
-    marker = "(mem-u2dec (if (= profile 1) 67108864 4194304))"
+    marker = "(mem-u2dec (cond (= profile 1) 67108864 (= profile 2) 32768 :else 4194304))"
     start = unity.index("(defn- xs-profile-prelude ")
     end = unity.index("(defn- xs-command ", start)
     prelude = unity[start:end]

@@ -188,8 +188,8 @@
 (defn- xs-profile-note [profile :i64] :string
   (if (< profile 0) ""
     (string-concat ", :runtime-profile "
-      (string-concat (if (= profile 1) ":large-vectors-v1" ":standard-v1")
-        (string-concat ", :vector-descriptors " (mem-u2dec (if (= profile 1) 67108864 4194304)))))))
+      (string-concat (cond (= profile 1) ":large-vectors-v1" (= profile 2) ":office-experiment-v1" :else ":standard-v1")
+        (string-concat ", :vector-descriptors " (mem-u2dec (cond (= profile 1) 67108864 (= profile 2) 32768 :else 4194304)))))))
 (defn- xs-write-record [target :string format :string code :i64 bytes :i64 profile :i64] :string
   (let [a (string-concat "{:ok true, :target " target)
         b (string-concat a ", :format ") c (string-concat b format)
@@ -209,14 +209,16 @@
   (cond (= (io-argc) base) 0
         (and (= (io-argc) (+ base 2)) (string=? (io-arg base) "--runtime-profile"))
           (cond (string=? (io-arg (inc base)) "standard-v1") 0
-                (string=? (io-arg (inc base)) "large-vectors-v1") 1 :else -1)
+                (string=? (io-arg (inc base)) "large-vectors-v1") 1
+                (string=? (io-arg (inc base)) "office-experiment-v1") 2 :else -1)
         :else -1))
 (defn- xs-profile-prelude [profile :i64] :string
   (string-concat "(def KXRT-VECTORS "
-    (string-concat (mem-u2dec (if (= profile 1) 67108864 4194304)) ")\n")))
+    (string-concat (mem-u2dec (cond (= profile 1) 67108864 (= profile 2) 32768 :else 4194304)) ")\n")))
 (defn- xs-command [mode :i64] :i64
   (let [src (io-arg 1) out (io-arg 5) profile (xs-runtime-profile 8) build (if (= mode 6) 0 mode)]
-    (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+    (cond (or (< profile 0) (and (= profile 2) (not= mode 0))
+              (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
             (drv-fail0 E-USAGE)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))

@@ -10,8 +10,12 @@
 (defn- xs-rt-core [] :string (xs-rt-core-profile 0))
 (defn- xs-rt-core-profile [profile :i64] :string
   ;; Runtime admission requires its intrinsic stubs first, in ABI order.
-  (string-concat (xs-rt-body) (xs-profile-prelude profile)))
-(defn- xs-rt-body [] :string
+  (string-concat (xs-rt-body profile) (xs-profile-prelude profile)))
+(defn- xs-rt-bounds [profile :i64] :string
+  (if (= profile 2)
+    "(def KXRT-PAIRS 262144)\n(def KXRT-POOL 4194304)\n(def KXRT-REGIONS 32768)\n(def KXRT-ITEMS 131072)\n(def KXRT-VECTOR-MAX 131072)\n(def KXRT-VALUE-MAX 65536)"
+    "(def KXRT-PAIRS 16777216)\n(def KXRT-POOL 268435456)\n(def KXRT-REGIONS 4194304)\n(def KXRT-ITEMS 268435456)\n(def KXRT-VECTOR-MAX 33554432)\n(def KXRT-VALUE-MAX 8388608)"))
+(defn- xs-rt-body [profile :i64] :string
 (string-concat "
 ;; x86_64-linux-static runtime. Scalar Kotoba plus the kxrt- intrinsics only:
 ;; no strings, vectors or closures (those would call back into this runtime).
@@ -47,12 +51,7 @@
 (defn- kxrt-g [] :i64 (+ (kxrt-ctx) 1024))
 (defn- kxrt-gl [k :i64] :i64 (kxrt-load64 (+ (kxrt-g) k)))
 (defn- kxrt-gs [k :i64 v :i64] :i64 (kxrt-store64 (+ (kxrt-g) k) v))
-(def KXRT-PAIRS 16777216)
-(def KXRT-POOL 268435456)
-(def KXRT-REGIONS 4194304)
-(def KXRT-ITEMS 268435456)
-(def KXRT-VECTOR-MAX 33554432)
-(def KXRT-VALUE-MAX 8388608)
+" (string-concat (xs-rt-bounds profile) (string-concat "
 
 ;; ---- system calls ----
 (defn- kxrt-exit [code :i64] :i64
@@ -1856,7 +1855,7 @@
   (let [d (kxrt-split argc) g (kxrt-gs 72 (if (< d argc) (- argc (inc d)) 0))
         h (kxrt-gs 80 (+ (kxrt-gl 80) (* 8 (inc d))))]
     d))
-" (string-concat (linux-fs2-src) (linux-keyword-src))))
+" (string-concat (linux-fs2-src) (linux-keyword-src))))))
 (defn- xs-rt-start [] :string
 "(defn- kxrt-start [sp :i64] :i64
   (let [ctx (kxrt-ctx) argc (kxrt-load64 sp)
