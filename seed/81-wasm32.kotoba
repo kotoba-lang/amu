@@ -420,6 +420,46 @@
     (let [v (xr-align M) p (+ MM-LIT-BASE (* lit MM-LIT-W)) w (mem-set v (+ p LF-POOL) (xg-pos v))]
       (xw-pool (xr-pool-bytes w (vector-at w (+ p LF-B)) (vector-at w (+ p LF-LEN))) (inc lit)))))
 
+;; Multi-module literals need one shared address space. V is a packed byte
+;; vector whose first word holds the used length; remaining words hold bytes.
+;; Each module's local pool is already in CODE and its LF-POOL offsets are
+;; relative to zero. Validate everything before changing either V or offsets.
+(defn- xw-project-pool-byte [V :vector-i64 at :i64] :i64
+  (bit-and (u64-shift-right (vector-at V (+ 1 (quot at 8))) (* 8 (bit-and at 7))) 255))
+(defn- xw-project-pool-set [V :vector-i64 at :i64 byte :i64] :vector-i64
+  (let [word (+ 1 (quot at 8)) shift (* 8 (bit-and at 7)) mask (i64-shift-left 255 shift)]
+    (vector-assoc! V word (bit-or (bit-and (vector-at V word) (bit-not mask))
+                                  (i64-shift-left (bit-and byte 255) shift)))))
+(defn- xw-project-pool-literals? [M :vector-i64 len :i64 lit :i64] :bool
+  (if (>= lit (vector-at M MM-LIT-N)) true
+    (let [p (+ MM-LIT-BASE (* lit MM-LIT-W)) at (vector-at M (+ p LF-POOL)) n (vector-at M (+ p LF-LEN))]
+      (and (>= at 0) (<= at len) (>= n 0) (<= n (- len at))
+           (xw-project-pool-literals? M len (+ lit 1))))))
+(defn- xw-project-pool-append [M :vector-i64 V :vector-i64] :vector-i64
+  (if (or (not (pj-ok M)) (< (vector-count V) 1)) (xg-err M 7104 0)
+    (let [used (vector-at V 0) len (xg-pos M) cap (* (- (vector-count V) 1) 8)
+          base (bit-and (+ used 7) -8)]
+      (if (or (< used 0) (> used cap) (< len 0) (not= len (xg-get M 2))
+              (> base cap) (> len (- cap base)) (> (+ base len) (- (* 8 MM-CODE-CAP) 1))
+              (not (xw-project-pool-literals? M len 1))) (xg-err M 7104 0)
+        (let [pad (loop [at used] (if (>= at base) 0
+                    (let [w (xw-project-pool-set V at 0)] (recur (+ at 1)))))
+              copied (loop [at 0] (if (>= at len) 0
+                       (let [w (xw-project-pool-set V (+ base at) (xg-code-byte M at))] (recur (+ at 1)))))
+              adjusted (loop [lit 1] (if (>= lit (vector-at M MM-LIT-N)) 0
+                         (let [p (+ MM-LIT-BASE (* lit MM-LIT-W) LF-POOL)
+                               w (mem-set M p (+ base (vector-at M p)))] (recur (+ lit 1)))))
+              done (vector-assoc! V 0 (+ base len))]
+          M)))))
+(defn- xw-project-pool-copy [M :vector-i64 V :vector-i64 at :i64 len :i64] :vector-i64
+  (if (or (>= at len) (not (pj-ok M))) M
+    (xw-project-pool-copy (xg-byte M (xw-project-pool-byte V at)) V (+ at 1) len)))
+(defn- xw-project-pool-emit [M :vector-i64 V :vector-i64] :vector-i64
+  (if (< (vector-count V) 1) (xg-err M 7104 0)
+    (let [len (vector-at V 0) cap (* (- (vector-count V) 1) 8)]
+      (if (or (< len 0) (> len cap) (> len (- (* 8 MM-CODE-CAP) 1))) (xg-err M 7104 0)
+        (xw-project-pool-copy M V 0 len)))))
+
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
 (defn- xw-host-field [M :vector-i64 k :i64] :vector-i64

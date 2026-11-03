@@ -44,6 +44,31 @@
                                               (cond (pj-ok rejected-types) 74
                                                     (not= (xg-pos M) 0) 75
                                                     :else 0)))))))))
+(defn- t-project-pool [M :vector-i64] :i64
+  (let [V (vector-alloc 4) p (+ MM-LIT-BASE MM-LIT-W)
+        ready (-> M (mem-set MM-ERR 0) (mem-set MM-CODE-N 1) (mem-set MM-LIT-N 2)
+                  (mem-set (+ p LF-B) 0) (mem-set (+ p LF-LEN) 3)
+                  (mem-set MM-LITB-BASE 65) (mem-set (+ MM-LITB-BASE 1) 66) (mem-set (+ MM-LITB-BASE 2) 67))
+        one (xw-project-pool-append (xw-pool ready 1) V)
+        first-at (vector-at M (+ p LF-POOL))
+        reset (-> M (mem-set MM-CODE-N 1) (mem-set (+ p LF-LEN) 2)
+                  (mem-set MM-LITB-BASE 88) (mem-set (+ MM-LITB-BASE 1) 89))
+        two (xw-project-pool-append (xw-pool reset 1) V)
+        second-at (vector-at M (+ p LF-POOL))
+        output (xw-project-pool-emit (mem-set M MM-CODE-N 1) V)]
+    (cond (not (pj-ok one)) 76 (not (pj-ok two)) 77 (not (pj-ok output)) 78
+          (not= first-at 0) 79 (not= second-at 8) 80
+          (not= (vector-at V 0) 10) 81 (not= (xg-pos M) 10) 82
+          (or (not= (xg-code-byte M 0) 65) (not= (xg-code-byte M 1) 66)
+              (not= (xg-code-byte M 2) 67) (not= (xg-code-byte M 3) 0)
+              (not= (xg-code-byte M 7) 0) (not= (xg-code-byte M 8) 88)
+              (not= (xg-code-byte M 9) 89)) 83
+          :else (let [bad (-> M (mem-set MM-CODE-N 1) (mem-set (+ p LF-LEN) 2))
+                      pool (xw-pool bad 1) invalid (mem-set M (+ p LF-POOL) 999)
+                      denied (xw-project-pool-append invalid V)]
+                  (cond (pj-ok denied) 84 (not= (vector-at V 0) 10) 85
+                        (not= (vector-at M (+ p LF-POOL)) 999) 86
+                        :else 0)))))
 (defn- t-project-stubs [] :i64
   (let [S "(ns app (:export [main]))\n(defn main [] :i64 (dep 41))\n(defn- dep [x :i64] :i64 0)\n"
         M (xg-front S) L (pj-new-l)
@@ -106,5 +131,6 @@
                                                                 denied (xw-project-archive thunk L 6)]
                                                             (cond (pj-ok denied) 60
                                                                   (not= (pj-l L pj-k-img) size2) 61
-                                                                  :else (t-archive-payload M L size))))))))))))
+                                                                  :else (let [result (t-archive-payload M L size)]
+                                                                          (if (= result 0) (t-project-pool M) result)))))))))))))
 (defn- seed-main [] :i64 (t-project-stubs))

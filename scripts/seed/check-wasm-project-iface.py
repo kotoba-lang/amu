@@ -100,6 +100,17 @@ def main():
         assert not negative.stderr and re.search(rb':status :ok :result '+str(expected).encode()+rb'(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
         payload_receipts[name] = {'sourceSha256':hashlib.sha256(payload_source.read_bytes()).hexdigest(),
                                   'imageSha256':hashlib.sha256(payload_image.read_bytes()).hexdigest()}
+    pool_guard = b'(not (xw-project-pool-literals? M len 1))'
+    assert stub_bytes.count(pool_guard) == 1
+    pool_source = out/'pool-mutant.kotoba'; pool_source.write_bytes(stub_bytes.replace(pool_guard,b'false'))
+    pool_image = out/'pool-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(pool_source),'--target',target,'--output',str(pool_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and pool_image.is_file(), (built.returncode,built.stderr[-1000:])
+    pool_image.chmod(0o755)
+    negative = subprocess.run([str(pool_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=120)
+    assert not negative.stderr and re.search(rb':status :ok :result 84(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -108,6 +119,7 @@ def main():
                'stubNegativeSourceSha256':sha(stub_mutant_source),'stubNegativeImageSha256':sha(stub_mutant),
                'archiveNegativeSourceSha256':sha(archive_source),'archiveNegativeImageSha256':sha(archive_image),
                'payloadNegativeControls':payload_receipts,
+               'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
                'limitations':['interface mapping component only; no project linker or Wasm execution']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
