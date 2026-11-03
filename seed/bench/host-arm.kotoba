@@ -42,9 +42,11 @@
           (not= (kxrt-gl 216) 0) (not= (kxrt-gl 224) 0)
           (not= (kxrt-gl 104) 0) (not= (kxrt-gl 112) -1)
           (not= (kxrt-gl 744) 0) (not= (kxrt-gl 656) 0)
-          ;; The current shared keyword module owns776(pointer)/784(count).
-          ;; Never mistake its initialized pointer for a held FS lock.
-          (<= (kxrt-gl 776) 0) (not= (kxrt-gl 784) 0) (not= (kxrt-gl 792) 0)
+          ;; The shared keyword module owns 800(pointer)/808(count); 776/784 are the
+          ;; filesystem lock's path length and buffer (JUN-790). Never mistake the
+          ;; initialized intern pointer for a held FS lock.
+          (<= (kxrt-gl 800) 0) (not= (kxrt-gl 808) 0)
+          (not= (kxrt-gl 776) 0) (not= (kxrt-gl 784) 0) (not= (kxrt-gl 792) 0)
           (not= (kxrt-load64 (+ (kxrt-ctx) 16)) 0)
           (not= (kxrt-load64 (+ (kxrt-ctx) 24)) 0)
           (not= (kxrt-load64 (+ (kxrt-ctx) 32)) 0)
