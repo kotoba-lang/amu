@@ -1,6 +1,6 @@
 (ns x86-project-fs.io
-  (:export [roundtrip])
-  (:capabilities [:fs/app-data]))
+  (:export [roundtrip emit-stdout emit-stderr])
+  (:capabilities [:fs/app-data :io/write :io/write-error]))
 (defn- fs [request :string] :string
   (typed-cap-call :fs/app-data :string :string request))
 (defn roundtrip [base :string] :bool
@@ -13,3 +13,9 @@
          (= (fs (string-concat base "FSYNC_SEP")) "1")
          (= (fs final) "native")
          (= (fs (string-concat lock "UNLOCK_SEP")) "1"))))
+(defn emit-stdout [] :bool
+  (= (typed-cap-call :io/write :string :string "kotoba-stdout-marker")
+     "kotoba-stdout-marker"))
+(defn emit-stderr [] :bool
+  (= (typed-cap-call :io/write-error :string :string "kotoba-stderr-marker")
+     "kotoba-stderr-marker"))
