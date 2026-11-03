@@ -16,6 +16,7 @@ MODULE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-module_t.kotoba'
 LINKED_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-linked_t.kotoba'
 GRAPH_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-graph_t.kotoba'
 RUNTIME_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-runtime_t.kotoba'
+TRAMPOLINE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-trampoline_t.kotoba'
 
 
 def main():
@@ -263,6 +264,30 @@ def main():
     negative = subprocess.run([str(archive_map_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=300)
     assert not negative.stderr and re.search(rb':status :ok :result 12(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    trampoline_source = out/'runtime-trampoline.kotoba'; trampoline_source.write_bytes(prefix+TRAMPOLINE_FIXTURE.read_bytes())
+    trampoline_image = out/'runtime-trampoline.elf'
+    built = subprocess.run([str(compiler),'compile',str(trampoline_source),'--target',target,'--output',str(trampoline_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and trampoline_image.is_file(), (built.returncode,built.stderr[-1000:])
+    trampoline_image.chmod(0o755)
+    result = subprocess.run([str(trampoline_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                            capture_output=True,timeout=300)
+    assert result.returncode == 0 and not result.stderr and re.search(rb':status :ok :result 0(?:\s|})',result.stdout), (result.returncode,result.stdout[-1000:],result.stderr)
+    match = re.search(rb'TRAMPOLINE-BEGIN\n([0-9a-f\n]+)TRAMPOLINE-END\n',result.stdout); assert match, result.stdout[-1000:]
+    trampoline_wasm = bytes.fromhex(match.group(1).decode()); assert trampoline_wasm[:8] == b'\x00asm\x01\x00\x00\x00'
+    trampoline_wasm_path = out/'runtime-trampoline.wasm'; trampoline_wasm_path.write_bytes(trampoline_wasm)
+    print('WASM_PROJECT_TRAMPOLINE_HEX', trampoline_wasm.hex())
+    trampoline_guard = b'(< entry (+ XW-NIMPORT runtime-count))'
+    trampoline_bytes = trampoline_source.read_bytes(); assert trampoline_bytes.count(trampoline_guard) == 1
+    trampoline_mutant_source = out/'runtime-trampoline-mutant.kotoba'; trampoline_mutant_source.write_bytes(trampoline_bytes.replace(trampoline_guard,b'false'))
+    trampoline_mutant = out/'runtime-trampoline-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(trampoline_mutant_source),'--target',target,'--output',str(trampoline_mutant),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and trampoline_mutant.is_file(), (built.returncode,built.stderr[-1000:])
+    trampoline_mutant.chmod(0o755)
+    negative = subprocess.run([str(trampoline_mutant)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=300)
+    assert not negative.stderr and re.search(rb':status :ok :result 3(?:\s|})',negative.stdout), (negative.returncode,negative.stdout[-1000:],negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -277,6 +302,7 @@ def main():
                'projectGraphSha256':sha(graph_path), 'graphOrderNegativeSha256':sha(order_image),
                'runtimeMapFixtureSha256':sha(RUNTIME_FIXTURE), 'runtimeMapImageSha256':sha(runtime_image), 'runtimeMapNegativeSha256':sha(runtime_mutant),
                'runtimeArchiveNegativeSha256':sha(archive_map_image),
+               'runtimeTrampolineSha256':sha(trampoline_wasm_path), 'runtimeTrampolineNegativeSha256':sha(trampoline_mutant),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

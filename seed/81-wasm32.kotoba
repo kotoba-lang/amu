@@ -613,6 +613,32 @@
   (and (xw-project-archive-readable? L XW-NIMPORT (vector-at R 0))
        (= (xw-project-runtime-arity L 0 XW-NIMPORT (vector-at R 1)) 1)
        (xw-project-runtime-archive-slots? L R 48)))
+;; Replace the reserved zero-argument main body with a call to the actual
+;; zero-argument entry. A fixed-width u32 LEB keeps the replacement bounded.
+;; Validate the complete archive and target before changing any image bytes.
+(defn- xw-project-trampoline [M :vector-i64 L :vector-i64 runtime-count :i64 count :i64 entry :i64] :vector-i64
+  (let [end (pj-l L pj-k-img)]
+    (if (or (not (pj-ok M)) (<= runtime-count 0) (<= count runtime-count)
+            (< entry (+ XW-NIMPORT runtime-count)) (>= entry (+ XW-NIMPORT count))
+            (not (xw-project-archive-readable? L XW-NIMPORT count)))
+      (xg-err M 7103 0)
+      (let [old (xw-project-archive-u32 L 5) delta (- 8 old) new-end (+ end delta)]
+        (if (or (not= (pj-ib L 4) 0)
+                (not= (xw-project-runtime-arity L 0 XW-NIMPORT entry) 0)
+                (< new-end 0) (> new-end pj-img-cap)) (xg-err M 7103 0)
+          (let [moved (if (> delta 0)
+                        (loop [i (- end 1)] (if (< i (+ 9 old)) 0
+                          (let [w (pj-ibset L (+ i delta) (pj-ib L i))] (recur (- i 1)))))
+                        (loop [i (+ 9 old)] (if (>= i end) 0
+                          (let [w (pj-ibset L (+ i delta) (pj-ib L i))] (recur (+ i 1))))))
+                hdr (pj-put32 L 5 8)
+                a (-> L (pj-ibset 9 0) (pj-ibset 10 16)
+                      (pj-ibset 11 (bit-or 128 (bit-and entry 127)))
+                      (pj-ibset 12 (bit-or 128 (bit-and (u64-shift-right entry 7) 127)))
+                      (pj-ibset 13 (bit-or 128 (bit-and (u64-shift-right entry 14) 127)))
+                      (pj-ibset 14 (bit-or 128 (bit-and (u64-shift-right entry 21) 127)))
+                      (pj-ibset 15 (bit-and (u64-shift-right entry 28) 15)) (pj-ibset 16 11))
+                done (pj-ls L pj-k-img new-end)] M))))))
 (defn- xw-project-runtime-bind [M :vector-i64 R :vector-i64 L :vector-i64] :vector-i64
   (if (or (not (pj-ok M)) (not (xw-project-runtime-map-valid? R M))
           (not (xw-project-runtime-archive-valid? L R))) (xg-err M 7102 0)
