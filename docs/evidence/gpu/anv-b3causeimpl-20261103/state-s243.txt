@@ -1,0 +1,129 @@
+amu-gpu s243 (2026-11-03 JST, cron) -- the cause-resolution act's
+INSTRUMENT PROBE IMPLEMENTATION: the s242 carry-forward's QUEUED row
+("the act's instrument probe implementation (ARM-Z1/ARM-Z2/H rows in the
+named Vulkan instrument family, committed source capture, implementation
+only, NO runs) -- QUEUED for s243") TAKEN AS ITS ROW.
+
+FINDING (verified by real tool output,
+docs/evidence/gpu/anv-b3causeimpl-20261103/): THE ACT'S INSTRUMENT IS
+IMPLEMENTED AND ITS SOURCE IS CAPTURED IN THE COMMITTED EVIDENCE FORM --
+IMPLEMENTATION + CAPTURE ONLY, NO RUNS, NO MEASUREMENT CLAIMS.  The new
+build gpu-subgroup-reduce-anv-causeprobe.c (38,189 bytes, sha256
+68c629fb1b833213772bfb58b147b27066a9b950170578a93fef191db5937d19;
+capture .c.txt byte-identical; manifest.json pins both) is a derived
+build of the committed v2-batch64 family base (archived snapshot 27,780
+bytes sha256 34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d731182e6e
+fd51e06) realizing the s242 FROZEN protocol's section-4 arms: ARM-Z1
+zero-work vkCmdWriteTimestamp pair (same stage, back to back, no command
+between) at round start; ARM-Z2 empty-barrier timestamp pair (TOP_OF_PIPE
+-> one dependency-free vkCmdPipelineBarrier -> BOTTOM_OF_PIPE)
+immediately after Z1; ARM-K the committed c2 control stream byte-
+preserved in the middle (committed per-round cell order, header metadata
+and CELL/SAMPLE/VERIFY row forms byte-identical; the act's frozen knob
+set n=1000003 rounds=6400 warmup=3 batch=2 barrier_n=0 work_mul=1
+ndiv=1 seed=20261027); ARM-H one isolated single dispatch of the
+reading-cell kernel (sum,128,S=16) at round end, host-timed
+CLOCK_MONOTONIC_RAW around submit->completion by busy polling (REPORT-
+ONLY).  Row forms exactly as frozen: PROBE round=<r> channel=zwts|zwbar
+ticks=<d> / channel=isohost raw_ns=<h> ride inside the same run logs.
+
+NAMED RECONSTRUCTION RESIDUAL (not hidden): the c2 control-stream
+build's source is NOT committed anywhere in the chain history (no
+committed .c file carries work_mul/barrier_n -- git pickaxe over all
+revisions); this build reconstructs the c2 build's OBSERVABLE CONTRACT
+from committed run-log byte forms, and the x-corpus initialization
+(carried from the family base) is UNVERIFIABLE from committed bytes.
+
+VERIFICATION (tool this tick, all runs of the SAME script bytes,
+impl-verify-s243.py sha256 2ec2af7a9162310b91c3f76fb2fe5cc791af3541fa08
+a0513db3f50ad00a85a9): devrun1 rc 0 '149 ok / 0 failed' -- the script's
+FIRST execution was CLEAN (THREE pre-run verifier fixes named in
+impl-verify-s243-identity.txt; no defective execution); devrun2 = the
+clean pre-pair confirmation; run1/run2 rc 0 both, stdout pair 16,569
+bytes sha256 1867ff8dc10d85bdefff07d1e33c8784cfe20c113e4c1850b1dc2cd3e2
+5dba35 cmp exit 0, stderr pair 0 bytes cmp exit 0, cmp devrun1 vs run1
+and cmp devrun2 vs run1 exit 0 -- ALL FOUR CAPTURES BYTE-IDENTICAL --
+tail '# impl-verify s243 (impl-verify-s243.py): 149 ok / 0 failed'.
+The 149 checks: the capture/manifest/base pins (S1); the frozen-protocol
+pins incl. the 4 frozen row forms and the act's knob set (S2); 21
+placement/semantics token pins over the source (S3: frozen placement
+order Z1/Z2 -> K -> H in the round loop, Z1 back-to-back same-stage with
+no command between, Z2's single empty barrier, ARM-H CLOCK_MONOTONIC_RAW
+busy-poll single-dispatch fail-closed reading-cell selection, ARM-K's
+committed CLOCK_MONOTONIC form and byte-preserved bracket/order/row
+forms); and the committed-bytes binds (S4): the c2 header identity +
+knob line RE-RENDERED byte-equal from parsed fields via the source's
+printf forms, all 24 CELL + all 24 VERIFY rows re-rendered byte-equal,
+cases.txt == the committed batch64 manifest data lines == the committed
+CELL rows, the knob formula n == floor(1000003*work_mul/ndiv) holding in
+EVERY committed knob-bearing run-log header (294 gz + non-gz logs), the
+timestampPeriod float DISCRIMINATED by the committed c8 rows to exactly
+f32(1000/19.2) = 52.08333206176758 (f32(52.083) refuted at the high-tick
+rows), and -- over the 30-log universe (27 committed c2 run logs = the
+s234 nine windows + 3 committed c8 run logs), 3,456,000 SAMPLE rows
+RE-PARSED from committed bytes -- every row re-rendered byte-equal via
+the source's SAMPLE form and EVERY one of the 192,000 rounds' per-round
+cell orders REPRODUCED by the source's seeded-Fisher-Yates algorithm
+(lcg_state = SEED + round, in-place over the 24-cell map, pipeline-FAIL
+cells skipped) against the committed streams.  Implementation + capture
+only: S4.14 confirms NO run log and NO '*.gz' in the act's evidence dir.
+
+GATES (real runs this tick): scoped GPU gate (8 GPU-owned namespaces,
+scratch runner, never committed) GREEN 123 tests / 12162 assertions / 0
+failures / 0 errors on run 1 AND run 2, runs byte-identical (the
+committed pin holds; the diff touches NO .cljk namespace); pinned
+gpu_regime_classify.py --self-test TOTAL 2649/0; gate (e) the RECORDED
+form find docs/evidence/gpu -name '*.sh' -> 0 files rc 0
+(gate-s243-nosh.txt 0 bytes) -- NAMED, NOT HIDDEN: a docs-WIDE find
+returns the ONE known file docs/evidence/spirv-to-wgsl-20261028/
+run-mac-native.sh committed at the chain base by PR #1644 (JUN-377)
+OUTSIDE this diff, NOT staged, NOT touched (the standing named drift);
+gate (f) passes (no 'session=s243'/'day=2026-11-03' ledger line,
+gate-s243-ledger.txt 0 bytes; ledger sha256 3bb682e4... == the
+s241/s242 value; tail row day=2026-10-31 session=s113 UNMOVED).  cc
+-fsyntax-only (Apple clang 21, macOS 26.4, vulkan headers
+/opt/homebrew/include) rc 0 -- SYNTAX GATE ONLY: NO binary built, NO .o,
+NO run; the first-measured binary digests belong to the measuring
+session (protocol section 5).  FULL run-tests.cljk NOT re-run: the full
+suite stands RED AT BASE kotoba.form (ADR-0362) outside this diff per
+the standing captures -- NO green full suite claimed.
+
+THREE-STATE: this row IMPLEMENTS instrument code (the act's probe
+instrument source + capture + verifier; the diff touches NO committed
+.cljk namespace) -- it is NOT a measurement.  Every act quantity (every
+fresh letter, P_Z1, P_Z2, every branch outcome, every probe delta) is
+UNMEASURED: NO hardware ran, NO run log exists, NO GO stamp, NO day-slot
+consumption.  Every sample value re-parsed in the verifier remains a
+named run's landed MEASURED QUANTITY on aiueos-6600hs (Intel BMG G31),
+never a new measurement.  The accelerator-targets workgroup rows stay
+exactly as ADR-0358 left them (:measured? false rows remain provisional
+-- NOT optimization evidence); NO vendor optimization exists for Intel
+(or for any vendor) and none follows from this implementation.
+
+BAR NON-INTERFERENCE / RULE 4: NO settle-bar-ledger line (gate (f)), NO
+day-slot consumption; the bar's SETTLED INTERMEDIATE/MIXED verdict
+unmoved.  RULE 4 unchanged: NOTHING MOVES; the committed bracket stays
+EXACTLY (254,923, 255,045]; L9 binds at n=254,984 (C2 (c), D3 (v)); the
+MID-ONLY NARROWING CLAIM stays SUSPENDED.
+
+NOT DONE (s244 carries exactly this list): (a) standing, not queued:
+the act's MEASUREMENT half (3 sessions x 3 runs on aiueos-6600hs under
+the frozen protocol, the measuring session building this source,
+recording the first-measured binary digests and taking the capture
+custody; every act quantity UNMEASURED until then) and the act's
+ANALYSIS half (rules R1-R5 of the frozen protocol executed fail-closed
+twice byte-identical over the act's committed run logs; its rules are
+frozen, its script bytes come with the analysis slice); (b) standing,
+not queued (carried unchanged): the s216 identity hazard's residual --
+the CAUSE of the sample-shape difference stays UNMEASURED and UNDECIDED
+until the act's measurement + analysis halves land; the underlying-
+instrument-state COUNT stays outside (s220 1(b)); at N=75 the
+s235/s237 classifications carry NO noise model and near-neither
+prevalence needs higher-N readings -- new hardware runs, each with its
+own freeze; any further counted-day slot and the cross-day tail-movement
+row.  NOTHING is QUEUED at s244 from this row (the queued row is
+answered here; the act's remaining halves are standing, not queued --
+the measurement half needs new hardware runs, each with its own capture
+custody).
+
+(JUN-55, JUN-59; Linear tracking JUN-499)
