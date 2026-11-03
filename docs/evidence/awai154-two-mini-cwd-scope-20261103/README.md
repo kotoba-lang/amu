@@ -52,9 +52,10 @@ confirmed removed. The initial levi SSH observer timed out; a subsequent
 read-only check found no matching temp directory or Background test job before
 the corrected levi test was started.
 
-This shows bounded background launchd execution during an SSH session, not
-persistence across SSH disconnect, reboot, automatic installation, bot
-operation, MTP or production runner qualification. The `launchctl load`
+This first test showed bounded background launchd execution during an SSH
+session; the separate disconnect follow-up is described below. Neither test
+establishes reboot persistence, automatic installation, bot operation, MTP or
+production runner qualification. The `launchctl load`
 route is a diagnostic use of the legacy OS command, not a new production
 orchestration dependency. The exact test observers are
 `background-ben-observer.py` and `background-levi-observer.py`.
@@ -73,3 +74,21 @@ user domain `d98c84dbb64b6851931b0cf00681aa8dee9829f91b2b5d5037ada9ed69746daf`.
 Background observers: benjamin
 `1c0c1b318aef541d03847818be6da3f67f030ab56269778ce63e3953703ba6e2`;
 levi `505e14718fde025b631222a5386a831d083a21e302385941666d2b26c8900acd`.
+
+## Follow-up: client SSH disconnect
+
+On both benjamin and levi, a unique task-owned Background job was loaded with
+`StartInterval=15` and `LaunchOnlyOnce=true`. The first SSH process completed
+before a separate SSH process observed the job. No output existed before the
+first disconnect; afterward, the signed scope probe produced the expected
+synthetic output and exited 0 on both machines. Each exact job was unloaded,
+its label was confirmed absent, and its task-owned directory was removed.
+The observers were `disconnect-ben-observer.py` and
+`disconnect-levi-observer.py`, SHA-256 respectively
+`b02fee21075c0e291ad9ec948b462ad7eee08feed77e98cc7a5520668c119209` and
+`a77592fef729514e770b47dc900ff06288717cc50ab2d68b21a8b422af00379b`.
+
+This tests a client SSH process disconnect, not a macOS user logout or reboot.
+It does not establish persistent installation, production orchestration,
+resource or process-tree isolation, credentials, inference, or autonomous bots.
+The legacy `launchctl load` route and Python observers are diagnostic only.
