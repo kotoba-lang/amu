@@ -1,5 +1,19 @@
 # Amu
 
+**The native compiler for Kotoba's modern Lisp machine.**
+
+Lisp lets us treat programs as data: a small, composable vocabulary for
+building and understanding systems. Amu carries that spirit toward native
+code, checking Kotoba programs before compiling them. The larger Lisp machine
+and its interactive system capabilities remain in development.
+
+In an exploratory Apple M4 measurement, translated Kotoba ports ran in
+**0.80× the time of C** across 19 Embench workloads. This was one sample per
+workload using a particular compiler snapshot with audited algorithm
+substitutions. It is not a result for the current released compiler, an
+official Embench score, or a universal speed ranking. [Read the measurements,
+method and audit](https://kotoba-lang.org/blog/embench-c-parity-20261015/).
+
 Amu checks canonical Kotoba and compiles it through the adopted compiler
 lineage. `bin/amu` is an Amu-built, self-rebuilt native **macOS ARM64**
 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same Mach-O.

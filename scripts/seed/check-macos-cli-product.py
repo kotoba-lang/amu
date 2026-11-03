@@ -49,6 +49,12 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # KOTOBA-161: negative float comparisons catch the previously observed
+    # integer-condition lowering error; the reversed operands are the control.
+    float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
+    float_greater = source('float-negative-greater', '(defn main [] :i64 (if (f64-lt -1.0 -2.0) 42 7))')
+    run('float-negative-less', 'run', float_less.name, stdout=b'42\n')
+    run('float-negative-greater', 'run', float_greater.name, stdout=b'7\n')
     # KOTOBA-13: the public host stages a locked KSL2 namespace map,
     # verifies every original source digest, then asks the pinned Kotoba
     # compiler to check the rewritten project lock in its private FS2 root.
@@ -64,6 +70,35 @@ def check(cli, out):
                 + ''.join('module ' + name + ' ' + str(path) + '\n' for name, path in modules)
                 + ''.join('file ' + hashlib.sha256(path.read_bytes()).hexdigest() + ' ' + str(path) + '\n'
                           for path in sorted(files)))
+
+    # The previous formatter exhausted the native string pool when formatting
+    # subnormals repeatedly. Exercise the real formatter, parser and boundary
+    # anchors; a deliberately wrong anchor must fail the same observation.
+    f64_project = out / 'f64-resource-project'
+    f64_project.mkdir()
+    f64_source = (ROOT / 'test/fixtures/selfhost/f64-text/native/f64_text_test.kotoba').read_text()
+    main_at = f64_source.index('(defn main [] :i64')
+    f64_source = f64_source[:main_at] + '''(defn main [] :i64
+  (if (and (anchors) (refusals)
+           (loop [i 0] (if (= i 40) true (if (roundtrip 1) (recur (+ i 1)) false)))) 42 7))
+'''
+    f64_entry = f64_project / 'f64_text_test.kotoba'
+    f64_text = f64_project / 'f64_text.kotoba'
+    f64_decimal = f64_project / 'decimal_bits.kotoba'
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/f64_text.kotoba', f64_text)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/decimal_bits.kotoba', f64_decimal)
+    f64_modules = [('kotoba.compiler.decimal-bits', f64_decimal),
+                   ('kotoba.compiler.f64-text', f64_text), ('native.f64-text-test', f64_entry)]
+    f64_lock = f64_project / 'project.ksl'
+    for suffix, body, expected_output in (('positive', f64_source, b'42\n'),
+                                          ('negative', f64_source.replace('"5e-324"', '"5e-323"'), b'7\n')):
+        assert body.count('"5e-324"') == (1 if suffix == 'positive' else 0)
+        f64_entry.write_text(body)
+        f64_lock.write_text(project_lock(f64_entry, f64_modules, [f64_entry, f64_text, f64_decimal]))
+        f64_program = out / ('f64-resource-' + suffix)
+        run('f64-resource-' + suffix + '-compile', 'compile', f64_entry, '--source-lock', f64_lock,
+            '-o', f64_program.name, stdout=('compiled ' + str(f64_program) + '\n').encode())
+        run('f64-resource-' + suffix + '-execute', image=f64_program, stdout=expected_output)
 
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))

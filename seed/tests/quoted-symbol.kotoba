@@ -1,0 +1,10 @@
+(ns quoted-symbol (:export [main]))
+
+(defn main [] :i64
+  (if (and (= (quote plain) (symbol "plain"))
+           (= (quote a/b) (symbol "a/b"))
+           (= (quote clojure.core/map) (symbol "clojure.core/map"))
+           (= (quote 日本/語) (symbol "日本/語"))
+           (not (= (quote a/b) (symbol "a/c"))))
+    41
+    7))
