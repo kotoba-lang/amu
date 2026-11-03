@@ -18,6 +18,14 @@ name: selfhost-native
 #   schedule, workflow_dispatch -> full: + the deep provenance from source
 #                         (C0 -> the adoption image; C0 -> Kw -> Pw -> F).
 #
+# JUN-759 (merge-queue latency). The required check names are unchanged. Slow serial steps run as sibling jobs
+# (bootstrap -> one-compiler | x86 qualification -> complete -> gates; the benchmark mutants in three shards;
+# the arm64 runtime checks beside the arm64 gates; the x86 runtime checks beside the x86 gate shards), and a
+# lightweight job with each original name needs its parts and fails unless all of them succeeded. Every job
+# starts with ci-gate (scripts/ci/ci_gate.py): a docs-only change skips the heavy steps inside the job, and an
+# input-hash marker/cache skips, or restores the derivation of, exactly the same inputs. Push to main, the
+# schedule and a manual dispatch always run everything and only write the markers/caches, after a job passed.
+#
 # The wasm32-browser target (KOTOBA-174, owner decision 2026-10-31) is not part
 # of the native qualification: native selfhost is the foundation and Wasm is one
 # build target. It has its own jobs in every tier, both mandatory, which no
@@ -51,6 +59,8 @@ on:
       - "runtime/wasm32-browser-*"
       - "runtime/kotoba-client-runtime*"
       - ".github/workflows/selfhost-native.yml"
+      - ".github/actions/**"
+      - "scripts/ci/**"
   # Required checks must be emitted on every pull request, including docs-only changes.
   pull_request:
     branches: [main]
@@ -72,48 +82,61 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-preflight
       - name: Foundation starter functional smoke (not compiler qualification)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: foundation-starter-functional-smoke
           path: ${{ runner.temp }}/foundation-starter
           if-no-files-found: warn
       - name: Observer and admission negative controls
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/test_content_reuse_trust.py -v
           python3 scripts/seed/test_native_iteration.py -v
           python3 scripts/seed/test_native_preflight_projects.py -v
           python3 scripts/seed/test_native_gate_shard.py -v
+          python3 scripts/ci/test_ci_gate.py -v
       - name: QMP observer pipe framing and deadline controls
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_aiueos_qmp_stdio.py -v
       - name: Benchmark staging observer format controls (not timing qualification)
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_embench_candidate.py -v
       - name: Closed benchmark factory and immutable oracle source controls
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python3 scripts/seed/test_native_benchmark_host.py -v
       - name: Proof record audits (not native verdict or performance qualification)
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
           python3 bench/embench/proof-v1/validate.py
           python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Independent native preflight controls through the shared two-slot plan
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/native_build_queue.py
           --manifest seed/native-preflight-plan.json --phase preflight --jobs 4
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/preflight-schedule"
       - name: Retain the actual B2 preflight admission
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         run: |
           python3 - <<'PY_GATE'
           import json
@@ -133,7 +156,7 @@ jobs:
                       "local-project-fs", "early-kotoba", "b2-preflight"}
           PY_GATE
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: b2-loader-native-preflight
           path: |
@@ -141,7 +164,7 @@ jobs:
             ${{ runner.temp }}/b2-libc-preflight-admission.json
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: early-native-kotoba24
           path: |
@@ -150,7 +173,7 @@ jobs:
             ${{ runner.temp }}/early-kotoba/*.stderr
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: local-native-preflight
           path: |
@@ -161,33 +184,74 @@ jobs:
             ${{ runner.temp }}/project-fs-candidate/*.stderr
             ${{ runner.temp }}/preflight-schedule
           if-no-files-found: warn
-  bootstrap-arm64:
-    needs: native-preflight
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  foundation-starter-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: foundation-starter-arm64
+      - name: Experimental ARM64 starter observation (not public qualification)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" --host-profile github-ubuntu-arm64-diagnostic
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: foundation-starter-arm64-diagnostic
+          path: ${{ runner.temp }}/foundation-starter-arm
+          if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  bootstrap-arm64-root:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Experimental ARM64 starter observation (not public qualification)
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" --host-profile github-ubuntu-arm64-diagnostic
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - id: gate
+        uses: ./.github/actions/ci-gate
         with:
-          name: foundation-starter-arm64-diagnostic
-          path: ${{ runner.temp }}/foundation-starter-arm
-          if-no-files-found: error
+          job: bootstrap-arm64-root
+          kind: derive
+          roots: selfhost-bootstrap.py,check-tiered-float-fuel.py,check-tiered-document-decimal-fuel.py,check-tiered-document-decimal-refusals.py
+          path: |
+            ${{ runner.temp }}/boot/selfhost-bootstrap.json
+            ${{ runner.temp }}/boot/root.elf
+            ${{ runner.temp }}/boot/F*.elf
+            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
+            ${{ runner.temp }}/boot/runtime-boundary/calls.json
+            ${{ runner.temp }}/boot/calls.json
+            ${{ runner.temp }}/boot/S-x86_64.elf
+            ${{ runner.temp }}/boot/R-x86_64.elf
+            ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/boot/runner.kotoba
       - name: Loaderless bootstrap from the pinned root (arm64, native)
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Float result and fuel corpus through the tiered native bootstrap
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: python3 scripts/seed/check-tiered-float-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
       - name: Document and decimal positive and fuel corpus through tiered native bootstrap
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: python3 scripts/seed/check-tiered-document-decimal-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-fuel-arm64"
       - name: Document and decimal refusal corpus through tiered native bootstrap
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: python3 scripts/seed/check-tiered-document-decimal-refusals.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-refusals-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: document-decimal-native-arm64
           path: |
@@ -195,15 +259,80 @@ jobs:
             ${{ runner.temp }}/document-decimal-refusals-arm64
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: float-fuel-arm64
           path: ${{ runner.temp }}/float-fuel-arm64
           if-no-files-found: warn
+      # Keep the transported compiler files at the artifact root. Adding the
+      # sibling AOT directory above changes upload-artifact's common ancestor.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: bootstrap-arm64
+          path: |
+            ${{ runner.temp }}/boot/selfhost-bootstrap.json
+            ${{ runner.temp }}/boot/root.elf
+            ${{ runner.temp }}/boot/F*.elf
+            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
+            ${{ runner.temp }}/boot/runtime-boundary/calls.json
+            ${{ runner.temp }}/boot/calls.json
+            ${{ runner.temp }}/boot/S-x86_64.elf
+            ${{ runner.temp }}/boot/R-x86_64.elf
+            ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/boot/runner.kotoba
+          if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+          kind: derive
+          path: |
+            ${{ runner.temp }}/boot/selfhost-bootstrap.json
+            ${{ runner.temp }}/boot/root.elf
+            ${{ runner.temp }}/boot/F*.elf
+            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
+            ${{ runner.temp }}/boot/runtime-boundary/calls.json
+            ${{ runner.temp }}/boot/calls.json
+            ${{ runner.temp }}/boot/S-x86_64.elf
+            ${{ runner.temp }}/boot/R-x86_64.elf
+            ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/boot/runner.kotoba
+  one-compiler-arm64:
+    needs: bootstrap-arm64-root
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: one-compiler-arm64
+          kind: derive
+          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.py
+          path: |
+            ${{ runner.temp }}/one/one-compiler.json
+            ${{ runner.temp }}/one/calls.json
+            ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F1.elf
+            ${{ runner.temp }}/one/F1.kseed
+            ${{ runner.temp }}/one/F2.kseed
+            ${{ runner.temp }}/one/F3.kseed
+            ${{ runner.temp }}/one/full.kotoba
+            ${{ runner.temp }}/one/runner.kotoba
+            ${{ runner.temp }}/one/F-x86_64.elf
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
       - name: Fresh one-compiler derivation before independent ISA qualification
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: one-compiler-receipt
           path: |
@@ -218,51 +347,186 @@ jobs:
             ${{ runner.temp }}/one/runner.kotoba
             ${{ runner.temp }}/one/F-x86_64.elf
           if-no-files-found: warn
-      # Keep the transported compiler files at the artifact root. Adding the
-      # sibling AOT directory above changes upload-artifact's common ancestor.
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - if: success() && steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+          kind: derive
+          path: |
+            ${{ runner.temp }}/one/one-compiler.json
+            ${{ runner.temp }}/one/calls.json
+            ${{ runner.temp }}/one/F2.elf
+            ${{ runner.temp }}/one/F1.elf
+            ${{ runner.temp }}/one/F1.kseed
+            ${{ runner.temp }}/one/F2.kseed
+            ${{ runner.temp }}/one/F3.kseed
+            ${{ runner.temp }}/one/full.kotoba
+            ${{ runner.temp }}/one/runner.kotoba
+            ${{ runner.temp }}/one/F-x86_64.elf
+  bootstrap-arm64:
+    # Required context. The loaderless bootstrap and the one-compiler derivation are sibling jobs (JUN-759).
+    needs: [foundation-starter-arm64, bootstrap-arm64-root, one-compiler-arm64]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every part of bootstrap-arm64 to have succeeded (JUN-759)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_NEEDS'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          print(json.dumps({k: v["result"] for k, v in needs.items()}))
+          # skipped, cancelled and failure all fail the required check
+          sys.exit(0 if needs and all(v["result"] == "success" for v in needs.values()) else 1)
+          PY_NEEDS
+  x86-native-qualification:
+    needs: bootstrap-arm64-root
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: x86-native-qualification
+          kind: derive
+          roots: selfhost-bootstrap.py,check-x86_64-native.py,check-aiueos-user-elf-native.py
+          path: |
+            ${{ runner.temp }}/x86
+            ${{ runner.temp }}/aiueos-user-elf-x86
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         with:
           name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
+      - name: Native x86_64 qualification (no loader, no emulation)
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        env:
+          TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
+        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: native-x86-qualification
           path: |
-            ${{ runner.temp }}/boot/selfhost-bootstrap.json
-            ${{ runner.temp }}/boot/root.elf
-            ${{ runner.temp }}/boot/F*.elf
-            ${{ runner.temp }}/boot/runtime-boundary/runtime-boundary.json
-            ${{ runner.temp }}/boot/runtime-boundary/calls.json
-            ${{ runner.temp }}/boot/calls.json
-            ${{ runner.temp }}/boot/S-x86_64.elf
-            ${{ runner.temp }}/boot/R-x86_64.elf
-            ${{ runner.temp }}/boot/selfhost-unity.kotoba
+            ${{ runner.temp }}/x86
+            ${{ runner.temp }}/aiueos-user-elf-x86
           if-no-files-found: error
-      # a separate artifact: another path in the one above would move its root
-      # (the qualify job expects boot/ at the top)
-  qualify-arm64:
-    needs: bootstrap-arm64
+      - if: success() && steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+          kind: derive
+          path: |
+            ${{ runner.temp }}/x86
+            ${{ runner.temp }}/aiueos-user-elf-x86
+  x86-complete:
+    needs: one-compiler-arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: x86-complete
+          kind: derive
+          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.py,check-complete-x86.py,check-public-native-product.py
+          path: |
+            ${{ runner.temp }}/complete
+            ${{ runner.temp }}/public-product
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Complete native x86 compiler fixed point and CDCI images
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+      - name: Public native product and aliases
+        if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: native-x86-derivation
+          path: |
+            ${{ runner.temp }}/complete
+            ${{ runner.temp }}/public-product
+          if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+          kind: derive
+          path: |
+            ${{ runner.temp }}/complete
+            ${{ runner.temp }}/public-product
+  derive-x86_64:
+    # Required context. The x86_64 qualification and the complete compiler fixed point are sibling jobs (JUN-759).
+    needs: [x86-native-qualification, x86-complete]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every part of derive-x86_64 to have succeeded (JUN-759)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_NEEDS'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          print(json.dumps({k: v["result"] for k, v in needs.items()}))
+          # skipped, cancelled and failure all fail the required check
+          sys.exit(0 if needs and all(v["result"] == "success" for v in needs.values()) else 1)
+          PY_NEEDS
+  qualify-arm64-runtime:
+    needs: one-compiler-arm64
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-arm64-runtime
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
       - name: Verify current source/image/receipt bindings before transported native execution
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
           python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
       - name: Wire 35 replace, WRITE and APPEND under injected fsync, rename and write faults (arm64, AWAI-52)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           fi="$RUNNER_TEMP/runtime/fs2-faults"; mkdir -p "$fi"
           for f in fsync renameat write; do python3 scripts/seed/check-fs2-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
@@ -273,6 +537,7 @@ jobs:
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
           done
       - name: Private-store create and append under injected write, fsync and flock faults (arm64, AWAI-52)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           fi="$RUNNER_TEMP/runtime/private-store-faults"; mkdir -p "$fi"
           for f in write fsync flock; do python3 scripts/seed/check-private-store-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
@@ -283,14 +548,18 @@ jobs:
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
           done
       - name: Wire 35 WRITE/APPEND and private-store frames under a short write (arm64, AWAI-52)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-short-write.py --compiler seed/bootstrap/aarch64-linux-static-root.elf --output "$RUNNER_TEMP/runtime/short-write"
       - name: Native private store and STOP/CONT sleep resume (arm64)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
           python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Spawn setup refusals under injected seccomp faults (arm64, JUN-292)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           fi="$RUNNER_TEMP/runtime/spawn-faults"; mkdir -p "$fi"
           for f in close_range fchdir; do python3 scripts/seed/check-spawn-fault-injection.py --write-profile "$f" "$fi/$f.json"; done
@@ -300,20 +569,65 @@ jobs:
               python3 /repo/scripts/seed/check-spawn-fault-injection.py \
               --compiler /repo/seed/bootstrap/aarch64-linux-static-root.elf --fault "$f" --output "/out/$f"
           done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: runtime-checks-arm64
+          path: |
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
+          if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  qualify-arm64-gates:
+    needs: one-compiler-arm64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-arm64-gates
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: bootstrap-arm64
+          path: ${{ runner.temp }}/boot
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: one-compiler-receipt
+          path: ${{ runner.temp }}/one
+      - name: Verify current source/image/receipt bindings before transported native execution
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Independent arm64 gates (bounded native build queue)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Kototama pure-i64 frontend check (arm64)
         run: python3 scripts/seed/check-kototama-check.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/kototama-check-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
           python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
           python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
           python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: live-abi-arm-evidence
           path: |
@@ -326,13 +640,13 @@ jobs:
             ${{ runner.temp }}/desktop-regions-arm/native-desktop-regions.json
             ${{ runner.temp }}/desktop-regions-arm/*/calls.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-fs2-arm-evidence
           path: ${{ runner.temp }}/fs2-arm
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: label-index-arm64-evidence
           path: |
@@ -353,7 +667,7 @@ jobs:
             ${{ runner.temp }}/label-index-arm64/*.stderr
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: kototama-i64-arm64
           path: |
@@ -366,67 +680,86 @@ jobs:
             ${{ runner.temp }}/kototama-check-arm64/corrupt.stdout
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: kototama-receipt-arm64
           path: ${{ runner.temp }}/kototama-receipt-arm64
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: kototama-cache-abi-arm64
           path: ${{ runner.temp }}/kototama-cache-abi-arm64
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: static-launcher-arm64
           path: ${{ runner.temp }}/launcher/static-launcher.json
           if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: runtime-checks-arm64
-          path: |
-            ${{ runner.temp }}/runtime/io-read/io-read.json
-            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
-            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
-            ${{ runner.temp }}/runtime/private-store/receipt.json
-            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
-          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-scheduling-arm64
           path: ${{ runner.temp }}/pg-arm64
           if-no-files-found: warn
-  qualify-benchmark-arm:
-    needs: bootstrap-arm64
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  qualify-arm64:
+    # Required context. The runtime/fault checks and the gate phase are sibling jobs (JUN-759).
+    needs: [qualify-arm64-runtime, qualify-arm64-gates]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every part of qualify-arm64 to have succeeded (JUN-759)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_NEEDS'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          print(json.dumps({k: v["result"] for k, v in needs.items()}))
+          # skipped, cancelled and failure all fail the required check
+          sys.exit(0 if needs and all(v["result"] == "success" for v in needs.values()) else 1)
+          PY_NEEDS
+  qualify-benchmark-arm-host:
+    needs: one-compiler-arm64
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-benchmark-arm-host
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
       - name: Verify current source/image/receipt bindings before transported native execution
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
           python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
       - name: Closed measurement host, original full counts and native accounting oracle
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
-      - name: Actually built and executed timing/accounting/reset/highwater mutants
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-benchmark-arm-evidence
           path: |
@@ -439,50 +772,92 @@ jobs:
             ${{ runner.temp }}/benchmark-arm-*-admission.json
           if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-benchmark-arm-host-reference
           path: ${{ runner.temp }}/benchmark-arm/host/observations.json
           if-no-files-found: error
-
-  derive-x86_64:
-    needs: bootstrap-arm64
-    runs-on: ubuntu-latest
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  qualify-benchmark-arm-mutants:
+    needs: one-compiler-arm64
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-benchmark-arm-mutants-${{ matrix.shard }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
-      - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
-      - name: Native x86_64 qualification (no loader, no emulation)
-        env:
-          TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
-        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
-      - name: Complete native x86 compiler fixed point and CDCI images
-        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
-      - name: Public native product and aliases
-        run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
+      - name: Verify current source/image/receipt bindings before transported native execution
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Unchanged original19 library/export provenance (ARM native producer)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+      - name: Closed measurement host, original full counts and native accounting oracle
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+      - name: Actually built and executed timing/accounting/reset/highwater mutants (shard ${{ matrix.shard }} of 3)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations" --shard ${{ matrix.shard }}/3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
-          name: native-x86-derivation
+          name: native-benchmark-arm-mutants-evidence-${{ matrix.shard }}
           path: |
-            ${{ runner.temp }}/complete
-            ${{ runner.temp }}/x86
-            ${{ runner.temp }}/public-product
-            ${{ runner.temp }}/aiueos-user-elf-x86
+            ${{ runner.temp }}/benchmark-arm/**/observations.json
+            ${{ runner.temp }}/benchmark-arm/**/*.stdout
+            ${{ runner.temp }}/benchmark-arm/**/*.stderr
+            ${{ runner.temp }}/benchmark-arm/**/*.kotoba
+            ${{ runner.temp }}/benchmark-arm/**/*.ksl
+            ${{ runner.temp }}/benchmark-arm/*/observer.py
+            ${{ runner.temp }}/benchmark-arm-*-admission.json
           if-no-files-found: error
-
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  qualify-benchmark-arm:
+    # Required context. The host/oracle run and the 13 mutants (in 3 shards) are sibling jobs (JUN-759).
+    needs: [qualify-benchmark-arm-host, qualify-benchmark-arm-mutants]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every part of qualify-benchmark-arm to have succeeded (JUN-759)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY_NEEDS'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          print(json.dumps({k: v["result"] for k, v in needs.items()}))
+          # skipped, cancelled and failure all fail the required check
+          sys.exit(0 if needs and all(v["result"] == "success" for v in needs.values()) else 1)
+          PY_NEEDS
   qualify-x86-shards:
-    needs: derive-x86_64
+    needs: [x86-native-qualification, x86-complete]
     strategy:
       fail-fast: false
       # JUN-629 (owner decision 2026-10-30): the x86 copies of label-proof-index, runtime-profile and ccf-filter run on
@@ -493,33 +868,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-x86-shards-${{ matrix.shard }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-x86-derivation
           path: ${{ runner.temp }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: native-x86-qualification
+          path: ${{ runner.temp }}
       - name: Verify current source and public image before transported native gates
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
           python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
-      - name: Static runtime stdin, wire 41 (x86_64, native)
-        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
-      - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
-        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
-      - name: Native private store and STOP/CONT sleep resume (x86_64)
-        run: |
-          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
-          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
-      - name: Static runtime spawn, wire 20 (x86_64, native)
-        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - name: Independent x86 gates (bounded native build queue)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
           python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
@@ -527,7 +905,7 @@ jobs:
         if: matrix.shard == 'core'
         run: python3 scripts/seed/check-kototama-check.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/kototama-check-x86_64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && matrix.shard == 'core'
+        if: always() && steps.gate.outputs.skip != 'true' && (matrix.shard == 'core')
         with:
           name: live-abi-x86-evidence
           path: |
@@ -540,7 +918,7 @@ jobs:
             ${{ runner.temp }}/desktop-regions-x86/native-desktop-regions.json
             ${{ runner.temp }}/desktop-regions-x86/*/calls.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: ${{ matrix.receipt }}
           path: |
@@ -606,11 +984,6 @@ jobs:
             ${{ runner.temp }}/clock-entropy/native-clock-entropy.json
             ${{ runner.temp }}/clock-entropy/calls.json
             ${{ runner.temp }}/clock-entropy/enosys-filter.json
-            ${{ runner.temp }}/runtime/io-read/io-read.json
-            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
-            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
-            ${{ runner.temp }}/runtime/private-store/receipt.json
-            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
             ${{ runner.temp }}/native-cdci/native-cdci.json
             ${{ runner.temp }}/native-cdci/calls.json
             ${{ runner.temp }}/native-cdci/controller-profile.json
@@ -619,7 +992,7 @@ jobs:
             ${{ runner.temp }}/native-cdci/positive/kotoba-gate.receipt
           if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: ${{ matrix.schedule }}
           path: |
@@ -631,22 +1004,103 @@ jobs:
   # KOTOBA-174: the wasm32-browser target, mandatory but outside the native
   # qualification. No native job needs these jobs, and the native tiers do not
   # compile wasm32-browser.
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  qualify-x86-runtime:
+    needs: x86-complete
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-x86-runtime
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: native-x86-derivation
+          path: ${{ runner.temp }}
+      - name: Verify current source and public image before transported native gates
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
+      - name: Static runtime stdin, wire 41 (x86_64, native)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
+      - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+      - name: Native private store and STOP/CONT sleep resume (x86_64)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          python3 scripts/seed/check-sleep-resume.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
+      - name: Static runtime spawn, wire 20 (x86_64, native)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: x86_64-native-runtime-receipt
+          path: |
+            ${{ runner.temp }}/runtime/io-read/io-read.json
+            ${{ runner.temp }}/runtime/durable-sleep/durable-sleep.json
+            ${{ runner.temp }}/runtime/spawn/spawn-runtime.json
+            ${{ runner.temp }}/runtime/private-store/receipt.json
+            ${{ runner.temp }}/runtime/sleep-resume/receipt.json
+          if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   wasm32-browser-compile:
+    needs: bootstrap-arm64-root
     name: wasm32-browser target (compile, arm64)
-    needs: bootstrap-arm64
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: wasm32-browser-compile
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: bootstrap-arm64
           path: ${{ runner.temp }}/boot
       - name: F's wasm32-browser modules of the runtime cases and probes, float refusals (JUN-353)
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/selfhost-bootstrap.py --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
+      - name: Locked Wasm project discovery and refusal controls
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-project-arm"
+      - name: Wasm project interface mapping controls
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          python3 scripts/seed/check-wasm-project-iface.py
+          --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-iface-arm"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: wasm-project-admission-arm
+          path: |
+            ${{ runner.temp }}/wasm-project-arm/receipt.json
+            ${{ runner.temp }}/wasm-iface-arm/receipt.json
+          if-no-files-found: warn
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: wasm32-browser-modules
           path: |
@@ -654,6 +1108,44 @@ jobs:
             ${{ runner.temp }}/wasm32-target/calls.json
             ${{ runner.temp }}/wasm32-target/wasm32/*.wasm
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  wasm32-project-admission-x86:
+    name: wasm32-browser project admission (x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: wasm32-project-admission-x86
+      - name: Locked Wasm project discovery and refusal controls
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          python3 scripts/seed/check-wasm-project-admission.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-project-x86"
+      - name: Wasm project interface mapping controls
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          python3 scripts/seed/check-wasm-project-iface.py
+          --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-iface-x86"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: wasm-project-admission-x86
+          path: |
+            ${{ runner.temp }}/wasm-project-x86/receipt.json
+            ${{ runner.temp }}/wasm-iface-x86/receipt.json
+          if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   wasm32-browser-chrome:
     name: wasm32-browser target (headless Chrome, x86_64)
     needs: wasm32-browser-compile
@@ -663,7 +1155,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: wasm32-browser-chrome
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: wasm32-browser-modules
           path: ${{ runner.temp }}/wasm32-target
@@ -672,16 +1169,26 @@ jobs:
       # and the consent broker's runs (Phase 2, restricted-wasm-v1: the vendored
       # kotoba-client-runtime.js on a 127.0.0.1 page; no request leaves the machine)
       - name: wasm32-browser cases in headless Chrome
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/wasm32-target/wasm32" --output "$RUNNER_TEMP/wasm32-browser" --browser google-chrome
+      - name: Local Worker stdio in headless Chrome
+        if: steps.gate.outputs.skip != 'true'
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/seed/check-wasm32-local-stdio.py --wasm "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-stdio.wasm" --output-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-output-bound.wasm" --read-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-bound.wasm" --broker-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-broker-isolation.wasm" --all-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-all.wasm" --output "$RUNNER_TEMP/wasm32-local-stdio" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: wasm32-browser-receipt
-          path: ${{ runner.temp }}/wasm32-browser/wasm32-browser.json
+          path: |
+            ${{ runner.temp }}/wasm32-browser/wasm32-browser.json
+            ${{ runner.temp }}/wasm32-local-stdio/receipt.json
+            ${{ runner.temp }}/wasm32-local-stdio/results.json
           if-no-files-found: warn
-
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   qualify-x86_64:
-    needs: qualify-x86-shards
+    needs: [qualify-x86-shards, qualify-x86-runtime]
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -689,54 +1196,78 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-x86_64
+      - name: Require the shards and the runtime checks even when the gate skipped the steps (JUN-759)
+        if: always() && !cancelled()
+        env:
+          SHARDS: ${{ needs.qualify-x86-shards.result }}
+          RUNTIME: ${{ needs.qualify-x86-runtime.result }}
+        run: test "$SHARDS" = success && test "$RUNTIME" = success
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-scheduling-x86
           path: ${{ runner.temp }}/x86-shards/core
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-scheduling-x86-extensions
           path: ${{ runner.temp }}/x86-shards/extensions
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
+        if: steps.gate.outputs.skip != 'true' && (github.event_name != 'pull_request' && github.event_name != 'merge_group')
         with:
           name: native-scheduling-x86-dupes
           path: ${{ runner.temp }}/x86-shards/x86-dupes
       - name: Require the original native gates and argv at the bounded capacity per runner (all 19; on a pull request 16, the 3 deferred to main running on arm64)
+        if: steps.gate.outputs.skip != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
         run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --tier "$TIER" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-x86-partition-review
           path: ${{ runner.temp }}/x86-partition-review.json
           if-no-files-found: warn
-
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   qualify-benchmark-x86-factory:
-    needs: [qualify-benchmark-arm, derive-x86_64]
+    needs: [qualify-benchmark-arm-host, x86-complete]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: qualify-benchmark-x86-factory
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-x86-derivation
           path: ${{ runner.temp }}/native-proof
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: steps.gate.outputs.skip != 'true'
         with:
           name: native-benchmark-arm-host-reference
           path: ${{ runner.temp }}/arm-host-reference
       - name: Stage original19 through the actual fixed-point public x86 compiler
+        if: steps.gate.outputs.skip != 'true'
         run: |
           chmod 700 "$RUNNER_TEMP/native-proof/complete/F3.elf"
           python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
       - name: Native x86 factory and exact equality to the executed ARM host/payloads
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-benchmark-x86-factory-evidence
           path: |
@@ -748,6 +1279,10 @@ jobs:
             ${{ runner.temp }}/benchmark-x86/*/observer.py
             ${{ runner.temp }}/benchmark-x86-*-admission.json
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   shared-browser-components:
     name: Shared text / DOM / text-edit (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
@@ -764,25 +1299,33 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: shared-browser-components-${{ matrix.target }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.gate.outputs.skip != 'true'
         with:
           repository: kotoba-lang/browser
           ref: 6e3ca4e768d886060abe7bff70da07cf36f5dabc
           path: _shared/browser
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.gate.outputs.skip != 'true'
         with:
           repository: kotoba-lang/dom-gpu
           ref: c0be10ca6b0089e5fbe061eb76a6c23e61f61b22
           path: _shared/dom
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: steps.gate.outputs.skip != 'true'
         with:
           repository: kotoba-lang/kotoba
           ref: b7719f723fbf94f11e19dcda12641f682e324e62
           path: _shared/text
           persist-credentials: false
       - name: Verify source owner pins and native compiler bytes
+        if: steps.gate.outputs.skip != 'true'
         env:
           TARGET: ${{ matrix.target }}
         run: |
@@ -801,18 +1344,23 @@ jobs:
           assert hashlib.sha256(image.read_bytes()).hexdigest() == meta['image']['sha256']
           PY
       - name: Locked typed x86 project and refusal controls
-        if: matrix.target == 'x86_64'
+        if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/x86-project"
+      - name: Explicit x86 project effect admission and runtime refusals
+        if: matrix.target == 'x86_64'
+        run: |
+          compiler_sha=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
+          python3 scripts/seed/check-x86-project-effects-native.py --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
       - name: Execute actual shared modules (ARM)
-        if: matrix.target == 'arm64'
+        if: steps.gate.outputs.skip != 'true' && (matrix.target == 'arm64')
         run: |
           python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --target arm64 --runner-source "$PWD/seed/x86_64-kx64-runner.kotoba" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
       - name: Execute actual shared modules (x86)
-        if: matrix.target == 'x86_64'
+        if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: |
           python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu-linux-x86_64" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: shared-components-${{ matrix.target }}
           path: |
@@ -823,4 +1371,11 @@ jobs:
             ${{ runner.temp }}/x86-project/*.json
             ${{ runner.temp }}/x86-project/*.stdout
             ${{ runner.temp }}/x86-project/*.stderr
+            ${{ runner.temp }}/x86-project-effects/*.json
+            ${{ runner.temp }}/x86-project-effects/*.stdout
+            ${{ runner.temp }}/x86-project-effects/*.stderr
           if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
