@@ -170,6 +170,7 @@ def main(out):
         '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2_LOCK\\n")] 0) 1)))\n')
     images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
     images["string-fs2-lock-cwd"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock-cwd", packager, "amu-cli-host-cwd")
+    images["spawn-cwd"] = build(["seed/tests/macos-cli-host-spawn.kotoba", "seed/macos-cli-api.kotoba"], "spawn-cwd", packager, "amu-cli-host-cwd")
     scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.set_inheritable(scope_fd, True)
@@ -180,6 +181,9 @@ def main(out):
         run("string-fs2-lock-cwd", scope_fd=scope_fd, exit_code=70)
     finally:
         os.close(scope_fd)
+    (out / "child.stdout").unlink()
+    run("spawn-cwd", out, images["info"], expected=b"PASS_NATIVE_HOST_SPAWN\n")
+    assert (out / "child.stdout").read_bytes() == (str(images["info"]) + "\n").encode()
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
