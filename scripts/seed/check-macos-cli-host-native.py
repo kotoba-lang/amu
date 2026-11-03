@@ -169,16 +169,22 @@ def main(out):
         '    (if (and (= d "\\u0000FS2\\u00001") (= l "1") (= u "1"))\n'
         '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2_LOCK\\n")] 0) 1)))\n')
     images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
+    images["string-fs2-lock-cwd"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock-cwd", packager, "amu-cli-host-cwd")
     scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.set_inheritable(scope_fd, True)
         run("string-fs2-lock", expected=b"PASS_STRING_FS2_LOCK\n", scope_fd=scope_fd)
+        # The opt-in cwd profile must open its own FD3, and must refuse an
+        # already occupied FD3 rather than silently replacing it.
+        run("string-fs2-lock-cwd", expected=b"PASS_STRING_FS2_LOCK\n")
+        run("string-fs2-lock-cwd", scope_fd=scope_fd, exit_code=70)
     finally:
         os.close(scope_fd)
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
-                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs2DiagnosticManualFD3=True, linuxProcess=False, hostedFallback=False,
+                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs2DiagnosticManualFD3=True,
+                  cwdHostDiagnostic=True, linuxProcess=False, hostedFallback=False,
                   builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")
