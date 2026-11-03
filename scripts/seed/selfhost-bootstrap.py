@@ -431,12 +431,12 @@ def wasm32_browser(out, boot):
         r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
                     "--output", refused, "--source-lock", lock, "--source-lock-sha256", digest], senv, success=False)
         assert r.returncode != 0 and b"E6015" in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
-    for name, flags in (("missing-digest", ["--source-lock", source_lock]),
-                        ("project-roots", [*lock_args, "--source-path", out])):
+    for name, flags, marker in (("missing-digest", ["--source-lock", source_lock], b"E7100"),
+                                ("project-roots", [*lock_args, "--source-path", out], b"E6015")):
         refused = out / f"wasm-document-{name}.wasm"
         r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
                     "--output", refused, *flags], senv, success=False)
-        assert r.returncode != 0 and b"E7100" in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
+        assert r.returncode != 0 and marker in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
     float_refusals = []
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
