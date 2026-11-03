@@ -1,7 +1,9 @@
 # ADR-0404 -- f32 locals live in FP registers in aarch64 leaves (JUN-804 S1)
 
-- Status: **implemented, diagnostic evidence only** (seed/41 `fh-*`, `gn-range-wrapper`, `gn-call-range`;
-  evidence `docs/evidence/s1-fp-homes-20261103/`). Native ARM/x86 CI qualification is pending.
+- Status: **implemented; Mac core adoption candidate** (seed/41 `fh-*`, `gn-range-wrapper`, `gn-call-range`;
+  evidence `docs/evidence/s1-fp-homes-20261103/`; receipt `seed/adoption-jun804-s1-fp-homes-20261103.json`).
+  The signed Mac F builds G1 = G2 = G3 from the new core (`PASS_MAC_CORE_ADOPTION_FIXED_POINT`); native ARM/x86 CI
+  and the Linux controller qualification are pending.
 - Date: 2026-11-03
 - Owner direction: 2026-11-03, JUN-804: plan and build an inference-first Kotoba and Amu, with Kotoba and Amu
   selfhost on this Mac's architecture, compiled by Amu selfhost directly. This is that plan's stage S1.
@@ -75,5 +77,7 @@ Functions without float locals, and every function outside an ordinary leaf, are
   (JUN-804 S2), not in float code.
 - Payloads of programs with f32 locals in leaves change. Integer-only programs produce identical bytes (checked
   for a set of programs; the full 19-workload corpus is integer-only). `check-a64-f2i.py` passes unchanged.
-- The adopted core changes, so its pins, the CDCI controller and the native ARM/x86 qualification must be rebuilt
-  and rerun before this is adopted.
+- The adopted core changes. Re-pinned here: core unity `fc894801…` (only seed/41 changes among the 19 modules),
+  G1 = G2 = G3 container `fc713b1c…` and native `ceb20d88…`, CDCI policy and controller literals (core source, core
+  container, amu-selfhost gate `67c4e4fc…`; the kotoba-native gate rebuilds unchanged, `ab782746…`), and the seed/79
+  controller pin. The Linux controller and native ARM/x86 qualification run in CI.

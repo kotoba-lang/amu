@@ -1,8 +1,23 @@
 # S1: f32 locals in FP registers (JUN-804, ADR 0404), 2026-11-03
 
 Author-run, diagnostic. MacBook Pro M1 Max, 32 GB, macOS 26.4, on a shared host (load average 19–55 during the
-day, two unrelated VMs running). Not a quiet-host measurement and not a published benchmark. Native ARM/x86 CI and the
-core adoption round are pending.
+day, two unrelated VMs running). Not a quiet-host measurement and not a published benchmark. Native ARM/x86 CI is
+pending.
+
+## Core adoption (Mac)
+
+- `scripts/seed/check-macos-core-adoption.py --mac-build <fresh check-aiueos-user-macos-native.py output>`:
+  `PASS_MAC_CORE_ADOPTION_FIXED_POINT fc894801… ceb20d88…`. The signed Mac F of the merged branch builds G1 = G2 = G3
+  from the 19-module core; container `fc713b1c…` and native code `ceb20d88…` are byte-identical across generations.
+  Receipt: `seed/adoption-jun804-s1-fp-homes-20261103.json`.
+- The same procedure run on main's tree and pinned root reproduces main's receipt exactly (unity `2b64262f…`,
+  native `d587fd0f…`, container `be013a55…`) and main's CDCI amu-selfhost gate (`4b1d7432…`). That validates
+  computing this branch's gate (`67c4e4fc…`, core-static compiled by the Mac F to static x86_64-linux) on the Mac.
+- The kotoba-native gate built by the new F with `cdci-build` is unchanged (`ab782746…`).
+- After merging main (no rebase), `repin-derived-pins.py --take-pins-from FETCH_HEAD` passes, including
+  `PASS_ORDINARY_MACOS_CLI` and `PASS_PUBLIC_MACOS_PRODUCT`. The 24-check gate and `check-a64-f2i.py` pass again on
+  the final CLI, with the quieter host then at 20.5 → 12.5 ms (one accumulator) and 17.3 → 10.4 ms (four), C 4.0 /
+  1.2 ms.
 
 - Old compiler: `bin/amu` of main `1abb17f30` (sha256 `916f3237…6a`).
 - New compiler: `bin/amu` of this branch after `scripts/seed/repin-derived-pins.py` (sha256 `2065be26…2a`). The new
