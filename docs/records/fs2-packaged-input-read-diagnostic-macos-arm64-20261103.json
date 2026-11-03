@@ -140,10 +140,10 @@
     "change": "FS35 helper word 467 at offset 1868 branches to its existing epilogue at offset 2692, restoring the saved call frame and routing FS2 string requests to the canonical D/A helper. N/J remain separately dispatched; byte B/C stays on the generic FS2 chain.",
     "focusedNativeGate": {
       "status": "PASS_MACOS_FS35",
-      "receipt": "/Users/junkawasaki/github/workspaces/codex/jun768-fs35-bisect/focused-gate-20261103/observations.json",
-      "receiptSha256": "b19bfe8347df79d9f414c9bcf38a5b14599967aa7ff6642829c8d0a8c5022386",
-      "packagerImageSha256": "04ca371096efb13921476ba4bf8a9b6e519d32d5aa7ed4966eb1a5b18b1bfa91",
-      "passingPositive": [
+      "receipt": "/Users/junkawasaki/github/workspaces/codex/jun768-fs35-bisect/focused-gate-final-20261103/observations.json",
+      "receiptSha256": "5669e11e40e380c609563db38b71e68d8154a164f8e0f2ab7bf0f17563a50623",
+      "bootstrapPackagerSha256": "a42ca0f5e9c0daf46e0b1191abff0e23ce2fc43a2866ab101ebdff066473a082",
+      "positive": [
         "roundtrip",
         "durable",
         "lock",
@@ -154,8 +154,7 @@
         "fs2-atomic-file-fsync",
         "fs2-atomic-rename",
         "fs2-atomic-root-fsync",
-        "fs2-atomic-roundtrip",
-        "cross-process-lock"
+        "fs2-atomic-roundtrip"
       ],
       "expectedRefusals": [
         "trap-read-missing",
@@ -164,7 +163,8 @@
         "trap-unknown",
         "trap-trailing",
         "control-without-fs35"
-      ]
+      ],
+      "crossProcessLock": "holder exclusion and process-death release passed"
     },
     "compilerFixedPoint": {
       "F1ImageSha256": "7fbfcb261e862331803fabfc220ceb87a864f55000808df54b06dc1c0083d9fe",
@@ -174,9 +174,65 @@
       "F2F3UnsignedCompilerImageSha256": "0498d0d557eb99ff1cc491e7adb6c955ae9b8c3171961cc29e911617c5f6a5bf"
     },
     "remaining": {
-      "packagerSelfRebuild": "P3 self-packaging exited 148; self-rebuild fixed point is not established.",
-      "rootPins": "unchanged; do not update derived pins until packager self-rebuild fixed point is demonstrated.",
-      "scope": "local macOS arm64 bootstrap/compiler fixture only; does not qualify the full Amu root, SQLite adapter, Itonami runtime, CI, publication or deployment."
+      "qualification": "local Mac ARM64 exact checks passed; GitHub workflows after the repin are still required.",
+      "rootStatus": "diagnostic-candidate; complete Mac runtime, release and physical hardware are explicitly false.",
+      "scope": "does not qualify the full Amu root, general SQLite, Itonami consumer readiness, publication, or deployment."
+    },
+    "packagerFixedPoint": {
+      "method": "Use the exact extracted main entry offset from `extract-native`; prior P3 self-packaging attempt incorrectly passed 0 and returned 148.",
+      "mainEntryOffset": 60684,
+      "packagerRaw": {
+        "bytes": 103616,
+        "sha256": "a8be58d0cf32962456dd40228d2089a0388d0478294d7a954729e443c602f8b2"
+      },
+      "P1": {
+        "unsignedBytes": 147456,
+        "unsignedSha256": "ab52ce9ef6e63276ac638f3be251f754f0172f5ab36dc276b86e98600b1c823b",
+        "signedBytes": 166000,
+        "signedSha256": "1fe027bcc7745eae601460096ddd173d0bc20e4d75dcf3563f54a9a7f488d4ca"
+      },
+      "P2": {
+        "unsignedBytes": 147456,
+        "unsignedSha256": "2ebc88261c9c4c5342ecce189c92417370bc1e6c83c95929301d70e355cb1beb",
+        "signedBytes": 166000,
+        "signedSha256": "ffccde85f6fca718665cf8eaf378cd4e8472d3fa43dfd8f0c1eb6793230e0689"
+      },
+      "P3": {
+        "unsignedBytes": 147456,
+        "unsignedSha256": "2ebc88261c9c4c5342ecce189c92417370bc1e6c83c95929301d70e355cb1beb",
+        "signedBytes": 166000,
+        "signedSha256": "a42ca0f5e9c0daf46e0b1191abff0e23ce2fc43a2866ab101ebdff066473a082"
+      },
+      "P4": {
+        "unsignedBytes": 147456,
+        "unsignedSha256": "2ebc88261c9c4c5342ecce189c92417370bc1e6c83c95929301d70e355cb1beb",
+        "signedBytes": 166000,
+        "signedSha256": "31fa1a3e659055b38dbd1e6d7564acafe663b3d5b1171504360a20449c6c582d"
+      },
+      "fixedPoint": "P2=P3=P4 unsigned image bytes; signatures verify on all packaged images."
     }
+  },
+  "publicMacCli": {
+    "status": "PASS_PUBLIC_MACOS_PRODUCT",
+    "observationReceipt": "/Users/junkawasaki/github/workspaces/codex/jun768-fs35-bisect/public-macos-product-verify-20261103/public-macos-product.json",
+    "observationReceiptSha256": "f8745ade10cd81f97d0392254563ce597f36b44dcb19ff09732bcadb9a2d797a",
+    "ordinaryNativeObservations": 76,
+    "signedImage": {
+      "bytes": 2825408,
+      "sha256": "a7446343a7c20d8859f3cdc69b7de344b9f9f22ef50f98d23659e9be4ee3cc80"
+    },
+    "unsignedImage": {
+      "bytes": 2801664,
+      "sha256": "4b94c2d60440e47b963b8c8f23250daa96e2b41a72c7deae4c1916ad84bb55d8"
+    },
+    "unity": {
+      "bytes": 2967451,
+      "sha256": "41c97ff3d91221ab67d78d792cc2680fa695916a85f35c7a760395e789dd0e9a"
+    },
+    "nativeRebuildMatchesPublicPayload": true,
+    "threeAliasesAndCheckCompileRun": true,
+    "hostedFallback": false,
+    "fullMacRuntimeQualified": false,
+    "independentUserQualified": false
   }
 }
