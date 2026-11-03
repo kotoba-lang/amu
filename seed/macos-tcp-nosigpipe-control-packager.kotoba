@@ -1,0 +1,115 @@
+;; Diagnostic Darwin TCP SO_NOSIGPIPE control emitted by Amu from Kotoba.
+;; This tests socket/connect/setsockopt/read/write/close, not TCP wires 43-47 or a full
+;; compiler. The assembly derivation lives in docs/evidence; the packager
+;; consumes only this Kotoba source and the Amu native runtime.
+(ns seed.macos-tcp-nosigpipe-control-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (u32-at at (bit-and value 4294967295))
+      (u32-at (+ at 4) (u64-shift-right value 32))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v]
+      (if (= i (vector-count bytes)) out
+        (recur (inc i) (byte-at out (+ at i) (vector-at bytes i)))))))
+
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= i (vector-count words)) out
+      (recur (inc i) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Diagnostic AArch64 Darwin IPv4 loopback syscall control. This is not a
+;; capability provider: it has no grants, timeouts or untrusted input support.
+;; strict sets SO_NOSIGPIPE; unprotected skips that syscall as a negative control.
+(defn- tcp-control-words [mode :string] :vector-i64
+  (let [v [
+       0xd10103ff 0x52804208 0x790003e8 0x52800fe8 0x72a02008 0xb90007e8
+       0xd2800000 0x91000be1 0xd2800042 0xd2800070 0xf2a04010 0xd4001001
+       0x54000722 0xf100081f 0x540006e1 0xd2800040 0xd2800021 0xd2800002
+       0xd2800c30 0xf2a04010 0xd4001001 0x54000602 0xaa0003f3 0x52800028
+       0xb90013e8 0xaa1303e0 0xd29fffe1 0xd2820442 0x910043e3 0xd2800084
+       0xd2800d30 0xf2a04010 0xd4001001 0x54000402 0xaa1303e0 0x910003e1
+       0xd2800202 0xd2800c50 0xf2a04010 0xd4001001 0x54000322 0xaa1303e0
+       0x910053e1 0xd2800022 0xd2800070 0xf2a04010 0xd4001001 0x52800f08
+       0x390053e8 0xaa1303e0 0x910053e1 0xd2800022 0xd2800090 0xf2a04010
+       0xd4001001 0x54000143 0xf100801f 0x54000101 0xaa1303e0 0xd28000d0
+       0xf2a04010 0xd4001001 0x540000e2 0xd2800000 0x14000006 0xaa1303e0
+       0xd28000d0 0xf2a04010 0xd4001001 0xd2800020 0xd2800030 0xf2a04010
+       0xd4001001 0xd4200000]]
+    (if (= mode "unprotected") (vector-assoc! v 32 0xd503201f) v)))
+
+(defn- body-at [v :vector-i64 at :i64 mode :string] :vector-i64
+  (-> v
+      ;; MH_EXECUTE CPU_TYPE_ARM64; no libSystem load command.
+      (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 7)
+      (u32-at (+ at 20) 344) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
+      (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296)
+      (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT")
+      (u64-at (+ at 128) 4294967296)
+      (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES)
+      (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
+      (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680)
+      (u64-at (+ at 208) IMAGE-BYTES)
+      (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1)
+      (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24)
+      (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24)
+      (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      ;; Empty LC_DYLD_INFO_ONLY avoids legacy relocation parsing.
+      (u32-at (+ at 328) 2147483682) (u32-at (+ at 332) 48)
+      (words-at (+ at 1024) (tcp-control-words mode))))
+
+(defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (if (and (= (vector-count reply) (+ IMAGE-BYTES 5))
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i IMAGE-BYTES) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (inc i)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        mode (typed-cap-call :cli/args :string :string "1")
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)]
+    (if (or (= length 0) (> length 255)
+            (not (or (string=? mode "strict")
+                     (string=? mode "unprotected")))) 2
+      (let [v0 (vector-alloc (+ offset IMAGE-BYTES))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (body-at offset mode))
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
+        (if (acknowledged-image? v1 offset (vector-i64-from-bytes response)) 0 3)))))
