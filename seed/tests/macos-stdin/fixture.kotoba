@@ -1,0 +1,19 @@
+;; Synthetic wire-41 diagnostic fixture. Output is test input only.
+(ns test.macos-stdin (:export [main]))
+(defn main [] :i64
+ (let [mode (typed-cap-call 38 :string :string "0")]
+  (cond (= mode "split")
+    (let [a (typed-cap-call 41 :string :string "3") b (typed-cap-call 41 :string :string "2")
+          c (typed-cap-call 41 :string :string "") z (typed-cap-call 37 :string :string (str a "|" b "|" c))] 0)
+    (= mode "zero")
+    (let [a (typed-cap-call 41 :string :string "0") b (typed-cap-call 41 :string :string "")
+          z (typed-cap-call 37 :string :string (str a "|" b))] 0)
+    (= mode "partial")
+    (let [a (typed-cap-call 41 :string :string "3") z (typed-cap-call 37 :string :string (str "<" a ">"))
+          b (typed-cap-call 41 :string :string "") q (typed-cap-call 37 :string :string b)] 0)
+    (= mode "bad")
+    (let [a (typed-cap-call 41 :string :string "bad") z (typed-cap-call 37 :string :string a)] 0)
+    (= mode "over-count")
+    (let [a (typed-cap-call 41 :string :string "1048577") z (typed-cap-call 37 :string :string a)] 0)
+    :else
+    (let [a (typed-cap-call 41 :string :string "") z (typed-cap-call 37 :string :string (string-from-i64 (string-byte-length a)))] 0))))
