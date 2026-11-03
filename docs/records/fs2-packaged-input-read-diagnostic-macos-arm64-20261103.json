@@ -1,0 +1,55 @@
+{
+  "schema": "amu.fs2-packaged-input-read-diagnostic.v1",
+  "date": "2026-11-03",
+  "host": {
+    "os": "macOS 26.4",
+    "architecture": "arm64",
+    "orchestrator": "Python 3.15.0"
+  },
+  "task": "JUN-768 / Amu PR #1791",
+  "input": {
+    "path": "scalar.kotoba",
+    "bytes": 52,
+    "sha256": "4f2600410a7ae58fa0cea13be50195850ee2caac9b2df91ad86dea9d4b9a921d",
+    "source": "(ns scalar (:export [main]))\n(defn main [] :i64 42)\n"
+  },
+  "fullUnityControl": {
+    "bytes": 3983308,
+    "sha256": "a5f990fcaec2bd762c083374f1112aebcddfd67d3ea0522052f1fa6e09e8d382",
+    "pinnedRootExit": 0,
+    "generatedF1Exit": 1,
+    "generatedF1Stderr": "seed: E3 cannot read input file"
+  },
+  "runtimes": [
+    {
+      "name": "pinned-root",
+      "imageSha256": "2b4ac12a77f156ccc2790eb0cf5453e57b9cac8669a2dce9779095579f7994a2",
+      "result": "PASS",
+      "exit": 0,
+      "outputBytes": 34,
+      "outputSha256": "d9d93e2896184a1eff34a88f79cdfd9d51d96afd2af1f6d1b2020010ebc920bc"
+    },
+    {
+      "name": "F1 built with existing packager",
+      "imageSha256": "850edf7c73f56465dad7d08f11ee31942aaf07c59a230744d1e9ba7836a6a0c5",
+      "compilerRawBytes": 3763312,
+      "compilerRawSha256": "7d91bb6c15ee2868ecbf398d7d9267fae99b23380e2edad2dbebcbd647bb3724",
+      "result": "PASS",
+      "exit": 0,
+      "outputBytes": 34,
+      "outputSha256": "d9d93e2896184a1eff34a88f79cdfd9d51d96afd2af1f6d1b2020010ebc920bc"
+    },
+    {
+      "name": "F1 built with source-changed packager",
+      "imageSha256": "6d17f32e387a7363238a39515651307c1eafd73e7f49d12e0abc499fa9aa2317",
+      "compilerRawBytes": 3763312,
+      "compilerRawSha256": "7d91bb6c15ee2868ecbf398d7d9267fae99b23380e2edad2dbebcbd647bb3724",
+      "result": "REFUSED",
+      "exit": 1,
+      "stderr": "seed: E3 cannot read input file",
+      "outputCreated": false
+    }
+  ],
+  "command": "native_run(image, cwd, \"compile\", \"scalar.kotoba\", \"--target\", \"aarch64-macos\", \"--output\", output.kseed)",
+  "inference": "The E3 reproduces for a 52-byte source and the 3,983,308-byte full unity. The compiler raw payloads of the two F1 variants are byte-identical; the observed difference is in the packaged runtime. This isolates the failure to the source-changed packaged FS2 input path, but does not identify the faulty instruction or prove the whole Amu root."
+}
