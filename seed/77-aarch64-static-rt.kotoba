@@ -360,7 +360,11 @@
 (defn- kxrt-vec [h :i64] :i64
   (if (or (<= h 0) (> h (kxrt-gl 48))) (kxrt-fail) (+ (kxrt-gl 40) (* (dec h) 16))))
 (defn- kxrt-voff [h :i64] :i64 (kxrt-load64 (kxrt-vec h)))
-(defn- kxrt-vlen [h :i64] :i64 (kxrt-load64 (+ (kxrt-vec h) 8)))
+(defn- kxrt-vlen [h :i64] :i64
+  ;; Validate the handle freshly, then derive its descriptor in this operation.
+  (let [g (+ (kxrt-ctx) 1024)]
+    (if (or (<= h 0) (> h (kxrt-load64 (+ g 48)))) (kxrt-fail)
+      (kxrt-load64 (+ (kxrt-load64 (+ g 40)) (* (dec h) 16) 8)))))
 (defn- kxrt-item [off :i64 i :i64] :i64 (+ (kxrt-gl 56) (* 8 (+ off i))))
 (defn- kxrt-vnew [off :i64 n :i64] :i64
   (let [u (kxrt-gl 48)]
@@ -368,7 +372,12 @@
       (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
-  (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
+  ;; The items mapping is immutable during this private forward-copy loop.
+  ;; Hoist address derivation; retain scalar forward order even for overlap.
+  (let [dst (kxrt-item d 0) src (kxrt-item s 0)]
+    (loop [i 0] (if (>= i n) d
+      (let [offset (* 8 i) z (kxrt-store64 (+ dst offset) (kxrt-load64 (+ src offset)))]
+        (recur (inc i)))))))
 (defn- kxrt-vector-alloc [n :i64] :i64
   (let [u (kxrt-gl 64)]
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
@@ -379,7 +388,13 @@
             w (kxrt-gs 64 (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
-  (let [n (kxrt-vlen h)] (if (or (< i 0) (>= i n)) (kxrt-fail) (kxrt-load64 (kxrt-item (kxrt-voff h) i)))))
+  ;; Same handle and index guards as vec/vlen/voff; no callback or metadata
+  ;; mutation occurs between these checks and the final item load.
+  (let [g (+ (kxrt-ctx) 1024)]
+    (if (or (<= h 0) (> h (kxrt-load64 (+ g 48)))) (kxrt-fail)
+      (let [p (+ (kxrt-load64 (+ g 40)) (* (dec h) 16)) n (kxrt-load64 (+ p 8))]
+        (if (or (< i 0) (>= i n)) (kxrt-fail)
+          (kxrt-load64 (+ (kxrt-load64 (+ g 56)) (* 8 (+ (kxrt-load64 p) i)))))))))
 (defn- kxrt-assoc-in-place [h :i64 i :i64 x :i64] :i64
   (let [n (kxrt-vlen h)]
     (if (or (< i 0) (>= i n)) (kxrt-fail) (let [z (kxrt-store64 (kxrt-item (kxrt-voff h) i) x)] h))))
@@ -434,13 +449,17 @@
   (let [u (kxrt-gl 64)]
     (cond (> n KXRT-VALUE-MAX) (kxrt-value 10)
           (> n (- KXRT-ITEMS u)) (kxrt-arena 3)
-          :else (let [z (loop [i 0] (if (= i n) 0 (let [w (kxrt-store64 (kxrt-item u i) (kxrt-load8 (+ a i)))] (recur (inc i)))))
+          :else (let [dst (kxrt-item u 0)
+                      z (loop [i 0] (if (= i n) 0
+                          (let [w (kxrt-store64 (+ dst (* 8 i)) (kxrt-load8 (+ a i)))]
+                            (recur (inc i)))))
                       w (kxrt-gs 64 (+ u n))]
                   (kxrt-vnew u n)))))
 (defn- kxrt-bytes-ok? [off :i64 n :i64] :bool
-  (loop [i 0] (cond (= i n) true
-                    (let [v (kxrt-load64 (kxrt-item off i))] (or (< v 0) (> v 255))) false
-                    :else (recur (inc i)))))
+  (let [base (kxrt-item off 0)]
+    (loop [i 0] (cond (= i n) true
+                      (let [v (kxrt-load64 (+ base (* 8 i)))] (or (< v 0) (> v 255))) false
+                      :else (recur (inc i))))))
 (defn- kxrt-bytes-from-vector [h :i64] :i64
   (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64)]
     (cond (> n KXRT-VALUE-MAX) (kxrt-value 10)
