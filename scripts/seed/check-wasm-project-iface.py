@@ -15,6 +15,7 @@ STUB_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-stubs_t.kotoba'
 MODULE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-module_t.kotoba'
 LINKED_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-linked_t.kotoba'
 GRAPH_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-graph_t.kotoba'
+RUNTIME_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-runtime_t.kotoba'
 
 
 def main():
@@ -230,6 +231,26 @@ def main():
     lock.write_text(lock_text)
     bad = run_graph(digest(lock_text.encode()))
     assert not bad.stderr and re.search(rb':status :ok :result 33(?:\s|})',bad.stdout) and b'GRAPH-BEGIN' not in bad.stdout, (bad.returncode,bad.stdout,bad.stderr)
+    runtime_source = out/'project-runtime.kotoba'; runtime_source.write_bytes(prefix+RUNTIME_FIXTURE.read_bytes())
+    runtime_image = out/'project-runtime.elf'
+    built = subprocess.run([str(compiler),'compile',str(runtime_source),'--target',target,'--output',str(runtime_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and runtime_image.is_file(), (built.returncode,built.stderr[-1000:])
+    runtime_image.chmod(0o755)
+    runtime_result = subprocess.run([str(runtime_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                                    capture_output=True,timeout=300)
+    assert runtime_result.returncode == 0 and not runtime_result.stderr and re.search(rb':status :ok :result 0(?:\s|})',runtime_result.stdout), (runtime_result.returncode,runtime_result.stdout,runtime_result.stderr)
+    runtime_guard = b'(not (xw-project-runtime-map-valid? R M))'
+    runtime_bytes = runtime_source.read_bytes(); assert runtime_bytes.count(runtime_guard) == 1
+    runtime_mutant_source = out/'runtime-map-mutant.kotoba'; runtime_mutant_source.write_bytes(runtime_bytes.replace(runtime_guard,b'false'))
+    runtime_mutant = out/'runtime-map-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(runtime_mutant_source),'--target',target,'--output',str(runtime_mutant),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and runtime_mutant.is_file(), (built.returncode,built.stderr[-1000:])
+    runtime_mutant.chmod(0o755)
+    negative = subprocess.run([str(runtime_mutant)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=300)
+    assert not negative.stderr and re.search(rb':status :ok :result 4(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -242,6 +263,7 @@ def main():
                'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
                'projectLinkedSha256':sha(linked_path), 'policyNegativeSha256':sha(policy_image),
                'projectGraphSha256':sha(graph_path), 'graphOrderNegativeSha256':sha(order_image),
+               'runtimeMapFixtureSha256':sha(RUNTIME_FIXTURE), 'runtimeMapImageSha256':sha(runtime_image), 'runtimeMapNegativeSha256':sha(runtime_mutant),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)

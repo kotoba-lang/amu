@@ -558,6 +558,58 @@
                                                   (vector-assoc! 1 (if (= m 0) (xw-idx M main) (vector-at W 1)))) W)]
             (recur (+ i 1) compiled)))))))
 
+;; A checked runtime is assigned first (including a reserved main trampoline).
+;; Its slot map records global Wasm index and arity independently of that
+;; frontend's function IDs, which cannot be reused by another module.
+(def XW-RT-MAP-WORDS 52)
+(defn- xw-project-rt-slots-valid? [M :vector-i64 count :i64 slot :i64] :bool
+  (if (> slot 440) true
+    (let [f (vector-at M (+ 200 (quot slot 8)))]
+      (and (or (= f 0)
+               (and (> f 0) (< f (vector-at M MM-FN-N)) (xs-rt? M f)
+                    (> (xw-idx M f) XW-NIMPORT) (< (xw-idx M f) (+ XW-NIMPORT count))
+                    (> (xg-f M f FF-NPARAMS) 0) (<= (xg-f M f FF-NPARAMS) 16)))
+           (xw-project-rt-slots-valid? M count (+ slot 8))))))
+(defn- xw-project-runtime-capture [M :vector-i64 R :vector-i64] :vector-i64
+  (let [count (xg-get M 3) start (vector-at M 199) main (xg-get M 1)]
+    (if (or (not (pj-ok M)) (< (vector-count R) XW-RT-MAP-WORDS)
+            (<= count 0) (> count 4294967291) (<= start 0) (>= start (vector-at M MM-FN-N))
+            (<= main 0) (not= (xw-idx M main) XW-NIMPORT) (not (xs-rt? M start))
+            (not= (xg-f M start FF-NPARAMS) 1)
+            (<= (xw-idx M start) XW-NIMPORT) (>= (xw-idx M start) (+ XW-NIMPORT count))
+            (= (vector-at M 250) 0) (not (xw-project-rt-slots-valid? M count 48)))
+      (xg-err M 7102 0)
+      (let [a (vector-assoc! R 0 count) b (vector-assoc! R 1 (xw-idx M start))
+            rows (loop [slot 48]
+                   (if (> slot 440) 0
+                     (let [f (vector-at M (+ 200 (quot slot 8)))
+                           value (if (= f 0) 0 (bit-or (i64-shift-left (xw-idx M f) 8) (xg-f M f FF-NPARAMS)))
+                           w (vector-assoc! R (+ 2 (quot (- slot 48) 8)) value)]
+                       (recur (+ slot 8)))))] M))))
+(defn- xw-project-runtime-map-valid? [R :vector-i64 M :vector-i64] :bool
+  (if (< (vector-count R) XW-RT-MAP-WORDS) false
+    (let [count (vector-at R 0) start (vector-at R 1) n (vector-at M MM-FN-N)]
+      (and (> count 0) (<= count 4294967291) (> start XW-NIMPORT) (< start (+ XW-NIMPORT count))
+           (not= (vector-at R (+ 2 (quot (- 400 48) 8))) 0)
+           (>= n 1) (<= n MM-FN-CAP)
+           (loop [slot 48 active 0]
+             (if (> slot 440) (<= active (- MM-FN-CAP n))
+               (let [word (vector-at R (+ 2 (quot (- slot 48) 8))) idx (u64-shift-right word 8) arity (bit-and word 255)]
+                 (and (= (vector-at M (+ 200 (quot slot 8))) 0)
+                      (or (= word 0) (and (> idx XW-NIMPORT) (< idx (+ XW-NIMPORT count)) (> arity 0) (<= arity 16)))
+                      (recur (+ slot 8) (if (= word 0) active (+ active 1)))))))))))
+(defn- xw-project-runtime-bind [M :vector-i64 R :vector-i64] :vector-i64
+  (if (or (not (pj-ok M)) (not (xw-project-runtime-map-valid? R M))) (xg-err M 7102 0)
+    (loop [slot 48 next (vector-at M MM-FN-N)]
+      (if (> slot 440) (mem-set M MM-FN-N next)
+        (let [word (vector-at R (+ 2 (quot (- slot 48) 8)))]
+          (if (= word 0) (recur (+ slot 8) next)
+            (let [base (+ MM-FN-BASE (* next MM-FN-W))
+                  a (mem-set M (+ base FF-NPARAMS) (bit-and word 255))
+                  b (mem-set M (+ base FF-CODE) (u64-shift-right word 8))
+                  c (mem-set M (+ 200 (quot slot 8)) next)]
+              (recur (+ slot 8) (+ next 1)))))))))
+
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
 (defn- xw-host-field [M :vector-i64 k :i64] :vector-i64
