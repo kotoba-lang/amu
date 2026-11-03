@@ -459,3 +459,38 @@ Every job of `selfhost-native` and of the other native workflows starts with `./
 - push to main, the schedule and workflow_dispatch never skip and never restore: they run the full suite and only save.
 - A new gate-only script that a derivation starts to call must be reachable by name from the derivation's roots in
   the workflow (`roots:`), or its edits will not bust that derivation's key.
+
+## All derived pins in one command (JUN-759)
+
+`scripts/seed/repin-derived-pins.py` covers the bootstrap roots, Linux images, product descriptors and Mac CLI.
+`scripts/seed/repin-all-pins.py` (Mac arm64, native only) adds the two pin kinds that PRs used to hand-edit:
+
+- **Core adoption**: when the `seed/MANIFEST` modules change, it rebuilds the Mac G1/G2/G3 core generations with the
+  Mac fixed point (the same procedure as `check-macos-core-adoption.py`) and rewrites the sources, source unity,
+  native image, container and generations of the receipt named by `seed/compiler-core.json` `adoptionReceipt`,
+  plus the sources and unity of `seed/compiler-core.json`.
+- **Native CDCI**: `seed/cdci/policy.json` (core source/container, amu-selfhost gate, kotoba-native gate, gate source),
+  the five pin rows of `seed/cdci/controller.kotoba`, the 24 case image rows of `seed/cdci/kotoba-gate.kotoba` and the
+  two role source hashes in `seed/79-native-cdci.kotoba`, all from the Mac fixed point
+  (`compile --target x86_64-linux --format static`, `cdci-build`). The compiler embeds `seed/79`, so the command
+  repeats repin + sync until the pins reach a fixed point (normally 3 rounds, about 8 minutes).
+
+```
+scripts/seed/repin-all-pins.py --merge origin/main   # merge, resolve mechanically, regenerate; then review + commit
+scripts/seed/repin-all-pins.py --check               # never writes; exit 10 CDCI stale, 11 core adoption stale
+scripts/seed/test-repin-all-pins.py                  # negative controls: each stale pin must fail --check
+```
+
+`--merge` resolves conflicts only in pin files, `seed/cdci/{policy.json,controller.kotoba,kotoba-gate.kotoba}`,
+`seed/compiler-core.json`, `seed/adoption-*.json` (main's side, then regenerated) and the role-hash lines of
+`seed/79-native-cdci.kotoba` (three-way merge ignoring them). Anything else exits 12 with the file list.
+
+What it does not cover (exit 12 `OWNER_AUTHORED_CONTENT_NEEDED`, or documented here):
+- semantic edits to `seed/79`, `seed/cdci/{entry,runtime}.kotoba`, new `static-cases.json` cases (new gate vectors) or
+  a changed case count; the entry/runtime hashes embedded in `seed/79` are not recomputed;
+- a core change whose G1/G2/G3 do not self-reproduce (fix the source);
+- a PR that creates a new `seed/adoption-*.json` and repoints `compiler-core.json`: main's pointer wins and the
+  PR's new file stays as a record; repointing is an owner decision;
+- `docs/evidence` and `docs/*.json` receipts are historical records bound to their own sources, are not read by any
+  CI check against current sources, and are not regenerated (`--report-receipts` lists drifted pins, informational);
+- native Linux execution of the controller/gate: CI remains the verdict; this command only reproduces the pinned bytes.
