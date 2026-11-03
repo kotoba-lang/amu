@@ -506,6 +506,7 @@
               (= op 79) (if (or (not committed) (= specsize 0) (>= reads 1)) (fw-die 15)
                 (let [shape (if (fw-output-spec? spec specsize) 0 (fw-die 26))
                       exe (kxrt-load64 (+ mem 520))
+                      preflight (if (fw-static-elf? root exe spec buf) 0 (fw-die 28))
                       digest (if (fw-fixture-hash? root exe buf 1) 0 (fw-die 26))
                       out (kxrt-syscall 222 0 8192 3 34 -1 0) allocated (if (< out 0) (fw-die 27) 0)
                       pair (+ buf 6100) made (if (< (kxrt-syscall 59 pair 526336 0 0 0 0) 0) (fw-die 27) 0)

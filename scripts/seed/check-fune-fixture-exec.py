@@ -49,6 +49,15 @@ def deny_clock():
         os._exit(125)
 
 
+def deny_pread():
+    code = (Filter * 4)(Filter(0x20, 0, 0, 0), Filter(0x15, 0, 1, 67),
+                        Filter(0x06, 0, 0, 0x00050001), Filter(0x06, 0, 0, 0x7fff0000))
+    program = Program(len(code), code)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(38, 1, 0, 0, 0) or libc.prctl(22, 2, ctypes.byref(program), 0, 0):
+        os._exit(125)
+
+
 def frame(op, path, size, data=b''):
     path = path.encode('ascii')
     return op + struct.pack('>HI', len(path), size) + path + data
@@ -133,6 +142,8 @@ def main(worker, fixture, expect_pids_refusal, producer, output, output_fixture)
         assert data_only_out.returncode == 2 and data_only_out.stdout == READY + b'D' and b'FREFUSE:15' in data_only_out.stderr
         denied_out = run(setup(outdata, payload) + b'O', deny_execveat)
         assert denied_out.returncode == 2 and denied_out.stdout == READY + b'KKD' and b'FREFUSE:27' in denied_out.stderr
+        denied_preflight = run(setup(outdata, payload) + b'O', deny_pread)
+        assert denied_preflight.returncode == 2 and denied_preflight.stdout == READY + b'KKD' and b'FREFUSE:28' in denied_preflight.stderr
         no_clock_out = run(setup(outdata, payload) + b'O', deny_clock)
         assert no_clock_out.returncode == 2 and no_clock_out.stdout == READY + b'KKD' and b'FREFUSE:27' in no_clock_out.stderr
         repeat_out = run(setup(outdata, payload) + b'OO')
