@@ -59,6 +59,14 @@ the helper to install the signal. The parent comparison refused the changed
 parent; a control omitting that comparison would have dispatched. This also
 used a one-off observer and does not exercise the changed runtime.
 
+A later [real-runtime Linux ARM64 observation](evidence/awai152-spawn-real-runtime-20261103/)
+used a byte-patched test-only compiler: after guest SIGKILL, the baseline helper
+and direct child remained alive, while the candidate helper and direct child
+were no longer live at 0.5 seconds. A separate [contract sample](evidence/awai152-spawn-contract-20261103/)
+checked sequential normal execution, ungranted-program refusal and missing
+executable refusal with both compilers. These are bounded samples, not a
+source-rebuilt compiler or full component qualification.
+
 The candidate does not govern grandchildren, daemonized processes, programs
 that reset their death signal, external services or macOS; termination is
 asynchronous and is not an atomic resource-release or distributed fence.
