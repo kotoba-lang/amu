@@ -1,6 +1,7 @@
 ;; Diagnostic fixed-target Linux ARM64 launcher. It disables dumping for the
-;; launcher itself, ignores SIGXFSZ, then execs /usr/bin/curl. Exec may reset
-;; dumpability; the ignored signal survives exec. Not a host boundary.
+;; launcher itself, ignores SIGXFSZ, then execs /usr/bin/curl with an empty
+;; environment. Exec may reset dumpability; ignored signals survive exec.
+;; This diagnostic is not a host boundary.
 (ns seed.linux-curl-sigxfsz-control-packager (:export [main]))
 (def IMAGE-BYTES 4096)
 (defn- byte-at [v :vector-i64 at :i64 x :i64] :vector-i64 (vector-assoc! v at (bit-and x 255)))
@@ -22,12 +23,12 @@
       (u32-at (+ at 64) 1) (u32-at (+ at 68) 5) (u64-at (+ at 80) 4194304) (u64-at (+ at 88) 4194304)
       (u64-at (+ at 96) IMAGE-BYTES) (u64-at (+ at 104) IMAGE-BYTES) (u64-at (+ at 112) 4096)
       (words-at (+ at 256) [0x910003f3 0xd2800080 0xd2800001 0xd2800002 0xd2800003 0xd2800004
-                            0xd28014e8 0xd4000001 0xf100001f 0x540002c1 0xd10083ff 0xd2800028
+                            0xd28014e8 0xd4000001 0xf100001f 0x540002a1 0xd10083ff 0xd2800028
                             0xf90003e8 0xa900ffff 0xf9000fff 0xd2800320 0x910003e1 0xd2800002
-                            0xd2800103 0xd28010c8 0xd4000001 0xf100001f 0x54000121 0xf9400269
-                            0x91004262 0x8b090c42 0x91002261 0x100000e0 0xf9000660 0xd2801ba8
+                            0xd2800103 0xd28010c8 0xd4000001 0xf100001f 0x54000101 0xf90003ff
+                            0x910003e2 0x91002261 0x100000e0 0xf9000660 0xd2801ba8
                             0xd4000001 0xd2800fe0 0xd2800ba8 0xd4000001])
-      (text-at (+ at 392) "/usr/bin/curl")))
+      (text-at (+ at 388) "/usr/bin/curl")))
 (defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
   (and (= (vector-count reply) (+ IMAGE-BYTES 5)) (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
        (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
