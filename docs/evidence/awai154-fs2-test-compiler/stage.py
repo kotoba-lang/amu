@@ -30,6 +30,10 @@ for comment in (
     if new.count(comment) != 1:
         raise SystemExit('candidate differs from the expected staging layout')
     new = new.replace(comment, '', 1)
+# If the new runtime still exceeds the pinned source slot, remove only full
+# comment lines from this throwaway test copy. Preserve every executable form.
+if len(new.encode()) > len(old):
+    new = '\n'.join(line for line in new.split('\n') if not line.lstrip().startswith(';;'))
 new = new.encode()
 if image.count(old) != 1 or len(new) > len(old):
     raise SystemExit('base source mismatch or candidate does not fit')

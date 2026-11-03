@@ -127,6 +127,15 @@ No other wire inherits these combinations. Form T is no-replace publication
 through Linux renameat2; it has no ordinary-rename fallback. Wire40 is an
 explicit string/string sys/cwd grant and does not inherit wire35 authority.
 
+Draft form D now reports `1` only after a successful scoped open, `0` only
+for Linux ENOENT, and `?` for scope-admission failure or other open errors.
+An unsuccessful close still refuses. This is an incompatible error-response
+change: a caller must explicitly require `0` before acting on absence rather
+than infer absence from a non-`1` response. The shared source is a candidate,
+not a released runtime. ARM64 test-only execution and its old-runtime control
+are recorded in docs/evidence/awai154-linux-fs2-existence-20261103/README.md;
+x86, all errno cases, races and full compiler qualification remain open.
+
 Draft FS2 form U is a no-follow metadata read with the same four-field
 response as O, except that its first field is `mode & 07777`, preserving
 setuid, setgid and sticky bits. O remains `mode & 0777`. U has no tail and

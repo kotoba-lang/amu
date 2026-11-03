@@ -134,9 +134,26 @@
              (string=? (field t 0) "932") (string=? (field t 3) "0")
              (string=? (field old 0) "420") (string=? (field symlink 3) "2")
              (string=? (field dir 3) "1") (string=? absent "")) 0 28)))
+;; Harness supplies a readable file, missing path, inaccessible file and
+;; parent, a symlink, an escaping symlink and a path outside the granted root.
+(defn- exists-errors-test [parent :string outside :string] :i64
+  (let [readable (call "D" (string-concat parent "/readable") "")
+        missing (call "D" (string-concat parent "/missing") "")
+        denied (call "D" (string-concat parent "/denied") "")
+        inaccessible (call "D" (string-concat parent "/parent/inside") "")
+        link (call "D" (string-concat parent "/link") "")
+        escape (call "D" (string-concat parent "/escape") "")
+        scoped-out (call "D" outside "")]
+    (if (and (yes? readable) (acknowledged? missing) (string=? (payload missing) "0")
+             (acknowledged? denied) (string=? (payload denied) "?")
+             (acknowledged? inaccessible) (string=? (payload inaccessible) "?")
+             (acknowledged? link) (string=? (payload link) "?")
+             (acknowledged? escape) (string=? (payload escape) "?")
+             (acknowledged? scoped-out) (string=? (payload scoped-out) "?")) 0 29)))
 (defn- run [] :i64
   (let [mode (arg "0") path (arg "1")]
     (cond (string=? mode "full-mode") (full-mode-test path)
+          (string=? mode "exists-errors") (exists-errors-test path (arg "2"))
           (string=? mode "raw") (raw-test path)
           (string=? mode "original-forms") (original-forms-test path)
           (string=? mode "managed") (managed-test path)
