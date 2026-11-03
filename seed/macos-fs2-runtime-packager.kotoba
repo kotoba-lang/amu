@@ -150,7 +150,8 @@
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes) SLICE-SETUP-START))
+   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes)
+                     (if (string=? mode "fs2-cli-stdio-cwd") (+ (mh-extra-start raw-bytes) FS35-BYTES) SLICE-SETUP-START)))
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
@@ -974,7 +975,7 @@
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
-        fs35 (string=? mode "fs2-cli-stdio-general")
+        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd"))
         extra (mh-extra-start raw-bytes)
         result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
@@ -1080,8 +1081,10 @@
               (words-at (+ at extra) (mh-result-words extra))
               (generated-at (+ at start) source)))
         (if fs35
-          (words-at result (+ at extra)
-            (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+          (let [with-fs (words-at result (+ at extra)
+                         (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))]
+            (if (string=? mode "fs2-cli-stdio-cwd")
+              (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES))) with-fs))
           result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
@@ -1099,7 +1102,7 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
+        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -1127,7 +1130,8 @@
           [0 70 83 50 0])
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
           (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
-            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
+            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
+              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 256) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
@@ -1137,6 +1141,9 @@
             (and (string=? mode "amu-program")
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
+            (and (string=? mode "fs2-cli-stdio-cwd")
+              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
+                (or (= words 0) (> (* words 4) 256))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -1266,6 +1273,27 @@
 (defn- mh-startup-words [start :i64] :vector-i64
   [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
    0xf9400a68 0xd2a00209 0xaa090108 0xf9000a68 0xa8c17bfd 0xd65f03c0])
+
+;; Diagnostic launchd command mode: bind FD3 to the already selected working
+;; directory. Never replace an existing FD3, and require stdin/stdout/stderr to
+;; be open so open() must return exactly 3. The launcher/host must establish a
+;; private, correctly owned, alias-free WorkingDirectory before exec. This is
+;; not a path-admission policy, a process sandbox or a production runner.
+(defn- mh-cwd-scope-words [base :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-sub 31 31 32) (mh-str 30 31 16)
+    ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
+    (mh-imm 0 3) (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92)
+    (mh-b 0x54000003 2) (mh-cmpi 0 9) (mh-b 0x54000001 2)
+    ;; open(".", O_RDONLY|O_DIRECTORY|O_NOFOLLOW, 0).
+    (mh-imm 8 46) (mh-sb 8 31 0) (mh-sb 31 31 1)
+    (mh-add 0 31 0) (mh-imm 1 1048832) (mh-imm 2 0) (mh-sys 5)
+    (mh-b 0x54000002 2) (mh-cmpi 0 3) (mh-b 0x54000001 1)
+    (mh-mov 7 19) (mh-call SLICE-SETUP-START)
+    (mh-ldr 30 31 16) (mh-add 31 31 32) (mh-i 0xd65f03c0)
+    ;; An unexpected descriptor is ours; close it and refuse.
+    (mh-label 1) (mh-sys 6)
+    (mh-label 2) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000))))
 
 ;; AMUH1: NUL AMUH 1 op, then bounded UTF-8/NUL fields or binary tail.
 ;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
