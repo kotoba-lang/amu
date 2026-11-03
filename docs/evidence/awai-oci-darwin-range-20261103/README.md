@@ -15,6 +15,13 @@ removed after testing. Reads starting at 0, 2^32-1, 2^32, 8,595,477,989,
 and 2^34-1 returned the expected distinct marker bytes. Starting at 2^34
 trapped; the previous provider accepted 2^32-1 but trapped at 2^32.
 
+A further disposable sparse file with the observed model length
+8,595,477,990 bytes occupied 12,288 disk bytes. FS2 F returned that exact
+64-bit length. An E read of four bytes starting at 2^32-2 returned all four
+distinct markers across the old boundary, and a two-byte read at the file end
+returned the expected markers. The file was removed after the test. These
+checks use the same signed regression fixture listed below.
+
 A separate real-file regression checked D, A, O, U, E, I, H, M and L; a
 small-file E read succeeded, while out-of-file ranges, a count above 262,144,
 an oversized decimal offset and a malformed count trapped. The final LLDB
