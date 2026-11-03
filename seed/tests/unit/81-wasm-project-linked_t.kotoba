@@ -1,0 +1,23 @@
+;; Compile two independently checked function sets, link their Wasm indices,
+;; and emit a module; the second calls the first through an imported stub.
+(defn- xg-default [] :i64 2)
+(defn- seed-main [] :i64
+  (let [S1 "(ns dep (:export [dep]))\n(defn dep [x :i64] :i64 (+ x 1))\n"
+        S2 "(ns app (:export [main]))\n(defn main [] :i64 (dep 41))\n(defn- dep [x :i64] :i64 0)\n"
+        L (pj-new-l) V (vector-alloc 2)
+        M1 (xg-front S1)
+        a1 (mem-set M1 197 (string-length S1))
+        save1 (xw-project-compile-unit a1 L V S1 1 0 5)]
+    (if (not (pj-ok save1)) 11
+      (let [M2 (xg-front S2) stub (pj-fn-named M2 S2 "dep") main (pj-fn-named M2 S2 "main")
+            target (pj-ls L pj-t-base 5)
+            a2 (mem-set M2 197 (string-length S2))
+            save2 (xw-project-compile-unit a2 L V S2 stub 1 6)
+            entry (xw-idx M2 main)]
+        (cond (not (pj-ok save2)) 12 (not= entry 6) 13
+              :else (let [wasm (xw-project-module M2 L V 2 entry)]
+                      (if (not (pj-ok wasm)) 14
+                        (let [start (io-out "LINKED-BEGIN\n")
+                              bytes (io-write-hex M2 (+ MM-OUT-BASE 1) (- (vector-at M2 MM-OUT-N) 1))
+                              end (io-out "LINKED-END\n")]
+                          0))))))))

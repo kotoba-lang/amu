@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-iface_t.kotoba'
 STUB_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-stubs_t.kotoba'
 MODULE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-module_t.kotoba'
+LINKED_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-linked_t.kotoba'
 
 
 def main():
@@ -139,6 +140,21 @@ def main():
     negative = subprocess.run([str(module_mutant)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=120)
     assert not negative.stderr and re.search(rb':status :ok :result 1(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    linked_source = out/'project-linked.kotoba'; linked_source.write_bytes(prefix+LINKED_FIXTURE.read_bytes())
+    linked_image = out/'project-linked.elf'
+    built = subprocess.run([str(compiler),'compile',str(linked_source),'--target',target,'--output',str(linked_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and linked_image.is_file(), (built.returncode,built.stderr[-1000:])
+    linked_image.chmod(0o755)
+    result = subprocess.run([str(linked_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                            capture_output=True,timeout=120)
+    assert result.returncode == 0 and not result.stderr and re.search(rb':status :ok :result 0(?:\s|})',result.stdout), (result.returncode,result.stdout,result.stderr)
+    match = re.search(rb'LINKED-BEGIN\n([0-9a-f\n]+)LINKED-END\n',result.stdout)
+    assert match, result.stdout
+    linked_wasm = bytes.fromhex(match.group(1).decode())
+    assert linked_wasm[:8] == b'\x00asm\x01\x00\x00\x00'
+    linked_path = out/'project-linked.wasm'; linked_path.write_bytes(linked_wasm)
+    print('WASM_PROJECT_LINKED_HEX', linked_wasm.hex())
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -149,6 +165,7 @@ def main():
                'payloadNegativeControls':payload_receipts,
                'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
                'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
+               'projectLinkedSha256':sha(linked_path),
                'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
