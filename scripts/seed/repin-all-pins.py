@@ -56,6 +56,9 @@ PIN_FILES = [
     "seed/bootstrap/aarch64-linux-static-root.json", "seed/bootstrap/aarch64-macos/amu-cli.macho",
     "seed/bootstrap/aarch64-macos/amu-full-root.macho", "seed/bootstrap/aarch64-macos/cli.json",
     "seed/bootstrap/aarch64-macos/root.json",
+    # Rebuilt by the staged packager run when seed/macos-fs2-runtime-packager.kotoba
+    # changes; repin-derived-pins.py installs it, so a merge conflict takes main's.
+    "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
 ]
 # Whole files that are outputs of this command: on a merge conflict take the
 # base's side and regenerate. kotoba-gate.kotoba and controller.kotoba are
