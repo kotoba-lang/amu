@@ -629,6 +629,8 @@
 ;; plus exact regular-file bytes. The derived Darwin code checks FD3 scope,
 ;; no-follow openat, fstat type/size, exact read and EOF before returning.
 ;; Other kind 8 FS2 requests fall through to the B/C callback.
+;; A slash is an invalid scoped basename: return the same failure status as
+;; an unsuccessful openat, before opening any file. Other traps stay intact.
 (defn- fs2-lock-helper-words [start :i64 bc-start :i64] :vector-i64
   (-> (vector-alloc 198)
       (append-runtime-words 0 [
@@ -641,7 +643,7 @@
        0xa9046bf9 0xa90573fb 0xaa0003f3 0xaa0c03f4 0xaa0a03f5 0xf9400a68 0xd2c00109 0xea09011f
        0x54001160 0xd28000d6 0x910203e1 0xeb1502df 0x54000162 0xf8767a88 0xb40010a8 0xf103fd1f])
       (append-runtime-words 64 [
-       0x54001068 0xf100bd1f 0x54001020 0xd1001ac9 0x38296828 0x910006d6 0x17fffff5 0xf1001adf
+       0x54001068 0xf100bd1f 0x54000d20 0xd1001ac9 0x38296828 0x910006d6 0x17fffff5 0xf1001adf
        0x54000f60 0xd1001ad6 0x3836683f 0xd2800060 0xd2820082 0xf2a42002 0xd2800003 0xd28039f0
        0xf2a40010 0xd4001001 0x54000b22 0xaa0003f7 0xaa1703e0 0x914007e1 0x91040021 0xd2802a70
        0xf2a40010 0xd4001001 0x540009a2 0x79620be8 0x12140d08 0x7140211f 0x54000921 0xf948b3f8
