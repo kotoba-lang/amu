@@ -32,7 +32,7 @@ def main():
     observations = []
     derivation = None
     env = dict(PATH='/nonexistent', KEXE_CAP_RESOURCES_35=str(out), KEXE_STACK_BYTES='8388608')
-    original = {p.name: p.read_bytes() for p in (ROOT / 'seed/tests/x86-project-fs').glob('*.kotoba')}
+    original = {p.name: p.read_bytes() for p in (ROOT / 'seed/tests/x86-project-effects').glob('*.kotoba')}
 
     def call(label, argv, custom=env, expected=0, diagnostic=None, timeout=120):
         result = subprocess.run(list(map(str, argv)), env=custom, cwd=out, capture_output=True, timeout=timeout)
