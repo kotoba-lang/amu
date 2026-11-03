@@ -7067,3 +7067,42 @@ tail-movement row; the s216 identity hazard's own question
 (UNMEASURED, unqueued). Evidence:
 docs/evidence/gpu/anv-b3control3state-20261102/.
 (JUN-55, JUN-59; Linear tracking JUN-499)
+2026-11-03 (session 245, JUN-59 -- THE PRE-M2-DAY STAND-DOWN, NO
+ROW TAKEN): the s244 carry-forward's only queued row, the
+cause-resolution act's measurement half at act session m2 of 3,
+is day-gated to 2026-11-04 UTC or later (the s244 queue row
+verbatim: "QUEUED for s245: act session m2 (2026-11-04 UTC or
+later)"; the s242 frozen run plan section 5 spreads the 3 fresh
+sessions over >=2 distinct days and the m1 queue recorded
+"sessions m2 and m3 on later UTC days"), and this session
+started 2026-11-03T01:29:40Z -- 81,019 s (22 h 30 m 19 s)
+before the slot opens (state-s245.txt).  Running m2's runs now
+would land them on UTC day 2026-11-03, against the committed
+queue row; carry-forward (b) is not queued until the measurement
+half lands and (c) is not queued; every m2 record composition is
+already bound to committed bytes (the s242 protocol freeze, the
+s243 instrument + committed-bytes verification, the s244 m1
+route/custody precedent), so per the s103/s112 closing rule NO
+honest preparation row remains and this tick stands down rather
+than pads.  ONE stand-down record suffices for the act's pre-m2
+period (the s104/s112 rule extended): further ticks starting
+before 2026-11-04T00:00:00Z stand down report-only ([SILENT])
+unless the state changes; the first tick whose START is
+at/after 2026-11-04T00:00:00Z is act session m2.  Standing gate
+set all == pins ((a) 2649/0 17,925 bytes; (b) scoped GPU gate
+GREEN 123/12162/0/0 twice == the s88 pins; (c) FULL run-tests
+.cljk exit 1 RED AT BASE kotoba.form .err 879 bytes == pin --
+NO green full suite claimed; (d) evaluator self-test 38/0 ==
+pin + ledger eval pair twice byte-identical == the s117
+post-append pins, VERDICT: SETTLED INTERMEDIATE/MIXED unchanged;
+(e) find '*.sh' -> 0; (f) settle-bar-ledger.txt == HEAD).  THE
+BAR: stand-down session -> NO hardware runs -> NO reading -> NO
+ledger line, NO day-slot consumption.  RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for any vendor.
+This is gate-state verification at stand-down, not a
+measurement.  Carry-forward: act session m2 (queued for the
+first tick at/after 2026-11-04T00:00:00Z), then m3 on its later
+UTC day; the act's ANALYSIS half after the measurement half
+lands; the s216 identity hazard's residual (not queued).
+Evidence: docs/evidence/gpu/anv-b3causem2preslotstanddown-20261103/.
+(JUN-55, JUN-59; Linear tracking JUN-499)
