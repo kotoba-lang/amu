@@ -41,9 +41,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-checked-definition-producer-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Native checking, alpha normalization, SCC oracle and executed mutants
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/native_build_queue.py
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
@@ -52,8 +58,12 @@ jobs:
           --output "$RUNNER_TEMP/checked-definition"
           --benchmark-scc
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: checked-definition-${{ matrix.isa }}
           path: ${{ runner.temp }}/checked-definition
           if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}

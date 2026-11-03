@@ -1,0 +1,145 @@
+;; Fixed-function Darwin host observer candidate. Its emitted Mach-O performs
+;; only sysctl, memorystatus_get_level, statfs64, write and exit; no guest is
+;; given filesystem or process authority. It accepts no arguments and emits a
+;; fixed 56-byte record as lowercase hex and newline. Host identity, authenticity, source sealing,
+;; deployment and resource admission are separate requirements.
+(ns seed.macos-fixed-observer-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64 (vector-assoc! v at (bit-and value 255)))
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (byte-at at value) (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16)) (byte-at (+ at 3) (u64-shift-right value 24))))
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (u32-at at (bit-and value 4294967295)) (u32-at (+ at 4) (u64-shift-right value 32))))
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v] (if (= i (vector-count b)) out (recur (+ i 1) (byte-at out (+ at i) (vector-at b i)))))))
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v] (if (= i (vector-count words)) out (recur (+ i 1) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Fixed instruction builder. Branch fixups are checked before emitting.
+(defn- ds-new [] :vector-i64 (vector-alloc 4096))
+(defn- ds-i [s :vector-i64 word :i64] :vector-i64
+  (let [n (vector-at s 0)] (if (>= n 2816) (vector-assoc! s 3 1)
+    (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
+(defn- ds-label [s :vector-i64 label :i64] :vector-i64
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
+(defn- ds-b [s :vector-i64 op :i64 label :i64] :vector-i64
+  (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) op) (vector-assoc! (+ at 2) label)
+          (vector-assoc! 1 (+ f 1)) (ds-i op)))))
+(defn- ds-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
+  (-> s (ds-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
+      (ds-i (bit-or 0xf2a00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 16) 65535) 5))))))
+(defn- ds-add [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0x91000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-sub [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xd1000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-ldr [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-str [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-lw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-lb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xf100001f (bit-or (i64-shift-left rn 5) (i64-shift-left value 10)))))
+(defn- ds-cmp [s :vector-i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0xeb00001f (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16)))))
+(defn- ds-sys [s :vector-i64 number :i64] :vector-i64 (-> s (ds-imm 16 (+ 33554432 number)) (ds-i 0xd4001001)))
+(defn- ds-hex-digit [s :vector-i64] :vector-i64
+  ;; Input nibble x11, result x11: 0..15 -> ASCII lowercase hex.
+  (-> s (ds-add 11 11 48) (ds-cmpi 11 57) (ds-add 12 11 39)
+      (ds-i 0x9a8b818b)))
+(defn- ds-finish [s :vector-i64] :vector-i64
+  (let [n (vector-at s 0) valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3))))) 0) false (recur (+ i 1))))))
+        out (loop [i 0 v (vector-alloc n)] (if (= i n) v (recur (+ i 1) (vector-assoc! v i (vector-at s (+ 256 i))))))]
+    (if (not valid) []
+      (loop [i 0 v out] (if (= i (vector-at s 1)) v
+        (let [at (+ 3072 (* i 3)) pc (vector-at s at) op (vector-at s (+ at 1))
+              delta (- (- (vector-at s (+ 8 (vector-at s (+ at 2)))) 1) pc)
+              mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
+              bits (bit-and delta mask)]
+          (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
+
+;; Layout: magic AOS1, version u32=1, hw.memsize u64, swap total/available/
+;; used u64, memorystatus_get_level u32, statfs block size u32, bavail u64.
+;; Syscall numbers/structures are Darwin ARM64; fail closed on syscall errors,
+;; unexpected sysctl lengths or short write. The percentage is not a budget.
+(defn- observer-words [] :vector-i64
+  (ds-finish (-> (ds-new)
+    (ds-cmpi 0 1) (ds-b 0x54000001 9) (ds-sub 31 31 2048) (ds-sub 31 31 2048)
+    ;; sysctl({CTL_HW, HW_MEMSIZE}, 2, &memory, &len, NULL, 0)
+    (ds-imm 8 6) (ds-sw 8 31 8) (ds-imm 8 24) (ds-sw 8 31 12)
+    (ds-imm 8 8) (ds-str 8 31 16) (ds-add 0 31 8) (ds-imm 1 2)
+    (ds-add 2 31 64) (ds-add 3 31 16) (ds-imm 4 0) (ds-imm 5 0)
+    (ds-sys 202) (ds-b 0x54000002 9) (ds-ldr 8 31 16) (ds-cmpi 8 8) (ds-b 0x54000001 9)
+    ;; sysctl({CTL_VM, VM_SWAPUSAGE}, 2, &xsw_usage, &len, NULL, 0)
+    (ds-imm 8 2) (ds-sw 8 31 8) (ds-imm 8 5) (ds-sw 8 31 12)
+    (ds-imm 8 32) (ds-str 8 31 16) (ds-add 0 31 8) (ds-imm 1 2)
+    (ds-add 2 31 72) (ds-add 3 31 16) (ds-imm 4 0) (ds-imm 5 0)
+    (ds-sys 202) (ds-b 0x54000002 9) (ds-ldr 8 31 16) (ds-cmpi 8 32) (ds-b 0x54000001 9)
+    (ds-add 0 31 104) (ds-sys 453) (ds-b 0x54000002 9)
+    ;; Root statfs64 output is metadata, not file contents or a grant.
+    (ds-imm 8 47) (ds-str 8 31 0) (ds-add 0 31 0) (ds-add 1 31 128)
+    (ds-sys 345) (ds-b 0x54000002 9)
+    ;; Reject impossible basic values before emitting any observation.
+    (ds-ldr 8 31 64) (ds-cmpi 8 0) (ds-b 0x54000000 9)
+    (ds-ldr 8 31 72) (ds-ldr 9 31 80) (ds-cmp 9 8) (ds-b 0x54000008 9)
+    (ds-ldr 9 31 88) (ds-cmp 9 8) (ds-b 0x54000008 9)
+    (ds-lw 8 31 104) (ds-cmpi 8 100) (ds-b 0x54000008 9)
+    (ds-lw 8 31 128) (ds-cmpi 8 0) (ds-b 0x54000000 9)
+    (ds-imm 8 827543361) (ds-sw 8 31 3072) (ds-imm 8 1) (ds-sw 8 31 3076)
+    (ds-ldr 8 31 64) (ds-str 8 31 3080) (ds-ldr 8 31 72) (ds-str 8 31 3088)
+    (ds-ldr 8 31 80) (ds-str 8 31 3096) (ds-ldr 8 31 88) (ds-str 8 31 3104)
+    (ds-lw 8 31 104) (ds-sw 8 31 3112) (ds-lw 8 31 128) (ds-sw 8 31 3116)
+    (ds-ldr 8 31 152) (ds-str 8 31 3120)
+    ;; Encode each byte, keeping binary fields independent of UTF-8 handling.
+    (ds-add 19 31 3072) (ds-add 20 31 3200) (ds-imm 21 0)
+    (ds-label 1) (ds-cmpi 21 56) (ds-b 0x54000000 2)
+    (ds-lb 10 19 0) (ds-i 0xd344fd4b) (ds-hex-digit) (ds-sb 11 20 0)
+    (ds-imm 12 15) (ds-i 0x8a0c014b) (ds-hex-digit) (ds-sb 11 20 1)
+    (ds-add 19 19 1) (ds-add 20 20 2) (ds-add 21 21 1) (ds-b 0x14000000 1)
+    (ds-label 2) (ds-imm 8 10) (ds-sb 8 20 0)
+    (ds-imm 0 1) (ds-add 1 31 3200) (ds-imm 2 113) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 113) (ds-b 0x54000001 9) (ds-imm 0 0) (ds-sys 1)
+    (ds-label 9) (ds-imm 0 1) (ds-sys 1) (ds-i 0xd4200000))))
+
+(defn- body-at [v :vector-i64 at :i64] :vector-i64
+  (-> v (u32-at at 4277009103) (u32-at (+ at 4) 16777228) (u32-at (+ at 12) 2)
+      (u32-at (+ at 16) 7) (u32-at (+ at 20) 344) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72) (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296) (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT") (u64-at (+ at 128) 4294967296) (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES) (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72) (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680) (u64-at (+ at 208) IMAGE-BYTES) (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1) (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24) (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24) (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (u32-at (+ at 328) 2147483682) (u32-at (+ at 332) 48) (words-at (+ at 1024) (observer-words))))
+(defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (and (= (vector-count reply) (+ IMAGE-BYTES 5)) (= (vector-at reply 0) 0)
+       (= (vector-at reply 1) 70) (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
+       (loop [i 0] (if (= i IMAGE-BYTES) true
+         (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i))) (recur (+ i 1)) false)))))
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0") extra (typed-cap-call :cli/args :string :string "1")
+        length (string-byte-length path) offset (+ 7 length)]
+    (if (or (= length 0) (> length 255) (not (= extra "")) (= (vector-count (observer-words)) 0)) 2
+      (let [v (-> (vector-alloc (+ offset IMAGE-BYTES)) (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                  (byte-at 3 50) (byte-at 4 0) (byte-at 5 66) (text-at 6 path) (byte-at (+ 6 length) 0) (body-at offset))
+            reply (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v))]
+        (if (acknowledged? v offset (vector-i64-from-bytes reply)) 0 3)))))

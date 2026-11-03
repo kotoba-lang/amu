@@ -36,6 +36,44 @@ executes in the replacement build or runtime.
 The catalog names `:amu-selfhost-static` separately from the historical
 hosted `:linux-static` packager and removed `:kexe-loader`.
 
+## Parent-death candidate (AWAI-152)
+
+The static-runtime source candidate binds the spawn helper to the guest and
+the directly spawned child to that helper using Linux `PR_SET_PDEATHSIG` and
+checks the expected parent after installing the signal. A failed child setup
+is sent through the existing spawn refusal status pipe. This candidate is
+not yet present in a rebuilt or qualified compiler/runtime artifact.
+
+The [small source-unity mock fixtures](evidence/awai152-spawn-parent-death-20261103/)
+exercise the parent check and refusal decisions for both syscall-number sets;
+the Mac Amu CLI printed `0` for each. Removing the parent comparison printed
+`1` in both controls. Separately, a one-off Python observer on Linux ARM64
+7.2.7 in a disposable one-CPU VM exercised the analogous kernel signal chain:
+both helper and child were no longer live 0.5 seconds after killing the root
+process. That observer does not run this runtime implementation. The VM was
+removed.
+
+A separate [kernel race observation](evidence/awai152-spawn-parent-death-20261103/race-observation.json)
+held a helper before `PR_SET_PDEATHSIG`, killed its parent, and then allowed
+the helper to install the signal. The parent comparison refused the changed
+parent; a control omitting that comparison would have dispatched. This also
+used a one-off observer and does not exercise the changed runtime.
+
+A later [real-runtime Linux ARM64 observation](evidence/awai152-spawn-real-runtime-20261103/)
+used a byte-patched test-only compiler: after guest SIGKILL, the baseline helper
+and direct child remained alive, while the candidate helper and direct child
+were no longer live at 0.5 seconds. A separate [contract sample](evidence/awai152-spawn-contract-20261103/)
+checked sequential normal execution, ungranted-program refusal and missing
+executable refusal with both compilers. These are bounded samples, not a
+source-rebuilt compiler or full component qualification.
+
+The candidate does not govern grandchildren, daemonized processes, programs
+that reset their death signal, external services or macOS; termination is
+asynchronous and is not an atomic resource-release or distributed fence.
+Full rebuilt native ARM and x86 runtime gates, startup race and failure tests,
+process-tree handling, lock/queue/resource integration and host qualification
+remain required before any governor or deployment claim.
+
 ## Verification
 
 The evidence publisher checks source pins against the checkout before
