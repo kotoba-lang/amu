@@ -16,6 +16,7 @@ SOURCE = ROOT / "seed/macos-fs2-runtime-packager.kotoba"
 EVIDENCE = ROOT / "docs/evidence/mac-aiueos-kernel-admission-20261026"
 CASES = (
     ("fs2-da-helper-words", EVIDENCE / "fs2-da-virtual-root.derivation.s", 184, {27, 179}),
+    ("fs2-bc-helper-words", ROOT / "docs/evidence/awai154-darwin-fs2-bc-nested-20261103/fs2-bcnested.derivation.s", 227, {226}),
     ("fs2-lock-helper-words", EVIDENCE / "ksl1-lock.derivation.s", 198, {197}),
     ("fs2-ef-helper-words",
      ROOT / "docs/evidence/awai154-darwin-fs2-rename-20261103/fs2-efouhmitl.derivation.s", 638, {636, 637}),

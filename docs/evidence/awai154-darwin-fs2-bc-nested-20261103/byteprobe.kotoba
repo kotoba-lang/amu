@@ -1,0 +1,18 @@
+(ns darwin-fs2-byte-probe (:export [main]))
+(defn main [] :i64
+  (let [op (typed-cap-call 38 :string :string "0")
+        path (typed-cap-call 38 :string :string "1")
+        data (typed-cap-call 38 :string :string "2")
+        nul (string-from-utf8 (bytes-from-vector-i64 [0]))
+        prefix (vector-i64-from-bytes (string-to-utf8 (str nul "FS2" nul op path nul)))
+        body (if (= data "binary") [0 87 65 255] (vector-i64-from-bytes (string-to-utf8 data)))
+        n (vector-count prefix) size (vector-count body)
+        request (loop [i 0 v (vector-alloc (+ n size))]
+                  (if (= i (+ n size)) v
+                    (recur (+ i 1) (vector-assoc! v i (if (< i n) (vector-at prefix i) (vector-at body (- i n)))))))
+        reply (vector-i64-from-bytes (typed-cap-call :fs/app-data :bytes :bytes (bytes-from-vector-i64 request)))
+        good (and (= (vector-count reply) (+ size 5)) (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+                  (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
+                  (loop [i 0] (if (= i size) true (and (= (vector-at reply (+ i 5)) (vector-at body i)) (recur (+ i 1))))))
+        out (typed-cap-call 37 :string :string (if good "ACK\n" "BAD\n"))]
+    (if good 0 1)))

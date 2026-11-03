@@ -590,3 +590,10 @@ parent descriptors and renameatx_np with NOFOLLOW_ANY; T adds EXCL and has
 no replacing fallback. It keeps the strict bounded path rules used by I.
 One-Mac tests are recorded in docs/evidence/awai154-darwin-fs2-rename-20261103.
 This is not whole-provider or crash-durability qualification.
+
+The Darwin diagnostic B/C byte writer now accepts bounded nested ASCII paths
+beneath FD3 while rejecting dot and empty components and symlinks. A one-Mac
+framed fixture covers binary write, append, 4096-byte chunks, sync and
+no-replace publication; the previous basename-only handler refused the
+nested control. See docs/evidence/awai154-darwin-fs2-bc-nested-20261103.
+The diagnostic is not a full checkpoint or product FS2 qualification.
