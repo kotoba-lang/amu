@@ -469,6 +469,12 @@
                   (xw-tables 1) (xw-project-code 1 first count))]
     (xw-project-archive ready L start)))
 
+;; A successfully compiled library publishes the existing typed project
+;; interface with its Wasm indices. A failed unit must publish no interface.
+(defn- xw-project-compile-library [M :vector-i64 L :vector-i64 V :vector-i64 P :string S :string first :i64 count :i64 start :i64 module :i64] :string
+  (let [compiled (xw-project-compile-unit M L V S first count start)]
+    (if (pj-ok compiled) (xw-project-iface compiled L P S module) P)))
+
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
 (defn- xw-host-field [M :vector-i64 k :i64] :vector-i64
