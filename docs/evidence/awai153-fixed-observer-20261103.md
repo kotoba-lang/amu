@@ -35,6 +35,31 @@ diagnostic SSH host; OCI delivery and production integration remain open. The
 emitted fixed instructions, platform signing, syscall ABI and production source
 seal still require independent review and qualification before use as a host tool.
 
+## Local OCI layout experiment
+
+With ORAS 1.3.0 on the local Darwin ARM64 machine, the signed fixed observer
+was packaged into a local OCI layout and restored. This was a compatibility
+experiment with an installed third-party tool, not the native production
+packaging or deployment path. The proposed artifact type was
+`application/vnd.awai.node.host-tool.v1`, and the layer type was
+`application/vnd.awai.node.macos-arm64.executable.v1`. These names are
+experimental; this host tool is not an Itonami application artifact.
+
+The manifest digest was
+`sha256:e66e3b3c7d43d68cf1c507a9155d8e01dc76e7e0cd6420bb96b658abcf5e8faf`.
+The 34,688-byte restored payload retained the observer SHA-256 in the table
+below, and `codesign --verify` reported it valid. ORAS restored the file as
+`0644` rather than its original `0700`: a qualified installer must explicitly
+set and verify appropriate execution permissions after verifying the expected
+digest and signing identity. Ad-hoc signature validity here does not establish
+publisher identity, source provenance, or authorization to run.
+
+No registry, remote deployment, model loading, or live service was involved.
+Production still needs an authenticated, digest-pinned release and native
+installer, qualified resource admission, and end-to-end verification. The
+large inference model needs its own artifact and a streaming-capable path;
+the small-host-tool experiment does not qualify that path or GPU access.
+
 | Artifact | SHA-256 |
 | --- | --- |
 | packager source | `d94be93dd451f156016272067565bf184289a35a381dbb53729b657f4e0869ba` |
