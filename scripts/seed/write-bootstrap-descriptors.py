@@ -16,7 +16,8 @@ unrelated fields are preserved):
 * seed/bootstrap/aarch64-linux-static-root.json
     image, sourceUnity, producedBy.macFixedPointContainer.
 * native-product.json
-    image (the x86_64 full compiler), rootImage, sourceUnity, sourceModuleCount.
+    image (the x86_64 full compiler), hostEntry.image (the public Linux x86_64
+    host entry, KOTOBA-174), rootImage, sourceUnity, sourceModuleCount.
     Native qualification is never promoted here. Changed compiler/source bytes
     invalidate prior generations, sourceRevision and native qualification flags.
 * examples/foundation-starter/candidate.json, when present
@@ -25,9 +26,10 @@ unrelated fields are preserved):
 
 --install (with --write) also copies the verified artifacts to
 the paths the descriptors name: the signed Mac compiler and packager, the
-aarch64 root ELF and bin/amu-linux-x86_64. The public Mac CLI is rebuilt and
+aarch64 root ELF, bin/amu-linux-x86_64 and the host entry
+bin/x86_64-linux/amu. The public Mac CLI is rebuilt and
 repinned separately; identity/public gates refuse stale root/packager bindings.
-Linux aliases follow bin/amu-linux-x86_64.
+Linux aliases follow bin/amu-linux-x86_64 and bin/x86_64-linux/amu.
 
 Two phases, because the cross gate and the descriptor-bound Mac gate refuse a
 source the descriptor does not carry yet:
@@ -153,6 +155,8 @@ def derive(mac_dir: Path, cross_dir: Path):
     pk_digest, pk_size = sha(mac_dir / "P1-signed.macho")
     arm = pin(cross_dir / "F-aarch64.elf", cross["aarch64Root"], "aarch64 root")
     x86 = pin(cross_dir / "F-x86_64.elf", cross["x86FullCompiler"], "x86_64 full compiler")
+    host = pin(cross_dir / "H-x86_64.elf", cross["x86HostEntry"], "x86_64 host entry")
+    need(host != x86, "the x86_64 host entry is the root image")
     del unsigned
 
     return {
@@ -162,6 +166,7 @@ def derive(mac_dir: Path, cross_dir: Path):
              {"bytes": pk_size, "sha256": pk_digest}),
             (cross_dir / "F-aarch64.elf", "seed/bootstrap/aarch64-linux-static-root.elf", arm),
             (cross_dir / "F-x86_64.elf", "bin/amu-linux-x86_64", x86),
+            (cross_dir / "H-x86_64.elf", "bin/x86_64-linux/amu", host),
         ],
         "root": {
             "compiler": compiler,
@@ -176,7 +181,7 @@ def derive(mac_dir: Path, cross_dir: Path):
             "sourceUnity": dict(cross["fullSource"]["unity"]),
             "macContainer": dict(cross["container"]),
         },
-        "product": {"image": x86, "rootImage": arm,
+        "product": {"image": x86, "hostImage": host, "rootImage": arm,
                     "sourceUnity": dict(cross["fullSource"]["unity"]),
                     "sourceModuleCount": cross["fullSource"]["modules"]},
     }
@@ -206,8 +211,10 @@ def updated(old: dict, new: dict, which: str, phase: str = "final"):
         doc["producedBy"]["macFixedPointContainer"].update(new["macContainer"])
     elif which == "product":
         changed = (doc["image"] != new["image"] or
+                   doc["hostEntry"]["image"] != new["hostImage"] or
                    doc["sourceUnity"] != new["sourceUnity"])
         doc["image"].update(new["image"])
+        doc["hostEntry"]["image"].update(new["hostImage"])
         doc["rootImage"].update(new["rootImage"])
         doc["sourceUnity"].update(new["sourceUnity"])
         doc["sourceModuleCount"] = new["sourceModuleCount"]
@@ -300,6 +307,7 @@ def main(argv):
             dst = args.repo / rel
             if dst.is_file() and sha(dst)[0] == digest:
                 continue
+            dst.parent.mkdir(parents=True, exist_ok=True)
             tmp = dst.with_name(dst.name + ".installing")
             tmp.write_bytes(src.read_bytes())
             tmp.chmod(0o755)

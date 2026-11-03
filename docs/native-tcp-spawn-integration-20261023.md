@@ -63,7 +63,13 @@ Its temporary test directory was removed after local receipt/archive
 verification. Raw logs and input snapshots are retained in the task archive.
 Fault injection for spawn's `isolation-unavailable` / `setup-failed` kernel
 branches is not covered by the runtime corpus; each spawn receipt records
-that limitation.
+that limitation. `scripts/seed/check-spawn-fault-injection.py` (JUN-292, 2026-10-30)
+covers two of the child's four setup calls by running the guest under a seccomp
+profile that makes one of them return EPERM: `close_range` gives
+`spawn/isolation-unavailable` and `fchdir` gives `spawn/setup-failed`, with exit 126
+and the program never run; a run with no extra profile is the control. `prctl` and
+`dup3` are not injected, because the runtime and the container's process start use
+them too.
 
 The combined manifest also includes both source-lock modules (`03` and
 `59`), preserving the complete static core in dependency order. Omitting

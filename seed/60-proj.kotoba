@@ -832,6 +832,13 @@
           (= (string-code-point-at S i) 47) i
           :else (recur (+ i (mem-cpw (string-code-point-at S i)))))))
 
+;; Direct (quote symbol) operands are data, not qualified references.
+(defn- pj-quoted-symbol-token? [M :vector-i64 S :string t :i64] :bool
+  (and (>= t 3) (< (+ t 1) (vector-at M MM-TOK-N))
+       (= (pj-tf M (- t 2) TF-KIND) TK-LPAREN)
+       (= (pj-tf M (- t 1) TF-KIND) TK-SYM)
+       (pj-span= S (pj-tf M (- t 1) TF-START) (pj-tf M (- t 1) TF-END) "quote")
+       (= (pj-tf M (+ t 1) TF-KIND) TK-RPAREN)))
 ;; every symbol token alias/name of the module's own text: alias required, name an export of it
 (defn- pj-qscan [M :vector-i64 L :vector-i64 P :string S :string m :i64] :vector-i64
   (let [trail (pj-l L pj-k-trail)]
@@ -843,7 +850,8 @@
           (if (< sl 0)
             (recur (+ t 1))
             (let [r (pj-req-alias L P m (string-substring S a sl))]
-              (cond (pj-r5b-with? M S t) (recur (+ t 1))   ; R5B: (with l/h ..) is refused by 21-check (handle shape)
+              (cond (pj-quoted-symbol-token? M S t) (recur (+ t 1))
+                    (pj-r5b-with? M S t) (recur (+ t 1))   ; R5B: (with l/h ..) is refused by 21-check (handle shape)
                     ;; R6A: clojure.core/f is the core name f (the token is narrowed to it)
                     (pj-span= S a sl "clojure.core") (let [w (vector-assoc! M (+ MM-TOK-BASE (* t MM-TOK-W) TF-START) (+ sl 1))] (recur (+ t 1)))
                     ;; R6B: a friendly capability name of the catalogue (hash/sha256 ..) is 21-check's (ck-r6b-cap)
@@ -1448,7 +1456,7 @@
   (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
         (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
-        (string=? s ":process/spawn") 20
+        (string=? s ":process/spawn") 20 (string=? s ":entropy/draw") 23 (string=? s ":sys/cwd") 40
         (string=? s ":net/listen") 43 (string=? s ":net/accept") 44 (string=? s ":net/dial") 45
         (string=? s ":net/read") 46 (string=? s ":net/write") 47 :else -1))
 ;; the declared set node v of the module being read (L[pj-k-errmod])

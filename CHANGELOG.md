@@ -21,6 +21,17 @@ file's own addition was written with a changelog in mind.
 
 ## [Unreleased]
 
+### Each public entry names its own host target (2026-10-31, KOTOBA-174, ADR 0396)
+
+An omitted `--target` on a public entry is that entry's fixed host.
+- `bin/amu` (Mac CLI) uses `aarch64-macos`, as before.
+- The new Linux entry `bin/x86_64-linux/amu` (with `kotoba` / `kotoba-compiler` aliases) uses `x86_64-linux`. It
+  writes the same bytes as an explicit `--target x86_64-linux`, and passes every explicit command line through
+  unchanged.
+- The compiler roots refuse an omitted target with E2. They are `bin/amu-linux-x86_64`, `amu-full-root.macho` and the
+  Linux ARM64 root.
+- Nothing defaults to Kototama or Wasm. Supersedes ADR 0355. ADR 0351 is historical.
+
 ### `:bytes` as a guest value and `string-from-utf8`: context ABI v11 (2026-09-25, superproject adr-2609242330)
 
 The language had no way to build a string from bytes and no way to build a
@@ -39,6 +50,11 @@ error codes (and its three existing bytes refusals now carry them too).
 `examples/bytes-slots.kotoba` runs in the native conformance.
 
 ### An omitted `--target` is the host's native target (2026-09-24, ADR 0351)
+
+> Historical. This entry describes the retired nbb launcher. ADR 0355 replaced it on 2026-10-14 and ADR 0396 replaced
+> that on 2026-10-31. Current behaviour: each public entry names its own host (`bin/amu`: `aarch64-macos`,
+> `bin/x86_64-linux/amu`: `x86_64-linux`), and the compiler roots (including `bin/amu-linux-x86_64`) refuse an omitted
+> target with E2. There is no `AMU_TARGET`, and Windows, Android and `aarch64-linux` have no public entry.
 
 `amu compile <file>` and `amu worker` with no `--target` now build for the
 machine they run on (`aarch64-macos`, `x86_64-linux`, `aarch64-linux`,

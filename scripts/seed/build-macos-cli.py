@@ -46,7 +46,7 @@ def build(out):
             names.append(name)
             if name == "seed/90-drv.kotoba":
                 break
-    assert len(names) == 17
+    assert len(names) == 18 and len(set(names)) == 18 and "seed/19-decimal.kotoba" in names
     paths = [ROOT / name for name in names] + [ROOT / "seed/macos-cli-api.kotoba", pins, ROOT / "seed/macos-cli.kotoba"]
     cli = native(paths, "amu-cli", bootstrap, "amu-cli-host")
     report = dict(schema="amu.macos-native-cli-build.v1", status="BUILT_NATIVE_MACOS_CLI", compiler=mac.pin(compiler),

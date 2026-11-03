@@ -1,5 +1,18 @@
 # Agent rules
 
+## Product introduction and performance evidence
+
+Describe Amu as the native compiler for Kotoba's Lisp machine in development.
+Lisp's programs-as-data and composable forms motivate the work; do not describe
+interactive machine capabilities as shipped without their own evidence.
+
+The 2026-10-15 M4 observation measured translated Kotoba ports at 0.80× C
+execution time across 19 Embench workloads for a specific compiler snapshot,
+with one sample per workload and audited algorithm substitutions. This is not
+an official score, a measurement of the current released compiler or a
+universal speed ranking. Keep the boundary and audit with the number:
+https://kotoba-lang.org/blog/embench-c-parity-20261015/.
+
 ## Selfhost is the top priority
 
 - Use canonical `.kotoba` source and an Amu-built native compiler for the
@@ -95,7 +108,11 @@ actual guest receipts; full scheduling and shared Browser remain separate.
 - The complete candidate uses `seed/FULL-MANIFEST` (48 modules), retaining
   every adopted core module. Static OUT is 12MiB because the complete
   TCP/spawn image exceeded the old 8MiB bound. The complete static profile
-  also uses LitB1MiB and TOK786432 and NODE786432 and MM-WORDS31,064,064 (<2^25). Heap size, expected results,
+  also uses LitB1MiB, TOK1048576, NODE786432, SIR589824 and MM-WORDS32,505,856 (<2^25).
+  TOK is not fixed: it was raised from 786432 by owner decision (2026-11-01, JUN-737), and
+  `scripts/seed/check-token-headroom-native.py` (native-definition-graph `headroom` job) reports
+  the TOK/NODE/FN table headroom of the largest static builds and fails below its floors. Change any capacity through the `seed/MEMORY-MAP` static
+  overrides and `seed/gen-static-ns.kotoba`, never by hand. Heap size, expected results,
   all19 workloads and all24 runtime fixtures remain unchanged.
 - `seed/cdci` owns the Kotoba-native controller and gate. Its two mandatory
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
@@ -153,6 +170,23 @@ receipt (`--complete`) and match the actual entry to all3 current native F
 images/current FULL-MANIFEST bytes. An older self-consistent descriptor is
 insufficient. Runtime/target changes must regenerate affected role/source,
 root and product pins and re-run native positive/refusal/resource checks.
+
+## Derived seed pins are regenerated, never merged (JUN-631, ADR 0388)
+
+Compiler images, `native-product.json`, `seed/bootstrap/*`, `bin/amu-linux-x86_64`,
+the public Mac CLI and foundation-starter descriptors are build outputs of the
+whole seed tree. When a seed PR conflicts with main in them:
+
+- merge main (never rebase or force-push), then run
+  `python3 scripts/seed/repin-derived-pins.py --take-pins-from FETCH_HEAD` on Mac
+  arm64. It restores main's pin files and rebuilds every pin on the merged
+  source with the two-phase writer and the public CLI repin. Do not pick
+  either side of a pin conflict by hand.
+- leave `sourceRevision` `null` after regeneration: it means the descriptor's
+  own commit and the source-revision audit checks that commit. Do not open a
+  follow-up PR to name a squash commit.
+- Target (stage 2, not implemented): PRs carry source only, CI derives the
+  compilers from the PR, and a post-merge job repins main.
 
 ## Bounded canonical Kototama native frontend (JUN-369)
 

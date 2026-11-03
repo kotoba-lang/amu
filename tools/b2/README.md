@@ -1,7 +1,7 @@
 # tools/b2 -- route B2: the Kotoba loader and libc subset (ADR 0375, JUN-377)
 
 Route B2 loads the platform's GPU stack with an Amu-built program instead of the system's `ld.so`: a static
-x86_64 image (`--format b2`, seed module 98) maps a vendor shared object itself, binds the object's libc imports to
+x86_64 or aarch64 image (`--format b2`, seed module 98; seed/80 on aarch64, JUN-701) maps a vendor shared object itself, binds the object's libc imports to
 the functions of this directory, and calls into it. No C source, no C compiler, no system loader and no system
 libc is part of the route. The vendor driver's code still runs in the process, as under any loader.
 
@@ -12,6 +12,7 @@ provider.
 | File | What it holds |
 |---|---|
 | `00-base.kotoba` | the state map, short load/store names, system-call helpers, C-string helpers, messages and named refusals |
+| `01-arch-x86_64.kotoba`, `01-arch-aarch64.kotoba` | what differs per target (JUN-701): system call numbers, relocation types, the thread pointer, refusing stubs, the instruction-cache sync, `va_list`, the fault context, the glibc base version. `MANIFEST` names `01-arch-@ARCH@.kotoba` |
 | `10-string.kotoba` | `mem*`, `str*`, the fortified `*_chk`, the ctype table, `strtol` |
 | `20-printf.kotoba` | `snprintf`, `__snprintf_chk`, `__vsnprintf_chk`, `sscanf` |
 | `30-malloc.kotoba` | `malloc`, `calloc`, `realloc`, `free` |
@@ -37,7 +38,14 @@ provider.
 ## Checks
 
 * `scripts/seed/check-b2-image.py`: the image format (any x86_64 Linux kernel; wired into the native CI job).
+  `--target aarch64-linux` checks the same format on aarch64 (JUN-701; build on Linux or Mac arm64, run on any aarch64
+  Linux kernel; wired into the native CI job's arm64 phase). The tests of `tests/` are per target where they hold
+  machine code or system call numbers: `image_arch_*.kotoba`, and `image_abi_t.kotoba` (SysV) or
+  `image_abi_a64_t.kotoba` (AAPCS64) after `image_abi_common.kotoba`.
 * `scripts/seed/check-b2-libc.py`: the libc subset, from Kotoba, with the tests of `tests/` (any x86_64 Linux kernel;
   wired into the native CI job).
 * `scripts/seed/check-b2-libvulkan.py`: the system `libvulkan.so.1` through the loader, against an independent
-  oracle (the same calls through the system's own loader, drivers hidden). GPU hosts only: gad or the B70.
+  oracle (the same calls through the system's own loader, drivers hidden). GPU hosts only: gad or the B70 (x86_64),
+  Xavier (aarch64, `docs/evidence/b2-aarch64-libvulkan-20261031/`).
+* `scripts/seed/check-b2-libc.py` runs the x86_64 units only: its tests hold x86_64 machine code and system call
+  numbers. aarch64 has the image checks and the libvulkan run.

@@ -1,0 +1,5 @@
+(ns drv (:export [submit poll]))
+(defn submit [b :i64 n :i64 v :i64] :i64
+  (let [d (kernel-store-u32-4k b n 0 v) f (kernel-fence-store) bell (kernel-store-u8-4k b n 56 64)] (+ d f)))
+(defn poll [b :i64 n :i64] :i64
+  (let [s (kernel-load-u32-4k b n 0) f (kernel-fence-load) w (kernel-load-u64-4k b n 8)] (+ (+ s f) w)))

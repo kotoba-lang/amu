@@ -59,20 +59,77 @@
   (-> M (xa-w 0xB500004A) (xa-w 0xD4200000) (xa-w 0xB100055F) (xa-w 0x540000A1)
       (xa-w 0xD2F0000B) (xa-w 0xEB0B013F) (xa-w 0x54000041) (xa-w 0xD4200000)
       (xa-w (xa-r3 0x9AC00C00))))
+(defn- xa-float-arith? [op :i64] :bool
+  (or (and (>= op BOP-F64-ADD) (<= op BOP-F64-MAX))
+      (and (>= op BOP-F32-ADD) (<= op BOP-F32-MAX))))
+(defn- xa-fp-begin [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xD53B440B) (xa-w 0xD53B442C) (xa-w 0xD51B441F)))
+(defn- xa-fp-end [M :vector-i64] :vector-i64
+  (-> M (xa-w 0xD51B440B) (xa-w 0xD51B442C)))
 (defn- xa-bin-op [M :vector-i64 op :i64] :vector-i64
-  (case op
+  (if (xa-float-arith? op)
+    (let [sz (if (< op BOP-F32-ADD) 1 0)]
+      (cond-> (-> M (xa-fp-begin)
+                  (xa-w (enc-fmov-to-fp sz 0 9)) (xa-w (enc-fmov-to-fp sz 1 10))
+                  (xa-w (enc-fop2 (bit-and op 7) sz 0 0 1))
+                  (xa-w (enc-fmov-from-fp sz 9 0)) (xa-fp-end))
+        (= sz 0) (xa-w (enc-sxtw 9 9))))
+    (case op
     1 (xa-w M (xa-r3 0x8B000000)) 2 (xa-w M (xa-r3 0xCB000000))
     3 (xa-w M 0x9B0A7D29) 4 (xa-quot M)
     5 (xa-w M (xa-r3 0x8A000000)) 6 (xa-w M (xa-r3 0xAA000000)) 7 (xa-w M (xa-r3 0xCA000000))
     8 (xa-w M (xa-r3 0x9AC02000)) 9 (xa-w M (xa-r3 0x9AC02400)) 10 (xa-w M (xa-r3 0x9AC02800))
-    (xg-err M 7101 op)))
+    (xg-err M 7101 op))))
 ;; cset x9, cc: csinc x9, xzr, xzr, invert(cc)
 (defn- xa-cond [cc :i64] :i64 (case cc 1 0 2 11 3 12 4 13 5 10 0))
 (defn- xa-cmp [M :vector-i64 cc :i64 t :i64] :vector-i64
-  (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xEB0A013F)
-      (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t)))
+  (if (xg-fl-cmp? cc)
+    ;; Preserve the caller's FP environment. Compare with traps, flushing and
+    ;; alternate modes disabled, then restore FPCR and FPSR independently.
+    (let [sz (if (< cc CC-F32-EQ) 1 0)]
+      (-> M (xa-lt 9 t) (xa-lt 10 (inc t))
+          (xa-fp-begin)
+          (xa-w (enc-fmov-to-fp sz 0 9)) (xa-w (enc-fmov-to-fp sz 1 10))
+          (xa-w (enc-fcmp sz 0 1)) (xa-w (enc-cset 9 (enc-fcond (bit-and cc 7))))
+          (xa-fp-end) (xa-st 9 t)))
+    (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xEB0A013F)
+        (xa-w (bit-or 0x9A9F07E9 (i64-shift-left (bit-xor (xa-cond cc) 1) 12))) (xa-st 9 t))))
 (defn- xa-un [M :vector-i64 op :i64 t :i64] :vector-i64
-  (-> M (xa-lt 9 t) (xa-w (if (= op UOP-NOT) 0xD2400129 0xAA2903E9)) (xa-st 9 t)))
+  (cond
+    (and (>= op UOP-F64-TO-I64) (<= op UOP-F32-TO-I64))
+    (let [g (-> M (xa-lt 9 t) (xa-fp-begin))
+          h (case op
+              UOP-F64-TO-I64 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-fcvtzs 1 9 0)))
+              UOP-F32-TO-I64 (-> g (xa-w (enc-fmov-to-fp 0 0 9)) (xa-w (enc-movz 9 0xdf00 1))
+                                 (xa-w (enc-fmov-to-fp 0 1 9)) (xa-w (enc-fcmp 0 0 1))
+                                 (xa-w (enc-bcond (enc-cond-lt) 4)) (xa-w (enc-fop1 0 0 1 1))
+                                 (xa-w (enc-fcmp 0 1 0)) (xa-w (enc-bcond (enc-cond-gt) 2))
+                                 (xa-w (enc-brk 0)) (xa-w (enc-fcvtzs 0 9 0)))
+              UOP-I64-TO-F64 (-> g (xa-w (enc-scvtf 1 0 9)) (xa-w (enc-fmov-from-fp 1 9 0)))
+              UOP-I64-TO-F32 (-> g (xa-w (enc-scvtf 0 0 9)) (xa-w (enc-fmov-from-fp 0 9 0)) (xa-w (enc-sxtw 9 9)))
+              UOP-F64-TO-F32 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-fcvt 1 0 0)) (xa-w (enc-fmov-from-fp 0 9 0)) (xa-w (enc-sxtw 9 9)))
+              UOP-F32-TO-F64 (-> g (xa-w (enc-fmov-to-fp 0 0 9)) (xa-w (enc-fcvt 0 0 0)) (xa-w (enc-fmov-from-fp 1 9 0)))
+              (xg-err g 7101 op))]
+      (-> h (xa-fp-end) (xa-st 9 t)))
+    (or (= op UOP-F64-SQRT) (= op UOP-F32-SQRT))
+    (let [sz (if (= op UOP-F64-SQRT) 1 0)]
+      (cond-> (-> M (xa-lt 9 t) (xa-fp-begin) (xa-w (enc-fmov-to-fp sz 0 9))
+                  (xa-w (enc-fop1 2 sz 0 0)) (xa-w (enc-fmov-from-fp sz 9 0)) (xa-fp-end))
+        (= sz 0) (xa-w (enc-sxtw 9 9))
+        true (xa-st 9 t)))
+    (or (= op UOP-F64-NEG) (= op UOP-F32-NEG))
+    (let [single (= op UOP-F32-NEG)]
+      (cond-> (-> M (xa-lt 9 t) (xa-mov64 10 (if single 2147483648 -9223372036854775808))
+                  (xa-w (xa-r3 0xCA000000)))
+        single (xa-w (enc-sxtw 9 9))
+        true (xa-st 9 t)))
+    (or (= op UOP-F64-ABS) (= op UOP-F32-ABS))
+    (let [single (= op UOP-F32-ABS)]
+      (cond-> (-> M (xa-lt 9 t) (xa-mov64 10 (if single 2147483647 9223372036854775807))
+                  (xa-w (xa-r3 0x8A000000)))
+        single (xa-w (enc-sxtw 9 9))
+        true (xa-st 9 t)))
+    :else (-> M (xa-lt 9 t) (xa-w (if (= op UOP-NOT) 0xD2400129 0xAA2903E9)) (xa-st 9 t))))
 ;; arguments t .. t+n-1: 0..4 in x0..x4, the rest at [sp, 8*(i-5)]
 (defn- xa-args [M :vector-i64 t :i64 i :i64 n :i64] :vector-i64
   (if (= i n) M
@@ -139,7 +196,104 @@
     8 (-> M (xa-zero-args 0) (xa-lt 16 (+ t 2)) (xa-w 0xF9400200) (xa-w 0xF9400601) (xa-w 0xF9400A02)
           (xa-w 0xF9400E03) (xa-w 0xF9401204) (xa-lt 17 t) (xa-lt 7 (inc t)) (xa-w 0xD63F0220)
           (xa-x7) (xa-st 0 t))
+    ;; (kxrt-ccall fp argv), --format b2 only: an AAPCS64 C call. argv holds 14 words, word i the C
+    ;; function's integer argument i: 0..7 go to x0..x7, 8..13 to [sp] (the frame's outgoing area);
+    ;; blr fp; x7 = context again. The C function preserves x19..x28, x29 and sp.
+    9 (-> M (xa-lt 16 (inc t)) (xa-ccall-stack 0) (xa-ccall-regs 0) (xa-lt 17 t) (xa-w 0xD63F0220)
+          (xa-x7) (xa-st 0 t))
     (xg-err M 7101 OP-CALL)))
+;; ldr x17, [x16, #64 + 8k] ; str x17, [sp, #8k] for k = 0..5
+(defn- xa-ccall-stack [M :vector-i64 k :i64] :vector-i64
+  (if (= k 6) M
+    (xa-ccall-stack (-> M (xa-w (bit-or 0xF9400211 (i64-shift-left (+ 8 k) 10)))
+                        (xa-w (bit-or 0xF90003F1 (i64-shift-left k 10))))
+                    (inc k))))
+;; ldr xk, [x16, #8k] for k = 0..7
+(defn- xa-ccall-regs [M :vector-i64 k :i64] :vector-i64
+  (if (= k 8) M (xa-ccall-regs (xa-w M (bit-or 0xF9400200 (bit-or (i64-shift-left k 10) k))) (inc k))))
+
+;; ---- route B2 on aarch64-linux (--format b2, mode 5, ADR 0375, JUN-701) ----------------------------
+;; The same format as seed/98 on x86_64: the scan (xb-scan), the platform API (xb-check-api) and the
+;; export records are seed/98's; the instructions are AArch64.
+;; E2: x9 = address, x10 = value; loads zero-extend, stores return the value.
+(defn- xa-b2-intrinsic [M :vector-i64 k :i64 t :i64] :vector-i64
+  (case k
+    ;; ldrh w9, [x9]
+    0 (-> M (xa-lt 9 t) (xa-w 0x79400129) (xa-st 9 t))
+    ;; ldr w9, [x9]
+    1 (-> M (xa-lt 9 t) (xa-w 0xB9400129) (xa-st 9 t))
+    ;; strh w10, [x9]
+    2 (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0x7900012A) (xa-st 10 t))
+    ;; str w10, [x9]
+    3 (-> M (xa-lt 9 t) (xa-lt 10 (inc t)) (xa-w 0xB900012A) (xa-st 10 t))
+    (xg-err M 7101 OP-CALL)))
+;; E1: the AAPCS64 entry thunk of an export with n parameters. A C caller passes x0..x7, then stack
+;; words; a Kotoba callee takes parameters 0..4 in x0..x4 and 5.. at [sp] (seed/80 xa-params) with the
+;; context in x7. F = the frame: the outgoing words, the caller's fuel at [sp, #F-32] and x29/x30 at
+;; [sp, #F-16]:
+;;
+;;   sub sp, sp, #F ; stp x29, x30, [sp, #F-16] ; add x29, sp, #F-16
+;;   for j = 5..min(n,8)-1: str xj, [sp, #8(j-5)]
+;;   for j = 8..n-1:        ldr x16, [x29, #16 + 8(j-8)] ; str x16, [sp, #8(j-5)]
+;;   x7 := context ; ldr x16, [x7, #8] ; str x16, [sp, #F-32] ; x16 := XB-CALL-FUEL ; str x16, [x7, #8]
+;;   bl callee
+;;   x7 := context ; ldr x16, [sp, #F-32] ; str x16, [x7, #8]
+;;   ldp x29, x30, [sp, #F-16] ; add sp, sp, #F ; ret
+;;
+;; The generated code touches only x0..x17, x29, x30 and sp (seed/80), so x19..x28 survive the call;
+;; sp is 16-aligned at the call. The caller's fuel is restored on return, as on x86_64.
+(defn- xa-b2-frame [n :i64] :i64 (+ 32 (bit-and (+ 15 (* 8 (if (> n 5) (- n 5) 0))) -16)))
+(defn- xa-b2-regs [n :i64] :i64 (cond (<= n 5) 0 (>= n 8) 3 :else (- n 5)))
+(defn- xa-b2-thunk-size [n :i64] :i64 (* 4 (+ 24 (xa-b2-regs n) (* 2 (if (> n 8) (- n 8) 0)))))
+(defn- xa-b2-store-regs [M :vector-i64 j :i64 n :i64] :vector-i64
+  (if (or (>= j n) (= j 8)) M
+    (xa-b2-store-regs (xa-w M (bit-or 0xF90003E0 (bit-or (i64-shift-left (- j 5) 10) j))) (inc j) n)))
+(defn- xa-b2-copy-stack [M :vector-i64 j :i64 n :i64] :vector-i64
+  (if (>= j n) M
+    (xa-b2-copy-stack (-> M (xa-w (bit-or 0xF94003B0 (i64-shift-left (+ 2 (- j 8)) 10)))
+                          (xa-w (bit-or 0xF90003F0 (i64-shift-left (- j 5) 10))))
+                      (inc j) n)))
+(defn- xa-b2-thunk [M :vector-i64 f :i64] :vector-i64
+  (let [n (xg-f M f FF-NPARAMS) F (xa-b2-frame n) fp (quot (- F 16) 8) fs (quot (- F 32) 8)]
+    (-> M (xa-w (bit-or 0xD10003FF (i64-shift-left F 10)))
+          (xa-w (bit-or 0xA9007BFD (i64-shift-left fp 15)))
+          (xa-w (bit-or 0x910003FD (i64-shift-left (- F 16) 10)))
+          (xa-b2-store-regs 5 n) (xa-b2-copy-stack 8 n)
+          (xa-abs 7 16 0) (xa-w 0xF94004F0) (xa-w (bit-or 0xF90003F0 (i64-shift-left fs 10)))
+          (xa-mov64 16 XB-CALL-FUEL) (xa-w 0xF90004F0)
+          (xa-fixrec 11 f) (xa-w 0x94000000)
+          (xa-abs 7 16 0) (xa-w (bit-or 0xF94003F0 (i64-shift-left fs 10))) (xa-w 0xF90004F0)
+          (xa-w (bit-or 0xA9407BFD (i64-shift-left fp 15)))
+          (xa-w (bit-or 0x910003FF (i64-shift-left F 10))) (xa-w 0xD65F03C0))))
+(defn- xa-b2-thunks [M :vector-i64 S :string f :i64] :vector-i64
+  (cond (>= f (vector-at M MM-FN-N)) M
+        (xb-export? M S f) (xa-b2-thunks (xa-b2-thunk M f) S (inc f))
+        :else (xa-b2-thunks M S (inc f))))
+(defn- xa-b2-thunks-before [M :vector-i64 S :string f :i64] :i64
+  (loop [g 1 s 0]
+    (if (>= g f) s (recur (inc g) (if (xb-export? M S g) (+ s (xa-b2-thunk-size (xg-f M g FF-NPARAMS))) s)))))
+;; the table of seed/98 (count, then thunk / name / version addresses, then the strings)
+(defn- xa-b2-records [M :vector-i64 S :string g :i64 p0 :i64 sbase :i64] :vector-i64
+  (cond (>= g (vector-at M MM-FN-N)) M
+        (xb-export? M S g)
+          (let [na (+ 0x401000 (+ sbase (xb-strings-before M S g)))]
+            (xa-b2-records (-> M (xg-bytes (+ 0x401000 (+ p0 (xa-b2-thunks-before M S g))) 8) (xg-bytes na 8)
+                                 (xg-bytes (+ na (+ 1 (xb-name-len M S g))) 8))
+                           S (inc g) p0 sbase))
+        :else (xa-b2-records M S (inc g) p0 sbase)))
+(defn- xa-b2-table [M :vector-i64 S :string n :i64 p0 :i64 t0 :i64] :vector-i64
+  (-> M (xb-pad8) (xg-bytes n 8) (xa-b2-records S 1 p0 (+ t0 (+ 8 (* 24 n)))) (xb-strings S 1)
+        (mem-set 252 (+ 0x401000 t0))))
+;; after the program's code, before the literal pool
+(defn- xa-b2-emit [M :vector-i64 S :string] :vector-i64
+  (if (or (not (xb-on? M)) (not= (vector-at M MM-ERR) 0)) M
+    (let [n (xb-count M S 1) bad (xb-first-bad M S 1) p0 (xg-pos M)
+          t0 (bit-and (+ 7 (+ p0 (xa-b2-thunks-before M S (vector-at M MM-FN-N)))) -8)]
+      (cond (> bad 0) (xg-err M 7102 bad)
+            (= n 0) M
+            (> n XB-EXPORT-MAX) (xg-err M 7102 n)
+            (not= (vector-at M 252) 0) (xg-err M 7102 252)
+            :else (xa-b2-table (xa-b2-thunks M S 1) S n p0 t0)))))
 (defn- xa-one [M :vector-i64 i :i64] :vector-i64
   (let [op (xg-si M i IF-OP) a (xg-si M i IF-A) b (xg-si M i IF-B) c (xg-si M i IF-C)]
     (case op
@@ -153,7 +307,9 @@
       10 (-> M (xa-fixrec 12 a) (xa-w 0x14000000))
       11 (-> M (xa-lt 9 a) (xa-fixrec 13 b) (xa-w 0xB4000009))
       12 (-> M (xa-lt 9 a) (xa-fixrec 13 b) (xa-w 0xB5000009))
-      13 (if (>= (xs-intr M a) 0) (xa-intrinsic M (xs-intr M a) b) (xa-call M i a b c))
+      13 (cond (>= (xs-intr M a) 0) (xa-intrinsic M (xs-intr M a) b)
+               (>= (xb-intr M a) 0) (xa-b2-intrinsic M (xb-intr M a) b)
+               :else (xa-call M i a b c))
       14 (xa-rt M a b c) 15 (xa-cap M a b c) 16 (xa-str-lit M a b) 17 (xa-vec M a b 0)
       18 (if (xs-rt? M (xg-get M 0)) M (xa-fuel M))
       19 (-> M (xa-lt 0 a) (xa-epilogue) (xa-w 0xD65F03C0))
@@ -220,30 +376,49 @@
   (let [g (xa-page M) at (xg-pos g)
         h (loop [h g i 0] (if (or (= i cl) (not= (vector-at h MM-ERR) 0)) h (recur (xg-byte h (vector-at V (+ cs i))) (inc i))))]
     (-> h (mem-set 252 (+ 0x401000 at)) (mem-set 253 cl) (mem-set 254 off))))
+;; Runtime-profile admission is shared with x86, whose emitter supports float.
+;; Float comparisons, conversions, arithmetic, sqrt and sign operations are implemented here.
+;; Reject all other float instructions before emitting code.
+(defn- xa-float-un? [op :i64 sub :i64] :bool
+  (and (= op OP-UN) (or (= sub UOP-F64-NEG) (= sub UOP-F64-ABS)
+                         (= sub UOP-F64-SQRT) (= sub UOP-F32-NEG)
+                         (= sub UOP-F32-ABS) (= sub UOP-F32-SQRT)
+                         (and (>= sub UOP-F64-TO-I64) (<= sub UOP-F32-TO-I64)))))
+(defn- xa-check-float [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) sub (xg-si M i IF-A)]
+      (if (and (xg-fl-sir? op sub) (not (or (xa-float-un? op sub)
+                                               (and (= op OP-BIN) (xa-float-arith? sub))
+                                               (and (= op OP-CMP) (xg-fl-cmp? sub))))) (xg-err M 7101 sub)
+        (xa-check-float M (inc i))))))
 (defn- xa-build [M :vector-i64 S :string rt :i64 mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 mode) (xg-set 4 1)
-              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+              (xg-check-fns S 1) (xg-check-sir 1) (xa-check-float 1) (xr-check 1) (xs-scan S 1) (xb-scan S 1) (xs-check 1 0)
+              (xb-check-api S 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0)) (xg-err a 7102 1)
           :else (let [g0 (-> a (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xg-index-labels 1)
-                             (xa-entry) (xa-code 1) (xr-pool 1))
+                             (xa-entry) (xa-code 1) (xa-b2-emit S) (xr-pool 1))
                       g (if (= mode 2) (xa-payload g0 V cs cl off) g0)
                       data (bit-and (+ 8191 (xg-pos g)) -4096)]
                   (if (>= (+ data XS-CTX-BYTES 1) MM-OUT-CAP) (xg-err g 7104 data)
                     (xa-elf (xa-fix (xg-set g 3 data) 1)))))))
 (defn- xa-write [M :vector-i64 out :string profile :i64] :i64
   (let [n (dec (vector-at M MM-OUT-N)) written (out-write-v M out (+ MM-OUT-BASE 1) n)
-        format (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher" :else ":static")
+        format (cond (= (xg-get M 2) 1) ":runner" (= (xg-get M 2) 2) ":packed" (= (xg-get M 2) 4) ":launcher"
+                     (= (xg-get M 2) 5) ":b2" :else ":static")
         w (io-out (xs-write-record ":aarch64-linux" format (xg-pos M) n profile))]
     (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))
-;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher
+;; compile SRC --target aarch64-linux --output NEW --format static|runner|launcher|b2
 ;; compile SRC --target aarch64-linux --output NEW --format packed --payload KSEED
 ;;   (SRC is the runner source; KSEED a container whose `main` takes no arguments)
 (defn- xa-compile [src :string out :string mode :i64 V :vector-i64 cs :i64 cl :i64 off :i64 profile :i64] :i64
   (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-        ;; --format launcher (mode 4): the runtime ends with xa-rt-launch, not the standard start
-        rt (string-concat (xa-rt-core-profile profile) (if (= mode 4) (xa-rt-launch) (xa-rt-start)))
+        ;; --format launcher (mode 4) and b2 (mode 5): the runtime ends with xa-rt-launch or xa-rt-b2,
+        ;; not the standard start
+        rt (string-concat (xa-rt-core-profile profile)
+                          (cond (= mode 4) (xa-rt-launch) (= mode 5) (xa-rt-b2) :else (xa-rt-start)))
         s (string-concat guest rt) m (xa-build (xg-front s) s (string-length guest) mode V cs cl off)]
     (if (not= (vector-at m MM-ERR) 0) (xg-report m src out) (xa-write m out profile))))
 (defn- xa-packed [src :string out :string kseed :string profile :i64] :i64
@@ -255,12 +430,13 @@
           :else (xa-compile src out 2 V (vector-at H MM-R1) (vector-at H MM-R2) (vector-at H MM-R0) profile))))
 (defn- xa-command [] :i64
   (let [src (io-arg 1) out (io-arg 5) fmt (io-arg 7)
-        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4 :else -1)
+        mode (cond (string=? fmt "static") 0 (string=? fmt "runner") 1 (string=? fmt "packed") 2 (string=? fmt "launcher") 4
+                   (string=? fmt "b2") 5 :else -1)
         profile (xs-runtime-profile (if (= mode 2) 10 8))]
     (cond (or (< profile 0) (not (string=? (io-arg 4) "--output")) (not (string=? (io-arg 6) "--format"))
               (and (= mode 2) (not (string=? (io-arg 8) "--payload")))
               (< mode 0) (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher [--payload KSEED]\n")] 2)
+            (let [w (io-err "seed-aarch64-linux: E7100 expected compile SOURCE --target aarch64-linux --output NEW --format static|runner|packed|launcher|b2 [--payload KSEED]\n")] 2)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           (= mode 2) (if (= (io-exists (io-arg 9)) 0) (drv-fail0 E-READ) (xa-packed src out (io-arg 9) profile))
           :else (xa-compile src out mode (vector-alloc 1) 0 0 0 profile))))

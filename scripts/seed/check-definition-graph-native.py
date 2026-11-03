@@ -191,6 +191,9 @@ def main(args):
     assert pin(input_path) == product['sourceUnity']
     parts = []
     for path in full_paths:
+        # JUN-584: the kernel is in FULL-MANIFEST now; it is appended below (possibly mutated), never twice.
+        if path == KERNEL:
+            continue
         data = (ROOT / path).read_bytes()
         if path == 'seed/78-full-entry.kotoba':
             assert data.count(b'(defn- seed-main [] :i64') == 1

@@ -9,11 +9,13 @@ anything: it is machine code assembled by hand below). It has what the loader mu
 * imports: strlen at GLIBC_2.2.5 (JUMP_SLOT), stderr at GLIBC_2.2.5 (GLOB_DAT, a data object), a weak reference
   (GLOB_DAT, bound to 0) and an import nothing implements (JUMP_SLOT, bound to a refusing stub);
 * RELATIVE (also the init_array entry, as in a real object) and R_X86_64_64 (symbol plus addend) relocations in .rela.dyn.
-Variants add one thing the loader must refuse by name: see VARIANTS.
+Variants add one thing the loader must refuse by name: see VARIANTS. One variant must load instead: textrel (DT_TEXTREL
+and a RELATIVE relocation into a word of the read-execute segment, which fx_textcell reads; JUN-701).
 """
 import struct
 
-BASE_FUNCS = ["fx_add", "fx_strlen", "fx_stderr", "fx_weak", "fx_flag", "fx_flag2", "fx_ptr", "fx_ref64", "fx_bss", "fx_missing"]
+BASE_FUNCS = ["fx_add", "fx_strlen", "fx_stderr", "fx_weak", "fx_flag", "fx_flag2", "fx_ptr", "fx_ref64", "fx_bss", "fx_missing",
+              "fx_textcell"]
 VARIANTS = {
     "base": None,
     "zero-file-bss": None,
@@ -22,7 +24,7 @@ VARIANTS = {
     "irelative": "relocation type 37",
     "unknown-reloc": "relocation type 99",
     "needed": "needed library not available in slice 1: libnot-there.so.9",
-    "textrel": "DT_TEXTREL",
+    "textrel": None,
     "relr": "DT_RELR",
     "version": "this image has it at another symbol version than GLIBC_2.99999",
     "not-elf": "not an ELF file",
@@ -54,12 +56,13 @@ def build(variant="base"):
     if variant == "short":
         return b"\x7fELF\x02\x01"
     # --- addresses (file offset = virtual address throughout)
-    text = 0x500
+    text = 0x600
     got_stderr, got_weak, gotplt_strlen, gotplt_missing = 0x1200, 0x1208, 0x1210, 0x1218
     flag, flag2, ptrcell, ref64, string, bss = 0x2000, 0x2008, 0x2010, 0x2018, 0x2020, 0x2800
     if variant == "zero-file-bss":
         bss = 0x4008  # valid p_filesz=0 segment, not page-aligned
     init_array, dynamic = 0x1000, 0x1008
+    textcell = text - 8  # a word of the read-execute segment, relocated only by the textrel variant
     # --- machine code
     code, addr_of = bytearray(), {}
 
@@ -89,6 +92,7 @@ def build(variant="base"):
     func("fx_ref64", load(ref64))
     func("fx_bss", load(bss))
     func("fx_missing", jump(gotplt_missing))
+    func("fx_textcell", load(textcell))
     text_end = text + len(code)
     assert text_end < 0x1000
     # --- symbols: null, imports, then the definitions ordered by hash bucket
@@ -133,6 +137,8 @@ def build(variant="base"):
         rela.insert(0, (ptrcell, 37, 0, text))
     if variant == "unknown-reloc":
         rela.insert(0, (ptrcell, 99, 0, 0))
+    if variant == "textrel":
+        rela.append((textcell, 8, 0, string))
     pltrela = [(gotplt_strlen, 7, sym_index["strlen"], 0), (gotplt_missing, 7, sym_index["no_such_import"], 0)]
     rela_b = b"".join(struct.pack("<QQq", o, (s << 32) | t, a) for o, t, s, a in rela)
     plt_b = b"".join(struct.pack("<QQq", o, (s << 32) | t, a) for o, t, s, a in pltrela)
@@ -145,7 +151,7 @@ def build(variant="base"):
         pos = (pos + align - 1) & -align
         layout[name] = (pos, blob)
         pos += len(blob)
-    assert pos <= text, hex(pos)
+    assert pos <= textcell, hex(pos)
     # --- dynamic section
     dyn = [(1, off["libc.so.6"]), (1, off["libm.so.6"]), (14, off["libfixture.so.1"]), (12, addr_of["_init"]), (25, init_array), (27, 8),
            (0x6FFFFEF5, layout["gnuhash"][0]), (5, layout["dynstr"][0]), (6, layout["dynsym"][0]), (10, len(strtab)), (11, 24),

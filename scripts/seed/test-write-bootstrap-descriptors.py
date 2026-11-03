@@ -5,8 +5,8 @@ Takes the outputs of the Mac gate and the cross gate (check-aiueos-user-macos-
 native.py, check-macos-cross-linux-candidates.py) and runs, on copies:
 
 1. the committed descriptors against their own receipts: DESCRIPTORS_CURRENT;
-2. three refusals: one digit of the mac receipt, one byte of the x86 compiler,
-   one byte of the signed fixed-point compiler;
+2. four refusals: one digit of the mac receipt, one byte of the x86 compiler,
+   one byte of the x86 host entry, one byte of the signed fixed-point compiler;
 3. a descriptor with a wrong digest is reported as differing (exit 1), --write
    repairs it to the committed bytes, and a second --check is current;
 4. the source phase on the same receipt is current, an unknown cross-gate
@@ -27,7 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WRITER = ROOT / "scripts/seed/write-bootstrap-descriptors.py"
 BINARIES = ("seed/bootstrap/aarch64-macos/amu-full-root.macho",
             "seed/bootstrap/aarch64-macos/kotoba-packager-root.macho",
-            "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu-linux-x86_64")
+            "seed/bootstrap/aarch64-linux-static-root.elf", "bin/amu-linux-x86_64",
+            "bin/x86_64-linux/amu")
 FILES = ("seed/bootstrap/aarch64-macos/root.json",
          "seed/bootstrap/aarch64-linux-static-root.json", "native-product.json")
 
@@ -79,6 +80,12 @@ def main(argv):
         expect("one byte of the x86 compiler is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
         shutil.copy(args.cross_build / "F-x86_64.elf", cross / "F-x86_64.elf")
 
+        flip(cross / "H-x86_64.elf", 100)
+        r = run(args.mac_build, cross)
+        expect("one byte of the x86 host entry is refused (KOTOBA-174)",
+               r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
+        shutil.copy(args.cross_build / "H-x86_64.elf", cross / "H-x86_64.elf")
+
         flip(mac / "F2-signed.macho", 5000)
         r = run(mac, args.cross_build)
         expect("one byte of the signed compiler is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
@@ -128,7 +135,9 @@ def main(argv):
         cross = Path(tmp) / "cross"
         shutil.copytree(args.cross_build, cross)
         receipt = cross / "cross.json"
-        receipt.write_text(receipt.read_text().replace("MAC_NATIVE_CROSS_ARTIFACTS_UNEXECUTED", "SOMETHING_ELSE"))
+        record = json.loads(receipt.read_text())
+        record["status"] = "SOMETHING_ELSE"
+        receipt.write_text(json.dumps(record, indent=2) + "\n")
         r = run(args.mac_build, cross)
         expect("an unknown cross status is refused", r.returncode == 2 and "REFUSED" in r.stderr, r.stderr)
 

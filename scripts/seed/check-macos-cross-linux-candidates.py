@@ -31,6 +31,8 @@ PRODUCT = ROOT / "native-product.json"
 ARM_ROOT = ROOT / "seed/bootstrap/aarch64-linux-static-root.json"
 ARM_IMAGE = ROOT / "seed/bootstrap/aarch64-linux-static-root.elf"
 X86_IMAGE = ROOT / "bin/amu-linux-x86_64"
+# KOTOBA-174 / ADR 0396: the public Linux x86_64 host entry (omitted target = x86_64-linux)
+HOST_IMAGE = ROOT / "bin/x86_64-linux/amu"
 
 
 def module():
@@ -77,7 +79,7 @@ def static_elf(path, machine):
     return pin(path)
 
 
-def check_product_bindings(full, arm, x86):
+def check_product_bindings(full, arm, x86, host):
     """Refuse stale checked-in images before the costly native ISA gates."""
     product = json.loads(PRODUCT.read_text())
     root = json.loads(ARM_ROOT.read_text())
@@ -91,6 +93,10 @@ def check_product_bindings(full, arm, x86):
         raise ValueError("Mac ARM fixed point differs from checked-in root image")
     if x86 != product["image"] or x86 != pin(X86_IMAGE):
         raise ValueError("Mac x86 fixed point differs from checked-in public image")
+    if (product["hostEntry"]["target"] != "x86_64-linux" or
+            host != product["hostEntry"]["image"] or not HOST_IMAGE.is_file() or
+            HOST_IMAGE.is_symlink() or host != pin(HOST_IMAGE)):
+        raise ValueError("Mac x86 host entry differs from checked-in host entry")
 
 
 def main(mac_build, output, produce=False):
@@ -102,9 +108,13 @@ def main(mac_build, output, produce=False):
     descriptor = json.loads(DESCRIPTOR.read_text())
     report_path = mac_build / "mac-aiueos-user-target.json"
     report = json.loads(report_path.read_text())
+    explicit_root = (report.get("bootstrapDescriptor") is None and
+                     report.get("compiler") == {k: descriptor["compiler"][k] for k in ("bytes", "sha256")} and
+                     report.get("packager") == {k: descriptor["packager"][k] for k in ("bytes", "sha256")})
     if (report.get("status") != "PASS_MAC_NATIVE_USER_TARGET_SELFHOST" or
-            report.get("bootstrapDescriptor") != pin(DESCRIPTOR) or
-            report.get("source") != descriptor["fullSource"] or
+            (not produce and report.get("bootstrapDescriptor") != pin(DESCRIPTOR)) or
+            (produce and report.get("bootstrapDescriptor") != pin(DESCRIPTOR) and not explicit_root) or
+            (not produce and report.get("source") != descriptor["fullSource"]) or
             report.get("fixedPointGeneration") != len(report["generations"]) or
             len(report["generations"]) < 2):
         raise ValueError("Mac selfhost report is not bound to this source and root")
@@ -126,7 +136,8 @@ def main(mac_build, output, produce=False):
     gate.native_run(producer, output, "compile", "full-unity.kotoba",
                     "--target", "aarch64-macos", "--output", "F.kseed")
     container = pin(output / "F.kseed")
-    if container["sha256"] != descriptor["expectedFixedPoint"]["compilerContainerSha256"]:
+    expected_container = final["container"]["sha256"] if produce else descriptor["expectedFixedPoint"]["compilerContainerSha256"]
+    if container["sha256"] != expected_container:
         raise ValueError("Mac producer changed the full compiler container")
     gate.native_run(producer, output, "compile", "runner.kotoba",
                     "--target", "aarch64-linux", "--output", "F-aarch64.elf",
@@ -136,13 +147,19 @@ def main(mac_build, output, produce=False):
                     "--target", "x86_64-linux", "--output", "F-x86_64.elf",
                     "--format", "static")
     x86 = static_elf(output / "F-x86_64.elf", 62)
+    gate.native_run(producer, output, "compile", "full-unity.kotoba",
+                    "--target", "x86_64-linux", "--output", "H-x86_64.elf",
+                    "--format", "host-entry")
+    host = static_elf(output / "H-x86_64.elf", 62)
+    if host == x86:
+        raise ValueError("host entry is the root image: the host start is missing")
     if not produce:
-        check_product_bindings(full, arm, x86)
+        check_product_bindings(full, arm, x86, host)
     gate.native_run(producer, output, "compile", "selfhost-unity.kotoba",
                     "--target", "x86_64-linux", "--output", "S-x86_64.elf",
                     "--format", "static")
     x86_selfhost = static_elf(output / "S-x86_64.elf", 62)
-    if gate.verify_macho(producer) != final["signed"] or pin(DESCRIPTOR) != report["bootstrapDescriptor"]:
+    if gate.verify_macho(producer) != final["signed"] or (not explicit_root and pin(DESCRIPTOR) != report["bootstrapDescriptor"]):
         raise ValueError("Mac producer inputs changed during cross build")
     report = {"schema": "amu.mac-cross-linux-candidates.v1",
               "status": ("MAC_NATIVE_CROSS_CANDIDATES_UNADOPTED" if produce
@@ -150,7 +167,7 @@ def main(mac_build, output, produce=False):
               "macSelfhostReport": pin(report_path), "producer": final["signed"],
               "fullSource": full, "selfhostSource": selfhost, "runnerSource": runner,
               "container": container, "aarch64Root": arm,
-              "x86FullCompiler": x86, "x86SelfhostCompiler": x86_selfhost,
+              "x86FullCompiler": x86, "x86HostEntry": host, "x86SelfhostCompiler": x86_selfhost,
               "linuxProcessInThisGate": False, "nativeLinuxExecutionQualified": False,
               "observer": pin(Path(__file__))}
     (output / "cross.json").write_text(json.dumps(report, indent=2) + "\n")

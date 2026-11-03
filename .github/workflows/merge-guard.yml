@@ -1,0 +1,34 @@
+name: merge-guard
+# JUN-263: the amu#1339 incident guard, ported from the retired Node script (amu#1439) to git
+# and Python. It is not a required status check; making it one is a branch-protection change
+# for the owner.
+on:
+  pull_request:
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  merge-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The guard reads the full branch line: the PR's own commits, the
+          # merges that brought main into it, and the base history.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Guard controls (clean, own delete, revert of a main merge, bad resolution, mass deletion)
+        run: python3 scripts/check-merge-guard.py
+      - name: Merge-side deletion, revert-of-main-merge and mass-deletion guard
+        run: python3 scripts/merge-guard.py
+        env:
+          MERGE_GUARD_BASE: ${{ github.event.pull_request.base.sha }}
+          MERGE_GUARD_HEAD: ${{ github.event.pull_request.head.sha }}
+          # Advisory (owner decision 2026-10-21): reports findings and never blocks a
+          # merge, so refactor flows (mass rewrites, repeated main merges) are not held
+          # up. Flip to "fail" here, in a reviewed commit, to gate merges instead.
+          MERGE_GUARD_MODE: warn

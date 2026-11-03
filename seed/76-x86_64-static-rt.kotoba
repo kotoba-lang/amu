@@ -1927,6 +1927,50 @@
           (= (kxrt-gl 240) 1) (kxrt-exit (bit-and r 255))
           :else (let [b (kxrt-gl 200) n (kxrt-sdec b r) z (kxrt-store8 (+ b n) 10) w (kxrt-write-all 1 b (inc n))] (kxrt-exit 0)))))
 ")
+;; ---- host entry: --format host-entry (KOTOBA-174, ADR 0396) ----
+;; The public Linux x86_64 entry names its own host, as the Mac CLI names
+;; aarch64-macos. Its image is the --format static compiler with one change:
+;; the standard kxrt-start sets the argument vector through kxrt-host-argv.
+;; A `compile` command line with no `--target` word anywhere is read as if
+;; `--target x86_64-linux` had been written as arguments 2 and 3; every other
+;; command line (check, an explicit --target, every other command) is the
+;; process's own. Context word 408 stays 0, so the image behaves as --format
+;; static in everything else. The roots never contain this start.
+(defn- xs-rt-host-argv [] :string
+";; any argument 1..n-1 that is exactly --target
+(defn- kxrt-host-has-target? [sp :i64 n :i64] :bool
+  (loop [i 1]
+    (cond (>= i n) false
+          (kxrt-cstr= (kxrt-load64 (+ sp (* 8 (+ i 2)))) 0x7465677261742d2d 0 8) true
+          :else (recur (inc i)))))
+(defn- kxrt-host-copy [a :i64 sp :i64 n :i64] :i64
+  (loop [i 2]
+    (if (>= i n) 0
+      (let [z (kxrt-store64 (+ a (* 8 (+ i 2))) (kxrt-load64 (+ sp (* 8 (+ i 2)))))] (recur (inc i))))))
+;; argument i is at sp + 8 (i + 2); the new vector is n + 2 words, then the
+;; two strings --target and x86_64-linux, NUL-terminated, at word n + 4
+(defn- kxrt-host-argv [sp :i64 argc :i64] :i64
+  (let [n (if (> argc 0) (dec argc) 0)]
+    (if (and (>= n 2) (kxrt-cstr= (kxrt-load64 (+ sp 16)) 0x656c69706d6f63 0 7)
+             (not (kxrt-host-has-target? sp n)))
+      (let [a (kxrt-map (* 8 (+ n 8))) s (+ a (* 8 (+ n 4)))
+            w0 (kxrt-store64 s 0x7465677261742d2d) w1 (kxrt-store64 (+ s 8) 0)
+            w2 (kxrt-store64 (+ s 16) 0x6c2d34365f363878) w3 (kxrt-store64 (+ s 24) 0x78756e69)
+            c0 (kxrt-store64 a (kxrt-load64 (+ sp 16))) c1 (kxrt-store64 (+ a 8) (kxrt-load64 (+ sp 24)))
+            c2 (kxrt-store64 (+ a 16) s) c3 (kxrt-store64 (+ a 24) (+ s 16))
+            c4 (kxrt-host-copy a sp n) g (kxrt-gs 72 (+ n 2))]
+        (kxrt-gs 80 a))
+      (kxrt-gs 80 (+ sp 16)))))
+")
+(defn- xs-rt-host-at [] :string "b (kxrt-gs 80 (+ sp 16))")
+;; "" (no kxrt-start, so seed/75 refuses with E7102) unless the standard
+;; start sets the vector exactly once, at the expected place
+(defn- xs-rt-host-start [] :string
+  (let [T (xs-rt-start) A (xs-rt-host-at) i (string-index-of T A) k (string-length A)]
+    (if (or (< i 0) (>= (string-index-of (string-substring T (+ i k) (string-length T)) A) 0)) ""
+      (string-concat (xs-rt-host-argv)
+        (string-concat (string-substring T 0 i)
+          (string-concat "b (kxrt-host-argv sp argc)" (string-substring T (+ i k) (string-length T))))))))
 (defn- xs-rt-launch [] :string
 "
 ;; ---- launcher: --format launcher, context word 408 = 4 (ADR 0371 step 4) ----

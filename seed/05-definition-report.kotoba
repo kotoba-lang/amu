@@ -1,0 +1,192 @@
+;; seed/05-definition-report.kotoba -- the ADR 0300 `definition-cids` report with per-definition refusal (JUN-584).
+;; Built on the checked-source bridge (05-checked-source), its loop planner (05-source-loops) and the producer (06).
+;; It is a separate module so that the bridge's frozen-loop-planner qualification (check-source-namespace-native.py)
+;; still builds the bridge and the legacy row format 0 against the frozen planner.
+;; Per-definition refusal for the ADR 0300 `definition-cids` report (JUN-584), with the reference's shape
+;; (src/kotoba/compiler/definition_identity.cljk `definitions` / `format-lines` / `scanned-line`): a definition that
+;; cannot be identified is listed as `name<TAB>REFUSED:<marker>` instead of refusing the module, its callers are
+;; `dependency-unavailable`, and `SCANNED<TAB><identified>/<total>`. Q[f] for a top-level defn/defn- row f:
+;; 0 identified by the producer, 1 the bridge cannot express it (`unbridged-source`, native-only marker),
+;; 2 it calls a refused definition (`dependency-unavailable`), 3 its effect row names an unregistered wire
+;; (`unbridged-effect`). Q[0] counts the closures of rows that were never emitted. A refused row's text, loop
+;; helpers and closures never reach the KIR, and a row is kept only when nothing it calls was refused, so the
+;; KIR handed to the freshly checking producer is closed and every kept CID is the one the whole module gives.
+;; Frontend errors, computed defs, templates and unexpected FN kinds still refuse the whole module.
+(defn- dsr-row? [M :vector-i64 f :i64] :bool
+  (let [kind (nm-ff M f FF-KIND)]
+    (and (or (= kind FK-DEFN) (= kind FK-PRIV)) (not (dsb-cdef? M f)))))
+(defn- dsr-reset [C :vector-i64] :vector-i64 (-> C (vector-assoc! 0 0) (vector-assoc! 1 0)))
+(defn- dsr-refuse [C :vector-i64 Q :vector-i64 f :i64 code :i64] :vector-i64
+  (let [q (vector-assoc! Q f code)] (dsr-reset C)))
+(defn- dsr-registered [] :i64
+  (loop [wire 0 mask 0]
+    (if (= wire 48) mask (recur (inc wire) (bit-or mask
+      (if (= (dcp-effect-name wire) "") 0 (ck-wire-bit wire)))))))
+(defn- dsr-fn-count [M :vector-i64 n :i64] :i64
+  (let [kind (nm-kind M n) own (if (dsb-fn-node? M n) 1 0)]
+    (if (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
+      (loop [p (nm-first M n) count own]
+        (if (= p 0) count (recur (nm-next M p) (+ count (dsr-fn-count M p))))) own)))
+(defn- dsr-body [M :vector-i64 f :i64] :i64 (nm-nth M (nm-ff M f FF-NODE) 4))
+(defn- dsr-mark-effects [M :vector-i64 Q :vector-i64] :i64
+  (let [allowed (dsr-registered)]
+    (loop [f 1 count 0]
+      (if (= f (vector-at M MM-FN-N)) count
+        (if (and (dsr-row? M f) (not= (bit-and (ck-f2 M f FN2-FX) (bit-not allowed)) 0))
+          (let [q (vector-assoc! Q f 3)] (recur (inc f) (inc count)))
+          (recur (inc f) count))))))
+(defn- dsr-guard-each [M :vector-i64 C :vector-i64 Q :vector-i64] :i64
+  (loop [f 1]
+    (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
+      (let [kind (nm-ff M f FF-KIND)
+            walk (if (and (or (= kind FK-DEFN) (= kind FK-PRIV)) (= (vector-at Q f) 0))
+                   (dsb-guard M C (dsr-body M f) 0 false false) 0)
+            keep (if (and (not= (vector-at C 0) 0) (dsr-row? M f)) (dsr-refuse C Q f 1) C)]
+        (recur (inc f))))))
+(defn- dsr-plan-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] :i64
+  (let [can-collide (dsl-helper-namespace? M S)]
+    (loop [f 1]
+      (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
+        (let [kind (nm-ff M f FF-KIND)
+              walk (if (and (or (= kind FK-DEFN) (= kind FK-PRIV)) (= (vector-at Q f) 0))
+                     (dsl-visit M S C (dsr-body M f) f 0 can-collide) 0)
+              keep (if (and (not= (vector-at C 0) 0) (dsr-row? M f)) (dsr-refuse C Q f 1) C)]
+          (recur (inc f)))))))
+;; Entry f-1 is f's KIR text, or "" when f is not a row or is refused. Same per-FN admission as dsb-kir.
+(defn- dsr-values-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] [:list :string]
+  (loop [f 1 out (typed-list-new [:list :string])]
+    (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) out
+      (let [kind (nm-ff M f FF-KIND) sym (nm-ff M f FF-SYM) base (+ (dsb-lam-base M C) 9)]
+        (cond (or (= kind FK-DEF) (= kind FK-LAMBDA) (= kind FK-ADAPTER))
+                (recur (inc f) (typed-list-conj [:list :string] out ""))
+          (dsb-cdef? M f)
+            (if (dsb-literal? M (dsb-thunk-value M f)) (recur (inc f) (typed-list-conj [:list :string] out ""))
+              (let [bad (dsb-bad C 3 f)] out))
+          (or (not (or (= kind FK-DEFN) (= kind FK-PRIV)))
+              (not= (nm-sf M sym SF-FN) f)
+              (lw-tmpl? M f) (lw-spec? M f)) (let [bad (dsb-bad C 3 f)] out)
+          (not= (vector-at Q f) 0)
+            (let [skip (vector-assoc! Q 0 (+ (vector-at Q 0) (dsr-fn-count M (dsr-body M f))))]
+              (recur (inc f) (typed-list-conj [:list :string] out "")))
+          :else
+            (let [saved (vector-at C base) value (dsb-function M S C f)]
+              (if (= (vector-at C 0) 0) (recur (inc f) (typed-list-conj [:list :string] out value))
+                (let [refused (dsr-refuse C Q f 1) back (vector-assoc! C base saved)
+                      skip (vector-assoc! Q 0 (+ (vector-at Q 0) (dsr-fn-count M (dsr-body M f))))]
+                  (recur (inc f) (typed-list-conj [:list :string] out ""))))))))))
+;; Entry id-1 is loop helper id's KIR text, or "" when its owner is refused. A helper the bridge cannot express
+;; refuses its owner.
+(defn- dsr-helpers-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] [:list :string]
+  (loop [id 1 out (typed-list-new [:list :string])]
+    (if (or (> id (vector-at C 5)) (not= (vector-at C 0) 0)) out
+      (let [owner (vector-at C (+ (dsl-record C id) 1))]
+        (if (not= (vector-at Q owner) 0) (recur (inc id) (typed-list-conj [:list :string] out ""))
+          (let [text (dsl-helper M S C id)]
+            (if (= (vector-at C 0) 0) (recur (inc id) (typed-list-conj [:list :string] out text))
+              (let [refused (dsr-refuse C Q owner 1)]
+                (recur (inc id) (typed-list-conj [:list :string] out ""))))))))))
+;; Does the checked subtree call a refused row? Defs are followed into their values (the bridge inlines them).
+;; Past the bound the answer is the conservative one.
+(defn- dsr-refers? [M :vector-i64 C :vector-i64 Q :vector-i64 n :i64 depth :i64] :bool
+  (let [kind (nm-kind M n) r (nm-nf M n NF-RES) tag (quot r RES-SCALE) target (rem r RES-SCALE)]
+    (cond (> depth (* 2 (dip-expression-depth (vector-at C 8)))) true
+      (and (= kind ND-SYM) (= tag RES-FN))
+        (and (> target 0) (< target (vector-at M MM-FN-N)) (> (vector-at Q target) 0))
+      (and (= kind ND-SYM) (= tag RES-DEF) (> target 0) (< target (vector-at M MM-FN-N)))
+        (dsr-refers? M C Q (nm-nth M (nm-ff M target FF-NODE) 2) (inc depth))
+      (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
+        (loop [p (nm-first M n)]
+          (cond (= p 0) false (dsr-refers? M C Q p (inc depth)) true :else (recur (nm-next M p))))
+      :else false)))
+(defn- dsr-close [M :vector-i64 C :vector-i64 Q :vector-i64] :i64
+  (loop [round 0]
+    (let [changed (loop [f 1 count 0]
+            (if (= f (vector-at M MM-FN-N)) count
+              (if (and (dsr-row? M f) (= (vector-at Q f) 0) (dsr-refers? M C Q (dsr-body M f) 0))
+                (let [q (vector-assoc! Q f 2)] (recur (inc f) (inc count)))
+                (recur (inc f) count))))]
+      (if (= changed 0) round (recur (inc round))))))
+(defn- dsr-refused-any? [M :vector-i64 Q :vector-i64] :bool
+  (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false (and (dsr-row? M f) (> (vector-at Q f) 0)) true
+                :else (recur (inc f)))))
+;; The KIR of the kept rows and their helpers, "" when no row is kept. The module row is the union of the kept
+;; rows' rows, so the producer's per-row and union checks still hold.
+(defn- dsr-kir-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] :string
+  (let [salt (dsb-hygiene M S C)
+        guard (dsr-guard-each M C Q)
+        plan (if (= (vector-at C 0) 0) (dsr-plan-each M S C Q) 0)
+        values (if (= (vector-at C 0) 0) (dsr-values-each M S C Q) (typed-list-new [:list :string]))
+        helpers (if (= (vector-at C 0) 0) (dsr-helpers-each M S C Q) (typed-list-new [:list :string]))
+        lambdas (loop [f 1 count 0]
+          (if (= f (vector-at M MM-FN-N)) count
+            (recur (inc f) (+ count (if (= (nm-ff M f FF-KIND) FK-LAMBDA) 1 0)))))
+        every (if (and (= (vector-at C 0) 0)
+                       (not= lambdas (+ (vector-at C (+ (dsb-lam-base M C) 9)) (vector-at Q 0)))) (dsb-bad C 3 0) "")
+        refused (and (= (vector-at C 0) 0) (dsr-refused-any? M Q))
+        closed (if refused (dsr-close M C Q) 0)]
+    (if (not= (vector-at C 0) 0) ""
+      (let [kept (loop [f 1 out "" mask 0 count 0]
+              (if (= f (vector-at M MM-FN-N))
+                (if (= count 0) ""
+                  (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
+                    (string-concat (dsb-effect-text (if refused mask (vector-at M MM-CAPS))) (string-concat " :functions ["
+                      (string-concat out (string-concat
+                        (loop [id 1 text ""]
+                          (if (> id (vector-at C 5)) text
+                            (recur (inc id) (if (= (vector-at Q (vector-at C (+ (dsl-record C id) 1))) 0)
+                              (string-concat text (typed-list-nth [:list :string] helpers (dec id))) text))))
+                        "]}\n"))))))
+                (if (and (dsr-row? M f) (= (vector-at Q f) 0))
+                  (recur (inc f) (string-concat out (string-concat " " (typed-list-nth [:list :string] values (dec f))))
+                    (bit-or mask (ck-f2 M f FN2-FX)) (inc count))
+                  (recur (inc f) out mask count))))]
+        kept))))
+(defn- dsr-marker [code :i64] :string
+  (case code 1 "unbridged-source" 2 "dependency-unavailable" 3 "unbridged-effect" ""))
+;; `definition-cids` (format 1, or 2 with group columns): rows in declaration order, then SCANNED. Exit-style
+;; status 0 = report printed; 1 = no identity could be computed (nothing on stdout, a DSB:* line on stderr).
+(defn- dsr-source-report [source :string resource :i64 format :i64] :i64
+  (let [S (string-concat source (ck-r6b-lib source)) front (dsb-front-h S (ck-hint-new))
+        M (if (= (vector-at front MM-ERR) 0) (dsb-effects front) front)
+        C (dsb-with-lambdas M (dsl-new-resource M resource))
+        Q (vector-alloc (if (> (vector-at M MM-FN-N) 0) (vector-at M MM-FN-N) 1))]
+    (cond (not (dip-valid? resource)) (let [out (io-err "DSB:PROFILE\n")] 1)
+          (not= (vector-at M MM-ERR) 0)
+            (let [out (io-err (string-concat "DSB:SOURCE:" (string-concat (mem-u2dec (vector-at M MM-ERR)) "\n")))] 1)
+          ;; No definition at all is no identity (the reference: `:entries :unavailable`, exit 66), not `SCANNED 0/0`.
+          (not (loop [f 1] (cond (= f (vector-at M MM-FN-N)) false (dsr-row? M f) true :else (recur (inc f)))))
+            (let [out (io-err "DSB:IDENTITY:1\n")] 1)
+          :else
+          (let [marked (dsr-mark-effects M Q)
+                carried (loop [f 1 mask 0]
+                  (if (= f (vector-at M MM-FN-N)) mask
+                    (recur (inc f) (if (dsr-row? M f) (bit-or mask (ck-f2 M f FN2-FX)) mask))))]
+            ;; An unregistered wire that no definition row carries is still a whole-module refusal.
+            (if (not= (bit-and (vector-at M MM-CAPS) (bit-not (bit-or (dsr-registered) carried))) 0)
+              (let [out (io-err "DSB:EFFECT\n")] 1)
+              (let [K (dsr-kir-each M S C Q)]
+                (if (not= (vector-at C 0) 0)
+                  (let [out (io-err (string-concat "DSB:BRIDGE:" (string-concat (mem-u2dec (vector-at C 0))
+                          (string-concat ":" (string-concat (mem-u2dec (vector-at C 1)) "\n")))))] 1)
+                  (let [Z (vector-alloc 2)
+                        rows (if (= K "") (typed-list-new [:list :string]) (dcs-rows-text K resource format Z))]
+                    (if (not= (vector-at Z 0) 0)
+                      (let [out (io-err (string-concat "DSB:IDENTITY:" (string-concat (mem-u2dec (vector-at Z 0)) "\n")))] 1)
+                      (let [merged (loop [f 1 j 0 text "" total 0]
+                              (if (= f (vector-at M MM-FN-N))
+                                (loop [k j tail text all total]
+                                  (if (= k (vector-count rows))
+                                    (string-concat tail (string-concat "SCANNED\t" (string-concat (mem-u2dec (vector-at Z 1))
+                                      (string-concat "/" (string-concat (mem-u2dec all) "\n")))))
+                                    (recur (inc k) (string-concat tail (string-concat (typed-list-nth [:list :string] rows k) "\n"))
+                                      (inc all))))
+                                (cond (not (dsr-row? M f)) (recur (inc f) j text total)
+                                  (= (vector-at Q f) 0)
+                                    (recur (inc f) (inc j)
+                                      (string-concat text (string-concat (typed-list-nth [:list :string] rows j) "\n")) (inc total))
+                                  :else
+                                    (recur (inc f) j (string-concat text (string-concat (dsb-name M S f)
+                                      (string-concat "\tREFUSED:" (string-concat (dsr-marker (vector-at Q f))
+                                        (if (= format 2) "\t-\t-1\n" "\n"))))) (inc total)))))
+                            out (io-out merged)]
+                        0))))))))))

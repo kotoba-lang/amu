@@ -1,0 +1,32 @@
+(ns keyword-map-keys (:export [main]))
+
+(defn main [] :i64
+  (let [m (typed-map-new [:map :keyword :string]
+            :z "last" :foo/a "foo" :a "first" :bar/a "bar" :m "middle")
+        keys (typed-map-keys [ :map
+                              :keyword ; accepted whitespace/comment
+                              :string ] m)
+        many (typed-map-new [:map :keyword :string] :k30 "v" :k29 "v" :k28 "v" :k27 "v" :k26 "v" :k25 "v" :k24 "v" :k23 "v" :k22 "v" :k21 "v" :k20 "v" :k19 "v" :k18 "v" :k17 "v" :k16 "v" :k15 "v" :k14 "v" :k13 "v" :k12 "v" :k11 "v" :k10 "v" :k09 "v" :k08 "v" :k07 "v" :k06 "v" :k05 "v" :k04 "v" :k03 "v" :k02 "v" :k01 "v" :k00 "v")
+        many-keys (typed-map-keys [:map :keyword :string] many)
+        qualified (clojure.core/typed-map-keys [:map :keyword :string] m)
+        empty (typed-map-keys [:map :keyword :string] (typed-map-new [:map :keyword :string]))
+        unicode (typed-map-keys [:map :keyword :string] (typed-map-new [:map :keyword :string] : "bmp" :𐀀 "astral" :😀 "emoji" :z "ascii"))
+        ints (typed-map-keys [:map :i64 :string] (typed-map-new [:map :i64 :string] 5 "z" 2 "a"))]
+    (if (and (= (typed-list-nth [:list :keyword] unicode 0) :z)
+             (= (typed-list-nth [:list :keyword] unicode 1) :𐀀)
+             (= (typed-list-nth [:list :keyword] unicode 2) :😀)
+             (= (typed-list-nth [:list :keyword] unicode 3) :)
+             (= (count keys) 5) (= (count empty) 0) (= (count many-keys) 31)
+             (= (typed-list-nth [:list :keyword] many-keys 0) :k00)
+             (= (typed-list-nth [:list :keyword] many-keys 30) :k30)
+             (= (typed-list-nth [:list :keyword] keys 0) :a)
+             (= (typed-list-nth [:list :keyword] keys 1) :bar/a)
+             (= (typed-list-nth [:list :keyword] keys 2) :foo/a)
+             (= (typed-list-nth [:list :keyword] keys 3) :m)
+             (= (typed-list-nth [:list :keyword] keys 4) :z)
+             (= (typed-list-nth [:list :keyword] qualified 1) :bar/a)
+             (= (typed-list-nth [:list :i64] ints 0) 2)
+             (= (typed-list-nth [:list :i64] ints 1) 5)
+             (string=? (option-value-of [:option :string]
+                        (typed-map-get [:map :keyword :string] m :bar/a) "") "bar"))
+      42 7)))

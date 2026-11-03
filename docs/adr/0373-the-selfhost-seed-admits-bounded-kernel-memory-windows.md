@@ -223,6 +223,9 @@ times cost about 8^10 visits at depth 12. `xk-region` now has a work budget per 
 not rooted, which refuses and never admits (`no_call_site_blowup_is_refused_not_hung`; the 38 cases check in about fourteen seconds). Not verified
 by that read: R5B specializations (they shift the parameter slots; the profile should refuse them), and closures that write a parent frame's slot.
 
+Amended by ADR 0403 (2026-11-01, JUN-708): the object route now proves each (helper, parameter) region once, with one
+work budget per object that scales with its size; the blowup case above is admitted as `ok_call_site_fan_in_8_depth_10`.
+
 The depth12/work40000 limits and pair-priority behavior above describe the
 single-object route. The closed project retains all functions and solves
 fixed/paired contracts over its complete graph, then verifies local and

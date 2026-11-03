@@ -159,7 +159,9 @@ def run_plan(manifest, phase, output, *, jobs=2, capacity=2, directory=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slot-dir", type=Path, default=default_slot_dir())
-    parser.add_argument("--capacity", type=int, default=2)
+    # 2 protects a shared workstation; a CI runner (4 vCPUs, nothing else on it) sets KOTOBA_NATIVE_SLOT_CAPACITY so
+    # that every call in one job agrees on the shared slot directory's capacity (JUN-629).
+    parser.add_argument("--capacity", type=int, default=int(os.environ.get("KOTOBA_NATIVE_SLOT_CAPACITY", "2")))
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--phase")

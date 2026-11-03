@@ -1,10 +1,26 @@
 # Amu
 
+**The native compiler for Kotoba's modern Lisp machine.**
+
+Lisp lets us treat programs as data: a small, composable vocabulary for
+building and understanding systems. Amu carries that spirit toward native
+code, checking Kotoba programs before compiling them. The larger Lisp machine
+and its interactive system capabilities remain in development.
+
+In an exploratory Apple M4 measurement, translated Kotoba ports ran in
+**0.80× the time of C** across 19 Embench workloads. This was one sample per
+workload using a particular compiler snapshot with audited algorithm
+substitutions. It is not a result for the current released compiler, an
+official Embench score, or a universal speed ranking. [Read the measurements,
+method and audit](https://kotoba-lang.org/blog/embench-c-parity-20261015/).
+
 Amu checks canonical Kotoba and compiles it through the adopted compiler
 lineage. `bin/amu` is an Amu-built, self-rebuilt native **macOS ARM64**
 executable. `bin/kotoba` and `bin/kotoba-compiler` name that same Mach-O.
-It has no dylib dependency. The unchanged native Linux x86_64 executable
-is available explicitly as `bin/amu-linux-x86_64`.
+It has no dylib dependency. On Linux x86_64 the public entry is
+`bin/x86_64-linux/amu`. Each public entry compiles for its own host when
+`--target` is omitted (ADR 0396). The engine-neutral Linux compiler
+`bin/amu-linux-x86_64` requires an explicit target.
 
 The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
 in a 49-module compiler with native Linux emitters, browser Wasm, bounded
@@ -55,7 +71,8 @@ target still refuses `E2`; the public Mac host default does not change that
 engine-neutral compiler contract. Unsupported public flags refuse instead
 of silently dropping source paths or locks.
 
-Linux users use `bin/amu-linux-x86_64` and the
+Linux x86_64 users use `bin/x86_64-linux/amu` (omitted `--target` =
+`x86_64-linux`), or `bin/amu-linux-x86_64` with an explicit target, and the
 [pinned Linux starter](examples/foundation-starter/README.md), whose immutable
 snapshot retains its original Linux entry. No Node/NBB/KBB, JVM, C compiler,
 Linux VM or emulator is used by the Mac CLI.

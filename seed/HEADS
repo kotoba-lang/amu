@@ -64,7 +64,8 @@
   ;;    schema has the type TY-REC-BASE + the keyword symbol (the identity of an inline/:schemas schema), so recursive schemas
   ;;    ([:kids [:list [:ref :kw]]]) and forward references type as the schema; a defrecord's block is in SF-REC before its
   ;;    fields are typed. A ref whose keyword no schema registers is E2179. A record field may have any type but a fn type
-  ;;    (records, lists of records, :bytes ..): the field holds the value's handle (records stay pair chains).
+  ;;    (records, lists of records, :bytes ..): the field holds the value's handle (records stay pair chains). JUN-728: an
+  ;;    :f64 field (its i64 word of bits) is admitted; an :f32 field stays E2128.
   ]
  ;; Type keywords in signatures: :i64 :bool :string :vector-i64 (R1 :keyword, records; R3 the vector forms [:option T]
  ;; [:result T E] [:list T] [:map K V] [:set T]). Anything else after a parameter -> E2105.
@@ -177,10 +178,26 @@
                  result :i64 or :bool"]
   [:c HD-DEFN-PRIV 4 "(defn- NAME [p :T ...] :R body) -- private, same shape"]
   [:c HD-DEF 5 "(def NAME literal) -- literal is an integer, a string or a vector literal of integer
-                literals; the type is the literal's. A reference evaluates the literal again (no storage)"]
-  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body"]
+                literals; the type is the literal's. A reference evaluates the literal again (no storage).
+                JUN-734 (lang/guest-grammar.edn :def :value :literal): a vector literal that is not such an integer
+                vector, and a map literal that is not R6B's opaque constant data (keywords / strings / integers), take
+                R6F's computed-def route -- a private nullary defn whose body is the literal, typed as in a body: f64 and
+                boolean values ({:a 0.5 :b true} is a closed record, JUN-728), vectors of map literals, [0.5 1.5],
+                [true false], [:a :b], [[1 2] [3 4]]. A loop / fn literal inside stays E2124 at the name; an ill-typed
+                literal is refused at the def (E2116 for [1 :a], E2102 ..) even when nothing reads it. Not changed:
+                (def x (->D 0.5)) was already admitted by R6F (the reference's :unspellable refuses a nominal record)"]
+  [:c HD-LET 6 "(let [n1 e1 n2 e2 ...] body) -- sequential; names unique within the let (E2112); type = body.
+                JUN-729: a binder may be a destructuring pattern (lang/guest-grammar.edn :nested-destructuring), reader
+                sugar that 21-check expands before typing into plain pairs: [a b & r :as v] e -> g e a (nth g 0)
+                b (nth g 1) r (vector-drop g 2) v g; {:keys [x] y :k :or {x d} :as v} e -> g e x (get g :x d)
+                y (get g :k) v g; g a fresh gensym, nested patterns each take one, `_` inside a pattern binds nothing.
+                Refused E2111: a keyword other than :as in a vector pattern, anything but :as after & r, :strs :syms
+                and other keyword keys, a non-keyword lookup key, a :keys item that is not a symbol or whose keyword is
+                never written in the module, :as / :or of the wrong shape. The lookups are typed as written (E2104);
+                JUN-734: a :keys name over a typed map without :or is (get g :k), an [:option V]"]
   [:c HD-LOOP 7 "(loop [n1 e1 ...] body) -- 1..10 bindings (R4B: 1..20) of type i64/bool/string; a value (may be non-tail);
-                 type = body"]
+                 type = body. JUN-729: with a pattern binder it is clojure.core/loop's expansion
+                 (let [g e p g x e2 ..] (loop [g g x x ..] (let [p g x x ..] body)))"]
   [:c HD-RECUR 8 "(recur e1 ...) -- only in tail position of the innermost loop, or of a defn body that has
                   no enclosing loop (then it re-enters the defn). Count = binding/param count (E2107, E2106)"]
   [:c HD-IF 9 "(if c a b) -- c:b, a and b the same type (E2104), exactly 3 args (E2110); result that type"]
@@ -256,12 +273,30 @@
                         RT RT-PAIR-FIRST t 1. The field keyword's NF-RES = the field index (21-check)"]
   [:c HD-DEFRECORD 70 "(defrecord Name [f :T g ..]) top level; unannotated fields are :i64; 1..32 unique fields.
                        Identity: the keyword :<ns>/Name when the file spells it (then inline schemas of that name must
-                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR)"]
-  [:c HD-GET 71 "(get r :f) on a record -> field f"]
+                       have the same fields, E2128), else the symbol Name. (->Name e ..) constructs (HD-RECORD-CTOR).
+                       JUN-730: (defrecord Name [..] P (m [this ..] body ..) ..) -- inline protocol implementations -- and
+                       the top-level defmulti / defmethod / defprotocol / extend-type / extend-protocol forms (no head codes:
+                       recognized by spelling) are reader sugar that 20-names (nm-dp-norm) expands before any name is
+                       registered (lang/guest-grammar.edn :closed-multimethod :protocol-dispatch :protocol-extension):
+                       a defmulti and all its defmethods -> one (defn NAME [params] (case (DISPATCH p ..) KEY body ..
+                       [default])); each implementation of method m for record R -> (defn- G [this [:ref R] ..] body ..),
+                       G a gensym, NF-SYM of its list node = m, placed where its owner form was; an extend-protocol
+                       `default` section is refused E2006 for now (its per-record specialization was cut to fit the static
+                       token table before JUN-737 raised it; admitting it is separate work). 21-check binds a call's
+                       receiver to a fresh local, (m x ..) -> (let [g x] (m g ..)), and calls the implementation of g's
+                       static record type (E2180 otherwise). Non-receiver parameters of an implementation are typed as
+                       written (an unannotated one is :i64). reify is refused E2181; definterface stays E2003"]
+  [:c HD-GET 71 "(get r :f) on a record -> field f. JUN-734: (get m k) on a typed map [:map K V] -> [:option V] (k:K;
+                 lowered as typed-map-get, 4 hidden slots: lang/guest-grammar.edn lookup is get, [:option V] or V with
+                 a default); (get m k d) stays V (R3)"]
   [:c HD-TRAP 72 "(no spelling) synthetic: brk, type bottom (OP-TRAP 0)"]
-  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list)"]
+  [:c HD-KWGET 73 "(no spelling) (:f r) on a record -> field f (NF-RES of the list). JUN-734: (:k m d) on a typed map
+                    is (get m :k d) -> V; on a record (declared or a keyword map literal) or any other type the default is
+                    refused E2103 at :k -- a record field is never absent, so a default has no meaning there"]
   [:c HD-RECORD-CTOR 74 "(no spelling) (->Name e ..) (NF-RES of the list); args start at the 2nd child"]
-  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). 21-check gives it a
+  [:c HD-ASSOC 75 "(assoc r :f v) on a record -> a new record with field f = v (the other fields copied). JUN-734: the
+                   variadic (assoc r k1 v1 k2 v2 ..) is reader sugar for (assoc (assoc r k1 v1) k2 v2 ..) (21-check, before
+                   typing; records, typed maps and documents alike); an odd key/value count is E2103. 21-check gives it a
                    hidden frame slot (NF-TYPE of the head symbol node) that holds r while the fields are copied"]
   ;; -- R3 (rung 3, 2026-10-03): values. Every R3 head is typed by 21-check; the type argument T/R/L/S/Mt is a type form
   ;;    ([:option T] ...) that must name the matching constructor (E2105 / E2104 otherwise). Heads that need frame slots
@@ -328,9 +363,19 @@
   [:c HD-SETLIT 129 "(no spelling) NF-RES of an ND-SET expression: #{x ..} -> [:set :keyword] (the reference's set literal
                      is keyword-only; typed-set-new builds the others), 1..32 items, all :keyword (E2104), not empty (E2133).
                      7 hidden slots: the first is in NF-SYM of the ND-SET node"]
-  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string
-                     (E2105: the reference reads a keyword-keyed literal as a pair list or a record), 1..31 entries (7 hidden
-                     slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1 meaning"]
+  [:c HD-MAPLIT 130 "(no spelling) NF-RES of an ND-MAP expression {k v ..} -> [:map K V] from the first entry, K :i64 or :string,
+                     1..31 entries (7 hidden slots, the first in NF-SYM of the ND-MAP node). (map->Name {..}) keeps its R1
+                     meaning. JUN-728: a literal whose first key is a keyword is a closed RECORD (lang/guest-grammar.edn
+                     :map-literal :value-types :keyword-keys; docs/language-ladder.edn :literal-typing: wherever it is written,
+                     also when every value is :i64 -- the seed never had the keyword->i64 pair map). Every key a keyword (E2105
+                     at another kind), none repeated (E2128), 1..32 entries (E2128); the fields are typed by the checked values
+                     (a fn value, an :f32 or a value of no type: E2128 / E2133). 21-check desugaring puts the entries in the
+                     printed-text order of their keys (the values are evaluated in that order, as record-new's fields);
+                     literals with the same keys and field types share one anonymous record type (a gensym identity, SF-HASH
+                     0 and RB-ID itself). NF-RES = HD-RECORD-NEW, the key nodes' NF-RES = their field index; 30-lower builds the
+                     pair chain (lw-kwrec). (:k m), get and assoc of a present key are the record heads; assoc of an absent key
+                     is E2127. Not admitted: an anonymous record where a declared record type is expected (E2104), except the
+                     R6F declared-result tail and map->Name"]
   ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
   ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
   ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
@@ -355,7 +400,11 @@
                      and 2 (E2136 otherwise): the first item seeds the fold, an empty coll answers (f)"]
   [:c HD-LIST 138 "(list e ..) -> [:list T] (T the first item's type; (list) is [:list :i64]); at most 64 items"]
   [:c HD-AMP 139 "& -- only in a parameter vector of a defn clause: [p .. & rest] (rest a bare name: [:list :i64], E2111 otherwise);
-                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export"]
+                  the call packs the surplus arguments into a list. A variadic defn cannot be a value or an export.
+                  JUN-729: also the rest marker of a vector destructuring pattern (HD-LET). A defn parameter (also the
+                  rest) may be a pattern -- a map, or a vector that is not a type form: 20-names counts it as one
+                  parameter, 21-check gives the clause a fresh parameter g (its type form stays) and the body
+                  (let [pattern g] body). A fn literal parameter stays a symbol (E2139)"]
   [:c HD-CALLK 140 "(no spelling) NF-RES of (f a ..) where f is a known function slot: CALL of the lifted function with the
                     arguments, then the captured slots"]
   [:c HD-CALLV 141 "(no spelling) NF-RES of (g a ..) where g is a fn-typed local or ((..) a ..) where the head is a fn-typed
@@ -402,8 +451,9 @@
  ;; R1 spellings 43.. : "do" "when" "when-not" "if-not" "case" "condp" "->" "->>" "as->" "cond->" "cond->>" "dotimes"
  ;; "doseq" "range" "inc" "dec" "zero?" "pos?" "neg?" "not=" "assert" "true" "false" "vector-count" "record-new" "record"
  ;; "record-get" "defrecord" "get"; 72 73 74 have none; 75 "assoc". (map->Name {..}) and (->Name ..) are recognised by
- ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children)
- ;; and admitted ONLY as the argument of map->Name (exactly the record's keyword fields), E1105 anywhere else (scripts/seed/gen-names-tables.py generates 20-names' tables).
+ ;; spelling at desugaring time (the record name after the prefix); a map literal is read (ND-MAP, key/value children):
+ ;; the argument of map->Name (exactly the record's keyword fields), else an R3 typed map or (JUN-728) a keyword-keyed
+ ;; record literal (HD-MAPLIT) (scripts/seed/gen-names-tables.py generates 20-names' tables).
  :spellings ["" "ns" ":export" "defn" "defn-" "def" "let" "loop" "recur" "if" "and" "or" "not" "=" "<" ">" "<="
              ">=" "+" "-" "*" "quot" "bit-and" "bit-or" "bit-xor" "bit-not" "u64-shift-right" "i64-shift-left"
              "i64-shift-right" "vector-at" "vector-conj" "vector-assoc" "vector-assoc!" "vector-alloc"
@@ -516,14 +566,20 @@
   [:c E-NAMES-TOP 2003 "unsupported top-level form '{name}'"]
   [:c E-NAMES-NS 2004 "the file must start with (ns NAME (:export [...]))"]
   [:c E-NAMES-EXPORT 2005 "export of undefined function '{name}'"]
+  ;; JUN-730 (closed static dispatch, 20-names nm-dp-norm): a malformed defmulti / defmethod / defprotocol / extend-type /
+  ;; extend-protocol / defrecord implementation; and an extension of a multimethod, protocol or record the module does not declare
+  [:c E-NAMES-DISPATCH 2006 "malformed closed dispatch form '{name}'"]
+  [:c E-NAMES-OPEN 2007 "closed dispatch: '{name}' is not declared in this module (no cross-module or runtime extension)"]
   [:c E-CHECK-HEAD 2101 "unknown or unsupported form '{name}'"]
   [:c E-CHECK-SYM 2102 "unknown symbol '{name}'"]
   [:c E-CHECK-ARITY 2103 "wrong number of arguments to '{name}': expected {n}"]
   [:c E-CHECK-TYPE 2104 "type mismatch in '{name}': expected {t}"]
-  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]
+  [:c E-CHECK-TYPENAME 2105 "unsupported type '{name}'"]   ; JUN-734: also a defrecord's bare name in a defn parameter
+                                                           ; vector ([s S]): a type is a keyword or a type vector, the
+                                                           ; record type is [:ref :<ns>/S]; S is not read as a parameter
   [:c E-CHECK-RECUR-TAIL 2106 "recur is not in tail position"]
   [:c E-CHECK-RECUR-ARITY 2107 "recur expects {n} arguments"]
-  [:c E-CHECK-PARAMS 2108 "more than 5 parameters in '{name}'"]
+  [:c E-CHECK-PARAMS 2108 "too many parameters (an export takes 8, a variadic clause 5) in '{name}'"]
   [:c E-CHECK-ELSE 2109 "cond needs a final :else clause"]
   [:c E-CHECK-IF 2110 "if needs exactly a test, a then and an else"]
   [:c E-CHECK-BINDINGS 2111 "malformed binding vector in '{name}'"]
@@ -557,6 +613,10 @@
   ;; -- R4B (E2140-E2177 are reserved for R5) --
   [:c E-CHECK-PARAMS16 2178 "more than 16 parameters in '{name}'"]
   [:c E-CHECK-REF 2179 "type references an undeclared record schema '{name}'"]
+  ;; JUN-730: (m x ..) of a protocol method m whose receiver x has no record type with an implementation in the module (no
+  ;; runtime type guessing, ADR 0204); reify is a permanent refusal (no anonymous implementations under closed dispatch)
+  [:c E-CHECK-DISPATCH 2180 "no static implementation of protocol method '{name}' for this receiver's type"]
+  [:c E-CHECK-REIFY 2181 "reify is not admitted (closed static dispatch; implement the protocol on a record): '{name}'"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =

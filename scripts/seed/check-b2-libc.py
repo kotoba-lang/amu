@@ -14,6 +14,8 @@ x86_64 Linux kernel:
   libc_t    malloc, calloc, realloc, free, stdio on files, the standard error stream, directories, access, readlink,
             getenv, qsort (a stable sort called with a machine-code comparator), mutexes, dlopen, dlsym, dlerror, the
             thread control block (fs:0, fs:0x10, the canary) and the refusing stub (unit 00..70).
+The units are the x86_64 ones (01-arch-x86_64.kotoba after 00-base): the tests hold x86_64 machine code and system
+call numbers, and the fixture is an x86_64 object. The textrel fixture must load (DT_TEXTREL, JUN-701).
 Each runs once for its checks (every line ends in ok; the last exit status is 0) and once per refusal mode, where the
 program must stop with exit status 127 and a `b2: refused:` line naming the reason, or (abort, stack smashing)
 exit status 134.
@@ -39,18 +41,18 @@ NS = "(ns g (:export [main]))\n"
 CHK = ["memcpy", "memset", "strncpy", "strcat", "strncat"]
 # (name, test file, units, environment, [(argument, exit status, stderr contains)])
 TESTS = [
-    ("string", "string_t.kotoba", ["00-base", "10-string"], {},
+    ("string", "string_t.kotoba", ["00-base", "01-arch-x86_64", "10-string"], {},
      [(f"overflow-{n}", 127, f"b2: refused: buffer overflow detected: __{n}_chk") for n in CHK]
      + [("invalid-base", 127, "invalid base"), ("invalid-base-1", 127, "invalid base"),
         ("memcpy-huge", 127, "size exceeds the address space"), ("strtok-null", 127, "no string to continue from")]),
-    ("printf", "printf_t.kotoba", ["00-base", "20-printf"], {},
+    ("printf", "printf_t.kotoba", ["00-base", "01-arch-x86_64", "20-printf"], {},
      [("overflow-chk", 127, "b2: refused: buffer overflow detected: __snprintf_chk"), ("vchk", 127, "b2: refused: buffer overflow detected: __vsnprintf_chk"),
       ("float", 127, "b2: refused: printf: unsupported conversion"), ("pct-n", 127, "b2: refused: printf: unsupported conversion"),
       ("positional", 127, "b2: refused: printf: unsupported conversion"), ("wide-s", 127, "b2: refused: printf: unsupported conversion"),
       ("scan-float", 127, "b2: refused: sscanf: unsupported conversion"), ("scan-p", 127, "b2: refused: sscanf: unsupported conversion"),
       ("scan-wide", 127, "b2: refused: sscanf: unsupported conversion")]),
-    ("elf", "elf_t.kotoba", ["00-base", "10-string", "20-printf", "30-malloc", "40-stdio", "50-elf", "60-fault", "70-init"], {}, []),
-    ("libc", "libc_t.kotoba", ["00-base", "10-string", "20-printf", "30-malloc", "40-stdio", "50-elf", "60-fault", "70-init"],
+    ("elf", "elf_t.kotoba", ["00-base", "01-arch-x86_64", "10-string", "20-printf", "30-malloc", "40-stdio", "50-elf", "60-fault", "70-init"], {}, []),
+    ("libc", "libc_t.kotoba", ["00-base", "01-arch-x86_64", "10-string", "20-printf", "30-malloc", "40-stdio", "50-elf", "60-fault", "70-init"],
      {"B2_TEST_VAR": "value=with=equals", "B2_TEST_VAR2x": "no", "B2_TEST_EMPTY": ""},
      [("mutex-twice", 127, "pthread_mutex_lock: the mutex is already held"), ("fopen-write", 127, "only read modes are supported"),
       ("abort", 134, "abort() called"), ("stack-chk", 134, "stack smashing detected"),
@@ -148,6 +150,14 @@ def main(compiler, output):
                     (output / ("elf-variant-" + variant + ".stderr")).write_bytes(z2.stderr)
                     assert z2.returncode == 127 and why.encode() in z2.stderr and b"b2: refused:" in z2.stderr, (variant, z2.returncode, z2.stderr[-300:])
                     refusals["variant-" + variant] = dict(exit=127, stderr=z2.stderr.decode(errors="replace").strip().splitlines()[-1][:200])
+            # DT_TEXTREL loads (JUN-701): every check, the relocated text word, and the text back to read-execute
+            z2 = subprocess.run([str(img), str(fixtures["textrel"]), "textrel"], env=env, capture_output=True, timeout=600)
+            (output / "elf-textrel.stdout").write_bytes(z2.stdout)
+            (output / "elf-textrel.stderr").write_bytes(z2.stderr)
+            tl = z2.stdout.decode().splitlines()
+            assert z2.returncode == 0 and not [l for l in tl if "FAIL" in l] and sum(l.endswith(" ok") for l in tl) == 20, (z2.returncode, z2.stderr[-300:])
+            assert re.findall(r"^maps \S+ (\S+) ([0-9a-f]+) ", z2.stdout.decode(), re.M)[0] == ("r-xp", "00000000"), "the text is read-execute again"
+            refusals["textrel-loads"] = dict(exit=0, checks=20)
             z2 = subprocess.run([str(img), str(scratch / "libfixture.so.1"), "call-missing"], env=env, capture_output=True, timeout=600)
             (output / "elf-call-missing.stdout").write_bytes(z2.stdout)
             (output / "elf-call-missing.stderr").write_bytes(z2.stderr)

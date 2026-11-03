@@ -12,7 +12,9 @@
 ;;   the sandbox and the host ends the run. A guest trap calls kxrt-slot-400 directly (5 = SIGTRAP for guest
 ;;   traps, 4 = SIGILL for runtime refusals), which writes the native trap lines and report, then exits 120;
 ;; - the arena capacities are smaller than natively (wasm32 linear memory: pairs 4M, string pool 64 MiB,
-;;   vectors 512K, vector items 16M, about 290 MiB in all when every arena is reserved);
+;;   vectors 512K, vector items 16M, plus 6 MiB private keyword-intern rows);
+;; - private keyword slots 96/104 use seed/73 rows; the Worker initializes a
+;;   fresh bounded table before guest entry and does not expose it as a host wire;
 ;; - the entry ABI (Phase 3): only the wires that move the run's own data inside the Worker can be granted,
 ;;   and only by the page, as KEXE_ALLOW grants them natively: at start the runtime asks
 ;;   kotoba:host/input(2, wire, 0, 0, 0, 0) for each of 35, 37, 38, 39 and sets the allow bitmap's bit when
@@ -23,8 +25,17 @@
 ;;   such input, and copies the bytes to dst only when cap >= the length. The runtime asks twice (the
 ;;   length, then the bytes into the string pool). Any other :fs/app-data request (WRITE, APPEND, RANGE, ..)
 ;;   is refused by name, as an ungranted wire is;
-;; - every other capability is refused by name (its bit is never set; kotoba:host/cap, which refuses
-;;   everything, is where the consent broker plugs in, Phase 2); start(fuel) always writes the report.
+;; - the consent broker (Phase 2, restricted-wasm-v1): the page also grants the wires it has bound to one
+;;   operation of its kotoba.app.client-runtime.v1 descriptor (kotoba-client-runtime.js), so at start the
+;;   runtime asks input(2, wire, ..) for every wire 0..63 and sets the bit when the answer is 1. A granted
+;;   wire that the runtime does not serve itself (not 35, 37, 38, 39) with a :string request goes to
+;;   kotoba:host/cap(wire, ptr, len): the host hands the request to the shared broker, which refuses an
+;;   undeclared operation or endpoint before any network activity and sends the request only after one
+;;   trusted user approval of that one invocation. The answer is the response's length, or -1 for every
+;;   refusal (undeclared, denied, failed), which is refused by name as an ungranted wire is; the runtime
+;;   copies the response with input(3, 0, 0, 0, dst, cap) into the string pool. A bit the page did not
+;;   set is never asked for, so without a grant every wire is refused by name; start(fuel) always writes
+;;   the report.
 (defn- xw-rt-cut [T :string a :string b :string] :string
   (let [i (string-index-of T a)
         j (if (< i 0) -1 (string-index-of (string-substring T i (string-length T)) b))]
@@ -38,7 +49,7 @@
         d (xw-rt-cut T "(defn- kxrt-report" ";; Context word 408")]
     (if (or (= (string-length a) 0) (= (string-length b) 0) (= (string-length c) 0) (= (string-length d) 0)) ""
       (string-concat (xw-rt-head) (string-concat a (string-concat b (string-concat (xw-rt-caps)
-        (string-concat c (string-concat d (xw-rt-start))))))))))
+        (string-concat c (string-concat (linux-keyword-src) (string-concat d (xw-rt-start)))))))))))
 (defn- xw-rt-head [] :string
 "
 (defn- kxrt-load64 [a :i64] :i64 0)
@@ -85,7 +96,7 @@
 ")
 (defn- xw-rt-caps [] :string
 "
-;; ---- capabilities: refused by name ----
+;; ---- capabilities: refused by name, or answered by the consent broker ----
 (defn- kxrt-cap-refused [id :i64] :i64
   (let [b (kxrt-gl 200) z (kxrt-flush) i (kxrt-w b (kxrt-w b 0 0x5041435f4558454b 8) 0x20657269773a7b20 8)
         j (+ i (kxrt-dec (+ b i) id)) y (kxrt-err-text b (kxrt-w b (kxrt-w b (kxrt-w b (kxrt-w b j 0x6573756665723a20 8) 0x336d7361773a2064 8) 0x6573776f72622d32 8) 0xa7d72 3))]
@@ -114,12 +125,18 @@
     (cond (>= ei 0) (kxrt-intern-dec (if (< (kxrt-host-input 1 0 a ei 0 0) 0) 0 1))
           (>= (kxrt-find a n 0x5045535f 0 4) 0) (kxrt-cap-refused 35)
           :else (let [r (kxrt-in 1 0 a n)] (if (< r 0) (kxrt-fail) r)))))
-;; the page's grants: the allow bitmap's word for wires 0..63, from 35, 37, 38 and 39 only
+;; the page's grants: the allow bitmap's word for wires 0..63 (35, 37, 38, 39 and the wires bound to a
+;; broker operation; the host answers 0 for every other wire)
 (defn- kxrt-in-allow [] :i64
-  (loop [k 0 acc 0]
-    (if (= k 4) acc
-      (let [w (case k 0 35 1 37 2 38 39)]
-        (recur (inc k) (if (= (kxrt-host-input 2 w 0 0 0 0) 1) (bit-or acc (i64-shift-left 1 w)) acc))))))
+  (loop [w 0 acc 0]
+    (if (= w 64) acc
+      (recur (inc w) (if (= (kxrt-host-input 2 w 0 0 0 0) 1) (bit-or acc (i64-shift-left 1 w)) acc)))))
+;; the broker's answer of length n (input kind 3) as a fresh pool string
+(defn- kxrt-cap-answer [n :i64] :i64
+  (let [u (kxrt-gl 32)]
+    (cond (> n (- KXRT-POOL u)) (kxrt-budget 4)
+          (= (kxrt-host-input 3 0 0 0 (+ (kxrt-gl 24) u) n) n) (let [w (kxrt-gs 32 (+ u n))] (kxrt-pair-new (- -1 u) n))
+          :else (kxrt-fail))))
 (defn- kxrt-typed-cap-call [id :i64 rk :i64 sk :i64 req :i64] :i64
   (cond (not (kxrt-admitted? id)) (kxrt-cap-refused id)
         (not= rk sk) (kxrt-fail)
@@ -128,7 +145,7 @@
         (and (= rk 1) (= id 38)) (kxrt-valid (kxrt-in-args req))
         (and (= rk 1) (= id 35)) (kxrt-valid (kxrt-in-fs req))
         (= rk 1) (let [v (kxrt-valid req) r (kxrt-host-cap id (kxrt-saddr req) (kxrt-ps req))]
-                   (if (< r 0) (kxrt-cap-refused id) (kxrt-fail)))
+                   (if (< r 0) (kxrt-cap-refused id) (kxrt-valid (kxrt-cap-answer r))))
         :else (kxrt-cap-refused id)))
 
 ")
@@ -144,6 +161,7 @@
         m11 (kxrt-gs 232 (kxrt-map KXRT-VALUE-MAX)) fd (kxrt-gs 112 -1)
         m12 (kxrt-gs 672 (kxrt-map 16384)) m13 (kxrt-gs 688 (kxrt-map (* 8 KXRT-VECTORS)))
         m14 (kxrt-gs 696 (kxrt-map (* 16 KXRT-REGIONS))) m15 (kxrt-gs 736 (kxrt-map 98304))
+        mki (kxrt-ki-init)
         v (kxrt-store64 ctx 11) al (kxrt-store64 (+ ctx 16) (kxrt-in-allow))
         d0 (kxrt-store64 (+ ctx 288) (+ (kxrt-g) 8)) d1 (kxrt-store64 (+ ctx 296) (kxrt-gl 0))
         d2 (kxrt-store64 (+ ctx 304) (kxrt-gl 16)) d3 (kxrt-store64 (+ ctx 312) (+ (kxrt-g) 48))
