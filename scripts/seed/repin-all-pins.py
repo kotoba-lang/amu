@@ -218,6 +218,11 @@ class Sync:
         t79 = self.path(p79_rel).read_text()
         t79 = re.sub(r'(string=\? role "kotoba-native"\) ")[0-9a-f]{64}', lambda m: m.group(1) + sha(gtxt.encode()), t79)
 
+        # The closed benchmark host/registry sources are pinned by file hash in seed/79 (bench-build).
+        for var, rel in (("host", "seed/bench/host-arm.kotoba"), ("registry", "seed/bench/registry-arm.kotoba")):
+            t79 = re.sub(r'(string=\? \(sh-text %s\) ")[0-9a-f]{64}' % var,
+                         lambda m, rel=rel: m.group(1) + sha(self.path(rel).read_bytes()), t79)
+
         self.stage("entry.kotoba", entry)
         self.stage("runtime.kotoba", runtime)
         self.stage("kotoba-gate.kotoba", gtxt.encode())
