@@ -1,0 +1,17 @@
+{
+  "kind": "awai152.linux-arm64-real-runtime-parent-death/1",
+  "recordedAt": "2026-11-03 Asia/Tokyo",
+  "sourceCommit": "fc93f2b30eeb33738aa3b86a7548284d11553976",
+  "baseSourceCommit": "7a755126",
+  "baseCompilerSha256": "914b828a24ced086e09929894bb64806dea103bf79766ef144001a076717b1c4",
+  "testOnlyPatchedCompilerSha256": "fc91250e9eb77e79878ea215ed9945be37b0329866f26c4c5cc75fdf8bfbecf0",
+  "fixtureSourceSha256": "24a7331b18b24450e23cf744a0a2de5cdea9c1d0f6b4e0b5661a08707af0fdf5",
+  "observerSha256": "5f899c84112710a419cb3bcb2293cf78550e031f84a23b80f3de9c95d39385e4",
+  "baselineGuestSha256": "eb9bdccbdb57d173f4f5d2889a344f999eb31e6a50be484cf039e2c5ea8946a1",
+  "candidateGuestSha256": "4ffae04d7b740e2f6346940d3fd9569b072e679b8ad9f6f2fe37176fbc56a8e3",
+  "environment": "isolated Podman ARM64 Linux VM, 1 CPU and 2 GiB",
+  "operation": "Start the guest and observe its helper and /usr/bin/sleep 6 child through /proc; SIGKILL guest; sample helper and child after 0.5 seconds, comparing PID start times and non-zombie state. Cleanup only observed owned processes.",
+  "baseline": {"guestExit": -9, "helperAlive": true, "directChildAlive": true},
+  "candidate": {"guestExit": -9, "helperAlive": false, "directChildAlive": false},
+  "scope": "Test-only compiler byte-patch of the measured base's embedded ARM64 runtime region; it is not a rebuilt or qualified compiler. One successful simple direct-child kill on Linux ARM64; no normal completion/refusal coverage, runtime setup race, x86, macOS, grandchildren, escaped processes, lock, or resource governor. Python is only a test observer and staging tool."
+}

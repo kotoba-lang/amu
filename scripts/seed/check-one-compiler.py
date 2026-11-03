@@ -133,6 +133,21 @@ def main(boot, out):
         observed = dict(exit=r.returncode, remainingFuel=int(fuel[1]) if fuel else None)
         assert observed == case["reference"], (case["name"], observed, case["reference"])
         results.append(dict(name=case["name"], image=images[1], **observed))
+    # Quote operands are data even when they look like qualified operations.
+    # Exercise the original document SHA fixture and distinct symbol spellings;
+    # unlike static-cases these are not claimed as historical loader evidence.
+    for name, source, expected in (
+        ("quoted-symbol", ROOT / "seed/tests/quoted-symbol.kotoba", 41),
+        ("document-sha", ROOT / "test/fixtures/selfhost/document/native/document_sha256_test.kotoba", 15),
+        ("keyword-map-keys", ROOT / "seed/tests/keyword-map-keys.kotoba", 42),
+        ("keyword-unicode-scan", ROOT / "seed/tests/keyword-unicode-scan.kotoba", 42),
+    ):
+        src, dst = out / (name + ".kotoba"), out / (name + ".elf")
+        shutil.copyfile(source, src)
+        run(name + "-compile", [F, "compile", src, "--target", "aarch64-linux", "--output", dst, "--format", "static"], env)
+        dst.chmod(0o755)
+        result = run(name + "-run", [dst], {"KEXE_STRUCTURED_REPORT": "1", "KEXE_FUEL": "off", "KEXE_ALLOW": "-"})
+        assert re.search(rb":result " + str(expected).encode() + rb"\b", result.stdout), (name, result.stdout)
     run("x86-compiler", [F, "compile", out / "selfhost.kotoba", "--target", "x86_64-linux", "--output", out / "X-F.elf", "--format", "static"], env)
     assert pin(out / "X-F.elf") == pin(out / "S-x86_64.elf"), "F's x86_64 compiler differs from S3's"
 
@@ -170,6 +185,12 @@ def main(boot, out):
     binary_lock.write_bytes(b"KSL1\n\xff\n")
     unknown = out / "public-unknown.kotoba"
     unknown.write_text("(ns public-unknown (:export [main]))\n(defn main [] :i64 (amu-unresolved 0))\n")
+    unknown_qualified = out / "public-unknown-qualified.kotoba"
+    unknown_qualified.write_text("(ns public-unknown-qualified (:export [main]))\n(defn main [] :i64 (missing/op 0))\n")
+    unsupported_kwmap = out / "public-unsupported-kwmap.kotoba"
+    shutil.copyfile(ROOT / "seed/tests/keyword-map-keys-unsupported.kotoba", unsupported_kwmap)
+    malformed_kwmap = out / "public-malformed-kwmap.kotoba"
+    shutil.copyfile(ROOT / "seed/tests/keyword-map-keys-malformed.kotoba", malformed_kwmap)
     large = out / "public-large-unknown.kotoba"
     large.write_bytes((out / "full.kotoba").read_bytes() + b"\n(defn- public-unresolved [] :i64 (amu-unresolved 0))\n")
     legacy = out / "public-legacy.cljk"
@@ -178,6 +199,9 @@ def main(boot, out):
     containers_before_refusals = set(out.glob("*.kseed"))
     probes = [("c-linked-format", ["compile", good, "--target", "x86_64-linux", "--output", out / "c-linked.elf", "--format", "platform-linked"], "E2"),
               ("unknown-small", ["check", unknown], "E2101"),
+              ("unknown-qualified", ["check", unknown_qualified], "E6010"),
+              ("unsupported-keyword-map", ["check", unsupported_kwmap], "E2105"),
+              ("malformed-keyword-map", ["check", malformed_kwmap], "E2105"),
               ("unknown-large", ["check", large], "E2101"),
               ("legacy-source", ["check", legacy], "E1"),
               ("default-target", ["compile", good, "--output", out / "default.kseed"], "E2"),
