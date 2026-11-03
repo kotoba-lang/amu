@@ -1131,7 +1131,7 @@
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
           (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
-              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 512) 0)))))
+              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
@@ -1143,7 +1143,7 @@
                 (or (= words 0) (> (* words 4) 512))))
             (and (string=? mode "fs2-cli-stdio-cwd")
               (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
-                (or (= words 0) (> (* words 4) 512))))
+                (or (= words 0) (> (* words 4) 1024))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -1226,6 +1226,12 @@
   (mh-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
 (defn- mh-lw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-sh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-sw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (mh-i s (bit-or 0x8a000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
 (defn- mh-sb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
 (defn- mh-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
@@ -1282,11 +1288,11 @@
 ;; directory. Never replace an existing FD3, and require stdin/stdout/stderr to
 ;; be open so open() must return exactly 3. The launcher/host must establish a
 ;; alias-free WorkingDirectory before exec. fstat64 then requires a directory
-;; owned by the process effective UID with exact mode 0700. ACLs and the path
-;; used to enter it remain host duties. This is not a process sandbox.
+;; owned by the process effective UID with exact mode 0700 and no ACL. The
+;; path used to enter it remains a host duty. This is not a process sandbox.
 (defn- mh-cwd-scope-words [base :i64] :vector-i64
   (mh-finish (-> (mh-new base)
-    (mh-sub 31 31 192) (mh-str 30 31 16)
+    (mh-sub 31 31 384) (mh-str 30 31 16)
     ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
     (mh-imm 0 3) (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92)
     (mh-b 0x54000003 2) (mh-cmpi 0 9) (mh-b 0x54000001 2)
@@ -1299,8 +1305,33 @@
     (mh-imm 0 3) (mh-add 1 31 32) (mh-sys 339) (mh-b 0x54000002 2)
     (mh-lh 8 31 36) (mh-imm 9 16832) (mh-cmp 8 9) (mh-b 0x54000001 2)
     (mh-sys 25) (mh-b 0x54000002 2) (mh-lw 8 31 48) (mh-cmp 0 8) (mh-b 0x54000001 2)
+    ;; Require the volume to report native extended-security support. This
+    ;; prevents treating an unsupported ACL query as an absent ACL. attrlist
+    ;; is at sp+192 and the fixed 96-byte volume reply at sp+224.
+    (mh-str 31 31 192) (mh-str 31 31 200) (mh-str 31 31 208)
+    (mh-imm 8 5) (mh-sh 8 31 192) (mh-imm 8 2147483648) (mh-sw 8 31 196)
+    (mh-imm 8 3221356544) (mh-sw 8 31 200)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 224) (mh-imm 3 96) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 224) (mh-cmpi 8 96) (mh-b 0x54000001 2)
+    (mh-lw 8 31 228) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 232) (mh-imm 9 1073872896) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; Both valid and supported ACL capability, plus valid/native attribute.
+    (mh-imm 9 1024) (mh-lw 8 31 252) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 268) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-imm 9 4194304) (mh-lw 8 31 280) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 300) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; A no-ACL APFS reply has only returned-attrs and an empty reference.
+    ;; Any ACL, unsupported/malformed response, or syscall error refuses.
+    (mh-imm 8 2151677952) (mh-sw 8 31 196) (mh-sw 31 31 200)
+    (mh-str 31 31 320) (mh-str 31 31 328) (mh-str 31 31 336) (mh-str 31 31 344)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 320) (mh-imm 3 32) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 320) (mh-cmpi 8 32) (mh-b 0x54000001 2)
+    (mh-lw 8 31 324) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 328) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 336) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 344) (mh-cmpi 8 0) (mh-b 0x54000001 2)
     (mh-mov 7 19) (mh-call SLICE-SETUP-START)
-    (mh-ldr 30 31 16) (mh-add 31 31 192) (mh-i 0xd65f03c0)
+    (mh-ldr 30 31 16) (mh-add 31 31 384) (mh-i 0xd65f03c0)
     ;; An unexpected descriptor is ours; close it and refuse.
     (mh-label 1) (mh-sys 6)
     (mh-label 2) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000))))

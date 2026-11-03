@@ -60,6 +60,43 @@ production runner. macOS ACLs require separate handling.
 | Signed mutant packager | `c669f67f79f3d44135ca62f55c64466a7771ba34e409b9e5af2267f050074582` |
 | Signed mutant probe | `35fdea2f74de59ffff0d9994eaf6779efde0ee3620d8c665146ece2a23fb5c9e` |
 
+## Follow-up: ACL and filesystem capability
+
+The later candidate first requests volume capabilities and valid/native
+attributes on the opened FD. It requires the extended-security capability
+and extended-security attribute to be reported as supported, then requests
+the directory's extended security attributes. It accepts only the observed
+32-byte no-ACL form with the expected returned-attribute mask and empty
+reference. Any ACL, unsupported capability, unexpected response shape or
+syscall failure refuses. This deliberately narrows the diagnostic to
+filesystems that make those claims and return that shape.
+
+On the local APFS test directory, a 0700 no-ACL directory succeeded. A
+synthetic `everyone allow list,search` ACL on the same directory caused exit
+70 and no guest output, while the previous mode-and-owner candidate accepted
+it. Removing the ACL restored success. A test-only mutant requesting an
+unsupported capability bit refused the otherwise valid directory. Short-lived
+user launchd jobs observed the same 0/70 outcomes and were removed. FS2 D,
+A, O, U, E, I, H, M and L regression cases passed without an ACL. A preliminary
+packager build refused because its candidate-code size guard had not yet been
+increased; the guard was corrected and all results above use the rebuilt source.
+
+An independent one-off macOS `fgetattrlist` observer saw a 32-byte no-ACL
+response and a 100-byte ACL-present response, including when the output buffer
+was 32 bytes. It also observed the local APFS support/validity bits used by
+the candidate. This is not proof for other filesystems, kernel versions, ACL
+mutations after the check, device/inode or parent-path pinning, or process
+isolation. No real bot, secret, GitHub storage or remote Mac mini was involved.
+
+| ACL follow-up artifact | SHA-256 |
+| --- | --- |
+| Candidate source | `9d889f1bb638081c47fc4da1473b383dec50626fa7d37ba5ce5b1ceaf7318732` |
+| Signed candidate packager | `f9368abfe55929bbde0c64c0ec28b54f5dcc6aa12e4076913797a90a2dd38676` |
+| Signed candidate probe | `3d03943226e74c3bf054e9b2cec025b1a220f4d50af7e3e0ee9333d5e66a55fd` |
+| Unsupported-capability mutant source | `cc2be4e660842dfc0cf661efb5a26fd5ef0064a25042039d57ec5a736457ca7a` |
+| Signed mutant packager | `b0311f12145df2fb8b85397b8cbb62625ff40db7f32a169be7732c1396220b29` |
+| Signed mutant probe | `850b836655a7a2e63ee7228cfb530432bbfd4dba5f2109a05c0fa030d354275b` |
+
 | Artifact | SHA-256 |
 | --- | --- |
 | Candidate packager source | `a5a90267fb8384d09c32f81a4252d6004643d40c15be75c4634f61ae8fdb45b9` |
