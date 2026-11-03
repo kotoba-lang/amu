@@ -1,0 +1,10 @@
+(ns darwin-fs2-ou-probe (:export [main]))
+(defn main [] :i64
+  (let [operation (typed-cap-call 38 :string :string "0")
+        path (typed-cap-call 38 :string :string "1")
+        tail (typed-cap-call 38 :string :string "2")
+        nul (string-from-utf8 (bytes-from-vector-i64 [0]))
+        request (str nul "FS2" nul operation path nul tail)
+        value (typed-cap-call 35 :string :string request)
+        output (typed-cap-call 37 :string :string (str value "\n"))]
+    0))

@@ -562,3 +562,12 @@ Linear memory:
 | 5120 | G |
 | 65536 | the literal pool (a data segment) |
 | after the pool, 64 KiB aligned | the runtime's arena (memory.grow) |
+
+On 2026-11-03, the diagnostic Darwin packager gained partial O/U handling
+using FD3-scoped fstatat64; O keeps 0777 and U exposes 07777. Both return
+the block count in field three as in the Linux candidate, while the pre-existing
+Darwin F diagnostic keeps its historical time field. An actual FS2-framed
+probe on one Mac covers common modes, special bits, directory and symlink,
+scoped refusal, missing metadata and E/F regressions. It also fixes a prior
+one-character path refusal. See docs/evidence/awai154-darwin-fs2-ou-20261103.
+This is not a complete FS2 provider, a deployed checkpoint or a release gate.
