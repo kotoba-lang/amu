@@ -129,5 +129,54 @@
       "outputCreated": false
     },
     "inference": "With identical pinned root compiler/bootstrap packager, exact 61-module unity, F1 compiler raw, entry offset and 52-byte source, replacing only the FS35 helper implementation changes the observed compile from E3 refusal to exit 0 and the expected 34-byte KSEED. This localizes the regression to the changed FS35 helper or its interaction with the unchanged current surrounding layout. It does not identify a faulty instruction, qualify the experimental variant as a runtime, or establish SQLite/Amu completion. The graft is diagnostic only and is not used by CI, product runtime, packaging or fallback."
+  },
+  "fs2DaReturnFix": {
+    "date": "2026-11-03",
+    "source": {
+      "path": "seed/macos-fs2-runtime-packager.kotoba",
+      "bytes": 99635,
+      "sha256": "c863cab70332b23691bcd3ece3ad3865d990356450f8fd3e8997251604754aff"
+    },
+    "change": "FS35 helper word 467 at offset 1868 branches to its existing epilogue at offset 2692, restoring the saved call frame and routing FS2 string requests to the canonical D/A helper. N/J remain separately dispatched; byte B/C stays on the generic FS2 chain.",
+    "focusedNativeGate": {
+      "status": "PASS_MACOS_FS35",
+      "receipt": "/Users/junkawasaki/github/workspaces/codex/jun768-fs35-bisect/focused-gate-20261103/observations.json",
+      "receiptSha256": "b19bfe8347df79d9f414c9bcf38a5b14599967aa7ff6642829c8d0a8c5022386",
+      "packagerImageSha256": "04ca371096efb13921476ba4bf8a9b6e519d32d5aa7ed4966eb1a5b18b1bfa91",
+      "passingPositive": [
+        "roundtrip",
+        "durable",
+        "lock",
+        "paths",
+        "fs2-atomic-n",
+        "fs2-atomic-j",
+        "fs2-atomic-b",
+        "fs2-atomic-file-fsync",
+        "fs2-atomic-rename",
+        "fs2-atomic-root-fsync",
+        "fs2-atomic-roundtrip",
+        "cross-process-lock"
+      ],
+      "expectedRefusals": [
+        "trap-read-missing",
+        "trap-read-link",
+        "trap-write-dotdot",
+        "trap-unknown",
+        "trap-trailing",
+        "control-without-fs35"
+      ]
+    },
+    "compilerFixedPoint": {
+      "F1ImageSha256": "7fbfcb261e862331803fabfc220ceb87a864f55000808df54b06dc1c0083d9fe",
+      "F2KseedSha256": "7ccf0e0ff501a852372c497e03fcc9e7a900ffc1e54873063ca5f50549ad4ee0",
+      "F2F3KseedIdentical": true,
+      "F2F3RawCompilerSha256": "7d91bb6c15ee2868ecbf398d7d9267fae99b23380e2edad2dbebcbd647bb3724",
+      "F2F3UnsignedCompilerImageSha256": "0498d0d557eb99ff1cc491e7adb6c955ae9b8c3171961cc29e911617c5f6a5bf"
+    },
+    "remaining": {
+      "packagerSelfRebuild": "P3 self-packaging exited 148; self-rebuild fixed point is not established.",
+      "rootPins": "unchanged; do not update derived pins until packager self-rebuild fixed point is demonstrated.",
+      "scope": "local macOS arm64 bootstrap/compiler fixture only; does not qualify the full Amu root, SQLite adapter, Itonami runtime, CI, publication or deployment."
+    }
   }
 }

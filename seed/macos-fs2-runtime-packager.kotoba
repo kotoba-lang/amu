@@ -944,14 +944,18 @@
        0x8b08014a 0x9100154a 0xd280000b 0xeb1a017f 0x540000a0 0x386b6b2c 0x382b694c 0x9100056b
        0x17fffffb 0x8b1a0109 0x91001529 0xf900ce69 0xaa1303e0 0xaa2803e1 0xaa1a03e2 0x91001442
        0x17ffff0e])
-      ;; FS2 N resumes through the saved call frame into the canonical D/A
-      ;; helper. Keep the generic FS2 chain at the separate Lchain trampoline.
+      ;; FS2 A/D requests and N resume through the saved call frame into the
+      ;; canonical D/A helper. Keep the generic FS2 chain at the separate
+      ;; Lchain trampoline; byte B/C requests already use that chain.
       (append-runtime-words 673 [
        0xa94607e0 0xa9470fe2 0xf94043e4 0xa94573fb 0xa9446bf9 0xa94363f7
        0xa9425bf5 0xa94153f3 0xa9407bfd 0x912803ff
        (b-direct (+ start 2732) da-start)])
       (vector-assoc! 33 (bl-direct (+ start 132) (+ RUNTIME-START 52)))
-      (vector-assoc! 450 (b-direct (+ start 1800) chain))))
+      (vector-assoc! 450 (b-direct (+ start 1800) chain))
+      ;; Forward FS2 string forms to D/A. It handles A/D and refuses unknown
+      ;; forms; FS2 N/J were dispatched above and byte B/C bypass this path.
+      (vector-assoc! 467 (b-direct (+ start 1868) (+ start 2692)))))
 
 ;; ADRP x7, __DATA: wrapper PC is in the first 4 KiB page. The target is
 ;; 16 KiB-aligned, and the checked image size is far within ADRP's range.
