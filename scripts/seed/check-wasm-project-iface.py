@@ -12,6 +12,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-iface_t.kotoba'
 STUB_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-stubs_t.kotoba'
+MODULE_FIXTURE = ROOT / 'seed/tests/unit/81-wasm-project-module_t.kotoba'
 
 
 def main():
@@ -111,6 +112,33 @@ def main():
     negative = subprocess.run([str(pool_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='-',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
                               capture_output=True,timeout=120)
     assert not negative.stderr and re.search(rb':status :ok :result 84(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
+    module_source = out/'project-module.kotoba'; module_source.write_bytes(prefix+MODULE_FIXTURE.read_bytes())
+    module_image = out/'project-module.elf'
+    built = subprocess.run([str(compiler),'compile',str(module_source),'--target',target,'--output',str(module_image),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and module_image.is_file(), (built.returncode,built.stderr[-1000:])
+    module_image.chmod(0o755)
+    result = subprocess.run([str(module_image)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                            capture_output=True,timeout=120)
+    assert result.returncode == 0 and not result.stderr and re.search(rb':status :ok :result 0(?:\s|})',result.stdout), (result.returncode,result.stdout,result.stderr)
+    match = re.search(rb'WASM-BEGIN\n([0-9a-f\n]+)WASM-END\n',result.stdout)
+    assert match, result.stdout
+    wasm = bytes.fromhex(match.group(1).decode())
+    assert wasm[:8] == b'\x00asm\x01\x00\x00\x00' and b'abc' in wasm
+    wasm_path = out/'project-module.wasm'; wasm_path.write_bytes(wasm)
+    print('WASM_PROJECT_MODULE_HEX', wasm.hex())
+    module_guard = b'(>= start (+ XW-NIMPORT count))'
+    module_bytes = module_source.read_bytes(); assert module_bytes.count(module_guard) == 1
+    module_mutant_source = out/'project-module-mutant.kotoba'
+    module_mutant_source.write_bytes(module_bytes.replace(module_guard,b'false'))
+    module_mutant = out/'project-module-mutant.elf'
+    built = subprocess.run([str(compiler),'compile',str(module_mutant_source),'--target',target,'--output',str(module_mutant),'--format','static'],
+                           cwd=out,env=env,capture_output=True,timeout=900)
+    assert built.returncode == 0 and not built.stderr and module_mutant.is_file(), (built.returncode,built.stderr[-1000:])
+    module_mutant.chmod(0o755)
+    negative = subprocess.run([str(module_mutant)],cwd=out,env=dict(PATH='/nonexistent',KEXE_ALLOW='37',KEXE_STRUCTURED_REPORT='1',KEXE_STACK_BYTES='8388608'),
+                              capture_output=True,timeout=120)
+    assert not negative.stderr and re.search(rb':status :ok :result 1(?:\s|})',negative.stdout), (negative.returncode,negative.stdout,negative.stderr)
     sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
     receipt = {'status':'PASS_WASM_PROJECT_IFACE', 'target':target, 'compilerSha256':sha(compiler),
                'fixtureSha256':sha(FIXTURE),'sourceSha256':sha(source),'imageSha256':sha(image),
@@ -120,7 +148,8 @@ def main():
                'archiveNegativeSourceSha256':sha(archive_source),'archiveNegativeImageSha256':sha(archive_image),
                'payloadNegativeControls':payload_receipts,
                'poolNegativeSourceSha256':sha(pool_source),'poolNegativeImageSha256':sha(pool_image),
-               'limitations':['interface mapping component only; no project linker or Wasm execution']}
+               'projectModuleSha256':sha(wasm_path), 'projectModuleNegativeSha256':sha(module_mutant),
+               'limitations':['archive module fixture only; no project driver or Wasm execution in this gate']}
     (out/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
     print(receipt['status'],target)
 

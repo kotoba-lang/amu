@@ -74,7 +74,7 @@ otool -L bin/amu
 ```
 
 Expected CLI SHA-256:
-`b1fe188abef3c07b3430383cf446c419de65e6f3d233a2554350fe877ff6898b`.
+`a0c9daafaa5a9e50fa0e09c6cd4c92c0d8359ce6d45f55e4e48880f31d68499c`.
 `file -L` identifies ARM64 Mach-O; `otool -L` lists no dylibs.
 The source recipe, image, compiler and packager pins are in
 [`cli.json`](../../seed/bootstrap/aarch64-macos/cli.json).
