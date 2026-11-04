@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Observe a pinned CI watcher on a disposable owned child; no builds.
+"""Observe a pinned signed watcher on a disposable owned child; no builds.
 
-The expected hash must come from an independently verified CI receipt. This
-is an ABI diagnostic, not a scheduler, process-tree proof, or governor.
+The caller must bind the hash to a verified build and record its provenance.
+This is an ABI diagnostic, not a scheduler, process-tree proof, or governor.
 """
 import argparse
 import contextlib
@@ -95,12 +95,17 @@ def main():
         with contextlib.redirect_stdout(io.StringIO()):
             helper.transition_case(watcher, root, 'exec')
             helper.transition_case(watcher, root, 'fork')
+            helper.persistent_case(watcher, root)
+            helper.transition_case(watcher, root, 'exec', b'WP02')
+            helper.transition_case(watcher, root, 'fork', b'WP02')
     print(json.dumps({'schema': 'amu.darwin-watch-observation.v1', 'build': build,
                       'watcherSha256': args.expected_sha256, 'positive': True,
                       'wrongIdentityRefused': True, 'timeoutRefused': True,
                       'reapedPidRefused': True, 'signalledExitEventObserved': True,
                       'signalledChildIsSuccess': False, 'execEventRefused': True,
-                      'forkEventRefused': True, 'governorQualified': False}))
+                      'forkEventRefused': True, 'persistentExitObserved': True,
+                      'persistentExecRefused': True, 'persistentForkRefused': True,
+                      'governorQualified': False}))
 
 
 if __name__ == '__main__':

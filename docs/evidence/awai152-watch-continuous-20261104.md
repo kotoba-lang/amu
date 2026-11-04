@@ -28,7 +28,21 @@ refused a wrong identity, reaped PID, invalid protocol and zero timeout. The
 original mode still refused after its timeout. A separately built mutation
 that disabled the `WP02` repeat branch failed the persistent case as expected.
 These are short owned-child tests, not a 900-second or production endurance
-run. The new image has not been tested on the three target Macs.
+run.
+
+The same locally built and ad-hoc signed diagnostic image was subsequently
+copied to naphtali, benjamin and judah over host-key-pinned Tailscale SSH.
+Each target was Darwin ARM64 build `25G332` and checked the image hash and
+strict code signature before execution. The observer SHA-256 was
+`85d80391b06c0e0b5a5284d206f896b9787f16f56b15555a50806a7bec3d0b6e`;
+the imported test helper had the hash listed above. Each target observed the
+normal exit after multiple 1-second intervals, and refused fork and exec
+after multiple intervals. The earlier WP01 normal exit, identity, timeout,
+reaped PID and SIGKILL event cases also passed. The target harness checked a
+complete result and removal of its private staging directory. This image was
+built locally with the diagnostic tools listed above, not taken from a CI
+receipt; this is not a release or selfhost artifact. Only short, task-owned
+child processes were exercised.
 
 This change does not supervise or terminate a process, enforce memory, GPU or
 CPU limits, prevent a fork or exec, establish complete descendant termination,
