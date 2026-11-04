@@ -110,6 +110,18 @@ def transition_case(image, directory, mode):
         import select
         if not select.select([child.stdout], [], [], 5)[0] or child.stdout.readline() != b'READY\n':
             raise RuntimeError((mode, 'child not ready'))
+        os.kill(child.pid, signal.SIGSTOP)
+        deadline = time.monotonic() + 5
+        while True:
+            got, status = os.waitpid(child.pid, os.WUNTRACED | os.WNOHANG)
+            if got:
+                if not os.WIFSTOPPED(status):
+                    child.returncode = os.waitstatus_to_exitcode(status)
+                    raise RuntimeError((mode, 'child exited before registration', status))
+                break
+            if time.monotonic() >= deadline:
+                raise TimeoutError((mode, 'child did not stop'))
+            time.sleep(0.01)
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 5)
         watcher = launch_watcher(image, directory, request)
@@ -127,6 +139,7 @@ def transition_case(image, directory, mode):
             raise RuntimeError((mode, 'invalid ready frame', ready))
         if watcher.poll() is not None:
             raise RuntimeError((mode, 'watcher exited before trigger'))
+        os.kill(child.pid, signal.SIGCONT)
         child.stdin.write(b'x')
         child.stdin.flush()
         out, err = watcher.communicate(timeout=7)
