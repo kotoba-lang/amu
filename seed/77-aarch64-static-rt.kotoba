@@ -587,12 +587,13 @@
         (let [k (kxrt-admit-root m i)]
           (if (< k 0) (recur (inc i)) (let [z (kxrt-gs 664 (kxrt-gl (+ 528 (* 8 i))))] k)))))))
 ;; openat2(root, rest, {flags, mode, RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS}); fd or negative
-(defn- kxrt-open [m :i64 flags :i64 mode :i64] :i64
+(defn- kxrt-open-mode [m :i64 flags :i64 mode :i64 strict :bool] :i64
   (let [k (kxrt-admit m) d (kxrt-gl 208) how (+ (kxrt-gl 200) 4096)]
     (if (< k 0) -1
       (let [rest (if (>= k m) (let [z (kxrt-store8 (+ d m 1) 46) y (kxrt-store8 (+ d m 2) 0)] (+ d m 1)) (+ d k))
-            x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) 10)]
+            x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) (if strict 14 10))]
         (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
+(defn- kxrt-open [m :i64 flags :i64 mode :i64] :i64 (kxrt-open-mode m flags mode false))
 (defn- kxrt-sink-close [] :i64
   (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
@@ -611,7 +612,7 @@
         (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-fail)
               :else (let [w (kxrt-gs 32 (+ u k))] (kxrt-pair-new (- -1 u) k)))))))
 
-;; Private byte source-lock frame: NUL KSL1 NUL + exact path bytes.
+;; Bounded scoped byte read, shared by the source-lock and KFR1 frames.
 ;; Status byte 1 plus the complete regular-file bytes, or status 0.
 ;; One nonblocking no-follow FD supplies metadata and bytes; no token scan.
 (defn- kxrt-lock-answer [u :i64 n :i64 ok :bool] :i64
@@ -624,10 +625,10 @@
     (if (= i n) n
       (let [k (kxrt-syscall 67 fd (+ p i) (- n i) i 0 0)]
         (cond (= k -4) (recur i) (<= k 0) -1 :else (recur (+ i k)))))))
-(defn- kxrt-fs-source-lock [a :i64 n :i64] :i64
+(defn- kxrt-fs-bounded-read [a :i64 n :i64 strict :bool] :i64
   (let [u (kxrt-gl 32) clean (and (> n 0) (< n 4096)
         (loop [i 0] (cond (= i n) true (= (kxrt-load8 (+ a i)) 0) false :else (recur (inc i)))))
-        m (if clean (kxrt-path a n) -1) fd (if (< m 0) -1 (kxrt-open m 559104 0))]
+        m (if clean (kxrt-path a n) -1) fd (if (< m 0) -1 (kxrt-open-mode m 559104 0 strict))]
     (if (< fd 0) (kxrt-lock-answer u 0 false)
       (let [st (+ (kxrt-gl 200) 8192) f (kxrt-syscall 80 fd st 0 0 0 0)
             size (kxrt-load64 (+ st 48)) mode (kxrt-load64 (+ st 16))
@@ -798,7 +799,7 @@
     (cond (and (>= n 6) (kxrt-tok-at a 0x3156504b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-private (+ a 6) (- n 6)))
           (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
-          (let [z (kxrt-sink-close)] (kxrt-fs-source-lock (+ a 6) (- n 6)))
+          (let [z (kxrt-sink-close)] (kxrt-fs-bounded-read (+ a 6) (- n 6) false))
           append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
           (>= wi 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false) (kxrt-fail)))
@@ -1569,7 +1570,16 @@
              (kxrt-tok-at (kxrt-vbytes req) 0x314c534b00 0 6))
           (let [n (kxrt-vlen req) p (kxrt-vbytes req)
                 checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
-                closed (kxrt-sink-close) r (kxrt-fs-source-lock (+ p 6) (- n 6))]
+                closed (kxrt-sink-close) r (kxrt-fs-bounded-read (+ p 6) (- n 6) false)]
+            (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
+        ;; KFR1 is an explicit bounded application read, distinct from KSL1.
+        ;; A zero status reports I/O refusal; a one prefixes exact file bytes.
+        ;; Only raw bytes use this operation, so file names cannot invoke it.
+        (and (= id 35) (= rk 8) (= sk 8) (>= (kxrt-vlen req) 6)
+             (kxrt-tok-at (kxrt-vbytes req) 0x3152464b00 0 6))
+          (let [n (kxrt-vlen req) p (kxrt-vbytes req)
+                checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
+                closed (kxrt-sink-close) r (kxrt-fs-bounded-read (+ p 6) (- n 6) true)]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         ;; KPV1 is also an exact byte frame; route it before FS2 can reject
         ;; raw bytes. Other byte requests still require the FS2 contract.
