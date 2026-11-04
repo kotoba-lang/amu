@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 PYTHON = '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9'
+PYTHON_APP = '/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python'
 OBSERVER = '''import ctypes,json,sys
 class P(ctypes.Structure):
  _fields_=[('active',ctypes.c_int32),('active_attr',ctypes.c_uint32),('inactive',ctypes.c_int32),('inactive_attr',ctypes.c_uint32)]
@@ -46,7 +47,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--attributes', required=True, type=Path)
     parser.add_argument('--expected-sha256', required=True)
+    parser.add_argument('--interpreter', choices=('bin', 'app'), default='bin')
     args = parser.parse_args()
+    executable = PYTHON if args.interpreter == 'bin' else PYTHON_APP
     data = args.attributes.read_bytes()
     if not re.fullmatch('[0-9a-f]{64}', args.expected_sha256) or len(data) != 248 or hashlib.sha256(data).hexdigest() != args.expected_sha256:
         raise ValueError('attribute digest or length mismatch')
@@ -80,10 +83,10 @@ def main():
                 address = ctypes.addressof(raw)
             desc = (ctypes.c_uint64 * 18)()
             desc[0], desc[1] = 248, address
-            argv = (ctypes.c_char_p * 4)(PYTHON.encode(), b'-c', CHILD.encode(), None)
+            argv = (ctypes.c_char_p * 4)(executable.encode(), b'-c', CHILD.encode(), None)
             env = (ctypes.c_char_p * 3)(b'PATH=/usr/bin:/bin', ('TEST_FD='+str(wr)).encode(), None)
             ctypes.set_errno(0)
-            rc = lib.syscall(244, ctypes.byref(pid), ctypes.c_char_p(PYTHON.encode()), ctypes.byref(desc), argv, env)
+            rc = lib.syscall(244, ctypes.byref(pid), ctypes.c_char_p(executable.encode()), ctypes.byref(desc), argv, env)
             if rc != 0 or pid.value <= 0:
                 raise RuntimeError(('spawn failed', mode, rc, ctypes.get_errno()))
             os.close(wr)
@@ -166,7 +169,8 @@ def main():
             if attr.value:
                 lib.posix_spawnattr_destroy(ctypes.byref(attr))
     print(json.dumps({'schema': 'amu.darwin-attribute-enforcement-observation.v1', 'build': build,
-                      'attributeSha256': args.expected_sha256, 'preflightFreePercent': int(match.group(1)),
+                      'attributeSha256': args.expected_sha256, 'interpreter': args.interpreter,
+                      'preflightFreePercent': int(match.group(1)),
                       'cases': results, 'kernelKillReasonCollected': False, 'governorQualified': False}))
 
 
