@@ -101,3 +101,28 @@ This is a post-resume snapshot, not proof of the executable's exact startup
 phase or of its properties after the sample. The version-only path and absent
 sampled events do not establish that a serving process cannot later exec,
 evade its cap, spawn descendants, or use GPU memory outside the limit.
+
+## Kapitsa startup held before model configuration
+
+On all three Macs, a separate bounded diagnostic started the same pinned
+Kapitsa image with `serve --private --local` and a fresh private directory
+whose `config.json` was a FIFO. No model bytes were supplied. Automatic
+update was disabled by environment and the child used a task-owned HOME;
+the CLI's port preflight used a selected loopback port. The observer waited
+until the private FIFO had a reader, stopped the child, checked that its
+kernel-reported executable path matched the pinned Kapitsa path, and read
+memory properties independently. Both the initial stopped child and the
+FIFO-stage sample returned `[64,1,64,1]` on each host. No NOTE_EXEC event
+was reported in these samples. The observer then SIGKILLed and reaped its
+own direct child; task-owned directories were removed. It did not start
+inference or supply configuration/model data.
+
+Observer SHA-256:
+`5579a61b83eef7f77e150ef3592b1d1ee0c741857af73edd188f1ca7092a2195`;
+the imported version observer SHA-256:
+`a8f71ceccb1271a84cddc2aab5a352fc4e309be25184ec10d7e25a3b7e2879bb`.
+Reaching a private FIFO and matching the executable path gives a later
+startup sample than `--version`, but does not show model loading, a serving
+listener, later exec/fork behavior, GPU accounting, complete descendants,
+recovery, or an effective inference budget. No missing event proves that
+future exec cannot occur. The sample does not qualify a governor.
