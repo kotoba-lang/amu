@@ -50,3 +50,46 @@ termination, GPU/CPU/memory enforcement, durable reservation recovery, or
 governor qualification. It has not been tested on the target Mac minis or
 integrated with the actual host launcher or FIFO. The CPU limit does not bound
 memory or establish that descendants are contained.
+
+## Direct Bash and three target Macs
+
+The observer was extended with three `/bin/bash` cases: writing a private
+marker, writing a marker then forking a child, and writing a marker then
+executing `/bin/sleep`. On the same local Mac, direct Bash marker-only
+completed with a watcher exit frame; its fork and exec cases were refused.
+Each marker was absent before watcher readiness and present after resume. The
+`/bin/sh` cases above continued to refuse. Separately inspecting `/bin/sh` on
+the local Mac found strings referencing `/bin/bash`, `/bin/zsh` and an exec
+failure; this is consistent with a wrapper transition but does not identify
+the exact event that caused the watcher's refusal.
+
+On 2026-11-05 JST, the updated observer, kqueue diagnostic, existing helper
+and the same signed watcher were copied to task-owned temporary directories
+on naphtali, benjamin and judah over Tailscale SSH. Each connection used
+strict host-key checking against that peer's advertised SSH host keys; the
+remote scripts checked transferred SHA-256 values and the watcher checked its
+signature. All three hosts reported Darwin ARM64, macOS 26.7.2, build
+`25G332`. On each host:
+
+* The kqueue diagnostic observed EXIT for direct sleep, EXEC then EXIT for
+  `/bin/sh`, and EXEC, FORK, EXIT for the shell fork case.
+* The watcher accepted direct sleep and direct Bash marker-only exits, while
+  refusing the `/bin/sh` marker and fork cases and direct Bash fork and exec
+  cases. The markers were absent before readiness and present after resume.
+* The direct children were reaped and each remote temporary directory was
+  confirmed absent. No model or persistent service was started.
+
+The updated observer SHA-256 is
+`c8b74d4c81bcb99c6abea6e555e1b226e27fb1e137f04ff0540e645299bd02a8`;
+the archived task-specific orchestration script
+`awai152-suspended-spawn-three-macs-20261105.py` has SHA-256
+`6b2e22ff9dc4c19ddfaf20bccaa247c3e1afe6ef8d4b8f837914e3e35a40c65d`.
+It contains local artifact paths and host names and is evidence of this run,
+not an unattended deployment command.
+
+Directly selecting a known executable avoided the observed shell-wrapper
+transition in these tests; it is not a general executable identity or launch
+policy. The watcher observes and refuses transitions after they occur and
+cannot prevent the child or a descendant from already performing side effects.
+It does not establish tree containment, resource limits, durable recovery,
+an authenticated supervisor, model compatibility or governor qualification.
