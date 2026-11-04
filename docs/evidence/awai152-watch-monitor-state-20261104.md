@@ -52,6 +52,19 @@ Both an always-expired deadline mutation and a mutation restoring the older
 last-frame-only rollback comparison were detected. Source/image SHA-256:
 `290ec24b870491e44ade916eb9a1b922e7b9e3e24bf9ed3c0df83f92e85bb5cf` /
 `e38fd090cee2f3cea508d849a0c84d5937f6f7a58675b600974a605892b06b22`.
-The earlier real-frame replay above predates this interface change; it does
-not prove the revised state against a live watcher. The host supervisor and
-other qualification limitations above remain open.
+A follow-up on the same local Mac observed a pinned diagnostic watcher
+(SHA-256 `1fdff12c551e847948096c96bf4037d91aee540310ca9947f43c9dda20d3869b`)
+attached to a task-owned `/bin/sleep 4`. A test-only Python observer read its
+pipe and recorded monotonic timestamps: 17 events included readiness, three
+heartbeats, 12 polls and a final frame over 4,011 ms. The watcher and child
+exited successfully and were reaped. The recorded events and times were then
+replayed offline through the revised actual Kotoba state function, compiled
+into a signed local native source-unity diagnostic; it passed. Source/image
+SHA-256:
+`8dc071c9c8f58369006068066a5f3f75b61a7eba7e114cd414015d406f70d5a6` /
+`2d432a75e0554122b80f104f06d3c037768e42eb065a1555c4102459bcdc5c8b`.
+
+The observer and native decision were separate processes at separate times;
+this is not an integrated live native supervisor, a process-tree proof, or
+a test of buffered data freshness, host restart or a real workload. The host
+supervisor and other qualification limitations above remain open.
