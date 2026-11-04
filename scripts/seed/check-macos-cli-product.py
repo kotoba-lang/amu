@@ -103,6 +103,32 @@ def check(cli, out):
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
     run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
+    # JUN-838: `check ENTRY --source-path DIR...` derives the KSL2 module map
+    # from the declared roots; the pinned root still verifies it. A module on no
+    # declared root keeps the root's E6002, two roots holding one module refuse.
+    sp = out / 'source-path-project'
+    for d in ('src/lib', 'other/lib', 'dup/lib'):
+        (sp / d).mkdir(parents=True)
+    sp_app = sp / 'src/app.kotoba'
+    sp_app.write_text('(ns app (:require [lib.mid :as m]) (:export [main]))\n(defn main [] :i64 (m/two 40))\n')
+    (sp / 'src/lib/mid.kotoba').write_text('(ns lib.mid (:require [lib.leaf :as l]) (:export [two]))\n'
+                                           '(defn two [x :i64] :i64 (l/inc1 (l/inc1 x)))\n')
+    (sp / 'other/lib/leaf.kotoba').write_text('(ns lib.leaf (:export [inc1]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n')
+    (sp / 'dup/lib/leaf.kotoba').write_bytes((sp / 'other/lib/leaf.kotoba').read_bytes())
+    run('source-path-check', 'check', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other', stdout=b'ok\n')
+    run('source-path-missing-module', 'check', sp_app, '--source-path', sp / 'src',
+        expected=1, diagnostic=b'E6002 required module lib.leaf is missing from the explicit source paths')
+    run('source-path-unlisted-root', 'check', sp_app, '--source-path', sp / 'other',
+        expected=1, diagnostic=b'E6002 required module lib.mid is missing from the explicit source paths')
+    run('source-path-ambiguous-module', 'check', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other',
+        '--source-path', sp / 'dup', expected=1, diagnostic=b'EPATH module lib.leaf is found under more than one')
+    run('source-path-with-lock', 'check', sp_app, '--source-path', sp / 'src', '--source-lock', sp / 'x.ksl',
+        expected=2, diagnostic=b'usage')
+    run('source-path-dangling-flag', 'check', sp_app, '--source-path', sp / 'src', '--source-path',
+        expected=2, diagnostic=b'usage')
+    run('source-path-compile-refused', 'compile', sp_app, '--source-path', sp / 'src', '-o', 'sp-program',
+        expected=2, diagnostic=b'usage')
+    run('source-path-run-refused', 'run', sp_app, '--source-path', sp / 'src', expected=2, diagnostic=b'usage')
     project_program = out / 'locked-project-program'
     run('locked-project-compile', 'compile', app, '--source-lock', lock, '-o', project_program.name,
         stdout=('compiled ' + str(project_program) + '\n').encode())
@@ -199,7 +225,8 @@ def check(cli, out):
     bad = source('bad', '(defn main [] :i64 "bad")')
     run('check-type-error', 'check', bad.name, expected=1, diagnostic=b'E')
     for i, args in enumerate((('compile', hello.name, '--target', 'x86_64-linux'),
-                              ('check', hello.name, '--source-path', '.'),
+                              ('check', hello.name, '--source-path'),
+                              ('check', hello.name, '--source-path', '.', '--source-lock', 'x.ksl'),
                               ('compile', hello.name, '-o'), ('garbage', hello.name),
                               ('run', hello.name, '--receipt'), ('run', hello.name, '--receipt', 'r.json', 'extra'))):
         run('usage' + str(i), *args, expected=2, diagnostic=b'usage:')
