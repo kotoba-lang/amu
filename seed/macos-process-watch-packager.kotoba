@@ -75,8 +75,10 @@
           (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
 
 ;; Fixed request: "WP01", pid u32, start-sec u64, start-usec u64,
-;; token u32, timeout seconds u32. Response only on a matching event:
-;; "WO01", 4 zero bytes, and the exact 32-byte request (40 bytes total).
+;; token u32, timeout seconds u32. After registration and the second identity
+;; check emit "WR01", four zero bytes and the request (40 bytes). Only a
+;; matching exit later emits "WO01", four zero bytes and the same request.
+;; The host must consume the exact ready frame before resuming the workload.
 ;; Errors, timeouts, changed identity and malformed fields cannot be success.
 ;; A failed or short stdout write can leave a partial response. The host must
 ;; require an exact frame and successful exit and treat all else as unknown.
@@ -125,6 +127,13 @@
     (ds-lw 8 31 780) (ds-cmp 8 19) (ds-b 0x54000001 9)
     (ds-ldr 8 31 888) (ds-cmp 8 20) (ds-b 0x54000001 9)
     (ds-ldr 8 31 896) (ds-cmp 8 21) (ds-b 0x54000001 9)
+    ;; A ready frame binds registration to the exact request. Partial output,
+    ;; failure, loss of the watcher, and host crash remain unknown.
+    (ds-str 31 31 1200) (ds-imm 8 825250391) (ds-sw 8 31 1200)
+    (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)
+    (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)
+    (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 40) (ds-b 0x54000001 9)
     ;; Wait once for one event, bounded by the caller's approved timeout.
     (ds-str 24 31 1104) (ds-str 31 31 1112)
     (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
@@ -139,7 +148,7 @@
     (ds-lw 8 31 1036) (ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
     (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
     (ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)
-    ;; Emit a fixed response; a lost or partial write is still unknown to host.
+    ;; Emit the final frame; a lost or partial write is still unknown to host.
     (ds-str 31 31 1200) (ds-imm 8 825249623) (ds-sw 8 31 1200)
     (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)
     (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)

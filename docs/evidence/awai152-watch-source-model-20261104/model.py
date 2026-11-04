@@ -1,7 +1,7 @@
 # Source-operation model only: no code generation, machine execution or kernel calls.
 import re,struct,sys,hashlib
 from pathlib import Path
-src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='9c4a38875b9addce805448a4d421bf87d989ab25c1c3567c2f8f9289ff983ec6','source pin mismatch';body=src[src.index('(defn- watcher-words'):src.index('(defn- body-at')]
+src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='a387d7ec0d4b991ffdc2b29b83bdd3d948af3b9a4a5cd5badbbee5c261c9cf2c','source pin mismatch';body=src[src.index('(defn- watcher-words'):src.index('(defn- body-at')]
 def parse(text):
  text=re.sub(r';;[^\n]*','',text)
  ops=[(n,[int(x,0) for x in a.split()]) for n,a in re.findall(r'\((ds-[a-z]+)\s+([^()]*)\)',text)]
@@ -9,18 +9,19 @@ def parse(text):
  assert len(labels)==1 and 9 in labels
  return ops,labels
 req=struct.pack('<4sIQQII',b'WP01',1234,1700000000,42,5678,10)
-expected=b'WO01'+b'\0'*4+req
+ready=b'WR01'+b'\0'*4+req
+expected=ready+b'WO01'+b'\0'*4+req
 class Term(Exception):
  def __init__(self,rc):self.rc=rc
 
 def run(text,fail='',request=req):
- ops,labels=parse(text);mem=bytearray(2048);x=[0]*32;sp=2048;pc=0;carry=False;z=False;c=False;output=b'';nproc=0
+ ops,labels=parse(text);mem=bytearray(2048);x=[0]*32;sp=2048;pc=0;carry=False;z=False;c=False;output=b'';nproc=0;nwrite=0
  def reg(n,base=False):return sp if n==31 and base else 0 if n==31 else x[n]
  def store(offset,size,value):
   assert 0<=offset<=len(mem)-size,(offset,size)
   mem[offset:offset+size]=int(value).to_bytes(size,'little',signed=False)
  def call(num):
-  nonlocal carry,output,nproc
+  nonlocal carry,output,nproc,nwrite
   carry=False
   if num==3:
    assert x[0]==3 and x[1]==0 and x[2]==32
@@ -55,8 +56,10 @@ def run(text,fail='',request=req):
    mem[1024:1072]=struct.pack('<QhHIqQQQ',pid,flt,flags,note,0,tok,0,0);x[0]=1;return
   if num==4:
    assert x[0]==1 and x[1]==1200 and x[2]==40
-   if fail=='write-error':carry=True;x[0]=5;return
-   count=10 if fail=='write-short' else 40;output=bytes(mem[1200:1200+count]);x[0]=count;return
+   nwrite+=1;assert nwrite<=2
+   phase='ready-write' if nwrite==1 else 'write'
+   if fail==phase+'-error':carry=True;x[0]=5;return
+   count=10 if fail==phase+'-short' else 40;output+=bytes(mem[1200:1200+count]);x[0]=count;return
   if num==1:raise Term(x[0])
   raise AssertionError(('unexpected syscall',num))
  try:
@@ -90,7 +93,7 @@ def run(text,fail='',request=req):
  except Term as t:return t.rc,output
 
 assert run(body)==(0,expected)
-failures=['read-error','read-short','before-error','before-short','before-pid','before-sec','before-usec','kqueue-error','registration-error','registration-count','after-error','after-short','after-pid','after-sec','after-usec','wait-error','wait-timeout','wait-count','event-pid','event-filter','event-error','event-no-eof','event-no-exit','event-exec','event-fork','event-token','write-error','write-short']
+failures=['read-error','read-short','before-error','before-short','before-pid','before-sec','before-usec','kqueue-error','registration-error','registration-count','after-error','after-short','after-pid','after-sec','after-usec','ready-write-error','ready-write-short','wait-error','wait-timeout','wait-count','event-pid','event-filter','event-error','event-no-eof','event-no-exit','event-exec','event-fork','event-token','write-error','write-short']
 for name in failures:
  rc,out=run(body,name);assert rc==1 and out!=expected,(name,rc,out)
 invalid=[struct.pack('<4sIQQII',m,p,s,u,t,w) for m,p,s,u,t,w in [(b'bad!',1234,1700000000,42,5678,10),(b'WP01',0,1700000000,42,5678,10),(b'WP01',2147483648,1700000000,42,5678,10),(b'WP01',1234,0,42,5678,10),(b'WP01',1234,1700000000,1000000,5678,10),(b'WP01',1234,1700000000,42,0,10),(b'WP01',1234,1700000000,42,2147483648,10),(b'WP01',1234,1700000000,42,5678,0),(b'WP01',1234,1700000000,42,5678,901)]]

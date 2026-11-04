@@ -2,7 +2,7 @@
 # It does not invoke the Kotoba compiler or execute the instructions.
 import lldb,re,struct,sys,hashlib
 from pathlib import Path
-src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='9c4a38875b9addce805448a4d421bf87d989ab25c1c3567c2f8f9289ff983ec6'
+src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='a387d7ec0d4b991ffdc2b29b83bdd3d948af3b9a4a5cd5badbbee5c261c9cf2c'
 b=src[src.index('(defn- watcher-words'):src.index('(defn- body-at')];b=re.sub(r';;[^\n]*','',b)
 ops=[(n,[int(x,0) for x in a.split()]) for n,a in re.findall(r'\((ds-[a-z]+)\s+([^()]*)\)',b)]
 words=[];checks=[];labels={};fix=[]

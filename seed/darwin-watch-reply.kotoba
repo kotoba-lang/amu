@@ -3,7 +3,7 @@
 ;; identity, obtain EOF, and bind these bytes and exit status to that launch.
 ;; A matched frame is not a successful workload receipt, a process-tree proof,
 ;; or permission to release a resource reservation.
-(ns amu.darwin-watch-reply (:export [darwin-watch-reply-class]))
+(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-reply-class]))
 
 (defn- dwr-u32 [v :vector-i64 at :i64] :i64
   (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
@@ -27,15 +27,27 @@
          (> (dwr-u32 r 24) 0) (<= (dwr-u32 r 24) 2147483647)
          (> (dwr-u32 r 28) 0) (<= (dwr-u32 r 28) 900))))
 
+;; Accept readiness only from exactly one complete frame from a live, pinned
+;; watcher which the trusted host owns. This pure check authenticates nothing.
+(defn darwin-watch-ready? [request :vector-i64 ready :vector-i64] :bool
+  (and (dwr-request? request) (= (vector-count ready) 40) (dwr-bytes? ready)
+       (= (vector-at ready 0) 87) (= (vector-at ready 1) 82)
+       (= (vector-at ready 2) 48) (= (vector-at ready 3) 49)
+       (= (dwr-u32 ready 4) 0)
+       (loop [i 0] (if (= i 32) true
+         (and (= (vector-at request i) (vector-at ready (+ i 8))) (recur (+ i 1)))))))
+
 ;; eof must mean the complete output was observed, not a read timeout or
-;; truncated buffer. The response consists of WO01, four zero bytes and the
-;; complete request. Nonzero/unknown status and every mismatch stay unknown.
+;; truncated buffer. The total response is WR01/request then WO01/request.
+;; Nonzero/unknown status and every mismatch stay unknown.
 (defn darwin-watch-reply-class [request :vector-i64 reply :vector-i64 exit-code :i64 eof :bool] :string
-  (if (and (= exit-code 0) eof (dwr-request? request) (= (vector-count reply) 40)
-           (dwr-bytes? reply) (= (vector-at reply 0) 87) (= (vector-at reply 1) 79)
-           (= (vector-at reply 2) 48) (= (vector-at reply 3) 49)
-           (= (dwr-u32 reply 4) 0)
+  (if (and (= exit-code 0) eof (dwr-request? request) (= (vector-count reply) 80)
+           (dwr-bytes? reply) (= (vector-at reply 0) 87) (= (vector-at reply 1) 82)
+           (= (vector-at reply 2) 48) (= (vector-at reply 3) 49) (= (dwr-u32 reply 4) 0)
+           (= (vector-at reply 40) 87) (= (vector-at reply 41) 79)
+           (= (vector-at reply 42) 48) (= (vector-at reply 43) 49) (= (dwr-u32 reply 44) 0)
            (loop [i 0]
              (if (= i 32) true
-               (and (= (vector-at request i) (vector-at reply (+ i 8))) (recur (+ i 1))))))
+               (and (= (vector-at request i) (vector-at reply (+ i 8)))
+                    (= (vector-at request i) (vector-at reply (+ i 48))) (recur (+ i 1))))))
     "observer/bound-exit-observed" "observer/unknown"))

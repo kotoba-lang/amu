@@ -9,7 +9,7 @@ assemble, build or execute the proposed helper. Run from the repository root:
 python3 docs/evidence/awai152-watch-source-model-20261104/model.py seed/macos-process-watch-packager.kotoba
 ```
 
-The model accepts one successful request/response, refuses 28 syscall and
+The model accepts one ready-plus-exit response, refuses 30 syscall and
 observation failure cases and nine invalid requests, and confirms that deleting
 the token-mismatch branch causes its wrong-token control to be accepted. It
 also models coalesced fork/exit and exec/exit as refusals and checks that a
@@ -23,7 +23,7 @@ not an operational tool or a qualified governor.
 
 The adjacent `lldb-encoding-model.py` separately models the source builder's
 instruction encoding and asks the installed LLDB to disassemble the modeled
-words directly from memory, without writing an executable. It checks 219
+words directly from memory, without writing an executable. It checks 242
 mnemonics, operands and branch targets and rejects deliberate register and
 branch mutations. For macOS with the Command Line Tools installed:
 
