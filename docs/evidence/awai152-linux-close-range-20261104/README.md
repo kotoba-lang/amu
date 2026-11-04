@@ -75,9 +75,9 @@ seccomp fault profiles, source-locked selfhost output or a qualified governor.
 ## Low status-descriptor boundaries
 
 The owned-child observer was extended to move the status pipe to FD 3 and FD 4
-before the legacy close sequence. Both cases passed on Xavier: the exec target
-saw only its intended standard descriptors, the cwd and NoNewPrivs assertions
-held, and the close-on-exec status pipe closed. The prior six failure controls
+before the legacy close sequence. Both cases passed on Xavier: the test FDs 50
+and 200 were closed, the cwd and NoNewPrivs assertions held, and the
+close-on-exec status pipe closed. The prior six failure controls
 also passed. Observer SHA-256:
 `4be748aafeb73baefc8f04409215c421a18dfc3cae2ae8383cd8b01f5dba4446`.
 This exercises direct system calls through the diagnostic observer, not the
