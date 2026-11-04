@@ -58,3 +58,11 @@ This does not cover failure injection for these operations, durable power loss,
 concurrent adversarial replacement, process lifetime, a real GitHub archive,
 the Metal profile or the full merge/rebuild. All files were task-owned test
 fixtures; no production runtime or service was changed.
+
+The review artifact `packager-against-main.patch` records the tested source
+candidate against the packager at main commit `15aef330f3374b941c4d610979b905ff91af0cd0`.
+Its SHA-256 is `be1ceabe0f50b3c462e5628c3e408b646d93e670a3d705bdd7556f41c9ea1c7a`.
+Applying it to a separate copy of that exact base reproduced candidate SHA-256
+`d39954bb3ac3ae5b9c51fba3d756d5afdf9b82877c2ef604172f163ffbe898c5`.
+The patch is an evidence/review artifact and does not update the actual
+packager, resolve other conflicts, or establish suitability for current main.
