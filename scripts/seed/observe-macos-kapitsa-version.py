@@ -2,7 +2,8 @@
 """Observe one pinned Kapitsa --version child under the diagnostic attribute.
 
 No model, listener, persistent service, reservation or governor is started.
-Post-resume sampling is race-prone and an unknown result stays unknown.
+Stdout is briefly backpressured with a full pipe to permit post-resume
+sampling. Sampling remains race-prone and unknown stays unknown.
 """
 import argparse
 import ctypes
@@ -61,6 +62,27 @@ def main():
     env = (ctypes.c_char_p * 2)(b'PATH=/usr/bin:/bin', None)
     pid = ctypes.c_int(-1)
     rd, wr = os.pipe()
+    # Fill the pipe before spawn so the short --version output cannot
+    # immediately complete. The parent drains only its own filler before
+    # resuming the sampled child. No filesystem or external endpoint is used.
+    os.set_blocking(wr, False)
+    filler = b'X' * 4096
+    filled = 0
+    while True:
+        try:
+            filled += os.write(wr, filler if filled < 1048576 else b'X')
+            if filled > 1048576:
+                raise RuntimeError('unexpectedly large pipe')
+        except BlockingIOError:
+            break
+    while True:
+        try:
+            filled += os.write(wr, b'X')
+        except BlockingIOError:
+            break
+    if filled == 0:
+        raise RuntimeError('pipe not filled')
+    os.set_blocking(wr, True)
     saved = os.dup(1)
     try:
         os.dup2(wr, 1)
@@ -96,7 +118,7 @@ def main():
                       flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
                       fflags=select.KQ_NOTE_EXEC | select.KQ_NOTE_EXIT)], 0, 0)
         os.kill(pid.value, signal.SIGCONT)
-        time.sleep(0.005)
+        time.sleep(0.1)
         sample = None
         try:
             os.kill(pid.value, signal.SIGSTOP)
@@ -108,6 +130,14 @@ def main():
             if got:
                 if os.WIFSTOPPED(status):
                     sample = properties(pid.value)
+                    os.set_blocking(rd, False)
+                    remaining = filled
+                    while remaining:
+                        chunk = os.read(rd, min(4096, remaining))
+                        if not chunk or chunk != b'X' * len(chunk):
+                            raise RuntimeError('pipe filler mismatch')
+                        remaining -= len(chunk)
+                    filled = 0
                     os.kill(pid.value, signal.SIGCONT)
                 else:
                     reaped = True
@@ -117,6 +147,11 @@ def main():
             time.sleep(0.01)
         events = queue.control(None, 4, 0)
         os.set_blocking(rd, False)
+        while filled:
+            chunk = os.read(rd, min(4096, filled))
+            if not chunk or chunk != b'X' * len(chunk):
+                raise RuntimeError('pipe filler mismatch after exit')
+            filled -= len(chunk)
         try:
             output = os.read(rd, 4096)
         except BlockingIOError:
