@@ -16,6 +16,22 @@ generated instruction stream or its behavior: no image has been generated,
 signed or executed, and there is no independent instruction derivation yet.
 The previous three-Mac Python FD diagnostic is not a test of this source.
 
+On 2026-11-04 a separate Python/ctypes diagnostic called the existing macOS
+`fstatat64` library entry on all three Macs, using flags `0x2820` and a
+task-owned mode-0700 temporary directory. For an ordinary child, the returned
+directory mode and device/inode at the expected stat64 offsets matched the
+held child FD. Replacing the parent entry with another directory produced a
+different identity. For a final symlink, the call returned success and the
+metadata identified a symlink, not a directory; it did not return an error.
+The candidate's explicit directory-type check is therefore necessary for
+this case. The test checked the type condition in Python, not in the candidate
+machine code. It closed FDs and removed only task-owned temporary objects.
+The initial diagnostic expected the syscall itself to fail for the symlink;
+that assertion failed on all three hosts and was corrected before rerunning.
+The checked-in `awai149-flint-fstatat-probe.py` was then run on each host and
+reported `PROBE_END` with all three conditions true; its SHA-256 is
+`dd9398f50918b7c7d8d5673204bf7f18f3d428de6f0f30c426934e98e5834aa4`.
+
 This is stacked on the closed draft #1810 and does not fix its dependencies.
 It cannot prevent a later rename, bind snapshots or file reads to held FDs,
 establish host ownership, block aliases or concurrent writes, or qualify a
