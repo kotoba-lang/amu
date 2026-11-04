@@ -24,3 +24,12 @@ This is a one-run ABI and framing observation, not evidence of complete
 descendant termination, daemon containment, lock lifetime, memory/CPU
 enforcement, crash recovery, durable reservation, or a qualified governor.
 It does not authorize inference dispatch or FIFO release.
+
+On the same date a second run on all three hosts repeated the cases above
+and used a separate owned child killed with SIGKILL after watcher startup.
+Each watcher returned its exact exit-event frame while an independent
+`wait` returned SIGKILL. The frame itself carries no successful workload
+result and must never be used as one. The observer in this run had SHA-256
+`8844e3bb812a42d411b048b4b006041dff98cf2cc40b7bed61949359a4c9388d`;
+the signed watcher and staging helper pins were unchanged. The fixed-delay
+test does not establish all possible registration races or crash recovery.
