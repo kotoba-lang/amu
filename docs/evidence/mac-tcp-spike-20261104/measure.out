@@ -1,0 +1,35 @@
+CONST POLLIN=1 POLLOUT=4 POLLERR=8 POLLHUP=16 POLLNVAL=32
+CONST F_GETFD=1 F_SETFD=2 FD_CLOEXEC=1 F_GETFL=3 F_SETFL=4 O_NONBLOCK=4 SO_ERROR=4103 SO_LINGER=128 SO_NOSIGPIPE=0x1022
+ERRNO EAGAIN=35 EINPROGRESS=36 ECONNREFUSED=61 ECONNRESET=54 ENETUNREACH=51 EHOSTUNREACH=65 ETIMEDOUT=60 EPIPE=32 EADDRINUSE=48
+
+-- FD_CLOEXEC
+F_GETFD before=0 F_SETFD->0 F_GETFD after=1
+
+-- getsockname with port 0
+getsockname: len=16 sin_len=16 family=2 port=51963 (asked 0)
+
+-- dial: refused / success (loopback)
+getsockname: len=16 sin_len=16 family=2 port=51964 (asked 0)
+connect(nonblock=1) -> -1 errno=36 (Operation now in progress)
+poll->1 revents=0x11 SO_ERROR=61 (Connection refused)
+connect(nonblock=1) -> -1 errno=36 (Operation now in progress)
+to listener: poll->1 revents=0x4 SO_ERROR=0
+accepted fd flags O_NONBLOCK=not inherited FD_CLOEXEC=not inherited
+
+-- POLLOUT and partial writes (peer not reading)
+wrote 310828 bytes in 19 writes, 1 partial, stopped with errno=35 (EAGAIN=35)
+poll POLLOUT while full -> 1 revents=0x4
+drained 114636; poll POLLOUT after -> 1 revents=0x4
+
+-- orderly close: read returns 0
+poll->1 revents=0x1 read->52 errno=0
+
+-- reset: SO_LINGER {1,0} then close sends RST
+connect(nonblock=0) -> 0 errno=0 (ok)
+poll->1 revents=0x11 read->-1 errno=54 (ECONNRESET=54)
+
+-- write to a reset peer: SIGPIPE?
+connect(nonblock=0) -> 0 errno=0 (ok)
+  child (SO_NOSIGPIPE=0) killed by signal 13 (SIGPIPE=13)
+connect(nonblock=0) -> 0 errno=0 (ok)
+  child (SO_NOSIGPIPE=1): w1=1 w2=-1 errno=32 (EPIPE=32)

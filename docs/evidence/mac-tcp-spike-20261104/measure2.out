@@ -1,0 +1,6 @@
+listener O_NONBLOCK=0 -> accepted socket O_NONBLOCK=NOT inherited
+listener O_NONBLOCK=1 -> accepted socket O_NONBLOCK=inherited
+-- orderly close, nothing in flight
+poll->1 revents=0x11 read->0 errno=0
+second read->0
+-- write timeout shape: peer idle, how long until POLLOUT is absent for a full buffer

@@ -43,9 +43,20 @@ non-blocking and close-on-exec, `SO_REUSEADDR` before `bind`.
   `sockaddr_in` is 16 bytes with a leading `sin_len` byte, `AF_INET = 2`, `SOCK_STREAM = 1`,
   `SOL_SOCKET = 0xffff`, `SO_REUSEADDR = 4`, `F_SETFL = 4`, `O_NONBLOCK = 4`, `POLLIN = 1`, `poll` takes
   `struct pollfd` { int32, int16, int16 }, and the carry-flag/errno convention holds.
-  **Accepted sockets inherit `O_NONBLOCK` on Darwin** (a `read` straight after `accept` returned `EAGAIN`, 35),
-  so the runtime polls before every read. Not yet measured: `F_SETFD`/`FD_CLOEXEC`, `POLLOUT` and partial
-  writes, `connect` outcomes for dial, reset versus orderly close.
+  A second round (`measure.c`, `measure2.c`) measured the rest. What changes the design:
+  * the accepted socket's blocking mode **follows the listener's**; the runtime keeps its listener
+    non-blocking (so `accept` can time out through `poll`) and so must `poll` before every `read`;
+  * **`SO_NOSIGPIPE` (0x1022) must be set on every socket**, listening and accepted and dialled: a write to a
+    closed peer otherwise kills the process with SIGPIPE, and these images install no signal handler;
+  * a closed peer and a reset peer look the same to `poll` (revents 0x11); `read` returning 0 versus -1
+    ECONNRESET (54) is what distinguishes `closed` from `reset`;
+  * a non-blocking `connect` returns EINPROGRESS (36) even on loopback; a refusal arrives as revents 0x11 and
+    `SO_ERROR` 61, a success as revents 0x4 and `SO_ERROR` 0;
+  * `POLLOUT` does not promise a whole write, so write, poll, and end with the partial count after 1000 ms of
+    no progress, as the Linux runtime specifies;
+  * `F_SETFD` = 2, `FD_CLOEXEC` = 1 work as expected; `getsockname` with port 0 returns the kernel's port.
+  Not measured (needs an off-host destination): the errno that `connect` produces for `unreachable` and
+  `timeout`; the numbers are ENETUNREACH 51, EHOSTUNREACH 65, ETIMEDOUT 60.
 
 D3. **Grants are exact, content-identified (decision 1 below) and never baked into an artifact.** As on Linux, listen (43) and dial (45) are separate
 exact `<ipv4>:<port>` lists; a listener request outside its list is `net/address-not-granted`. The grant is
