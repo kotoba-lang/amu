@@ -60,3 +60,16 @@ Any future host must verify limits after its final exec and cannot interpret
 an unavailable or changed readback as permission to dispatch. Whole-tree
 containment, durable reservations, recovery and resource governance remain
 unqualified.
+
+On naphtali a further metadata-only test registered kqueue NOTE_EXEC before
+resuming each stopped process, then sampled events when the interpreter had
+started and stopped itself before allocating. For the `bin/python3.9` path,
+both the unlimited and 64 MiB cases reported an exec event; the limited
+case's readback changed from `[64,1,64,1]` to `[-1,0,-1,0]`. For the direct
+`Python.app` path neither case reported an exec event in this observation,
+and the limited case retained `[64,1,64,1]`. All four children exited 0 and
+were reaped; no memory workload ran. Observer SHA-256:
+`694bbfb7d23efbd35dc768f67e99dca8b25d41e2174ff72bc4fd4263ed6dc2b7`.
+This associates an additional observed exec with the changed limit in one
+sample; it does not identify the exact kernel mechanism or prove that a
+missing event establishes no exec, nor does it characterize Kapitsa.
