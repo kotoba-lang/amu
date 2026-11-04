@@ -102,8 +102,10 @@
     (ds-cmpi 0 32) (ds-b 0x54000001 9)
     (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 26 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
     (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000000 10)
-    (ds-imm 9 858804311) (ds-cmp 8 9) (ds-b 0x54000001 9)
-    (ds-imm 25 2) (ds-b 0x14000000 1)
+    (ds-imm 9 858804311) (ds-cmp 8 9) (ds-b 0x54000000 16)
+    (ds-imm 9 875581527) (ds-cmp 8 9) (ds-b 0x54000001 9)
+    (ds-imm 25 3) (ds-b 0x14000000 1)
+    (ds-label 16) (ds-imm 25 2) (ds-b 0x14000000 1)
     (ds-label 10) (ds-imm 25 1)
     (ds-label 1)
     (ds-lw 19 31 4) (ds-cmpi 19 0) (ds-b 0x54000000 9)
@@ -127,7 +129,7 @@
     (ds-str 19 31 512) (ds-imm 8 1179643) (ds-sw 8 31 520)
     ;; Exit, fork and exec are all one-shot observations. Fork or exec must
     ;; stop this watcher as unknown, even if coalesced with an exit event.
-    (ds-cmpi 25 2) (ds-b 0x54000001 11)
+    (ds-cmpi 25 2) (ds-b 0x54000003 11)
     (ds-imm 8 3825205248) (ds-b 0x14000000 12)
     (ds-label 11) (ds-imm 8 3758096384) (ds-label 12)
     (ds-sw 8 31 524) (ds-str 22 31 536)
@@ -154,7 +156,7 @@
     (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
     (ds-imm 4 1) (ds-imm 5 0) (ds-add 6 31 1104) (ds-sys 369) (ds-b 0x54000002 9)
     (ds-cmpi 0 0) (ds-b 0x54000001 3)
-    (ds-cmpi 25 1) (ds-b 0x54000001 9)
+    (ds-imm 10 1) (ds-and 9 25 10) (ds-cmpi 9 1) (ds-b 0x54000001 9)
     ;; WP02: bounded, request-bound heartbeat; sequence wrap is unknown.
     (ds-add 26 26 1) (ds-imm 8 4294967295) (ds-cmp 26 8) (ds-b 0x54000008 9)
     (ds-str 31 31 1200) (ds-imm 8 825247831) (ds-sw 8 31 1200) (ds-sw 26 31 1204)
@@ -170,16 +172,16 @@
     (ds-imm 10 32768) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
     (ds-lw 8 31 1036) (ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
     (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
-    ;; WP03 requests exit status; missing status or a nonterminal/malformed
+    ;; WP03/WP04 request exit status; missing status or a nonterminal/malformed
     ;; wait value must not be turned into a successful exit observation.
-    (ds-cmpi 25 2) (ds-b 0x54000001 13)
+    (ds-cmpi 25 2) (ds-b 0x54000003 13)
     (ds-imm 10 67108864) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
     (ds-ldr 8 31 1040) (ds-imm 10 65535) (ds-cmp 8 10) (ds-b 0x54000008 9)
     (ds-imm 10 127) (ds-and 9 8 10) (ds-cmpi 9 127) (ds-b 0x54000000 9)
     (ds-str 8 31 1152) (ds-label 13)
     (ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)
     ;; Emit the final frame; a lost or partial write is still unknown to host.
-    (ds-str 31 31 1200) (ds-cmpi 25 2) (ds-b 0x54000001 14)
+    (ds-str 31 31 1200) (ds-cmpi 25 2) (ds-b 0x54000003 14)
     (ds-imm 8 825250647) (ds-sw 8 31 1200) (ds-lw 8 31 1152) (ds-sw 8 31 1204) (ds-b 0x14000000 15)
     (ds-label 14) (ds-imm 8 825249623) (ds-sw 8 31 1200) (ds-label 15)
     (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)

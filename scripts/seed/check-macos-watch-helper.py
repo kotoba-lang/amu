@@ -146,7 +146,7 @@ def transition_case(image, directory, mode, protocol=b'WP01'):
             ready += chunk
         if ready != b'WR01\0\0\0\0' + request:
             raise RuntimeError((mode, 'invalid ready frame', ready))
-        if protocol == b'WP02':
+        if protocol in (b'WP02', b'WP04'):
             time.sleep(2.2)
         if watcher.poll() is not None:
             raise RuntimeError((mode, 'watcher exited before trigger'))
@@ -154,9 +154,9 @@ def transition_case(image, directory, mode, protocol=b'WP01'):
         child.stdin.write(b'x')
         child.stdin.flush()
         out, err = watcher.communicate(timeout=7)
-        if protocol == b'WP02':
+        if protocol in (b'WP02', b'WP04'):
             heartbeat_frames(out, request)
-        if watcher.returncode != 1 or (protocol == b'WP01' and out) or err:
+        if watcher.returncode != 1 or (protocol in (b'WP01', b'WP03') and out) or err:
             raise RuntimeError((mode, 'transition was not cleanly refused', watcher.returncode, out, err))
         if child.wait(timeout=5) != 0:
             raise RuntimeError((mode, 'child failed'))
@@ -170,13 +170,13 @@ def transition_case(image, directory, mode, protocol=b'WP01'):
             child.wait(timeout=3)
 
 
-def persistent_case(image, directory):
+def persistent_case(image, directory, protocol=b'WP02'):
     import select
     child = subprocess.Popen(['/bin/sleep', '5'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     watcher = None
     try:
         sec, usec = identity(child.pid)
-        request = struct.pack('<4sIQQII', b'WP02', child.pid, sec, usec, 12345, 1)
+        request = struct.pack('<4sIQQII', protocol, child.pid, sec, usec, 12345, 1)
         watcher = launch_watcher(image, directory, request)
         ready = b''
         deadline = time.monotonic() + 5
@@ -204,7 +204,7 @@ def persistent_case(image, directory):
         if watcher.poll() is not None or child.poll() is not None:
             raise RuntimeError('persistent watcher did not survive multiple intervals')
         out, err = watcher.communicate(timeout=5)
-        final = b'WO01\0\0\0\0' + request
+        final = (b'WS01' if protocol == b'WP04' else b'WO01') + b'\0\0\0\0' + request
         if watcher.returncode != 0 or not out.endswith(final) or err:
             raise RuntimeError(('persistent event mismatch', watcher.returncode, out, err))
         heartbeat_frames(out[:-40], request, minimum=0, start=3)
@@ -218,7 +218,7 @@ def persistent_case(image, directory):
             child.kill(); child.wait(timeout=3)
 
 
-def status_case(image, directory, mode):
+def status_case(image, directory, mode, protocol=b'WP03'):
     """Observe an owned child's raw exit status, not a reservation release."""
     import select
     code = "import os,sys; print('READY',flush=True); os.read(0,1); sys.exit(" + ('7' if mode == 'seven' else '0') + ")"
@@ -229,7 +229,7 @@ def status_case(image, directory, mode):
         if not select.select([child.stdout], [], [], 4)[0] or child.stdout.readline() != b'READY\n':
             raise RuntimeError((mode, 'child not ready'))
         sec, usec = identity(child.pid)
-        request = struct.pack('<4sIQQII', b'WP03', child.pid, sec, usec, 12345, 4)
+        request = struct.pack('<4sIQQII', protocol, child.pid, sec, usec, 12345, 4)
         watcher = launch_watcher(image, directory, request)
         ready = b''
         deadline = time.monotonic() + 4
@@ -290,7 +290,7 @@ def run(compiler, packager, output, artifact_dir=None):
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 8)
         wrong = struct.pack('<4sIQQII', b'WP01', child.pid, sec + 1, usec, 12345, 8)
-        for malformed in (struct.pack('<4sIQQII', b'WP04', child.pid, sec, usec, 12345, 1),
+        for malformed in (struct.pack('<4sIQQII', b'WP05', child.pid, sec, usec, 12345, 1),
                           struct.pack('<4sIQQII', b'WP02', child.pid, sec, usec, 12345, 0)):
             refused = observe(image, output, malformed)
             if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
@@ -325,9 +325,13 @@ def run(compiler, packager, output, artifact_dir=None):
         transition_case(image, output, 'fork', b'WP02')
         for mode in ('zero', 'seven', 'signal'):
             status_case(image, output, mode)
+            status_case(image, output, mode, b'WP04')
         transition_case(image, output, 'exec', b'WP03')
         transition_case(image, output, 'fork', b'WP03')
-        anchor = '(ds-cmpi 25 1) (ds-b 0x54000001 9)'
+        transition_case(image, output, 'exec', b'WP04')
+        transition_case(image, output, 'fork', b'WP04')
+        persistent_case(image, output, b'WP04')
+        anchor = '(ds-imm 10 1) (ds-and 9 25 10) (ds-cmpi 9 1) (ds-b 0x54000001 9)'
         text = source.read_text()
         if text.count(anchor) != 1:
             raise RuntimeError('persistent negative-control anchor changed')
@@ -348,6 +352,13 @@ def run(compiler, packager, output, artifact_dir=None):
                 raise
         else:
             raise RuntimeError('persistent negative control unexpectedly passed')
+        try:
+            persistent_case(mutant, output, b'WP04')
+        except RuntimeError as error:
+            if str(error) != 'persistent watcher did not survive multiple intervals':
+                raise
+        else:
+            raise RuntimeError('WP04 persistent negative control unexpectedly passed')
         print('WATCH_PERSISTENT_MUTANT_REFUSED', flush=True)
         heartbeat_anchor = '(ds-imm 8 825247831)'
         if text.count(heartbeat_anchor) != 1:
@@ -390,6 +401,13 @@ def run(compiler, packager, output, artifact_dir=None):
                 raise
         else:
             raise RuntimeError('missing-status negative control unexpectedly passed')
+        try:
+            status_case(status_mutant, output, 'zero', b'WP04')
+        except RuntimeError as error:
+            if error.args != (('zero', 'status mismatch', 0, 1, b'', b''),):
+                raise
+        else:
+            raise RuntimeError('WP04 missing-status negative control unexpectedly passed')
         print('WATCH_MISSING_STATUS_MUTANT_REFUSED', flush=True)
         if artifact_dir is not None:
             artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
