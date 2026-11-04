@@ -26,6 +26,25 @@ their encoding, emitted branch fixups, Darwin ABI, native artifact or races.
 Its SHA-256 is
 `2b72e94ac9772556805698f6a4f2eedc86b9b3f492d1586dafd737e5f9aed9e8`.
 
+Read-only LLDB disassembly of the prior signed ADI2 helper (SHA-256
+`8f8e63db8e32c532f650bb9504ae4dad29c1e7bff79baf6824339dd1b51746aa`)
+confirmed that the same raw literal words used in the new source decode as the
+directory-mode mask, register moves and hex-output operations assumed by the
+source model. A separate signed fstatat control (SHA-256
+`9dc4fa60e85dcc4d362674187c7bd1d7d3ea74def3d0511dd6f0fa0e4f759190`)
+disassembles to syscall 470 with flags `0x2820`. The checked-in read-only
+`awai149-disassemble-existing.py` reproduces these comparisons for those exact
+artifact hashes; its SHA-256 is
+`a41144964a60d4bb2f661b9886072236803b8aa6f0133271bfa25ec0fbfa46ed`.
+
+The old fstatat control loads `0x200001d6` into x16; the current candidate's
+generic `ds-sys` builder intends `0x020001d6`. In Apple's current public XNU
+[ARM syscall dispatch source](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/dev/arm/systemcalls.c),
+the BSD syscall number is returned as an unsigned short; both values have
+the same low 16 bits. This is a source-based inference, not confirmation that
+the new helper works on the installed OS builds or under every policy. No new
+helper image or branch fixup was generated or disassembled.
+
 On 2026-11-04 a separate Python/ctypes diagnostic called the existing macOS
 `fstatat64` library entry on all three Macs, using flags `0x2820` and a
 task-owned mode-0700 temporary directory. For an ordinary child, the returned
