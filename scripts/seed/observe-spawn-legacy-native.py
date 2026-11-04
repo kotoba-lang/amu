@@ -24,7 +24,16 @@ def run(args,env,fd,extras=(),inject=False):
   if inject:
    class Filter(ctypes.Structure):_fields_=[('code',ctypes.c_ushort),('jt',ctypes.c_ubyte),('jf',ctypes.c_ubyte),('k',ctypes.c_uint)]
    class Prog(ctypes.Structure):_fields_=[('len',ctypes.c_ushort),('filter',ctypes.POINTER(Filter))]
-   ins=(Filter*6)(Filter(0x20,0,0,0),Filter(0x15,0,3,436),Filter(0x20,0,0,32),Filter(0x15,0,1,0),Filter(0x06,0,0,0x00050001),Filter(0x06,0,0,0x7fff0000))
+   allow=Filter(0x06,0,0,0x7fff0000); deny=Filter(0x06,0,0,0x00050001)
+   if inject=='fchdir':
+    seq=[Filter(0x20,0,0,0),Filter(0x15,0,1,50),deny,allow]
+   elif inject=='fcntl':
+    seq=[Filter(0x20,0,0,0),Filter(0x15,0,3,25),Filter(0x20,0,0,24),Filter(0x15,0,1,2),deny,allow]
+   elif inject=='second':
+    seq=[Filter(0x20,0,0,0),Filter(0x15,0,5,436),Filter(0x20,0,0,32),Filter(0x15,0,3,0),Filter(0x20,0,0,16),Filter(0x25,0,1,3),deny,allow]
+   else:
+    seq=[Filter(0x20,0,0,0),Filter(0x15,0,3,436),Filter(0x20,0,0,32),Filter(0x15,0,1,0),deny,allow]
+   ins=(Filter*len(seq))(*seq)
    prog=Prog(len(ins),ins);libc=ctypes.CDLL(None,use_errno=True)
    if libc.prctl(38,1,0,0,0)!=0 or libc.prctl(22,2,ctypes.byref(prog),0,0)!=0:os._exit(119)
  p=subprocess.Popen([str(x) for x in args],cwd=root,env=env,pass_fds=tuple(set((fd,)+extras)),preexec_fn=setup,stdout=subprocess.PIPE,stderr=subprocess.PIPE);start=time.monotonic();peak=0
@@ -41,14 +50,15 @@ fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY);env=dict(os.environ,KEXE_CAP_RESOURC
 r=run([root/'compiler','compile',root/'source.kotoba','--target','aarch64-linux','--output',root/'probe.elf','--format','static'],env,fd)
 if r[0] or r[2]:raise RuntimeError(('compile',r[0],r[2][-300:]))
 (root/'probe.elf').chmod(0o700);print('image',hashlib.sha256((root/'probe.elf').read_bytes()).hexdigest(),'compile_peak_kib',r[3],flush=True)
-for mode in ('ok','missing','denied'):
+for mode in ('ok','missing','denied','fcntl','fchdir','second'):
  scope=root/mode;scope.mkdir();base=os.open('/dev/null',os.O_RDONLY);os.dup2(base,50);os.dup2(base,200);os.close(base)
  env=dict(os.environ,KEXE_ALLOW='20,35,37,38,39',KEXE_CAP_RESOURCES_20='/definitely-missing-awai' if mode=='missing' else '/bin/sh',KEXE_CAP_RESOURCES_35=str(scope),KEXE_SPAWN_ENV='AWAI_SCOPE',AWAI_SCOPE=str(scope),KEXE_CPU_SECONDS='3',KEXE_WALL_SECONDS='10')
  scopefd=os.open(scope,os.O_RDONLY|os.O_DIRECTORY)
- r=run([root/'probe.elf','missing' if mode=='missing' else 'normal'],env,scopefd,(50,200),mode=='denied');os.close(scopefd);os.close(50);os.close(200);marker=(scope/'marker').exists()
+ r=run([root/'probe.elf','missing' if mode=='missing' else 'normal'],env,scopefd,(50,200),mode if mode in ('denied','fcntl','fchdir','second') else False);os.close(scopefd);os.close(50);os.close(200);marker=(scope/'marker').exists()
  print('case',mode,'exit',r[0],'stdout',repr(r[1][-120:]),'stderr',repr(r[2][-200:]),'marker',marker,'peak_kib',r[3],flush=True)
  if mode=='ok':assert r[0]==0 and r[1]==b'0\nok' and not r[2] and marker
  elif mode=='missing':assert r[0]==126 and b'spawn/exec-failed' in r[2] and not marker
+ elif mode=='fchdir':assert r[0]==126 and b'spawn/setup-failed' in r[2] and not marker
  else:assert r[0]==126 and b'spawn/isolation-unavailable' in r[2] and not marker
 print('artifact-directory',root,flush=True)
 '''

@@ -115,3 +115,26 @@ not all descriptors or failure stages, actual systemd under every failure,
 source-lock qualification of the product, descendant containment, resource
 governance, or deployment. Full evidence and the separate real systemd count
 recovery are in the linked Murakumo evidence above.
+
+### Real runtime, additional setup-failure controls
+
+The native observer was extended (script SHA-256
+`ff88ff620bb2aaa2889f148adc4757cbdb29e40c3681b7b3aa7464365ea64bdf`) and
+rerun with the same source-derived F3 and guest image on Xavier. Test-only
+outer seccomp filters denied `fcntl(F_SETFD)`, `fchdir`, or flags-0
+`close_range` only when the first FD was greater than 3 (the second range).
+The actual candidate runtime returned respectively `spawn/isolation-unavailable`,
+`spawn/setup-failed`, and `spawn/isolation-unavailable`; all exited 126 with no
+execution marker. Normal spawn, missing executable and the all-flags-0 denial
+controls passed again. The filter applies only to the owned test process.
+
+As an independent old-runtime control, the previously pinned ARM64 root
+compiler `b6bc55a5424742fee501b7ae27e9cf7c5a7bf63538c98f5fda94bd63fdba6e6d`
+compiled the same guest to image SHA-256
+`7ef2e38e1c1a1af742a9b93c331127bcd58ee7393c05f318fd7081f3af41b254`.
+On the same host, the nominal success case instead trapped with
+`spawn/isolation-unavailable` and no marker. This is a diagnostic comparison,
+not a claim that the full shipped compiler or all workloads are qualified.
+The samples use an old-kernel host, synthetic input and injected faults; they do
+not cover every setup failure, power failure, process-tree lifetime, concurrent
+load or resource-governor admission.
