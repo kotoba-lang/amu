@@ -8,8 +8,10 @@ queries identity and observes their outputs.
 import ctypes
 import hashlib
 import importlib.util
+import json
 import os
 import platform
+import shutil
 import signal
 import struct
 import subprocess
@@ -66,7 +68,7 @@ def observe(image, directory, request):
         os.close(fd)
 
 
-def run(compiler, packager, output):
+def run(compiler, packager, output, artifact_dir=None):
     gate = load('mac_native_watcher', 'check-aiueos-user-macos-native.py')
     fixture = load('mac_scope_watcher', 'check-macos-arena-scope.py')
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -81,9 +83,11 @@ def run(compiler, packager, output):
                    capture_output=True, check=True, timeout=30)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(image)],
                    capture_output=True, check=True, timeout=30)
+    pins = {}
     for name, path in (('source', source), ('compiler', compiler), ('packager', packager),
                        ('emitter', emitter), ('watcher-unsigned', unsigned), ('watcher-signed', image)):
-        print(name, 'sha256', hashlib.sha256(path.read_bytes()).hexdigest(), flush=True)
+        pins[name] = hashlib.sha256(path.read_bytes()).hexdigest()
+        print(name, 'sha256', pins[name], flush=True)
     print('host', platform.system(), platform.machine(), platform.release(), flush=True)
     child = subprocess.Popen(['/bin/sleep', '8'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -108,6 +112,15 @@ def run(compiler, packager, output):
         if reaped.returncode != 1 or reaped.stdout or reaped.stderr:
             raise RuntimeError(('reaped child did not cleanly refuse', reaped.returncode,
                                 reaped.stdout, reaped.stderr))
+        if artifact_dir is not None:
+            artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
+            shutil.copyfile(image, artifact_dir / 'watch.macho')
+            (artifact_dir / 'evidence.json').write_text(json.dumps({
+                'schema': 'amu.darwin-watch-fixture.v1', 'sha256': pins,
+                'host': {'system': platform.system(), 'machine': platform.machine(),
+                         'release': platform.release()},
+                'scope': 'one owned child; identity mismatch, timeout and reaped PID refusals; not a governor',
+            }, indent=2) + '\n')
         print('PASS_MAC_WATCH_HELPER exact event; wrong identity, timeout and reaped PID refused; no governor qualification')
     finally:
         if child.poll() is None:

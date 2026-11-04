@@ -120,7 +120,9 @@ def main(output):
         "mac_watch_helper", ROOT / "scripts/seed/check-macos-watch-helper.py")
     watch = importlib.util.module_from_spec(watch_spec)
     watch_spec.loader.exec_module(watch)
-    watch.run(compiler, packager, output / "watch-helper")
+    public_receipt = output.parent / "public-macos-product"
+    artifact = public_receipt / "experimental-watch-fixture" if public_receipt.is_dir() else None
+    watch.run(compiler, packager, output / "watch-helper", artifact)
 
 
 if __name__ == "__main__":
