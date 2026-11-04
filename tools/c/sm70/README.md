@@ -18,7 +18,7 @@ Layout: an instruction is two i64 halves, `lo` = bits 0..63 and `hi` = bits 64..
 their 128-bit bit numbers, as the reference does. The control word occupies bits 105..125: stall 105..108, yield
 109, write barrier 110..112, read barrier 113..115 (7 = none), wait mask 116..121, reuse 122..125. Registers are
 R0..R254 and RZ = 255; predicates P0..P6 and PT = 7; convergence barriers B0..B15. The decode kernels (JUN-739)
-added FADD and IADD3 with negated sources, FSETP (register and immediate), FMNMX, IMNMX, SEL (register and
+added FADD and IADD3 with negated sources, F2F.F32.F16 (part 2b), FSETP (register and immediate), FMNMX, IMNMX, SEL (register and
 immediate), MUFU (COS, SIN, EX2, LG2, RCP, RSQ, SQRT), I2F and F2I (32-bit), LOP3 (register and immediate), SHF
 (register and immediate shift, every type), IMAD.WIDE with a register multiplier and SGXT. Not covered yet: abs
 modifiers, constant-bank operands other than MOV's, uniform operands, IADD3.X, PLOP3 and the other SETP forms,
@@ -149,9 +149,9 @@ tick 55). Every kernel is a KIR v2 module of `tools/gpu_kernels_v2.kotoba`:
 
 | step | kernel | KIR v2 module | SPIR-V it needs beyond the earlier subset | here |
 |---|---|---|---|---|
-| token row | `embed_q8` (embed_iq4xs.comp -DQ8) | `(kir2-embed 8)` | BitFieldSExtract, ConvertSToF, the half scale (UnpackHalf2x16), SGreaterThanEqual | not yet |
+| token row | `embed_q8` (embed_iq4xs.comp -DQ8) | `(kir2-embed 8)` | ConvertSToF, the half scale (UnpackHalf2x16), SGreaterThanEqual, WorkgroupId.y | **lowered, gated** |
 | norms | `rmsnorm` | `(kir2-nex-op 1)` | InverseSqrt, FDiv, ConvertUToF, Select | **lowered, gated** |
-| q, k, v, o, gate, up, down | `kdot_f32_r8` (wide) and `kdot_f32_r1` (narrow), Q8_0 arm | `(kir2-kdot-f32-r8 8)`, `(kir2-kdot-f32-r1)` | every tensor type's arm: vectors, OpDot, BitFieldSExtract, UnpackHalf2x16, Function arrays | not yet |
+| q, k, v, o, gate, up, down | `kdot_f32_r1`, Q8_0 arm (the generator's wide class uses `kdot_f32_r8`, a speed variant) | `(kir2-kdot-f32-r1)` | every tensor type's arm: vectors, OpDot, BitFieldSExtract, UnpackHalf2x16, a vector variable, a constant false | **lowered; Q8_0 gated** |
 | q, k, v bias | `add_bias` | `(kir2-nex-op 11)` | UDiv by a register, ISub | **lowered, gated** |
 | rope | `rope_neox` | `(kir2-nex-op 15)` | Pow, Sin, Cos, a select of booleans, a branch inside an if (continue) | **lowered, gated** |
 | KV cache write | `copy_at` | `(kir2-nex-op 8)` | FUnordNotEqual (the dynamic position) | **lowered, gated** |
@@ -160,7 +160,7 @@ tick 55). Every kernel is a KIR v2 module of `tools/gpu_kernels_v2.kotoba`:
 | SwiGLU | `silu_mul` | `(kir2-nex-op 4)` | Exp, FNegate, FDiv | **lowered, gated** |
 | residual | `add` | `(kir2-nex-op 10)` | none | **lowered, gated** |
 | final norm | `rmsnorm` | `(kir2-nex-op 1)` | as above | **lowered, gated** |
-| lm head | `kdot_f32_r1` | `(kir2-kdot-f32-r1)` | as the matvecs | not yet |
+| lm head | `kdot_f32_r1` | `(kir2-kdot-f32-r1)` | as the matvecs | **lowered; Q8_0 gated** |
 | argmax | `argmax_partial`, `argmax_final` | `(kir2-nex-op 18)`, `(kir2-nex-op 19)` | LogicalAnd / LogicalOr (PLOP3), Bitcast, nested ifs, UMin | **lowered, gated** |
 | position | `pos_incr` | `(kir2-nex-op 14)` | none | **lowered, gated** |
 
@@ -234,10 +234,41 @@ arms swapped, every if predicated, the branched if's skip not inverted, the else
 branch unguarded, WorkgroupId.y read as x) and of the scheduler (a scoreboard reused without the wait). That last
 one does not show in the kernels, whose reused scoreboard always guards a late source read long finished, so a
 scheduler-only case (`sbfull`: seven loads in flight) expects the seventh load to wait on and reuse the first's
-scoreboard. The whole check takes about 11 minutes on the Mac.
+scoreboard. The whole check takes about 25 minutes on the Mac (kdot is interpreted for every mutant).
 
 bin/amu refuses a program argument longer than about 4 KiB (exit 70, no message), so the lowering unit now takes a
 module's words in pieces of at most 3900 bytes.
+
+**Part 2b (embed_q8, kdot_f32_r1).** One module, `kdot_f32_r1`, serves every matvec and the lm head of the token:
+one workgroup of 64 a row, any width. `kdot_f32_r8` (the generator's faster form for the wide matvecs) keeps its R
+accumulators in Function arrays indexed by a loop variable, which needs local memory and its launch setup; it is not
+lowered, and one token does not need it. kdot_f32_r1 holds an arm for every tensor type (Q4_K, Q5_K, IQ4_XS, Q8_0,
+Q4_0, Q4_1, Q5_0, Q5_1, Q6_K, F16, BF16, PQ2_0, PTQ1_0) chosen at run time by Meta.type; the whole module lowers
+(1877 instructions), and the gate runs the Q8_0 arm, the one qwen2.5-0.5b q8_0 uses: o[row] = sum over k of the
+dequantized weight times x[k], relative to sum |w x|, at widths 896, 96, 4864 (the FFN) and 32. The other arms are
+lowered but not gated. embed_q8 is exact: an f16 scale times an int8 fits in f32.
+
+What it took: vectors are scalarized (a vector value is up to four registers; CompositeConstruct takes scalars or
+vectors, CompositeExtract and a vector Bitcast are free, the arithmetic, conversions, shifts and bitwise ops go a
+component at a time, a vector Function variable is a register a component); OpDot is FMUL then FFMA in component
+order; UnpackHalf2x16 is two F2F.F32.F16 (the low and the high half, NAK's F16 swizzle); BitFieldSExtract is SHF.R
+by the offset (an immediate or a register) then SGXT of the constant count, as NAK on SM70; a Bitcast of a constant
+stays a constant; OpConstantTrue / False are PT and !PT. Convergence barriers are now numbered by nesting depth
+(freed at their BSYNC): kdot's 15 convergence regions (two loops, thirteen branched ifs of its chain of type arms)
+nest twelve deep and use B0..B11, and a module with more than 16 regions in all still lowers while no more than 16
+are open at once. The
+allocator ends a value's life at a guarded write too when the value is written once (where the guard is false it
+is not read) or it is a pair's low half; with the old rule kdot's predicated arms kept hundreds of values live
+from the program's start and ran out of registers.
+
+Part 2b's negative controls, each detected: in the emitted words, embed's scale read from the other half and kdot's
+int8 weights zero-extended; built mutants of the lowering (OpDot without its last component, BitFieldSExtract
+zero-extending, the halves of UnpackHalf2x16 swapped, a branched if not taking a barrier of its own), of the
+scheduler (F2F as fixed latency) and of the allocator (a guarded write never ending a value: kdot runs out of
+registers). The kdot arms other than Q8_0 are lowered and encoded (every word re-encodes as NAK's) but not run.
+
+bin/amu refuses more than about 62 program arguments (exit 2), so the check compiles the lowering unit once
+(`amu compile`) and runs it per group of modules.
 
 ## Reference
 

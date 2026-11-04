@@ -1,0 +1,8 @@
+(defn- row-dot [W :vector-i64 x :vector-i64 base :i64 n :i64] :f32
+  (loop [k 0 a0 (i64-to-f32-rounded 0) a1 (i64-to-f32-rounded 0) a2 (i64-to-f32-rounded 0) a3 (i64-to-f32-rounded 0)]
+    (if (= k n) (f32-add (f32-add a0 a1) (f32-add a2 a3))
+      (let [p0 (f32-mul (f32-from-bits (vector-at W (+ base k))) (f32-from-bits (vector-at x k)))
+            p1 (f32-mul (f32-from-bits (vector-at W (+ base (+ k 1)))) (f32-from-bits (vector-at x (+ k 1))))
+            p2 (f32-mul (f32-from-bits (vector-at W (+ base (+ k 2)))) (f32-from-bits (vector-at x (+ k 2))))
+            p3 (f32-mul (f32-from-bits (vector-at W (+ base (+ k 3)))) (f32-from-bits (vector-at x (+ k 3))))]
+        (recur (+ k 4) (f32-@OP@ a0 p0) (f32-add a1 p1) (f32-add a2 p2) (f32-add a3 p3))))))

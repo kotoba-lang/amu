@@ -2,12 +2,15 @@ name: native-checked-definition
 # Independent producer qualification; it does not replace any selfhost gate
 # or admit these prototype modules into the production compiler closure.
 on:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
   pull_request:
     paths:
       - "seed/**"
       - "bin/amu-linux-x86_64"
       - "scripts/seed/check-checked-definition-native.py"
+      - "scripts/seed/check-schema-closure-native.py"
       - ".github/workflows/native-checked-definition.yml"
   push:
     branches: [main]
@@ -15,6 +18,7 @@ on:
       - "seed/**"
       - "bin/amu-linux-x86_64"
       - "scripts/seed/check-checked-definition-native.py"
+      - "scripts/seed/check-schema-closure-native.py"
       - ".github/workflows/native-checked-definition.yml"
 permissions:
   contents: read
@@ -39,9 +43,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-checked-definition-producer-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Native checking, alpha normalization, SCC oracle and executed mutants
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/native_build_queue.py
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
@@ -49,9 +59,26 @@ jobs:
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/checked-definition"
           --benchmark-scc
+      - name: Native record-schema closure and executed mutants
+        run: >-
+          python3 scripts/seed/native_build_queue.py
+          --slot-dir "$RUNNER_TEMP/native-build-slots" --
+          python3 scripts/seed/check-schema-closure-native.py
+          --compiler "$PWD/${{ matrix.compiler }}"
+          --output "$RUNNER_TEMP/schema-closure"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: checked-definition-${{ matrix.isa }}
           path: ${{ runner.temp }}/checked-definition
           if-no-files-found: warn
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && steps.gate.outputs.skip != 'true'
+        with:
+          name: schema-closure-${{ matrix.isa }}
+          path: ${{ runner.temp }}/schema-closure
+          if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}

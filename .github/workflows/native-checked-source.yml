@@ -1,6 +1,8 @@
 name: native-checked-source
 # This is a bounded identity bridge, not whole-compiler cache admission.
 on:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
   pull_request:
     paths:
@@ -54,9 +56,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-checked-source-source-${{ matrix.runner }}
       - name: Verify adopted compiler source and image pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Stage independent source identity gate plan
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
           NATIVE_COMPILER: ${{ matrix.compiler }}
@@ -81,6 +89,7 @@ jobs:
           (Path(os.environ["RUNNER_TEMP"]) / "source-identity-plan.json").write_text(json.dumps(plan) + "\n")
           PY
       - name: Native source, effect and resource controls through the shared two-slot plan
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
@@ -90,7 +99,7 @@ jobs:
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/source-identity-schedule"
       - name: Retain completed gate admission records
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: |
@@ -114,7 +123,7 @@ jobs:
                   assert {gate["name"] for gate in report["gates"]} == set(names)
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-checked-source-${{ matrix.isa }}
           path: |
@@ -129,3 +138,7 @@ jobs:
             ${{ runner.temp }}/source-identity-plan.json
             ${{ runner.temp }}/source-identity-schedule
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}

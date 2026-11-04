@@ -49,6 +49,165 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # KOTOBA-161: negative float comparisons catch the previously observed
+    # integer-condition lowering error; the reversed operands are the control.
+    float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
+    float_greater = source('float-negative-greater', '(defn main [] :i64 (if (f64-lt -1.0 -2.0) 42 7))')
+    run('float-negative-less', 'run', float_less.name, stdout=b'42\n')
+    run('float-negative-greater', 'run', float_greater.name, stdout=b'7\n')
+    # KOTOBA-13: the public host stages a locked KSL2 namespace map,
+    # verifies every original source digest, then asks the pinned Kotoba
+    # compiler to check the rewritten project lock in its private FS2 root.
+    project = out / 'locked-project'
+    project.mkdir()
+    app = project / 'app.kotoba'
+    util = project / 'util.kotoba'
+    app.write_text('(ns app (:require [util :as u]) (:export [main]))\n(defn main [] :i64 (u/add 41))\n')
+    util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
+
+    def project_lock(entry, modules, files):
+        return ('KSL2\nentry ' + str(entry) + '\n'
+                + ''.join('module ' + name + ' ' + str(path) + '\n' for name, path in modules)
+                + ''.join('file ' + hashlib.sha256(path.read_bytes()).hexdigest() + ' ' + str(path) + '\n'
+                          for path in sorted(files)))
+
+    # The previous formatter exhausted the native string pool when formatting
+    # subnormals repeatedly. Exercise the real formatter, parser and boundary
+    # anchors; a deliberately wrong anchor must fail the same observation.
+    f64_project = out / 'f64-resource-project'
+    f64_project.mkdir()
+    f64_source = (ROOT / 'test/fixtures/selfhost/f64-text/native/f64_text_test.kotoba').read_text()
+    main_at = f64_source.index('(defn main [] :i64')
+    f64_source = f64_source[:main_at] + '''(defn main [] :i64
+  (if (and (anchors) (refusals)
+           (loop [i 0] (if (= i 40) true (if (roundtrip 1) (recur (+ i 1)) false)))) 42 7))
+'''
+    f64_entry = f64_project / 'f64_text_test.kotoba'
+    f64_text = f64_project / 'f64_text.kotoba'
+    f64_decimal = f64_project / 'decimal_bits.kotoba'
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/f64_text.kotoba', f64_text)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/decimal_bits.kotoba', f64_decimal)
+    f64_modules = [('kotoba.compiler.decimal-bits', f64_decimal),
+                   ('kotoba.compiler.f64-text', f64_text), ('native.f64-text-test', f64_entry)]
+    f64_lock = f64_project / 'project.ksl'
+    for suffix, body, expected_output in (('positive', f64_source, b'42\n'),
+                                          ('negative', f64_source.replace('"5e-324"', '"5e-323"'), b'7\n')):
+        assert body.count('"5e-324"') == (1 if suffix == 'positive' else 0)
+        f64_entry.write_text(body)
+        f64_lock.write_text(project_lock(f64_entry, f64_modules, [f64_entry, f64_text, f64_decimal]))
+        f64_program = out / ('f64-resource-' + suffix)
+        run('f64-resource-' + suffix + '-compile', 'compile', f64_entry, '--source-lock', f64_lock,
+            '-o', f64_program.name, stdout=('compiled ' + str(f64_program) + '\n').encode())
+        run('f64-resource-' + suffix + '-execute', image=f64_program, stdout=expected_output)
+
+    lock = project / 'project.ksl'
+    lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
+    run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
+    # JUN-838: `check ENTRY --source-path DIR...` derives the KSL2 module map
+    # from the declared roots; the pinned root still verifies it. A module on no
+    # declared root keeps the root's E6002, two roots holding one module refuse.
+    sp = out / 'source-path-project'
+    for d in ('src/lib', 'other/lib', 'dup/lib'):
+        (sp / d).mkdir(parents=True)
+    sp_app = sp / 'src/app.kotoba'
+    sp_app.write_text('(ns app (:require [lib.mid :as m]) (:export [main]))\n(defn main [] :i64 (m/two 40))\n')
+    (sp / 'src/lib/mid.kotoba').write_text('(ns lib.mid (:require [lib.leaf :as l]) (:export [two]))\n'
+                                           '(defn two [x :i64] :i64 (l/inc1 (l/inc1 x)))\n')
+    (sp / 'other/lib/leaf.kotoba').write_text('(ns lib.leaf (:export [inc1]))\n(defn inc1 [x :i64] :i64 (+ x 1))\n')
+    (sp / 'dup/lib/leaf.kotoba').write_bytes((sp / 'other/lib/leaf.kotoba').read_bytes())
+    run('source-path-check', 'check', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other', stdout=b'ok\n')
+    run('source-path-missing-module', 'check', sp_app, '--source-path', sp / 'src',
+        expected=1, diagnostic=b'E6002 required module lib.leaf is missing from the explicit source paths')
+    run('source-path-unlisted-root', 'check', sp_app, '--source-path', sp / 'other',
+        expected=1, diagnostic=b'E6002 required module lib.mid is missing from the explicit source paths')
+    run('source-path-ambiguous-module', 'check', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other',
+        '--source-path', sp / 'dup', expected=1, diagnostic=b'EPATH module lib.leaf is found under more than one')
+    run('source-path-with-lock', 'check', sp_app, '--source-path', sp / 'src', '--source-lock', sp / 'x.ksl',
+        expected=2, diagnostic=b'usage')
+    run('source-path-dangling-flag', 'check', sp_app, '--source-path', sp / 'src', '--source-path',
+        expected=2, diagnostic=b'usage')
+    # compile takes the same roots (parity with --source-lock compile). run stays
+    # refused: mc-main-abi? cannot validate a multi-file project.
+    sp_program = out / 'source-path-program'
+    run('source-path-compile', 'compile', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other',
+        '-o', sp_program.name, stdout=('compiled ' + str(sp_program) + '\n').encode())
+    mac.verify_macho(sp_program)
+    run('source-path-native-execute', expected=0, stdout=b'42\n', image=sp_program)
+    run('source-path-run-artifact', 'run', sp_program, stdout=b'42\n')
+    sp_profile = out / 'source-path-profile-program'
+    run('source-path-compile-profile', 'compile', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other',
+        '--runtime-profile', 'amu-program', '-o', sp_profile.name, stdout=('compiled ' + str(sp_profile) + '\n').encode())
+    mac.verify_macho(sp_profile)
+    sp_program_bytes = sp_program.read_bytes()
+    run('source-path-compile-output-collision', 'compile', sp_app, '--source-path', sp / 'src',
+        '--source-path', sp / 'other', '-o', sp_program.name, expected=1, diagnostic=b'EOUTPUT')
+    assert sp_program.read_bytes() == sp_program_bytes
+    run('source-path-compile-output-is-entry', 'compile', sp_app, '--source-path', sp / 'src',
+        '--source-path', sp / 'other', '-o', sp_app, expected=1, diagnostic=b'EOUTPUT cannot replace the project entry')
+    run('source-path-compile-missing-module', 'compile', sp_app, '--source-path', sp / 'src', '-o', 'sp-missing',
+        expected=1, diagnostic=b'E6002 required module lib.leaf is missing from the explicit source paths')
+    run('source-path-compile-ambiguous-module', 'compile', sp_app, '--source-path', sp / 'src', '--source-path', sp / 'other',
+        '--source-path', sp / 'dup', '-o', 'sp-ambiguous', expected=1, diagnostic=b'EPATH module lib.leaf is found under more than one')
+    run('source-path-compile-with-lock', 'compile', sp_app, '--source-path', sp / 'src', '--source-lock', sp / 'x.ksl',
+        '-o', 'sp-mixed', expected=2, diagnostic=b'usage')
+    run('source-path-run-refused', 'run', sp_app, '--source-path', sp / 'src', expected=2, diagnostic=b'usage')
+    run('source-path-run-args-refused', 'run', sp_app, '--source-path', sp / 'src', '--', 'x', expected=2, diagnostic=b'usage')
+    run('source-path-run-with-lock', 'run', sp_app, '--source-path', sp / 'src', '--source-lock', sp / 'x.ksl',
+        expected=2, diagnostic=b'usage')
+    run('source-path-compile-dangling-flag', 'compile', sp_app, '--source-path', sp / 'src', '-o',
+        expected=2, diagnostic=b'usage')
+    run('source-path-compile-no-root-value', 'compile', sp_app, '--source-path', expected=2, diagnostic=b'usage')
+    run('source-path-run-no-separator', 'run', sp_app, '--source-path', sp / 'src', 'extra', expected=2, diagnostic=b'usage')
+    run('source-path-run-receipt-refused', 'run', sp_app, '--source-path', sp / 'src', '--receipt', 'r.json',
+        expected=2, diagnostic=b'usage')
+    run('source-path-too-many-roots', 'check', sp_app, *(a for _ in range(17) for a in ('--source-path', sp / 'src')),
+        expected=2, diagnostic=b'usage')
+    project_program = out / 'locked-project-program'
+    run('locked-project-compile', 'compile', app, '--source-lock', lock, '-o', project_program.name,
+        stdout=('compiled ' + str(project_program) + '\n').encode())
+    mac.verify_macho(project_program)
+    run('locked-project-native-execute', expected=0, stdout=b'42\n', image=project_program)
+    run('locked-project-run', 'run', app, '--source-lock', lock, stdout=b'42\n')
+    run('locked-project-run-artifact', 'run', project_program, stdout=b'42\n')
+    damaged_project_program = out / 'damaged-locked-project-program'
+    damaged_bytes = bytearray(project_program.read_bytes())
+    damaged_bytes[-1] ^= 1
+    damaged_project_program.write_bytes(damaged_bytes)
+    run('locked-project-run-damaged-artifact', 'run', damaged_project_program,
+        expected=1, diagnostic=b'EARTIFACT supplied project differs')
+    project_program_bytes = project_program.read_bytes()
+    run('locked-project-output-collision', 'compile', app, '--source-lock', lock, '-o', project_program.name,
+        expected=1, diagnostic=b'EOUTPUT')
+    assert project_program.read_bytes() == project_program_bytes
+    run('locked-project-wrong-entry', 'check', util, '--source-lock', lock,
+        expected=1, diagnostic=b'ELOCK entry does not match')
+    run('locked-project-compile-wrong-entry', 'compile', util, '--source-lock', lock, '-o', 'wrong-entry-program',
+        expected=1, diagnostic=b'ELOCK entry does not match')
+    bad_utf8_lock = project / 'invalid-utf8.ksl'
+    bad_utf8_lock.write_bytes(b'KSL2\n\xff\n')
+    run('locked-project-invalid-utf8-lock', 'check', app, '--source-lock', bad_utf8_lock,
+        expected=1, diagnostic=b'ELOCK source lock must be valid UTF-8')
+    legacy = project / 'legacy.cljk'
+    legacy.write_text(app.read_text())
+    legacy_lock = project / 'legacy.ksl'
+    legacy_lock.write_text(project_lock(legacy, [('app', legacy), ('util', util)], [legacy, util]))
+    run('locked-project-non-kotoba-path', 'check', legacy, '--source-lock', legacy_lock,
+        expected=1, diagnostic=b'ELOCK project files must use canonical .kotoba paths')
+    util.write_text(util.read_text() + '\n')
+    run('locked-project-changed-source', 'check', app, '--source-lock', lock,
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    run('locked-project-compile-changed-source', 'compile', app, '--source-lock', lock, '-o', 'changed-source-program',
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    run('locked-project-run-changed-source', 'run', app, '--source-lock', lock,
+        expected=1, diagnostic=b'EINPUT a locked project source')
+    util.write_text('(ns util (:export [add]))\n(defn add [x :i64] :i64 (+ x 1))\n')
+
+    missing = project / 'missing.kotoba'
+    missing.write_text('(ns app (:require [absent :as a]) (:export [main]))\n(defn main [] :i64 (a/value))\n')
+    missing_lock = project / 'missing.ksl'
+    missing_lock.write_text(project_lock(missing, [('app', missing), ('util', util)], [missing, util]))
+    run('locked-project-missing-import', 'check', missing, '--source-lock', missing_lock,
+        expected=1, diagnostic=b'E')
     run('compile-default', 'compile', hello.name)
     mac.verify_macho(out / 'hello')
     run('execute-default', expected=0, stdout=b'42\n', image=out / 'hello')
@@ -99,11 +258,13 @@ def check(cli, out):
     bad = source('bad', '(defn main [] :i64 "bad")')
     run('check-type-error', 'check', bad.name, expected=1, diagnostic=b'E')
     for i, args in enumerate((('compile', hello.name, '--target', 'x86_64-linux'),
-                              ('check', hello.name, '--source-path', '.'),
-                              ('run', hello.name, '--source-lock', 'missing'),
+                              ('check', hello.name, '--source-path'),
+                              ('check', hello.name, '--source-path', '.', '--source-lock', 'x.ksl'),
                               ('compile', hello.name, '-o'), ('garbage', hello.name),
                               ('run', hello.name, '--receipt'), ('run', hello.name, '--receipt', 'r.json', 'extra'))):
         run('usage' + str(i), *args, expected=2, diagnostic=b'usage:')
+    run('project-run-missing-lock', 'run', hello.name, '--source-lock', 'missing',
+        expected=1, diagnostic=b'EINPUT expected a bounded regular source lock')
     # removed with the C loader (docs/c-loader-removal.md): refused by name, not as unknown (JUN-282)
     for name in ('measure-runtime', 'package-ios', 'package-macos', 'test'):
         run('removed-' + name, name, hello.name, expected=2, diagnostic=b'EREMOVED ' + name.encode())
