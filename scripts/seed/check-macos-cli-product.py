@@ -49,6 +49,22 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # The public CLI must run the watcher frame classifier and reject a
+    # deliberately fail-open implementation. This exercises source compiled
+    # by the CLI; it does not execute the watcher or qualify a governor.
+    watch_source = (ROOT / 'seed/darwin-watch-reply.kotoba').read_text()
+    declaration = '(ns amu.darwin-watch-reply (:export [darwin-watch-reply-class]))'
+    assert watch_source.count(declaration) == 1
+    watch_source = watch_source.replace(declaration, '')
+    watch_cases = (ROOT / 'seed/tests/awai152-darwin-watch/reply-cases.kotoba').read_text()
+    watch_main = '\n(defn main [] :i64 (if (test-darwin-watch-reply) 42 7))\n'
+    refusal = '"observer/bound-exit-observed" "observer/unknown"'
+    assert watch_source.count(refusal) == 1
+    watch_mutant = watch_source.replace(refusal, '"observer/bound-exit-observed" "observer/bound-exit-observed"')
+    watch = source('watch-reply', watch_source + '\n' + watch_cases + watch_main)
+    mutant = source('watch-reply-mutant', watch_mutant + '\n' + watch_cases + watch_main)
+    run('watch-reply', 'run', watch.name, stdout=b'42\n')
+    run('watch-reply-mutant', 'run', mutant.name, stdout=b'7\n')
     # KOTOBA-161: negative float comparisons catch the previously observed
     # integer-condition lowering error; the reversed operands are the control.
     float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
