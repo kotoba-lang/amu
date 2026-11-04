@@ -57,3 +57,17 @@ source rather than this change. That is a genuine regeneration/provenance
 requirement, not evidence of a passing candidate. Descriptor hashes or compiler
 binaries were not hand-edited. The qualified selfhost rebuild and safe
 regeneration path remain prerequisites to resolve it.
+
+## Expanded owned-child syscall controls
+
+The updated observer (SHA-256
+`5963c29896b73c2d2e6d4b2728b401207a994f682dec4b1819fe94852b36adf3`)
+ran on the same Xavier kernel. In separate owned children it injected a
+failure at the first close range, second close range, status-pipe fcntl,
+scope fchdir and no-new-privileges setup; each returned its expected failure
+on the status pipe and did not create the execution marker. A nonexistent
+executable produced `exec-failed:2` through the still-open status pipe and no
+marker. The success case again verified the two inherited descriptors, cwd
+and NoNewPrivs after exec. These are direct syscall diagnostics with
+Python-controlled fault selection, not calls through the changed Amu runtime,
+seccomp fault profiles, source-locked selfhost output or a qualified governor.
