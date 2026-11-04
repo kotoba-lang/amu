@@ -1,0 +1,27 @@
+;; Experimental Darwin ARM64 spawn attribute for a future qualified host.
+;; This builds data only. It does not spawn, install a sandbox, reserve memory,
+;; bind an executable, supervise descendants or qualify the host ABI.
+;; The private 248-byte layout is observed on macOS 26.7.2 only. A trusted
+;; caller must independently identify and qualify the exact OS/runtime before
+;; using any bytes; unknown versions must be refused, not guessed.
+(ns amu.darwin-spawn-attribute (:export [darwin-spawn-attribute]))
+
+(defn- dsa-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
+  (loop [i 0 x n out v]
+    (if (= i 4) out
+      (recur (+ i 1) (quot x 256) (vector-assoc! out (+ at i) (mod x 256))))))
+
+;; A positive MiB limit bounded before arithmetic. An empty vector means the
+;; request was refused; it is not an unlimited attribute or launch authority.
+(defn darwin-spawn-attribute [limit-mib :i64] :vector-i64
+  (if (or (< limit-mib 1) (> limit-mib 32767)) (vector-alloc 0)
+    (let [blank (loop [i 0 out (vector-alloc 248)]
+                  (if (= i 248) out (recur (+ i 1) (vector-assoc! out i 0))))
+          flags (vector-assoc! blank 0 128)
+          reserved (vector-assoc! flags 56 1)
+          jetsam (vector-assoc! (vector-assoc! reserved 64 12) 65 128)
+          priority (dsa-u32 jetsam 68 4294967295)
+          active (dsa-u32 priority 72 limit-mib)
+          inactive (dsa-u32 active 76 limit-mib)]
+      (loop [i 112 out inactive]
+        (if (= i 128) out (recur (+ i 1) (vector-assoc! out i 255)))))))

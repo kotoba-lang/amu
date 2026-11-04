@@ -1,0 +1,19 @@
+;; Source cases only until a qualified compiler can execute the actual module.
+(ns amu.darwin-spawn-attribute-cases (:export [test-darwin-spawn-attribute]))
+
+(defn test-darwin-spawn-attribute [] :bool
+  (let [a (darwin-spawn-attribute 64) b (darwin-spawn-attribute 16384)]
+    (and (= (vector-count (darwin-spawn-attribute -1)) 0)
+         (= (vector-count (darwin-spawn-attribute 0)) 0)
+         (= (vector-count (darwin-spawn-attribute 32768)) 0)
+         (= (vector-at (darwin-spawn-attribute 1) 72) 1)
+         (= (vector-count a) 248) (= (vector-count b) 248)
+         (loop [i 0]
+           (if (= i 248) true
+             (let [expected (cond (= i 0) 128 (= i 56) 1 (= i 64) 12 (= i 65) 128
+                                  (and (>= i 68) (< i 72)) 255
+                                  (or (= i 72) (= i 76)) 64
+                                  (and (>= i 112) (< i 128)) 255 :else 0)]
+               (and (= (vector-at a i) expected) (recur (+ i 1))))))
+         (= (vector-at b 72) 0) (= (vector-at b 73) 64)
+         (= (vector-at b 76) 0) (= (vector-at b 77) 64))))
