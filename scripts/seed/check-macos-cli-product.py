@@ -71,9 +71,17 @@ def check(cli, out):
     assert watch_source.count(rollback_guard) == 1
     rollback = source('watch-reply-rollback-mutant',
                       watch_source.replace(rollback_guard, '(< now last)') + '\n' + watch_cases + watch_main)
+    # A contradictory high byte must not turn signal termination into a
+    # valid status; exercise the same source cases with that guard removed.
+    status_guard = '(and (< status 256) (> signal 0) (< signal 127))'
+    assert watch_source.count(status_guard) == 1
+    invalid_status = source('watch-reply-status-mutant',
+                            watch_source.replace(status_guard, '(and (> signal 0) (< signal 127))')
+                            + '\n' + watch_cases + watch_main)
     run('watch-reply', 'run', watch.name, stdout=b'42\n')
     run('watch-reply-mutant', 'run', mutant.name, stdout=b'7\n')
     run('watch-reply-rollback-mutant', 'run', rollback.name, stdout=b'7\n')
+    run('watch-reply-status-mutant', 'run', invalid_status.name, stdout=b'7\n')
     # Exercise the pure identity/event composition and a fail-open transition
     # mutant. Source namespaces are removed only in this test composition.
     watch_paths = ['seed/darwin-proc-identity.kotoba', 'seed/darwin-kqueue-event.kotoba',
