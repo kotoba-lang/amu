@@ -73,3 +73,19 @@ were reaped; no memory workload ran. Observer SHA-256:
 This associates an additional observed exec with the changed limit in one
 sample; it does not identify the exact kernel mechanism or prove that a
 missing event establishes no exec, nor does it characterize Kapitsa.
+
+## Kapitsa version-only sample
+
+On naphtali, benjamin and judah, a task-owned `kapitsa --version` was spawned
+with the exact 64 MiB CI-generated attribute. Each host's installed Kapitsa
+passed strict signature verification and had SHA-256
+`20db8dadcb79de820d237367ca93d7ac66f8a70d91d5513f6e1ab77253925daa`.
+The initially stopped child read back `[64,1,64,1]`, then printed
+`kapitsa 0.2.26 (6ef19b0)`, exited 0 and was reaped. No NOTE_EXEC event was
+reported in this sample. In all three cases the process exited before the
+observer's post-resume stop/readback, so the effective post-resume limit is
+**unknown**. An absent event is not proof that no later exec occurred.
+Observer SHA-256:
+`8e15ba7f42ef3e0783abfaf98c66a7880d3b67f71ede3a7f6dceb1d201c589cc`.
+No model, inference, network listener or persistent service was started.
+This does not qualify Kapitsa serving, its memory enforcement or a governor.
