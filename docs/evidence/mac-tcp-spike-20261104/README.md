@@ -20,7 +20,7 @@ no listener remained.
 | `fcntl(fd, 4, 4)` | F_SETFL = 4, O_NONBLOCK = 4 |
 | `poll` = 230 | `struct pollfd` { int32 fd; int16 events; int16 revents }, POLLIN = 1; returned 0 on timeout and 1 on a pending connection |
 | `accept` = 30, `read` = 3, `write` = 4, `close` = 6, `listen` = 106, `bind` = 104, `socket` = 97, `setsockopt` = 105 | all worked as numbered |
-| **Accepted sockets inherit O_NONBLOCK** | `read` straight after `accept` failed with errno **35 (EAGAIN)** (exit code of an errno variant), and the client saw a reset. Polling the connection for POLLIN first fixes it. A Darwin runtime must `poll` before every `read`; it cannot rely on a blocking accepted socket as the Linux `accept4` form allows |
+| Accepted socket and `read` | in this program the listener was non-blocking, `read` straight after `accept` failed with errno **35 (EAGAIN)** and the client saw a reset. Polling the connection for POLLIN first fixes it. (The second round shows the cause: the accepted socket follows the *listener's* blocking mode, it is not a general rule.) |
 
 ## Second round: the behaviours the first round left open
 
