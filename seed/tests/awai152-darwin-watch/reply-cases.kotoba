@@ -1,0 +1,22 @@
+;; Source cases only; these do not run the watcher or authenticate its caller.
+(defn- dwr-case-request [] :vector-i64
+  [87 80 48 49 210 4 0 0 0 241 83 101 0 0 0 0 42 0 0 0 0 0 0 0 46 22 0 0 5 0 0 0])
+(defn- dwr-case-reply [] :vector-i64
+  [87 79 48 49 0 0 0 0 87 80 48 49 210 4 0 0 0 241 83 101 0 0 0 0 42 0 0 0 0 0 0 0 46 22 0 0 5 0 0 0])
+(defn- dwr-case-reply-for [r :vector-i64] :vector-i64
+  (loop [i 0 out (dwr-case-reply)]
+    (if (= i 32) out (recur (+ i 1) (vector-assoc! out (+ i 8) (vector-at r i))))))
+(defn test-darwin-watch-reply [] :bool
+  (let [r (dwr-case-request) out (dwr-case-reply)
+        bad-usec (vector-assoc! (dwr-case-request) 20 1)
+        bad-timeout (vector-assoc! (dwr-case-request) 28 0)]
+    (and (= (darwin-watch-reply-class r out 0 true) "observer/bound-exit-observed")
+         (= (darwin-watch-reply-class r out 133 true) "observer/unknown")
+         (= (darwin-watch-reply-class r out 0 false) "observer/unknown")
+         (= (darwin-watch-reply-class r (vector-alloc 39) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class r (vector-alloc 41) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class r (vector-assoc! (dwr-case-reply) 4 1) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class r (vector-assoc! (dwr-case-reply) 32 47) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class bad-usec (dwr-case-reply-for bad-usec) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class bad-timeout (dwr-case-reply-for bad-timeout) 0 true) "observer/unknown")
+         (= (darwin-watch-reply-class r (vector-assoc! (dwr-case-reply) 0 256) 0 true) "observer/unknown"))))

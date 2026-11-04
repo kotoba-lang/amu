@@ -1,0 +1,41 @@
+;; Pure framing check for the experimental Darwin watcher. The trusted host
+;; must itself launch the pinned helper, authenticate the boot and process
+;; identity, obtain EOF, and bind these bytes and exit status to that launch.
+;; A matched frame is not a successful workload receipt, a process-tree proof,
+;; or permission to release a resource reservation.
+(ns amu.darwin-watch-reply (:export [darwin-watch-reply-class]))
+
+(defn- dwr-u32 [v :vector-i64 at :i64] :i64
+  (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
+     (* 65536 (vector-at v (+ at 2))) (* 16777216 (vector-at v (+ at 3)))))
+
+(defn- dwr-bytes? [v :vector-i64] :bool
+  (loop [i 0]
+    (if (= i (vector-count v)) true
+      (let [x (vector-at v i)]
+        (and (>= x 0) (<= x 255) (recur (+ i 1)))))))
+
+;; The helper accepts one 32-byte WP01 request. Validate it independently,
+;; including the high half of microseconds and the approved timeout limit.
+(defn- dwr-request? [r :vector-i64] :bool
+  (if (not (= (vector-count r) 32)) false
+    (and (dwr-bytes? r) (= (vector-at r 0) 87) (= (vector-at r 1) 80)
+         (= (vector-at r 2) 48) (= (vector-at r 3) 49)
+         (> (dwr-u32 r 4) 0) (<= (dwr-u32 r 4) 2147483647)
+         (or (> (dwr-u32 r 8) 0) (> (dwr-u32 r 12) 0))
+         (= (dwr-u32 r 20) 0) (<= (dwr-u32 r 16) 999999)
+         (> (dwr-u32 r 24) 0) (<= (dwr-u32 r 24) 2147483647)
+         (> (dwr-u32 r 28) 0) (<= (dwr-u32 r 28) 900))))
+
+;; eof must mean the complete output was observed, not a read timeout or
+;; truncated buffer. The response consists of WO01, four zero bytes and the
+;; complete request. Nonzero/unknown status and every mismatch stay unknown.
+(defn darwin-watch-reply-class [request :vector-i64 reply :vector-i64 exit-code :i64 eof :bool] :string
+  (if (and (= exit-code 0) eof (dwr-request? request) (= (vector-count reply) 40)
+           (dwr-bytes? reply) (= (vector-at reply 0) 87) (= (vector-at reply 1) 79)
+           (= (vector-at reply 2) 48) (= (vector-at reply 3) 49)
+           (= (dwr-u32 reply 4) 0)
+           (loop [i 0]
+             (if (= i 32) true
+               (and (= (vector-at request i) (vector-at reply (+ i 8))) (recur (+ i 1))))))
+    "observer/bound-exit-observed" "observer/unknown"))
