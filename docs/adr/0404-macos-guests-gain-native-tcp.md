@@ -43,7 +43,7 @@ non-blocking and close-on-exec, `SO_REUSEADDR` before `bind`.
   a leading `sin_len` byte (BSD), `AF_INET = 2`, `SOCK_STREAM = 1`, `SOL_SOCKET = 0xffff`, `SO_REUSEADDR = 4`,
   `O_NONBLOCK = 4`, `F_GETFL = 3`, `F_SETFL = 4`, `F_SETFD = 2`, `FD_CLOEXEC = 1`, `POLLIN = 1`, `POLLOUT = 4`.
 
-D3. **Grants are exact and never baked into an artifact.** As on Linux, listen (43) and dial (45) are separate
+D3. **Grants are exact, content-identified (decision 1 below) and never baked into an artifact.** As on Linux, listen (43) and dial (45) are separate
 exact `<ipv4>:<port>` lists; a listener request outside its list is `net/address-not-granted`. The grant is
 supplied when the program is *run*, so a distributed binary cannot grant itself the network.
 
@@ -74,10 +74,32 @@ Each slice is its own change; none is half of another.
 
 ## Decisions on the open questions (owner, 2026-11-04: "as recommended")
 
-1. **Grant transport: the environment, as on Linux.** The net-capable image reads `KEXE_CAP_RESOURCES_43`
-   (listen) and `KEXE_CAP_RESOURCES_45` (dial) itself, comma-separated exact `<ipv4>:<port>` entries, so
-   `KEXE_CAP_RESOURCES_43=127.0.0.1:8765 ./listener` works without the CLI. No new public flag on `amu run`
-   for now; flags can follow if wanted.
+1. **Grant transport: the environment, as on Linux, but the grant is a content-addressed value** (amended
+   2026-11-04 after the owner pointed out that Kotoba/Amu identify things by content, so a grant that decides
+   what a program may reach should be identified by content too).
+   What is true today: the *declared* policy is already content-addressed. Two spellings of one policy
+   canonicalise to the same bytes and the same `:policy-sha256` (see `examples/capability-named.edn`), and the
+   source is pinned by its KSL1 lock and Definition CIDs. What is not: Linux's runtime grant
+   (`KEXE_CAP_RESOURCES_43` / `_45`) is a bare comma-separated string read from the environment, so two runs of
+   one artifact can hold different authority and nothing records which.
+   Decision for the Mac variant:
+   * The grant is a canonical text: entries sorted, de-duplicated, comma-joined, exact `<ipv4>:<port>`, no
+     whitespace; anything not in that form is refused at start (`net/setup-failed`), so one authority has one
+     byte string.
+   * The image computes the SHA-256 of that text with the shared pure implementation (`seed/03-source-sha256`)
+     and **writes it on its first diagnostic line** (`KEXE_GRANT {:wire 43 :sha256 "..."}` to stderr), so a run's
+     authority is recorded as a digest, as its source already is.
+   * If the invoker also sets `KEXE_CAP_GRANT_SHA256_43` (resp. `_45`), the image **refuses to start** unless it
+     equals the digest of the supplied text. That is the pinning form: an operator or a supervisor fixes the
+     authority by content, and an environment variable that was altered in transit no longer matches.
+   * The project-level declared policy stays the ceiling (`:policy-sha256`); a supplied grant outside the
+     declared ceiling is refused. Declared policy is *what the program may ever ask for*; the grant is *what
+     this run is given*; both are digests.
+   * Still not baked into the artifact (D3): a digest identifies an authority, it does not confer one.
+   Limits to state plainly: an environment variable remains ambient (the digest makes it auditable and
+   pinnable, it does not authenticate who set it), and the Linux runtime has no digest line yet. Giving the two
+   runtimes one canonical grant form is a small Linux change and is preferable to two forms; it is left to the
+   slice that touches Linux, and to the owner's call whether the pin variable should be mandatory.
 2. **Listener lifetime: direct execution.** A listener is a directly executed binary. `amu run` keeps its 5 s
    deadline and gains no flag.
 3. **First release is loopback only.** Any entry other than `127.0.0.1:<port>` is refused at start with
