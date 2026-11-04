@@ -176,6 +176,25 @@ Each slice is its own change; none is half of another.
      also gives Linux the digest line that decision 1 noted it lacks.
   5. *Packaging*: `amu-program` images gain the compiled runtime instead of the helper chain, or the two coexist
      during a transition.
+  **Measured constraints on that route (2026-11-04, `docs/evidence/mac-tcp-spike-20261104/layout.c`)** — these
+  correct the "reused unchanged" claim above; the net *logic* is reused, the platform layer under it is not:
+  * *Addresses.* The Linux emitter bakes absolute addresses into `movz/movk` sequences (code at `0x401000`,
+    data at `0x400000+`, pools at `0x40000000`). On this macOS a fixed `mmap` at `0x400000` or `0x40000000`
+    **fails** (the 4 GiB `__PAGEZERO`), `-no_pie` is **ignored on arm64**, and `main` lands at a different
+    address on every run (ASLR slide). So the Darwin profile needs **position-independent addressing in the
+    emitter** (`adrp`/`add` in place of the four-word `mov64` for fixup kinds 14..17) and the runtime's
+    pool/region constants moved above 4 GiB (a fixed map at `0x200000000` succeeded).
+  * *Start.* dyld calls `main(argc, argv, envp, apple)` and the arrays are contiguous exactly as on Linux:
+    `argv[-1] == argc`, `envp == argv + argc + 1`, `apple == envp + n + 1`. So the Linux `kxrt-start`, which takes
+    the initial stack pointer, can be reused with `x0 := argv - 8` in the Darwin entry stub.
+  * *Calls with no Darwin equivalent.* The Linux net code uses `accept4`, `ppoll`, `recvfrom`/`sendto` with
+    Linux flags and a seccomp filter. Darwin has `accept` + `fcntl`, `poll`, and `SO_NOSIGPIPE`; the net section
+    gets a Darwin variant for these calls while its parsing, decisions, hex and handle table stay.
+  * *Container.* A Mach-O writer in the shape of `xa-elf` (the header builder exists in the packager's `body-at`),
+    signed ad hoc by the CLI as today.
+  This is a compiler-lineage change of the size of a new emitter file plus profile deltas in the runtime text,
+  not a new capability bolted on; it is the "complete Darwin runtime" the public-entry document lists as open.
+
   The new net behaviour is then the Linux behaviour by construction, and the Linux qualification corpus ports
   with the syscall table. What it costs is a change to the compiler lineage (a new emitter and profile), which
   ADR 0370's review order governs, and a Mach-O static-runtime image that the Mac CLI does not produce today.
