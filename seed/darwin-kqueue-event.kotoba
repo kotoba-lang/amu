@@ -1,0 +1,46 @@
+;; Experimental 64-bit Darwin kevent data profile for a future host watcher.
+;; This module does not call kqueue, identify a process, observe an event,
+;; persist state, reap a process, or authorize release of a reservation.
+;; The host must independently qualify OS build/architecture, own the kqueue,
+;; bind its watch to trusted process identity, and treat missing/error events
+;; and observer loss as unknown. The correlation value is not authentication.
+(ns amu.darwin-kqueue-event (:export [darwin-proc-watch-event darwin-proc-exit-event?]))
+
+(defn- dke-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
+  (loop [i 0 x n out v]
+    (if (= i 4) out
+      (recur (+ i 1) (quot x 256) (vector-assoc! out (+ at i) (mod x 256))))))
+(defn- dke-get32 [v :vector-i64 at :i64] :i64
+  (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
+     (* 65536 (vector-at v (+ at 2))) (* 16777216 (vector-at v (+ at 3)))))
+(defn- dke-args? [os-build :string pid :i64 token :i64] :bool
+  (and (= os-build "25G332") (> pid 0) (<= pid 2147483647)
+       (> token 0) (<= token 2147483647)))
+
+;; struct kevent64_s: ident, EVFILT_PROC, EV_ADD|EV_ONESHOT, NOTE_EXIT,
+;; zero data, udata correlation value, zero extension words. Empty = refusal.
+(defn darwin-proc-watch-event [os-build :string pid :i64 token :i64] :vector-i64
+  (if (not (dke-args? os-build pid token)) (vector-alloc 0)
+    (let [blank (loop [i 0 out (vector-alloc 48)]
+                  (if (= i 48) out (recur (+ i 1) (vector-assoc! out i 0))))
+          ident (dke-u32 blank 0 pid)
+          filter (vector-assoc! (vector-assoc! ident 8 251) 9 255)
+          flags (vector-assoc! filter 10 17)
+          note (vector-assoc! flags 15 128)]
+      (dke-u32 note 24 token))))
+
+;; This recognizes one event's fields only. A true value is not proof that
+;; all descendants stopped, a durable completion, a wait result, or a grant.
+;; The caller must reject syscall errors, unexpected event counts and races.
+(defn darwin-proc-exit-event? [os-build :string pid :i64 token :i64 event :vector-i64] :bool
+  (if (or (not (dke-args? os-build pid token)) (not (= (vector-count event) 48))) false
+    (and (loop [i 0]
+           (if (= i 48) true
+             (let [b (vector-at event i)]
+               (and (>= b 0) (<= b 255) (recur (+ i 1))))))
+         (= (dke-get32 event 0) pid) (= (dke-get32 event 4) 0)
+         (= (vector-at event 8) 251) (= (vector-at event 9) 255)
+         (= (bit-and (vector-at event 11) 64) 0)
+         (not (= (bit-and (vector-at event 11) 128) 0))
+         (not (= (bit-and (vector-at event 15) 128) 0))
+         (= (dke-get32 event 24) token) (= (dke-get32 event 28) 0))))

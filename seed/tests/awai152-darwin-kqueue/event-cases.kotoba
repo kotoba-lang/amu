@@ -1,0 +1,28 @@
+;; Source cases; execution and kernel integration remain unqualified.
+(ns amu.darwin-kqueue-event-cases (:export [test-darwin-kqueue-event]))
+
+(defn test-darwin-kqueue-event [] :bool
+  (let [e (darwin-proc-watch-event "25G332" 1234 305419896)
+        response (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128)
+        badpid (vector-assoc! (darwin-proc-watch-event "25G332" 1235 305419896) 11 128)
+        badtoken (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419897) 11 128)
+        error (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 192)
+        missing (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 15 0)
+        invalid (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 47 256)]
+    (and (= (vector-count e) 48)
+         (= (vector-count (darwin-proc-watch-event "" 1234 1)) 0)
+         (= (vector-count (darwin-proc-watch-event "25G332" 0 1)) 0)
+         (= (vector-count (darwin-proc-watch-event "25G332" 1234 0)) 0)
+         (= (vector-at e 0) 210) (= (vector-at e 1) 4)
+         (= (vector-at e 8) 251) (= (vector-at e 9) 255)
+         (= (vector-at e 10) 17) (= (vector-at e 15) 128)
+         (= (vector-at e 24) 120) (= (vector-at e 25) 86)
+         (= (vector-at e 26) 52) (= (vector-at e 27) 18)
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 e))
+         (darwin-proc-exit-event? "25G332" 1234 305419896 response)
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 badpid))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 badtoken))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 error))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 missing))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 invalid))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 (vector-alloc 0))))))
