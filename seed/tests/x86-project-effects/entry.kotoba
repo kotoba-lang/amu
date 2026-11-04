@@ -1,0 +1,7 @@
+(ns x86-project-fs.entry
+  (:export [main])
+  (:capabilities [:cli/args])
+  (:require [x86-project-fs.io :as io]))
+(defn main [] :i64
+  (let [base (typed-cap-call :cli/args :string :string "0")]
+    (if (io/roundtrip base) 42 91)))
