@@ -15,7 +15,9 @@
     (loop [i 0 out v] (if (= i 32) out
       (recur (+ i 1) (vector-assoc! out (+ i 8) (vector-at r i)))))))
 (defn test-darwin-watch-monitor [] :bool
-  (let [r (vector-assoc! (dwr-case-request) 3 50) init [0 1 100 20 100]
+  (let [r (vector-assoc! (dwr-case-request) 3 50) init (darwin-watch-monitor-start r 100 20)
+        other (-> (dwr-case-request) (vector-assoc! 3 50) (vector-assoc! 24 47))
+        other-hb (dwr-case-frame other 72 1) other-final (dwr-case-frame other 79 0)
         ready (dwr-case-frame r 82 0) hb (dwr-case-frame r 72 1)
         final (dwr-case-frame r 79 0) empty (vector-alloc 0)
         s1 (darwin-watch-monitor-step r init "ready" ready -1 false 110 true)
@@ -38,6 +40,12 @@
          (= (vector-at (darwin-watch-monitor-step r s2 "exit" final 0 false 130 false) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r s2 "exit" final 1 true 130 false) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r done "poll" empty -1 false 141 true) 0) 3)
+         (= (vector-at (darwin-watch-monitor-step other s1 "heartbeat" other-hb -1 false 120 true) 0) 3)
+         (= (vector-at (darwin-watch-monitor-step other s1 "poll" empty -1 false 120 true) 0) 3)
+         (= (vector-at (darwin-watch-monitor-step other s1 "exit" other-final 0 true 120 false) 0) 3)
+         (= (vector-at (darwin-watch-monitor-start (dwr-case-request) 100 20) 0) 3)
+         (= (vector-at (darwin-watch-monitor-start r 0 20) 0) 3)
+         (= (vector-at (darwin-watch-monitor-start r 100 0) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r [0 1 0 20 0] "ready" ready -1 false 1 true) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r [0 1 100 20] "ready" ready -1 false 110 true) 0) 3))))
 (defn test-darwin-watch-reply [] :bool

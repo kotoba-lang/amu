@@ -3,7 +3,7 @@
 ;; identity, obtain EOF, and bind these bytes and exit status to that launch.
 ;; A matched frame is not a successful workload receipt, a process-tree proof,
 ;; or permission to release a resource reservation.
-(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-monitor-step darwin-watch-reply-class]))
+(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-monitor-start darwin-watch-monitor-step darwin-watch-reply-class]))
 
 (defn- dwr-u32 [v :vector-i64 at :i64] :i64
   (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
@@ -60,8 +60,26 @@
              (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))
     "observer/bound-exit-observed" "observer/unknown"))
 
-;; Host-owned volatile state [phase next-sequence last-frame-ms timeout-ms last-observed-ms].
-;; Start with [0 1 launch-time timeout launch-time], advance only after reading from the
+;; Host-owned volatile state has five numeric fields followed by the exact
+;; 32-byte request. This is correlation, not authentication; the host must
+;; protect the state and bind the request to its own authenticated launch.
+(defn- dwr-monitor-state [request :vector-i64 phase :i64 next :i64 last :i64 timeout :i64 observed :i64] :vector-i64
+  (let [base (-> (vector-alloc 37) (vector-assoc! 0 phase) (vector-assoc! 1 next)
+                 (vector-assoc! 2 last) (vector-assoc! 3 timeout) (vector-assoc! 4 observed))]
+    (loop [i 0 out base]
+      (if (= i 32) out (recur (+ i 1) (vector-assoc! out (+ i 5) (vector-at request i)))))))
+(defn- dwr-state-request? [request :vector-i64 state :vector-i64] :bool
+  (and (= (vector-count request) 32) (= (vector-count state) 37)
+       (loop [i 0]
+         (if (= i 32) true
+           (and (= (vector-at request i) (vector-at state (+ i 5))) (recur (+ i 1)))))))
+(defn darwin-watch-monitor-start [request :vector-i64 now :i64 timeout :i64] :vector-i64
+  (if (and (dwr-request? request) (= (vector-at request 3) 50)
+           (> now 0) (<= now 9007199254740991) (> timeout 0) (<= timeout 900000))
+    (dwr-monitor-state request 0 1 now timeout now) [3 0 0 0 0]))
+
+;; Numeric fields: [phase next-sequence last-frame-ms timeout-ms last-observed-ms].
+;; Start with darwin-watch-monitor-start, advance only after reading from the
 ;; authenticated helper pipe, and retain a separate durable reservation. A
 ;; timeout, clock rollback, pipe loss, bad frame or inconsistent status makes
 ;; state [3 0 0 0 0] (unknown). Phase 2 observes one bound exit only; it never
@@ -69,7 +87,7 @@
 ;; not themselves prove freshness; the host must enforce its I/O deadline.
 (defn darwin-watch-monitor-step [request :vector-i64 state :vector-i64 event :string frame :vector-i64
                                 exit-code :i64 eof :bool now :i64 alive :bool] :vector-i64
-  (if (not (= (vector-count state) 5)) [3 0 0 0 0]
+  (if (not (dwr-state-request? request state)) [3 0 0 0 0]
     (let [phase (vector-at state 0) next (vector-at state 1)
           last (vector-at state 2) timeout (vector-at state 3) observed (vector-at state 4)]
       (if (or (not (dwr-request? request)) (not (= (vector-at request 3) 50))
@@ -77,13 +95,13 @@
               (<= last 0) (> last 9007199254740991) (< observed last) (< now observed) (> now 9007199254740991)
               (< timeout 1) (> timeout 900000) (> (- now last) timeout)) [3 0 0 0 0]
         (cond (and (= event "ready") (= phase 0) (= next 1) alive (= exit-code -1) (not eof)
-                   (darwin-watch-ready? request frame)) [1 next now timeout now]
+                   (darwin-watch-ready? request frame)) (dwr-monitor-state request 1 next now timeout now)
               (and (= event "heartbeat") (= phase 1) alive (= exit-code -1) (not eof)
-                   (darwin-watch-heartbeat? request frame next)) [1 (+ next 1) now timeout now]
-              (and (= event "poll") alive (= exit-code -1) (not eof) (= (vector-count frame) 0)) [phase next last timeout now]
+                   (darwin-watch-heartbeat? request frame next)) (dwr-monitor-state request 1 (+ next 1) now timeout now)
+              (and (= event "poll") alive (= exit-code -1) (not eof) (= (vector-count frame) 0)) (dwr-monitor-state request phase next last timeout now)
               (and (= event "exit") (= phase 1) (not alive)
                    (= (darwin-watch-exit-class request frame exit-code eof) "observer/bound-exit-observed"))
-                [2 next now timeout now]
+                (dwr-monitor-state request 2 next now timeout now)
               :else [3 0 0 0 0])))))
 
 ;; eof must mean the complete output was observed, not a read timeout or
