@@ -263,6 +263,8 @@ if __name__ == "__main__":
     parser.add_argument("--reuse", type=Path, help="content-addressed results to reuse for identical calls; new results are added")
     parser.add_argument("--store", type=Path, help="record content-addressed results without reusing any (full run)")
     args = parser.parse_args()
+    if args.reuse:
+        parser.error("--reuse is disabled until the producer and input closure are independently trusted")
     assert not (args.reuse and args.store), "--reuse and --store are exclusive"
     store = args.store or args.reuse
     main(args.bootstrap.resolve(), args.output.resolve(), args.tier, args.reuse and args.reuse.resolve(), store and store.resolve())

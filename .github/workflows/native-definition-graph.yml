@@ -2,6 +2,8 @@ name: native-definition-graph
 # Shared sparse traversal is exercised by the identity/object gates as well.
 # This whole-source call graph is not the checked-KIR/DefCID/cache bridge.
 on:
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
   pull_request:
     paths:
@@ -43,9 +45,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-definition-graph-graph-${{ matrix.runner }}
       - name: Verify current compiler source and image pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Native sparse graph, complete compiler input and executed mutants
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
@@ -57,7 +65,7 @@ jobs:
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-graph"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-definition-graph-${{ matrix.isa }}
           path: |
@@ -70,6 +78,10 @@ jobs:
             ${{ runner.temp }}/definition-graph/whole-producer.elf
             ${{ runner.temp }}/graph-admission.json
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   headroom:
     # JUN-737: exact token / read-node / function-table headroom of the largest static builds (about 100
     # compiles that stop after reading, ~10 s each on a runner), in parallel with the graph gate.
@@ -89,9 +101,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-definition-graph-headroom-${{ matrix.runner }}
       - name: Verify current compiler source and image pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Compiler table headroom of the largest static builds, with negative controls
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
@@ -103,10 +121,14 @@ jobs:
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/table-headroom"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-table-headroom-${{ matrix.isa }}
           path: |
             ${{ runner.temp }}/table-headroom/token-headroom.json
             ${{ runner.temp }}/table-headroom-admission.json
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
