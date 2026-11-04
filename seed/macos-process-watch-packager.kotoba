@@ -77,9 +77,11 @@
 ;; Fixed request: "WP01", pid u32, start-sec u64, start-usec u64,
 ;; token u32, timeout seconds u32. Response only on a matching event:
 ;; "WO01", 4 zero bytes, and the exact 32-byte request (40 bytes total).
-;; Syscall errors, timeouts, short I/O, changed identity and malformed fields
-;; exit nonzero with no response. External boot identity and durable recovery
-;; are essential; the 32-bit token is correlation only.
+;; Errors, timeouts, changed identity and malformed fields cannot be success.
+;; A failed or short stdout write can leave a partial response. The host must
+;; require an exact frame and successful exit and treat all else as unknown.
+;; External boot identity and durable recovery are essential; the 32-bit token
+;; is correlation only.
 (defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
   (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
 (defn- ds-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
@@ -87,7 +89,8 @@
 (defn- watcher-words [] :vector-i64
   (ds-finish (-> (ds-new)
     (ds-sub 31 31 2048)
-    ;; Read one fixed request from FD 3, including its exact length.
+    ;; Read exactly 32 bytes from FD 3. The host must also exclude trailing
+    ;; data; this read alone cannot prove end-of-input or prevent blocking.
     (ds-imm 0 3) (ds-add 1 31 0) (ds-imm 2 32) (ds-sys 3) (ds-b 0x54000002 9)
     (ds-cmpi 0 32) (ds-b 0x54000001 9)
     (ds-lw 8 31 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000001 9)
