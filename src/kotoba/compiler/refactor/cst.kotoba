@@ -1,0 +1,320 @@
+;; Lossless concrete syntax tree reader/printer for CLJK / CLJC / EDN source (JUN-830).
+;;
+;; The CST is a flat token table that partitions the source: every byte of the
+;; input belongs to exactly one token (whitespace, comments, `#_` markers and
+;; prefixes are tokens), so print(read(x)) == x. Reading checks structure
+;; (balanced delimiters, terminated strings/regexes, prefixes followed by a
+;; form) and answers a named refusal code instead of a table when it cannot.
+;; Meaning is never interpreted.
+;;
+;; Token = 4 slots [kind sub start end], byte offsets into the UTF-8 source.
+;;   kind: 0 ws, 1 comment (; and #!), 2 open, 3 close, 4 string, 5 regex,
+;;         6 char, 7 atom (incl. ##Inf), 8 prefix (' ` ~ ~@ @ #' #tag #:ns),
+;;         9 discard (#_), 10 meta (^).
+;;   sub:  open  0 ( 1 [ 2 { 3 #( 4 #{ 5 #?( or #?@(;  atom 0 sym 1 keyword 2 number.
+;; Result = vector [code pos tok...]; code 0 ok. Refusals:
+;;   1 unterminated string, 2 unterminated regex, 3 mismatched or unbalanced
+;;   closing delimiter, 4 unterminated collection, 5 prefix without a form,
+;;   6 bad dispatch (#? without a list, # at end of input).
+;;
+;; Native single-source program (an `amu run` entry takes one source and one
+;; exported `main`): main is this module's self-gate, a round trip over
+;; fixtures plus negative controls. `amu run` prints main's result, which is
+;; the number of failed checks: 0 means every check held (the process exit is 0
+;; either way, so read the printed value). Run:
+;;   bin/amu check src/kotoba/compiler/refactor/cst.kotoba
+;;   bin/amu run   src/kotoba/compiler/refactor/cst.kotoba    # expect 0 Not yet covered: the kotoba monorepo
+;; corpus gate (needs fs reads + multi-file input) -- see JUN-830 comments.
+(ns kotoba.compiler.refactor.cst
+  (:export [main]))
+
+;; ---------------------------------------------------------------- bytes
+
+(defn- ws? [b :i64] :bool
+  (or (= b 32) (= b 9) (= b 10) (= b 13) (= b 12) (= b 44)))
+
+(defn- delim? [b :i64] :bool
+  (or (= b 40) (= b 41) (= b 91) (= b 93) (= b 123) (= b 125)
+      (= b 34) (= b 59)))
+
+(defn- atom-byte? [b :i64] :bool
+  (not (or (ws? b) (delim? b))))
+
+(defn- digit? [b :i64] :bool
+  (and (>= b 48) (<= b 57)))
+
+(defn- atom-end [bs :bytes i :i64 n :i64] :i64
+  (loop [j i]
+    (if (and (< j n) (atom-byte? (bytes-at bs j)))
+      (recur (+ j 1))
+      j)))
+
+(defn- push-tok [v :vector-i64 kind :i64 sub :i64 s :i64 e :i64] :vector-i64
+  (vector-conj (vector-conj (vector-conj (vector-conj v kind) sub) s) e))
+
+;; scan a string body starting after the opening quote at i; answer index just
+;; past the closing quote, or -1
+(defn- string-end [bs :bytes i :i64 n :i64] :i64
+  (loop [j i]
+    (if (>= j n)
+      -1
+      (let [b (bytes-at bs j)]
+        (cond (= b 92) (recur (+ j 2))
+              (= b 34) (+ j 1)
+              :else (recur (+ j 1)))))))
+
+(defn- line-end [bs :bytes i :i64 n :i64] :i64
+  (loop [j i]
+    (if (and (< j n) (not (= (bytes-at bs j) 10)))
+      (recur (+ j 1))
+      j)))
+
+(defn- ws-end [bs :bytes i :i64 n :i64] :i64
+  (loop [j i]
+    (if (and (< j n) (ws? (bytes-at bs j)))
+      (recur (+ j 1))
+      j)))
+
+;; char literal: backslash, one whole code point, then any atom bytes
+(defn- char-end [bs :bytes i :i64 n :i64] :i64
+  (if (>= (+ i 1) n)
+    n
+    (let [first (bytes-at bs (+ i 1))
+          k (cond (< first 192) 1 (< first 224) 2 (< first 240) 3 :else 4)
+          after (min n (+ i (+ 1 k)))]
+      (atom-end bs after n))))
+
+(defn- atom-sub [bs :bytes s :i64 e :i64] :i64
+  (let [b (bytes-at bs s)]
+    (cond (= b 58) 1
+          (digit? b) 2
+          (and (or (= b 43) (= b 45)) (< (+ s 1) e) (digit? (bytes-at bs (+ s 1)))) 2
+          :else 0)))
+
+(defn- close-kind [b :i64] :i64
+  (cond (= b 41) 0 (= b 93) 1 :else 2))
+
+;; ---------------------------------------------------------------- pending stack
+;; entries: >=1 remaining forms a prefix still needs; <=-2 an open frame (-(2+closer))
+;; closer: 0 paren, 1 bracket, 2 brace
+
+;; A stack is [depth e1 e2 ...]; slots above depth are stale and reused.
+
+(defn- st-depth [st :vector-i64] :i64
+  (vector-at st 0))
+
+(defn- st-top [st :vector-i64] :i64
+  (vector-at st (st-depth st)))
+
+(defn- st-set-top [st :vector-i64 x :i64] :vector-i64
+  (vector-assoc st (st-depth st) x))
+
+(defn- st-pop [st :vector-i64] :vector-i64
+  (vector-assoc st 0 (- (st-depth st) 1)))
+
+(defn- st-new [] :vector-i64
+  (vector-conj (vector-i64) 0))
+
+;; a form just completed: satisfy pending prefixes on top of the stack
+(defn- complete [st :vector-i64] :vector-i64
+  (loop [s st]
+    (if (= 0 (st-depth s))
+      s
+      (let [t (st-top s)]
+        (cond (< t 0) s
+              (> t 1) (st-set-top s (- t 1))
+              :else (recur (st-pop s)))))))
+
+(defn- fix-push [st :vector-i64 x :i64] :vector-i64
+  (let [d (+ (st-depth st) 1)]
+    (if (< d (vector-count st))
+      (vector-assoc (vector-assoc st 0 d) d x)
+      (vector-conj (vector-assoc st 0 d) x))))
+
+;; ---------------------------------------------------------------- reader
+;; state passed through loop: i, toks, st. Failure returns [code pos].
+
+(defn- fail [code :i64 pos :i64] :vector-i64
+  (vector-conj (vector-conj (vector-i64) code) pos))
+
+(defn- finish [toks :vector-i64 st :vector-i64 n :i64] :vector-i64
+  (if (= 0 (st-depth st))
+    (loop [k 0 out (fail 0 n)]
+      (if (>= k (vector-count toks))
+        out
+        (recur (+ k 1) (vector-conj out (vector-at toks k)))))
+    (if (< (st-top st) 0)
+      (fail 4 n)
+      (fail 5 n))))
+
+(defn- read [src :string] :vector-i64
+  (let [bs (string-to-utf8 src)
+        n (bytes-count bs)]
+    (loop [i 0 toks (vector-i64) st (st-new)]
+      (if (>= i n)
+        (finish toks st n)
+        (let [b (bytes-at bs i)]
+          (cond
+            (ws? b)
+            (let [e (ws-end bs i n)]
+              (recur e (push-tok toks 0 0 i e) st))
+
+            (= b 59)
+            (let [e (line-end bs i n)]
+              (recur e (push-tok toks 1 0 i e) st))
+
+            (or (= b 40) (= b 91) (= b 123))
+            (let [sub (cond (= b 40) 0 (= b 91) 1 :else 2)]
+              (recur (+ i 1) (push-tok toks 2 sub i (+ i 1))
+                     (fix-push st (- 0 (+ 2 (close-kind (cond (= b 40) 41 (= b 91) 93 :else 125)))))))
+
+            (or (= b 41) (= b 93) (= b 125))
+            (if (or (= 0 (st-depth st)) (>= (st-top st) 0))
+              (if (= 0 (st-depth st)) (fail 3 i) (fail 5 i))
+              (if (= (- 0 (+ 2 (close-kind b))) (st-top st))
+                (recur (+ i 1) (push-tok toks 3 0 i (+ i 1)) (complete (st-pop st)))
+                (fail 3 i)))
+
+            (= b 34)
+            (let [e (string-end bs (+ i 1) n)]
+              (if (< e 0)
+                (fail 1 i)
+                (recur e (push-tok toks 4 0 i e) (complete st))))
+
+            (= b 92)
+            (let [e (char-end bs i n)]
+              (recur e (push-tok toks 6 0 i e) (complete st)))
+
+            (or (= b 39) (= b 96) (= b 64))
+            (recur (+ i 1) (push-tok toks 8 0 i (+ i 1)) (fix-push st 1))
+
+            (= b 126)
+            (let [e (if (and (< (+ i 1) n) (= (bytes-at bs (+ i 1)) 64)) (+ i 2) (+ i 1))]
+              (recur e (push-tok toks 8 0 i e) (fix-push st 1)))
+
+            (= b 94)
+            (recur (+ i 1) (push-tok toks 10 0 i (+ i 1)) (fix-push st 2))
+
+            (= b 35)
+            (if (>= (+ i 1) n)
+              (fail 6 i)
+              (let [c (bytes-at bs (+ i 1))]
+                (cond
+                  (= c 95) (recur (+ i 2) (push-tok toks 9 0 i (+ i 2)) (fix-push st 1))
+                  (= c 40) (recur (+ i 2) (push-tok toks 2 3 i (+ i 2)) (fix-push st -2))
+                  (= c 123) (recur (+ i 2) (push-tok toks 2 4 i (+ i 2)) (fix-push st -4))
+                  (= c 39) (recur (+ i 2) (push-tok toks 8 0 i (+ i 2)) (fix-push st 1))
+                  (= c 33) (let [e (line-end bs i n)] (recur e (push-tok toks 1 0 i e) st))
+                  (= c 34)
+                  (let [e (string-end bs (+ i 2) n)]
+                    (if (< e 0)
+                      (fail 2 i)
+                      (recur e (push-tok toks 5 0 i e) (complete st))))
+                  (= c 63)
+                  (let [p (if (and (< (+ i 2) n) (= (bytes-at bs (+ i 2)) 64)) (+ i 3) (+ i 2))]
+                    (if (and (< p n) (= (bytes-at bs p) 40))
+                      (recur (+ p 1) (push-tok toks 2 5 i (+ p 1)) (fix-push st -2))
+                      (fail 6 i)))
+                  (= c 35)
+                  (let [e (atom-end bs (+ i 2) n)]
+                    (recur e (push-tok toks 7 0 i e) (complete st)))
+                  :else
+                  (let [e (atom-end bs (+ i 1) n)]
+                    (if (= e (+ i 1))
+                      (fail 6 i)
+                      (recur e (push-tok toks 8 0 i e) (fix-push st 1)))))))
+
+            :else
+            (let [e (atom-end bs i n)]
+              (recur e (push-tok toks 7 (atom-sub bs i e) i e) (complete st)))))))))
+
+;; ---------------------------------------------------------------- printer
+
+(defn- tok-text [src :string toks :vector-i64 k :i64] :string
+  (let [base (+ 2 (* 4 k))]
+    (string-substring src (vector-at toks (+ base 2)) (vector-at toks (+ base 3)))))
+
+(defn- tok-count [r :vector-i64] :i64
+  (quot (- (vector-count r) 2) 4))
+
+;; Concatenate the token texts in order. The partition invariant (token k+1
+;; starts where token k ends, the table covers [0, len)) is checked by
+;; `partition?`, so a table that skips bytes cannot print as the source.
+(defn- print [src :string r :vector-i64] :string
+  (loop [k 0 out ""]
+    (if (>= k (tok-count r))
+      out
+      (recur (+ k 1) (string-concat out (tok-text src r k))))))
+
+(defn- partition? [src :string r :vector-i64] :bool
+  (let [n (string-byte-length src)
+        c (tok-count r)]
+    (loop [k 0 at 0]
+      (if (>= k c)
+        (= at n)
+        (let [base (+ 2 (* 4 k))]
+          (if (and (= at (vector-at r (+ base 2)))
+                   (> (vector-at r (+ base 3)) at))
+            (recur (+ k 1) (vector-at r (+ base 3)))
+            false))))))
+
+;; ---------------------------------------------------------------- self-gate
+
+(defn- round-trips? [src :string] :bool
+  (let [r (read src)]
+    (and (= 0 (vector-at r 0))
+         (partition? src r)
+         (string=? (print src r) src))))
+
+(defn- refuses? [src :string code :i64] :bool
+  (= code (vector-at (read src) 0)))
+
+(defn- count-kind [r :vector-i64 kind :i64] :i64
+  (loop [k 0 c 0]
+    (if (>= k (tok-count r))
+      c
+      (recur (+ k 1) (if (= kind (vector-at r (+ 2 (* 4 k)))) (+ c 1) c)))))
+
+(defn- ok [name :string v :bool] :i64
+  (if v 0 1))
+
+(defn main [] :i64
+  (+
+   ;; positive round trips: comments, blank runs, #_, every CLJK literal kind
+   (ok "empty" (round-trips? ""))
+   (ok "ws" (round-trips? "  \n\t,, \n"))
+   (ok "comment-eof" (round-trips? "; only a comment"))
+   (ok "ns" (round-trips? "(ns a.b ; keep me\n  (:require [x :as y]))\n"))
+   (ok "discard" (round-trips? "(a #_ (b c) #_#_ d e f)"))
+   (ok "fnlit" (round-trips? "(map #(+ % 1) [1 2])"))
+   (ok "regex" (round-trips? "(re-find #\"a\\\"b[)]\" s)"))
+   (ok "js" (round-trips? "#js {:a 1} #js [1 2]"))
+   (ok "quote" (round-trips? "'x `(a ~b ~@c) @d #'e"))
+   (ok "chars" (round-trips? "[\\a \\space \\( \\) \\\" \\u00e9 \\é \\newline]"))
+   (ok "rc" (round-trips? "#?(:kotoba 1 :default 2) #?@(:cljs [a b])"))
+   (ok "meta" (round-trips? "^:dynamic ^{:a 1} ^String x"))
+   (ok "nsmap" (round-trips? "#:user{:a 1} ##Inf ##-Inf"))
+   (ok "shebang" (round-trips? "#!/usr/bin/env x\n(a)"))
+   (ok "str-multiline" (round-trips? "\"line1\n;not comment ) ( \\\" end\" x"))
+   (ok "unicode" (round-trips? "(def 名前 \"日本語 ; )\") ; コメント"))
+   (ok "crlf" (round-trips? "(a)\r\n(b)\r\n"))
+   ;; token classification actually happens
+   (ok "kinds" (let [r (read "(a #_b ; c\n  \"s\")")]
+                 (and (= 1 (count-kind r 1)) (= 1 (count-kind r 9))
+                      (= 1 (count-kind r 4)) (= 1 (count-kind r 2))
+                      (= 1 (count-kind r 3)))))
+   ;; negative controls: named refusals
+   (ok "n-string" (refuses? "(a \"b" 1))
+   (ok "n-regex" (refuses? "#\"abc" 2))
+   (ok "n-extra-close" (refuses? "(a))" 3))
+   (ok "n-mismatch" (refuses? "(a]" 3))
+   (ok "n-close-first" (refuses? ")" 3))
+   (ok "n-unterminated" (refuses? "(a [b" 4))
+   (ok "n-dangling" (refuses? "(a '" 5))
+   (ok "n-dangling-discard" (refuses? "#_" 5))
+   (ok "n-prefix-before-close" (refuses? "(a ~)" 5))
+   (ok "n-dispatch" (refuses? "#" 6))
+   (ok "n-rc" (refuses? "#? x" 6))
+   ;; the gate fails on a broken table: a table with a hole is not a partition
+   (ok "n-partition" (not (partition? "abc" (push-tok (push-tok (fail 0 3) 7 0 0 1) 7 0 2 3))))
+   ))

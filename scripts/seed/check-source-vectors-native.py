@@ -349,7 +349,7 @@ def main(compiler, out):
     result=run('detect-bytes-type-erasure',[image,'source',inputs['bytes-from-vector-i64']],1)
     assert not result.stdout and result.stderr.startswith(b'DSB:IDENTITY:')
     report['mutations'].append(dict(name='bytes-type-erasure',image=pin(image),built=True,executed=True,atomicFreshTypeRefusal=True))
-    old='type (dsb-type M C ty 0)'
+    old='type (dsb-type M S C ty 0)'
     assert unity.count(old)==1
     image=build('mutant-list-type-erasure',unity.replace(old,'type "[:list :i64]"'))
     result=run('detect-list-type-erasure',[image,'source',inputs['list-new-string']],1)

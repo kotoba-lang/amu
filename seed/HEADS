@@ -138,7 +138,14 @@
   [:c KW-SYMBOL 39 ":symbol (type)"]
   ;; -- R6C --
   [:c KW-PINFER 40 "(no spelling) the synthetic type of an unannotated defn parameter: :i64 unless the checker's own refusal
-   asks for another type (the reference's infer-absent-parameter-types; 21-check records the refinement, the driver re-runs)"]
+   asks for another type (the reference's infer-absent-parameter-types; 21-check records the refinement, the driver re-runs).
+   JUN-733 (docs/language-ladder.edn :row-records :row-get-and-match): a parameter used as a record -- (:k p), get, assoc /
+   dissoc / merge / select-keys, :keys destructuring -- or passed a record by a caller asks for a ROW (the pseudo type
+   TY-REC-BASE): the re-run makes its defn a row generic (FN2-FLAGS bits 0 and 5), never checked or lowered itself; each
+   call uses its specialization at the record types of its row arguments (a clone of the defn form, FN2-FLAGS bit 6,
+   checked when made). A non-record argument to a row parameter is E2104, an explicitly exported row function E2183, one
+   as a value E2134, a self-recursive one without a declared result E2126. (get r :k d) / (:k r d) on a record: a field r
+   has reads as (:k r) (d of its type), an [:option T] field as (option-or (:k r) d), a key r lacks is d"]
   [:c KW-F64 41 ":f64 (type)"]
   ;; -- ADR 0371 step 3 (2026-10-22): wire 42 :gpu/compute admitted as typed-cap-call :string :string
   [:c KW-GPU-COMPUTE 42 ":gpu/compute (capability wire 42)"]
@@ -387,7 +394,18 @@
                      boolean literals, (->R ..), calls of defns with a declared result, declared [:option T] fields of that key);
                      a non-nil value T at such a key, or into an [:option T] field, is its some (30-lower lw-some: pair(x, 0)).
                      nil with no T: E2182; two Ts: E2128; nil into a field that is not an option: E2104; nil anywhere else
-                     stays E2102"]
+                     stays E2102. JUN-733 slice 2 (:row-operations :empty-map-literal :record-field-update
+                     :merge-literal-reads-its-row): ROW OPERATIONS on records give the record of the shape they make (the one
+                     declared record of exactly that shape, else the anonymous one, its keys in printed-text order: 21-check
+                     ck-shape-type, ck-krank): (assoc r :k v) of a key r lacks EXTENDS the row (v typed as a literal value);
+                     {} is the empty record as the record argument of assoc / merge (anywhere else E2133); (dissoc r :k ..)
+                     and (select-keys r [:k ..]) SHRINK it (a key r lacks is ignored; a key that is not a keyword literal:
+                     E2127); (merge a b) takes a's fields and b's, b's winning (both records, else E2104; (merge a b c ..)
+                     folds left); (update m :k f x ..) is reader sugar (let [g m] (assoc g :k (f (:k g) x ..))), a fn literal
+                     f applied as a let (a parameter count other than the value count: E2103). merge, select-keys and
+                     update are recognized by spelling when the module defines no function of that name. 30-lower builds
+                     each result field from the source's field of the same key (lw-assoc / lw-rebuild / lw-merge); a merge
+                     is NF-RES HD-ASSOC with two arguments (2 hidden slots), dissoc / select-keys NF-RES HD-DISSOC (1)"]
   ;; R1's get and assoc also take maps: (get m k d) -> the value of k or d (5 hidden slots), (assoc m k v) = typed-map-assoc
   ;; -- R4 (rung 4, 2026-10-03): functions. Lowerings: seed/SIR :r4-lowering. A fn literal is lambda-lifted by 21-check into
   ;;    its own FN record (FK-LAMBDA, seed/MEMORY-MAP): parameters first, then the captured locals of the enclosing function
@@ -632,6 +650,8 @@
   ;; JUN-733: nil at a keyword key of a map literal is the none of an [:option T] field; refused when no declared record
   ;; takes the literal and the module spells no T at that key (lang/guest-grammar.edn :keyword-keys :refused-by-name :nil)
   [:c E-CHECK-NILKEY 2182 "nil at key '{name}' has no field type: no declared record takes this literal and no other value at that key says T"]
+  ;; JUN-733 slice 3: an unannotated parameter used as a record is a row; its function exists only as its specializations
+  [:c E-CHECK-ROW-EXPORT 2183 "a function with a row parameter has no single interface and cannot be exported: '{name}'"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
