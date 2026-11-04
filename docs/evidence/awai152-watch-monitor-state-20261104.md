@@ -68,3 +68,13 @@ The observer and native decision were separate processes at separate times;
 this is not an integrated live native supervisor, a process-tree proof, or
 a test of buffered data freshness, host restart or a real workload. The host
 supervisor and other qualification limitations above remain open.
+
+## Native CLI regression control
+
+The native CLI product gate now also runs the existing monitor cases against
+a mutation that compares the clock only with the last frame, rather than the
+last observation. This checks that a rollback after a poll is detected by the
+actual compiled cases. A local bounded source-unity run of the unchanged
+monitor and this mutation returned the expected pass and refusal respectively,
+with a 3-second CPU limit per native process. The complete CLI product gate
+was not run locally; this does not qualify the CLI, watcher, or governor.
