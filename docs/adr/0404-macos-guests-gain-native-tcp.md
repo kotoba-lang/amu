@@ -1,6 +1,6 @@
 # ADR 0404: macOS guests gain native TCP (wires 43..47)
 
-Status: proposed (JUN-817). Design only: no runtime, packager, CLI or pin changes.
+Status: proposed (JUN-817); owner answered the four open questions on 2026-11-04 (recorded below). Design only: no runtime, packager, CLI or pin changes.
 
 ## Context
 
@@ -72,18 +72,21 @@ refuses wires it does not carry. This can land first and independently of the re
 
 Each slice is its own change; none is half of another.
 
-## Open questions (owner)
+## Decisions on the open questions (owner, 2026-11-04: "as recommended")
 
-1. **Grant transport.** Linux reads `KEXE_CAP_RESOURCES_43` / `_45` from the environment in the image itself, so
-   a directly executed binary works without the CLI. On macOS the same would let `./listener` run with
-   `KEXE_CAP_RESOURCES_43=127.0.0.1:8765 ./listener`. The alternative is a CLI flag on `amu run`, which adds
-   public flags (today unsupported flags refuse) and changes `amu-cli.macho`. Recommendation: the environment
-   form first, as on Linux, flags later if wanted.
-2. **Listener lifetime.** `amu run` kills a guest at 5 s, so a listener has to be a directly executed binary, or
-   `run` gets a bounded `--deadline` flag. Recommendation: direct execution, no change to `run`.
-3. **Loopback only in the first release** (D4)? Recommendation: yes.
-4. **Does a net-capable image carry the source and the recompile-and-compare check** that `run PROGRAM` relies
-   on? Directly executing a binary bypasses it by design, so the net variant's trust story needs a sentence.
+1. **Grant transport: the environment, as on Linux.** The net-capable image reads `KEXE_CAP_RESOURCES_43`
+   (listen) and `KEXE_CAP_RESOURCES_45` (dial) itself, comma-separated exact `<ipv4>:<port>` entries, so
+   `KEXE_CAP_RESOURCES_43=127.0.0.1:8765 ./listener` works without the CLI. No new public flag on `amu run`
+   for now; flags can follow if wanted.
+2. **Listener lifetime: direct execution.** A listener is a directly executed binary. `amu run` keeps its 5 s
+   deadline and gains no flag.
+3. **First release is loopback only.** Any entry other than `127.0.0.1:<port>` is refused at start with
+   `net/address-not-granted`, even if granted. Widening it is a later ADR.
+4. **Trust of a net-capable image.** The `run PROGRAM` check (recompile the embedded source, compare the whole
+   signed image, run the regenerated image) is unchanged and still applies to `run`. A binary executed directly
+   is, as for any executable the user starts, trusted only as far as the user trusts it; what limits it is that
+   it holds no grant of its own (D3), reaches only the addresses its invoker names, and only on loopback (3).
+   The wording of this paragraph is the part most in need of review.
 
 ## Consequences
 
