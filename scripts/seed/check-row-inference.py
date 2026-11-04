@@ -147,8 +147,10 @@ def main(compiler, output):
 
     ids = output / "cids"; ids.mkdir(mode=0o700)
     status, out, err = native(compiler, ids, "definition-cids", "annotated", CIDS["annotated"])
-    if status != 0 or "SCANNED\t0/2" not in out or out.count("REFUSED:unbridged-source") != 2:
-        raise ValueError(f"definition-cids annotated: expected both definitions REFUSED:unbridged-source, got exit "
+    # JUN-358 (#1788/#1789): a source holding a form with no bridge (records) refuses atomically, exit 66 DSB:BRIDGE:3:<offset>,
+    # instead of per-definition REFUSED:unbridged-source (docs/definition-cids-native.md; check-checked-source-native.py).
+    if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
+        raise ValueError(f"definition-cids annotated: expected the atomic DSB:BRIDGE:3 refusal, got exit "
                          f"{status}: {(out + err)[-300:]!r}")
     # a row generic is a template with specializations: whole-module DSB:BRIDGE (docs/definition-cids-native.md)
     status, out, err = native(compiler, ids, "definition-cids", "row", CIDS["row"])
