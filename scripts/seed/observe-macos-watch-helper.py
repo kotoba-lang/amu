@@ -14,6 +14,7 @@ import signal
 import struct
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -64,10 +65,34 @@ def main():
             if child.poll() is None:
                 child.send_signal(signal.SIGKILL)
                 child.wait(timeout=3)
+        # An observed exit event is not a successful child outcome. Kill a
+        # separate owned child while the watcher is registered, then compare
+        # the watch frame with the independent wait status.
+        killed = subprocess.Popen(['/bin/sleep', '10'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        timer = None
+        try:
+            sec, usec = helper.identity(killed.pid)
+            request = struct.pack('<4sIQQII', b'WP01', killed.pid, sec, usec, 23456, 8)
+            timer = threading.Timer(2, killed.kill)
+            timer.start()
+            result = helper.observe(watcher, root, request)
+            status = killed.wait(timeout=3)
+            if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
+                raise RuntimeError('signalled child did not produce exact event')
+            if status != -signal.SIGKILL:
+                raise RuntimeError('independent child status was not SIGKILL')
+        finally:
+            if timer is not None:
+                timer.cancel()
+                timer.join()
+            if killed.poll() is None:
+                killed.kill()
+                killed.wait(timeout=3)
     print(json.dumps({'schema': 'amu.darwin-watch-observation.v1', 'build': build,
                       'watcherSha256': args.expected_sha256, 'positive': True,
                       'wrongIdentityRefused': True, 'timeoutRefused': True,
-                      'reapedPidRefused': True, 'governorQualified': False}))
+                      'reapedPidRefused': True, 'signalledExitEventObserved': True,
+                      'signalledChildIsSuccess': False, 'governorQualified': False}))
 
 
 if __name__ == '__main__':
