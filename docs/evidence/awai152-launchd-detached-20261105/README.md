@@ -59,3 +59,33 @@ environment; they are not unattended setup commands. The first wrapper's
 `VERIFIED False` and the captured nonzero probe codes are expected records of
 failure, not successful launch evidence. A supported remote launch and
 supervision boundary remains to be designed and qualified.
+
+## Three target hosts: temporary system-domain job
+
+On 2026-11-05, strict Tailscale SSH preflight found that `sudo -n /usr/bin/true`
+succeeded and `launchctl print system` was readable on naphtali, benjamin and
+judah. A separate task-specific probe used `sudo -n` to run the test observer
+and its uniquely named short-lived job as root in the `system` domain. This
+privilege was used for the diagnostic only; it is not a recommendation to run
+the model as root. Each target reported ARM64 macOS 26.7.2 build `25G332`.
+
+On each target, system-domain bootstrap and bootout returned zero. The
+observer verified that the test's `setsid` child had its own session and
+process group before stopping the job. After bootout, the job parent and its
+same-group child were not observed, but the detached child remained live and
+was reparented to PID 1. Cleanup sent SIGKILL only after comparing that child's
+recorded PID and start time; the observer subsequently saw its task PIDs absent
+or zombie. An independent strict SSH follow-up successfully printed the
+system domain with no task-prefix label and found none of the recorded test
+PIDs at that point. Wrapper temporary directories were reported absent.
+
+The system-domain probe SHA-256 was
+`4d8395641bae5c91d457d895a539e9a5503561813878d62994d6601fd9a97a46`.
+`sudo-preflight.py`, `system-one.py`, `system-two.py`, and
+`system-list-hosts.py` record the task-specific wrappers and use local
+absolute paths. These short diagnostic jobs and their detached children were
+run as root, with CPU limits and fallback lifetimes, not a hard memory limit.
+They do not establish production privilege separation, atomic PID handles,
+fork-denial, process-tree containment, resource control, crash recovery or a
+qualified native governor. A root launch path and successful bootstrap alone
+are not authorization to deploy a real workload.
