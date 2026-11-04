@@ -112,7 +112,7 @@
 ;; The KIR of the kept rows and their helpers, "" when no row is kept. The module row is the union of the kept
 ;; rows' rows, so the producer's per-row and union checks still hold.
 (defn- dsr-kir-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] :string
-  (let [salt (dsb-hygiene M S C)
+  (let [records (dsb-record-guard M C) salt (dsb-hygiene M S C)
         guard (dsr-guard-each M C Q)
         plan (if (= (vector-at C 0) 0) (dsr-plan-each M S C Q) 0)
         values (if (= (vector-at C 0) 0) (dsr-values-each M S C Q) (typed-list-new [:list :string]))
