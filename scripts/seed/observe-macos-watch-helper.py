@@ -105,6 +105,7 @@ def main():
                       'signalledChildIsSuccess': False, 'execEventRefused': True,
                       'forkEventRefused': True, 'persistentExitObserved': True,
                       'persistentExecRefused': True, 'persistentForkRefused': True,
+                      'sequencedHeartbeatObserved': True,
                       'governorQualified': False}))
 
 

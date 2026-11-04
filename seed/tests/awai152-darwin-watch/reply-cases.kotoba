@@ -9,11 +9,32 @@
 (defn- dwr-case-reply-for [r :vector-i64] :vector-i64
   (loop [i 0 out (dwr-case-reply)]
     (if (= i 32) out (recur (+ i 1) (vector-assoc! (vector-assoc! out (+ i 8) (vector-at r i)) (+ i 48) (vector-at r i))))))
+(defn- dwr-case-frame [r :vector-i64 kind :i64 sequence :i64] :vector-i64
+  (let [v (-> (vector-alloc 40) (vector-assoc! 0 87) (vector-assoc! 1 kind)
+              (vector-assoc! 2 48) (vector-assoc! 3 49) (vector-assoc! 4 sequence))]
+    (loop [i 0 out v] (if (= i 32) out
+      (recur (+ i 1) (vector-assoc! out (+ i 8) (vector-at r i)))))))
 (defn test-darwin-watch-reply [] :bool
   (let [r (dwr-case-request) out (dwr-case-reply)
+        r2 (vector-assoc! (dwr-case-request) 3 50)
+        heartbeat (dwr-case-frame r2 72 1) final (dwr-case-frame r2 79 0)
+        last (-> (dwr-case-frame r2 72 255) (vector-assoc! 5 255) (vector-assoc! 6 255) (vector-assoc! 7 255))
         bad-usec (vector-assoc! (dwr-case-request) 20 1)
         bad-timeout (vector-assoc! (dwr-case-request) 28 0)]
     (and (darwin-watch-ready? r (dwr-case-ready))
+         (darwin-watch-ready? r2 (dwr-case-frame r2 82 0))
+         (darwin-watch-heartbeat? r2 heartbeat 1)
+         (darwin-watch-heartbeat? r2 last 4294967295)
+         (not (darwin-watch-heartbeat? r2 last 4294967296))
+         (not (darwin-watch-heartbeat? r2 heartbeat 2))
+         (not (darwin-watch-heartbeat? r2 heartbeat 0))
+         (not (darwin-watch-heartbeat? r heartbeat 1))
+         (not (darwin-watch-heartbeat? r2 (vector-assoc! heartbeat 8 0) 1))
+         (not (darwin-watch-heartbeat? r2 (vector-alloc 39) 1))
+         (= (darwin-watch-exit-class r2 final 0 true) "observer/bound-exit-observed")
+         (= (darwin-watch-exit-class r2 final 0 false) "observer/unknown")
+         (= (darwin-watch-exit-class r2 final 1 true) "observer/unknown")
+         (= (darwin-watch-reply-class r2 (dwr-case-reply-for r2) 0 true) "observer/unknown")
          (not (darwin-watch-ready? r (vector-alloc 39)))
          (not (darwin-watch-ready? r (vector-assoc! (dwr-case-ready) 32 47)))
          (= (darwin-watch-reply-class r out 0 true) "observer/bound-exit-observed")

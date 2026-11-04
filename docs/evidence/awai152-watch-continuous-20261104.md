@@ -1,5 +1,9 @@
 # Diagnostic continuous Darwin process watch
 
+This records the earlier `cf3b3a75` watcher revision, before sequenced
+heartbeats were added. See `awai152-watch-heartbeat-20261104.md` for the later
+protocol and evidence.
+
 The prior `WP01` watcher returned unknown after one timeout (at most 900
 seconds), which cannot continuously observe a long-lived process. The
 experimental `WP02` request retains the same kqueue registration and repeats

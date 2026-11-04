@@ -84,9 +84,11 @@
 ;; require an exact frame and successful exit and treat all else as unknown.
 ;; External boot identity and durable recovery are essential; the 32-bit token
 ;; is correlation only.
-;; WP01 refuses after one timeout; WP02 repeats bounded waits on the same
-;; registered queue until an event or error. WP02 has no heartbeat: the
-;; caller must monitor helper liveness and treat its loss as unknown.
+;; WP01 refuses after one timeout. WP02 repeats waits on the same queue and
+;; emits "WH01", a strictly increasing nonzero u32 sequence, and the exact
+;; request on each empty wait. The host must drain and authenticate the pipe,
+;; enforce its own deadline, reject missing, stale or malformed heartbeats and
+;; treat loss as unknown. A heartbeat is not proof that the workload is safe.
 (defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
   (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
 (defn- ds-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
@@ -98,7 +100,7 @@
     ;; data; this read alone cannot prove end-of-input or prevent blocking.
     (ds-imm 0 3) (ds-add 1 31 0) (ds-imm 2 32) (ds-sys 3) (ds-b 0x54000002 9)
     (ds-cmpi 0 32) (ds-b 0x54000001 9)
-    (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
+    (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 26 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
     (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000001 9) (ds-imm 25 1)
     (ds-label 1)
     (ds-lw 19 31 4) (ds-cmpi 19 0) (ds-b 0x54000000 9)
@@ -146,7 +148,12 @@
     (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
     (ds-imm 4 1) (ds-imm 5 0) (ds-add 6 31 1104) (ds-sys 369) (ds-b 0x54000002 9)
     (ds-cmpi 0 0) (ds-b 0x54000001 3)
-    (ds-cmpi 25 1) (ds-b 0x54000000 2) (ds-b 0x14000000 9)
+    (ds-cmpi 25 1) (ds-b 0x54000001 9)
+    ;; WP02: bounded, request-bound heartbeat; sequence wrap is unknown.
+    (ds-add 26 26 1) (ds-imm 8 4294967295) (ds-cmp 26 8) (ds-b 0x54000008 9)
+    (ds-str 31 31 1200) (ds-imm 8 825247831) (ds-sw 8 31 1200) (ds-sw 26 31 1204)
+    (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 40) (ds-b 0x54000001 9) (ds-b 0x14000000 2)
     (ds-label 3)
     (ds-cmpi 0 1) (ds-b 0x54000001 9)
     ;; PID, filter, EV_ERROR absent, EV_EOF and NOTE_EXIT set, token match;

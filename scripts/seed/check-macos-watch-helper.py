@@ -95,6 +95,15 @@ def launch_watcher(image, directory, request):
         os.close(fd)
 
 
+def heartbeat_frames(data, request, minimum=1, start=1):
+    if len(data) % 40 or len(data) // 40 < minimum:
+        raise RuntimeError('missing or partial heartbeat')
+    for index in range(len(data) // 40):
+        expected = b'WH01' + struct.pack('<I', index + start) + request
+        if data[index * 40:(index + 1) * 40] != expected:
+            raise RuntimeError('malformed or out-of-order heartbeat')
+
+
 def transition_case(image, directory, mode, protocol=b'WP01'):
     if mode == 'exec':
         action = "os.execv('/bin/sleep',['sleep','2'])"
@@ -145,7 +154,9 @@ def transition_case(image, directory, mode, protocol=b'WP01'):
         child.stdin.write(b'x')
         child.stdin.flush()
         out, err = watcher.communicate(timeout=7)
-        if watcher.returncode != 1 or out or err:
+        if protocol == b'WP02':
+            heartbeat_frames(out, request)
+        if watcher.returncode != 1 or (protocol == b'WP01' and out) or err:
             raise RuntimeError((mode, 'transition was not cleanly refused', watcher.returncode, out, err))
         if child.wait(timeout=5) != 0:
             raise RuntimeError((mode, 'child failed'))
@@ -161,7 +172,7 @@ def transition_case(image, directory, mode, protocol=b'WP01'):
 
 def persistent_case(image, directory):
     import select
-    child = subprocess.Popen(['/bin/sleep', '4'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    child = subprocess.Popen(['/bin/sleep', '5'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     watcher = None
     try:
         sec, usec = identity(child.pid)
@@ -179,12 +190,24 @@ def persistent_case(image, directory):
             ready += chunk
         if ready != b'WR01\0\0\0\0' + request:
             raise RuntimeError(('persistent ready mismatch', ready))
-        time.sleep(2.2)
+        seen = b''
+        deadline = time.monotonic() + 3.5
+        while len(seen) < 80:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([watcher.stdout], [], [], remaining)[0]:
+                raise RuntimeError('persistent heartbeat timeout')
+            chunk = os.read(watcher.stdout.fileno(), 80 - len(seen))
+            if not chunk:
+                raise RuntimeError('persistent watcher did not survive multiple intervals')
+            seen += chunk
+        heartbeat_frames(seen, request, minimum=2)
         if watcher.poll() is not None or child.poll() is not None:
             raise RuntimeError('persistent watcher did not survive multiple intervals')
         out, err = watcher.communicate(timeout=5)
-        if watcher.returncode != 0 or out != b'WO01\0\0\0\0' + request or err:
+        final = b'WO01\0\0\0\0' + request
+        if watcher.returncode != 0 or not out.endswith(final) or err:
             raise RuntimeError(('persistent event mismatch', watcher.returncode, out, err))
+        heartbeat_frames(out[:-40], request, minimum=0, start=3)
         if child.wait(timeout=2) != 0:
             raise RuntimeError('persistent child did not exit normally')
         print('WATCH_PERSISTENT_EVENT_AFTER_TIMEOUTS', flush=True)
@@ -249,11 +272,11 @@ def run(compiler, packager, output, artifact_dir=None):
         persistent_case(image, output)
         transition_case(image, output, 'exec', b'WP02')
         transition_case(image, output, 'fork', b'WP02')
-        anchor = '(ds-cmpi 25 1) (ds-b 0x54000000 2)'
+        anchor = '(ds-cmpi 25 1) (ds-b 0x54000001 9)'
         text = source.read_text()
         if text.count(anchor) != 1:
             raise RuntimeError('persistent negative-control anchor changed')
-        mutant_source = text.replace(anchor, '(ds-cmpi 25 0) (ds-b 0x54000000 2)')
+        mutant_source = text.replace(anchor, '(ds-cmpi 25 0) (ds-b 0x54000001 9)')
         mutant_emitter = fixture.build(gate, compiler, packager, output, 'watch-mutant-emitter', mutant_source)
         gate.native_run(mutant_emitter, output, 'watch-mutant-unsigned.macho', timeout=120)
         mutant = output / 'watch-mutant.macho'
@@ -271,6 +294,27 @@ def run(compiler, packager, output, artifact_dir=None):
         else:
             raise RuntimeError('persistent negative control unexpectedly passed')
         print('WATCH_PERSISTENT_MUTANT_REFUSED', flush=True)
+        heartbeat_anchor = '(ds-imm 8 825247831)'
+        if text.count(heartbeat_anchor) != 1:
+            raise RuntimeError('heartbeat negative-control anchor changed')
+        bad_source = text.replace(heartbeat_anchor, '(ds-imm 8 825247830)')
+        bad_emitter = fixture.build(gate, compiler, packager, output, 'heartbeat-mutant-emitter', bad_source)
+        gate.native_run(bad_emitter, output, 'heartbeat-mutant-unsigned.macho', timeout=120)
+        bad = output / 'heartbeat-mutant.macho'
+        shutil.copyfile(output / 'heartbeat-mutant-unsigned.macho', bad)
+        bad.chmod(0o700)
+        subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(bad)],
+                       capture_output=True, check=True, timeout=30)
+        subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(bad)],
+                       capture_output=True, check=True, timeout=30)
+        try:
+            persistent_case(bad, output)
+        except RuntimeError as error:
+            if str(error) != 'malformed or out-of-order heartbeat':
+                raise
+        else:
+            raise RuntimeError('heartbeat negative control unexpectedly passed')
+        print('WATCH_HEARTBEAT_MUTANT_REFUSED', flush=True)
         if artifact_dir is not None:
             artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
             shutil.copyfile(image, artifact_dir / 'watch.macho')
