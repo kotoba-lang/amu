@@ -423,13 +423,20 @@
 ;; (assoc r :f v): [r -> t] LSET s t, then field i into t+i (LGET + projections, or [v -> t+j]), CONST, pairs.
 ;; s = the hidden slot (NF-TYPE of the head node), j = NF-RES of the keyword, the field count from the record type.
 ;; The three numbers travel as one flat record (they were packed into one i64 in R0 style).
-(defrecord lw-asf [s :i64 j :i64 v :i64])
+(defrecord lw-asf [s :i64 j :i64 v :i64 f :i64])   ; JUN-733: f = the field's type (lw-some)
 (defn- lw-nfields [M :vector-i64 ty :i64] :i64
   (vector-at M (+ (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)) RB-N)))
+;; JUN-733: a value of type T stored into a field of type [:option T] is its some, pair(x, 0) (21-check ck-fval); fty / vty =
+;; the field's and the value's type (a bottom value, 0, never yields)
+(defn- lw-some [M :vector-i64 fty :i64 vty :i64 t :i64] :vector-i64
+  (if (or (zero? vty) (= fty vty)) M (-> M (lw-emit OP-CONST (inc t)) (lw-emit OP-RT RT-PAIR-NEW t 2))))
+;; the type of field j of record type ty
+(defn- lw-fty [M :vector-i64 ty :i64 j :i64] :i64
+  (vector-at M (+ (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)) RB-F0 (* j RB-FW) 1)))
 (defn- lw-assoc-fields [M :vector-i64 i :i64 n :i64 q [:ref :seed/lw-asf] t :i64]
   :vector-i64
   (cond (>= i n) M
-        (= i (:j q)) (lw-assoc-fields (lw-expr M (:v q) (+ t i) 0) (inc i) n q t)
+        (= i (:j q)) (lw-assoc-fields (lw-some (lw-expr M (:v q) (+ t i) 0) (:f q) (lw-nf M (:v q) NF-TYPE) (+ t i)) (inc i) n q t)
         :else (lw-assoc-fields (-> M (lw-emit OP-LGET (+ t i) (:s q)) (lw-seconds (+ t i) i)) (inc i) n q t)))
 (defn- lw-assoc [M :vector-i64 n :i64 t :i64] :vector-i64
   (let [h (lw-first M n)
@@ -440,7 +447,7 @@
     (-> M
         (lw-expr r t 0)
         (lw-emit OP-LSET s t)
-        (lw-assoc-fields 0 nf (->lw-asf s (lw-nf M kw NF-RES) (lw-next M kw)) t)
+        (lw-assoc-fields 0 nf (->lw-asf s (lw-nf M kw NF-RES) (lw-next M kw) (lw-fty M (lw-nf M n NF-TYPE) (lw-nf M kw NF-RES))) t)
         (lw-emit OP-CONST (+ t nf))
         (lw-pairs t (dec nf)))))
 
@@ -575,12 +582,18 @@
 
 ;; JUN-728: a keyword-keyed map literal {:k e ..} as a record: the value of the key whose field index (NF-RES of the key
 ;; node, 21-check ck-kwrec) is i goes to t+i, in field order; then CONST t+n 0 and the pairs from the last field (lw-recnew)
-(defn- lw-kwrec-val [M :vector-i64 c :i64 i :i64] :i64
-  (loop [k c] (cond (zero? k) 0 (= (lw-nf M k NF-RES) i) (lw-next M k) :else (recur (lw-next M (lw-next M k))))))
+;; JUN-733: the key node's NF-TYPE is the field type; a value whose own type differs is its some (lw-some)
+(defn- lw-kwrec-key [M :vector-i64 c :i64 i :i64] :i64
+  (loop [k c] (cond (zero? k) 0 (= (lw-nf M k NF-RES) i) k :else (recur (lw-next M (lw-next M k))))))
 (defn- lw-kwrec [M :vector-i64 n :i64 t :i64] :vector-i64
   (let [c (lw-first M n)
         nf (quot (lw-count M c) 2)
-        M1 (loop [M2 M i 0] (if (>= i nf) M2 (recur (lw-expr M2 (lw-kwrec-val M2 c i) (+ t i) 0) (inc i))))]
+        M1 (loop [M2 M i 0]
+             (if (>= i nf)
+               M2
+               (let [k (lw-kwrec-key M2 c i)
+                     v (lw-next M2 k)]
+                 (recur (lw-some (lw-expr M2 v (+ t i) 0) (lw-nf M2 k NF-TYPE) (lw-nf M2 v NF-TYPE) (+ t i)) (inc i)))))]
     (-> M1 (lw-emit OP-CONST (+ t nf)) (lw-pairs t (dec nf)))))
 (defn- lw-expr [M :vector-i64 n :i64 t :i64 k :i64] :vector-i64
   (let [aux (lw-nf M n NF-AUX)

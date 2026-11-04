@@ -1,0 +1,65 @@
+;; JUN-733 slice 1 (owner decision 2026-11-01): keyword map literals have structural identity, and nil is the none of an
+;; [:option T] field (docs/language-ladder.edn :absence :absent-field-from-assoc :row-unification :literal-typing;
+;; lang/guest-grammar.edn :map-literal :value-types :keyword-keys).
+;; main returns 0, or the number of the first failing case.
+(ns native-record-identity-option (:export [main]))
+
+(defrecord P [x :i64 y :i64])
+(defrecord Q [b :i64 a :i64])
+(defrecord A [u :i64 v :i64])
+(defrecord B [u :i64 v :i64])
+(defrecord O [p [:ref :native-record-identity-option/P] n :i64])
+(defrecord Sub [state :keyword timer :i64 kind [:option :keyword]])
+
+(defn- sum-p [p [:ref :native-record-identity-option/P]] :i64 (+ (:x p) (* 10 (:y p))))
+(defn- diff-q [q [:ref :native-record-identity-option/Q]] :i64 (- (:b q) (:a q)))
+(defn- get-a [a [:ref :native-record-identity-option/A]] :i64 (:u a))
+(defn- get-b [b [:ref :native-record-identity-option/B]] :i64 (:v b))
+(defn- mk-p [] [:ref :native-record-identity-option/P] {:x 4 :y 5})
+(defn- idle [] [:ref :native-record-identity-option/Sub] {:state :idle :timer 0 :kind nil})
+(defn- fire [s [:ref :native-record-identity-option/Sub] k :keyword] [:ref :native-record-identity-option/Sub]
+  (assoc s :kind k))
+(defn- seven [] :i64 7)
+
+(defn- case1 [] :i64 (sum-p {:x 1 :y 2}))                                ; 21: a literal where [:ref P] is expected
+(defn- case2 [] :i64 (let [m {:y 7 :x 1}] (sum-p m)))                     ; 71: a let-bound literal, the one record of its shape
+(defn- case3 [] :i64 (:x (if true {:x 1 :y 2} (->P 3 4))))                ; 1: an if joining a literal and a constructor
+(defn- case4 [] :i64 (:y (mk-p)))                                         ; 5: a literal as a declared [:ref P] result
+(defn- case5 [] :i64 (diff-q {:a 2 :b 10}))                               ; 8: the record's field order differs from the key order
+(defn- case6 [] :i64 (:y (:p (->O {:x 3 :y 4} 1))))                      ; 4: a literal as a record field argument
+(defn- case7 [] :i64 (let [o {:p {:x 3 :y 4} :n 1}] (+ (:n o) (:x (:p o)))))   ; 4: nested literals, each its record
+(defn- case8 [] :i64 (+ (get-a {:u 1 :v 2}) (get-b {:u 3 :v 4})))         ; 5: two records of one shape, each by its slot
+(defn- case9 [] :i64
+  (:x (nth (typed-list-new [:list [:ref :native-record-identity-option/P]] {:x 1 :y 2} (->P 3 4)) 1)))   ; 3
+(defn- case10 [] :i64 (if (some? (:kind (idle))) 1 (+ 6 (:timer (idle)))))   ; 6: nil is the declared field's none
+(defn- case11 [] :i64 (if (= :bomb (option-or (:kind (fire (idle) :bomb)) :none)) 11 0))   ; 11: a value T is its some
+(defn- case12 [] :i64
+  (let [a {:k nil :n 1} b {:k 5 :n 2}] (+ (option-or (:k a) 10) (option-or (:k b) 100))))   ; 15: the module spells T = :i64
+(defn- case13 [] :i64
+  (let [s (->Sub :idle 0 (option-none-of [:option :keyword])) t (assoc s :kind nil)] (if (some? (:kind t)) 1 13)))   ; 13
+(defn- case14 [] :i64
+  (let [s (record-new [:record :native-record-identity-option/r [[:a [:option :i64]] [:b :i64]]] nil 3)]
+    (+ (:b s) (option-or (:a s) 9))))                                     ; 12: nil as a record-new argument
+(defn- case15 [] :i64 (:timer {:state :idle :timer 4 :kind :x}))         ; 4: adopts Sub (a value T into its [:option T] field)
+(defn- case16 [] :i64 (let [a {:z nil} b {:z (seven)}] (+ (option-or (:z a) 1) (option-or (:z b) 0))))   ; 8: T from a call
+(defn- case17 [] :i64 (let [a {:w nil :n 1} b {:w "x" :n 2}] (if (some? (:w a)) 0 (string-length (option-or (:w b) "")))))   ; 1
+
+(defn main [] :i64
+  (cond (not= (case1) 21) 1
+        (not= (case2) 71) 2
+        (not= (case3) 1) 3
+        (not= (case4) 5) 4
+        (not= (case5) 8) 5
+        (not= (case6) 4) 6
+        (not= (case7) 4) 7
+        (not= (case8) 5) 8
+        (not= (case9) 3) 9
+        (not= (case10) 6) 10
+        (not= (case11) 11) 11
+        (not= (case12) 15) 12
+        (not= (case13) 13) 13
+        (not= (case14) 12) 14
+        (not= (case15) 4) 15
+        (not= (case16) 8) 16
+        (not= (case17) 1) 17
+        :else 0))
