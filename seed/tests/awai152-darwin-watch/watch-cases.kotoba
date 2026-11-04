@@ -1,0 +1,25 @@
+;; Source cases only. The actual host, kernel provider and recovery are untested.
+(ns amu.darwin-proc-watch-cases (:export [test-darwin-proc-watch]))
+(defn- dpw-case-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
+  (loop [i 0 x n out v]
+    (if (= i 4) out (recur (+ i 1) (quot x 256) (vector-assoc! out (+ at i) (mod x 256))))))
+(defn- dpw-case-identity [pid :i64 sec :i64 usec :i64] :vector-i64
+  (let [blank (loop [i 0 out (vector-alloc 136)] (if (= i 136) out (recur (+ i 1) (vector-assoc! out i 0))))]
+    (dpw-case-u32 (dpw-case-u32 (dpw-case-u32 blank 12 pid) 120 sec) 128 usec)))
+(defn- dpw-case-ctx [] :vector-i64 [1234 1700000000 42 5678 136 0 136 1])
+(defn- dpw-case-event [] :vector-i64
+  (vector-assoc! (darwin-proc-watch-event "25G332" 1234 5678) 11 128))
+(defn test-darwin-proc-watch [] :bool
+  (let [ctx (dpw-case-ctx) before (dpw-case-identity 1234 1700000000 42)
+        after (dpw-case-identity 1234 1700000000 42) event (dpw-case-event)]
+    (and (= (darwin-proc-watch-class "25G332" ctx before after event) "observer/bound-exit-observed")
+         (= (darwin-proc-watch-class "" ctx before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" (vector-alloc 0) before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" (vector-assoc! (dpw-case-ctx) 5 -1) before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" (vector-assoc! (dpw-case-ctx) 4 135) before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" (vector-assoc! (dpw-case-ctx) 6 -1) before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" (vector-assoc! (dpw-case-ctx) 7 0) before after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" ctx (dpw-case-identity 1234 1700000001 42) after event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" ctx before (dpw-case-identity 1234 1700000001 42) event) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" ctx before after (vector-alloc 0)) "observer/unknown")
+         (= (darwin-proc-watch-class "25G332" ctx before after (vector-assoc! (dpw-case-event) 11 192)) "observer/unknown"))))
