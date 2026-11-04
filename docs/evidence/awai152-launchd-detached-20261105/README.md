@@ -33,3 +33,29 @@ sandbox, PID reuse races, GPU memory, resource enforcement, reservation
 recovery, actual Kapitsa, an authenticated native supervisor or the governor.
 In particular a job's disappearance is not sufficient evidence for releasing
 its workload reservation.
+
+## Three target hosts: bootstrap did not succeed
+
+The same task-only GUI-domain diagnostic was attempted over strict Tailscale
+SSH on naphtali, benjamin and judah, each reporting Darwin ARM64 macOS 26.7.2
+build `25G332`. All three `launchctl bootstrap gui/501` calls returned 125,
+`Domain does not support specified action`; the workload did not reach its
+PID files. A variant targeting `user/501` instead returned 5, `Input/output
+error`, on each. These outcomes do not establish the underlying cause and are
+not target-host descendant tests. The observer prints a cleanup success line
+even with an empty PID set; that line is vacuous in these failed bootstraps.
+
+An independent follow-up listed `user/501` on each host successfully and
+found no label with the task prefix. `launchctl print gui/501` returned 125
+on each, so absence from that GUI domain could not be independently listed.
+Remote wrappers reported their task-owned temporary directories absent. These
+are limited post-attempt observations, not a general launchd cleanup proof.
+No inference or persistent service was intentionally started.
+
+`three-hosts.py`, `user-domain-probe.py`, `user-three-hosts.py` and
+`list-hosts.py` are archived task-specific operators. They contain local paths
+and rely on current Tailscale host keys, SSH access and the diagnostic Python
+environment; they are not unattended setup commands. The first wrapper's
+`VERIFIED False` and the captured nonzero probe codes are expected records of
+failure, not successful launch evidence. A supported remote launch and
+supervision boundary remains to be designed and qualified.
