@@ -82,3 +82,36 @@ also passed. Observer SHA-256:
 `4be748aafeb73baefc8f04409215c421a18dfc3cae2ae8383cd8b01f5dba4446`.
 This exercises direct system calls through the diagnostic observer, not the
 candidate Amu runtime or a source-locked compiler build.
+
+## Source-derived runtime on Xavier
+
+The ARM64 bootstrap job of [Actions run 41833823850](https://github.com/kotoba-lang/amu/actions/runs/41833823850)
+at PR head `a0dac512` succeeded. Its receipt pins this runtime source SHA-256
+`595adeb9fbd706a48b7c1155394f86c49a8e844949e8edb291c0a8b3b1681862`;
+F2 and F3 match SHA-256
+`46fce6f620a73d91c7ec482687856a3354646f416e05085a6fa61022d37a5e0b`.
+The original root did not reproduce the new image, so this is not a root repin
+or proof that descriptor identity checks passed.
+
+The F3 compiler built the test-only Kotoba guest
+`seed/tests/awai152-linux-close-range/native-spawn-probe.kotoba` (SHA-256
+`f77655e5546cc022c8d2dcf79384d71e9c7d8a527a26b09941a49b4ee92e4c56`) to
+Linux ARM64 image SHA-256
+`1a4de8b2105a92b24c59f0a3e911a65e8f5151c83aa3e9681e61c453e1c2fa45`.
+`scripts/seed/observe-spawn-legacy-native.py` (SHA-256
+`9eb63b7f9f2d13f5ba4a1f71da9721891849719133dfeaef065133b0ca903c0b`)
+staged it on Xavier over host-key-checked Tailscale SSH. The actual generated
+runtime spawned a scoped test shell which confirmed that intentionally
+inherited FDs 50/200 were absent, cwd was the scope, and NoNewPrivs was set.
+A granted nonexistent executable produced exit 126 `spawn/exec-failed`;
+a test-only outer seccomp filter denying close_range flags 0 produced exit 126
+`spawn/isolation-unavailable`. Both negative cases had no execution marker.
+The compiler and guest were limited to 3/4 seconds CPU, 8 GiB virtual address
+space and a sampled 200 MiB RSS termination threshold; sampling is not a hard
+RSS limit. Only task-owned temporary artifacts were created and retained.
+
+This validates selected real candidate-runtime paths on one old-kernel host,
+not all descriptors or failure stages, actual systemd under every failure,
+source-lock qualification of the product, descendant containment, resource
+governance, or deployment. Full evidence and the separate real systemd count
+recovery are in the linked Murakumo evidence above.
