@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import re
+import select
 import signal
 import subprocess
 import time
@@ -32,6 +33,9 @@ f=int(os.environ['TEST_FD'])
 def out(x): os.write(f,(json.dumps(x)+'\\n').encode())
 out({'event':'start'})
 os.kill(os.getpid(),signal.SIGSTOP)
+if os.environ.get('TEST_METADATA_ONLY')=='1':
+ out({'event':'complete'})
+ raise SystemExit(0)
 m=mmap.mmap(-1,128*1024*1024)
 for i in range(0,128*1024*1024,16384):
  m[i:i+1]=b'x'
@@ -48,6 +52,7 @@ def main():
     parser.add_argument('--attributes', required=True, type=Path)
     parser.add_argument('--expected-sha256', required=True)
     parser.add_argument('--interpreter', choices=('bin', 'app'), default='bin')
+    parser.add_argument('--metadata-only', action='store_true')
     args = parser.parse_args()
     executable = PYTHON if args.interpreter == 'bin' else PYTHON_APP
     data = args.attributes.read_bytes()
@@ -72,6 +77,7 @@ def main():
         os.set_inheritable(wr, True)
         attr = ctypes.c_void_p()
         pid = ctypes.c_int(-1)
+        queue = None
         reaped = False
         try:
             if mode == 'control':
@@ -84,7 +90,8 @@ def main():
             desc = (ctypes.c_uint64 * 18)()
             desc[0], desc[1] = 248, address
             argv = (ctypes.c_char_p * 4)(executable.encode(), b'-c', CHILD.encode(), None)
-            env = (ctypes.c_char_p * 3)(b'PATH=/usr/bin:/bin', ('TEST_FD='+str(wr)).encode(), None)
+            env = (ctypes.c_char_p * 4)(b'PATH=/usr/bin:/bin', ('TEST_FD='+str(wr)).encode(),
+                                       ('TEST_METADATA_ONLY='+('1' if args.metadata_only else '0')).encode(), None)
             ctypes.set_errno(0)
             rc = lib.syscall(244, ctypes.byref(pid), ctypes.c_char_p(executable.encode()), ctypes.byref(desc), argv, env)
             if rc != 0 or pid.value <= 0:
@@ -108,6 +115,11 @@ def main():
                 raise RuntimeError(('invalid properties', mode, props))
             if mode == 'control' and props[2] == 64 and props[4] == 64:
                 raise RuntimeError('control unexpectedly has the test limit')
+            queue = select.kqueue()
+            change = select.kevent(pid.value, filter=select.KQ_FILTER_PROC,
+                                   flags=select.KQ_EV_ADD | select.KQ_EV_CLEAR,
+                                   fflags=select.KQ_NOTE_EXEC | select.KQ_NOTE_EXIT)
+            queue.control([change], 0, 0)
             os.kill(pid.value, signal.SIGCONT)
             # Stop after the interpreter has exec'd and before it allocates;
             # the initial stopped-process readback alone does not prove the
@@ -127,6 +139,8 @@ def main():
             after_exec = json.loads(r.stdout)
             if after_exec[0] != 0:
                 raise RuntimeError(('post-exec readback unavailable', mode, after_exec))
+            seen = queue.control(None, 4, 0)
+            exec_observed = any(e.ident == pid.value and (e.fflags & select.KQ_NOTE_EXEC) for e in seen)
             os.kill(pid.value, signal.SIGCONT)
             deadline = time.monotonic() + 15
             while True:
@@ -151,9 +165,12 @@ def main():
             if mode == 'control' and (exit_code != 0 or not complete):
                 raise RuntimeError(('control failed', exit_code, events))
             results.append({'mode': mode, 'propertiesBeforeExec': props[2:],
-                            'propertiesAfterExec': after_exec[2:], 'exit': exit_code,
+                            'propertiesAfterExec': after_exec[2:], 'execEventObserved': exec_observed,
+                            'exit': exit_code,
                             'completed': complete, 'events': events})
         finally:
+            if queue is not None:
+                queue.close()
             if pid.value > 0 and not reaped:
                 try:
                     os.kill(pid.value, signal.SIGKILL)
@@ -170,6 +187,7 @@ def main():
                 lib.posix_spawnattr_destroy(ctypes.byref(attr))
     print(json.dumps({'schema': 'amu.darwin-attribute-enforcement-observation.v1', 'build': build,
                       'attributeSha256': args.expected_sha256, 'interpreter': args.interpreter,
+                      'metadataOnly': args.metadata_only,
                       'preflightFreePercent': int(match.group(1)),
                       'cases': results, 'kernelKillReasonCollected': False, 'governorQualified': False}))
 
