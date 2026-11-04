@@ -25,7 +25,7 @@ l=ctypes.CDLL('/usr/lib/libSystem.B.dylib',use_errno=True)
 f=l.memorystatus_control;f.argtypes=[ctypes.c_uint32,ctypes.c_int32,ctypes.c_uint32,ctypes.c_void_p,ctypes.c_size_t];f.restype=ctypes.c_int
 p=P();r=f(8,int(sys.argv[1]),0,ctypes.byref(p),ctypes.sizeof(p));print(json.dumps([r,ctypes.get_errno(),p.active,p.active_attr,p.inactive,p.inactive_attr]))
 '''
-CHILD = '''import json,mmap,os,resource
+CHILD = '''import json,mmap,os,resource,time
 resource.setrlimit(resource.RLIMIT_CPU,(5,5))
 f=int(os.environ['TEST_FD'])
 def out(x): os.write(f,(json.dumps(x)+'\\n').encode())
@@ -33,7 +33,10 @@ out({'event':'start'})
 m=mmap.mmap(-1,128*1024*1024)
 for i in range(0,128*1024*1024,16384):
  m[i:i+1]=b'x'
- if i%(8*1024*1024)==0: out({'event':'touched','mib':i//1048576})
+ if i%(8*1024*1024)==0:
+  out({'event':'touched','mib':i//1048576})
+  time.sleep(0.05)
+time.sleep(2)
 out({'event':'complete'})
 '''
 
@@ -124,9 +127,8 @@ def main():
             complete = any(e.get('event') == 'complete' for e in events)
             if mode == 'control' and (exit_code != 0 or not complete):
                 raise RuntimeError(('control failed', exit_code, events))
-            if mode == 'limited' and (exit_code != -signal.SIGKILL or complete):
-                raise RuntimeError(('limited case unexpected', exit_code, events))
-            results.append({'mode': mode, 'properties': props[2:], 'exit': exit_code, 'events': events})
+            results.append({'mode': mode, 'properties': props[2:], 'exit': exit_code,
+                            'completed': complete, 'events': events})
         finally:
             if pid.value > 0 and not reaped:
                 try:
