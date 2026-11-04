@@ -218,6 +218,52 @@ def persistent_case(image, directory):
             child.kill(); child.wait(timeout=3)
 
 
+def status_case(image, directory, mode):
+    """Observe an owned child's raw exit status, not a reservation release."""
+    import select
+    code = "import os,sys; print('READY',flush=True); os.read(0,1); sys.exit(" + ('7' if mode == 'seven' else '0') + ")"
+    child = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    watcher = None
+    try:
+        if not select.select([child.stdout], [], [], 4)[0] or child.stdout.readline() != b'READY\n':
+            raise RuntimeError((mode, 'child not ready'))
+        sec, usec = identity(child.pid)
+        request = struct.pack('<4sIQQII', b'WP03', child.pid, sec, usec, 12345, 4)
+        watcher = launch_watcher(image, directory, request)
+        ready = b''
+        deadline = time.monotonic() + 4
+        while len(ready) < 40:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([watcher.stdout], [], [], remaining)[0]:
+                raise RuntimeError((mode, 'watcher ready timeout'))
+            part = os.read(watcher.stdout.fileno(), 40 - len(ready))
+            if not part:
+                raise RuntimeError((mode, 'watcher ready EOF'))
+            ready += part
+        if ready != b'WR01\0\0\0\0' + request or watcher.poll() is not None:
+            raise RuntimeError((mode, 'invalid ready'))
+        if mode == 'signal':
+            os.kill(child.pid, signal.SIGKILL)
+        else:
+            child.stdin.write(b'x'); child.stdin.flush()
+        output, err = watcher.communicate(timeout=5)
+        pid, status = os.waitpid(child.pid, 0)
+        child.returncode = os.waitstatus_to_exitcode(status)
+        if pid != child.pid or watcher.returncode or err or output != b'WS01' + struct.pack('<I', status) + request:
+            raise RuntimeError((mode, 'status mismatch', status, watcher.returncode, output, err))
+        expected = {'zero': 0, 'seven': 7 << 8, 'signal': signal.SIGKILL}[mode]
+        if status != expected:
+            raise RuntimeError((mode, 'unexpected child status', status))
+        print('WATCH_STATUS', mode, status, flush=True)
+    finally:
+        if watcher is not None and watcher.poll() is None:
+            watcher.kill(); watcher.wait(timeout=3)
+        if child.returncode is None:
+            try: child.kill(); child.wait(timeout=3)
+            except ProcessLookupError: pass
+
+
 def run(compiler, packager, output, artifact_dir=None):
     gate = load('mac_native_watcher', 'check-aiueos-user-macos-native.py')
     fixture = load('mac_scope_watcher', 'check-macos-arena-scope.py')
@@ -244,7 +290,7 @@ def run(compiler, packager, output, artifact_dir=None):
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 8)
         wrong = struct.pack('<4sIQQII', b'WP01', child.pid, sec + 1, usec, 12345, 8)
-        for malformed in (struct.pack('<4sIQQII', b'WP03', child.pid, sec, usec, 12345, 1),
+        for malformed in (struct.pack('<4sIQQII', b'WP04', child.pid, sec, usec, 12345, 1),
                           struct.pack('<4sIQQII', b'WP02', child.pid, sec, usec, 12345, 0)):
             refused = observe(image, output, malformed)
             if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
@@ -258,6 +304,11 @@ def run(compiler, packager, output, artifact_dir=None):
         if timed.returncode != 1 or timed.stdout != b'WR01\0\0\0\0' + timeout_request or timed.stderr or child.poll() is not None:
             raise RuntimeError(('watch timeout did not cleanly refuse', timed.returncode,
                                 timed.stdout, timed.stderr, child.poll()))
+        status_timeout = struct.pack('<4sIQQII', b'WP03', child.pid, sec, usec, 12345, 1)
+        timed_status = observe(image, output, status_timeout)
+        if timed_status.returncode != 1 or timed_status.stdout != b'WR01\0\0\0\0' + status_timeout or timed_status.stderr or child.poll() is not None:
+            raise RuntimeError(('status timeout did not cleanly refuse', timed_status.returncode,
+                                timed_status.stdout, timed_status.stderr, child.poll()))
         result = observe(image, output, request)
         if result.returncode != 0 or result.stdout != b'WR01\0\0\0\0' + request + b'WO01\0\0\0\0' + request or result.stderr:
             raise RuntimeError(('watch failed', result.returncode, result.stdout, result.stderr))
@@ -272,6 +323,10 @@ def run(compiler, packager, output, artifact_dir=None):
         persistent_case(image, output)
         transition_case(image, output, 'exec', b'WP02')
         transition_case(image, output, 'fork', b'WP02')
+        for mode in ('zero', 'seven', 'signal'):
+            status_case(image, output, mode)
+        transition_case(image, output, 'exec', b'WP03')
+        transition_case(image, output, 'fork', b'WP03')
         anchor = '(ds-cmpi 25 1) (ds-b 0x54000001 9)'
         text = source.read_text()
         if text.count(anchor) != 1:
@@ -315,6 +370,27 @@ def run(compiler, packager, output, artifact_dir=None):
         else:
             raise RuntimeError('heartbeat negative control unexpectedly passed')
         print('WATCH_HEARTBEAT_MUTANT_REFUSED', flush=True)
+        status_anchor = '(ds-imm 8 3825205248)'
+        if text.count(status_anchor) != 1:
+            raise RuntimeError('status registration negative-control anchor changed')
+        no_status = text.replace(status_anchor, '(ds-imm 8 3758096384)')
+        status_emitter = fixture.build(gate, compiler, packager, output, 'status-mutant-emitter', no_status)
+        gate.native_run(status_emitter, output, 'status-mutant-unsigned.macho', timeout=120)
+        status_mutant = output / 'status-mutant.macho'
+        shutil.copyfile(output / 'status-mutant-unsigned.macho', status_mutant)
+        status_mutant.chmod(0o700)
+        subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(status_mutant)],
+                       capture_output=True, check=True, timeout=30)
+        subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(status_mutant)],
+                       capture_output=True, check=True, timeout=30)
+        try:
+            status_case(status_mutant, output, 'zero')
+        except RuntimeError as error:
+            if error.args != (('zero', 'status mismatch', 0, 1, b'', b''),):
+                raise
+        else:
+            raise RuntimeError('missing-status negative control unexpectedly passed')
+        print('WATCH_MISSING_STATUS_MUTANT_REFUSED', flush=True)
         if artifact_dir is not None:
             artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
             shutil.copyfile(image, artifact_dir / 'watch.macho')

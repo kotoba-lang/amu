@@ -101,7 +101,10 @@
     (ds-imm 0 3) (ds-add 1 31 0) (ds-imm 2 32) (ds-sys 3) (ds-b 0x54000002 9)
     (ds-cmpi 0 32) (ds-b 0x54000001 9)
     (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 26 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
-    (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000001 9) (ds-imm 25 1)
+    (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000000 10)
+    (ds-imm 9 858804311) (ds-cmp 8 9) (ds-b 0x54000001 9)
+    (ds-imm 25 2) (ds-b 0x14000000 1)
+    (ds-label 10) (ds-imm 25 1)
     (ds-label 1)
     (ds-lw 19 31 4) (ds-cmpi 19 0) (ds-b 0x54000000 9)
     (ds-imm 8 2147483647) (ds-cmp 19 8) (ds-b 0x54000008 9)
@@ -124,7 +127,10 @@
     (ds-str 19 31 512) (ds-imm 8 1179643) (ds-sw 8 31 520)
     ;; Exit, fork and exec are all one-shot observations. Fork or exec must
     ;; stop this watcher as unknown, even if coalesced with an exit event.
-    (ds-imm 8 3758096384) (ds-sw 8 31 524) (ds-str 22 31 536)
+    (ds-cmpi 25 2) (ds-b 0x54000001 11)
+    (ds-imm 8 3825205248) (ds-b 0x14000000 12)
+    (ds-label 11) (ds-imm 8 3758096384) (ds-label 12)
+    (ds-sw 8 31 524) (ds-str 22 31 536)
     (ds-i 0xaa1703e0) (ds-add 1 31 512) (ds-imm 2 1) (ds-imm 3 0)
     (ds-imm 4 0) (ds-imm 5 0) (ds-imm 6 0) (ds-sys 369) (ds-b 0x54000002 9)
     (ds-cmpi 0 0) (ds-b 0x54000001 9)
@@ -164,9 +170,18 @@
     (ds-imm 10 32768) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
     (ds-lw 8 31 1036) (ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
     (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    ;; WP03 requests exit status; missing status or a nonterminal/malformed
+    ;; wait value must not be turned into a successful exit observation.
+    (ds-cmpi 25 2) (ds-b 0x54000001 13)
+    (ds-imm 10 67108864) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    (ds-ldr 8 31 1040) (ds-imm 10 65535) (ds-cmp 8 10) (ds-b 0x54000008 9)
+    (ds-imm 10 127) (ds-and 9 8 10) (ds-cmpi 9 127) (ds-b 0x54000000 9)
+    (ds-str 8 31 1152) (ds-label 13)
     (ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)
     ;; Emit the final frame; a lost or partial write is still unknown to host.
-    (ds-str 31 31 1200) (ds-imm 8 825249623) (ds-sw 8 31 1200)
+    (ds-str 31 31 1200) (ds-cmpi 25 2) (ds-b 0x54000001 14)
+    (ds-imm 8 825250647) (ds-sw 8 31 1200) (ds-lw 8 31 1152) (ds-sw 8 31 1204) (ds-b 0x14000000 15)
+    (ds-label 14) (ds-imm 8 825249623) (ds-sw 8 31 1200) (ds-label 15)
     (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)
     (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)
     (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)

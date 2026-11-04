@@ -3,7 +3,7 @@
 ;; identity, obtain EOF, and bind these bytes and exit status to that launch.
 ;; A matched frame is not a successful workload receipt, a process-tree proof,
 ;; or permission to release a resource reservation.
-(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-monitor-start darwin-watch-monitor-step darwin-watch-reply-class]))
+(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-status darwin-watch-monitor-start darwin-watch-monitor-step darwin-watch-reply-class]))
 
 (defn- dwr-u32 [v :vector-i64 at :i64] :i64
   (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
@@ -15,12 +15,12 @@
       (let [x (vector-at v i)]
         (and (>= x 0) (<= x 255) (recur (+ i 1)))))))
 
-;; Validate one 32-byte WP01 or WP02 request independently,
+;; Validate one 32-byte WP01, WP02 or WP03 request independently,
 ;; including the high half of microseconds and the approved timeout limit.
 (defn- dwr-request? [r :vector-i64] :bool
   (if (not (= (vector-count r) 32)) false
     (and (dwr-bytes? r) (= (vector-at r 0) 87) (= (vector-at r 1) 80)
-         (= (vector-at r 2) 48) (or (= (vector-at r 3) 49) (= (vector-at r 3) 50))
+         (= (vector-at r 2) 48) (or (= (vector-at r 3) 49) (= (vector-at r 3) 50) (= (vector-at r 3) 51))
          (> (dwr-u32 r 4) 0) (<= (dwr-u32 r 4) 2147483647)
          (or (> (dwr-u32 r 8) 0) (> (dwr-u32 r 12) 0))
          (= (dwr-u32 r 20) 0) (<= (dwr-u32 r 16) 999999)
@@ -59,6 +59,18 @@
            (loop [i 0] (if (= i 32) true
              (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))
     "observer/bound-exit-observed" "observer/unknown"))
+
+;; WP03 is one-shot. Return raw terminal wait status, -1 on any ambiguity.
+;; Status is not a reservation release or proof of child/descendant reaping.
+(defn darwin-watch-status [request :vector-i64 frame :vector-i64 exit-code :i64 eof :bool] :i64
+  (if (not (and (dwr-request? request) (= (vector-at request 3) 51)
+                (= exit-code 0) eof (= (vector-count frame) 40) (dwr-bytes? frame)
+                (= (vector-at frame 0) 87) (= (vector-at frame 1) 83)
+                (= (vector-at frame 2) 48) (= (vector-at frame 3) 49)
+                (loop [i 0] (if (= i 32) true
+                  (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))) -1
+    (let [status (dwr-u32 frame 4)]
+      (if (or (> status 65535) (= (bit-and status 127) 127)) -1 status))))
 
 ;; Host-owned volatile state has five numeric fields followed by the exact
 ;; 32-byte request. This is correlation, not authentication; the host must
