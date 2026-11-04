@@ -256,6 +256,17 @@ def main(compiler, out):
         assert rows["caller"][0] == "REFUSED:dependency-unavailable"
         assert rows["clean"][0] == golden("leaf")
     cids("mutant-no-close-abort", abort_cases, image=mutant_close, code=66)
+    # Explicit namespace record schemas reach the report bridge; an unrelated
+    # unsupported row and its caller remain refused without changing f's CID.
+    schema_ns = "(ns demo (:export []) (:schemas {:s/r [:record :s/r [[:a :i64]]]}))"
+    schema_fn = "(defn- f [x [:ref :s/r]] :i64 42)"
+    schema_leaf = cids("schema-leaf", [schema_ns, schema_fn])
+    assert schema_leaf["f"][0] == "bafyreiagssxmxbxfy7i3zq4m6ayucfkyjylomcruexauvgvw6dtjqtfeeu"
+    schema_mixed = cids("schema-mixed", [schema_ns, fn("bad", ["n"], "((fn [x] (+ x 1)) n)"),
+                                         schema_fn, fn("caller", ["x"], "(bad x)")])
+    assert schema_mixed["bad"][0] == "REFUSED:unbridged-source"
+    assert schema_mixed["caller"][0] == "REFUSED:dependency-unavailable"
+    assert schema_mixed["f"] == schema_leaf["f"]
     # Per-definition refusal parity with the reference shape: the refused row keeps its place in declaration
     # order, its callers are dependency-unavailable (also through a loop helper), everything else keeps the CID
     # it has in a module without the refused definitions.
