@@ -1,8 +1,8 @@
 ;; Canonical native CDCI factory. The complete adopted compiler builds
 ;; only the two reviewed privileged roles from exact source bytes.
 (defn- xc-role-hash [role :string] :string
-  (cond (string=? role "controller") "bb02ec6237d4e6de7e021dbb57c516277b2e2379934fcf7bdf358dfb16c535db"
-        (string=? role "kotoba-native") "7778adf64e83542a4d9655beea8033761691c071666b106beef2674ad9465d8f"
+  (cond (string=? role "controller") "b05083de078c9021cb16025e26b4090de2ecb7cc16e9d1820ebdf6bc0400f64c"
+        (string=? role "kotoba-native") "fa7beeb668b687a37dd833a6566a7e82a42b01b1f4fd8505220082101249d85f"
         :else ""))
 (defn- xc-command [] :i64
   (cond (not= (io-argc) 6) (drv-usage)
@@ -31,7 +31,7 @@
         (= (io-exists (io-arg 4)) 1) (drv-fail0 E-WRITE)
         :else (let [host (drv-pj-lock-text (io-read-bytes (io-arg 2)))
                     registry (drv-pj-lock-text (io-read-bytes (io-arg 3)))]
-                (if (and (string=? (sh-text host) "c47c0d82e4f487211d5d679315e8126ab59fafc7e84aef80d8fc9e8bf1236ec7")
+                (if (and (string=? (sh-text host) "b8dd194085e58017fc9f624c9766ff00647c2cedbf42c208e83e908df0e06bec")
                          (string=? (sh-text registry) "c2152375e32d162c0ac340a2387818168860ab6f7a74bad4cebaaa765f371b1b"))
                   (let [guest "(ns native-bench (:export [main]))\n(defn main [] :i64 0)\n"
                         rt (string-concat (xa-rt-core-profile 1) (string-concat registry host))

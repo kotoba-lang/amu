@@ -45,9 +45,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-definition-graph-graph-${{ matrix.runner }}
       - name: Verify current compiler source and image pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Native sparse graph, complete compiler input and executed mutants
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
@@ -59,7 +65,7 @@ jobs:
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-graph"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: native-definition-graph-${{ matrix.isa }}
           path: |
@@ -72,28 +78,40 @@ jobs:
             ${{ runner.temp }}/definition-graph/whole-producer.elf
             ${{ runner.temp }}/graph-admission.json
           if-no-files-found: error
-  headroom:
-    # JUN-737: exact token / read-node / function-table headroom of the largest static builds (about 100
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  headroom-shard:
+    # JUN-818: sharded by table (TOK/NODE/FN are independent measurements + padding controls), then the
+    # `headroom` gate job below keeps the original check name. JUN-737: exact token / read-node / function-table headroom of the largest static builds (about 100
     # compiles that stop after reading, ~10 s each on a runner), in parallel with the graph gate.
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04-arm
-            isa: arm64
-            compiler: seed/bootstrap/aarch64-linux-static-root.elf
-          - runner: ubuntu-latest
-            isa: x86_64
-            compiler: bin/amu-linux-x86_64
+          - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: TOK}
+          - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: NODE}
+          - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: FN}
+          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: TOK}
+          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: NODE}
+          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: FN}
+    name: headroom-shard (${{ matrix.isa }}, ${{ matrix.table }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-definition-graph-headroom-${{ matrix.runner }}-${{ matrix.table }}
       - name: Verify current compiler source and image pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Compiler table headroom of the largest static builds, with negative controls
+        if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
@@ -104,11 +122,37 @@ jobs:
           python3 scripts/seed/check-token-headroom-native.py
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/table-headroom"
+          --tables "${{ matrix.table }}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
-          name: native-table-headroom-${{ matrix.isa }}
+          name: native-table-headroom-${{ matrix.isa }}-${{ matrix.table }}
           path: |
             ${{ runner.temp }}/table-headroom/token-headroom.json
             ${{ runner.temp }}/table-headroom-admission.json
           if-no-files-found: error
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
+  headroom:
+    # Final gate: keeps the original check names `headroom (<runner>, <isa>, <compiler>)`. It fails unless
+    # every table shard passed (if: always() so a failed or cancelled shard is reported, never skipped).
+    needs: headroom-shard
+    if: always()
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04-arm
+            isa: arm64
+            compiler: seed/bootstrap/aarch64-linux-static-root.elf
+          - runner: ubuntu-latest
+            isa: x86_64
+            compiler: bin/amu-linux-x86_64
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All headroom table shards passed
+        env:
+          RESULT: ${{ needs.headroom-shard.result }}
+        run: test "$RESULT" = success

@@ -1,0 +1,107 @@
+;; Darwin fixed raw-image readback diagnostic emitted by Amu.
+;; This is not a block-device provider and must not be exposed as one.
+;; The one-time assembly derivation is inert reference data; native builds
+;; and tests consume the Kotoba words below and require no assembler.
+(ns seed.macos-raw-readback-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (vector-assoc! v at (bit-and value 255)))
+
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (byte-at at value)
+      (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16))
+      (byte-at (+ at 3) (u64-shift-right value 24))))
+
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v
+      (u32-at at (bit-and value 4294967295))
+      (u32-at (+ at 4) (u64-shift-right value 32))))
+
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [bytes (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v]
+      (if (= i (vector-count bytes)) out
+        (recur (inc i) (byte-at out (+ at i) (vector-at bytes i)))))))
+
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v]
+    (if (= i (vector-count words)) out
+      (recur (inc i) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Read-only FD3: char device and fixed geometry; compare a full sector.
+(defn- offset-words [mode :string] :vector-i64
+  [
+       0xd11003ff 0xd2800060 0x910003e1 0xd2802a70 0xf2a04010 0xd4001001
+       0x540006c2 0x79400be8 0x12140d08 0x52840009 0x6b09011f 0x54000621
+       0xd2800060 0xd28c8301 0xf2a80081 0x910283e2 0xd28006d0 0xf2a04010
+       0xd4001001 0x54000522 0xb940a3e8 0x7108011f 0x540004c1 0xd2800060
+       0xd28c8321 0xf2a80101 0x9102a3e2 0xd28006d0 0xf2a04010 0xd4001001
+       0x540003c2 0xf94057e8 0xf140091f 0x54000361 0xd2800060 0x910403e1
+       0xd2804002 0xd2820003 0xd2801330 0xf2a04010 0xd4001001 0x54000262
+       0xf108001f 0x54000221 0xf94083e8 0xd28aa949 0xf2a6e9c9 0xf2c6e6c9
+       0xf2e62ac9 0xeb09011f 0x54000141 0xd280010a 0x910403eb 0xf86a6968
+       0xb50000c8 0x9100214a 0xf108015f 0x54ffff61 0xd2800000 0x14000002
+       0xd2800020 0xd2800030 0xf2a04010 0xd4001001 0xd4200000])
+
+(defn- body-at [v :vector-i64 at :i64 mode :string] :vector-i64
+  (-> v
+      ;; MH_EXECUTE CPU_TYPE_ARM64; no libSystem load command.
+      (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) 6)
+      (u32-at (+ at 20) 296) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
+      (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296)
+      (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT")
+      (u64-at (+ at 128) 4294967296)
+      (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES)
+      (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72)
+      (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680)
+      (u64-at (+ at 208) IMAGE-BYTES)
+      (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1)
+      (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24)
+      (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24)
+      (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (words-at (+ at 1024) (offset-words mode))))
+
+(defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (if (and (= (vector-count reply) (+ IMAGE-BYTES 5))
+           (= (vector-at reply 0) 0) (= (vector-at reply 1) 70)
+           (= (vector-at reply 2) 83) (= (vector-at reply 3) 50)
+           (= (vector-at reply 4) 0))
+    (loop [i 0]
+      (if (= i IMAGE-BYTES) true
+        (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i)))
+          (recur (inc i)) false)))
+    false))
+
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        mode (typed-cap-call :cli/args :string :string "1")
+        path-bytes (vector-i64-from-bytes (string-to-utf8 path))
+        length (vector-count path-bytes)
+        offset (+ 7 length)]
+    (if (or (= length 0) (> length 255)
+            (not (string=? mode "strict"))) 2
+      (let [v0 (vector-alloc (+ offset IMAGE-BYTES))
+            v1 (-> v0
+                   (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                   (byte-at 3 50) (byte-at 4 0) (byte-at 5 66)
+                   (text-at 6 path)
+                   (byte-at (+ 6 length) 0)
+                   (body-at offset mode))
+            response (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v1))]
+        (if (acknowledged-image? v1 offset (vector-i64-from-bytes response)) 0 3)))))

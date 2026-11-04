@@ -1,0 +1,34 @@
+(ns native-byte-copy (:export [main]))
+
+;; Public operations exercise the ordinary private byte-expansion and item-copy
+;; loops. The native program owns every value/immutability verdict.
+(defn check-size [n :i64] :bool
+  (let [source (vector-alloc n)
+        filled (loop [i 0 v source]
+                 (if (= i n) v
+                   (recur (+ i 1) (vector-assoc! v i (bit-and (+ (* i 17) 23) 255)))))
+        bytes (bytes-from-vector-i64 filled)
+        copied (vector-i64-from-bytes bytes)
+        split (quot n 2)
+        joined (bytes-concat (bytes-slice bytes 0 split) (bytes-slice bytes split n))
+        changed (if (> n 0) (vector-assoc! source 0 255) source)]
+    (let [values-ok
+          (and (= (bytes-count bytes) n) (= (vector-count copied) n)
+               (= (bytes-count joined) n)
+               (loop [i 0]
+                 (if (= i n) true
+                   (let [want (bit-and (+ (* i 17) 23) 255)]
+                     (if (and (= (bytes-at bytes i) want)
+                              (= (vector-at copied i) want)
+                              (= (bytes-at joined i) want))
+                       (recur (+ i 1)) false)))))
+          changed-copy (if (> n 0) (vector-assoc! copied 0 254) copied)]
+      (and values-ok
+           (if (> n 0) (= (bytes-at bytes 0) 23) true)))))
+
+(defn main [] :i64
+  (if (and (loop [n 0]
+             (if (> n 260) true
+               (if (check-size n) (recur (+ n 1)) false)))
+           (check-size 4095) (check-size 4096) (check-size 4097))
+    42 -1))
