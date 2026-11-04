@@ -66,3 +66,25 @@ Applying it to a separate copy of that exact base reproduced candidate SHA-256
 `d39954bb3ac3ae5b9c51fba3d756d5afdf9b82877c2ef604172f163ffbe898c5`.
 The patch is an evidence/review artifact and does not update the actual
 packager, resolve other conflicts, or establish suitability for current main.
+
+## Metal profile bootstrap (no GPU dispatch)
+
+The diagnostic packager also built `metal-profile-probe.kotoba` using the
+`amu-program-metal` profile and the default `amu-program` profile, with the
+same synthetic source bundle. On the local Mac the signed Metal-profile image
+returned `0`: wire 42 returned a callable bootstrap, its scratch address and
+dyld-bound resolver address were nonzero, and one scratch word could be
+written and read. The same program in the default profile trapped with
+`SIGTRAP` at its ungranted wire. Strict code signature verification passed for
+both images. Their respective SHA-256 values were
+`4bf979efd6d6e6067423de63898d072b3a3d839e8933bea760dfbda3a6e4526d` and
+`985f9bbe88a528d3139b5d09790a391e4529167d9c3c25ce5aef707ab7e8114e`;
+the fixture source SHA-256 was
+`d2716f17f887d267ac2a2c7eee1c6c79d9500ab99faf86e0b89dd194c31360d8`.
+The temporary orchestration script SHA-256 was
+`6268d6997db542c8a8c0e9199f275638ab412d912a1400de8f1ff10d5fd7385f`.
+
+The probe does not call the resolver, load a framework, create a Metal device,
+execute a GPU kernel or qualify Metal inference, and uses an old diagnostic
+compiler rather than a current selfhost build. The complete merge and resource
+governor remain unqualified.
