@@ -89,3 +89,15 @@ Observer SHA-256:
 `8e15ba7f42ef3e0783abfaf98c66a7880d3b67f71ede3a7f6dceb1d201c589cc`.
 No model, inference, network listener or persistent service was started.
 This does not qualify Kapitsa serving, its memory enforcement or a governor.
+
+In a follow-up on the same three hosts, the observer filled a private stdout
+pipe before spawn, resumed the child for 100 ms, stopped it, sampled the
+memory properties, drained only the observer's filler, and resumed it to
+completion. All three samples returned `[64,1,64,1]`; each then printed the
+same version, exited 0 and was reaped. No NOTE_EXEC event was reported in
+these samples. Observer SHA-256:
+`a8f71ceccb1271a84cddc2aab5a352fc4e309be25184ec10d7e25a3b7e2879bb`.
+This is a post-resume snapshot, not proof of the executable's exact startup
+phase or of its properties after the sample. The version-only path and absent
+sampled events do not establish that a serving process cannot later exec,
+evade its cap, spawn descendants, or use GPU memory outside the limit.
