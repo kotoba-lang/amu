@@ -13,6 +13,10 @@ launcher digests. The helper uses SETEXEC, START_SUSPENDED and a private
 256 MiB spawn attribute, and fixed loopback/private/local arguments. The
 nonce-derived model path is not inspected by the helper; the caller is
 responsible for ensuring its contents are test fixtures, not model files.
+An independent test-only encoder and LLDB disassembler matched the emitted
+instruction streams (391 instructions for naphtali and benjamin, 388 for
+judah); a changed-register mutant was rejected for each profile. This checks
+the modeled instructions, not all runtime or private-ABI semantics.
 
 On naphtali, benjamin and judah (macOS 26.7.2, arm64, build 25G332), the
 operator used strict Tailscale host keys and verified signed launchers, the
