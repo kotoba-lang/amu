@@ -123,6 +123,12 @@ def main(output):
     public_receipt = output.parent / "public-macos-product"
     artifact = public_receipt / "experimental-watch-fixture" if public_receipt.is_dir() else None
     watch.run(compiler, packager, output / "watch-helper", artifact)
+    attr_spec = importlib.util.spec_from_file_location(
+        "mac_spawn_attribute", ROOT / "scripts/seed/check-macos-spawn-attribute.py")
+    attr = importlib.util.module_from_spec(attr_spec)
+    attr_spec.loader.exec_module(attr)
+    artifact = public_receipt / "experimental-spawn-attribute" if public_receipt.is_dir() else None
+    attr.run(compiler, packager, output / "spawn-attribute", artifact)
 
 
 if __name__ == "__main__":
