@@ -41,7 +41,8 @@ MUTANTS = [
     ("no-f64-field", [(x, x.replace("(= ty ck-ty-f32)", "(or (= ty TY-F64) (= ty ck-ty-f32))")) for x in F64], "E2128"),
 ]
 REFUSALS = [
-    ("assoc-new-key", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:b m)))", "E2127"),
+    # JUN-733: (assoc {:a 1} :b 2) extends the row (check-row-operations.py); a field the record lacks is still refused
+    ("assoc-new-key-read-absent", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:c m)))", "E2127"),
     ("absent-key", "(defn main [] :i64 (let [m {:a 1}] (:z m)))", "E2127"),
     ("mixed-key-kinds", "(defn main [] :i64 (let [m {:a 1 \"b\" 2}] 0))", "E2105"),
     ("repeated-key", "(defn main [] :i64 (let [m {:a 1 :a 2}] 0))", "E2128"),

@@ -40,6 +40,8 @@
   [:c MM-CK-LAST 11 "R6C: node of the last checked expression when it is a use of a provisional (KW-PINFER) parameter, else 0"]
   [:c MM-CK-REFINE 12 "R6C: the refinement the first type error asks for (f * 2^28 + k * 2^24 + type), 0 = none"]
   [:c MM-CK-HINTS 13 "R6C: HEAP address of the refinements in force for this compile ([n, packed ..]), 0 = none"]
+  [:c MM-CK-KRANK 14 "JUN-733: HEAP address of the keyword rank table (21-check ck-krank-build): [n, rank of symbol 0 .. n-1],
+                      the printed-text order of the keyword symbols; anonymous record blocks keep their keys in it"]
   [:c MM-TOK-N 16 "TOK fill = next free token index (10-lex)"]
   [:c MM-NODE-N 17 "NODE fill (11-read)"]
   [:c MM-SYM-N 18 "SYM fill (20-names)"]
@@ -224,8 +226,10 @@
   ;; FN2 (R5B): one record per FN index, in HEAP at M[MM-FN2] (allocated by 21-check at ck-run; fresh words are zero)
   [:c FN2-W 8]
   [:c FN2-FLAGS 0 "bit 0: a stateful defn (a TEMPLATE: never checked or lowered itself; its specializations are); bit 1: a
-                   specialization; bit 2: a handler's get clause; bit 3: a handler's put clause"]
-  [:c FN2-ORIGIN 1 "a specialization: its template FN; a handler clause: the handler's name symbol"]
+                   specialization; bit 2: a handler's get clause; bit 3: a handler's put clause. JUN-733: bit 5 (with bit 0, so
+                   it is not lowered): a ROW GENERIC (a defn with a row parameter, checked as its specializations); bit 6: a
+                   row specialization (21-check ck-row-spec)"]
+  [:c FN2-ORIGIN 1 "a specialization: its template FN (JUN-733: a row specialization's row generic); a handler clause: the handler's name symbol"]
   [:c FN2-HAND 2 "a specialization: the handler (its get clause FN; put = get + 1); a handler clause: the get clause FN"]
   [:c FN2-CAPS 3 "direct effect mask (wire w < 47 = bit w; :state = bit 47; wire 47 = bit 48)"]
   [:c FN2-S 4 "a handler clause: the handler's state type S"]
