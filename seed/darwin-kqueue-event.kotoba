@@ -4,7 +4,7 @@
 ;; The host must independently qualify OS build/architecture, own the kqueue,
 ;; bind its watch to trusted process identity, and treat missing/error events
 ;; and observer loss as unknown. The correlation value is not authentication.
-(ns amu.darwin-kqueue-event (:export [darwin-proc-watch-event darwin-proc-exit-event? darwin-proc-event-class]))
+(ns amu.darwin-kqueue-event (:export [darwin-proc-watch-event darwin-proc-watch-status-event darwin-proc-exit-event? darwin-proc-exit-status darwin-proc-event-class]))
 
 (defn- dke-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
   (loop [i 0 x n out v]
@@ -30,6 +30,12 @@
           note (vector-assoc! flags 15 224)]
       (dke-u32 note 24 token))))
 
+;; Opt-in NOTE_EXITSTATUS. The host must register successfully and ensure it
+;; is permitted to observe the target; a byte frame is not a kernel receipt.
+(defn darwin-proc-watch-status-event [os-build :string pid :i64 token :i64] :vector-i64
+  (let [e (darwin-proc-watch-event os-build pid token)]
+    (if (= (vector-count e) 48) (vector-assoc! e 15 228) e)))
+
 ;; This recognizes one event's fields only. A true value is not proof that
 ;; all descendants stopped, a durable completion, a wait result, or a grant.
 ;; The caller must reject syscall errors, unexpected event counts and races.
@@ -46,6 +52,16 @@
          (not (= (bit-and (vector-at event 15) 128) 0))
          (= (bit-and (vector-at event 15) 96) 0)
          (= (dke-get32 event 24) token) (= (dke-get32 event 28) 0))))
+
+;; Return an observed raw wait status, or -1 for unknown. The host must bind
+;; this event to its own registration and target; it must separately account
+;; for descendants and durable reservation state. Zero is not a release.
+(defn darwin-proc-exit-status [os-build :string pid :i64 token :i64 count :i64 event :vector-i64] :i64
+  (if (not (and (= count 1) (darwin-proc-exit-event? os-build pid token event)
+                (not (= (bit-and (vector-at event 15) 4) 0))
+                (= (dke-get32 event 20) 0))) -1
+    (let [status (dke-get32 event 16)]
+      (if (or (> status 65535) (= (bit-and status 127) 127)) -1 status))))
 
 ;; A caller passes the result of a single-event kevent64 wait. Errors, timeout,
 ;; impossible counts and malformed events are indistinguishable from unknown

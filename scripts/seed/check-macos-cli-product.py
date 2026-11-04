@@ -87,8 +87,13 @@ def check(cli, out):
     watch_tail = '\n(defn main [] :i64 (if (and (test-darwin-proc-watch) (test-darwin-kqueue-event)) 42 7))\n'
     event_case = source('watch-events', watch_compose + watch_tail)
     event_mutant = source('watch-events-mutant', transition_mutant + watch_tail)
+    status_guard = '(not (= (bit-and (vector-at event 15) 4) 0))'
+    assert watch_compose.count(status_guard) == 1
+    status_mutant = source('watch-events-status-mutant',
+                           watch_compose.replace(status_guard, 'true') + watch_tail)
     run('watch-events', 'run', event_case.name, stdout=b'42\n')
     run('watch-events-mutant', 'run', event_mutant.name, stdout=b'7\n')
+    run('watch-events-status-mutant', 'run', status_mutant.name, stdout=b'7\n')
     # KOTOBA-161: negative float comparisons catch the previously observed
     # integer-condition lowering error; the reversed operands are the control.
     float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
