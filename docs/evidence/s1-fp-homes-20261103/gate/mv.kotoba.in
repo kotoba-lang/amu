@@ -1,0 +1,36 @@
+(ns gate.f32-matvec (:export [main]))
+
+;; One f32 matrix-vector product, @ROWS@ x @COLS@, repeated @REPS@ times. Values are k * c for an integer k in
+;; [-128, 127] and c = 1.37/128 (bits 0x3c2f5c29), so products and partial sums round and the result depends on
+;; the summation order. ACC = 1: strictly left to right; ACC = 4: four interleaved accumulators, combined as
+;; (a0 + a1) + (a2 + a3). Separate multiply and add (no contraction); gate/twin.c computes the same thing in C.
+
+(defn- mask48 [] :i64 281474976710655)
+
+(defn- lcg [s :i64] :i64
+  (bit-and (+ (* s 1103515245) 12345) 2147483647))
+
+(defn- fill [v :vector-i64 n :i64 seed :i64] :i64
+  (loop [i 0 s seed]
+    (if (= i n) s
+      (let [t (lcg s)
+            k (- (bit-and (i64-shift-right t 16) 255) 128)
+            u (vector-assoc! v i (f32-to-bits (f32-mul (i64-to-f32-rounded k) (f32-from-bits 1009736745))))]
+        (recur (+ i 1) t)))))
+
+@ROWDOT@
+
+(defn- matvec [W :vector-i64 x :vector-i64 c0 :i64] :i64
+  (loop [r 0 c c0]
+    (if (= r @ROWS@) c
+      (recur (+ r 1)
+             (bit-and (+ (* c 31) (bit-and (f32-to-bits (row-dot W x (* r @COLS@) @COLS@)) 4294967295)) (mask48))))))
+
+(defn main [] :i64
+  (let [W (vector-alloc (* @ROWS@ @COLS@))
+        x (vector-alloc @COLS@)
+        s1 (fill W (* @ROWS@ @COLS@) 12345)
+        s2 (fill x @COLS@ s1)]
+    (loop [i 0 c (bit-and s2 (mask48))]
+      (if (= i @REPS@) c
+        (recur (+ i 1) (matvec W x c))))))

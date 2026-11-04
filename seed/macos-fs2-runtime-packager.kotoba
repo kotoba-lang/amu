@@ -39,11 +39,15 @@
 (def FS2-LOCK-BYTES (+ FS2-LOCK-ONE-BYTES FS2-READ-BYTES))
 (def FS2-EF-BYTES 1172)
 (def FS35-BYTES 1768)
+(def METAL-BYTES 152)
+(def METAL-BIND-BYTES 16)
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
 
+(defn- amu-program-metal? [mode :string] :bool
+  (string=? mode "amu-program-metal"))
 (defn- amu-program-mode? [mode :string] :bool
-  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35")))
+  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35") (amu-program-metal? mode)))
 (defn- amu-program-fs35? [mode :string] :bool
   (string=? mode "amu-program-fs35"))
 
@@ -52,7 +56,10 @@
   (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4))
      FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES FS2-EF-BYTES))
 (defn- mh-data-bytes [mode :string] :i64
-  (if (string=? mode "amu-cli-host") 32768 DATA-BYTES))
+  (if (or (string=? mode "amu-cli-host") (amu-program-metal? mode)) 32768 DATA-BYTES))
+;; Bytes after __DATA: the dyld bind stream of the Metal profile, in __LINKEDIT.
+(defn- mh-tail-bytes [mode :string] :i64
+  (if (amu-program-metal? mode) METAL-BIND-BYTES 0))
 
 ;; The general build mode accepts an explicit extracted main offset. It is
 ;; bounded by the image size and the scoped FS2 output limit; admission and
@@ -145,7 +152,7 @@
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (string=? mode "amu-program") 0xd2c01c08
+   (if (or (string=? mode "amu-program") (amu-program-metal? mode)) 0xd2c01c08
      (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
@@ -910,6 +917,38 @@
       (bit-or (i64-shift-left (bit-and pages 3) 29)
               (i64-shift-left (quot pages 4) 5)))))
 
+;; The Metal profile (ADR 0375, owner decision 2026-11-04): wire 42 returns one
+;; fn value whose code is `boot`; every other wire continues to `chain`.
+;; boot(op, a, b): 0 load a, 1 store b at a, 2 store byte b at a, 3 call a with
+;; x0..x7 from the eight words at b, 4 the address of __DATA + 16384, whose first
+;; word is the dlsym dyld bound and the rest of whose 16 KiB is the program's.
+;; Assembly was used to derive/review words; Amu packages this Kotoba vector.
+(defn- metal-helper-words [start :i64 chain :i64] :vector-i64
+  (-> (vector-alloc 38)
+      (append-runtime-words 0 [
+       0xf100a83f 0x540000a1 0x100000a1 0xaa1f03e2 0xf9401c10 0xd61f0200
+       (b-direct (+ start 24) chain)
+       0xb5000060 0xf9400020 0xd65f03c0
+       0xf100041f 0x54000081 0xf9000022 0xaa1f03e0 0xd65f03c0
+       0xf100081f 0x54000081 0x39000022 0xaa1f03e0 0xd65f03c0
+       0xf1000c1f 0x54000181 0xa9bf7bfd 0x910003fd 0xaa0103f0 0xaa0203e9
+       0xa9400520 0xa9410d22 0xa9421524 0xa9431d26 0xd63f0200 0xa8c17bfd 0xd65f03c0
+       0xf100101f 0x54000061 0x914010e0 0xd65f03c0 0xd4200000])))
+
+;; LC_LOAD_DYLIB libSystem, LC_DYLD_INFO_ONLY, and the bind stream: ordinal 1,
+;; _dlsym, pointer, segment 2 (__DATA) offset 16384, bind, done.
+(defn- metal-macho-at [v :vector-i64 at :i64 total-bytes :i64] :vector-i64
+  (-> v
+      (u32-at (+ at 544) 12) (u32-at (+ at 548) 56) (u32-at (+ at 552) 24) (u32-at (+ at 556) 2)
+      (text-at (+ at 568) "/usr/lib/libSystem.B.dylib")
+      (u32-at (+ at 600) 2147483682) (u32-at (+ at 604) 48)
+      (u32-at (+ at 616) total-bytes) (u32-at (+ at 620) METAL-BIND-BYTES)
+      (byte-at (+ at total-bytes) 0x11) (byte-at (+ at total-bytes 1) 0x40)
+      (text-at (+ at total-bytes 2) "_dlsym")
+      (byte-at (+ at total-bytes 9) 0x51) (byte-at (+ at total-bytes 10) 0x72)
+      (byte-at (+ at total-bytes 11) 0x80) (byte-at (+ at total-bytes 12) 0x80)
+      (byte-at (+ at total-bytes 13) 0x01) (byte-at (+ at total-bytes 14) 0x90)))
+
 (defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool source :vector-i64] :vector-i64
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
@@ -919,12 +958,16 @@
         extra (mh-extra-start raw-bytes)
         fs35-start (if (amu-program-fs35? mode)
           (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))) extra)
+        metal (amu-program-metal? mode)
+        metal-start (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4)))
         result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
       ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (amu-program-mode? mode) 10 9))
-      (u32-at (+ at 20) (if (amu-program-mode? mode) 512 472)) (u32-at (+ at 24) 2097157)
+      ;; The Metal profile binds an import: DYLDLINK|TWOLEVEL|PIE (0x00200084).
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if metal 12 (if (amu-program-mode? mode) 10 9)))
+      (u32-at (+ at 20) (if metal 616 (if (amu-program-mode? mode) 512 472)))
+      (u32-at (+ at 24) (if metal 2097284 2097157))
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -947,6 +990,7 @@
       (u64-at (+ at 272) (+ 4294967296 total-bytes))
       (u64-at (+ at 280) DATA-BYTES)
       (u64-at (+ at 288) total-bytes)
+      (u64-at (+ at 296) (mh-tail-bytes mode))
       (u32-at (+ at 304) 1) (u32-at (+ at 308) 1)
       ;; macOS dyld starts LC_MAIN; no C runtime or libSystem load command.
       (u32-at (+ at 320) 14) (u32-at (+ at 324) 32)
@@ -981,7 +1025,7 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 fs35-start
+                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 fs35-start metal metal-start
                                            :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
@@ -1028,11 +1072,17 @@
                        (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
                        (words-at (+ at extra) (mh-result-words extra))
                        (generated-at (+ at start) source))]
-            (if fs35
+            (cond fs35
               (words-at program (+ at fs35-start)
                 (fs35-helper-words fs35-start
                   (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
-              program)))
+              metal
+              (metal-macho-at
+                (words-at program (+ at metal-start)
+                  (metal-helper-words metal-start
+                    (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+                at total-bytes)
+              :else program)))
         (if fs35
           (words-at result (+ at extra)
             (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
@@ -1084,10 +1134,11 @@
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
           (if (amu-program-mode? mode)
             (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
-              (if (amu-program-fs35? mode) FS35-BYTES 0))
+              (if (amu-program-fs35? mode) FS35-BYTES 0)
+              (if (amu-program-metal? mode) METAL-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
-        total-bytes (+ text-bytes (mh-data-bytes mode))]
+        total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
             (and (string=? mode "amu-cli-host")
               (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
