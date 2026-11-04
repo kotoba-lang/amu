@@ -27,9 +27,8 @@ This gate, on Apple Silicon:
 * builds seed/tests/native-row-operations.kotoba with --compiler (the Mac fixed
   point of this tree) and the descriptor's packager and runs it: exit 0;
 * checks that each refusal below is refused at check time with its named code;
-* definition-cids: the update sugar and its hand-written let/assoc form are
-  refused identically (unbridged-source: the definition bridge carries no
-  records), so CID equality is not observable for these forms;
+* definition-cids: both update forms are refused atomically because generated
+  record constructors are unbridged, so CID equality is not observable;
 * negative controls: one mutant full compiler per change, built from this
   tree's FULL-MANIFEST with that change removed; the checker mutants must refuse
   the corpus with the old code, the lowering mutants must build a corpus that
@@ -167,16 +166,12 @@ def main(compiler, output):
         print(f"refused {name}: {code}", flush=True)
 
     ids = output / "cids"; ids.mkdir(mode=0o700)
-    reports = {}
     for name, source in CIDS.items():
         status, out, err = native(compiler, ids, "definition-cids", name, source)
-        if status != 0 or "SCANNED\t0/2" not in out or out.count("REFUSED:unbridged-source") != 2:
-            raise ValueError(f"definition-cids {name}: expected both definitions REFUSED:unbridged-source, got exit "
+        if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
+            raise ValueError(f"definition-cids {name}: expected atomic defrecord refusal, got exit "
                              f"{status}: {(out + err)[-300:]!r}")
-        reports[name] = out
-    if reports["update-sugar"] != reports["update-pure"]:
-        raise ValueError("definition-cids: the update sugar and pure reports differ")
-    print("definition-cids: update sugar and its let/assoc form refused identically (unbridged-source; records have no bridge)",
+    print("definition-cids: both update forms refused atomically (record constructors unbridged)",
           flush=True)
 
     names = [line for line in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()
