@@ -40,3 +40,20 @@ actual runtime validation. A source-locked selfhost rebuild, actual Xavier
 execution, injected failures at each syscall, exact error/status behavior,
 other kernel controls, and descriptor-leak/security review remain required.
 No generator output, compiler binary, deployed service, or model was changed.
+
+## Candidate-runtime CI gate
+
+The diagnostic script now supports two seccomp-injected cases intended to use
+a source-derived `F1.elf` compiler: flags 4 -> EINVAL while flags
+0 remains available must execute; flags 4 -> EINVAL plus flags 0 -> EPERM must
+refuse before the execution marker. The profiles' errno, argument index and
+flag values were checked locally. The Docker/seccomp cases and the candidate runtime have not yet run. A workflow
+change exists only in local commit `f9430e6a`: GitHub rejected its push because
+the current OAuth token lacks the `workflow` scope. No CI wiring is claimed.
+
+On PR head `a14c1b09`, the `controls` and `qualify` checks failed because the
+checked-in root/product source-unity descriptors match the prior runtime
+source rather than this change. That is a genuine regeneration/provenance
+requirement, not evidence of a passing candidate. Descriptor hashes or compiler
+binaries were not hand-edited. The qualified selfhost rebuild and safe
+regeneration path remain prerequisites to resolve it.
