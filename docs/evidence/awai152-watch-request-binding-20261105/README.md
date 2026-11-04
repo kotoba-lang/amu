@@ -52,3 +52,28 @@ evidence rather than unattended operations. The original source and cases
 must be restored to the named temporary paths for `before.py`, and the
 separately pinned compiler and packager from the existing watcher evidence
 are required. This does not qualify selfhost, the real host or the governor.
+
+## Recorded WP02 frame replay
+
+A separate local run of the signed experimental WP02 watcher observed an
+owned four-second `/bin/sleep` child. The test captured readiness, three
+heartbeats, twelve empty polls and exit, with monotonic timestamps from the
+Python observer. The watcher and child exited successfully. A newly compiled
+and signed selected-source native fixture initialized the request-bound state
+and replayed those 17 events and recorded timestamps successfully. The
+watcher SHA-256 was
+`1fdff12c551e847948096c96bf4037d91aee540310ca9947f43c9dda20d3869b`;
+the replay source and signed image SHA-256 values were
+`dcba9dd9e4a60adc2302b2c52bd8a269b8af7ae342031048af73546c66283a2f` and
+`192c78cbd83679f804ae77e6911385340ff03a3977a7f58f17c258f24f74a47a`.
+The recorded elapsed time was 4,011 ms. The observer and compiler/fixture
+processes had a three-second CPU cap; no hard memory cap was imposed.
+
+The exact captured `replay.kotoba`, `replay-capture.py` and `replay-build.py`
+are archived here. Their SHA-256 values are respectively the source hash
+above, `8688fd6bf0e3fc7061b656cdd0fae4a81745be2305617db5e28b5514d11abbdf`,
+and `bb2135646eeb3b6dd555547a3466e2ba7c4039bdf63fcbff02efa409768933dd`.
+The scripts use task-specific absolute paths and the builder retains a
+temporary directory. This is offline replay of actual diagnostic frames and
+times, not live enforcement by the monitor, a trusted supervisor, process
+containment or resource-governor qualification.
