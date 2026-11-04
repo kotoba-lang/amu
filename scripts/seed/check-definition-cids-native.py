@@ -120,6 +120,11 @@ def main(compiler, out):
                                 "code (cond false 2 (> n 8) 1 :else 0)]", 1)
     assert blocked_text != text
     mutant_blocked = build("mutant-no-blocked", blocked_text)
+    record_guard = "(= (nm-form-head M n) HD-DEFRECORD) (let [bad (dsb-bad C 3 n)] 0)"
+    assert text.count(record_guard) == 1
+    record_text = text.replace(record_guard, "false (let [bad (dsb-bad C 3 n)] 0)", 1)
+    assert record_text != text
+    mutant_record = build("mutant-no-record-guard", record_text)
 
     def cids(name, source, image=cli, code=0, groups=False):
         p = out / (name + ".kotoba")
@@ -214,6 +219,18 @@ def main(compiler, out):
     cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
     # No definition at all is no identity (reference: `:entries :unavailable`), not an empty report.
     cids("refuse-no-definitions", ["(def k 5)"], code=66)
+    # Constructor identities for defrecord are not bridged; never emit a
+    # partial report even when the generated constructor is unused.
+    for suffix, fun in [("unused", "(defn- f [] :i64 42)"),
+                        ("referenced", "(defn- f [x [:ref :demo/Pair]] :i64 42)")]:
+        cids("refuse-defrecord-" + suffix,
+             ["(ns demo (:export []))", "(defrecord Pair [a :i64 b :string])", fun], code=66)
+    # Executing the removed-guard mutant demonstrates the omission: it reports
+    # f but not the implicitly generated ->Pair constructor.
+    record_mutant = cids("mutant-defrecord-unused",
+                        ["(ns demo (:export []))", "(defrecord Pair [a :i64 b :string])",
+                         "(defn- f [] :i64 42)"], image=mutant_record)
+    assert list(record_mutant) == ["f"]
     cids("refuse-closure-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x missing))] (g n))")], code=66)
     cids("refuse-closure-callback", ["(defn ap [g [:fn [:i64] :i64] x :i64] :i64 (g x))",
                                      fn("f", ["n"], "(ap (fn [x] (+ x 1)) n)")], code=66)
