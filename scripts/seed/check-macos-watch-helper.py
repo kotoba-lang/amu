@@ -113,9 +113,18 @@ def transition_case(image, directory, mode):
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 5)
         watcher = launch_watcher(image, directory, request)
-        # No readiness frame exists yet: early registration races fail this
-        # test instead of being interpreted as a successful guard.
-        time.sleep(0.5)
+        ready = b''
+        deadline = time.monotonic() + 5
+        while len(ready) < 40:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([watcher.stdout], [], [], remaining)[0]:
+                raise RuntimeError((mode, 'watcher ready timeout'))
+            chunk = os.read(watcher.stdout.fileno(), 40 - len(ready))
+            if not chunk:
+                raise RuntimeError((mode, 'short ready frame'))
+            ready += chunk
+        if ready != b'WR01\0\0\0\0' + request:
+            raise RuntimeError((mode, 'invalid ready frame', ready))
         if watcher.poll() is not None:
             raise RuntimeError((mode, 'watcher exited before trigger'))
         child.stdin.write(b'x')
@@ -167,11 +176,11 @@ def run(compiler, packager, output, artifact_dir=None):
                                 refused.stdout, refused.stderr, child.poll()))
         timeout_request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 1)
         timed = observe(image, output, timeout_request)
-        if timed.returncode != 1 or timed.stdout or timed.stderr or child.poll() is not None:
+        if timed.returncode != 1 or timed.stdout != b'WR01\0\0\0\0' + timeout_request or timed.stderr or child.poll() is not None:
             raise RuntimeError(('watch timeout did not cleanly refuse', timed.returncode,
                                 timed.stdout, timed.stderr, child.poll()))
         result = observe(image, output, request)
-        if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
+        if result.returncode != 0 or result.stdout != b'WR01\0\0\0\0' + request + b'WO01\0\0\0\0' + request or result.stderr:
             raise RuntimeError(('watch failed', result.returncode, result.stdout, result.stderr))
         if child.wait(timeout=2) != 0:
             raise RuntimeError('owned child did not exit normally')

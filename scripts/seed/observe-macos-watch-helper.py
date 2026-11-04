@@ -53,10 +53,10 @@ def main():
                 raise RuntimeError('wrong identity did not cleanly refuse on live child')
             short = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 1)
             timed = helper.observe(watcher, root, short)
-            if timed.returncode != 1 or timed.stdout or timed.stderr or child.poll() is not None:
+            if timed.returncode != 1 or timed.stdout != b'WR01\0\0\0\0' + short or timed.stderr or child.poll() is not None:
                 raise RuntimeError('timeout did not cleanly refuse on live child')
             result = helper.observe(watcher, root, request)
-            if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
+            if result.returncode != 0 or result.stdout != b'WR01\0\0\0\0' + request + b'WO01\0\0\0\0' + request or result.stderr:
                 raise RuntimeError('exact event response failed')
             if child.wait(timeout=2) != 0:
                 raise RuntimeError('owned child failed')
@@ -79,7 +79,7 @@ def main():
             timer.start()
             result = helper.observe(watcher, root, request)
             status = killed.wait(timeout=3)
-            if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
+            if result.returncode != 0 or result.stdout != b'WR01\0\0\0\0' + request + b'WO01\0\0\0\0' + request or result.stderr:
                 raise RuntimeError('signalled child did not produce exact event')
             if status != -signal.SIGKILL:
                 raise RuntimeError('independent child status was not SIGKILL')
