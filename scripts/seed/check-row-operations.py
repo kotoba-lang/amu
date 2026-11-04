@@ -170,13 +170,15 @@ def main(compiler, output):
     reports = {}
     for name, source in CIDS.items():
         status, out, err = native(compiler, ids, "definition-cids", name, source)
-        if status != 0 or "SCANNED\t0/2" not in out or out.count("REFUSED:unbridged-source") != 2:
-            raise ValueError(f"definition-cids {name}: expected both definitions REFUSED:unbridged-source, got exit "
+        # JUN-358 (#1788/#1789): a source holding a form with no bridge (records) refuses atomically, exit 66 DSB:BRIDGE:3:<offset>,
+        # instead of per-definition REFUSED:unbridged-source (docs/definition-cids-native.md; check-checked-source-native.py).
+        if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
+            raise ValueError(f"definition-cids {name}: expected the atomic DSB:BRIDGE:3 refusal, got exit "
                              f"{status}: {(out + err)[-300:]!r}")
-        reports[name] = out
+        reports[name] = err.split(":")[:3]
     if reports["update-sugar"] != reports["update-pure"]:
-        raise ValueError("definition-cids: the update sugar and pure reports differ")
-    print("definition-cids: update sugar and its let/assoc form refused identically (unbridged-source; records have no bridge)",
+        raise ValueError("definition-cids: the update sugar and pure refusals differ in kind")
+    print("definition-cids: update sugar and its let/assoc form both refuse atomically (DSB:BRIDGE:3; records have no bridge)",
           flush=True)
 
     names = [line for line in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()

@@ -34,7 +34,8 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "seed/tests/native-keyword-map-record.kotoba"
 CHECK = "seed/21-check.kotoba"
-LITERAL = "(if (= (nm-kind M (nm-first M n)) ND-KW) (ck-kwrec M n fx) (ck-maplit2 M n fx))"
+LITERAL = ("(if (or (= (nm-kind M (nm-first M n)) ND-KW) (and (zero? (nm-count M n)) (= (nm-nf M n NF-RES) HD-RECORD-NEW)))"
+           "   ; JUN-733: {} of a row op\n    (ck-kwrec M n fx) (ck-maplit2 M n fx))")
 F64 = ["(= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)", "(= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)"]
 MUTANTS = [
     ("no-keyword-literal", [(LITERAL, "(ck-maplit2 M n fx)")], "E2105"),
