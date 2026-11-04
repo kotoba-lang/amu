@@ -41,6 +41,10 @@ INERT = (
     re.compile(r"^docs/(?!evidence/).*\.md$"),
     re.compile(r"(^|/)\.DS_Store$"),
     re.compile(r"^\.github/dependabot\.yml$"),
+    # JUN-818: repository tooling no native job reads (PR batching helper, post-merge repin allowlist and its
+    # disabled bot workflow, which only runs on main/dispatch). Named one by one: a new file is never inert.
+    re.compile(r"^scripts/ci/(pr_batch|test_pr_batch|repin_allowlist|test_repin_allowlist)\.py$"),
+    re.compile(r"^\.github/workflows/post-merge-repin\.yml$"),
 )
 TIERS = ("pr", "main", "full")
 SEED = "scripts/seed/"

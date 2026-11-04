@@ -101,6 +101,45 @@ stage/hash/transport and observe native processes; they do not substitute for
 the controller or the checked-in Kotoba verdicts. Historical hosted/C-loader
 receipts retain their original source binding and are not current qualification.
 
+## Multi-file projects: `check|compile ENTRY --source-path DIR` (JUN-838)
+
+Code-first finding: `check|compile|run ENTRY --source-lock FILE.ksl` already
+accepts multi-file projects via a hand-written KSL2 module map. What was
+missing is a way to name source roots without writing that lock. The CLI now
+accepts `amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]` and
+`amu compile ENTRY.kotoba --source-path DIR [...] [--runtime-profile P] [-o OUT]`
+(1..16 roots).
+
+Design: the wrapper reads the entry, scans each `(:require [NAME ...])` clause
+(a hint only), resolves NAME to `DIR/<a/b_c>.kotoba` over the declared roots
+only (the root compiler's `pj-rel` mapping), hashes the bytes it read, and
+builds a sorted KSL2 lock (`module` rows by name, `file` rows by path). It then
+runs the existing locked-project check or compile, which re-verifies every
+digest on the staged private snapshot and lets the pinned root re-check the
+namespace map. Nothing is trusted from the scan: a missed or invented name is
+caught by the root. A module on no declared root is not guessed; the root's own
+`E6002 ... missing from the explicit source paths` is the refusal. A module on
+two roots refuses `EPATH`. Mixing `--source-path` with `--source-lock`, a
+dangling flag, more than 16 roots, and `run` with `--source-path` refuse with
+usage (never silently dropped). `compile -o` refuses to replace the entry and
+existing outputs are preserved (`EOUTPUT`).
+
+`run ENTRY --source-path` stays a usage refusal. `mc-main-abi?` validates one
+self-contained source (it refuses any source that needs another module), so it
+cannot admit a project. Code-first finding: the existing `--source-lock`
+`compile`/`run` path has no wrapper main-ABI check either; a project whose
+`main` takes an argument compiles and runs (measured 2026-11-04: prints a
+register garbage value, exit 0). `--source-path` compile inherits exactly that
+behavior and adds no new one; a project-aware ABI check is the open item before
+`run --source-path` can be admitted, and would also close the gap for locks.
+
+Status: the committed `amu-cli.macho`, `cli.json` pins were regenerated with
+`scripts/seed/repin-derived-pins.py`. Native Linux x86_64 and CDCI gates are
+not run locally. Remaining: independent qualification, `run`, project-aware
+ABI check, and a package lock generator (JUN-833). Roots and entry must not
+contain `.`/`..` segments except a bare `.` root; the root's stderr is not
+captured by the host spawn, so diagnostics reach the user directly.
+
 ## Locked typed x86 projects
 
 `compile ENTRY --target x86_64-linux --format kx64-v1 --output NEW` now has
