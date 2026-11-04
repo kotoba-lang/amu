@@ -117,12 +117,12 @@
       (let [kind (nm-ff M f FF-KIND)
             walk (if (or (= kind FK-DEFN) (= kind FK-PRIV))
                    (dsl-visit M S C (nm-nth M (nm-ff M f FF-NODE) 4) f 0 can-collide) 0)] (recur (inc f)))))))
-(defn- dsl-capture-text [M :vector-i64 C :vector-i64 id :i64 types :bool] :string
+(defn- dsl-capture-text [M :vector-i64 S :string C :vector-i64 id :i64 types :bool] :string
   (let [record (dsl-record C id)]
     (loop [i 0 out ""]
       (if (or (= i (vector-at C (+ record 3))) (not= (vector-at C 0) 0)) out
         (let [node (vector-at C (+ record 4 i)) value (if types
-                     (dsb-type M C (nm-nf M node NF-TYPE) 0) (dsb-local M C node))]
+                     (dsb-type M S C (nm-nf M node NF-TYPE) 0) (dsb-local M C node))]
           (recur (inc i) (string-concat out (string-concat " " value))))))))
 (defn- dsl-call [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [id (vector-at C (+ 9 n))]
@@ -132,18 +132,18 @@
                       (let [v (nm-next M p) text (dsb-expr M S C v depth)]
                         (recur (nm-next M v) (string-concat out (string-concat " " text))))))]
         (string-concat "(" (string-concat (dsl-name id)
-          (string-concat inits (string-concat (dsl-capture-text M C id false) ")"))))))))
-(defn- dsl-params [M :vector-i64 C :vector-i64 n :i64 types :bool] :string
+          (string-concat inits (string-concat (dsl-capture-text M S C id false) ")"))))))))
+(defn- dsl-params [M :vector-i64 S :string C :vector-i64 n :i64 types :bool] :string
   (loop [p (nm-first M (nm-nth M n 1)) out ""]
     (if (or (= p 0) (not= (vector-at C 0) 0)) out
-      (let [value (if types (dsb-type M C (nm-nf M p NF-TYPE) 0) (dsb-local M C p))]
+      (let [value (if types (dsb-type M S C (nm-nf M p NF-TYPE) 0) (dsb-local M C p))]
         (recur (nm-next M (nm-next M p)) (string-concat out (string-concat " " value)))))))
 (defn- dsl-helper [M :vector-i64 S :string C :vector-i64 id :i64] :string
   (let [record (dsl-record C id) node (vector-at C record)
         owner (vector-assoc! C 3 (vector-at C (+ record 1))) current (vector-assoc! C 4 id)
-        names (string-concat (dsl-params M C node false) (dsl-capture-text M C id false))
-        types (string-concat (dsl-params M C node true) (dsl-capture-text M C id true))
-        result (dsb-type M C (nm-nf M node NF-TYPE) 0) body (dsb-expr M S C (nm-nth M node 2) 0)]
+        names (string-concat (dsl-params M S C node false) (dsl-capture-text M S C id false))
+        types (string-concat (dsl-params M S C node true) (dsl-capture-text M S C id true))
+        result (dsb-type M S C (nm-nf M node NF-TYPE) 0) body (dsb-expr M S C (nm-nth M node 2) 0)]
     (string-concat " {:name " (string-concat (dsl-name id) (string-concat " :params ["
       (string-concat names (string-concat "] :param-types [" (string-concat types
         (string-concat "] :result " (string-concat result

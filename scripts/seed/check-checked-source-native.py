@@ -320,6 +320,50 @@ def main(compiler, out):
             assert stderr.startswith("DSB:BRIDGE:3:")
         if name in ("computed-def", "constant-alias", "option-refinement", "tuple-refinement", "nested-refinement", "function-type"):
             assert stderr.startswith("DSB:BRIDGE:")
+    # Explicit namespace schemas: keep only freshly checked schema data, and
+    # require the generated KIR to pass a separate native identity check.
+    schemas = {
+        "simple": "{:s/r [:record :s/r [[:a :i64]]]}",
+        "wide": "{:s/r [:record :s/r [[:a :i64] [:b :i64]]]}",
+        "unrelated": "{:s/r [:record :s/r [[:a :i64]]] :s/u [:record :s/u [[:z :string]]]}",
+        "transitive": "{:s/r [:record :s/r [[:n [:ref :s/n]]]] :s/n [:record :s/n [[:v :i64]]]}",
+        "transitive-edit": "{:s/r [:record :s/r [[:n [:ref :s/n]]]] :s/n [:record :s/n [[:v :string]]]}",
+        "cycle": "{:s/r [:record :s/r [[:next [:ref :s/n]]]] :s/n [:record :s/n [[:prev [:ref :s/r]]]]}",
+    }
+    schema_rows = {}
+    for name, schema in schemas.items():
+        src, kir = out / ("schema-" + name + ".source"), out / ("schema-" + name + ".kir")
+        src.write_text("(ns demo (:export []) (:schemas " + schema + ")) (defn- f [x [:ref :s/r]] :i64 42)\n")
+        text_kir, stderr = run("schema-kir-" + name, [producer, "kir", src])
+        assert not stderr
+        kir.write_text(text_kir)
+        got = rows(run("schema-source-" + name, [producer, src])[0])
+        expected = rows(run("schema-reference-" + name, [producer, "reference", kir])[0])
+        assert got == expected, (name, got, expected)
+        schema_rows[name] = got["f"][0]
+    # One-time local reference (2026-11-02): nbb v1.5.212-cljk.1, lock
+    # SHA-256 46385bd1f4e16c848f5c3a079fa2f36b072ece9db132759ffb9e12ca5d784e75.
+    # sema/analyze -> kir/lower -> definition-identity/definitions on the
+    # simple source above; nbb is not used in CI or as a fallback.
+    assert schema_rows["simple"] == "bafyreiagssxmxbxfy7i3zq4m6ayucfkyjylomcruexauvgvw6dtjqtfeeu"
+    assert schema_rows["unrelated"] == schema_rows["simple"]
+    assert schema_rows["wide"] != schema_rows["simple"]
+    assert schema_rows["transitive"] != schema_rows["transitive-edit"]
+    malformed = out / "schema-unused-malformed.source"
+    malformed.write_text("(ns demo (:export []) (:schemas {:s/r [:record :s/r [[:a :i64]]] :s/b [:record :s/b [[:x :i64] [:x :string]]]})) (defn- f [x [:ref :s/r]] :i64 42)\n")
+    stdout, stderr = run("schema-unused-malformed", [producer, malformed], 1)
+    assert not stdout and stderr.startswith("DSB:")
+    # Erasing the schema catalog cannot mint a usable identity.
+    old = '(string-concat schema (string-concat " :functions ["'
+    new = '(string-concat "{}" (string-concat " :functions ["'
+    bridge = (ROOT / BRIDGE).read_text()
+    assert text.count(bridge) == 1 and bridge.count(old) == 1
+    mutant_schema = build("mutant-schema-erasure", text.replace(bridge, bridge.replace(old, new)))
+    stdout, stderr = run("detect-schema-erasure", [mutant_schema, out / "schema-simple.source"], 1)
+    assert not stdout and stderr.startswith("DSB:")
+    report["schemaCases"] = len(schema_rows)
+    report["mutations"].append(dict(name="schema-erasure", image=pin(mutant_schema), built=True, executed=True,
+                                    detectedBy="fresh native schema refusal"))
     mutations = [
         ("operator", 'HD-ADD "+"', 'HD-ADD "-"', "leaf", False),
         ("literal", '(mem-u2dec (nm-nf M n NF-AUX))', '"0"', "const", False),
@@ -330,11 +374,11 @@ def main(compiler, out):
         ("constant-inline", '(and (= (quot r RES-SCALE) RES-FN) (ck-r6f-cdef-fn? M fi))',
          'false', "constant-false", True),
         ("composite-constructor", 'TC-LIST ":list"', 'TC-LIST ":option"', "list-string", False),
-        ("composite-child", '(dsb-type M C a (inc depth))', '":i64"', "list-string", False),
-        ("composite-right", '(dsb-type M C b (inc depth))', '":i64"', "map-keyword-string", False),
+        ("composite-child", '(dsb-type M S C a (inc depth))', '":i64"', "list-string", False),
+        ("composite-right", '(dsb-type M S C b (inc depth))', '":i64"', "map-keyword-string", False),
         ("cond-test", '(dsb-expr M S C p depth)', '"true"', "cond-many", False),
         ("string-equality", 'HD-STRING-EQ "string=?"', 'HD-STRING-EQ "="', "string-equality", False),
-        ("loop-recur-capture", '(dsl-capture-text M C (vector-at C 4) false)', '""', "loop-capture-order", True),
+        ("loop-recur-capture", '(dsl-capture-text M S C (vector-at C 4) false)', '""', "loop-capture-order", True),
     ]
     bridge = (ROOT / BRIDGE).read_text()
     assert text.count(bridge) == 1
