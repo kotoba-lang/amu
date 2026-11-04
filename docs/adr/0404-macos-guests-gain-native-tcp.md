@@ -131,6 +131,36 @@ Each slice is its own change; none is half of another.
    it holds no grant of its own (D3), reaches only the addresses its invoker names, and only on loopback (3).
    The wording of this paragraph is the part most in need of review.
 
+## Implementation notes (from reading `seed/macos-fs2-runtime-packager.kotoba`, 2026-11-04)
+
+* **The build loop is fast and reproduces.** `python3 scripts/seed/build-macos-cli.py --output DIR` rebuilds the
+  packager and the CLI from source in about 12 s on this machine and asserts the packager fixed point
+  (`root.json` `expectedFixedPoint.packagerUnsignedSha256`). So a change can be iterated, and a re-pin is a
+  mechanical consequence of a passing build rather than a leap.
+* **Guest images are the `amu-program` mode of that packager** (`amu compile` invokes the pinned packager as
+  `amu-packager program.macho program.raw amu-program <offset> /source.kotoba`). A runtime helper is a block of
+  AArch64 words placed at a fixed offset in the image and chained: each helper tests its wire and otherwise
+  branches back to the previous helper.
+* **The helper ABI**, read by disassembling the wire-39 (stderr) helper: `typed_cap(ctx=x0, wire=x1,
+  request_kind=x2, result_kind=x3, handle=x4)`. The grant is a bit in the word at `[ctx+0x10]` (wire 39 tests
+  `1<<39`); a request is a 1-based handle into a table at `[ctx+0x128]` (16-byte `{ptr,len}` entries, count at
+  `*[ctx+0x120]`) and a bounded-span resolver turns it into a pointer; a result string is appended to the pool at
+  `[ctx+0x190]` (used length at `[ctx+0x198]`, limit 256 MiB) and made a value by calling the function pointer at
+  `[ctx+0x38]` with `(ctx, ~offset, length)`; every refusal today is `brk #0`. A net helper has the same shape;
+  its answers are decimal handles or lowercase hex, so it needs hex encode/decode, which no existing helper has.
+* **Work items** (each testable): (A) capture `envp` in the wrapper; (B) scan it for `KEXE_CAP_RESOURCES_43/45`
+  and `KEXE_CAP_GRANT_SHA256_43/45`; (C) canonical-form and loopback-only checks; (D) SHA-256 in words (the
+  pure Kotoba one in `seed/03-source-sha256.kotoba` is the reference; there is no compiled copy in the runtime);
+  (E) the 16-slot handle table in `__DATA`; (F) wires 43..47 with their parsing, polls and answers; (G)
+  `SO_NOSIGPIPE` on every socket; (H) the grant bits set in `[ctx+0x10]` only after (B)-(D) pass, and the
+  `KEXE_TRAP` lines in place of `brk`; (I) the Mac port of `check-net-runtime.py` with negative controls;
+  (J) the re-pin chain.
+* **How the words are derived** is a decision for review. The existing helpers say "the assembler was used once to
+  derive these words" from reviewed assembly. Handwriting roughly 600 instructions (D and F are most of it) in
+  assembly is reviewable but slow; deriving them from freestanding C with `clang -S` and committing the assembly as
+  the evidence file is faster to test but puts a C compiler in the derivation step. Either way the build path
+  contains only the checked-in words.
+
 ## Consequences
 
 * torihiki's MT5 listener can be written in Kotoba and run on the user's Mac, with the EA's loopback-only guard intact.
