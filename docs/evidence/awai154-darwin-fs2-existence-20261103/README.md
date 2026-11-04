@@ -46,3 +46,14 @@ full FS2 conformance, all-error coverage, crash durability, race safety, a
 complete checkpoint, or an autonomous bot. Caller compatibility, Linux and
 other Macs remain unqualified; path ownership and race protection are still
 required.
+
+## Derivation verifier correction
+
+The later diagnostic packager contains 188 D/A words, but
+`scripts/seed/check_macos_fs2_derivation.py` still referenced the earlier
+184-word virtual-root derivation and relocation index 179. The verifier now
+selects this directory's 188-word derivation and relocation indexes 27/183.
+On 2026-11-04 it passed the D/A, B/C, lock and E/F/O/U helper comparisons
+on this branch. The verifier uses a host assembler as an independent test
+observer; that assembler is not part of the product build. This does not
+qualify the runtime or a compiler rebuild.
