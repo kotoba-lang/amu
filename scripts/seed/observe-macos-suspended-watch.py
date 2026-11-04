@@ -23,7 +23,7 @@ L.posix_spawn.argtypes=[ctypes.POINTER(ctypes.c_int),ctypes.c_char_p,ctypes.c_vo
 with tempfile.TemporaryDirectory(prefix='awai152-suspended-watch-') as d:
  staged=pathlib.Path(d)/'watch.macho';shutil.copyfile(image,staged);staged.chmod(0o700);image=staged
  subprocess.run(['/usr/bin/codesign','--verify','--strict',str(image)],check=True,capture_output=True,timeout=10)
- for mode in ('normal','marker','fork','bash-marker','bash-fork','bash-exec'):
+ for mode in ('normal','marker','fork','bash-marker','bash-fork','bash-exec','sandbox-bash-marker','sandbox-python-fork'):
   attr=ctypes.c_void_p();pid=ctypes.c_int();owned=False;reaped=False;watch=None
   try:
    if (rc:=L.posix_spawnattr_init(ctypes.byref(attr))):raise RuntimeError(('init',rc))
@@ -32,11 +32,24 @@ with tempfile.TemporaryDirectory(prefix='awai152-suspended-watch-') as d:
    marker=pathlib.Path(d)/(mode+'-started')
    if mode=='normal':args=[b'/bin/sleep',b'0.2']
    else:
-    if mode in ('marker','bash-marker'):command=b'printf ready > "$1"'
+    if mode in ('marker','bash-marker','sandbox-bash-marker'):command=b'printf ready > "$1"'
     elif mode=='bash-exec':command=b'printf ready > "$1"; exec /bin/sleep 0.2'
     else:command=b'printf ready > "$1"; /bin/sleep 0.2 & wait'
-    shell=b'/bin/bash' if mode.startswith('bash-') else b'/bin/sh'
+    shell=b'/bin/bash' if mode.startswith('bash-') or mode=='sandbox-bash-marker' else b'/bin/sh'
     args=[shell,b'-c',command,b'probe',os.fsencode(marker)]
+    if mode=='sandbox-bash-marker':
+     args=[b'/usr/bin/sandbox-exec',b'-p',b'(version 1) (allow default) (deny process-fork)']+args
+    if mode=='sandbox-python-fork':
+     code=b'''import errno,os,sys
+def check(f):
+ try: p=f()
+ except OSError as e: return e.errno==errno.EPERM
+ if p==0: os._exit(0)
+ os.waitpid(p,0); return False
+a=check(os.fork); b=check(lambda:os.posix_spawn('/usr/bin/true',['/usr/bin/true'],{}))
+open(sys.argv[1],'wb').write(b'ready' if a and b else b'bad')
+sys.exit(0 if a and b else 2)'''
+     args=[b'/usr/bin/sandbox-exec',b'-p',b'(version 1) (allow default) (deny process-fork)',b'/usr/bin/python3',b'-c',code,os.fsencode(marker)]
    argv=(ctypes.c_char_p*(len(args)+1))(*args,None);env=(ctypes.c_char_p*2)(b'PATH=/usr/bin:/bin',None)
    if (rc:=L.posix_spawn(ctypes.byref(pid),args[0],None,ctypes.byref(attr),argv,env)):raise RuntimeError(('spawn',rc))
    owned=True;deadline=time.monotonic()+3
@@ -63,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='awai152-suspended-watch-') as d:
    got,status=os.waitpid(pid.value,0);reaped=True
    if got!=pid.value or not os.WIFEXITED(status) or os.WEXITSTATUS(status)!=0 or err:raise RuntimeError(('child/err',status,err))
    if mode in ('normal','bash-marker') and (watch.returncode!=0 or out!=b'WO01\0\0\0\0'+req):raise RuntimeError((mode,watch.returncode,out))
-   if mode in ('marker','fork','bash-fork','bash-exec') and (watch.returncode!=1 or out):raise RuntimeError((mode,watch.returncode,out))
+   if mode in ('marker','fork','bash-fork','bash-exec','sandbox-bash-marker','sandbox-python-fork') and (watch.returncode!=1 or out):raise RuntimeError((mode,watch.returncode,out))
    if mode!='normal' and marker.read_bytes()!=b'ready':raise RuntimeError('child marker mismatch')
    print('mode',mode,'spawn-stopped',True,'watcher-ready-before-resume',True,'watcher-exit',watch.returncode,'output-bytes',len(out),'child-reaped',True,flush=True)
   finally:

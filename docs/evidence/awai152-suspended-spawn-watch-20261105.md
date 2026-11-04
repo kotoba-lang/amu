@@ -93,3 +93,32 @@ policy. The watcher observes and refuses transitions after they occur and
 cannot prevent the child or a descendant from already performing side effects.
 It does not establish tree containment, resource limits, durable recovery,
 an authenticated supervisor, model compatibility or governor qualification.
+
+## Combining the sandbox diagnostic with suspended spawn
+
+On 2026-11-05 JST, the same observer was extended with two short-lived
+`/usr/bin/sandbox-exec` cases using `(version 1) (allow default) (deny
+process-fork)`. Each process was spawned suspended, its WP01 watcher ready
+frame was checked, and only then was it resumed. In one case the target Bash
+wrote a private marker; in the other, the target Python attempted `fork` and
+`posix_spawn` and wrote `ready` only if both returned `EPERM`. Both markers
+were absent before readiness and read back as `ready` after the child exited.
+The watcher returned status 1 without a final exit frame in both cases.
+
+The same cases passed on the local Mac and on naphtali, benjamin and judah
+using the same strict Tailscale SSH and digest/signature checks described
+above. Each test-owned direct child was reaped and each remote temporary
+directory was confirmed absent. The watcher reports no reason for refusal;
+these observations do not by themselves prove that its refusal was caused by
+the sandbox launcher's exec. They do show that the marker was written despite
+the watcher refusing: this diagnostic observer waited for the child and did
+not terminate it when the watcher refused. A production host cannot treat a
+watcher failure alone as proof that the workload stopped or had no effects.
+
+The observer script SHA-256 for this run was
+`abf44aa6d69b02eacece24a79c08398b4ab0b7b16272c20a4d7b7e731436d7d1`;
+the unchanged three-Mac orchestration script hash is recorded above. The
+Python, sandbox-exec and allow-default policy are diagnostics, not a native
+implementation, a comprehensive process-creation restriction, an I/O or
+GPU/memory limit, an authenticated supervisor, or governor qualification.
+No model, real workload or persistent service ran.
