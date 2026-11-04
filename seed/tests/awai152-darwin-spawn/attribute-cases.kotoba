@@ -2,11 +2,13 @@
 (ns amu.darwin-spawn-attribute-cases (:export [test-darwin-spawn-attribute]))
 
 (defn test-darwin-spawn-attribute [] :bool
-  (let [a (darwin-spawn-attribute 64) b (darwin-spawn-attribute 16384)]
-    (and (= (vector-count (darwin-spawn-attribute -1)) 0)
-         (= (vector-count (darwin-spawn-attribute 0)) 0)
-         (= (vector-count (darwin-spawn-attribute 32768)) 0)
-         (= (vector-at (darwin-spawn-attribute 1) 72) 1)
+  (let [a (darwin-spawn-attribute "25G332" 64) b (darwin-spawn-attribute "25G332" 16384)]
+    (and (= (vector-count (darwin-spawn-attribute "" 64)) 0)
+         (= (vector-count (darwin-spawn-attribute "25G333" 64)) 0)
+         (= (vector-count (darwin-spawn-attribute "25G332" -1)) 0)
+         (= (vector-count (darwin-spawn-attribute "25G332" 0)) 0)
+         (= (vector-count (darwin-spawn-attribute "25G332" 32768)) 0)
+         (= (vector-at (darwin-spawn-attribute "25G332" 1) 72) 1)
          (= (vector-count a) 248) (= (vector-count b) 248)
          (loop [i 0]
            (if (= i 248) true
