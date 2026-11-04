@@ -88,3 +88,27 @@ The probe does not call the resolver, load a framework, create a Metal device,
 execute a GPU kernel or qualify Metal inference, and uses an old diagnostic
 compiler rather than a current selfhost build. The complete merge and resource
 governor remain unqualified.
+
+## Small Metal kernel observation
+
+On local Darwin arm64 build `25D771280a`, the same candidate packager and
+pinned diagnostic compiler built fetched-main `q8_metal.kotoba.in` and
+`q8_cpu.kotoba.in` with 32 rows, 32 columns, one block and one repetition.
+The signed Metal image executed one Metal dispatch and printed checksum
+`138356032241880`, equal to the signed Kotoba CPU image. A separate Metal
+image with the kernel accumulation operator changed from `+=` to `-=` printed
+`234609530751396`. The Metal, CPU and mutant signed image SHA-256 values were
+respectively `0c496e058c1f55b62843595b0636027fba81cb7c465de02ab547c22ac10d5d66`,
+`9ea2d96d3d3331ab0b4fec1c4a1f19fb1a1b2ceaf34274f14e0f8270e041387f`, and
+`42ea5bd24614f7c05e015f3d456fef3526d54bfb03ad8098b7a4d09d30bd4168`.
+Both template sources came from main commit
+`15aef330f3374b941c4d610979b905ff91af0cd0`; their respective SHA-256 values
+were `ff784af18b0593f7d7488ceffea29204f4b8efae33cb91d3b80faa2ac1840500` and
+`c060c7677a4dee83ede61110bfe155a3d684c506d941de47e7432c6cf3e42c91`.
+The temporary orchestration script SHA-256 was
+`89a23aa69622551dac13c9cf3c83f29a465a6b5b8cdaaab2ac2d845d7265515b`.
+
+This is one tiny synthetic kernel with one CPU comparison and one mutant, not
+the complete upstream Metal gate or a performance benchmark. It neither runs
+Flint nor verifies Metal under concurrent workloads or memory pressure. The
+packager merge, selfhost, resource governor and fleet deployment remain open.
