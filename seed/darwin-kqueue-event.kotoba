@@ -4,7 +4,7 @@
 ;; The host must independently qualify OS build/architecture, own the kqueue,
 ;; bind its watch to trusted process identity, and treat missing/error events
 ;; and observer loss as unknown. The correlation value is not authentication.
-(ns amu.darwin-kqueue-event (:export [darwin-proc-watch-event darwin-proc-exit-event?]))
+(ns amu.darwin-kqueue-event (:export [darwin-proc-watch-event darwin-proc-exit-event? darwin-proc-event-class]))
 
 (defn- dke-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
   (loop [i 0 x n out v]
@@ -44,3 +44,12 @@
          (not (= (bit-and (vector-at event 11) 128) 0))
          (not (= (bit-and (vector-at event 15) 128) 0))
          (= (dke-get32 event 24) token) (= (dke-get32 event 28) 0))))
+
+;; A caller passes the result of a single-event kevent64 wait. Errors, timeout,
+;; impossible counts and malformed events are indistinguishable from unknown
+;; here; none is evidence of termination or permission to release resources.
+;; Even exit-observed must be combined with independently bound identity,
+;; workload containment, durable recovery, and host authorization.
+(defn darwin-proc-event-class [os-build :string pid :i64 token :i64 count :i64 event :vector-i64] :string
+  (if (and (= count 1) (darwin-proc-exit-event? os-build pid token event))
+    "observer/exit-observed" "observer/unknown"))
