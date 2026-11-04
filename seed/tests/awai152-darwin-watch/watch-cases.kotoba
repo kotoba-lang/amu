@@ -8,7 +8,7 @@
     (dpw-case-u32 (dpw-case-u32 (dpw-case-u32 blank 12 pid) 120 sec) 128 usec)))
 (defn- dpw-case-ctx [] :vector-i64 [1234 1700000000 42 5678 136 0 136 1])
 (defn- dpw-case-event [] :vector-i64
-  (vector-assoc! (darwin-proc-watch-event "25G332" 1234 5678) 11 128))
+  (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 5678) 11 128) 15 128))
 (defn test-darwin-proc-watch [] :bool
   (let [ctx (dpw-case-ctx) before (dpw-case-identity 1234 1700000000 42)
         after (dpw-case-identity 1234 1700000000 42) event (dpw-case-event)]

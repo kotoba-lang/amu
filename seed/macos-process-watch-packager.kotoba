@@ -113,7 +113,9 @@
     (ds-str 31 31 512) (ds-str 31 31 520) (ds-str 31 31 528)
     (ds-str 31 31 536) (ds-str 31 31 544) (ds-str 31 31 552)
     (ds-str 19 31 512) (ds-imm 8 1179643) (ds-sw 8 31 520)
-    (ds-imm 8 2147483648) (ds-sw 8 31 524) (ds-str 22 31 536)
+    ;; Exit, fork and exec are all one-shot observations. Fork or exec must
+    ;; stop this watcher as unknown, even if coalesced with an exit event.
+    (ds-imm 8 3758096384) (ds-sw 8 31 524) (ds-str 22 31 536)
     (ds-i 0xaa1703e0) (ds-add 1 31 512) (ds-imm 2 1) (ds-imm 3 0)
     (ds-imm 4 0) (ds-imm 5 0) (ds-imm 6 0) (ds-sys 369) (ds-b 0x54000002 9)
     (ds-cmpi 0 0) (ds-b 0x54000001 9)
@@ -128,12 +130,14 @@
     (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
     (ds-imm 4 1) (ds-imm 5 0) (ds-add 6 31 1104) (ds-sys 369) (ds-b 0x54000002 9)
     (ds-cmpi 0 1) (ds-b 0x54000001 9)
-    ;; PID, filter, EV_ERROR absent, EV_EOF and NOTE_EXIT set, token match.
+    ;; PID, filter, EV_ERROR absent, EV_EOF and NOTE_EXIT set, token match;
+    ;; a concurrent or prior observed NOTE_FORK/NOTE_EXEC remains unknown.
     (ds-ldr 8 31 1024) (ds-cmp 8 19) (ds-b 0x54000001 9)
     (ds-lh 8 31 1032) (ds-imm 10 65531) (ds-cmp 8 10) (ds-b 0x54000001 9)
     (ds-lh 8 31 1034) (ds-imm 10 16384) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
     (ds-imm 10 32768) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
-    (ds-lw 8 31 1036) (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    (ds-lw 8 31 1036) (ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
+    (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
     (ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)
     ;; Emit a fixed response; a lost or partial write is still unknown to host.
     (ds-str 31 31 1200) (ds-imm 8 825249623) (ds-sw 8 31 1200)

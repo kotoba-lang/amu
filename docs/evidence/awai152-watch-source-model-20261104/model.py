@@ -1,7 +1,7 @@
 # Source-operation model only: no code generation, machine execution or kernel calls.
 import re,struct,sys,hashlib
 from pathlib import Path
-src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='43e5eebcbc7c3d0ee86d2175b8ab4c01c94de7f5e693da4a8bcd4f641a75b9d3','source pin mismatch';body=src[src.index('(defn- watcher-words'):src.index('(defn- body-at')]
+src=Path(sys.argv[1]).read_text();assert hashlib.sha256(src.encode()).hexdigest()=='9c4a38875b9addce805448a4d421bf87d989ab25c1c3567c2f8f9289ff983ec6','source pin mismatch';body=src[src.index('(defn- watcher-words'):src.index('(defn- body-at')]
 def parse(text):
  text=re.sub(r';;[^\n]*','',text)
  ops=[(n,[int(x,0) for x in a.split()]) for n,a in re.findall(r'\((ds-[a-z]+)\s+([^()]*)\)',text)]
@@ -38,7 +38,7 @@ def run(text,fail='',request=req):
    assert x[0]==7
    if x[2]==1:
     assert x[1]==512 and x[3:7]==[0,0,0,0]
-    assert bytes(mem[512:560])==struct.pack('<QhHIqQQQ',1234,-5,0x11,0x80000000,0,5678,0,0)
+    assert bytes(mem[512:560])==struct.pack('<QhHIqQQQ',1234,-5,0x11,0xe0000000,0,5678,0,0)
     if fail=='registration-error':carry=True;x[0]=3;return
     if fail=='registration-count':x[0]=1;return
     x[0]=0;return
@@ -48,7 +48,10 @@ def run(text,fail='',request=req):
    if fail=='wait-count':x[0]=2;return
    pid=1235 if fail=='event-pid' else 1234;flt=-4 if fail=='event-filter' else -5
    flags=0xc031 if fail=='event-error' else 0x0031 if fail=='event-no-eof' else 0x8031
-   note=0 if fail=='event-no-exit' else 0x80000000;tok=5679 if fail=='event-token' else 5678
+   note=0 if fail=='event-no-exit' else 0x80000000
+   if fail=='event-exec':note|=0x20000000
+   if fail=='event-fork':note|=0x40000000
+   tok=5679 if fail=='event-token' else 5678
    mem[1024:1072]=struct.pack('<QhHIqQQQ',pid,flt,flags,note,0,tok,0,0);x[0]=1;return
   if num==4:
    assert x[0]==1 and x[1]==1200 and x[2]==40
@@ -87,7 +90,7 @@ def run(text,fail='',request=req):
  except Term as t:return t.rc,output
 
 assert run(body)==(0,expected)
-failures=['read-error','read-short','before-error','before-short','before-pid','before-sec','before-usec','kqueue-error','registration-error','registration-count','after-error','after-short','after-pid','after-sec','after-usec','wait-error','wait-timeout','wait-count','event-pid','event-filter','event-error','event-no-eof','event-no-exit','event-token','write-error','write-short']
+failures=['read-error','read-short','before-error','before-short','before-pid','before-sec','before-usec','kqueue-error','registration-error','registration-count','after-error','after-short','after-pid','after-sec','after-usec','wait-error','wait-timeout','wait-count','event-pid','event-filter','event-error','event-no-eof','event-no-exit','event-exec','event-fork','event-token','write-error','write-short']
 for name in failures:
  rc,out=run(body,name);assert rc==1 and out!=expected,(name,rc,out)
 invalid=[struct.pack('<4sIQQII',m,p,s,u,t,w) for m,p,s,u,t,w in [(b'bad!',1234,1700000000,42,5678,10),(b'WP01',0,1700000000,42,5678,10),(b'WP01',2147483648,1700000000,42,5678,10),(b'WP01',1234,0,42,5678,10),(b'WP01',1234,1700000000,1000000,5678,10),(b'WP01',1234,1700000000,42,0,10),(b'WP01',1234,1700000000,42,2147483648,10),(b'WP01',1234,1700000000,42,5678,0),(b'WP01',1234,1700000000,42,5678,901)]]
@@ -95,5 +98,8 @@ for i,raw in enumerate(invalid):assert run(body,request=raw)==(1,b''),i
 old='(ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)';assert body.count(old)==1
 mut=body.replace(old,'(ds-ldr 8 31 1048) (ds-cmp 8 22)')
 assert run(mut,'event-token')==(0,expected)
+guard='(ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)';assert body.count(guard)==1
+mut=body.replace(guard,'')
+assert run(mut,'event-exec')==(0,expected) and run(mut,'event-fork')==(0,expected)
 print('source_sha256',hashlib.sha256(src.encode()).hexdigest(),'positive',1,'failure_cases',len(failures),'invalid_requests',len(invalid),'token_branch_mutant','accepted_as_expected')
 print('source-operation simulation with stub syscalls; raw instructions, native binary, kernel behavior and races NOT tested')

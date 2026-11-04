@@ -18,6 +18,7 @@
        (> token 0) (<= token 2147483647)))
 
 ;; struct kevent64_s: ident, EVFILT_PROC, EV_ADD|EV_ONESHOT, NOTE_EXIT,
+;; NOTE_FORK and NOTE_EXEC. Those latter observations remain unknown.
 ;; zero data, udata correlation value, zero extension words. Empty = refusal.
 (defn darwin-proc-watch-event [os-build :string pid :i64 token :i64] :vector-i64
   (if (not (dke-args? os-build pid token)) (vector-alloc 0)
@@ -26,7 +27,7 @@
           ident (dke-u32 blank 0 pid)
           filter (vector-assoc! (vector-assoc! ident 8 251) 9 255)
           flags (vector-assoc! filter 10 17)
-          note (vector-assoc! flags 15 128)]
+          note (vector-assoc! flags 15 224)]
       (dke-u32 note 24 token))))
 
 ;; This recognizes one event's fields only. A true value is not proof that
@@ -43,6 +44,7 @@
          (= (bit-and (vector-at event 11) 64) 0)
          (not (= (bit-and (vector-at event 11) 128) 0))
          (not (= (bit-and (vector-at event 15) 128) 0))
+         (= (bit-and (vector-at event 15) 96) 0)
          (= (dke-get32 event 24) token) (= (dke-get32 event 28) 0))))
 
 ;; A caller passes the result of a single-event kevent64 wait. Errors, timeout,
