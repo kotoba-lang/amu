@@ -112,3 +112,26 @@ This is one tiny synthetic kernel with one CPU comparison and one mutant, not
 the complete upstream Metal gate or a performance benchmark. It neither runs
 Flint nor verifies Metal under concurrent workloads or memory pressure. The
 packager merge, selfhost, resource governor and fleet deployment remain open.
+
+## Refresh against main 9ca2f342
+
+On 2026-11-04, GitHub reported Amu main
+`9ca2f342107f0146adbb68807c3d2cbdada66897`; retained branch head was
+`41b220e5165f98790f7b49975b7610ae1dccf27c`. PR #1796 remained closed and
+unmerged. A read-only merge-tree comparison of those exact commits reported
+16 conflicting paths, including generated compiler binaries/descriptors and
+the Darwin FS2 packager; no merge was started in the working tree. The commits
+were respectively 339 and 33 commits apart in the main-only / branch-only
+directions.
+
+The packager blob at this main commit is byte-identical to the previously
+observed `15aef330` main blob (`e5dec06991f7700962fdd9b57b7f1a8406e9c714`).
+Applying the stored evidence patch to a fresh temporary copy succeeded and
+reproduced candidate SHA-256
+`d39954bb3ac3ae5b9c51fba3d756d5afdf9b82877c2ef604172f163ffbe898c5`.
+The pinned diagnostic Amu compiler's `check` passed with a three-second CPU
+cap. This refresh establishes identity only for that single packager source;
+it does not show compatibility with other changed main modules, resolve any
+merge conflict, rebuild generated pins, or qualify the host/governor. The
+previous small local native and Metal observations remain scoped to their
+recorded source, compiler and execution conditions.
