@@ -114,6 +114,13 @@ def main(output):
     if result is None or result.returncode == 0:
         raise ValueError("unscoped allocations were not refused at the original budget")
     print("PASS_MAC_ARENA_SCOPE exit 0 controls, depth 257 -> 70, unscoped refused", flush=True)
+    # Exercise the separate experimental watcher after the arena gate. Its
+    # result is not proof of process-tree containment or governor qualification.
+    watch_spec = importlib.util.spec_from_file_location(
+        "mac_watch_helper", ROOT / "scripts/seed/check-macos-watch-helper.py")
+    watch = importlib.util.module_from_spec(watch_spec)
+    watch_spec.loader.exec_module(watch)
+    watch.run(compiler, packager, output / "watch-helper")
 
 
 if __name__ == "__main__":
