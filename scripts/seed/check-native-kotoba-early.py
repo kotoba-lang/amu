@@ -75,9 +75,6 @@ def main(compiler, out):
         lines += [pin(source), pin(image), source.name, image.name,
                   str(0 if case["reference"]["exit"] else case["result"]),
                   str(case["reference"]["exit"]), str(case["reference"]["remainingFuel"])]
-        report["compiledCases"].append(dict(index=i, name=case["name"], sourceSHA256=pin(source),
-                                            imageSHA256=pin(image), imageBytes=image.stat().st_size))
-        (out / "observations.json").write_text(json.dumps(report, indent=2) + "\n")
     ledger = out / "cases.kcg"
     ledger.write_text("\n".join(lines) + "\n")
     report.update(ledgerSHA256=pin(ledger), ledgerBytes=ledger.stat().st_size)
