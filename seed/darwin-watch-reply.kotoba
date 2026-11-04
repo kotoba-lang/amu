@@ -69,8 +69,13 @@
                 (= (vector-at frame 2) 48) (= (vector-at frame 3) 49)
                 (loop [i 0] (if (= i 32) true
                   (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))) -1
-    (let [status (dwr-u32 frame 4)]
-      (if (or (> status 65535) (= (bit-and status 127) 127)) -1 status))))
+    (let [status (dwr-u32 frame 4) signal (bit-and status 127)]
+      ;; Accept canonical exit codes (low byte zero), or signal termination
+      ;; (no high byte, nonzero/non-stopped signal, optional core bit).
+      ;; Contradictory bits are unknown even when WIFEXITED would mask them.
+      (if (and (<= status 65535)
+               (or (= (bit-and status 255) 0)
+                   (and (< status 256) (> signal 0) (< signal 127)))) status -1))))
 
 ;; Host-owned volatile state has five numeric fields followed by the exact
 ;; 32-byte request. WP04 appends a status slot; -1 until terminal observation.
