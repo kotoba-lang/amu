@@ -195,7 +195,10 @@ def verdict(headroom, floor):
     return "PASS" if headroom >= floor else "BELOW_FLOOR"
 
 
-def main(compiler, out, floors, mac_target=None):
+def main(compiler, out, floors, mac_target=None, only=None):
+    # `only` restricts the run to some tables (JUN-818: CI shards by table; every table's measurement and its
+    # padding control are independent, and the full gate is the union of the shards).
+    active = [t for t in TABLES if only is None or t in only]
     out.mkdir(mode=0o700, parents=True, exist_ok=False)
     data = compiler.read_bytes()
     if data[:4] == b"\x7fELF":
@@ -205,7 +208,7 @@ def main(compiler, out, floors, mac_target=None):
         target = mac_target or "aarch64-linux"
     probe = Probe(compiler, out, target)
     report = dict(schema="amu.native-table-headroom.v1", status="running", compiler=pin(compiler),
-                  observer=pin(Path(__file__)), target=target, floors=floors,
+                  observer=pin(Path(__file__)), target=target, floors=floors, tables=active,
                   capacities={t: capacity(c) for t, (_, c, _) in TABLES.items()}, builds={}, negativeControls={},
                   calls=probe.calls)
     save = lambda: (out / "token-headroom.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -213,7 +216,7 @@ def main(compiler, out, floors, mac_target=None):
     first = {}
     for name, source in sources.items():
         row = report["builds"][name] = dict(source=dict(bytes=len(source), sha256=hashlib.sha256(source).hexdigest()))
-        for table in TABLES:
+        for table in active:
             guess = None
             if table in first:  # centre the window by the estimated size difference to the measured build
                 base, measured = first[table]
@@ -224,7 +227,7 @@ def main(compiler, out, floors, mac_target=None):
             row[table] = dict(headroom=n, limitedBy=limited, verdict=verdict(n, floors[table]))
             print(f"{name} {target}: {table} headroom {n} (full next: {limited}; floor {floors[table]})", flush=True)
             save()
-    for table in TABLES:
+    for table in active:
         floor = floors[table]
         name = min(report["builds"], key=lambda b: report["builds"][b][table]["headroom"])
         measured = report["builds"][name][table]["headroom"]
@@ -242,7 +245,7 @@ def main(compiler, out, floors, mac_target=None):
                                                  refused=True)
         print(f"negative control {table}: {name} + {added} -> {floor - 1} left, refused", flush=True)
         save()
-    low = {f"{b}/{t}": r[t]["headroom"] for b, r in report["builds"].items() for t in TABLES
+    low = {f"{b}/{t}": r[t]["headroom"] for b, r in report["builds"].items() for t in active
            if r[t]["verdict"] != "PASS"}
     report["status"] = "PASS_NATIVE_TABLE_HEADROOM" if not low else "FAIL_TABLE_HEADROOM_BELOW_FLOOR"
     save()
@@ -260,10 +263,13 @@ if __name__ == "__main__":
                    help="override a floor (defaults: " + ", ".join(f"{t}={f}" for t, (_, _, f) in TABLES.items()) + ")")
     p.add_argument("--mac-target", choices=["aarch64-linux", "x86_64-linux"],
                    help="local Mach-O compiler only: the static target to measure (an ELF compiler uses its own ISA)")
+    p.add_argument("--tables", help="comma-separated subset of " + ",".join(TABLES) + " (a CI shard, never the full gate)")
     a = p.parse_args()
     floors = {t: f for t, (_, _, f) in TABLES.items()}
     for item in a.floor:
         table, value = item.split("=")
         assert table in floors
         floors[table] = int(value)
-    main(a.compiler.resolve(), a.output.resolve(), floors, a.mac_target)
+    only = a.tables.split(",") if a.tables else None
+    assert only is None or (only and all(x in TABLES for x in only)), "--tables names TOK, NODE or FN"
+    main(a.compiler.resolve(), a.output.resolve(), floors, a.mac_target, only)
