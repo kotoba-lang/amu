@@ -41,7 +41,8 @@ MUTANTS = [
     ("no-f64-field", [(x, x.replace("(= ty ck-ty-f32)", "(or (= ty TY-F64) (= ty ck-ty-f32))")) for x in F64], "E2128"),
 ]
 REFUSALS = [
-    ("assoc-new-key", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:b m)))", "E2127"),
+    # JUN-733: (assoc {:a 1} :b 2) extends the row (check-row-operations.py); a field the record lacks is still refused
+    ("assoc-new-key-read-absent", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:c m)))", "E2127"),
     ("absent-key", "(defn main [] :i64 (let [m {:a 1}] (:z m)))", "E2127"),
     ("mixed-key-kinds", "(defn main [] :i64 (let [m {:a 1 \"b\" 2}] 0))", "E2105"),
     ("repeated-key", "(defn main [] :i64 (let [m {:a 1 :a 2}] 0))", "E2128"),
@@ -49,9 +50,11 @@ REFUSALS = [
     ("f32-field", "(defrecord W [x :f32])\n(defn main [] :i64 0)", "E2128"),
     ("33-fields", "(defn main [] :i64 (let [m {" + " ".join(f":k{i} {i}" for i in range(33)) + "}] 0))", "E2128"),
     ("empty", "(defn main [] :i64 (let [m {}] 0))", "E2133"),
-    ("declared-record-parameter",
+    # JUN-733: a literal of the declared record's shape is that record (check-record-identity-option.py); one of
+    # another shape is still refused
+    ("declared-record-parameter-other-shape",
      "(defn g [m [:record :kotoba.map-literal/a+b [[:a :i64] [:b :string]]]] :i64 (:a m))\n"
-     "(defn main [] :i64 (g {:a 4 :b \"x\"}))", "E2104"),
+     "(defn main [] :i64 (g {:a 4 :b 5}))", "E2104"),
 ]
 
 
