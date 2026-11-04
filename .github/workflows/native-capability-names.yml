@@ -34,3 +34,41 @@ jobs:
           python3 scripts/seed/check-capability-declaration-names.py \
             --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --compiler-sha256 "$sha" \
             --output "$RUNNER_TEMP/capability-names"
+  awai154-hosted-repin:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: awai154-hosted-repin
+      - name: Run repository-native regeneration on hosted Mac
+        shell: bash
+        run: |
+          set -uo pipefail
+          test "$(uname -s)" = Darwin && test "$(uname -m)" = arm64 || exit 2
+          test "$(git rev-parse HEAD^)" = 5a30a844955c54cc1319c445bd240c1a37c9e362 || exit 2
+          mkdir -p "$RUNNER_TEMP/awai154-result"
+          git rev-parse HEAD > "$RUNNER_TEMP/awai154-result/workflow-head.txt"
+          git rev-parse HEAD^ > "$RUNNER_TEMP/awai154-result/input-head.txt"
+          python3 scripts/seed/repin-all-pins.py --work "$RUNNER_TEMP/awai154-work" 2>&1 | tee "$RUNNER_TEMP/awai154-result/repin.log"
+          result=${PIPESTATUS[0]}
+          printf '%s\n' "$result" > "$RUNNER_TEMP/awai154-result/exit-code.txt"
+          git status --short > "$RUNNER_TEMP/awai154-result/status.txt"
+          git diff --binary HEAD -- . ':(exclude).github/workflows/native-capability-names.yml' > "$RUNNER_TEMP/awai154-result/generated.patch"
+          exit "$result"
+      - name: Upload regeneration evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: awai154-hosted-repin
+          path: ${{ runner.temp }}/awai154-result/
+          if-no-files-found: warn
+          retention-days: 3
