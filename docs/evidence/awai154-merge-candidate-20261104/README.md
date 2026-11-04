@@ -38,3 +38,23 @@ profile, source-lock reproducibility, generated artifact and pin correctness,
 selfhost rebuild, resource governance, or actual Itonami inference and GitHub
 storage. The candidate source and all generated images stayed in temporary
 space; no production compiler, model or service was installed.
+
+## Existing FS2 operation regression
+
+Using the same signed candidate packager and compiler, a source-derived native
+fixture from `awai154-darwin-fs2-existence-20261103/general.kotoba` was built
+and run against a fresh private FD3 scope. `D` returned `1` for the regular
+file, `0` for a missing file and `?` for a symlink. `A` returned the expected
+payload. For a mode-04644 file, `O` returned mode 0644 while `U` returned
+04644. The `E` range returned `ayl`; `I`, `H`, `M` and `L` reported success,
+and the renamed file was present while the prior name was absent. The signed
+fixture image SHA-256 was
+`ec12006f4fa0545101ee0c6596b6cc7bf4516d82f4d79e33e88ae2d9af775aac`.
+The local diagnostic observer was
+`/private/tmp/awai1796-merge-fs2-regression.py` (SHA-256
+`06efe017615732a554fc8d52ac03099c3956d47a4e028f5eae7d77bdf705e845`).
+
+This does not cover failure injection for these operations, durable power loss,
+concurrent adversarial replacement, process lifetime, a real GitHub archive,
+the Metal profile or the full merge/rebuild. All files were task-owned test
+fixtures; no production runtime or service was changed.
