@@ -552,39 +552,52 @@
               path (string-concat (string-substring roots a e) (string-concat "/" rel))
               present (hc-ok? (hc-read path))]
           (recur (+ e 1) (if present path found) (if present (+ count 1) count)))))))
-(defn- mc-sp-final [base :string compiler :string entry :string mods :string files :string] :i64
-  (let [text (mc-sp-lock entry mods files)
-        dir (string-concat base "-sp")]
-    (cond (not (ksl-valid? text)) (mc-error "ELOCK cannot construct a bounded project lock" 1)
-          (not (hc-ok? (hc-path-call 3 dir))) (mc-error "EHOST cannot create private work directory" 70)
-          :else (let [status (mc-project-check dir compiler text)
-                      clean (mc-clean dir)] status))))
+;; walk result is the lock text; "" means an error was already printed (exit 1)
+(defn- mc-sp-fail [message :string] :string
+  (let [printed (mc-error message 1)] ""))
+(defn- mc-sp-final [entry :string mods :string files :string] :string
+  (let [text (mc-sp-lock entry mods files)]
+    (if (ksl-valid? text) text (mc-sp-fail "ELOCK cannot construct a bounded project lock"))))
 ;; Work list of required module names (one per line). Each name is resolved over
 ;; the declared roots only; an unresolved name is left for the root to refuse.
-(defn- mc-sp-walk [base :string compiler :string roots :string entry :string mods :string files :string todo :string count :i64] :i64
-  (if (= (string-length todo) 0) (mc-sp-final base compiler entry mods files)
+(defn- mc-sp-walk [roots :string entry :string mods :string files :string todo :string count :i64] :string
+  (if (= (string-length todo) 0) (mc-sp-final entry mods files)
     (let [e (ksl-end todo 0)
           name (string-substring todo 0 e)
           others (if (>= (+ e 1) (string-length todo)) "" (string-substring todo (+ e 1) (string-length todo)))
           found (if (mc-sp-has? mods name false) "" (mc-sp-locate roots name))]
-      (cond (= (string-length found) 0) (mc-sp-walk base compiler roots entry mods files others count)
+      (cond (= (string-length found) 0) (mc-sp-walk roots entry mods files others count)
             (string=? found "\n")
-              (mc-error (string-concat "EPATH module " (string-concat name " is found under more than one --source-path")) 1)
-            (>= count 255) (mc-error "ELOCK a project may name at most 256 modules" 1)
+              (mc-sp-fail (string-concat "EPATH module " (string-concat name " is found under more than one --source-path")))
+            (>= count 255) (mc-sp-fail "ELOCK a project may name at most 256 modules")
             :else
               (let [read (hc-read found)
                     bytes (if (hc-ok? read) (mc-read-data read) [])]
                 (if (or (not (hc-ok? read)) (<= (vector-count bytes) 0)
                         (> (vector-count bytes) 1048576) (not (ksl-utf8? bytes)))
-                  (mc-error "EINPUT a source-path module is missing, oversized, or not UTF-8" 1)
+                  (mc-sp-fail "EINPUT a source-path module is missing, oversized, or not UTF-8")
                   (let [line (string-concat name (string-concat " " (string-concat (sh-bytes bytes) (string-concat " " found))))]
-                    (mc-sp-walk base compiler roots entry
+                    (mc-sp-walk roots entry
                       (mc-sp-insert mods line name false) (mc-sp-insert files line found true)
                       (string-concat others (mc-sp-requires (hc-text bytes))) (+ count 1)))))))))
-(defn- mc-source-path-check [entry :string roots :string info :vector-i64] :i64
+;; the derived lock for ENTRY over ROOTS, or "" after an error was printed
+(defn- mc-sp-derive [abs-entry :string bytes :vector-i64 roots :string] :string
+  (let [name (mc-sp-ns-name (hc-text bytes))
+        line (string-concat name (string-concat " " (string-concat (sh-bytes bytes) (string-concat " " abs-entry))))]
+    (if (= (string-length name) 0)
+      (mc-sp-fail "ELOCK cannot read the entry namespace (expected a plain (ns NAME form)")
+      (mc-sp-walk roots abs-entry (string-concat line "\n") (string-concat line "\n")
+        (mc-sp-requires (hc-text bytes)) 0))))
+;; mode 1 check, 2 compile (JUN-838): the derived KSL2 lock goes through the same
+;; locked-project check/compile as --source-lock, so the root re-verifies every
+;; digest and the namespace map. Like --source-lock compile it adds no wrapper
+;; main-ABI check (mc-main-abi? cannot validate a multi-file project).
+(defn- mc-source-path-work [mode :i64 entry :string roots :string profile :string output :string guest-start :i64 info :vector-i64] :i64
   (let [root (mc-parent (hc-info-exe info))
         compiler (mc-join root "amu-full-root.macho")
+        packager (mc-join root "kotoba-packager-root.macho")
         abs-entry (mc-absolute (hc-info-cwd info) entry)
+        abs-output (if (= mode 2) (mc-absolute (hc-info-cwd info) output) "")
         read (hc-read abs-entry)
         bytes (if (hc-ok? read) (mc-read-data read) [])]
     (cond (not (hc-ok? read)) (mc-error "EINPUT expected a bounded regular source file (symlinks are refused)" 1)
@@ -592,22 +605,25 @@
             (mc-error "EINPUT expected bounded UTF-8 Kotoba source" 1)
           (not (mc-ends? abs-entry ".kotoba")) (mc-error "ELOCK project files must use canonical .kotoba paths" 1)
           (not (mc-pinned? compiler MC-COMPILER-SHA256)) (mc-error "EPROVENANCE full compiler digest mismatch" 70)
+          (and (not= mode 1) (not (mc-pinned? packager MC-PACKAGER-SHA256)))
+            (mc-error "EPROVENANCE native packager digest mismatch" 70)
+          (and (= mode 2) (string=? abs-output abs-entry)) (mc-error "EOUTPUT cannot replace the project entry" 1)
           :else
-            (let [name (mc-sp-ns-name (hc-text bytes))
-                  line (string-concat name (string-concat " " (string-concat (sh-bytes bytes) (string-concat " " abs-entry))))
-                  base (string-concat "/private/tmp/amu-" (hc-info-random info))]
-              (if (= (string-length name) 0)
-                (mc-error "ELOCK cannot read the entry namespace (expected a plain (ns NAME form)" 1)
-                (mc-sp-walk base compiler roots abs-entry (string-concat line "\n") (string-concat line "\n")
-                  (mc-sp-requires (hc-text bytes)) 0))))))
+            (let [text (mc-sp-derive abs-entry bytes roots)
+                  dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
+              (cond (= (string-length text) 0) 1
+                    (not (mc-project-kotoba-paths? text 0 (ksl-file-count text)))
+                      (mc-error "ELOCK project files must use canonical .kotoba paths" 1)
+                    (not (hc-ok? (hc-path-call 3 dir))) (mc-error "EHOST cannot create private work directory" 70)
+                    :else (let [status (if (= mode 1)
+                                         (mc-project-check dir compiler text)
+                                         (mc-project-compile dir compiler packager text profile abs-output guest-start
+                                           false false []))
+                                clean (mc-clean dir)] status))))))
 (defn- mc-sp-root [cwd :string path :string] :string
   (let [abs (if (string=? path ".") cwd (mc-absolute cwd path))
         n (string-length abs)]
     (if (and (> n 1) (= (string-code-point-at abs (- n 1)) 47)) (string-substring abs 0 (- n 1)) abs)))
-(defn- mc-sp-args? [i :i64 n :i64] :bool
-  (or (>= i n)
-      (and (string=? (hc-arg i) "--source-path") (mc-path? (hc-arg (+ i 1)))
-           (mc-sp-args? (+ i 2) n))))
 (defn- mc-sp-roots [cwd :string i :i64 n :i64 out :string] :string
   (if (>= i n) out
     (mc-sp-roots cwd (+ i 2) n (string-concat out (string-concat (mc-sp-root cwd (hc-arg (+ i 1))) "\n")))))
@@ -636,11 +652,36 @@
   (or (string=? command "measure-runtime") (string=? command "package-ios")
       (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | check ENTRY.kotoba --source-path DIR [--source-path DIR...] (up to 16) | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | check ENTRY.kotoba --source-path DIR [--source-path DIR...] (up to 16) | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
 (defn- mc-program-profile? [profile :string] :bool
   (or (string=? profile "amu-program") (string=? profile "amu-program-fs35")
       (string=? profile "amu-program-metal")
       (string=? profile "amu-command") (string=? profile "amu-command-fs35")))
+;; `--source-path D` pairs from index i; the index after the last pair
+(defn- mc-sp-end [i :i64 n :i64] :i64
+  (if (and (< (+ i 1) n) (string=? (hc-arg i) "--source-path") (mc-path? (hc-arg (+ i 1))))
+    (mc-sp-end (+ i 2) n) i))
+(defn- mc-sp-tail-profile? [at :i64 n :i64] :bool
+  (and (<= (+ at 2) n) (string=? (hc-arg at) "--runtime-profile") (mc-program-profile? (hc-arg (+ at 1)))))
+(defn- mc-sp-tail-output? [at :i64 n :i64] :bool
+  (and (= (+ at 2) n) (or (string=? (hc-arg at) "-o") (string=? (hc-arg at) "--output"))
+       (mc-path? (hc-arg (+ at 1)))))
+;; index of the -o flag after the roots: -1 none, -2 not a valid compile tail
+(defn- mc-sp-compile-tail [at :i64 n :i64] :i64
+  (cond (= at n) -1
+        (mc-sp-tail-output? at n) at
+        (and (mc-sp-tail-profile? at n) (= (+ at 2) n)) -1
+        (and (mc-sp-tail-profile? at n) (mc-sp-tail-output? (+ at 2) n)) (+ at 2)
+        :else -2))
+;; 0 not a source-path form, 1 check, 2 compile; 1..16 roots. `run` is not here:
+;; mc-main-abi? only validates one self-contained source, so a project run
+;; stays a usage refusal until a project-aware ABI check exists.
+(defn- mc-sp-mode [command :string n :i64] :i64
+  (let [e (mc-sp-end 2 n)]
+    (cond (or (< e 4) (> e 34)) 0
+          (string=? command "check") (if (= e n) 1 0)
+          (string=? command "compile") (if (>= (mc-sp-compile-tail e n) -1) 2 0)
+          :else 0)))
 (defn- seed-main [] :i64
   (let [command (hc-arg 0) source (hc-arg 1) n (hc-argc)
         project-check? (and (string=? command "check") (= n 4) (string=? (hc-arg 2) "--source-lock"))
@@ -685,12 +726,17 @@
                      output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
-      (and (string=? command "check") (>= n 4) (<= n 34) (= (rem n 2) 0) (mc-path? source)
-           (mc-ends? source ".kotoba") (mc-sp-args? 2 n))
-        (let [info (hc-call 0 [])]
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+      (and (> (mc-sp-mode command n) 0) (mc-path? source) (mc-ends? source ".kotoba"))
+        (let [info (hc-call 0 [])
+              mode (mc-sp-mode command n)
+              e (mc-sp-end 2 n)
+              out-at (if (= mode 2) (mc-sp-compile-tail e n) -1)
+              prof (if (and (= mode 2) (mc-sp-tail-profile? e n)) (hc-arg (+ e 1)) "amu-program")]
           (if (hc-ok? info)
-            (mc-source-path-check source (mc-sp-roots (hc-info-cwd info) 2 n "") info)
+            (mc-source-path-work mode source (mc-sp-roots (hc-info-cwd info) 2 e "") prof
+              (if (>= out-at 0) (hc-arg (+ out-at 1)) (mc-default-output source))
+              n info)
             (mc-error "EHOST cannot resolve native host context" 70)))
       (and (or project-check? project-compile? project-run?) (mc-path? source) (mc-path? (hc-arg 3))
            (or (not project-compile?) (mc-path? output)))
