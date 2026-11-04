@@ -69,3 +69,28 @@ helper's artifact and successful exit, bind all other observations to them,
 and enforce isolation throughout use. A match is not permission to publish or
 load a model. Real artifact generation and high-load work require the
 qualified native governor.
+
+## In-memory instruction model
+
+On 2026-11-05 JST, `awai149-flint-parent-lldb-model.py` independently
+reproduced the pinned source builder's operations and branch fixups in
+Python, then asked the installed LLDB to disassemble the resulting words
+directly from memory. The model checked 136 instructions and 17 branch
+targets against expected mnemonics and operands. A register-word mutation and
+a branch-offset mutation were both rejected. The Python process had a
+three-second CPU limit; no executable helper or generated artifact was written
+or run.
+
+The checked source SHA-256 was
+`9b1cd906ec0e670ff2bbbc65b1bace291a28283166eca151f730d0b16f281239`,
+the existing source-operation parser hash was
+`2b72e94ac9772556805698f6a4f2eedc86b9b3f492d1586dafd737e5f9aed9e8`,
+and the LLDB model SHA-256 was
+`f9a4f51cba037d8115e9b8027139f67fc0af4e0b4497dcd85998d75e018d6cd7`.
+It can be run with the installed Command Line Tools LLDB Python path, for
+example `PYTHONPATH=/Library/Developer/CommandLineTools/Library/PrivateFrameworks/LLDB.framework/Resources/Python /usr/bin/python3 docs/evidence/awai149-flint-parent-lldb-model.py`.
+
+These are Python-modeled words, not bytes emitted by Amu. The comparison does
+not establish the compiler's encoding, syscall semantics on target Macs,
+runtime ABI, mutation exclusion, FD provenance, end-to-end staging or the
+governor. The actual helper remains unbuilt and unqualified.
