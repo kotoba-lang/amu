@@ -89,9 +89,15 @@ Each slice is its own change; none is half of another.
    * The image computes the SHA-256 of that text with the shared pure implementation (`seed/03-source-sha256`)
      and **writes it on its first diagnostic line** (`KEXE_GRANT {:wire 43 :sha256 "..."}` to stderr), so a run's
      authority is recorded as a digest, as its source already is.
-   * If the invoker also sets `KEXE_CAP_GRANT_SHA256_43` (resp. `_45`), the image **refuses to start** unless it
-     equals the digest of the supplied text. That is the pinning form: an operator or a supervisor fixes the
-     authority by content, and an environment variable that was altered in transit no longer matches.
+   * **The pin is mandatory** (owner, 2026-11-04). For each net wire it is granted, the image requires
+     `KEXE_CAP_GRANT_SHA256_43` (resp. `_45`) to be set and equal to the digest of the supplied text, and
+     **refuses to start otherwise**: `net/grant-unpinned` when the pin is absent, `net/grant-mismatch` when it
+     differs. Both are new refusal names in `tools/kexe_loader_names.kotoba`'s net list (the stderr line and exit
+     code follow the existing `KEXE_TRAP` form). A grant is therefore always named by content before it takes
+     effect; there is no unpinned way to hold network authority.
+     A person starting a listener by hand computes the digest once from the canonical text, for example
+     `g=127.0.0.1:8765; KEXE_CAP_RESOURCES_43=$g KEXE_CAP_GRANT_SHA256_43=$(printf %s "$g" | shasum -a 256 | cut -d' ' -f1) ./listener`.
+     The cost is that one extra variable; the gain is that nothing runs with an authority nobody wrote down.
    * The project-level declared policy stays the ceiling (`:policy-sha256`); a supplied grant outside the
      declared ceiling is refused. Declared policy is *what the program may ever ask for*; the grant is *what
      this run is given*; both are digests.
@@ -99,7 +105,7 @@ Each slice is its own change; none is half of another.
    Limits to state plainly: an environment variable remains ambient (the digest makes it auditable and
    pinnable, it does not authenticate who set it), and the Linux runtime has no digest line yet. Giving the two
    runtimes one canonical grant form is a small Linux change and is preferable to two forms; it is left to the
-   slice that touches Linux, and to the owner's call whether the pin variable should be mandatory.
+   slice that touches Linux. (Whether the pin is mandatory is decided above: it is.)
 2. **Listener lifetime: direct execution.** A listener is a directly executed binary. `amu run` keeps its 5 s
    deadline and gains no flag.
 3. **First release is loopback only.** Any entry other than `127.0.0.1:<port>` is refused at start with
