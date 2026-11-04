@@ -53,7 +53,7 @@ def main(source_candidate_sha256=None):
     for role in ("packager", "packagerSource"):
         assert identity((ROOT / mac[role]["path"]).read_bytes()) == {k: mac[role][k] for k in ("bytes", "sha256")}
     core = paths[:paths.index("seed/90-drv.kotoba") + 1]
-    assert len(core) == 17
+    assert len(core) == 18 and len(set(core)) == 18 and "seed/19-decimal.kotoba" in core
     source_names = core + ["seed/macos-cli-api.kotoba", "seed/macos-cli.kotoba"]
     assert set(cli["sources"]) == set(source_names), "public Mac source recipe mismatch"
     for name in source_names:

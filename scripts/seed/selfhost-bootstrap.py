@@ -347,6 +347,27 @@ def main(out, tier, reuse=None, store=None):
 
 WASM_PROBES = {"spin": "(defn main [] :i64 (loop [i 0] (if (< i 0) i (recur (inc i)))))",
                "deep": "(defn- f [n :i64] :i64 (if (= n 0) 0 (+ 1 (f (dec n)))))\n(defn main [] :i64 (f 100000000))",
+               "local-stdio": "(defn main [] :i64\n"
+                              "  (let [hello (typed-cap-call :io/write :string :string \"READY\\n\")\n"
+                              "        flush (typed-cap-call :io/write-error :string :string \"\")\n"
+                              "        first (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        second (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        eof (typed-cap-call :io/read :string :string \"1\")\n"
+                              "        done (typed-cap-call :io/write :string :string \"DONE\\n\")]\n"
+                              "    (if (and (string=? first \"😀\") (string=? second \"x\") (string=? eof \"\")) 42 1)))",
+               "local-output-bound": '(defn main [] :i64 (let [x (typed-cap-call :io/write :string :string "' + ('x' * 70000) + '")] 42))',
+               "local-read-bound": '(defn main [] :i64 (loop [i 0] (if (= i 257) 42 (let [x (typed-cap-call :io/read :string :string "1")] (recur (+ i 1))))))',
+               "local-read-all": '(defn main [] :i64 (let [x (typed-cap-call :io/read :string :string "")] (if (string=? x "😀x") 42 1)))',
+               "local-broker-isolation": '(defn main [] :i64 (let [r (typed-cap-call :net/dial :string :string "GET /v1/items/abc") x (typed-cap-call :io/write :string :string (string-concat r "\\n"))] (string-byte-length r)))',
+               "document": "(defn- verify-keywords [i :i64] :i64\n"
+                           "  (if (= i 200) 1 (let [name (string-concat \"dynamic-\" (string-from-i64 i))\n"
+                           "    k (keyword-from-string name)]\n"
+                           "    (if (string=? (keyword-name k) name) (verify-keywords (+ i 1)) 0))))\n"
+                           "(defn main [] :i64 (let [k (keyword-from-string \"remote/識別\")\n"
+                           "  d (document-map k (document-string \"言葉\"))\n"
+                           "  v (option-or (document-get d k) (document-null))]\n"
+                           "  (if (and (= (verify-keywords 0) 1) (string=? (keyword-name k) \"識別\")\n"
+                           "           (string=? (option-or (document-string-value v) \"\") \"言葉\")) 2 0)))",
                # the entry ABI (Phase 3): argument 0 names a page-supplied file, echoed to stdout
                "entry": "(defn main [] :i64 (let [p (typed-cap-call :cli/args :string :string \"0\")\n"
                         "  s (typed-cap-call :fs/app-data :string :string p) w (typed-cap-call :io/write :string :string s)]\n"
@@ -392,13 +413,39 @@ def wasm32_browser(out, boot):
         src = out / f"wasm-probe-{name}.kotoba"
         src.write_text(f"(ns probe-{name} (:export [main]))\n{body}\n")
         compile_(src, wasm_dir / f"probe-{name}.wasm", f"probe-{name}-wasm32")
+    # Single-source Wasm locks must be verified, not silently discarded. The
+    # multi-module Wasm linker is a separate, still-unimplemented route.
+    src = out / "wasm-probe-document.kotoba"
+    source_lock = out / "wasm-document.ksl"
+    source_lock.write_text(f"KSL1\nentry {src}\nfile {pin(src)['sha256']} {src}\n")
+    locked_wasm = out / "wasm-document-locked.wasm"
+    lock_args = ["--source-lock", source_lock, "--source-lock-sha256", pin(source_lock)["sha256"]]
+    run.run("wasm-document-locked", [F, "compile", src, "--target", "wasm32-browser",
+                                     "--output", locked_wasm, *lock_args], senv)
+    assert pin(locked_wasm) == pin(wasm_dir / "probe-document.wasm"), "locked output changed"
+    bad_lock = out / "wasm-document-bad-source.ksl"
+    bad_lock.write_text(f"KSL1\nentry {src}\nfile {'0' * 64} {src}\n")
+    for name, lock, digest in (("bad-digest", source_lock, "0" * 64),
+                               ("bad-source", bad_lock, pin(bad_lock)["sha256"])):
+        refused = out / f"wasm-document-{name}.wasm"
+        r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
+                    "--output", refused, "--source-lock", lock, "--source-lock-sha256", digest], senv, success=False)
+        assert r.returncode != 0 and b"E6015" in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
+    for name, flags, marker in (("missing-digest", ["--source-lock", source_lock], b"E7100"),
+                                ("project-roots", [*lock_args, "--source-path", out], b"E6015")):
+        refused = out / f"wasm-document-{name}.wasm"
+        r = run.run("wasm-document-" + name, [F, "compile", src, "--target", "wasm32-browser",
+                    "--output", refused, *flags], senv, success=False)
+        assert r.returncode != 0 and marker in r.stderr and not refused.exists(), (name, r.returncode, r.stderr[-300:])
     float_refusals = []
     for case in json.loads((ROOT / FLOAT_CASES).read_text())["cases"]:
         src = out / f"float-{case['name']}.kotoba"
         src.write_text(case["source"])
         r = run.run(f"float-{case['name']}-wasm32", [F, "compile", src, "--target", "wasm32-browser", "--output", wasm_dir / f"float-{case['name']}.wasm"],
                     scope, success=False)
-        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {case['refusalDetail']}".encode() in r.stderr \
+        # Decimal literals lower to binary64 before the first refused operation.
+        detail = {"float-f32-conv": 34, "float-f64-unordered": 19}.get(case["name"], case["refusalDetail"])
+        assert r.returncode == 1 and b"E7101" in r.stderr and f"detail {detail}".encode() in r.stderr \
             and not (wasm_dir / f"float-{case['name']}.wasm").exists(), ("wasm32 float refusal", case["name"], r.returncode, r.stderr[-300:])
         float_refusals.append(case["name"])
     modules = {p.name: pin(p) for p in sorted(wasm_dir.glob("*.wasm"))}
@@ -433,6 +480,8 @@ if __name__ == "__main__":
                         help="the wasm32-browser target only (not a native tier): F of --bootstrap compiles the modules")
     parser.add_argument("--bootstrap", type=Path, help="with --wasm32-browser: a passing native bootstrap output")
     a = parser.parse_args()
+    if a.reuse:
+        parser.error("--reuse is disabled until the producer and input closure are independently trusted")
     if a.wasm32_browser:
         assert a.bootstrap and not (a.reuse or a.store), "--wasm32-browser takes --bootstrap and no reuse"
         sys.exit(wasm32_browser(a.output.resolve(), a.bootstrap.resolve()))

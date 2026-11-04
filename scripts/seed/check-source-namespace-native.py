@@ -49,11 +49,24 @@ def qualify(compiler, out, paths, fixtures, whole, expected_successes, expected_
                KEXE_ALLOW='35,37,38,39', KEXE_CAP_RESOURCES_35=str(out.parent))
     current = (ROOT/MODULE).read_text()
     frozen = (ROOT/REFERENCE).read_text()
+    # The frozen loop planner predates the source argument used by the
+    # checked schema bridge. Adapt only these call signatures in memory;
+    # the pinned reference file and its namespace algorithm stay unchanged.
+    for old, new in [
+        ('(dsb-type M C ', '(dsb-type M S C '),
+        ('(dsl-capture-text M C ', '(dsl-capture-text M S C '),
+        ('(dsl-params M C ', '(dsl-params M S C '),
+        ('[M :vector-i64 C :vector-i64 id :i64 types :bool]', '[M :vector-i64 S :string C :vector-i64 id :i64 types :bool]'),
+        ('[M :vector-i64 C :vector-i64 n :i64 types :bool]', '[M :vector-i64 S :string C :vector-i64 n :i64 types :bool]'),
+    ]:
+        assert old in frozen, old
+        frozen = frozen.replace(old, new)
     def unity(loop_module):
         return '\n'.join(loop_module if p == MODULE else (ROOT/p).read_text() for p in paths) + ENTRY
     report = dict(schema='amu.native-source-namespace.v1', status='RUNNING',
                   compiler=pin(compiler), observer=pin(Path(__file__)), host=[platform.system(),host],
                   modules={p:pin(ROOT/p) for p in paths+[REFERENCE,DESCRIPTOR]},
+                  adaptedReferenceSHA256=hashlib.sha256(frozen.encode()).hexdigest(),
                   calls=[], mutations=[], wholeInput=pin(whole), freshNamespaceOnly=True,
                   persistedProof=False, mutableCodeFixProofCached=False,
                   wholeCompilerIdentityQualified=False, sourceResourceProofQualified=False,

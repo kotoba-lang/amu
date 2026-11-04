@@ -73,6 +73,90 @@
                   (= kind 2) (xw-assign (xw-set-code M f (i64-shift-left ix 48)) S (inc i) next)
                   :else (xw-assign (xw-set-code M f next) S (inc i) (inc next))))
         :else (xw-assign M S (inc i) next)))
+;; Assign one project's module after its dependency indices are known. Import
+;; stubs carry typed interfaces from pj-trailer; their validated targets are
+;; already-defined Wasm functions, so stubs must not consume a new index.
+;; The project checker remains responsible for the signature/refinement match.
+(defn- xw-project-stubs-valid? [M :vector-i64 L :vector-i64 first :i64 count :i64 start :i64] :bool
+  (if (or (< first 1) (< count 0) (> count pj-t-cap) (> first (vector-at M MM-FN-N))
+          (> count (- (vector-at M MM-FN-N) first)) (< start XW-NIMPORT) (> start 4294967295)) false
+    (if (not (loop [k 0]
+               (if (>= k count) true
+                 (let [target (pj-l L (+ pj-t-base k))]
+                   (and (>= target XW-NIMPORT) (< target start) (recur (+ k 1))))))) false
+      (if (= count 0) true
+        (let [seen (vector-alloc count)]
+          (loop [i 1 found 0]
+            (if (>= i (vector-at M MM-SIR-N)) (= found count)
+              (let [f (xg-si M i IF-A) slot (- f first)]
+                (if (and (= (xg-si M i IF-OP) OP-FN) (>= f first) (>= slot 0) (< slot count))
+                  (if (not= (vector-at seen slot) 0) false
+                    (let [marked (vector-assoc! seen slot 1)] (recur (+ i 1) (+ found 1))))
+                  (recur (+ i 1) found))))))))))
+(defn- xw-project-assign-loop [M :vector-i64 L :vector-i64 S :string i :i64 next :i64 first :i64 count :i64] :vector-i64
+  (cond (or (not (pj-ok M)) (>= i (vector-at M MM-SIR-N))) (xg-set M 3 (- next XW-NIMPORT))
+        (= (xg-si M i IF-OP) OP-FN)
+          (let [f (xg-si M i IF-A) sp (xw-sp M S f) kind (u64-shift-right sp 8) ix (bit-and (u64-shift-right sp 4) 15)]
+            (cond (> (xg-f M f FF-NPARAMS) 16) (xg-err M 7102 f)
+                  (and (>= f first) (< f (+ first count)))
+                    (if (> sp 0) (xg-err M 7102 f)
+                      (xw-project-assign-loop (xw-set-code M f (pj-l L (+ pj-t-base (- f first)))) L S (inc i) next first count))
+                  (and (> sp 0) (not= (xg-f M f FF-NPARAMS) (bit-and sp 15))) (xg-err M 7102 f)
+                  (= kind 1) (xw-project-assign-loop (xw-set-code M f ix) L S (inc i) next first count)
+                  (= kind 2) (xw-project-assign-loop (xw-set-code M f (i64-shift-left ix 48)) L S (inc i) next first count)
+                  (>= next 4294967295) (xg-err M 7102 f)
+                  :else (xw-project-assign-loop (xw-set-code M f next) L S (inc i) (inc next) first count)))
+        :else (xw-project-assign-loop M L S (inc i) next first count)))
+(defn- xw-project-assign [M :vector-i64 L :vector-i64 S :string first :i64 count :i64 start :i64] :vector-i64
+  (if (not (xw-project-stubs-valid? M L first count start)) (xg-err M 7102 0)
+    (xw-project-assign-loop M L S 1 start first count)))
+
+;; Convert the project checker's typed exported clauses to absolute Wasm
+;; function indices. pj-iface-one records base + 4*(FF-CODE-1), an AArch64
+;; addressing convention; for Wasm, xw-assign must have run and xw-tables
+;; must not yet have packed a table slot into FF-CODE. Check every clause
+;; before changing any interface record so a malformed index cannot leak a
+;; partially converted interface to an importer.
+(defn- xw-iface-valid? [M :vector-i64 L :vector-i64 first :i64 end :i64 base :i64] :bool
+  (loop [entry first clause 0]
+    (if (>= entry end) true
+      (let [count (pj-if L entry pj-if-ncl)]
+        (cond (or (<= count 0) (> count pj-if-maxcl)) false
+              (>= clause count) (recur (+ entry 1) 0)
+              :else (let [offset (pj-if L entry (+ pj-if-off0 clause)) delta (- offset base)
+                          index (+ (quot delta 4) 1)]
+                      (and (>= offset base) (>= delta 0) (= (bit-and delta 3) 0)
+                           (>= index XW-NIMPORT) (< index (+ XW-NIMPORT (xg-get M 3)))
+                           (recur entry (+ clause 1)))))))))
+(defn- xw-iface-remap [M :vector-i64 L :vector-i64 first :i64 end :i64 base :i64] :vector-i64
+  (if (or (< first 0) (< end first) (> end (pj-l L pj-k-nif)) (> end pj-i-cap) (< base 0)
+          (< (xg-get M 3) 0) (> (xg-get M 3) 4294967291)
+          (not (xw-iface-valid? M L first end base))) (xg-err M 7102 0)
+    (let [written (loop [entry first clause 0]
+                    (if (>= entry end) 0
+                      (if (>= clause (pj-if L entry pj-if-ncl)) (recur (+ entry 1) 0)
+                        (let [offset (pj-if L entry (+ pj-if-off0 clause))
+                              index (+ (quot (- offset base) 4) 1)
+                              w (pj-iset L entry (+ pj-if-off0 clause) index)]
+                          (recur entry (+ clause 1))))))]
+      M)))
+(defn- xw-iface-unpacked? [M :vector-i64 i :i64] :bool
+  (if (>= i (vector-at M MM-SIR-N)) true
+    (let [f (xg-si M i IF-A)]
+      (if (and (= (xg-si M i IF-OP) OP-FN) (not (xs-rt? M f)))
+        (and (= (u64-shift-right (xw-code-of M f) 32) 0)
+             (>= (xw-idx M f) XW-NIMPORT)
+             (< (xw-idx M f) (+ XW-NIMPORT (xg-get M 3)))
+             (xw-iface-unpacked? M (+ i 1)))
+        (xw-iface-unpacked? M (+ i 1))))))
+(defn- xw-project-iface [M :vector-i64 L :vector-i64 P :string S :string module :i64] :string
+  (if (not (xw-iface-unpacked? M 1))
+    (let [w (xg-err M 7102 0)] P)
+    (let [first (pj-l L pj-k-nif) base (pj-l L pj-k-base)
+          result (pj-iface M L P S module)
+          remapped (if (pj-ok M) (xw-iface-remap M L first (pj-l L pj-k-nif) base) M)]
+      result)))
+
 ;; pass B: a table slot (and a thunk record) for every function value
 (defn- xw-tables [M :vector-i64 i :i64] :vector-i64
   (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
@@ -241,6 +325,86 @@
         (and (= (xg-si M i IF-OP) OP-FN) (let [f (xg-si M i IF-A)] (or (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
           (xw-code M (xw-skip M i))
         :else (xw-code (xw-one M i) (inc i))))
+;; Imported stubs refer to already-defined functions and have no body in the
+;; combined module. Runtime imports and inline intrinsics are likewise skipped.
+(defn- xw-project-code [M :vector-i64 i :i64 first :i64 count :i64] :vector-i64
+  (cond (or (not (pj-ok M)) (>= i (vector-at M MM-SIR-N))) M
+        (and (= (xg-si M i IF-OP) OP-FN)
+             (let [f (xg-si M i IF-A)]
+               (or (and (>= f first) (< f (+ first count))) (> (xw-inline M f) 0) (< (xw-idx M f) XW-NIMPORT))))
+          (xw-project-code M (xw-skip M i) first count)
+        :else (xw-project-code (xw-one M i) (inc i) first count)))
+;; Preserve each module's already-emitted Wasm bodies after its frontend M is
+;; reused for another module. The project image holds consecutive records:
+;; u32 function index, u8 arity, u32 body byte length, then the exact body.
+;; This is an internal linker archive, not a Wasm file. Validate the entire
+;; batch and its contiguous global index range before writing any bytes. Thunk
+;; records are refused until the project table archive is implemented.
+(defn- xw-project-archive-valid? [M :vector-i64 k :i64 n :i64 used :i64 next :i64 finish :i64] :bool
+  (if (>= k n) (= next finish)
+    (let [kind (xw-fix M k 1)]
+      (cond (not= kind 30) false
+            :else (let [a (xw-fix M k 0) b (xw-fix M k 3) f (xw-fix M k 2) len (- b a)]
+                    (and (>= a 0) (> b a) (<= b (xg-pos M))
+                         (> f 0) (< f (vector-at M MM-FN-N))
+                         (= (xw-idx M f) next) (>= (xg-f M f FF-NPARAMS) 0)
+                         (<= (xg-f M f FF-NPARAMS) 16) (<= used (- pj-img-cap 9))
+                         (<= len (- (- pj-img-cap used) 9))
+                         (xw-project-archive-valid? M (+ k 1) n (+ used 9 len) (+ next 1) finish)))))))
+(defn- xw-project-archive-bytes [M :vector-i64 L :vector-i64 src :i64 end :i64 dst :i64] :vector-i64
+  (if (>= src end) L
+    (xw-project-archive-bytes M (pj-ibset L dst (xg-code-byte M src)) (+ src 1) end (+ dst 1))))
+(defn- xw-project-archive-write [M :vector-i64 L :vector-i64 k :i64 n :i64 at :i64] :vector-i64
+  (cond (>= k n) (pj-ls L pj-k-img at)
+        :else (let [a (xw-fix M k 0) b (xw-fix M k 3) f (xw-fix M k 2) len (- b a)
+                    header (-> L (pj-put32 at (xw-idx M f)) (pj-ibset (+ at 4) (xg-f M f FF-NPARAMS))
+                                 (pj-put32 (+ at 5) len))
+                    copied (xw-project-archive-bytes M header a b (+ at 9))]
+                (xw-project-archive-write M copied (+ k 1) n (+ at 9 len)))))
+(defn- xw-project-archive [M :vector-i64 L :vector-i64 start :i64] :vector-i64
+  (let [used (pj-l L pj-k-img) n (vector-at M MM-FIX-N) count (xg-get M 3)]
+    (if (or (not (pj-ok M)) (< used 0) (> used pj-img-cap) (< n 1) (> n MM-FIX-CAP)
+            (< count 0) (> count 4294967291) (< start XW-NIMPORT) (> start (+ XW-NIMPORT count))
+            (not (xw-project-archive-valid? M 1 n used start (+ XW-NIMPORT count))))
+      (xg-err M 7104 0)
+      (let [written (xw-project-archive-write M L 1 n used)] M))))
+
+;; Read back the internal archive into Wasm function-section type indices and
+;; code-section bodies. The archive is untrusted until its complete extent,
+;; index order, arity and body lengths have been validated. Thunk records are
+;; not represented by this format and remain a separate linker requirement.
+(defn- xw-project-archive-u32 [L :vector-i64 at :i64] :i64
+  (bit-or (bit-or (pj-ib L at) (i64-shift-left (pj-ib L (+ at 1)) 8))
+          (bit-or (i64-shift-left (pj-ib L (+ at 2)) 16) (i64-shift-left (pj-ib L (+ at 3)) 24))))
+(defn- xw-project-archive-scan [L :vector-i64 at :i64 end :i64 expected :i64 remaining :i64] :bool
+  (if (= remaining 0) (= at end)
+    (if (or (< at 0) (> at end) (< (- end at) 9)) false
+      (let [index (xw-project-archive-u32 L at) arity (pj-ib L (+ at 4)) len (xw-project-archive-u32 L (+ at 5))]
+        (and (= index expected) (<= arity 16) (> len 0) (<= len (- (- end at) 9))
+             (xw-project-archive-scan L (+ at 9 len) end (+ expected 1) (- remaining 1)))))))
+(defn- xw-project-archive-readable? [L :vector-i64 start :i64 count :i64] :bool
+  (let [end (pj-l L pj-k-img)]
+    (and (>= end 0) (<= end pj-img-cap) (>= start XW-NIMPORT) (<= start 4294967295)
+         (>= count 0) (<= count (- 4294967296 start))
+         (xw-project-archive-scan L 0 end start count))))
+(defn- xw-project-type-rows [M :vector-i64 L :vector-i64 at :i64 count :i64] :vector-i64
+  (if (or (= count 0) (not (pj-ok M))) M
+    (let [len (xw-project-archive-u32 L (+ at 5))]
+      (xw-project-type-rows (xw-uleb M (pj-ib L (+ at 4))) L (+ at 9 len) (- count 1)))))
+(defn- xw-project-archive-types [M :vector-i64 L :vector-i64 start :i64 count :i64] :vector-i64
+  (if (not (xw-project-archive-readable? L start count)) (xg-err M 7103 0)
+    (xw-project-type-rows (xw-uleb M count) L 0 count)))
+(defn- xw-project-body-bytes [M :vector-i64 L :vector-i64 at :i64 end :i64] :vector-i64
+  (if (or (>= at end) (not (pj-ok M))) M
+    (xw-project-body-bytes (xg-byte M (pj-ib L at)) L (+ at 1) end)))
+(defn- xw-project-body-rows [M :vector-i64 L :vector-i64 at :i64 count :i64] :vector-i64
+  (if (or (= count 0) (not (pj-ok M))) M
+    (let [len (xw-project-archive-u32 L (+ at 5)) begin (+ at 9) end (+ begin len)]
+      (xw-project-body-rows (xw-project-body-bytes (xw-uleb M len) L begin end) L end (- count 1)))))
+(defn- xw-project-archive-bodies [M :vector-i64 L :vector-i64 start :i64 count :i64] :vector-i64
+  (if (not (xw-project-archive-readable? L start count)) (xg-err M 7103 0)
+    (xw-project-body-rows (xw-uleb M count) L 0 count)))
+
 ;; thunks: type 5 (five i64) -> the target's first p parameters
 (defn- xw-thunks [M :vector-i64 k :i64 n :i64] :vector-i64
   (cond (or (not= (vector-at M MM-ERR) 0) (= k n)) M
@@ -255,6 +419,238 @@
   (if (or (not= (vector-at M MM-ERR) 0) (= lit (vector-at M MM-LIT-N))) (xg-set M 2 (xg-pos M))
     (let [v (xr-align M) p (+ MM-LIT-BASE (* lit MM-LIT-W)) w (mem-set v (+ p LF-POOL) (xg-pos v))]
       (xw-pool (xr-pool-bytes w (vector-at w (+ p LF-B)) (vector-at w (+ p LF-LEN))) (inc lit)))))
+
+;; Multi-module literals need one shared address space. V is a packed byte
+;; vector whose first word holds the used length; remaining words hold bytes.
+;; Each module's local pool is already in CODE and its LF-POOL offsets are
+;; relative to zero. Validate everything before changing either V or offsets.
+(defn- xw-project-pool-byte [V :vector-i64 at :i64] :i64
+  (bit-and (u64-shift-right (vector-at V (+ 1 (quot at 8))) (* 8 (bit-and at 7))) 255))
+(defn- xw-project-pool-set [V :vector-i64 at :i64 byte :i64] :vector-i64
+  (let [word (+ 1 (quot at 8)) shift (* 8 (bit-and at 7)) mask (i64-shift-left 255 shift)]
+    (vector-assoc! V word (bit-or (bit-and (vector-at V word) (bit-not mask))
+                                  (i64-shift-left (bit-and byte 255) shift)))))
+(defn- xw-project-pool-literals? [M :vector-i64 len :i64 lit :i64] :bool
+  (if (>= lit (vector-at M MM-LIT-N)) true
+    (let [p (+ MM-LIT-BASE (* lit MM-LIT-W)) at (vector-at M (+ p LF-POOL)) n (vector-at M (+ p LF-LEN))]
+      (and (>= at 0) (<= at len) (>= n 0) (<= n (- len at))
+           (xw-project-pool-literals? M len (+ lit 1))))))
+(defn- xw-project-pool-append [M :vector-i64 V :vector-i64] :vector-i64
+  (if (or (not (pj-ok M)) (< (vector-count V) 1)) (xg-err M 7104 0)
+    (let [used (vector-at V 0) len (xg-pos M) cap (* (- (vector-count V) 1) 8)
+          base (bit-and (+ used 7) -8)]
+      (if (or (< used 0) (> used cap) (< len 0) (not= len (xg-get M 2))
+              (> base cap) (> len (- cap base)) (> (+ base len) (- (* 8 MM-CODE-CAP) 1))
+              (not (xw-project-pool-literals? M len 1))) (xg-err M 7104 0)
+        (let [pad (loop [at used] (if (>= at base) 0
+                    (let [w (xw-project-pool-set V at 0)] (recur (+ at 1)))))
+              copied (loop [at 0] (if (>= at len) 0
+                       (let [w (xw-project-pool-set V (+ base at) (xg-code-byte M at))] (recur (+ at 1)))))
+              adjusted (loop [lit 1] (if (>= lit (vector-at M MM-LIT-N)) 0
+                         (let [p (+ MM-LIT-BASE (* lit MM-LIT-W) LF-POOL)
+                               w (mem-set M p (+ base (vector-at M p)))] (recur (+ lit 1)))))
+              done (vector-assoc! V 0 (+ base len))]
+          M)))))
+(defn- xw-project-pool-copy [M :vector-i64 V :vector-i64 at :i64 len :i64] :vector-i64
+  (if (or (>= at len) (not (pj-ok M))) M
+    (xw-project-pool-copy (xg-byte M (xw-project-pool-byte V at)) V (+ at 1) len)))
+(defn- xw-project-pool-emit [M :vector-i64 V :vector-i64] :vector-i64
+  (if (< (vector-count V) 1) (xg-err M 7104 0)
+    (let [len (vector-at V 0) cap (* (- (vector-count V) 1) 8)]
+      (if (or (< len 0) (> len cap) (> len (- (* 8 MM-CODE-CAP) 1))) (xg-err M 7104 0)
+        (xw-project-pool-copy M V 0 len)))))
+
+;; Compile one already checked/lowered module into the shared project state.
+;; The caller owns source admission, typed interfaces and runtime scanning.
+;; Any error aborts the whole project; no partially built module is emitted.
+(defn- xw-project-compile-unit [M :vector-i64 L :vector-i64 V :vector-i64 S :string first :i64 count :i64 start :i64] :vector-i64
+  (let [ready (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xw-pool 1)
+                  (xw-project-pool-append V) (xw-project-assign L S first count start)
+                  (xw-tables 1) (xw-project-code 1 first count))]
+    (xw-project-archive ready L start)))
+
+;; A successfully compiled library publishes the existing typed project
+;; interface with its Wasm indices. A failed unit must publish no interface.
+(defn- xw-project-compile-library [M :vector-i64 L :vector-i64 V :vector-i64 P :string S :string first :i64 count :i64 start :i64 module :i64] :string
+  (let [compiled (xw-project-compile-unit M L V S first count start)]
+    (if (pj-ok compiled) (xw-project-iface compiled L P S module) P)))
+
+;; Run the project's normal namespace/reference pipeline before Wasm lowering.
+;; S includes the generated project trailer and L's trail offset is set by the
+;; caller. Retry type refinements before any shared Wasm archive is modified.
+(defn- xw-project-front-h [M :vector-i64 L :vector-i64 P :string S :string module :i64 H :vector-i64] :vector-i64
+  (let [read (pj-read M S)
+        refs (if (pj-ok read) (pj-refcheck (pj-qscan (pj-norm read L S) L P S module) L P module) read)
+        tree (if (pj-ok refs) (pj-splice refs L) refs)
+        names (if (pj-ok tree) (nm-run tree S) tree)
+        stub0 (if (pj-ok names) (pj-ls L pj-k-stub0 (- (vector-at names MM-FN-N) (pj-l L pj-k-nstub))) L)
+        checked (if (pj-ok names) (ck-run-h names S H) names)]
+    (if (and (pj-ok checked) (ck-hint-again? H checked))
+      (xw-project-front-h checked L P S module H)
+      (let [lowered (if (pj-ok checked) (lw-run checked) checked)
+            policy (if (pj-ok lowered) (pj-r5b-after lowered L P S module) lowered)]
+        (if (pj-ok policy)
+          (-> policy (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+              (xg-check-fns S 1) (xg-check-sir 1) (xw-check-float 1) (xr-check 1))
+          policy)))))
+(defn- xw-project-front [M :vector-i64 L :vector-i64 P :string S :string module :i64] :vector-i64
+  (xw-project-front-h M L P S module (ck-hint-new)))
+
+;; Process a discovered project module using the locked source cache and the
+;; regular trailer/interface machinery. Until shared runtime and global table
+;; binding exist, reject operations that need those bindings before archiving.
+(defn- xw-project-unbound-op [M :vector-i64 i :i64] :i64
+  (if (>= i (vector-at M MM-SIR-N)) 0
+    (let [op (xg-si M i IF-OP)]
+      (if (or (= op OP-RT) (= op OP-CAP) (= op OP-STR) (= op OP-VEC) (= op OP-VECP)
+              (= op OP-TAB) (= op OP-FADDR) (= op OP-CALLI) (= op OP-RES2) (= op OP-RET2))
+        op (xw-project-unbound-op M (+ i 1))))))
+(defn- xw-project-load-unit [M :vector-i64 L :vector-i64 V :vector-i64 P :string module :i64 start :i64] :string
+  (let [which (pj-ls L pj-k-errmod module)
+        S0 (pj-src M L P module)
+        trailer (pj-trailer L P module)
+        S1 (if (pj-ok M) (string-concat S0 (ck-r6b-lib-t S0 (pj-kw-table M L P module S0))) S0)
+        S (string-concat S1 trailer)
+        setup (-> L (pj-ls pj-k-trail (string-length S1)) (pj-ls pj-k-base 0))
+        front (if (pj-ok M) (xw-project-front M L P S module) M)
+        unbound (if (pj-ok front) (if (ck-r6b-needs-kw? S0) OP-RT (xw-project-unbound-op front 1)) 0)
+        checked (if (> unbound 0) (xg-err front 7101 unbound) front)
+        ready (if (pj-ok checked) (mem-set checked 197 (string-length S)) checked)
+        first (pj-l L pj-k-stub0) count (pj-l L pj-k-nstub)]
+    (if (not (pj-ok ready)) P
+      (if (= (pj-mf L module pj-mf-entry) 0)
+        (xw-project-compile-library ready L V P S first count start module)
+        (let [compiled (xw-project-compile-unit ready L V S first count start)] P)))))
+
+;; Validate the discovered topological order before mutating the archive.
+(defn- xw-project-order-valid? [L :vector-i64] :bool
+  (let [n (pj-l L pj-k-nmod) order (pj-l L pj-k-nord)]
+    (if (or (< n 1) (> n pj-m-cap) (not= order n)) false
+      (let [seen (vector-alloc n)]
+        (loop [i 0]
+          (if (>= i n) true
+            (let [m (pj-l L (+ pj-o-base i))]
+              (if (or (< m 0) (>= m n) (not= (vector-at seen m) 0)
+                      (not= (pj-mf L m pj-mf-entry) (if (= m 0) 1 0))
+                      (and (= m 0) (not= i (- n 1)))) false
+                (let [r0 (pj-mf L m pj-mf-req0) nr (pj-mf L m pj-mf-nreq)
+                      deps (if (or (< r0 0) (< nr 0) (> r0 pj-r-cap) (> nr (- pj-r-cap r0))) false
+                             (loop [k 0]
+                               (if (>= k nr) true
+                                 (let [d (pj-rf L (+ r0 k) pj-rf-mod)]
+                                   (and (>= d 0) (< d n) (= (vector-at seen d) 1) (recur (+ k 1)))))))]
+                  (if (not deps) false
+                    (let [mark (vector-assoc! seen m 1)] (recur (+ i 1)))))))))))))
+;; W[0] is the next Wasm index, W[1] the validated entry function index.
+;; This stage is intentionally not the public compiler: runtime/table binding
+;; still needs to be implemented before a project artifact may be published.
+(defn- xw-project-load-graph [M :vector-i64 L :vector-i64 V :vector-i64 W :vector-i64 P :string] :string
+  (if (or (not (pj-ok M)) (< (vector-count W) 2) (not (xw-project-order-valid? L)))
+    (let [e (xg-err M 7103 0)] P)
+    (let [init (-> W (vector-assoc! 0 XW-NIMPORT) (vector-assoc! 1 0))]
+      (loop [i 0 pool P]
+        (if (or (not (pj-ok M)) (>= i (pj-l L pj-k-nord))) pool
+          (let [m (pj-l L (+ pj-o-base i)) next (vector-at W 0)
+                compiled (xw-project-load-unit M L V pool m next)
+                main (if (and (pj-ok M) (= m 0)) (xg-get M 1) 0)
+                checked (if (and (pj-ok M) (= m 0) (= main 0)) (xg-err M 7102 0) M)
+                update (if (pj-ok checked) (-> W (vector-assoc! 0 (+ XW-NIMPORT (xg-get M 3)))
+                                                  (vector-assoc! 1 (if (= m 0) (xw-idx M main) (vector-at W 1)))) W)]
+            (recur (+ i 1) compiled)))))))
+
+;; A checked runtime is assigned first (including a reserved main trampoline).
+;; Its slot map records global Wasm index and arity independently of that
+;; frontend's function IDs, which cannot be reused by another module.
+(def XW-RT-MAP-WORDS 52)
+(defn- xw-project-rt-slots-valid? [M :vector-i64 count :i64 slot :i64] :bool
+  (if (> slot 440) true
+    (let [f (vector-at M (+ 200 (quot slot 8)))]
+      (and (or (= f 0)
+               (and (> f 0) (< f (vector-at M MM-FN-N)) (xs-rt? M f)
+                    (> (xw-idx M f) XW-NIMPORT) (< (xw-idx M f) (+ XW-NIMPORT count))
+                    (> (xg-f M f FF-NPARAMS) 0) (<= (xg-f M f FF-NPARAMS) 16)))
+           (xw-project-rt-slots-valid? M count (+ slot 8))))))
+(defn- xw-project-runtime-capture [M :vector-i64 R :vector-i64] :vector-i64
+  (let [count (xg-get M 3) start (vector-at M 199) main (xg-get M 1)]
+    (if (or (not (pj-ok M)) (< (vector-count R) XW-RT-MAP-WORDS)
+            (<= count 0) (> count 4294967291) (<= start 0) (>= start (vector-at M MM-FN-N))
+            (<= main 0) (not= (xw-idx M main) XW-NIMPORT) (not (xs-rt? M start))
+            (not= (xg-f M start FF-NPARAMS) 1)
+            (<= (xw-idx M start) XW-NIMPORT) (>= (xw-idx M start) (+ XW-NIMPORT count))
+            (= (vector-at M 250) 0) (not (xw-project-rt-slots-valid? M count 48)))
+      (xg-err M 7102 0)
+      (let [a (vector-assoc! R 0 count) b (vector-assoc! R 1 (xw-idx M start))
+            rows (loop [slot 48]
+                   (if (> slot 440) 0
+                     (let [f (vector-at M (+ 200 (quot slot 8)))
+                           value (if (= f 0) 0 (bit-or (i64-shift-left (xw-idx M f) 8) (xg-f M f FF-NPARAMS)))
+                           w (vector-assoc! R (+ 2 (quot (- slot 48) 8)) value)]
+                       (recur (+ slot 8)))))] M))))
+(defn- xw-project-runtime-map-valid? [R :vector-i64 M :vector-i64] :bool
+  (if (< (vector-count R) XW-RT-MAP-WORDS) false
+    (let [count (vector-at R 0) start (vector-at R 1) n (vector-at M MM-FN-N)]
+      (and (> count 0) (<= count 4294967291) (> start XW-NIMPORT) (< start (+ XW-NIMPORT count))
+           (not= (vector-at R (+ 2 (quot (- 400 48) 8))) 0)
+           (>= n 1) (<= n MM-FN-CAP)
+           (loop [slot 48 active 0]
+             (if (> slot 440) (<= active (- MM-FN-CAP n))
+               (let [word (vector-at R (+ 2 (quot (- slot 48) 8))) idx (u64-shift-right word 8) arity (bit-and word 255)]
+                 (and (= (vector-at M (+ 200 (quot slot 8))) 0)
+                      (or (= word 0) (and (> idx XW-NIMPORT) (< idx (+ XW-NIMPORT count)) (> arity 0) (<= arity 16)))
+                      (recur (+ slot 8) (if (= word 0) active (+ active 1)))))))))))
+;; The metadata must describe actual archived bodies, not just numbers in
+;; range. Call only on the complete runtime archive, before appending guests.
+(defn- xw-project-runtime-arity [L :vector-i64 at :i64 index :i64 target :i64] :i64
+  (if (= index target) (pj-ib L (+ at 4))
+    (xw-project-runtime-arity L (+ at 9 (xw-project-archive-u32 L (+ at 5))) (+ index 1) target)))
+(defn- xw-project-runtime-archive-slots? [L :vector-i64 R :vector-i64 slot :i64] :bool
+  (if (> slot 440) true
+    (let [word (vector-at R (+ 2 (quot (- slot 48) 8)))]
+      (and (or (= word 0)
+               (= (bit-and word 255) (xw-project-runtime-arity L 0 XW-NIMPORT (u64-shift-right word 8))))
+           (xw-project-runtime-archive-slots? L R (+ slot 8))))))
+(defn- xw-project-runtime-archive-valid? [L :vector-i64 R :vector-i64] :bool
+  (and (xw-project-archive-readable? L XW-NIMPORT (vector-at R 0))
+       (= (xw-project-runtime-arity L 0 XW-NIMPORT (vector-at R 1)) 1)
+       (xw-project-runtime-archive-slots? L R 48)))
+;; Replace the reserved zero-argument main body with a call to the actual
+;; zero-argument entry. A fixed-width u32 LEB keeps the replacement bounded.
+;; Validate the complete archive and target before changing any image bytes.
+(defn- xw-project-trampoline [M :vector-i64 L :vector-i64 runtime-count :i64 count :i64 entry :i64] :vector-i64
+  (let [end (pj-l L pj-k-img)]
+    (if (or (not (pj-ok M)) (<= runtime-count 0) (<= count runtime-count)
+            (< entry (+ XW-NIMPORT runtime-count)) (>= entry (+ XW-NIMPORT count))
+            (not (xw-project-archive-readable? L XW-NIMPORT count)))
+      (xg-err M 7103 0)
+      (let [old (xw-project-archive-u32 L 5) delta (- 8 old) new-end (+ end delta)]
+        (if (or (not= (pj-ib L 4) 0)
+                (not= (xw-project-runtime-arity L 0 XW-NIMPORT entry) 0)
+                (< new-end 0) (> new-end pj-img-cap)) (xg-err M 7103 0)
+          (let [moved (if (> delta 0)
+                        (loop [i (- end 1)] (if (< i (+ 9 old)) 0
+                          (let [w (pj-ibset L (+ i delta) (pj-ib L i))] (recur (- i 1)))))
+                        (loop [i (+ 9 old)] (if (>= i end) 0
+                          (let [w (pj-ibset L (+ i delta) (pj-ib L i))] (recur (+ i 1))))))
+                hdr (pj-put32 L 5 8)
+                a (-> L (pj-ibset 9 0) (pj-ibset 10 16)
+                      (pj-ibset 11 (bit-or 128 (bit-and entry 127)))
+                      (pj-ibset 12 (bit-or 128 (bit-and (u64-shift-right entry 7) 127)))
+                      (pj-ibset 13 (bit-or 128 (bit-and (u64-shift-right entry 14) 127)))
+                      (pj-ibset 14 (bit-or 128 (bit-and (u64-shift-right entry 21) 127)))
+                      (pj-ibset 15 (bit-and (u64-shift-right entry 28) 15)) (pj-ibset 16 11))
+                done (pj-ls L pj-k-img new-end)] M))))))
+(defn- xw-project-runtime-bind [M :vector-i64 R :vector-i64 L :vector-i64] :vector-i64
+  (if (or (not (pj-ok M)) (not (xw-project-runtime-map-valid? R M))
+          (not (xw-project-runtime-archive-valid? L R))) (xg-err M 7102 0)
+    (loop [slot 48 next (vector-at M MM-FN-N)]
+      (if (> slot 440) (mem-set M MM-FN-N next)
+        (let [word (vector-at R (+ 2 (quot (- slot 48) 8)))]
+          (if (= word 0) (recur (+ slot 8) next)
+            (let [base (+ MM-FN-BASE (* next MM-FN-W))
+                  a (mem-set M (+ base FF-NPARAMS) (bit-and word 255))
+                  b (mem-set M (+ base FF-CODE) (u64-shift-right word 8))
+                  c (mem-set M (+ 200 (quot slot 8)) next)]
+              (recur (+ slot 8) (+ next 1)))))))))
 
 ;; ---- sections: each payload is built in CODE and recorded [start 40 id end] ----
 (defn- xw-section [M :vector-i64 id :i64 at :i64] :vector-i64 (xw-rec M at 40 id (xg-pos M)))
@@ -318,9 +714,42 @@
 (defn- xw-module [M :vector-i64] :vector-i64
   (xw-out (-> M (mem-set MM-OUT-N 1) (xg-out 0x6d736100 4) (xg-out 1 4)) 1 (vector-at M MM-FIX-N)))
 
+;; Assemble a complete module from a validated project archive and shared
+;; literal pool. Function-value thunks need a separate global index/table pass;
+;; callers must not use this path until that pass is implemented.
+(defn- xw-project-module [M :vector-i64 L :vector-i64 V :vector-i64 count :i64 start :i64] :vector-i64
+  (if (or (not (pj-ok M)) (< (vector-count V) 1)) (xg-err M 7103 0)
+    (let [plen (vector-at V 0) cap (* (- (vector-count V) 1) 8)]
+      (if (or (< plen 0) (> plen cap) (> plen (- (* 8 MM-CODE-CAP) 1))
+              (<= count 0) (< start XW-NIMPORT) (>= start (+ XW-NIMPORT count))
+              (not (xw-project-archive-readable? L XW-NIMPORT count)))
+        (xg-err M 7103 0)
+        (let [m0 (-> M (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1))
+              pages (quot (+ XW-POOL plen 65535) 65536)
+              a1 (xg-pos m0) m1 (xw-section (xw-types (xw-uleb m0 17) 0) 1 a1)
+              a2 (xg-pos m1) m2 (xw-section (-> m1 (xw-uleb 5) (xw-host-name 0) (xw-host-name 1) (xw-host-name 2) (xw-host-name 3) (xw-host-name 4)) 2 a2)
+              a3 (xg-pos m2) m3 (xw-section (xw-project-archive-types m2 L XW-NIMPORT count) 3 a3)
+              a4 (xg-pos m3) m4 (xw-section (-> m3 (xw-uleb 1) (xg-byte 0x70) (xg-byte 1) (xw-uleb 0) (xw-uleb 0)) 4 a4)
+              a5 (xg-pos m4) m5 (xw-section (-> m4 (xw-uleb 1) (xg-byte 0) (xw-uleb pages)) 5 a5)
+              a6 (xg-pos m5) m6 (xw-section (-> m5 (xw-uleb 1) (xg-byte 0x7e) (xg-byte 1) (xw-i64 0) (xg-byte 0x0b)) 6 a6)
+              a7 (xg-pos m6) m7 (xw-section (-> m6 (xw-uleb 2) (xw-uleb 6) (xg-bytes 0x79726f6d656d 6) (xg-byte 2) (xw-uleb 0)
+                                                (xw-uleb 5) (xg-bytes 0x7472617473 5) (xg-byte 0) (xw-uleb start)) 7 a7)
+              a10 (xg-pos m7) m10 (xw-section (xw-project-archive-bodies m7 L XW-NIMPORT count) 10 a10)
+              a11 (xg-pos m10) m11 (-> m10 (xw-uleb 2) (xg-byte 0) (xw-i32 XW-POOL) (xg-byte 0x0b) (xw-uleb plen)
+                                         (xw-project-pool-emit V) (xg-byte 0) (xw-i32 (+ XW-CTX 384))
+                                         (xg-byte 0x0b) (xw-uleb 16) (xg-bytes XW-POOL 8) (xg-bytes plen 8))]
+          (xw-module (xw-section m11 11 a11)))))))
+;; Runtime admission is shared with native targets, but this emitter does not
+;; implement floating-point SIR. Refuse it before emitting any Wasm.
+(defn- xw-check-float [M :vector-i64 i :i64] :vector-i64
+  (if (or (not= (vector-at M MM-ERR) 0) (= i (vector-at M MM-SIR-N))) M
+    (let [op (xg-si M i IF-OP) sub (xg-si M i IF-A)]
+      (if (xg-fl-sir? op sub) (xg-err M 7101 sub)
+        (xw-check-float M (inc i))))))
+
 (defn- xw-build [M :vector-i64 S :string rt :i64] :vector-i64
   (let [a (-> M (xs-clear 197) (mem-set 197 rt) (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 3 0) (xg-set 4 1)
-              (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
+              (xg-check-fns S 1) (xg-check-sir 1) (xw-check-float 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))]
     (cond (not= (vector-at a MM-ERR) 0) a
           (= (xg-get a 1) 0) (xg-err a 7102 0)
           (or (= (vector-at a 199) 0) (= (vector-at a 198) 0) (= (vector-at a 250) 0)) (xg-err a 7102 1)
@@ -342,14 +771,50 @@
                              (string-concat ", :pool-bytes " (string-concat (mem-u2dec (xg-get M 2))
                                (string-concat ", :bytes " (string-concat (mem-u2dec n) "}\n")))))))]
                   (if (= (io-exists out) 1) 0 (drv-fail0 E-WRITE))))))
+;; Locked project admission precedes the target-specific Wasm linker.  Until
+;; that linker exists, even a completely checked source graph is refused.
+;; The canonical discovery/lock owner caches and verifies every source; never
+;; accept --unpinned or ignore an option on the Wasm project path.
+(defn- xw-project-flags? [i :i64 roots :i64 lock :bool digest :bool] :bool
+  (if (= i (io-argc)) (and (<= roots 16) lock digest)
+    (if (>= (+ i 1) (io-argc)) false
+      (let [flag (io-arg i)]
+        (cond (string=? flag "--source-path") (xw-project-flags? (+ i 2) (+ roots 1) lock digest)
+              (and (string=? flag "--source-lock") (not lock)) (xw-project-flags? (+ i 2) roots true digest)
+              (and (string=? flag "--source-lock-sha256") (not digest)) (xw-project-flags? (+ i 2) roots lock true)
+              :else false)))))
+(defn- xw-mapped-project? [] :bool
+  (let [argument (drv-pj-lock-arg 1 (io-argc) -1)]
+    (and (>= argument 0)
+         (let [text (drv-pj-lock-text (io-read-source-lock (io-arg argument)))]
+           (and (ksl-mapped? text) (> (ksl-file-count text) 1))))))
+(defn- xw-project-check [path :string] :i64
+  (let [M (mem-new) L (pj-new-l) roots (drv-pj-roots L (pj-new-p L) 1 (io-argc))
+        locked (drv-pj-lock M L roots path)
+        graph (if (pj-ok M) (pj-discover M L (pj-padd L locked path) (- (pj-n L) 1)) locked)]
+    (cond (not (pj-ok M)) (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in M path "") (drv-pj-fail M L graph))
+          :else (let [w (io-err "seed-wasm32-browser: E7107 locked project linker is not implemented; no artifact emitted\n")] 2))))
+
 ;; compile SRC --target wasm32-browser --output NEW
+;;   [--source-lock LOCK --source-lock-sha256 DIGEST]
+;; The optional lock is currently the single-source KSL form, not a project
+;; linker. Never accept and discard roots or any unsupported flags.
 (defn- xw-command [] :i64
-  (let [src (io-arg 1) out (io-arg 5)]
-    (cond (or (not= (io-argc) 6) (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
-            (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM\n")] 2)
+  (let [src (io-arg 1) out (io-arg 5) count (io-argc)
+        project (or (= (drv-pj-has 1 count "--source-path") 1) (xw-mapped-project?))
+        locked (and (= count 10) (string=? (io-arg 6) "--source-lock")
+                    (string=? (io-arg 8) "--source-lock-sha256"))]
+    (cond (or (and project (not (xw-project-flags? 6 0 false false)))
+              (and (not project) (not= count 6) (not locked))
+              (not (string=? (io-arg 4) "--output")) (= (string-length out) 0) (= (io-exists out) 1))
+            (let [w (io-err "seed-wasm32-browser: E7100 expected compile SOURCE --target wasm32-browser --output NEW_WASM [--source-lock LOCK --source-lock-sha256 DIGEST]\n")] 2)
+          project (xw-project-check src)
           (= (io-exists src) 0) (drv-fail0 E-READ)
           (= (string-length (xw-rt-src)) 0)
             (let [w (io-err "seed-wasm32-browser: E7106 a section marker of the seed/77 runtime text is missing\n")] 1)
-          :else (let [original (drv-read src) guest (string-concat original (ck-r6b-lib original))
-                      s (string-concat guest (xw-rt-src))]
-                  (xw-report (xw-build (xg-front s) s (string-length guest)) src out)))))
+          :else (let [original (drv-read src)]
+                  (if (and locked (not (drv-single-lock? original src)))
+                    (drv-fail0 E-PROJ-UNPINNED)
+                    (let [guest (string-concat original (ck-r6b-lib original))
+                          s (string-concat guest (xw-rt-src))]
+                      (xw-report (xw-build (xg-front s) s (string-length guest)) src out)))))))
