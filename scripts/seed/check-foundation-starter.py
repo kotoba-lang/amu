@@ -37,7 +37,7 @@ def host_profile(value):
     return value
 
 
-def main(output, profile, experimental_arm64=False):
+def main(output, profile, experimental_arm64=False, source_candidate_sha256=None):
     machine = "aarch64" if experimental_arm64 else "x86_64"
     target = "aarch64-linux" if experimental_arm64 else "x86_64-linux"
     require(platform.system() == "Linux" and platform.machine() == machine,
@@ -71,8 +71,13 @@ def main(output, profile, experimental_arm64=False):
                if line and not line.startswith("#")]
     require(len(sources) == descriptor["sourceModuleCount"], "compiler source count mismatch")
     unity = b"".join((ROOT / name).read_bytes() + b"\n" for name in sources)
-    require({"bytes": len(unity), "sha256": hashlib.sha256(unity).hexdigest()} ==
-            descriptor["sourceUnity"], "compiler source unity mismatch")
+    current_source_unity = {"bytes": len(unity), "sha256": hashlib.sha256(unity).hexdigest()}
+    if current_source_unity != descriptor["sourceUnity"]:
+        require(source_candidate_sha256 == current_source_unity["sha256"],
+                "compiler source unity mismatch; candidate override must pin the observed unity")
+    else:
+        require(source_candidate_sha256 in (None, current_source_unity["sha256"]),
+                "candidate source pin differs from the current unity")
     require(candidate["compilerSourceUnity"] == descriptor["sourceUnity"],
             "starter/compiler source pin mismatch")
     output = output.resolve()
@@ -191,6 +196,9 @@ def main(output, profile, experimental_arm64=False):
         "starterCandidate": candidate_pin,
         "upstreamRevision": candidate["upstreamRevision"],
         "descriptor": descriptor_pin, "sourceUnity": descriptor["sourceUnity"],
+        "observedSourceUnity": current_source_unity,
+        "sourceUnityMatchesCompiler": current_source_unity == descriptor["sourceUnity"],
+        "sourceCandidateSHA256": source_candidate_sha256,
         "descriptorQualification": {key: descriptor.get(key) for key in
                                     ("nativePinnedCheckAndCompile", "controllerQualified",
                                      "currentCompilerLinkVerified", "qualificationState")},
@@ -215,5 +223,7 @@ if __name__ == "__main__":
                         help="non-identifying host/OS label (lowercase letters, digits, hyphens)")
     parser.add_argument("--experimental-arm64", action="store_true",
                         help="observe the pinned Linux ARM64 root; not a qualified public profile")
+    parser.add_argument("--source-candidate-sha256", default=os.environ.get("SOURCE_CANDIDATE_SHA256") or None,
+                        help="explicitly allow a changed source unity in preflight, pinned to its observed SHA-256")
     args = parser.parse_args()
-    main(args.output, args.host_profile, args.experimental_arm64)
+    main(args.output, args.host_profile, args.experimental_arm64, args.source_candidate_sha256)

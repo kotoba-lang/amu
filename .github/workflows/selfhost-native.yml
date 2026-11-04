@@ -37,6 +37,11 @@ on:
   merge_group:
     types: [checks_requested]
   workflow_dispatch:
+    inputs:
+      source_candidate_sha256:
+        description: Current FULL-MANIFEST unity SHA-256 when qualifying changed seed sources
+        required: false
+        type: string
   schedule:
     - cron: "17 3 * * *"
   push:
@@ -74,6 +79,7 @@ permissions:
 env:
   # JUN-629: the runner has 4 vCPUs; every native_build_queue.py call in a job uses this shared-slot capacity.
   KOTOBA_NATIVE_SLOT_CAPACITY: "4"
+  SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
 jobs:
   native-preflight:
     runs-on: ubuntu-latest
@@ -88,7 +94,15 @@ jobs:
           job: native-preflight
       - name: Foundation starter functional smoke (not compiler qualification)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64
+        env:
+          SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
+        run: |
+          args=()
+          if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
+            args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
+          fi
+          python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py \
+            --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64 "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -127,7 +141,14 @@ jobs:
           python3 -m unittest discover -s bench/embench/proof-v1 -p 'test_*.py' -v
       - name: Source and image identity preflight
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        env:
+          SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
+        run: |
+          args=()
+          if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
+            args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
+          fi
+          python3 scripts/seed/check-native-identities.py "${args[@]}"
       - name: Independent native preflight controls through the shared two-slot plan
         if: steps.gate.outputs.skip != 'true'
         run: >-
@@ -201,7 +222,16 @@ jobs:
           job: foundation-starter-arm64
       - name: Experimental ARM64 starter observation (not public qualification)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" --host-profile github-ubuntu-arm64-diagnostic
+        env:
+          SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
+        run: |
+          args=()
+          if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
+            args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
+          fi
+          python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py \
+            --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" \
+            --host-profile github-ubuntu-arm64-diagnostic "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.gate.outputs.skip != 'true'
         with:
