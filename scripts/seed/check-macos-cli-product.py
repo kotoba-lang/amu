@@ -53,11 +53,11 @@ def check(cli, out):
     # deliberately fail-open implementation. This exercises source compiled
     # by the CLI; it does not execute the watcher or qualify a governor.
     watch_source = (ROOT / 'seed/darwin-watch-reply.kotoba').read_text()
-    declaration = '(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-reply-class]))'
+    declaration = '(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-monitor-step darwin-watch-reply-class]))'
     assert watch_source.count(declaration) == 1
     watch_source = watch_source.replace(declaration, '')
     watch_cases = (ROOT / 'seed/tests/awai152-darwin-watch/reply-cases.kotoba').read_text()
-    watch_main = '\n(defn main [] :i64 (if (test-darwin-watch-reply) 42 7))\n'
+    watch_main = '\n(defn main [] :i64 (if (and (test-darwin-watch-reply) (test-darwin-watch-monitor)) 42 7))\n'
     refusal = '"observer/bound-exit-observed" "observer/unknown"'
     assert watch_source.count(refusal) == 2
     split = watch_source.rindex(refusal)
