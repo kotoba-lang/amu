@@ -15,7 +15,7 @@
     (loop [i 0 out v] (if (= i 32) out
       (recur (+ i 1) (vector-assoc! out (+ i 8) (vector-at r i)))))))
 (defn test-darwin-watch-monitor [] :bool
-  (let [r (vector-assoc! (dwr-case-request) 3 50) init [0 1 100 20]
+  (let [r (vector-assoc! (dwr-case-request) 3 50) init [0 1 100 20 100]
         ready (dwr-case-frame r 82 0) hb (dwr-case-frame r 72 1)
         final (dwr-case-frame r 79 0) empty (vector-alloc 0)
         s1 (darwin-watch-monitor-step r init "ready" ready -1 false 110 true)
@@ -27,6 +27,9 @@
          (= (vector-at (darwin-watch-monitor-step r s1 "heartbeat" hb -1 false 130 true) 0) 1)
          (= (vector-at (darwin-watch-monitor-step r s1 "heartbeat" hb -1 false 131 true) 0) 3)
          (= (vector-at polled 2) 120) (= (vector-at done 0) 2)
+         (= (vector-at polled 4) 130)
+         (= (vector-at (darwin-watch-monitor-step r polled "poll" empty -1 false 125 true) 0) 3)
+         (= (vector-at (darwin-watch-monitor-step r polled "exit" final 0 true 125 false) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r s2 "heartbeat" hb -1 false 121 true) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r s2 "poll" empty -1 false 141 true) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r s2 "poll" empty -1 false 119 true) 0) 3)
@@ -35,7 +38,8 @@
          (= (vector-at (darwin-watch-monitor-step r s2 "exit" final 0 false 130 false) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r s2 "exit" final 1 true 130 false) 0) 3)
          (= (vector-at (darwin-watch-monitor-step r done "poll" empty -1 false 141 true) 0) 3)
-         (= (vector-at (darwin-watch-monitor-step r [0 1 0 20] "ready" ready -1 false 1 true) 0) 3))))
+         (= (vector-at (darwin-watch-monitor-step r [0 1 0 20 0] "ready" ready -1 false 1 true) 0) 3)
+         (= (vector-at (darwin-watch-monitor-step r [0 1 100 20] "ready" ready -1 false 110 true) 0) 3))))
 (defn test-darwin-watch-reply [] :bool
   (let [r (dwr-case-request) out (dwr-case-reply)
         r2 (vector-assoc! (dwr-case-request) 3 50)

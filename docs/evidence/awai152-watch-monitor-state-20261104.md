@@ -3,8 +3,8 @@
 The previous `WP02` framing functions could validate individual frames but did
 not define what a host should do after a missed deadline, duplicate sequence,
 clock rollback or watcher loss. `darwin-watch-monitor-step` adds a pure native
-transition candidate with host-owned state `[phase next-sequence last-time
- timeout]`. Ready and heartbeat frames are bound to the request. Only valid,
+transition candidate with host-owned state. The original four-field state was later
+replaced as described below; callers must initialize the five-field format. Ready and heartbeat frames are bound to the request. Only valid,
 in-order observations within a caller-supplied monotonic deadline advance the
 state; polls do not renew the deadline. Timeout, rollback, process loss, bad
 status, unexpected EOF, malformed or out-of-order frames and invalid state
@@ -34,3 +34,24 @@ separately establish whole-workload termination. State is volatile and accepts
 trusted observations; it is not a supervisor, durable ledger, kernel resource
 limit, distributed fence, production release or selfhost qualification. No
 model, persistent service, resource release or real workload was run.
+
+## Poll-to-poll clock rollback correction
+
+The earlier state retained only the last ready/heartbeat time. Consequently,
+if a poll observed time 130 after a heartbeat at 120, a subsequent poll or
+exit at 125 could be accepted. The state is now `[phase next-sequence
+last-frame-ms timeout-ms last-observed-ms]`, initialized as `[0 1 launch-time
+timeout launch-time]`. Every accepted poll updates the last observed time but
+does not extend the heartbeat deadline. A backward timestamp, inconsistent
+state, or the older four-field format is rejected as unknown. This is a
+source-level interface change; no existing state may be silently migrated.
+
+The updated selected source and cases passed in a signed local Darwin native
+source-unity diagnostic, including rollback after poll and exit after rollback.
+Both an always-expired deadline mutation and a mutation restoring the older
+last-frame-only rollback comparison were detected. Source/image SHA-256:
+`290ec24b870491e44ade916eb9a1b922e7b9e3e24bf9ed3c0df83f92e85bb5cf` /
+`e38fd090cee2f3cea508d849a0c84d5937f6f7a58675b600974a605892b06b22`.
+The earlier real-frame replay above predates this interface change; it does
+not prove the revised state against a live watcher. The host supervisor and
+other qualification limitations above remain open.
