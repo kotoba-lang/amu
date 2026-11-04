@@ -95,7 +95,7 @@ def launch_watcher(image, directory, request):
         os.close(fd)
 
 
-def transition_case(image, directory, mode):
+def transition_case(image, directory, mode, protocol=b'WP01'):
     if mode == 'exec':
         action = "os.execv('/bin/sleep',['sleep','2'])"
     elif mode == 'fork':
@@ -123,7 +123,7 @@ def transition_case(image, directory, mode):
                 raise TimeoutError((mode, 'child did not stop'))
             time.sleep(0.01)
         sec, usec = identity(child.pid)
-        request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 5)
+        request = struct.pack('<4sIQQII', protocol, child.pid, sec, usec, 12345, 1)
         watcher = launch_watcher(image, directory, request)
         ready = b''
         deadline = time.monotonic() + 5
@@ -137,6 +137,8 @@ def transition_case(image, directory, mode):
             ready += chunk
         if ready != b'WR01\0\0\0\0' + request:
             raise RuntimeError((mode, 'invalid ready frame', ready))
+        if protocol == b'WP02':
+            time.sleep(2.2)
         if watcher.poll() is not None:
             raise RuntimeError((mode, 'watcher exited before trigger'))
         os.kill(child.pid, signal.SIGCONT)
@@ -147,7 +149,7 @@ def transition_case(image, directory, mode):
             raise RuntimeError((mode, 'transition was not cleanly refused', watcher.returncode, out, err))
         if child.wait(timeout=5) != 0:
             raise RuntimeError((mode, 'child failed'))
-        print('WATCH_TRANSITION_REFUSED', mode, flush=True)
+        print('WATCH_TRANSITION_REFUSED', protocol.decode(), mode, flush=True)
     finally:
         if watcher is not None and watcher.poll() is None:
             watcher.kill()
@@ -155,6 +157,42 @@ def transition_case(image, directory, mode):
         if child.poll() is None:
             child.kill()
             child.wait(timeout=3)
+
+
+def persistent_case(image, directory):
+    import select
+    child = subprocess.Popen(['/bin/sleep', '4'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    watcher = None
+    try:
+        sec, usec = identity(child.pid)
+        request = struct.pack('<4sIQQII', b'WP02', child.pid, sec, usec, 12345, 1)
+        watcher = launch_watcher(image, directory, request)
+        ready = b''
+        deadline = time.monotonic() + 5
+        while len(ready) < 40:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not select.select([watcher.stdout], [], [], remaining)[0]:
+                raise RuntimeError('persistent watcher not ready')
+            chunk = os.read(watcher.stdout.fileno(), 40 - len(ready))
+            if not chunk:
+                raise RuntimeError('persistent watcher short ready frame')
+            ready += chunk
+        if ready != b'WR01\0\0\0\0' + request:
+            raise RuntimeError(('persistent ready mismatch', ready))
+        time.sleep(2.2)
+        if watcher.poll() is not None or child.poll() is not None:
+            raise RuntimeError('persistent watcher did not survive multiple intervals')
+        out, err = watcher.communicate(timeout=5)
+        if watcher.returncode != 0 or out != b'WO01\0\0\0\0' + request or err:
+            raise RuntimeError(('persistent event mismatch', watcher.returncode, out, err))
+        if child.wait(timeout=2) != 0:
+            raise RuntimeError('persistent child did not exit normally')
+        print('WATCH_PERSISTENT_EVENT_AFTER_TIMEOUTS', flush=True)
+    finally:
+        if watcher is not None and watcher.poll() is None:
+            watcher.kill(); watcher.wait(timeout=3)
+        if child.poll() is None:
+            child.kill(); child.wait(timeout=3)
 
 
 def run(compiler, packager, output, artifact_dir=None):
@@ -183,6 +221,11 @@ def run(compiler, packager, output, artifact_dir=None):
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 8)
         wrong = struct.pack('<4sIQQII', b'WP01', child.pid, sec + 1, usec, 12345, 8)
+        for malformed in (struct.pack('<4sIQQII', b'WP03', child.pid, sec, usec, 12345, 1),
+                          struct.pack('<4sIQQII', b'WP02', child.pid, sec, usec, 12345, 0)):
+            refused = observe(image, output, malformed)
+            if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
+                raise RuntimeError(('invalid request did not refuse', refused.returncode, refused.stdout, refused.stderr))
         refused = observe(image, output, wrong)
         if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
             raise RuntimeError(('wrong identity did not cleanly refuse', refused.returncode,
@@ -203,6 +246,31 @@ def run(compiler, packager, output, artifact_dir=None):
                                 reaped.stdout, reaped.stderr))
         transition_case(image, output, 'exec')
         transition_case(image, output, 'fork')
+        persistent_case(image, output)
+        transition_case(image, output, 'exec', b'WP02')
+        transition_case(image, output, 'fork', b'WP02')
+        anchor = '(ds-cmpi 25 1) (ds-b 0x54000000 2)'
+        text = source.read_text()
+        if text.count(anchor) != 1:
+            raise RuntimeError('persistent negative-control anchor changed')
+        mutant_source = text.replace(anchor, '(ds-cmpi 25 0) (ds-b 0x54000000 2)')
+        mutant_emitter = fixture.build(gate, compiler, packager, output, 'watch-mutant-emitter', mutant_source)
+        gate.native_run(mutant_emitter, output, 'watch-mutant-unsigned.macho', timeout=120)
+        mutant = output / 'watch-mutant.macho'
+        shutil.copyfile(output / 'watch-mutant-unsigned.macho', mutant)
+        mutant.chmod(0o700)
+        subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', str(mutant)],
+                       capture_output=True, check=True, timeout=30)
+        subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(mutant)],
+                       capture_output=True, check=True, timeout=30)
+        try:
+            persistent_case(mutant, output)
+        except RuntimeError as error:
+            if str(error) != 'persistent watcher did not survive multiple intervals':
+                raise
+        else:
+            raise RuntimeError('persistent negative control unexpectedly passed')
+        print('WATCH_PERSISTENT_MUTANT_REFUSED', flush=True)
         if artifact_dir is not None:
             artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
             shutil.copyfile(image, artifact_dir / 'watch.macho')

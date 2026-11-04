@@ -1,5 +1,5 @@
 ;; Diagnostic Darwin ARM64 process watcher packager candidate.
-;; No binary has been built or run. The trusted host MUST bind FD 3 to a
+;; Any emitted binary is diagnostic only. The trusted host MUST bind FD 3 to a
 ;; private fixed 32-byte request and authenticate build, boot/session, PID,
 ;; process birth and queue ownership. FD 3 can block before any timeout;
 ;; the host must supply the request and supervise the helper's whole lifetime.
@@ -74,7 +74,7 @@
               bits (bit-and delta mask)]
           (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
 
-;; Fixed request: "WP01", pid u32, start-sec u64, start-usec u64,
+;; Fixed request: "WP01" or "WP02", pid u32, start-sec u64, start-usec u64,
 ;; token u32, timeout seconds u32. After registration and the second identity
 ;; check emit "WR01", four zero bytes and the request (40 bytes). Only a
 ;; matching exit later emits "WO01", four zero bytes and the same request.
@@ -84,6 +84,9 @@
 ;; require an exact frame and successful exit and treat all else as unknown.
 ;; External boot identity and durable recovery are essential; the 32-bit token
 ;; is correlation only.
+;; WP01 refuses after one timeout; WP02 repeats bounded waits on the same
+;; registered queue until an event or error. WP02 has no heartbeat: the
+;; caller must monitor helper liveness and treat its loss as unknown.
 (defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
   (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
 (defn- ds-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
@@ -95,7 +98,9 @@
     ;; data; this read alone cannot prove end-of-input or prevent blocking.
     (ds-imm 0 3) (ds-add 1 31 0) (ds-imm 2 32) (ds-sys 3) (ds-b 0x54000002 9)
     (ds-cmpi 0 32) (ds-b 0x54000001 9)
-    (ds-lw 8 31 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000001 9)
+    (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
+    (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000001 9) (ds-imm 25 1)
+    (ds-label 1)
     (ds-lw 19 31 4) (ds-cmpi 19 0) (ds-b 0x54000000 9)
     (ds-imm 8 2147483647) (ds-cmp 19 8) (ds-b 0x54000008 9)
     (ds-ldr 20 31 8) (ds-cmpi 20 0) (ds-b 0x54000000 9)
@@ -134,10 +139,15 @@
     (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)
     (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
     (ds-cmpi 0 40) (ds-b 0x54000001 9)
-    ;; Wait once for one event, bounded by the caller's approved timeout.
+    ;; Retain the same registration across WP02 timeout intervals; re-registering
+    ;; after timeout would leave a gap in event observation.
+    (ds-label 2)
     (ds-str 24 31 1104) (ds-str 31 31 1112)
     (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
     (ds-imm 4 1) (ds-imm 5 0) (ds-add 6 31 1104) (ds-sys 369) (ds-b 0x54000002 9)
+    (ds-cmpi 0 0) (ds-b 0x54000001 3)
+    (ds-cmpi 25 1) (ds-b 0x54000000 2) (ds-b 0x14000000 9)
+    (ds-label 3)
     (ds-cmpi 0 1) (ds-b 0x54000001 9)
     ;; PID, filter, EV_ERROR absent, EV_EOF and NOTE_EXIT set, token match;
     ;; a concurrent or prior observed NOTE_FORK/NOTE_EXEC remains unknown.
