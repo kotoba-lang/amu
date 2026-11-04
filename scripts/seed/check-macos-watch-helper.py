@@ -6,8 +6,10 @@ The compiler and emitted watcher execute natively; Python only stages,
 queries identity and observes their outputs.
 """
 import ctypes
+import hashlib
 import importlib.util
 import os
+import platform
 import signal
 import struct
 import subprocess
@@ -79,7 +81,11 @@ def run(compiler, packager, output):
                    capture_output=True, check=True, timeout=30)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(image)],
                    capture_output=True, check=True, timeout=30)
-    child = subprocess.Popen(['/bin/sleep', '6'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for name, path in (('source', source), ('compiler', compiler), ('packager', packager),
+                       ('emitter', emitter), ('watcher-unsigned', unsigned), ('watcher-signed', image)):
+        print(name, 'sha256', hashlib.sha256(path.read_bytes()).hexdigest(), flush=True)
+    print('host', platform.system(), platform.machine(), platform.release(), flush=True)
+    child = subprocess.Popen(['/bin/sleep', '8'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 8)
@@ -88,12 +94,21 @@ def run(compiler, packager, output):
         if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
             raise RuntimeError(('wrong identity did not cleanly refuse', refused.returncode,
                                 refused.stdout, refused.stderr, child.poll()))
+        timeout_request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 1)
+        timed = observe(image, output, timeout_request)
+        if timed.returncode != 1 or timed.stdout or timed.stderr or child.poll() is not None:
+            raise RuntimeError(('watch timeout did not cleanly refuse', timed.returncode,
+                                timed.stdout, timed.stderr, child.poll()))
         result = observe(image, output, request)
         if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
             raise RuntimeError(('watch failed', result.returncode, result.stdout, result.stderr))
         if child.wait(timeout=2) != 0:
             raise RuntimeError('owned child did not exit normally')
-        print('PASS_MAC_WATCH_HELPER exact event and wrong-start-time refusal; no governor qualification')
+        reaped = observe(image, output, request)
+        if reaped.returncode != 1 or reaped.stdout or reaped.stderr:
+            raise RuntimeError(('reaped child did not cleanly refuse', reaped.returncode,
+                                reaped.stdout, reaped.stderr))
+        print('PASS_MAC_WATCH_HELPER exact event; wrong identity, timeout and reaped PID refused; no governor qualification')
     finally:
         if child.poll() is None:
             child.send_signal(signal.SIGKILL)
