@@ -3,9 +3,10 @@
 This candidate combines PR #1796 head `5c6c9213` with main `d41d3cbe`.
 The manually reconciled packager source has SHA-256
 `cc371bb7a0af8a7f0c6ccc65b2eb8e649adea034f81274122034d14685f34d92`.
-The original PR's derivation gate still expected the older 184-word D/A
-helper. It now checks the 188-word error-distinguishing helper against its
-own derivation and relocation slots 27 and 183. The gate passed for D/A,
+The closed PR snapshot's derivation gate still expected the older 184-word D/A
+helper; a later retained branch commit had already updated it. The merged
+gate checks the 188-word error-distinguishing helper against its own
+derivation and relocation slots 27 and 183. The gate passed for D/A,
 B/C, lock and E/F/O/U/H/I/L/M/T on one Darwin ARM64 host.
 
 A strictly signature-verified CI-produced diagnostic compiler from an
