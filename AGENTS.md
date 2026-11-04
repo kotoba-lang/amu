@@ -185,7 +185,7 @@ whole seed tree. When a seed PR conflicts with main in them:
 - leave `sourceRevision` `null` after regeneration: it means the descriptor's
   own commit and the source-revision audit checks that commit. Do not open a
   follow-up PR to name a squash commit.
-- Target (stage 2, design in ADR 0404, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
+- Target (stage 2, design in ADR 0406, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
   post-merge bot PR repins main. Do not enable it or relax PR pin checks without the owner (needs a token/App).
 
 ## Bounded canonical Kototama native frontend (JUN-369)
