@@ -30,7 +30,27 @@ short processes were limited to three CPU seconds, without a hard memory cap.
 
 These are bounded local diagnostics using a prior compiler and bootstrap, not
 the native self-rebuild or the merged compiler's qualification. They do not
-cover Metal execution, all FS2 error paths, power-loss durability, all
+cover all FS2 error paths, power-loss durability, all
 concurrency and identity races, a GitHub roundtrip or a resource governor.
 Generated pins must be regenerated and verified with the repository-native
 route after the resource governor is qualified. The PR remains draft.
+
+## Small Metal execution
+
+With the same candidate packager and compiler on local macOS 26.3.1 ARM64,
+the current `seed/tests/macos-metal/q8_metal.kotoba.in` and CPU template were
+rendered with 32 rows, 32 columns, one block and one repetition. The signed
+Metal and CPU images both returned checksum `138356032241880`; changing the
+Metal accumulation operator from `+=` to `-=` produced `234609530751396`.
+The corresponding signed image SHA-256 values were respectively
+`e7884b528d98d9aec9de5bf2eb5616c1061ce388e99e24c3b3c0daef6557dbb0`,
+`f159e36a23bef28145a03ae6980435e5d6836fe24d0427e8cb5695b6563afd42`, and
+`5e9dd05b278cdf8b251040b9bec402f6efdd26b884edd14cf8cf8c8cbfea1e00`.
+Temporary files were removed and processes inherited a three-second CPU
+limit; there was no independent hard GPU or whole-host memory cap.
+
+The first Metal invocation returned the same checksum but the observer
+mistakenly rejected its timing text on stderr. The comparison above was a
+separate rerun that accepted the timing output. This is one small synthetic
+dispatch and a sensitivity control, not the full Metal gate, a benchmark,
+Flint inference, shared-host memory qualification or a selfhost rebuild.
