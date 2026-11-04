@@ -15,6 +15,8 @@ import shutil
 import signal
 import struct
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,6 +70,71 @@ def observe(image, directory, request):
         os.close(fd)
 
 
+def launch_watcher(image, directory, request):
+    path = directory / 'transition-request.bin'
+    path.write_bytes(request)
+    fd = os.open(path, os.O_RDONLY)
+    saved = None
+    relocated = fd != 3
+    try:
+        if relocated:
+            try:
+                saved = os.dup(3)
+            except OSError:
+                pass
+            os.dup2(fd, 3)
+        return subprocess.Popen([str(image)], cwd=directory, pass_fds=(3,),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    finally:
+        if relocated:
+            if saved is None:
+                os.close(3)
+            else:
+                os.dup2(saved, 3)
+                os.close(saved)
+        os.close(fd)
+
+
+def transition_case(image, directory, mode):
+    if mode == 'exec':
+        action = "os.execv('/bin/sleep',['sleep','2'])"
+    elif mode == 'fork':
+        action = "p=os.fork(); (os._exit(0) if p==0 else os.waitpid(p,0)); time.sleep(2)"
+    else:
+        raise ValueError('unknown transition')
+    code = "import os,sys,time; print('READY',flush=True); sys.stdin.buffer.read(1); " + action
+    child = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    watcher = None
+    try:
+        import select
+        if not select.select([child.stdout], [], [], 5)[0] or child.stdout.readline() != b'READY\n':
+            raise RuntimeError((mode, 'child not ready'))
+        sec, usec = identity(child.pid)
+        request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 5)
+        watcher = launch_watcher(image, directory, request)
+        # No readiness frame exists yet: early registration races fail this
+        # test instead of being interpreted as a successful guard.
+        time.sleep(0.5)
+        if watcher.poll() is not None:
+            raise RuntimeError((mode, 'watcher exited before trigger'))
+        child.stdin.write(b'x')
+        child.stdin.flush()
+        out, err = watcher.communicate(timeout=7)
+        if watcher.returncode != 1 or out or err:
+            raise RuntimeError((mode, 'transition was not cleanly refused', watcher.returncode, out, err))
+        if child.wait(timeout=5) != 0:
+            raise RuntimeError((mode, 'child failed'))
+        print('WATCH_TRANSITION_REFUSED', mode, flush=True)
+    finally:
+        if watcher is not None and watcher.poll() is None:
+            watcher.kill()
+            watcher.wait(timeout=3)
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=3)
+
+
 def run(compiler, packager, output, artifact_dir=None):
     gate = load('mac_native_watcher', 'check-aiueos-user-macos-native.py')
     fixture = load('mac_scope_watcher', 'check-macos-arena-scope.py')
@@ -112,6 +179,8 @@ def run(compiler, packager, output, artifact_dir=None):
         if reaped.returncode != 1 or reaped.stdout or reaped.stderr:
             raise RuntimeError(('reaped child did not cleanly refuse', reaped.returncode,
                                 reaped.stdout, reaped.stderr))
+        transition_case(image, output, 'exec')
+        transition_case(image, output, 'fork')
         if artifact_dir is not None:
             artifact_dir.mkdir(mode=0o700, parents=False, exist_ok=False)
             shutil.copyfile(image, artifact_dir / 'watch.macho')
@@ -119,9 +188,9 @@ def run(compiler, packager, output, artifact_dir=None):
                 'schema': 'amu.darwin-watch-fixture.v1', 'sha256': pins,
                 'host': {'system': platform.system(), 'machine': platform.machine(),
                          'release': platform.release()},
-                'scope': 'one owned child; identity mismatch, timeout and reaped PID refusals; not a governor',
+                'scope': 'owned children; identity mismatch, timeout, reaped PID and exec/fork event refusals; not a governor',
             }, indent=2) + '\n')
-        print('PASS_MAC_WATCH_HELPER exact event; wrong identity, timeout and reaped PID refused; no governor qualification')
+        print('PASS_MAC_WATCH_HELPER exact event; wrong identity, timeout, reaped PID and exec/fork observations refused; no governor qualification')
     finally:
         if child.poll() is None:
             child.send_signal(signal.SIGKILL)
