@@ -49,7 +49,7 @@
     (string-concat "#{" (string-concat values "}"))))
 (defn- dsb-cap [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [wire (ck-kw-wire (nm-nf M (nm-nth M n 1) NF-TYPE)) argument (nm-nth M n 4)
-        request (dsb-type M C (nm-nf M argument NF-TYPE) 0) result (dsb-type M C (nm-nf M n NF-TYPE) 0)
+        request (dsb-type M S C (nm-nf M argument NF-TYPE) 0) result (dsb-type M S C (nm-nf M n NF-TYPE) 0)
         body (dsb-expr M S C argument depth)]
     (if (= (dcp-effect-name wire) "") (dsb-bad C 3 n)
       (string-concat "(typed-cap-call " (string-concat (mem-u2dec wire)
@@ -118,12 +118,13 @@
 ;; CT-LIST also represents fixed-length tuples, and CT-OPTION's second field
 ;; distinguishes :option-i64 from [:option :i64]. Never erase those refinements.
 ;; A checked table index is not a canonical type spelling or a portable ID.
-(defn- dsb-type [M :vector-i64 C :vector-i64 ty :i64 depth :i64] :string
+(defn- dsb-type [M :vector-i64 S :string C :vector-i64 ty :i64 depth :i64] :string
   (cond (or (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 2 ty)
-    (< ty TY-COMP-BASE)
+    (< ty TY-REC-BASE)
       (case ty TY-I64 ":i64" TY-BOOL ":bool" TY-STR ":string"
         TY-VEC ":vector-i64" TY-BYTES ":bytes" TY-KW ":keyword"
         (dsb-bad C 2 ty))
+    (< ty TY-COMP-BASE) (dss-record-type M S C ty)
     (or (= (vector-at M MM-CT) 0) (= ty TY-COMP-BASE)
         (>= (- ty TY-COMP-BASE) (vector-at M (+ (vector-at M MM-CT) CT-N)))) (dsb-bad C 2 ty)
     :else
@@ -134,8 +135,8 @@
                             TC-MAP ":map" TC-RESULT ":result" "")]
         (if (or (not (or unary binary)) (and unary (not= b 0))
                 (<= a 0) (and binary (<= b 0))) (dsb-bad C 2 ty)
-          (let [left (dsb-type M C a (inc depth))
-                right (if binary (string-concat " " (dsb-type M C b (inc depth))) "")]
+          (let [left (dsb-type M S C a (inc depth))
+                right (if binary (string-concat " " (dsb-type M S C b (inc depth))) "")]
             (string-concat "[" (string-concat name
               (string-concat " " (string-concat left (string-concat right "]"))))))))))
 (defn- dsb-literal? [M :vector-i64 n :i64] :bool
@@ -243,7 +244,7 @@
   (let [argument (nm-nth M n 1) ty (nm-nf M argument NF-TYPE)
         op (case (nm-nf M n NF-RES) HD-LIST-NEW "typed-list-new"
              HD-LIST-NTH "typed-list-nth" HD-LIST-CONJ "typed-list-conj" "")
-        type (dsb-type M C ty 0)]
+        type (dsb-type M S C ty 0)]
     (if (or (= argument 0) (= op "") (not= (ck-tcon M ty) TC-LIST)) (dsb-bad C 3 n)
       (string-concat "(" (string-concat op (string-concat " " (string-concat type
         (string-concat (dsb-seq M S C (nm-nth M n 2) depth) ")"))))))))
@@ -274,7 +275,7 @@
       :else (string-concat "(" (string-concat op
         (string-concat (dsb-seq M S C (nm-next M h) depth)
           (string-concat (if (and (= hd HD-RECUR) (> (vector-at C 4) 0))
-                          (dsl-capture-text M C (vector-at C 4) false) "") ")")))))))
+                          (dsl-capture-text M S C (vector-at C 4) false) "") ")")))))))
 (defn- dsb-expr [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
   (let [kind (nm-kind M n) r (nm-nf M n NF-RES) tag (quot r RES-SCALE)]
     (cond (or (= n 0) (> depth (dip-expression-depth (vector-at C 8))) (not= (vector-at C 0) 0)) (dsb-bad C 3 n)
@@ -293,18 +294,18 @@
       (dsb-fn-node? M n) (dsb-fn-expr M S C n (inc depth))
       (= kind ND-LIST) (dsb-call M S C n (inc depth))
       :else (dsb-bad C 3 n))))
-(defn- dsb-params [M :vector-i64 C :vector-i64 p :i64 types :bool] :string
+(defn- dsb-params [M :vector-i64 S :string C :vector-i64 p :i64 types :bool] :string
   (loop [n (nm-first M p) out "" count 0]
     (if (or (= n 0) (not= (vector-at C 0) 0)) out
-      (let [t (nm-next M n) value (if types (dsb-type M C (nm-nf M n NF-TYPE) 0) (dsb-local M C n))]
+      (let [t (nm-next M n) value (if types (dsb-type M S C (nm-nf M n NF-TYPE) 0) (dsb-local M C n))]
         (if (or (= t 0) (= (nm-head-of M n) HD-AMP)) (dsb-bad C 3 n)
           (recur (nm-next M t) (string-concat out (string-concat " " value)) (inc count)))))))
 (defn- dsb-function [M :vector-i64 S :string C :vector-i64 f :i64] :string
   (let [node (nm-ff M f FF-NODE) params (nm-nth M node 2)
         set-f (vector-assoc! C 3 f) no-loop (vector-assoc! C 4 0)
         lam0 (vector-assoc! (vector-assoc! C (dsb-lam-base M C) 0) (+ (dsb-lam-base M C) 1) f)
-        names (dsb-params M C params false) types (dsb-params M C params true)
-        result (dsb-type M C (nm-ff M f FF-RTYPE) 0)
+        names (dsb-params M S C params false) types (dsb-params M S C params true)
+        result (dsb-type M S C (nm-ff M f FF-RTYPE) 0)
         body (dsb-expr M S C (nm-nth M node 4) 0)]
     (string-concat "{:name " (string-concat (dsb-name M S f)
       (string-concat " :params [" (string-concat names (string-concat "] :param-types ["
@@ -323,7 +324,7 @@
 ;; Seed computed-def thunks (one site for both KIR paths).
 (defn- dsb-cdef? [M :vector-i64 f :i64] :bool (ck-r6f-cdef-fn? M f))
 (defn- dsb-kir [M :vector-i64 S :string C :vector-i64] :string
-  (let [records (dsb-record-guard M C) salt (dsb-hygiene M S C)
+  (let [records (dsb-record-guard M C) schema (dss-schemas M S C) salt (dsb-hygiene M S C)
         guard (loop [f 1]
           (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
             (let [kind (nm-ff M f FF-KIND)
@@ -350,8 +351,9 @@
         every (if (and (= (vector-at C 0) 0) (not= lambdas (vector-at C (+ (dsb-lam-base M C) 9)))) (dsb-bad C 3 0) "")]
     (if (not= (vector-at C 0) 0) ""
       (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
-        (string-concat (dsb-effect-text (vector-at M MM-CAPS)) (string-concat " :functions ["
-          (string-concat values (string-concat helpers "]}\n"))))))))
+        (string-concat (dsb-effect-text (vector-at M MM-CAPS)) (string-concat " :schemas "
+          (string-concat schema (string-concat " :functions ["
+          (string-concat values (string-concat helpers "]}\n"))))))))))
 (defn- dsb-source-format [source :string emit-kir :bool resource :i64 format :i64] :i64
   (let [S (string-concat source (ck-r6b-lib source)) front (dsb-front-h S (ck-hint-new))
         M (if (= (vector-at front MM-ERR) 0) (dsb-effects front) front)
@@ -376,3 +378,42 @@
 (defn- dsb-source-resource [source :string emit-kir :bool resource :i64] :i64
   (dsb-source-format source emit-kir resource 0))
 (defn- dsb-source [source :string emit-kir :bool] :i64 (dsb-source-resource source emit-kir 0))
+
+;; Only explicit checked namespace schemas are eligible.  defrecord is
+;; guarded above; unsupported schema data refuses atomically.
+(defn- dss-text [M :vector-i64 S :string n :i64] :string
+  (let [t (nm-nf M n NF-TOK)]
+    (string-substring S (nm-tf M t TF-START) (nm-tf M t TF-END))))
+(defn- dss-symbol-text [M :vector-i64 S :string sym :i64] :string
+  (string-substring S (nm-sf M sym SF-START) (nm-sf M sym SF-END)))
+(defn- dss-schema-map [M :vector-i64] :i64
+  (let [ns (vector-at M MM-NS-NODE)] (if (= ns 0) 0 (ck-schemas-map M ns))))
+(defn- dss-name-declared? [M :vector-i64 S :string name :string blk :i64] :bool
+  (let [map (dss-schema-map M)]
+    (loop [p (nm-first M map) count 0]
+      (if (= p 0) (= count 1)
+        (let [v (nm-next M p) hit (and (= (nm-kind M p) ND-KW) (= (dss-text M S p) name)
+                                          (= (nm-sf M (nm-sym-of M p) SF-REC) blk))]
+          (if (= v 0) false (recur (nm-next M v) (+ count (if hit 1 0)))))))))
+(defn- dss-record-type [M :vector-i64 S :string C :vector-i64 ty :i64] :string
+  (let [blk (ck-blk M ty) sym (if (> blk 0) (vector-at M (+ blk RB-ID)) 0)
+        name (if (> sym 0) (dss-symbol-text M S sym) "")]
+    (if (and (> (string-length name) 1) (= (string-code-point-at name 0) 58)
+             (dss-name-declared? M S name blk))
+      (string-concat "[:ref " (string-concat name "]")) (dsb-bad C 2 ty))))
+(defn- dss-emit [M :vector-i64 S :string C :vector-i64 n :i64 depth :i64] :string
+  (cond (or (= n 0) (> depth 64) (not= (vector-at C 0) 0)) (dsb-bad C 2 n)
+    (= (nm-kind M n) ND-KW) (dss-text M S n)
+    (or (= (nm-kind M n) ND-VEC) (= (nm-kind M n) ND-MAP))
+      (let [open (if (= (nm-kind M n) ND-VEC) "[" "{") close (if (= (nm-kind M n) ND-VEC) "]" "}")
+            body (loop [p (nm-first M n) out ""]
+              (if (or (= p 0) (not= (vector-at C 0) 0)) out
+                (recur (nm-next M p) (string-concat out (string-concat " " (dss-emit M S C p (inc depth)))))))]
+        (string-concat open (string-concat body close)))
+    :else (dsb-bad C 2 n)))
+(defn- dss-schemas [M :vector-i64 S :string C :vector-i64] :string
+  (let [schema (dss-schema-map M)]
+    (cond (not= (vector-at C 0) 0) ""
+          (= schema 0) "{}"
+          (not= (nm-kind M schema) ND-MAP) (dsb-bad C 2 schema)
+          :else (dss-emit M S C schema 0))))
