@@ -155,11 +155,32 @@ Each slice is its own change; none is half of another.
   `SO_NOSIGPIPE` on every socket; (H) the grant bits set in `[ctx+0x10]` only after (B)-(D) pass, and the
   `KEXE_TRAP` lines in place of `brk`; (I) the Mac port of `check-net-runtime.py` with negative controls;
   (J) the re-pin chain.
-* **How the words are derived** is a decision for review. The existing helpers say "the assembler was used once to
-  derive these words" from reviewed assembly. Handwriting roughly 600 instructions (D and F are most of it) in
-  assembly is reviewable but slow; deriving them from freestanding C with `clang -S` and committing the assembly as
-  the evidence file is faster to test but puts a C compiler in the derivation step. Either way the build path
-  contains only the checked-in words.
+* **Revised route: derive it with Amu itself, as Linux does (owner, 2026-11-04: "can't Kotoba/Amu selfhost derive
+  it?").** The Linux static runtime is not hand-assembled. `seed/76-x86_64-static-rt.kotoba` and
+  `seed/77-aarch64-static-rt.kotoba` are *Kotoba source* ("scalar Kotoba plus the `kxrt-` intrinsics only",
+  2449 lines for aarch64, with the TCP wires, the shared decisions, hex, the 16-slot handle table, and
+  `envp` already in its globals at offset 88), and `seed/80-aarch64-linux.kotoba` (266 lines) is the emitter
+  that compiles guest plus runtime into one image. The Mac images use hand-derived words only because no Mac
+  counterpart of that emitter exists. So the work is a **Darwin profile of the same runtime**, not 600 new
+  instructions:
+  1. *Intrinsic*: `kxrt-syscall` on Darwin emits `svc #0x80` with the number in `x16` and turns the carry flag
+     into a negative errno, which is the convention the runtime text already expects, so the net code (and the
+     rest) is reused unchanged. This is the one small piece of machine code, and it is an emitter template, not
+     a checked-in blob.
+  2. *Numbers*: the runtime's syscall table (`case op 0 63 1 67 ...`) gets a Darwin variant (the numbers are in
+     this ADR, D2 and the measurements); the seccomp filter has no Darwin counterpart (D4).
+  3. *Image and start*: a Mach-O sibling of `80-aarch64-linux` (the Mach-O header builder already exists in Kotoba
+     in the packager's `body-at`) and a Darwin `kxrt-start` that reads `argc/argv/envp` from the registers dyld
+     passes to `LC_MAIN`.
+  4. *Pin*: the SHA-256 for the grant pin is `seed/03-source-sha256.kotoba` linked into the runtime, which
+     also gives Linux the digest line that decision 1 noted it lacks.
+  5. *Packaging*: `amu-program` images gain the compiled runtime instead of the helper chain, or the two coexist
+     during a transition.
+  The new net behaviour is then the Linux behaviour by construction, and the Linux qualification corpus ports
+  with the syscall table. What it costs is a change to the compiler lineage (a new emitter and profile), which
+  ADR 0370's review order governs, and a Mach-O static-runtime image that the Mac CLI does not produce today.
+  The earlier plan (work items A-J as new hand-derived words) is superseded by this route; B, C, E, F, G and H
+  become *reused Kotoba*, D becomes a link, and A is the Darwin start.
 
 ## Consequences
 
