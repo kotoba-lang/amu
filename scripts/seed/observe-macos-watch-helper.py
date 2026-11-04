@@ -5,8 +5,10 @@ The expected hash must come from an independently verified CI receipt. This
 is an ABI diagnostic, not a scheduler, process-tree proof, or governor.
 """
 import argparse
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import platform
 import re
@@ -88,11 +90,17 @@ def main():
             if killed.poll() is None:
                 killed.kill()
                 killed.wait(timeout=3)
+        # These cases start their own short-lived child and verify that the
+        # watcher refuses the event. They do not prevent fork or exec.
+        with contextlib.redirect_stdout(io.StringIO()):
+            helper.transition_case(watcher, root, 'exec')
+            helper.transition_case(watcher, root, 'fork')
     print(json.dumps({'schema': 'amu.darwin-watch-observation.v1', 'build': build,
                       'watcherSha256': args.expected_sha256, 'positive': True,
                       'wrongIdentityRefused': True, 'timeoutRefused': True,
                       'reapedPidRefused': True, 'signalledExitEventObserved': True,
-                      'signalledChildIsSuccess': False, 'governorQualified': False}))
+                      'signalledChildIsSuccess': False, 'execEventRefused': True,
+                      'forkEventRefused': True, 'governorQualified': False}))
 
 
 if __name__ == '__main__':
