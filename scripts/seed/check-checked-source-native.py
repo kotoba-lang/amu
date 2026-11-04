@@ -274,6 +274,10 @@ def main(compiler, out):
     negatives = {
         "ill-typed": "(defn main [] :i64 true)",
         "unknown": "(defn main [] :i64 (unknown 1))",
+        # A defrecord implicitly defines a constructor. Even an unused record
+        # must not silently disappear from the module's identity.
+        "defrecord-unused": "(defrecord Pair [a :i64 b :string]) (defn- f [] :i64 42)",
+        "defrecord-referenced": "(defrecord Pair [a :i64 b :string]) (defn- f [x [:ref :source/Pair]] :i64 42)",
         # The source identity bridge does not yet bind the abort control row.
         # Do not mint persistent identities for escaping or caught aborts,
         # including a callee whose abort is eliminated by its caller.

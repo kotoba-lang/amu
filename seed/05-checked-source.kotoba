@@ -311,12 +311,19 @@
         (string-concat types (string-concat "] :result " (string-concat result
           (string-concat " :effects " (string-concat (dsb-effect-text (ck-f2 M f FN2-FX))
             (string-concat " :body " (string-concat body "}"))))))))))))))
+;; The checker does not enumerate generated defrecord constructors as normal
+;; definition rows. Refuse the whole module until their identities are bound.
+(defn- dsb-record-guard [M :vector-i64 C :vector-i64] :i64
+  (loop [n (nm-first M (vector-at M MM-ROOT))]
+    (cond (= n 0) 0
+          (= (nm-form-head M n) HD-DEFRECORD) (let [bad (dsb-bad C 3 n)] 0)
+          :else (recur (nm-next M n)))))
 ;; The hygienic-name salt, shared by both KIR paths.
 (defn- dsb-hygiene [M :vector-i64 S :string C :vector-i64] :vector-i64 (vector-assoc! C 2 (dsb-salt M S)))
 ;; Seed computed-def thunks (one site for both KIR paths).
 (defn- dsb-cdef? [M :vector-i64 f :i64] :bool (ck-r6f-cdef-fn? M f))
 (defn- dsb-kir [M :vector-i64 S :string C :vector-i64] :string
-  (let [salt (dsb-hygiene M S C)
+  (let [records (dsb-record-guard M C) salt (dsb-hygiene M S C)
         guard (loop [f 1]
           (if (or (= f (vector-at M MM-FN-N)) (not= (vector-at C 0) 0)) 0
             (let [kind (nm-ff M f FF-KIND)
