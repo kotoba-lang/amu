@@ -8,7 +8,9 @@
         badtoken (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419897) 11 128) 15 128)
         error (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 192) 15 128)
         missing (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 15 0)
-        invalid (vector-assoc! (vector-assoc! response 47 256) 15 128)]
+        invalid (vector-assoc! (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 15 128) 47 256)
+        exec-event (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 15 160)
+        fork-event (vector-assoc! (vector-assoc! (darwin-proc-watch-event "25G332" 1234 305419896) 11 128) 15 192)]
     (and (= (vector-count e) 48)
          (= (vector-count (darwin-proc-watch-event "" 1234 1)) 0)
          (= (vector-count (darwin-proc-watch-event "25G332" 0 1)) 0)
@@ -20,8 +22,8 @@
          (= (vector-at e 26) 52) (= (vector-at e 27) 18)
          (not (darwin-proc-exit-event? "25G332" 1234 305419896 e))
          (darwin-proc-exit-event? "25G332" 1234 305419896 response)
-         (not (darwin-proc-exit-event? "25G332" 1234 305419896 (vector-assoc! response 15 160)))
-         (not (darwin-proc-exit-event? "25G332" 1234 305419896 (vector-assoc! response 15 192)))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 exec-event))
+         (not (darwin-proc-exit-event? "25G332" 1234 305419896 fork-event))
          (not (darwin-proc-exit-event? "25G332" 1234 305419896 badpid))
          (not (darwin-proc-exit-event? "25G332" 1234 305419896 badtoken))
          (not (darwin-proc-exit-event? "25G332" 1234 305419896 error))

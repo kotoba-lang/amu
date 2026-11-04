@@ -65,6 +65,21 @@ def check(cli, out):
     mutant = source('watch-reply-mutant', watch_mutant + '\n' + watch_cases + watch_main)
     run('watch-reply', 'run', watch.name, stdout=b'42\n')
     run('watch-reply-mutant', 'run', mutant.name, stdout=b'7\n')
+    # Exercise the pure identity/event composition and a fail-open transition
+    # mutant. Source namespaces are removed only in this test composition.
+    watch_paths = ['seed/darwin-proc-identity.kotoba', 'seed/darwin-kqueue-event.kotoba',
+                   'seed/darwin-proc-watch.kotoba', 'seed/tests/awai152-darwin-kqueue/event-cases.kotoba',
+                   'seed/tests/awai152-darwin-watch/watch-cases.kotoba']
+    watch_compose = '\n'.join('\n'.join(line for line in (ROOT / path).read_text().splitlines()
+                                         if not line.startswith('(ns ')) for path in watch_paths)
+    transition_guard = '(= (bit-and (vector-at event 15) 96) 0)'
+    assert watch_compose.count(transition_guard) == 1
+    transition_mutant = watch_compose.replace(transition_guard, 'true')
+    watch_tail = '\n(defn main [] :i64 (if (and (test-darwin-proc-watch) (test-darwin-kqueue-event)) 42 7))\n'
+    event_case = source('watch-events', watch_compose + watch_tail)
+    event_mutant = source('watch-events-mutant', transition_mutant + watch_tail)
+    run('watch-events', 'run', event_case.name, stdout=b'42\n')
+    run('watch-events-mutant', 'run', event_mutant.name, stdout=b'7\n')
     # KOTOBA-161: negative float comparisons catch the previously observed
     # integer-condition lowering error; the reversed operands are the control.
     float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
