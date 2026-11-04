@@ -1,0 +1,7 @@
+(ns scoped-read.binary (:export [main]))
+(defn main [] :i64
+  (let [nul (string-from-utf8 (bytes-from-vector-i64 (vector-alloc 1)))
+        path (typed-cap-call 38 :string :string "0")
+        answer (typed-cap-call 35 :bytes :bytes (string-to-utf8 (str nul "KFR1" nul path)))]
+    (if (and (= (bytes-count answer) 4) (= (bytes-at answer 0) 1)
+             (= (bytes-at answer 1) 0) (= (bytes-at answer 2) 255) (= (bytes-at answer 3) 128)) 0 1)))

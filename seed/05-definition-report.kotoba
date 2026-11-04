@@ -112,7 +112,7 @@
 ;; The KIR of the kept rows and their helpers, "" when no row is kept. The module row is the union of the kept
 ;; rows' rows, so the producer's per-row and union checks still hold.
 (defn- dsr-kir-each [M :vector-i64 S :string C :vector-i64 Q :vector-i64] :string
-  (let [salt (dsb-hygiene M S C)
+  (let [records (dsb-record-guard M C) schema (dss-schemas M S C) salt (dsb-hygiene M S C)
         guard (dsr-guard-each M C Q)
         plan (if (= (vector-at C 0) 0) (dsr-plan-each M S C Q) 0)
         values (if (= (vector-at C 0) 0) (dsr-values-each M S C Q) (typed-list-new [:list :string]))
@@ -129,13 +129,14 @@
               (if (= f (vector-at M MM-FN-N))
                 (if (= count 0) ""
                   (string-concat "{:format :kotoba.kir/v4 :entry nil :exports [] :effects "
-                    (string-concat (dsb-effect-text (if refused mask (vector-at M MM-CAPS))) (string-concat " :functions ["
+                    (string-concat (dsb-effect-text (if refused mask (vector-at M MM-CAPS))) (string-concat " :schemas "
+                      (string-concat schema (string-concat " :functions ["
                       (string-concat out (string-concat
                         (loop [id 1 text ""]
                           (if (> id (vector-at C 5)) text
                             (recur (inc id) (if (= (vector-at Q (vector-at C (+ (dsl-record C id) 1))) 0)
                               (string-concat text (typed-list-nth [:list :string] helpers (dec id))) text))))
-                        "]}\n"))))))
+                        "]}\n"))))))))
                 (if (and (dsr-row? M f) (= (vector-at Q f) 0))
                   (recur (inc f) (string-concat out (string-concat " " (typed-list-nth [:list :string] values (dec f))))
                     (bit-or mask (ck-f2 M f FN2-FX)) (inc count))
