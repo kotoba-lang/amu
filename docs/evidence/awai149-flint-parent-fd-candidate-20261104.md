@@ -16,6 +16,16 @@ generated instruction stream or its behavior: no image has been generated,
 signed or executed, and there is no independent instruction derivation yet.
 The previous three-Mac Python FD diagnostic is not a test of this source.
 
+`awai149-flint-parent-source-sim.py` parses this candidate's builder calls and
+models their intended high-level effects with stubbed syscalls. One positive
+case and 14 refusals passed, including wrong identities, a symlink mode,
+syscall errors and short output. Removing the parent-entry inode mismatch
+branch made the replacement case succeed in the model, as a negative control.
+The simulation assumes meanings for raw instruction words and does not check
+their encoding, emitted branch fixups, Darwin ABI, native artifact or races.
+Its SHA-256 is
+`2b72e94ac9772556805698f6a4f2eedc86b9b3f492d1586dafd737e5f9aed9e8`.
+
 On 2026-11-04 a separate Python/ctypes diagnostic called the existing macOS
 `fstatat64` library entry on all three Macs, using flags `0x2820` and a
 task-owned mode-0700 temporary directory. For an ordinary child, the returned
