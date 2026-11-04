@@ -39,9 +39,13 @@ do for `mmap`). Numbers read from xnu `bsd/kern/syscalls.master` on 2026-11-04:
 `recvfrom 29`, `sendto 133`, `close 6`, `poll 230`, `fcntl 92`, `getsockname 32`. Calls are made only in the
 one form each, mirroring the Linux filter: `socket(AF_INET, SOCK_STREAM, 0)`, then `fcntl` to
 non-blocking and close-on-exec, `SO_REUSEADDR` before `bind`.
-  *Recalled, not yet checked against the headers, and to be checked before code:* `sockaddr_in` is 16 bytes with
-  a leading `sin_len` byte (BSD), `AF_INET = 2`, `SOCK_STREAM = 1`, `SOL_SOCKET = 0xffff`, `SO_REUSEADDR = 4`,
-  `O_NONBLOCK = 4`, `F_GETFL = 3`, `F_SETFL = 4`, `F_SETFD = 2`, `FD_CLOEXEC = 1`, `POLLIN = 1`, `POLLOUT = 4`.
+  *Measured 2026-11-04* with a standalone direct-syscall program (`docs/evidence/mac-tcp-spike-20261104/`):
+  `sockaddr_in` is 16 bytes with a leading `sin_len` byte, `AF_INET = 2`, `SOCK_STREAM = 1`,
+  `SOL_SOCKET = 0xffff`, `SO_REUSEADDR = 4`, `F_SETFL = 4`, `O_NONBLOCK = 4`, `POLLIN = 1`, `poll` takes
+  `struct pollfd` { int32, int16, int16 }, and the carry-flag/errno convention holds.
+  **Accepted sockets inherit `O_NONBLOCK` on Darwin** (a `read` straight after `accept` returned `EAGAIN`, 35),
+  so the runtime polls before every read. Not yet measured: `F_SETFD`/`FD_CLOEXEC`, `POLLOUT` and partial
+  writes, `connect` outcomes for dial, reset versus orderly close.
 
 D3. **Grants are exact, content-identified (decision 1 below) and never baked into an artifact.** As on Linux, listen (43) and dial (45) are separate
 exact `<ipv4>:<port>` lists; a listener request outside its list is `net/address-not-granted`. The grant is
