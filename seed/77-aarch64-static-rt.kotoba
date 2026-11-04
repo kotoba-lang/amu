@@ -1275,6 +1275,16 @@
 (defn- kxrt-sp-parent-bound? [parent :i64] :bool
   (and (> parent 0) (>= (kxrt-syscall 167 1 9 0 0 0 0) 0)
        (= (kxrt-syscall 173 0 0 0 0 0 0) parent)))
+;; Older kernels implement close_range but not CLOSE_RANGE_CLOEXEC. After
+;; fchdir has consumed the scope fd, close all descriptors except the status
+;; pipe, explicitly mark that pipe close-on-exec, and refuse on any failure.
+;; This runs only after the flags form returned EINVAL; it is not a fallback
+;; for ENOSYS, permission errors, or an unverified descriptor range.
+(defn- kxrt-sp-close-legacy? [st-w :i64] :bool
+  (and (>= st-w 3) (< st-w 4294967295)
+       (>= (kxrt-syscall 25 st-w 2 1 0 0 0) 0)
+       (or (= st-w 3) (>= (kxrt-syscall 436 3 (- st-w 1) 0 0 0 0) 0))
+       (>= (kxrt-syscall 436 (+ st-w 1) 4294967295 0 0 0 0) 0)))
 ;; the child: stdio, every other descriptor close-on-exec, no new privileges,
 ;; the scope root as its directory, execve. A failure goes to the status
 ;; pipe as step * 4096 + errno (op 42), then exit 127.
@@ -1287,10 +1297,16 @@
         dfl (kxrt-signal 13 q)
         step (cond (< (kxrt-syscall 24 in-r 0 0 0 0 0) 0) 0
                    (< (kxrt-syscall 24 out-w 1 0 0 0 0) 0) 0
-                   (< (kxrt-syscall 436 3 4294967295 4 0 0 0) 0) 1
-                   (< (kxrt-syscall 167 38 1 0 0 0 0) 0) 2
-                   (and (> (kxrt-gl 656) 0) (< (kxrt-syscall 50 (kxrt-gl 528) 0 0 0 0 0) 0)) 3
-                   :else 4)
+                   :else (let [closed (kxrt-syscall 436 3 4294967295 4 0 0 0)]
+                     (cond (= closed -22)
+                           (cond (and (> (kxrt-gl 656) 0) (< (kxrt-syscall 50 (kxrt-gl 528) 0 0 0 0 0) 0)) 3
+                                 (not (kxrt-sp-close-legacy? st-w)) 1
+                                 (< (kxrt-syscall 167 38 1 0 0 0 0) 0) 2
+                                 :else 4)
+                           (< closed 0) 1
+                           (< (kxrt-syscall 167 38 1 0 0 0 0) 0) 2
+                           (and (> (kxrt-gl 656) 0) (< (kxrt-syscall 50 (kxrt-gl 528) 0 0 0 0 0) 0)) 3
+                           :else 4)))
         e (if (= step 4) (kxrt-syscall 221 prog argv envp 0 0 0) -1)
         z (kxrt-store64 s (+ (* step 4096) (if (< e 0) (- 0 e) 0)))
         y (kxrt-write-all st-w s 8)]
