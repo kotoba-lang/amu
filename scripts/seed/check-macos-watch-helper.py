@@ -79,14 +79,15 @@ def run(compiler, packager, output):
                    capture_output=True, check=True, timeout=30)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(image)],
                    capture_output=True, check=True, timeout=30)
-    child = subprocess.Popen(['/bin/sleep', '4'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    child = subprocess.Popen(['/bin/sleep', '6'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         sec, usec = identity(child.pid)
         request = struct.pack('<4sIQQII', b'WP01', child.pid, sec, usec, 12345, 8)
         wrong = struct.pack('<4sIQQII', b'WP01', child.pid, sec + 1, usec, 12345, 8)
         refused = observe(image, output, wrong)
-        if refused.returncode == 0 or refused.stdout:
-            raise RuntimeError(('wrong identity accepted', refused.returncode, refused.stdout))
+        if refused.returncode != 1 or refused.stdout or refused.stderr or child.poll() is not None:
+            raise RuntimeError(('wrong identity did not cleanly refuse', refused.returncode,
+                                refused.stdout, refused.stderr, child.poll()))
         result = observe(image, output, request)
         if result.returncode != 0 or result.stdout != b'WO01\0\0\0\0' + request or result.stderr:
             raise RuntimeError(('watch failed', result.returncode, result.stdout, result.stderr))
