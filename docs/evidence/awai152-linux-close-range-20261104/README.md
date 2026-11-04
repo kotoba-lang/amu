@@ -71,3 +71,14 @@ marker. The success case again verified the two inherited descriptors, cwd
 and NoNewPrivs after exec. These are direct syscall diagnostics with
 Python-controlled fault selection, not calls through the changed Amu runtime,
 seccomp fault profiles, source-locked selfhost output or a qualified governor.
+
+## Low status-descriptor boundaries
+
+The owned-child observer was extended to move the status pipe to FD 3 and FD 4
+before the legacy close sequence. Both cases passed on Xavier: the exec target
+saw only its intended standard descriptors, the cwd and NoNewPrivs assertions
+held, and the close-on-exec status pipe closed. The prior six failure controls
+also passed. Observer SHA-256:
+`4be748aafeb73baefc8f04409215c421a18dfc3cae2ae8383cd8b01f5dba4446`.
+This exercises direct system calls through the diagnostic observer, not the
+candidate Amu runtime or a source-locked compiler build.

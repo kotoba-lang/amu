@@ -36,6 +36,11 @@ def observe(root, mode):
             except OSError:
                 os.write(status_w, b'fchdir-failed')
                 os._exit(127)
+            if mode in ('low3', 'low4'):
+                target = 3 if mode == 'low3' else 4
+                os.dup2(status_w, target, inheritable=False)
+                os.close(status_w)
+                status_w = target
             result, error = syscall(436, 3, ctypes.c_uint(0xffffffff), 4)
             if result != -1 or error != errno.EINVAL:
                 os.write(status_w, b'unexpected-fast-path')
@@ -85,7 +90,7 @@ def observe(root, mode):
     os.close(out_r)
     exit_code = os.WEXITSTATUS(raw) if os.WIFEXITED(raw) else -os.WTERMSIG(raw)
     marker = scope / 'ran'
-    if mode == 'ok':
+    if mode in ('ok', 'low3', 'low4'):
         assert exit_code == 0 and not status and marker.read_text() == str(scope), (exit_code, status, output)
     else:
         expected = {'fault': b'close-failed', 'second-fault': b'close-failed',
@@ -97,5 +102,5 @@ def observe(root, mode):
 with tempfile.TemporaryDirectory(prefix='awai-spawn-legacy-') as directory:
     base = pathlib.Path(directory)
     results = [observe(base, mode) for mode in
-               ('ok', 'fault', 'second-fault', 'fcntl-fault', 'fchdir-fault', 'prctl-fault', 'badexec')]
+               ('ok', 'low3', 'low4', 'fault', 'second-fault', 'fcntl-fault', 'fchdir-fault', 'prctl-fault', 'badexec')]
     print(json.dumps({'kernel': platform.release(), 'results': results}, sort_keys=True))
