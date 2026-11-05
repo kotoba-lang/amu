@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Negative controls for scripts/ci/ci_gate.py (JUN-759): what may be skipped and what must change a key."""
+"""Negative controls for scripts/ci/ci_gate.py (JUN-759): what may be skipped, what must change a key and which steps
+must stop when the gate skips."""
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -170,6 +172,105 @@ class Git(unittest.TestCase):
             self.assertIn("restore=false", text)
             self.assertIn("docs_only=false", text)
             self.assertIn("amu-ci-marker-v1-j-Linux-ARM64-main-", text)
+
+
+GATE = "./.github/actions/ci-gate"
+GUARD = "steps.gate.outputs.skip != 'true'"
+# Reads only `needs` results, so it runs on a skip too: a skipped job must not hide a failed shard.
+MAY_RUN_WHEN_SKIPPED = {("selfhost-native.yml", "qualify-x86_64",
+                         "Require the shards and the runtime checks even when the gate skipped the steps (JUN-759)")}
+
+
+def steps_by_job(text):
+    """Job id to its steps' keys, read by line: the runners have no YAML module, and these workflows keep jobs at
+    indent 2, `steps:` at 4, steps at 6 and step keys at 8. test_every_gate_is_seen fails if that stops holding."""
+    jobs, job, steps = {}, None, None
+    for line in text.split("\njobs:\n", 1)[1].splitlines():
+        id_line = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if id_line:
+            job, steps = id_line.group(1), None
+        elif re.match(r"^    steps:\s*$", line):
+            steps = jobs.setdefault(job, [])
+        elif re.match(r"^    [^\s#]", line):
+            steps = None
+        elif steps is not None:
+            if line.startswith("      - "):
+                steps.append({})
+                line = "        " + line[len("      - "):]
+            key = re.match(r"^        ([a-z-]+):\s*(.*)$", line)
+            if key:
+                steps[-1].setdefault(key.group(1), key.group(2))
+    return jobs
+
+
+def gated_jobs(text):
+    return [job for job, steps in steps_by_job(text).items() if any(s.get("uses") == GATE for s in steps)]
+
+
+def unguarded(text):
+    """(job, step) of each step after a job's gate that would still run when the gate skips."""
+    found = []
+    for job, steps in steps_by_job(text).items():
+        uses = [s.get("uses") for s in steps]
+        if GATE in uses:
+            later = steps[uses.index(GATE) + 1:]
+            found += [(job, s.get("name", s.get("uses"))) for s in later if GUARD not in s.get("if", "")]
+    return found
+
+
+class Guards(unittest.TestCase):
+    head = ("on:\n  pull_request:\n    paths:\n      - 'seed/**'\njobs:\n  plain:\n    steps:\n      - name: no gate\n"
+            "        run: a\n  gated:\n    needs:\n      - plain\n    steps:\n      - name: before\n        run: b\n"
+            f"      - id: gate\n        uses: {GATE}\n        with:\n          job: gated\n")
+
+    def test_guarded_steps_pass_in_every_form(self):
+        for step in (f"      - name: s\n        if: {GUARD}\n        run: c\n",
+                     f"      - name: s\n        if: always() && {GUARD} && (matrix.shard == 'core')\n        run: c\n",
+                     f"      - if: success() && {GUARD}\n        uses: ./.github/actions/ci-save\n",
+                     f"      - uses: actions/upload-artifact@x\n        if: {GUARD}\n        with:\n          name: n\n"):
+            self.assertEqual(unguarded(self.head + step), [], step)
+
+    def test_a_step_the_gate_would_not_stop_is_found(self):
+        for condition in ("", "        if: matrix.target == 'x86_64'\n", "        if: always()\n",
+                          "        if: steps.gate.outputs.hit != 'true'\n", "        if: steps.gate.outputs.skip == 'true'\n"):
+            step = f"      - name: s\n{condition}        run: c\n"
+            self.assertEqual(unguarded(self.head + step), [("gated", "s")], condition)
+
+    def test_one_missing_guard_among_guarded_steps_is_found(self):
+        steps = (f"      - name: a\n        if: {GUARD}\n        run: c\n      - name: b\n        run: |\n          d\n"
+                 f"      - name: e\n        if: {GUARD}\n        run: f\n")
+        self.assertEqual(unguarded(self.head + steps), [("gated", "b")])
+
+    def test_only_steps_after_a_gate_count(self):
+        self.assertEqual(unguarded(self.head), [])
+        self.assertEqual(gated_jobs(self.head), ["gated"])
+        text = self.head + "  later:\n    steps:\n      - name: other job\n        run: g\n"
+        self.assertEqual(unguarded(text), [])
+
+    def test_text_inside_a_run_block_is_not_a_step(self):
+        step = f"      - name: s\n        if: {GUARD}\n        run: |\n          cat <<EOF\n          - name: x\n          EOF\n"
+        self.assertEqual(unguarded(self.head + step), [])
+
+    def test_job_keys_after_the_steps_end_them(self):
+        step = f"      - name: s\n        if: {GUARD}\n        run: c\n    outputs:\n      - not-a-step: 1\n"
+        self.assertEqual(unguarded(self.head + step), [])
+
+    workflows = sorted((Path(__file__).resolve().parents[2] / ".github/workflows").glob("*.y*ml"))
+
+    def test_every_gate_is_seen(self):
+        total = 0
+        for path in self.workflows:
+            text = path.read_text()
+            gates = len(re.findall(r"^\s+(?:- )?uses: " + re.escape(GATE) + r"\s*$", text, re.M))
+            if gates:
+                self.assertEqual(len(gated_jobs(text)), gates, path.name)
+            total += gates
+        self.assertGreater(total, 0)
+
+    def test_every_later_step_stops_when_the_gate_skips(self):
+        found = {(path.name, *row) for path in self.workflows if GATE in path.read_text()
+                 for row in unguarded(path.read_text())}
+        self.assertEqual(found, MAY_RUN_WHEN_SKIPPED)
 
 
 if __name__ == "__main__":
