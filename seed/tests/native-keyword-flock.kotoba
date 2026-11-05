@@ -1,0 +1,25 @@
+(ns seed.native-keyword-flock (:export [main]))
+
+(defn- request [path :string op :string] :bool
+  (string=? (typed-cap-call :fs/app-data :string :string (string-concat path op)) "1"))
+
+;; The host supplies a fresh lock path inside its test-only FS35 scope.
+;; Check both directions: lock state must survive interning and the keyword
+;; table must survive lock, wrong unlock, release and a second acquisition.
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0")
+        first (keyword-from-string "test/first-雪")
+        before (string=? (keyword-name first) "first-雪")
+        acquired (request path "FLOCK_SEP")
+        second (keyword-from-string "test/second-😀")
+        stable-first (= first (keyword-from-string "test/first-雪"))
+        stable-second (string=? (keyword-name second) "second-😀")
+        reentry (request path "FLOCK_SEP")
+        wrong (request (string-concat path ".wrong") "UNLOCK_SEP")
+        released (request path "UNLOCK_SEP")
+        after-release (= second (keyword-from-string "test/second-😀"))
+        again (request path "FLOCK_SEP")
+        third (keyword-from-string "test/third")
+        final (request path "UNLOCK_SEP")]
+    (if (and before acquired stable-first stable-second (not reentry) (not wrong)
+             released after-release again (string=? (keyword-name third) "third") final) 0 1)))

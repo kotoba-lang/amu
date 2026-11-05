@@ -1,0 +1,5 @@
+;; Observation fixture: the namespace deliberately omits :capabilities.
+;; It does not assert that omission is valid admission or grants authority.
+(ns safety.fs-omitted (:export [main]))
+(defn main [] :i64
+ (if (= (string-byte-length (typed-cap-call :fs/app-data :string :string "/data")) 3) 42 7))

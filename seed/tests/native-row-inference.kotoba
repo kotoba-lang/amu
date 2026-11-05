@@ -1,0 +1,63 @@
+;; JUN-733 slice 3 (owner decision 2026-11-01): an unannotated parameter used as a record is a row; its function exists only
+;; as its specializations, one per record type a call passes (docs/language-ladder.edn :row-records :row-get-and-match
+;; :options-map-argument). (get m :k d) / (:k m d) on a record read a field it has, or d.
+;; main returns 0, or the number of the first failing case.
+(ns native-row-inference (:export [main]))
+
+(defrecord P [x :i64 y :i64])
+
+(defn- read-a [m] (:a m))
+(defn- sum-xy [m] (+ (:x m) (:y m)))
+(defn- a-or-7 [m] (get m :a 7))
+(defn- bump [m] (assoc m :n (+ 1 (:n m))))
+(defn- add-ab [{:keys [a b]}] (+ a b))
+(defn- inner [m] (:a m))
+(defn- outer [m] (inner m))
+(defn- plus-k [m k :i64] (+ (:a m) k))
+(defn- id [x] x)
+(defn- inc-n [m] (update m :n inc))
+(defn- with-z [m] (merge m {:z 1}))
+(defn- a-or-5 [m] (:a m 5))
+(defn- drop-a [m] (dissoc m :a))
+(defn- only-a [m] (select-keys m [:a]))
+(defn- o-or-9 [m] (get m :o 9))
+(defn- count-down [m] :i64 (if (> (:n m) 0) (+ 1 (count-down (assoc m :n (- (:n m) 1)))) 0))
+(defn- move [state delta :i64 {:keys [extend?]}] (+ (:pos state) (if extend? (* 2 delta) delta)))
+
+(defn- case1 [] :i64 (read-a {:a 3 :b 4}))                                 ; 3
+(defn- case2 [] :i64 (+ (read-a {:a 3 :b 4}) (read-a {:a 10})))             ; 13: two specializations
+(defn- case3 [] :i64 (+ (sum-xy (->P 1 2)) (sum-xy {:x 10 :y 20 :z 0})))     ; 33: a declared and an anonymous record
+(defn- case4 [] :i64 (+ (a-or-7 {:a 1}) (a-or-7 {:b 2})))                    ; 8: get with a default on a row
+(defn- case5 [] :i64 (:n (bump (bump {:n 1 :s "x"}))))                       ; 3
+(defn- case6 [] :i64 (add-ab {:a 2 :b 3}))                                  ; 5: a destructured row
+(defn- case7 [] :i64 (outer {:a 9}))                                         ; 9: passed on to a row parameter
+(defn- case8 [] :i64 (plus-k {:a 1} 5))                                      ; 6: beside a typed parameter
+(defn- case9 [] :i64 (:a (id {:a 4})))                                       ; 4: a caller's record makes the row
+(defn- case10 [] :i64 (:n (inc-n {:n 4})))                                   ; 5
+(defn- case11 [] :i64 (:z (with-z {:a 1})))                                  ; 1
+(defn- case12 [] :i64 (+ (a-or-5 {:a 1}) (a-or-5 {:c 1})))                    ; 6: (:k m d)
+(defn- case13 [] :i64 (:b (drop-a {:a 1 :b 2})))                             ; 2
+(defn- case14 [] :i64 (:a (only-a {:a 1 :b 2})))                             ; 1
+(defn- case15 [] :i64 (+ (o-or-9 {:o nil}) (o-or-9 {:o 4})))                  ; 13: an [:option T] field or its default
+(defn- case16 [] :i64 (count-down {:n 3}))                                  ; 3: a self-recursive row function
+(defn- case17 [] :i64 (+ (move {:pos 10} 1 {:extend? true}) (move {:pos 10} 1 {:extend? false})))   ; 23
+
+(defn main [] :i64
+  (cond (not= (case1) 3) 1
+        (not= (case2) 13) 2
+        (not= (case3) 33) 3
+        (not= (case4) 8) 4
+        (not= (case5) 3) 5
+        (not= (case6) 5) 6
+        (not= (case7) 9) 7
+        (not= (case8) 6) 8
+        (not= (case9) 4) 9
+        (not= (case10) 5) 10
+        (not= (case11) 1) 11
+        (not= (case12) 6) 12
+        (not= (case13) 2) 13
+        (not= (case14) 1) 14
+        (not= (case15) 13) 15
+        (not= (case16) 3) 16
+        (not= (case17) 23) 17
+        :else 0))

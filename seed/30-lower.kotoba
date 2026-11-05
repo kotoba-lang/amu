@@ -423,7 +423,7 @@
 ;; (assoc r :f v): [r -> t] LSET s t, then field i into t+i (LGET + projections, or [v -> t+j]), CONST, pairs.
 ;; s = the hidden slot (NF-TYPE of the head node), j = NF-RES of the keyword, the field count from the record type.
 ;; The three numbers travel as one flat record (they were packed into one i64 in R0 style).
-(defrecord lw-asf [s :i64 j :i64 v :i64 f :i64])   ; JUN-733: f = the field's type (lw-some)
+(defrecord lw-asf [s :i64 j :i64 v :i64 f :i64 a :i64 b :i64])   ; JUN-733: f = the field's type (lw-some), a / b = the source / result record type
 (defn- lw-nfields [M :vector-i64 ty :i64] :i64
   (vector-at M (+ (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)) RB-N)))
 ;; JUN-733: a value of type T stored into a field of type [:option T] is its some, pair(x, 0) (21-check ck-fval); fty / vty =
@@ -433,11 +433,52 @@
 ;; the type of field j of record type ty
 (defn- lw-fty [M :vector-i64 ty :i64 j :i64] :i64
   (vector-at M (+ (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)) RB-F0 (* j RB-FW) 1)))
+;; JUN-733 slice 2: row operations (21-check ck-assoc-ext / ck-shrink / ck-merge). Each result field j is taken from the
+;; source record's field of the same key: lw-src = its index there (-1 when the source lacks the key)
+(defn- lw-blk-of [M :vector-i64 ty :i64] :i64 (vector-at M (+ MM-SYM-BASE (* (- ty TY-REC-BASE) MM-SYM-W) SF-REC)))
+(defn- lw-src [M :vector-i64 a :i64 b :i64 j :i64] :i64
+  (let [ba (lw-blk-of M a)
+        ks (vector-at M (+ (lw-blk-of M b) RB-F0 (* j RB-FW)))]
+    (loop [i 0] (cond (>= i (vector-at M (+ ba RB-N))) -1 (= (vector-at M (+ ba RB-F0 (* i RB-FW))) ks) i :else (recur (inc i))))))
+;; true when ty is a record type
+(defn- lw-rec? [ty :i64] :bool (and (>= ty TY-REC-BASE) (< ty TY-COMP-BASE)))
+;; (dissoc r :k ..) / (select-keys r [..]) on a record: [r -> t] LSET s t, then each field of the result from r's
+(defn- lw-rebuild [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        r (lw-next M h)
+        s (lw-nf M h NF-TYPE)
+        a (lw-nf M r NF-TYPE)
+        b (lw-nf M n NF-TYPE)
+        nb (lw-nfields M b)
+        M1 (-> M (lw-expr r t 0) (lw-emit OP-LSET s t))
+        M2 (loop [M3 M1 j 0]
+             (if (>= j nb) M3 (recur (-> M3 (lw-emit OP-LGET (+ t j) s) (lw-seconds (+ t j) (lw-src M3 a b j))) (inc j))))]
+    (-> M2 (lw-emit OP-CONST (+ t nb)) (lw-pairs t (dec nb)))))
+;; (merge a b) of two records: [a -> t] LSET s t, [b -> t] LSET s+1 t, then each field from b when b has its key, else from a
+(defn- lw-merge [M :vector-i64 n :i64 t :i64] :vector-i64
+  (let [h (lw-first M n)
+        x (lw-next M h)
+        y (lw-next M x)
+        s (lw-nf M h NF-TYPE)
+        a (lw-nf M x NF-TYPE)
+        c (lw-nf M y NF-TYPE)
+        b (lw-nf M n NF-TYPE)
+        nb (lw-nfields M b)
+        M1 (-> M (lw-expr x t 0) (lw-emit OP-LSET s t) (lw-expr y t 0) (lw-emit OP-LSET (inc s) t))
+        M2 (loop [M3 M1 j 0]
+             (if (>= j nb)
+               M3
+               (let [ic (lw-src M3 c b j)]
+                 (recur (if (neg? ic)
+                          (-> M3 (lw-emit OP-LGET (+ t j) s) (lw-seconds (+ t j) (lw-src M3 a b j)))
+                          (-> M3 (lw-emit OP-LGET (+ t j) (inc s)) (lw-seconds (+ t j) ic)))
+                        (inc j)))))]
+    (-> M2 (lw-emit OP-CONST (+ t nb)) (lw-pairs t (dec nb)))))
 (defn- lw-assoc-fields [M :vector-i64 i :i64 n :i64 q [:ref :seed/lw-asf] t :i64]
   :vector-i64
   (cond (>= i n) M
         (= i (:j q)) (lw-assoc-fields (lw-some (lw-expr M (:v q) (+ t i) 0) (:f q) (lw-nf M (:v q) NF-TYPE) (+ t i)) (inc i) n q t)
-        :else (lw-assoc-fields (-> M (lw-emit OP-LGET (+ t i) (:s q)) (lw-seconds (+ t i) i)) (inc i) n q t)))
+        :else (lw-assoc-fields (-> M (lw-emit OP-LGET (+ t i) (:s q)) (lw-seconds (+ t i) (lw-src M (:a q) (:b q) i))) (inc i) n q t)))
 (defn- lw-assoc [M :vector-i64 n :i64 t :i64] :vector-i64
   (let [h (lw-first M n)
         r (lw-next M h)
@@ -447,7 +488,8 @@
     (-> M
         (lw-expr r t 0)
         (lw-emit OP-LSET s t)
-        (lw-assoc-fields 0 nf (->lw-asf s (lw-nf M kw NF-RES) (lw-next M kw) (lw-fty M (lw-nf M n NF-TYPE) (lw-nf M kw NF-RES))) t)
+        (lw-assoc-fields 0 nf (->lw-asf s (lw-nf M kw NF-RES) (lw-next M kw) (lw-fty M (lw-nf M n NF-TYPE) (lw-nf M kw NF-RES))
+                                        (lw-nf M r NF-TYPE) (lw-nf M n NF-TYPE)) t)
         (lw-emit OP-CONST (+ t nf))
         (lw-pairs t (dec nf)))))
 
@@ -476,7 +518,10 @@
       HD-RECORD-CTOR (lw-recnew M a t)
       HD-RECORD-GET (lw-field M (lw-next M a) (lw-next M (lw-next M a)) t)
       HD-KWGET (lw-field M a h t)
-      HD-ASSOC (if (= (lw-ct M (lw-nf M n NF-TYPE) CT-CTOR) TC-MAP) (lw-massoc M n a t) (lw-assoc M n t))
+      HD-ASSOC (cond (= (lw-ct M (lw-nf M n NF-TYPE) CT-CTOR) TC-MAP) (lw-massoc M n a t)
+                     (= (lw-count M a) 2) (lw-merge M n t)   ; JUN-733: (merge a b) of records
+                     :else (lw-assoc M n t))
+      HD-DISSOC (if (lw-rec? (lw-nf M n NF-TYPE)) (lw-rebuild M n t) (lw-r3 M n hd t k))   ; JUN-733: a record's dissoc / select-keys
       HD-GET (cond (= (lw-count M a) 3) (lw-gget M h a t)
                    (= (lw-ct M (lw-nf M a NF-TYPE) CT-CTOR) TC-MAP)   ; JUN-734: (get m k) on a map -> [:option V]
                    (lw-mget M a (lw-nf M h NF-TYPE) (lw-md M (lw-nf M a NF-TYPE)) t)

@@ -90,7 +90,10 @@
                 (= text ":pair") (= text ":option") (= text ":result") (= text ":map") (= text ":set"))
           (dc-kw (string-substring text 1 (string-length text))) (dcp-bad A)))
     (= (kr-kind M n) ND-VEC)
-      (if (= (dcp-text M S (kr-first M n)) ":ref") (dcp-fail A 5)
+      (if (= (dcp-text M S (kr-first M n)) ":ref")
+        (let [key (kr-next M (kr-first M n)) text (dcp-text M S key)]
+          (if (or (not= (kr-count M n) 2) (not= (kr-kind M key) ND-KW)) (dcp-fail A 5)
+            (dcp-vec (typed-list-new [:list :string] (dc-kw "ref") (dc-kw (string-substring text 1 (string-length text)))))))
         (dcp-vec (loop [p (kr-first M n) out (typed-list-new [:list :string])]
           (if (= p 0) out (recur (kr-next M p)
             (typed-list-conj [:list :string] out (dcp-type M S A p (inc depth))))))))
@@ -295,13 +298,114 @@
     (if (not= (kr-kind M params) ND-VEC) (dcp-bad A)
       (dcp-vec (loop [p (kr-first M params) out (typed-list-new [:list :string])]
         (if (= p 0) out (recur (kr-next M p) (typed-list-conj [:list :string] out (dcp-bind M A p)))))))))
+;; Native reachability for checked KIR record schemas. Missing, duplicate and
+;; unsupported data refuse; identity does not grant cache admission.
+;; V: [count, key-node, definition-node, ...], bounded by schema-map size.
+(defn- dsq-fail [A :vector-i64] :i64 (let [a (dcp-fail A 5)] 0))
+(defn- dsq-seen? [M :vector-i64 S :string V :vector-i64 key :i64] :bool
+  (loop [i 0]
+    (if (= i (vector-at V 0)) false
+      (or (= (dcp-text M S (vector-at V (+ 1 (* 2 i)))) (dcp-text M S key)) (recur (inc i))))))
+(defn- dsq-type? [M :vector-i64 S :string n :i64 depth :i64] :bool
+  (cond (or (= n 0) (> depth 64)) false
+    (= (kr-kind M n) ND-KW)
+      (let [t (dcp-text M S n)]
+        (or (= t ":i64") (= t ":bool") (= t ":string") (= t ":bytes")
+            (= t ":vector-i64") (= t ":keyword")))
+    (= (kr-kind M n) ND-VEC)
+      (let [head (kr-first M n) tag (dcp-text M S head) a (kr-next M head) b (kr-next M a)
+            count (kr-count M n)]
+        (cond (= tag ":ref") (and (= count 2) (= (kr-kind M a) ND-KW))
+          (or (= tag ":list") (= tag ":set") (= tag ":option"))
+            (and (= count 2) (dsq-type? M S a (inc depth)))
+          (or (= tag ":map") (= tag ":result"))
+            (and (= count 3) (dsq-type? M S a (inc depth)) (dsq-type? M S b (inc depth)))
+          :else false))
+    :else false))
+(defn- dsq-fields? [M :vector-i64 S :string fields :i64] :bool
+  (let [count (kr-count M fields)]
+    (and (= (kr-kind M fields) ND-VEC) (> count 0) (<= count 32)
+      (loop [p (kr-first M fields) seen (typed-list-new [:list :string])]
+        (if (= p 0) true
+          (let [key (kr-first M p) ty (kr-next M key) name (dcp-text M S key)]
+            (and (= (kr-kind M p) ND-VEC) (= (kr-count M p) 2)
+                 (= (kr-kind M key) ND-KW) (not (dcp-contains seen name))
+                 (dsq-type? M S ty 0)
+                 (recur (kr-next M p) (typed-list-conj [:list :string] seen name)))))))))
+(defn- dsq-add [M :vector-i64 S :string A :vector-i64 V :vector-i64 schemas :i64 key :i64] :i64
+  (let [name (dcp-text M S key) value (if (= (kr-kind M schemas) ND-MAP) (dcp-field M S schemas name) 0)
+        head (kr-first M value) declared (kr-next M head) fields (kr-next M declared) count (vector-at V 0)]
+    (cond (or (not= (kr-kind M key) ND-KW) (= value 0)
+              (not= (kr-kind M value) ND-VEC) (not= (kr-count M value) 3)
+              (not= (dcp-text M S head) ":record") (not= (kr-kind M declared) ND-KW)
+              (not= (dcp-text M S declared) name) (not (dsq-fields? M S fields))) (dsq-fail A)
+      (dsq-seen? M S V key) 0
+      (>= (+ 2 (* 2 count)) (vector-count V)) (dsq-fail A)
+      :else (let [a (vector-assoc! V (+ 1 (* 2 count)) key)
+                  b (vector-assoc! V (+ 2 (* 2 count)) value)
+                  c (vector-assoc! V 0 (inc count))] 0))))
+(defn- dsq-walk [M :vector-i64 S :string A :vector-i64 V :vector-i64 schemas :i64 n :i64 depth :i64] :i64
+  (cond (= n 0) 0 (> depth (dip-expression-depth (dcp-resource A))) (dsq-fail A)
+    (not= (vector-at A 0) 0) 0
+    :else
+    (let [kind (kr-kind M n) first (kr-first M n)
+          ref (and (= kind ND-VEC) (> first 0) (= (dcp-text M S first) ":ref"))]
+      (cond ref (if (= (kr-count M n) 2) (dsq-add M S A V schemas (kr-next M first)) (dsq-fail A))
+        (or (= kind ND-LIST) (= kind ND-VEC) (= kind ND-MAP) (= kind ND-SET))
+          (loop [p first]
+            (if (or (= p 0) (not= (vector-at A 0) 0)) 0
+              (let [walk (dsq-walk M S A V schemas p (inc depth))] (recur (kr-next M p)))))
+        :else 0))))
+(defn- dsq-encode [M :vector-i64 S :string A :vector-i64 n :i64 depth :i64] :string
+  (cond (> depth 64) (dcp-bad A)
+    (= (kr-kind M n) ND-KW) (let [t (dcp-text M S n)] (dc-kw (string-substring t 1 (string-length t))))
+    (= (kr-kind M n) ND-VEC)
+      (dcp-vec (loop [p (kr-first M n) out (typed-list-new [:list :string])]
+        (if (or (= p 0) (not= (vector-at A 0) 0)) out
+          (recur (kr-next M p) (typed-list-conj [:list :string] out (dsq-encode M S A p (inc depth)))))))
+    :else (dcp-bad A)))
+;; Validate every schema before producing any graph or identity. A bad or
+;; missing unreferenced definition must not disappear merely because this
+;; function's reachable subset does not include it.
+(defn- dsq-catalog [M :vector-i64 S :string A :vector-i64 doc :i64] :vector-i64
+  (let [schemas (dcp-field M S doc ":schemas") V (vector-alloc (+ 1 (* 2 (kr-count M schemas))))
+        entries (loop [p (kr-first M schemas)]
+          (if (or (= p 0) (not= (vector-at A 0) 0)) 0
+            (let [value (kr-next M p)
+                  add (if (= value 0) (dsq-fail A) (dsq-add M S A V schemas p))]
+              (if (= value 0) 0 (recur (kr-next M value))))))
+        closure (loop [i 0]
+          (if (or (= i (vector-at V 0)) (not= (vector-at A 0) 0)) 0
+            (let [walk (dsq-walk M S A V schemas (vector-at V (+ 2 (* 2 i))) 0)] (recur (inc i)))))] A))
+(defn- dsq-schemas [M :vector-i64 S :string A :vector-i64 f :i64] :string
+  (let [doc (kr-first M (vector-at M MM-ROOT)) schemas (dcp-field M S doc ":schemas")
+        V (vector-alloc (+ 1 (* 2 (kr-count M schemas)))) map (dcp-f A f 0)
+        a (dsq-walk M S A V schemas (dcp-field M S map ":param-types") 0)
+        b (dsq-walk M S A V schemas (dcp-field M S map ":result") 0)
+        c (dsq-walk M S A V schemas (dcp-field M S map ":body") 0)
+        closure (loop [i 0]
+          (if (or (= i (vector-at V 0)) (not= (vector-at A 0) 0)) 0
+            (let [walk (dsq-walk M S A V schemas (vector-at V (+ 2 (* 2 i))) 0)] (recur (inc i)))))]
+    (if (= (vector-at A 0) 0)
+      (if (= (vector-at V 0) 0) ""
+        (dc-collection "map" (loop [i 0 out (typed-list-new [:list :string])]
+          (if (= i (vector-at V 0)) out
+            (let [key (dcp-text M S (vector-at V (+ 1 (* 2 i))))
+                  value (dsq-encode M S A (vector-at V (+ 2 (* 2 i))) 0)
+                  entry (dc-pair (dc-kw (string-substring key 1 (string-length key))) value)]
+              (recur (inc i) (typed-list-conj [:list :string] out entry))))) true)) "")))
+
 (defn- dcp-interface [M :vector-i64 S :string A :vector-i64 f :i64] :string
   (let [map (dcp-f A f 0) ps (dcp-field M S map ":params") pt (dcp-field M S map ":param-types")
         result (dcp-type M S A (dcp-field M S map ":result") 0)
-        arity (dc-entry "arity" (dc-int (mem-u2dec (kr-count M ps))))]
-    (if (= pt 0) (dcp-map (typed-list-new [:list :string] arity (dc-entry "result" result)))
-      (dcp-map (typed-list-new [:list :string] arity (dc-entry "params" (dcp-type M S A pt 0))
-        (dc-entry "result" result))))))
+        arity (dc-entry "arity" (dc-int (mem-u2dec (kr-count M ps))))
+        params (if (= pt 0) "" (dc-entry "params" (dcp-type M S A pt 0)))
+        schemas (dsq-schemas M S A f)
+        values (typed-list-new [:list :string] arity)
+        with-params (if (= pt 0) values (typed-list-conj [:list :string] values params))
+        with-result (typed-list-conj [:list :string] with-params (dc-entry "result" result))
+        all (if (= schemas "") with-result (typed-list-conj [:list :string] with-result (dc-entry "schemas" schemas)))]
+    (dcp-map all)))
 (defn- dcp-clear-deps [A :vector-i64] :vector-i64
   (loop [i 0 state A]
     (if (= i (vector-at state 3)) state (recur (inc i) (dcp-put state i 4 0)))))
