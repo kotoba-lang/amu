@@ -55,6 +55,22 @@ def check(cli, out):
     float_greater = source('float-negative-greater', '(defn main [] :i64 (if (f64-lt -1.0 -2.0) 42 7))')
     run('float-negative-less', 'run', float_less.name, stdout=b'42\n')
     run('float-negative-greater', 'run', float_greater.name, stdout=b'7\n')
+    # JUN-846: f64-to-bits answers one canonical quiet NaN (0x7FF8000000000000) for every NaN, as the reference
+    # does, so an x86 default NaN, a negative NaN and a payload NaN cannot make bits/serialisation host-dependent.
+    # Infinity and -0.0 keep their exact bits. Each term is a distinct decimal digit; the pre-fix compiler answers 111001.
+    nan_canonical = source('f64-nan-canonical', '''(defn main [] :i64
+  (let [nan (f64-div (i64-to-f64-rounded 0) (i64-to-f64-rounded 0))
+        neg-nan (f64-from-bits -2251799813685248)
+        payload (f64-from-bits 9218868437227405313)
+        neg-zero (f64-neg (i64-to-f64-rounded 0))
+        inf (f64-div (i64-to-f64-rounded 1) (i64-to-f64-rounded 0))]
+    (+ (if (= (f64-to-bits nan) 9221120237041090560) 1 0)
+       (if (= (f64-to-bits neg-nan) 9221120237041090560) 10 0)
+       (if (= (f64-to-bits payload) 9221120237041090560) 100 0)
+       (if (= (f64-to-bits neg-zero) -9223372036854775808) 1000 0)
+       (if (= (f64-to-bits 1.5) 4609434218613702656) 10000 0)
+       (if (= (f64-to-bits inf) 9218868437227405312) 100000 0))))''')
+    run('f64-nan-canonical', 'run', nan_canonical.name, stdout=b'111111\n')
     # KOTOBA-13: the public host stages a locked KSL2 namespace map,
     # verifies every original source digest, then asks the pinned Kotoba
     # compiler to check the rewritten project lock in its private FS2 root.
