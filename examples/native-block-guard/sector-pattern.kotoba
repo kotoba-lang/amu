@@ -1,0 +1,41 @@
+(ns examples.native-block-guard.sector-pattern (:export [main]))
+
+;; Deterministic address-tagged blocks for an eventual host. These values are
+;; not cryptographic authentication, proof of persistence, or a device grant.
+;; The private host must supply a fresh positive nonce and check all bytes.
+(defn pattern [block sector nonce] :vector-i64
+  (if (or (and (not= block 512) (not= block 4096))
+          (< sector 0) (> sector 2251799813685246) (<= nonce 0)) []
+    (loop [i 0 out (vector-alloc block)]
+      (if (= i block) out
+        (let [word (if (< (mod i 16) 8) sector nonce)
+              shift (* (mod i 8) 8)
+              tag (bit-and (u64-shift-right word shift) 255)
+              byte (bit-and (+ tag (mod (* i 37) 256)) 255)]
+          (recur (inc i) (vector-assoc! out i byte)))))))
+
+(defn verify [block sector nonce bytes :vector-i64]
+  (let [expected (pattern block sector nonce)]
+    (if (or (= (vector-count expected) 0)
+            (not= (vector-count bytes) (vector-count expected))) 0
+      (loop [i 0]
+        (if (= i block) 1
+          (if (= (vector-at bytes i) (vector-at expected i))
+            (recur (inc i)) 0))))))
+
+(defn main [] :i64
+  (let [a (pattern 512 4095999999 77)
+        corrupt (vector-assoc! (pattern 512 4095999999 77) 511 (mod (inc (vector-at a 511)) 256))
+        b (pattern 4096 4095999999 77)]
+    (+ (if (= (vector-count a) 512) 0 1)
+       (if (= (vector-count b) 4096) 0 1)
+       (if (= (verify 512 4095999999 77 a) 1) 0 1)
+       (if (= (verify 4096 4095999999 77 b) 1) 0 1)
+       (if (= (verify 512 4095999998 77 a) 0) 0 1)
+       (if (= (verify 512 4095999999 78 a) 0) 0 1)
+       (if (= (verify 512 4095999999 77 corrupt) 0) 0 1)
+       (if (= (verify 4096 4095999999 77 a) 0) 0 1)
+       (if (= (vector-count (pattern 513 0 1)) 0) 0 1)
+       (if (= (vector-count (pattern 512 -1 1)) 0) 0 1)
+       (if (= (vector-count (pattern 512 2251799813685247 1)) 0) 0 1)
+       (if (= (vector-count (pattern 512 0 0)) 0) 0 1))))

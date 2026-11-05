@@ -48,15 +48,21 @@ jobs:
           - runner: ubuntu-latest
             isa: x86_64
             compiler: bin/amu-linux-x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: native-definition-cids-cids-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
+        if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-identities.py
       - name: Native definition-cids against the independent oracle, with negative controls
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/native_build_queue.py
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
@@ -64,8 +70,12 @@ jobs:
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-cids"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         with:
           name: definition-cids-${{ matrix.isa }}
           path: ${{ runner.temp }}/definition-cids
           if-no-files-found: warn
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}

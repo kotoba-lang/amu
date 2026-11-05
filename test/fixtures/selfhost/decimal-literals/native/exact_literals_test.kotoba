@@ -1,0 +1,36 @@
+(ns native.exact-literals-test (:export [main]))
+
+;; Expected raw IEEE-754 patterns are fixed independent anchors. Each token
+;; must be lowered at compile time, not reparsed or divided by guest code.
+(defn- bits? [value :f64 expected :i64] :bool (= (f64-to-bits value) expected))
+(defn- ordinary [] :bool
+  (and (bits? 0.4117647058823529 4601089313421810266)
+       (bits? 0.1 4591870180066957722)
+       (bits? -0.1 -4631501856787818086)
+       (bits? 1.0 4607182418800017408)
+       (bits? 9007199254740993.0 4845873199050653696)))
+(defn- spellings [] :bool
+  (and (bits? .5 4602678819172646912)
+       (bits? +.5 4602678819172646912)
+       (bits? 1. 4607182418800017408)
+       (bits? +1e0 4607182418800017408)
+       (bits? 10E-1 4607182418800017408)
+       (bits? 0.5e+1 4617315517961601024)))
+(defn- ties [] :bool
+  (and (bits? 1.00000000000000011102230246251565404236316680908203125 4607182418800017408)
+       (bits? 1.00000000000000011102230246251565404236316680908203126 4607182418800017409)
+       (bits? 1.00000000000000033306690738754696212708950042724609375 4607182418800017410)))
+(defn- boundaries [] :bool
+  (and (bits? 5e-324 1)
+       (bits? 2.4703282292062327e-324 0)
+       (bits? 2.4703282292062328e-324 1)
+       (bits? 2.225073858507201e-308 4503599627370495)
+       (bits? 2.2250738585072014e-308 4503599627370496)
+       (bits? 1.7976931348623157e308 9218868437227405311)))
+(defn- zeros [] :bool
+  (and (bits? 0.0 0) (bits? -0.0 -9223372036854775808)
+       (bits? 0e0 0) (bits? -0e0 -9223372036854775808)
+       (bits? 1e-999 0) (bits? -1e-999 -9223372036854775808)))
+(defn main [] :i64
+  (+ (if (ordinary) 1 0) (if (spellings) 2 0) (if (ties) 4 0)
+     (if (boundaries) 8 0) (if (zeros) 16 0)))

@@ -250,13 +250,14 @@ def main(compiler, output):
     if control == sugar:
         raise ValueError("multimethod control has the sugar's CIDs")
     print("definition-cids: multimethod sugar = hand-written case defn; control differs", flush=True)
-    reports = {k: cids(compiler, ids, k, v) for k, v in PAIR.items()}
-    for report in reports.values():
-        if "SCANNED\t0/2" not in report or report.count("REFUSED:unbridged-source") != 2:
-            raise ValueError(f"protocol pair: expected both definitions REFUSED:unbridged-source:\n{report}")
-    if reports["protocol-sugar"] != reports["protocol-pure"]:
-        raise ValueError("protocol pair: the refusal reports differ")
-    print("definition-cids: protocol pair refused identically (unbridged-source; records have no bridge)", flush=True)
+    # Both protocol examples contain defrecord. Until its generated constructor
+    # has an identity, the whole module must refuse rather than emit a partial
+    # per-definition report; no CID may be produced on stdout.
+    for name, source in PAIR.items():
+        status, out, err = native(compiler, ids, "definition-cids", name, source)
+        if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
+            raise ValueError(f"{name}: expected atomic defrecord refusal, got exit {status}: {(out + err)[-300:]!r}")
+    print("definition-cids: protocol pair refused atomically (record constructors unbridged)", flush=True)
 
     names = [line for line in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()
              if line and not line.startswith("#")]

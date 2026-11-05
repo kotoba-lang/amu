@@ -31,21 +31,35 @@
 (def BYTES-SLICE-START 7296)
 (def STDOUT-TYPED-START 7488)
 (def BYTES-CONCAT-START 7872)
-(def FS2-DA-BYTES 736)
+(def FS2-DA-BYTES 752)
 (def FS2-BC-BYTES 908)
 (def FS2-KIND9-BYTES 256)
-(def FS2-LOCK-BYTES 792)
+(def FS2-LOCK-ONE-BYTES 792)
+(def FS2-READ-BYTES 816)
+(def FS2-LOCK-BYTES (+ FS2-LOCK-ONE-BYTES FS2-READ-BYTES))
 (def FS2-EF-BYTES 2552)
 (def FS35-BYTES 1768)
+(def METAL-BYTES 152)
+(def METAL-BIND-BYTES 16)
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
+
+(defn- amu-program-metal? [mode :string] :bool
+  (string=? mode "amu-program-metal"))
+(defn- amu-program-mode? [mode :string] :bool
+  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35") (amu-program-metal? mode)))
+(defn- amu-program-fs35? [mode :string] :bool
+  (string=? mode "amu-program-fs35"))
 
 ;; Only the public host CLI receives this service. Bootstrap/guest modes do not.
 (defn- mh-extra-start [raw-bytes :i64] :i64
   (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4))
      FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES FS2-EF-BYTES))
 (defn- mh-data-bytes [mode :string] :i64
-  (if (string=? mode "amu-cli-host") 32768 DATA-BYTES))
+  (if (or (string=? mode "amu-cli-host") (amu-program-metal? mode)) 32768 DATA-BYTES))
+;; Bytes after __DATA: the dyld bind stream of the Metal profile, in __LINKEDIT.
+(defn- mh-tail-bytes [mode :string] :i64
+  (if (amu-program-metal? mode) METAL-BIND-BYTES 0))
 
 ;; The general build mode accepts an explicit extracted main offset. It is
 ;; bounded by the image size and the scoped FS2 output limit; admission and
@@ -138,7 +152,7 @@
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (string=? mode "amu-program") 0xd2c01c08
+   (if (or (string=? mode "amu-program") (amu-program-metal? mode)) 0xd2c01c08
      (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
@@ -150,11 +164,12 @@
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes) SLICE-SETUP-START))
+   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes)
+                     (if (string=? mode "fs2-cli-stdio-cwd") (+ (mh-extra-start raw-bytes) FS35-BYTES) SLICE-SETUP-START)))
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
-   (if (string=? mode "amu-program") (b-direct 1212 (mh-extra-start raw-bytes))
+   (if (amu-program-mode? mode) (b-direct 1212 (mh-extra-start raw-bytes))
      (if cli-image 0xd2800030 0xf100a81f))
    (if cli-image 0xf2a40010 (b-ne 48 56))
    ;; Earlier string fixtures require a pair; vector fixtures instead prove
@@ -621,35 +636,36 @@
 ;; and assembler are not inputs to the native Kotoba packager. Other forms
 ;; still trap at brk #0x35.
 (defn- fs2-da-helper-words [start :i64] :vector-i64
-  (-> (vector-alloc 184)
+  (-> (vector-alloc 188)
       (append-runtime-words 0 [
-       0xf1008c3f 0x54001621 0xa9b07bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xaa0003f3 0xaa0403f4
-       0xf9400a68 0xd2c00109 0xea09011f 0x54001540 0xf100045f 0x540014e1 0xf100047f 0x540014a1
-       0xb40014b4 0xf9409268 0xf9400108 0xeb08029f 0x54001428 0xf9409668 0xd1000689 0x8b091108
-       0xa9400901 0xaa0203f6 0xaa1303e0 0x9400009b 0xaa0003f5 0xf10022df 0x540012e3 0xd28200c8
-       0xeb0802df 0x54001288 0x394002a8 0x35001248 0x394006a8 0x7101191f 0x540011e1 0x39400aa8
-       0x71014d1f 0x54001181 0x39400ea8 0x7100c91f 0x54001121 0x394012a8 0x350010e8 0x394016a8
-       0x7101111f 0x54000060 0x7101051f 0x54001021 0xd28000c9 0xeb16013f 0x54000fe2 0x38696aa8
-       0x34000068 0x91000529 0x17fffffb 0x91000529 0xeb16013f 0x54000f01 0x91001aa1 0x39400028])
+       0xf1008c3f 0x540016a1 0xa9b07bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xaa0003f3 0xaa0403f4
+       0xf9400a68 0xd2c00109 0xea09011f 0x540015c0 0xf100045f 0x54001561 0xf100047f 0x54001521
+       0xb4001534 0xf9409268 0xf9400108 0xeb08029f 0x540014a8 0xf9409668 0xd1000689 0x8b091108
+       0xa9400901 0xaa0203f6 0xaa1303e0 0x9400009f 0xaa0003f5 0xf10022df 0x54001363 0xd28200c8
+       0xeb0802df 0x54001308 0x394002a8 0x350012c8 0x394006a8 0x7101191f 0x54001261 0x39400aa8
+       0x71014d1f 0x54001201 0x39400ea8 0x7100c91f 0x540011a1 0x394012a8 0x35001168 0x394016a8
+       0x7101111f 0x54000060 0x7101051f 0x540010a1 0xd28000c9 0xeb16013f 0x54001062 0x38696aa8
+       0x34000068 0x91000529 0x17fffffb 0x91000529 0xeb16013f 0x54000f81 0x91001aa1 0x39400028])
       (append-runtime-words 64 [
        0x7100bd1f 0x54000041 0x91000421 0xd2800060 0xd2820082 0xf2a42002 0xd2800003 0xd28039f0
-       0xf2a40010 0xd4001001 0x54000182 0xaa0003f4 0x394016a8 0x7101051f 0x540003c0 0xaa1403e0
-       0xd28000d0 0xf2a40010 0xd4001001 0x54000c42 0x52800636 0x14000005 0x394016a8 0x7101051f
-       0x54000ba0 0x52800616 0xf940ce68 0xd2a20009 0xd1001929 0xeb09011f 0x54000ae8 0xf940ca69
-       0x8b080129 0x5288c00a 0x72a64a6a 0xb900012a 0x3900113f 0x39001536 0x9100190b 0xf900ce6b
-       0xaa1303e0 0xaa2803e1 0xd28000c2 0x14000040 0xaa1403e0 0x910143e1 0xd2802a70 0xf2a40010
-       0xd4001001 0x54000882 0x7940abe8 0x12140d08 0x7140211f 0x54000801 0xf940ce77 0xd2a20008
-       0xd1001508 0xeb0802ff 0x54000768 0xcb170118 0xd2a01008 0xd1001508 0xeb08031f 0x9a988118])
+       0xf2a40010 0xd4001001 0x54000182 0xaa0003f4 0x394016a8 0x7101051f 0x54000440 0xaa1403e0
+       0xd28000d0 0xf2a40010 0xd4001001 0x54000cc2 0x52800636 0x14000009 0x394016a8 0x7101051f
+       0x54000c20 0xf100081f 0x54000061 0x52800616 0x14000002 0x528007f6 0xf940ce68 0xd2a20009
+       0xd1001929 0xeb09011f 0x54000ae8 0xf940ca69 0x8b080129 0x5288c00a 0x72a64a6a 0xb900012a
+       0x3900113f 0x39001536 0x9100190b 0xf900ce6b 0xaa1303e0 0xaa2803e1 0xd28000c2 0x14000040
+       0xaa1403e0 0x910143e1 0xd2802a70 0xf2a40010 0xd4001001 0x54000882 0x7940abe8 0x12140d08
+       0x7140211f 0x54000801 0xf940ce77 0xd2a20008 0xd1001508 0xeb0802ff 0x54000768 0xcb170118])
       (append-runtime-words 128 [
-       0xf940ca75 0x8b1702b5 0x910016b5 0xd2800016 0xcb160302 0xb4000142 0xaa1403e0 0x8b1602a1
-       0xd2800070 0xf2a40010 0xd4001001 0x540001a2 0xb40001e0 0x8b0002d6 0x17fffff6 0xaa1403e0
-       0x910103e1 0xd2800022 0xd2800070 0xf2a40010 0xd4001001 0x54000062 0xb50003e0 0x14000004
-       0xf100101f 0x54fffd60 0x1400001b 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x540002c2
-       0xd10016a9 0x5288c00a 0x72a64a6a 0xb900012a 0x3900113f 0x8b1602eb 0x9100156b 0xf900ce6b
-       0xaa1303e0 0xaa3703e1 0x910016c2 0xf9401e70 0xd63f0200 0xa94363f7 0xa9425bf5 0xa94153f3
-       0xa8d07bfd 0xd65f03c0 0xf100983f 0x14000004 0xd42006a0 0xd42006c0 0xd4202020 0xd4202040])
+       0xd2a01008 0xd1001508 0xeb08031f 0x9a988118 0xf940ca75 0x8b1702b5 0x910016b5 0xd2800016
+       0xcb160302 0xb4000142 0xaa1403e0 0x8b1602a1 0xd2800070 0xf2a40010 0xd4001001 0x540001a2
+       0xb40001e0 0x8b0002d6 0x17fffff6 0xaa1403e0 0x910103e1 0xd2800022 0xd2800070 0xf2a40010
+       0xd4001001 0x54000062 0xb50003e0 0x14000004 0xf100101f 0x54fffd60 0x1400001b 0xaa1403e0
+       0xd28000d0 0xf2a40010 0xd4001001 0x540002c2 0xd10016a9 0x5288c00a 0x72a64a6a 0xb900012a
+       0x3900113f 0x8b1602eb 0x9100156b 0xf900ce6b 0xaa1303e0 0xaa3703e1 0x910016c2 0xf9401e70
+       0xd63f0200 0xa94363f7 0xa9425bf5 0xa94153f3 0xa8d07bfd 0xd65f03c0 0xf100983f 0x14000004
+       0xd42006a0 0xd42006c0 0xd4202020 0xd4202040])
       (vector-assoc! 27 (bl-direct (+ start 108) (+ RUNTIME-START 52)))
-      (vector-assoc! 179 (b-direct (+ start 716) (+ TYPED-START 4)))))
+      (vector-assoc! 183 (b-direct (+ start 732) (+ TYPED-START 4)))))
 
 ;; Diagnostic scoped FS2 B/C byte writer. Nested ASCII paths are validated
 ;; before openat under FD3; scope and no-follow are enforced by Darwin flags.
@@ -758,6 +774,25 @@
       (append-runtime-words 192 [
        0xa9407bfd 0x91400fff 0xd65f03c0 0xd42006c0 0x14000001 0xd4202060])
       (vector-assoc! 197 (b-direct (+ start 788) bc-start))))
+
+;; KFR1 has a distinct prefix and treats malformed path bytes as a zero
+;; status. A leading slash denotes the FD3 root, never the host root. The
+;; openat flags include O_RESOLVE_BENEATH and O_NOFOLLOW_ANY; the kernel must
+;; refuse traversal and every symlink. Allocation/capability failures trap.
+(defn- fs2-read-helper-words [start :i64 bc-start :i64] :vector-i64
+  (-> (vector-alloc 204)
+      (append-runtime-words 0 (fs2-lock-helper-words start bc-start))
+      (vector-assoc! 14 0xf100195f)
+      (vector-assoc! 33 0xf101191f)
+      (vector-assoc! 36 0xf101491f)
+      (vector-assoc! 62 0xb4000da8)
+      (vector-assoc! 64 0x54000d68)
+      (vector-assoc! 66 0xd503201f)
+      (vector-assoc! 72 0x54000c60)
+      (vector-assoc! 75 (b-direct (+ start 300) (+ start 792)))
+      ;; ldrb w8,[x1]; cmp w8,#'/'; b.ne +8; add x1,x1,#1; mov x0,#3
+      (append-runtime-words 198 [0x39400028 0x7100bd1f 0x54000041 0x91000421 0xd2800060 0x14000000])
+      (vector-assoc! 203 (b-direct (+ start 812) (+ start 304)))))
 
 ;; Diagnostic Darwin FS2 E/F, draft O/U metadata and H/I/L/M/T mutation.
 ;; The derivation is evidence; Kotoba literals are the build input. O masks
@@ -888,7 +923,8 @@
       (vector-assoc! 637 (b-direct (+ start 2548) da-start))))
 
 ;; JUN-593: legacy wire-35 text requests (the Linux kxrt-fs grammar) for the
-;; fs2-cli-stdio-general runtime: read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
+;; fs2-cli-stdio-general runtime and the explicit amu-program-fs35 profile:
+;; read, EXISTS, WRITE, FSYNC, RENAME, FLOCK and
 ;; UNLOCK beneath FD 3 (O_NOFOLLOW_ANY|O_RESOLVE_BENEATH, renameatx_np with
 ;; RENAME_NOFOLLOW_ANY); every other request falls through unchanged to the FS2
 ;; chain. One-time derivation: docs/evidence/mac-fs35-20261029/fs35.derivation.s.
@@ -968,19 +1004,57 @@
       (bit-or (i64-shift-left (bit-and pages 3) 29)
               (i64-shift-left (quot pages 4) 5)))))
 
+;; The Metal profile (ADR 0375, owner decision 2026-11-04): wire 42 returns one
+;; fn value whose code is `boot`; every other wire continues to `chain`.
+;; boot(op, a, b): 0 load a, 1 store b at a, 2 store byte b at a, 3 call a with
+;; x0..x7 from the eight words at b, 4 the address of __DATA + 16384, whose first
+;; word is the dlsym dyld bound and the rest of whose 16 KiB is the program's.
+;; Assembly was used to derive/review words; Amu packages this Kotoba vector.
+(defn- metal-helper-words [start :i64 chain :i64] :vector-i64
+  (-> (vector-alloc 38)
+      (append-runtime-words 0 [
+       0xf100a83f 0x540000a1 0x100000a1 0xaa1f03e2 0xf9401c10 0xd61f0200
+       (b-direct (+ start 24) chain)
+       0xb5000060 0xf9400020 0xd65f03c0
+       0xf100041f 0x54000081 0xf9000022 0xaa1f03e0 0xd65f03c0
+       0xf100081f 0x54000081 0x39000022 0xaa1f03e0 0xd65f03c0
+       0xf1000c1f 0x54000181 0xa9bf7bfd 0x910003fd 0xaa0103f0 0xaa0203e9
+       0xa9400520 0xa9410d22 0xa9421524 0xa9431d26 0xd63f0200 0xa8c17bfd 0xd65f03c0
+       0xf100101f 0x54000061 0x914010e0 0xd65f03c0 0xd4200000])))
+
+;; LC_LOAD_DYLIB libSystem, LC_DYLD_INFO_ONLY, and the bind stream: ordinal 1,
+;; _dlsym, pointer, segment 2 (__DATA) offset 16384, bind, done.
+(defn- metal-macho-at [v :vector-i64 at :i64 total-bytes :i64] :vector-i64
+  (-> v
+      (u32-at (+ at 544) 12) (u32-at (+ at 548) 56) (u32-at (+ at 552) 24) (u32-at (+ at 556) 2)
+      (text-at (+ at 568) "/usr/lib/libSystem.B.dylib")
+      (u32-at (+ at 600) 2147483682) (u32-at (+ at 604) 48)
+      (u32-at (+ at 616) total-bytes) (u32-at (+ at 620) METAL-BIND-BYTES)
+      (byte-at (+ at total-bytes) 0x11) (byte-at (+ at total-bytes 1) 0x40)
+      (text-at (+ at total-bytes 2) "_dlsym")
+      (byte-at (+ at total-bytes 9) 0x51) (byte-at (+ at total-bytes 10) 0x72)
+      (byte-at (+ at total-bytes 11) 0x80) (byte-at (+ at total-bytes 12) 0x80)
+      (byte-at (+ at total-bytes 13) 0x01) (byte-at (+ at total-bytes 14) 0x90)))
+
 (defn- body-at [v :vector-i64 at :i64 raw :vector-i64 text-bytes :i64 mode :string entry-offset :i64 general :bool source :vector-i64] :vector-i64
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
-        fs35 (string=? mode "fs2-cli-stdio-general")
+        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd") (amu-program-fs35? mode))
         extra (mh-extra-start raw-bytes)
+        fs35-start (if (amu-program-fs35? mode)
+          (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))) extra)
+        metal (amu-program-metal? mode)
+        metal-start (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4)))
         result (-> v
       ;; mach_header_64: MH_EXECUTE, CPU_TYPE_ARM64, nine commands.
       ;; Direct-syscall launch uses NOUNDEFS|DYLDLINK|PIE (0x00200005).
       (u32-at at 4277009103) (u32-at (+ at 4) 16777228)
-      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if (string=? mode "amu-program") 10 9))
-      (u32-at (+ at 20) (if (string=? mode "amu-program") 512 472)) (u32-at (+ at 24) 2097157)
+      ;; The Metal profile binds an import: DYLDLINK|TWOLEVEL|PIE (0x00200084).
+      (u32-at (+ at 12) 2) (u32-at (+ at 16) (if metal 12 (if (amu-program-mode? mode) 10 9)))
+      (u32-at (+ at 20) (if metal 616 (if (amu-program-mode? mode) 512 472)))
+      (u32-at (+ at 24) (if metal 2097284 2097157))
       ;; LC_SEGMENT_64 __PAGEZERO, __TEXT, __DATA and __LINKEDIT.
       (u32-at (+ at 32) 25) (u32-at (+ at 36) 72)
       (text-at (+ at 40) "__PAGEZERO")
@@ -1003,6 +1077,7 @@
       (u64-at (+ at 272) (+ 4294967296 total-bytes))
       (u64-at (+ at 280) DATA-BYTES)
       (u64-at (+ at 288) total-bytes)
+      (u64-at (+ at 296) (mh-tail-bytes mode))
       (u32-at (+ at 304) 1) (u32-at (+ at 308) 1)
       ;; macOS dyld starts LC_MAIN; no C runtime or libSystem load command.
       (u32-at (+ at 320) 14) (u32-at (+ at 324) 32)
@@ -1037,7 +1112,7 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 extra
+                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 fs35-start metal metal-start
                                            :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
@@ -1059,6 +1134,12 @@
                   (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES)))
       (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
                 (fs2-lock-helper-words (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)))
+      ;; The KFR1 application operation has its own exact prefix; reuse the
+      ;; same scoped regular-file mechanism without treating KSL1 as public.
+      (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)
+                (fs2-read-helper-words
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-ONE-BYTES)
                   (+ fs2-start FS2-DA-BYTES)))
       (words-at (+ at fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES)
                 (fs2-ef-helper-words
@@ -1070,17 +1151,30 @@
           (words-at (+ at extra) (mh-startup-words extra))
           (words-at (+ at extra 64)
             (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
-      (if (string=? mode "amu-program")
+      (if (amu-program-mode? mode)
         (let [start (+ extra 512)]
-          (-> result
-              (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
-              (text-at (+ at 512) "AMU-SOURCE-V1")
-              (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
-              (words-at (+ at extra) (mh-result-words extra))
-              (generated-at (+ at start) source)))
+          (let [program (-> result
+                       (u32-at (+ at 504) 49) (u32-at (+ at 508) 40)
+                       (text-at (+ at 512) "AMU-SOURCE-V1")
+                       (u64-at (+ at 528) start) (u64-at (+ at 536) (- (vector-count source) 5))
+                       (words-at (+ at extra) (mh-result-words extra))
+                       (generated-at (+ at start) source))]
+            (cond fs35
+              (words-at program (+ at fs35-start)
+                (fs35-helper-words fs35-start
+                  (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+              metal
+              (metal-macho-at
+                (words-at program (+ at metal-start)
+                  (metal-helper-words metal-start
+                    (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+                at total-bytes)
+              :else program)))
         (if fs35
-          (words-at result (+ at extra)
-            (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+          (let [with-fs (words-at result (+ at extra)
+                         (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))]
+            (if (string=? mode "fs2-cli-stdio-cwd")
+              (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES))) with-fs))
           result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
@@ -1098,7 +1192,9 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "amu-cli-host") (string=? mode "amu-program"))
+        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
+                    (string=? mode "fs2-cli-stdio-general-command")
+                    (string=? mode "amu-cli-host") (amu-program-mode? mode))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -1119,23 +1215,30 @@
         entry-offset (if general selected-entry
                        (if (= raw-bytes MAC-PACKAGER-RAW-BYTES)
                          MAC-PACKAGER-ENTRY-OFFSET 0))
-        source (if (string=? mode "amu-program")
+        source (if (amu-program-mode? mode)
           (vector-i64-from-bytes (typed-cap-call :fs/app-data :string :bytes
             (string-concat fs2-prefix (string-concat "A" (string-concat
               (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
           [0 70 83 50 0])
         fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
-          (if (string=? mode "amu-program") (+ 512 (- (vector-count source) 5))
-            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
+          (if (amu-program-mode? mode)
+            (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
+              (if (amu-program-fs35? mode) FS35-BYTES 0)
+              (if (amu-program-metal? mode) METAL-BYTES 0))
+            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
+              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
-        total-bytes (+ text-bytes (mh-data-bytes mode))]
+        total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
             (and (string=? mode "amu-cli-host")
               (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
                 (or (= words 0) (> (+ 64 (* words 4)) 8192))))
-            (and (string=? mode "amu-program")
+            (and (amu-program-mode? mode)
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
+            (and (string=? mode "fs2-cli-stdio-cwd")
+              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
+                (or (= words 0) (> (* words 4) 1024))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -1154,7 +1257,7 @@
                  (not= raw-bytes 172)))
             (> (+ offset total-bytes) MAX-FS2-VALUE)
             (> (+ total-bytes 5) MAX-FS2-VALUE)
-            (and (string=? mode "amu-program")
+            (and (amu-program-mode? mode)
               (or (< (vector-count source) 6) (> (vector-count source) 1048581)
                   (not= (vector-at source 0) 0) (not= (vector-at source 1) 70)
                   (not= (vector-at source 2) 83) (not= (vector-at source 3) 50) (not= (vector-at source 4) 0)))
@@ -1214,6 +1317,16 @@
   (mh-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
 (defn- mh-lb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
+(defn- mh-lh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-lw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-sh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-sw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (mh-i s (bit-or 0x8a000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
 (defn- mh-sb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
 (defn- mh-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
@@ -1266,6 +1379,58 @@
   [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
    0xf9400a68 0xd2a00209 0xaa090108 0xf9000a68 0xa8c17bfd 0xd65f03c0])
 
+;; Diagnostic launchd command mode: bind FD3 to the already selected working
+;; directory. Never replace an existing FD3, and require stdin/stdout/stderr to
+;; be open so open() must return exactly 3. The launcher/host must establish a
+;; alias-free WorkingDirectory before exec. fstat64 then requires a directory
+;; owned by the process effective UID with exact mode 0700 and no ACL. The
+;; path used to enter it remains a host duty. This is not a process sandbox.
+(defn- mh-cwd-scope-words [base :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-sub 31 31 384) (mh-str 30 31 16)
+    ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
+    (mh-imm 0 3) (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92)
+    (mh-b 0x54000003 2) (mh-cmpi 0 9) (mh-b 0x54000001 2)
+    ;; open(".", O_RDONLY|O_DIRECTORY|O_NOFOLLOW, 0).
+    (mh-imm 8 46) (mh-sb 8 31 0) (mh-sb 31 31 1)
+    (mh-add 0 31 0) (mh-imm 1 1048832) (mh-imm 2 0) (mh-sys 5)
+    (mh-b 0x54000002 2) (mh-cmpi 0 3) (mh-b 0x54000001 1)
+    ;; fstat64(3): Darwin stat64 mode@4, uid@16. Reject other kinds,
+    ;; special bits and group/other permissions, then require effective UID.
+    (mh-imm 0 3) (mh-add 1 31 32) (mh-sys 339) (mh-b 0x54000002 2)
+    (mh-lh 8 31 36) (mh-imm 9 16832) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-sys 25) (mh-b 0x54000002 2) (mh-lw 8 31 48) (mh-cmp 0 8) (mh-b 0x54000001 2)
+    ;; Require the volume to report native extended-security support. This
+    ;; prevents treating an unsupported ACL query as an absent ACL. attrlist
+    ;; is at sp+192 and the fixed 96-byte volume reply at sp+224.
+    (mh-str 31 31 192) (mh-str 31 31 200) (mh-str 31 31 208)
+    (mh-imm 8 5) (mh-sh 8 31 192) (mh-imm 8 2147483648) (mh-sw 8 31 196)
+    (mh-imm 8 3221356544) (mh-sw 8 31 200)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 224) (mh-imm 3 96) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 224) (mh-cmpi 8 96) (mh-b 0x54000001 2)
+    (mh-lw 8 31 228) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 232) (mh-imm 9 1073872896) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; Both valid and supported ACL capability, plus valid/native attribute.
+    (mh-imm 9 1024) (mh-lw 8 31 252) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 268) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-imm 9 4194304) (mh-lw 8 31 280) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 300) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; A no-ACL APFS reply has only returned-attrs and an empty reference.
+    ;; Any ACL, unsupported/malformed response, or syscall error refuses.
+    (mh-imm 8 2151677952) (mh-sw 8 31 196) (mh-sw 31 31 200)
+    (mh-str 31 31 320) (mh-str 31 31 328) (mh-str 31 31 336) (mh-str 31 31 344)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 320) (mh-imm 3 32) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 320) (mh-cmpi 8 32) (mh-b 0x54000001 2)
+    (mh-lw 8 31 324) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 328) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 336) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 344) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-mov 7 19) (mh-call SLICE-SETUP-START)
+    (mh-ldr 30 31 16) (mh-add 31 31 384) (mh-i 0xd65f03c0)
+    ;; An unexpected descriptor is ours; close it and refuse.
+    (mh-label 1) (mh-sys 6)
+    (mh-label 2) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000))))
+
 ;; AMUH1: NUL AMUH 1 op, then bounded UTF-8/NUL fields or binary tail.
 ;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
 ;; wire35 owns file/host-info operations, wire20 owns only child execution.
@@ -1277,8 +1442,11 @@
     (mh-cmpi 1 20) (mh-b 0x54000000 1) (mh-jump fallback)
     ;; The private host service uses byte/vector FS requests; ordinary FS2
     ;; strings and string-to-bytes go to the existing scoped dispatcher.
-    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000000 117)
-    (mh-cmpi 2 9) (mh-b 0x54000000 117) (mh-b 0x14000000 1)
+    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000001 125)
+    ;; String-to-string needs prefix validation before FS2 dispatch: otherwise
+    ;; malformed host requests trap instead of reporting the host ABI error.
+    (mh-cmpi 3 1) (mh-b 0x54000000 1) (mh-jump fallback)
+    (mh-label 125) (mh-cmpi 2 9) (mh-b 0x54000000 117) (mh-b 0x14000000 1)
     (mh-label 117) (mh-jump fallback)
     (mh-label 1)
     (mh-sub 31 31 128)
@@ -1295,6 +1463,7 @@
     (mh-imm 8 8388608) (mh-ar 22 21 8 0)
     (mh-imm 8 16777216) (mh-ar 23 21 8 0)
     (mh-cmpi 28 20) (mh-b 0x54000000 8)
+    (mh-cmpi 2 1) (mh-b 0x54000000 8)
     (mh-cmpi 2 8) (mh-b 0x54000001 98)
     (mh-cmpi 3 8) (mh-b 0x54000001 98)
     ;; Validate the complete vector descriptor and every byte before use.
@@ -1332,6 +1501,11 @@
     (mh-lb 8 21 3) (mh-cmpi 8 50) (mh-b 0x54000001 123)
     (mh-lb 8 21 4) (mh-b (bit-or 0xb4000000 8) 122)
     (mh-label 123)
+    ;; Wire35 string requests must be FS2; the private AMUH host protocol
+    ;; accepts byte vectors only. Wire20's string AMUH remains unchanged.
+    (mh-cmpi 28 35) (mh-b 0x54000001 124)
+    (mh-ldr 8 31 96) (mh-cmpi 8 1) (mh-b 0x54000000 98)
+    (mh-label 124)
     (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
     (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
     (mh-lb 8 21 2) (mh-cmpi 8 77) (mh-b 0x54000001 90)
@@ -1537,7 +1711,10 @@
     ;; Minimal environment; no caller secrets or runtime override variables.
     (mh-label 75) (mh-b (bit-or 0x10000000 8) 111) (mh-str 8 23 768)
     (mh-b (bit-or 0x10000000 8) 112) (mh-str 8 23 776)
-    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784) (mh-str 31 23 792)
+    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784)
+    ;; Do not inherit machine-wide Git helpers, URL rewrites or proxies.
+    ;; Per-repository configuration is still checked by the caller.
+    (mh-b (bit-or 0x10000000 8) 118) (mh-str 8 23 792) (mh-str 31 23 800)
     (mh-imm 8 0x003d524944504d54) (mh-str 8 27 0)
     (mh-add 27 27 7) (mh-ldr 26 23 528)
     (mh-label 76) (mh-lb 8 26 0) (mh-sb 8 27 0)
@@ -1601,6 +1778,7 @@
     (mh-label 110) (mh-text ".")
     (mh-label 111) (mh-text "PATH=/usr/bin:/bin")
     (mh-label 112) (mh-text "LANG=C")
+    (mh-label 118) (mh-text "GIT_CONFIG_NOSYSTEM=1")
     (mh-label 114) (mh-text "amu: EHOST child setup/exec failed\n")
     (mh-label 115) (mh-text "amu: EHOST invalid host ABI or exhausted buffer\n"))]
     (mh-finish s)))

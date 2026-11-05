@@ -1,0 +1,68 @@
+;; JUN-733 slice 2 (owner decision 2026-11-01): row operations on records (docs/language-ladder.edn :row-operations
+;; :empty-map-literal :record-field-update :merge-literal-reads-its-row). Each result is the record of the shape the
+;; operation gives: the one declared record of that shape, else the anonymous record of that shape.
+;; main returns 0, or the number of the first failing case.
+(ns native-row-operations (:export [main]))
+
+(defrecord P [x :i64 y :i64])
+(defrecord P3 [x :i64 y :i64 z :i64])
+(defrecord Win [id :string title :string w :i64])
+
+(defn- z-of [p [:ref :native-row-operations/P3]] :i64 (:z p))
+(defn- y-of [p [:ref :native-row-operations/P]] :i64 (:y p))
+(defn- seven [] :i64 7)
+
+(defn- case1 [] :i64 (let [m (assoc {:a 1} :b 2)] (+ (:a m) (* 10 (:b m)))))          ; 21: assoc extends the row
+(defn- case2 [] :i64 (let [m (assoc {} :a 1 :b 2)] (+ (:a m) (:b m))))                  ; 3: {} extended by assoc
+(defn- case3 [] :i64 (z-of (assoc (->P 1 2) :z 7)))                                    ; 7: the extended row is P3
+(defn- case4 [] :i64 (:a (if true (assoc {:b 1} :a 2) {:a 5 :b 6})))                   ; 2: one type with the literal
+(defn- case5 [] :i64 (let [m (assoc {:a 1} :k nil) n {:k 4 :a 0}] (+ (option-or (:k m) 9) (option-or (:k n) 0))))   ; 13
+(defn- case6 [] :i64 (let [m (assoc {:a 1} :s "xy")] (string-length (:s m))))         ; 2
+(defn- case7 [] :i64 (let [m (dissoc (->P3 1 2 3) :z)] (+ (:x m) (y-of m))))           ; 3: dissoc shrinks P3 to P
+(defn- case8 [] :i64 (y-of (dissoc (->P3 1 2 3) :z :q)))                                ; 2: an absent key is ignored
+(defn- case9 [] :i64 (:b (dissoc {:a 1 :b 2 :c 3} :a :c)))                              ; 2
+(defn- case10 [] :i64 (let [m (select-keys {:a 1 :b 2 :c 3} [:c :a])] (+ (:a m) (:c m))))   ; 4
+(defn- case11 [] :i64 (y-of (select-keys (->P3 5 6 7) [:x :y])))                        ; 6
+(defn- case12 [] :i64 (let [m (merge {:a 1 :b 2} {:b 20 :c 30})] (+ (:a m) (+ (:b m) (:c m)))))   ; 51: b's value wins
+(defn- case13 [] :i64 (z-of (merge (->P 1 2) {:z 3})))                                  ; 3: merging a literal gives P3
+(defn- case14 [] :i64 (:y (merge {} (->P 4 5))))                                        ; 5: (merge {} m)
+(defn- case15 [] :i64 (let [m (merge {:a 1} {:b 2} {:c 3})] (+ (:a m) (+ (:b m) (:c m)))))   ; 6: folded left
+(defn- case16 [] :i64
+  (let [w (->Win "w1" "" 400)
+        m (merge {:title (:id w)} (dissoc w :title))]                                   ; a merged literal reads its row
+    (+ (:w m) (string-length (:title m)))))                                             ; 402
+(defn- case17 [] :i64 (string-length (:a (merge {:a 1} {:a "s"}))))                    ; 1: b's type wins
+(defn- case18 [] :i64 (:n (update {:n 1} :n inc)))                                      ; 2
+(defn- case19 [] :i64 (:y (update (->P 1 2) :y + 10)))                                  ; 12
+(defn- case20 [] :i64 (:n (update {:n 3} :n (fn [x] (* x x)))))                          ; 9: a fn literal applied as a let
+(defn- case21 [] :i64 (nth (:v (update {:v [1 2 3]} :v (fn [[a b c]] [c b a]))) 0))       ; 3: its parameter destructures
+(defn- case22 [] :i64 (count (:v (update {:v [1 2]} :v conj 5))))                         ; 3
+(defn- case23 [] :i64 (:n (update {:n 1} :n (fn [x y] (+ x y)) (seven))))                ; 8
+(defn- case24 [] :i64 (let [c (atom 1) m (merge {:a (swap! c + 1)} {:b (swap! c * 10)})] (+ (* 100 (:a m)) (:b m))))   ; 220
+
+(defn main [] :i64
+  (cond (not= (case1) 21) 1
+        (not= (case2) 3) 2
+        (not= (case3) 7) 3
+        (not= (case4) 2) 4
+        (not= (case5) 13) 5
+        (not= (case6) 2) 6
+        (not= (case7) 3) 7
+        (not= (case8) 2) 8
+        (not= (case9) 2) 9
+        (not= (case10) 4) 10
+        (not= (case11) 6) 11
+        (not= (case12) 51) 12
+        (not= (case13) 3) 13
+        (not= (case14) 5) 14
+        (not= (case15) 6) 15
+        (not= (case16) 402) 16
+        (not= (case17) 1) 17
+        (not= (case18) 2) 18
+        (not= (case19) 12) 19
+        (not= (case20) 9) 20
+        (not= (case21) 3) 21
+        (not= (case22) 3) 22
+        (not= (case23) 8) 23
+        (not= (case24) 220) 24
+        :else 0))
