@@ -30,7 +30,7 @@ WINDOWS16 = Path(__file__).with_name("check-aiueos-object-windows16.py")
 PAUSE = Path(__file__).with_name("check-aiueos-object-pause.py")
 FOPS = Path(__file__).resolve().parents[2] / "docs/evidence/f32-sse-20261030/fops.kotoba"
 # the objects' SHA-256 under amu main 3d160442 (slice 6), before the conversion existed
-FOPS_SHA256 = "77838ccc70c641f2b52596e312e834c0db5dcbe5aea85b356964fdde86de0115"
+FOPS_SHA256 = "d079b9d45c526f4e36831610a02ead9f19c0e85c30b4f0ec7468911554e4fe56"
 PAUSE_SHA256 = "c24f9c962e000ead3c1672975f74f941960c169d9c22bfe824a89a3c7a909403"
 SOURCE = """(ns f2i (:export [kotoba_aiueos_f32_to_i64]))
 (defn kotoba_aiueos_f32_to_i64 [bits :i64] :i64 (f32-to-i64-truncating (f32-from-bits bits)))

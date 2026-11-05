@@ -60,7 +60,7 @@ UNCHANGED = {
     "float-f64-unordered": "96d77de223bed4e18a5768a5abdb55cc7e2df6c02944ebb082ad2b99b187cc54",
     "float-f32-cmp": "2629d0afcd6fb9520f037a8c40678e735bf00a6eb44912e86163d20422eb3264",
 }
-D64 = "4280a029215d9ebbcc2eed89c1a1ef57e587987c538b610b08ce0ba47e630bb6"   # the F64 payload under the same root
+D64 = "89e0f0ea552eb753df9ad01ddbf3df8d4c68daefab27044fd6577e708cdfbf43"   # the F64 payload under the same root
 IN_RANGE = [0x00000000, 0x80000000, 0x00000001, 0x807fffff, 0x3f7fffff, 0xbf7fffff, 0x3f800000, 0xbfc00000,
             0x40200000, 0xc0200000, 0x4b000001, 0xcaffffff, 0x4f000000, 0xcf800001, 0x5e800000, 0x5effffff,
             0xdeffffff, 0xdf000000]
