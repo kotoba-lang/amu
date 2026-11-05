@@ -1365,7 +1365,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/x86-project"
       - name: Explicit x86 project effect admission and runtime refusals
-        if: matrix.target == 'x86_64'
+        if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: |
           compiler_sha=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
           python3 scripts/seed/check-x86-project-effects-native.py --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
