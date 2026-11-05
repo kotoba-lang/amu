@@ -93,7 +93,9 @@ def main(compiler, out):
     try:
         observe("exists-errors", [image, "exists-errors", scope, outside], guest, timeout=60)
     finally:
+        # the evidence upload must be able to read the scope
         (scope / "parent").chmod(0o700)
+        (scope / "denied").chmod(0o600)
 
     for name, mode, extra, diagnostic in [
         ("fault", "managed-fault", {}, b":kind :signal"),
