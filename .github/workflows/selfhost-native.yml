@@ -82,7 +82,7 @@ env:
   SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
 jobs:
   native-preflight:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -210,7 +210,7 @@ jobs:
         with:
           key: ${{ steps.gate.outputs.key }}
   foundation-starter-arm64:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -243,7 +243,7 @@ jobs:
         with:
           key: ${{ steps.gate.outputs.key }}
   bootstrap-arm64-root:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,7 +330,7 @@ jobs:
             ${{ runner.temp }}/boot/runner.kotoba
   one-compiler-arm64:
     needs: bootstrap-arm64-root
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -398,7 +398,7 @@ jobs:
     # Required context. The loaderless bootstrap and the one-compiler derivation are sibling jobs (JUN-759).
     needs: [foundation-starter-arm64, bootstrap-arm64-root, one-compiler-arm64]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every part of bootstrap-arm64 to have succeeded (JUN-759)
@@ -414,7 +414,7 @@ jobs:
           PY_NEEDS
   x86-native-qualification:
     needs: bootstrap-arm64-root
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -460,7 +460,7 @@ jobs:
             ${{ runner.temp }}/aiueos-user-elf-x86
   x86-complete:
     needs: one-compiler-arm64
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -506,7 +506,7 @@ jobs:
     # Required context. The x86_64 qualification and the complete compiler fixed point are sibling jobs (JUN-759).
     needs: [x86-native-qualification, x86-complete]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every part of derive-x86_64 to have succeeded (JUN-759)
@@ -522,7 +522,7 @@ jobs:
           PY_NEEDS
   qualify-arm64-runtime:
     needs: one-compiler-arm64
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -617,7 +617,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   qualify-arm64-gates:
     needs: one-compiler-arm64
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -736,7 +736,7 @@ jobs:
     # Required context. The runtime/fault checks and the gate phase are sibling jobs (JUN-759).
     needs: [qualify-arm64-runtime, qualify-arm64-gates]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every part of qualify-arm64 to have succeeded (JUN-759)
@@ -752,7 +752,7 @@ jobs:
           PY_NEEDS
   qualify-benchmark-arm-host:
     needs: one-compiler-arm64
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -812,7 +812,7 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -867,7 +867,7 @@ jobs:
     # Required context. The host/oracle run and the 13 mutants (in 3 shards) are sibling jobs (JUN-759).
     needs: [qualify-benchmark-arm-host, qualify-benchmark-arm-mutants]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Require every part of qualify-benchmark-arm to have succeeded (JUN-759)
@@ -890,7 +890,7 @@ jobs:
       # native_gate_shard.py --tier pr refuses the deferral if it no longer does.
       matrix:
         include: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'merge_group') && '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"}]' || '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"},{"shard":"x86-dupes","receipt":"x86_64-native-dupes-receipt","schedule":"native-scheduling-x86-dupes"}]') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1028,7 +1028,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   qualify-x86-runtime:
     needs: x86-complete
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1081,7 +1081,7 @@ jobs:
   wasm32-browser-compile:
     needs: bootstrap-arm64-root
     name: wasm32-browser target (compile, arm64)
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1132,7 +1132,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   wasm32-project-admission-x86:
     name: wasm32-browser project admission (x86_64)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1167,7 +1167,7 @@ jobs:
   wasm32-browser-chrome:
     name: wasm32-browser target (headless Chrome, x86_64)
     needs: wasm32-browser-compile
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1208,7 +1208,7 @@ jobs:
   qualify-x86_64:
     needs: [qualify-x86-shards, qualify-x86-runtime]
     if: always() && !cancelled()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1256,7 +1256,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   qualify-benchmark-x86-factory:
     needs: [qualify-benchmark-arm-host, x86-complete]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1303,7 +1303,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   shared-browser-components:
     name: Shared text / DOM / text-edit (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

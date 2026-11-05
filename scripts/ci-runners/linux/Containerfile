@@ -1,0 +1,21 @@
+# amu CI Linux runner image (ADR 0406). Build once per ISA on that ISA's host, never with emulation:
+#   podman build --build-arg RUNNER_VERSION=<x.y.z> --build-arg RUNNER_SHA256=<sha256 of the tarball> \
+#     --build-arg RUNNER_ARCH=arm64|x64 -t <registry>/amu-ci-runner:<tag> scripts/ci-runners/linux
+# Both build args are required: the build fails instead of guessing a version or digest.
+FROM docker.io/library/ubuntu:24.04
+ARG RUNNER_VERSION
+ARG RUNNER_SHA256
+ARG RUNNER_ARCH
+RUN test -n "$RUNNER_VERSION" && test -n "$RUNNER_SHA256" && test -n "$RUNNER_ARCH"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl git jq python3 sudo tar unzip xz-utils libicu74 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -s /bin/bash runner
+USER runner
+WORKDIR /home/runner
+RUN curl -fsSL -o runner.tgz \
+      "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" \
+    && echo "${RUNNER_SHA256}  runner.tgz" | sha256sum -c - \
+    && tar xzf runner.tgz && rm runner.tgz
+# JIT config arrives in ACTIONS_RUNNER_JITCONFIG; the runner exits after its single job.
+ENTRYPOINT ["/bin/bash", "-c", "exec ./run.sh --jitconfig \"$ACTIONS_RUNNER_JITCONFIG\""]

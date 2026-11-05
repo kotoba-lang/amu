@@ -1,0 +1,15 @@
+# Applied inside the Linux runner VM (nft -f). Runner containers must reach GitHub and registries only:
+# no tailnet, no LAN, no host loopback or link-local. Order matters: drops come before the final accept.
+table inet amu_ci {
+  chain forward {
+    type filter hook forward priority 0; policy accept;
+    ip daddr { 100.64.0.0/10, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 } \
+      counter drop comment "tailnet, LAN, link-local"
+    ip6 daddr { fc00::/7, fe80::/10 } counter drop
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+    # The VM itself needs its DNS/gateway on the NAT range; add that single host above the drop by hand
+    # for the Lima network in use (see README), never a whole range.
+  }
+}
