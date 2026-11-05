@@ -1,0 +1,64 @@
+name: post-merge-repin
+# ADR 0404 (JUN-818). DISABLED by default: the push trigger runs only when the repository variable
+# AMU_POST_MERGE_REPIN_ENABLED is 'true'; workflow_dispatch is for owner-run trials. Regenerates the derived
+# pins on the merged main commit and lands them as ONE bot pull request through the merge queue. It never
+# pushes to main. Needs secret AMU_REPIN_TOKEN (GitHub App installation token: contents+pull-requests write).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+concurrency:
+  group: post-merge-repin
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  repin:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (vars.AMU_POST_MERGE_REPIN_ENABLED == 'true' && !startsWith(github.event.head_commit.message, 'repin:'))
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pin check on the merged commit (nothing to do when current)
+        id: stale
+        run: |
+          if python3 scripts/seed/repin-all-pins.py --check; then echo "stale=false" >> "$GITHUB_OUTPUT"
+          else echo "stale=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Regenerate pins (Mac fixed point, native only)
+        if: steps.stale.outputs.stale == 'true'
+        run: python3 scripts/seed/repin-all-pins.py
+      - name: Path allowlist (only derived pins may change)
+        if: steps.stale.outputs.stale == 'true'
+        run: |
+          python3 scripts/ci/test_repin_allowlist.py
+          python3 scripts/ci/repin_allowlist.py
+      - name: Verify the result is a fixed point and the stale-pin controls still fail
+        if: steps.stale.outputs.stale == 'true'
+        run: |
+          python3 scripts/seed/repin-all-pins.py --check
+          python3 scripts/seed/test-repin-all-pins.py
+      - name: Open and enqueue the bot pin pull request
+        if: steps.stale.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.AMU_REPIN_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          test -n "$GH_TOKEN" || { echo "AMU_REPIN_TOKEN is not configured"; exit 1; }
+          short="${SHA:0:12}"; branch="bot/repin-$short"
+          git config user.name "amu-repin-bot"
+          git config user.email "amu-repin-bot@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "repin: regenerate derived pins on $short (JUN-818, ADR 0404)"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
+            --title "repin: regenerate derived pins on $short" \
+            --body "Bot pin regeneration of main@$SHA (ADR 0404, JUN-818). Pin files only; allowlist and --check passed in the generating job.")
+          id=$(gh pr view "$url" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
+          gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' -f id="$id"
