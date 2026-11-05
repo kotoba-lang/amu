@@ -68,6 +68,33 @@ def main(compiler, out):
         if case in ("managed-publish", "managed-publish-exclusive"):
             assert (scope / "published").read_bytes() == b"preserved"
 
+    # Form U (draft full-permission no-follow stat): real files with exact modes, a
+    # final symlink and a directory; the fixture also requires O to keep its old mask.
+    scope, guest = scope_for("full-mode")
+    for fname, fmode in (("regular", 0o644), ("special", 0o4644), ("group", 0o2644), ("sticky", 0o1644)):
+        (scope / fname).write_bytes(b"x")
+        (scope / fname).chmod(fmode)
+    os.symlink(scope / "regular", scope / "link")
+    (scope / "directory").mkdir()
+    observe("full-mode", [image, "full-mode", scope], guest, timeout=60)
+    # Existence errors: D answers 1 for a readable file, 0 for ENOENT and ? for every other error,
+    # a symlink leaf, an escaping symlink and a path outside the granted root.
+    scope, guest = scope_for("exists-errors")
+    outside = out / "exists-outside"
+    outside.write_bytes(b"x")
+    (scope / "readable").write_bytes(b"x")
+    (scope / "denied").write_bytes(b"x")
+    (scope / "denied").chmod(0)
+    (scope / "parent").mkdir()
+    (scope / "parent" / "inside").write_bytes(b"x")
+    (scope / "parent").chmod(0)
+    os.symlink(scope / "readable", scope / "link")
+    os.symlink(outside, scope / "escape")
+    try:
+        observe("exists-errors", [image, "exists-errors", scope, outside], guest, timeout=60)
+    finally:
+        (scope / "parent").chmod(0o700)
+
     for name, mode, extra, diagnostic in [
         ("fault", "managed-fault", {}, b":kind :signal"),
         ("fuel", "managed-fuel", {"KEXE_FUEL": "1000000"}, b":kind :signal"),
