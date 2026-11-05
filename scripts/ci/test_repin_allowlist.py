@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Negative controls for repin_allowlist.py (ADR 0404)."""
+"""Negative controls for repin_allowlist.py (ADR 0406)."""
 import subprocess
 import sys
 import tempfile

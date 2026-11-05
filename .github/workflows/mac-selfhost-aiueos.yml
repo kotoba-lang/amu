@@ -239,16 +239,19 @@ jobs:
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-closed-dispatch"
       - name: keyword map literals have structural identity; nil is an [:option T] field's none (JUN-733)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-record-identity-option.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-record-identity-option"
       - name: row operations -- assoc extends, dissoc / select-keys shrink, merge, update, {} (JUN-733)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-row-operations.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-row-operations"
       - name: unannotated parameters infer a row; get with a default on a record (JUN-733)
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-row-inference.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
