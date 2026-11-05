@@ -48,7 +48,7 @@ jobs:
           - runner: ubuntu-latest
             isa: x86_64
             compiler: bin/amu-linux-x86_64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}
     # 11 to 20+ minutes observed (main 11, #1652 19, #1654 twice over 20): the limit
     # was cancelling a job whose gates had all printed PASS_.
     timeout-minutes: 30
