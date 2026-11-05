@@ -176,6 +176,7 @@
           M1 (ck-tform M (nm-next M k))
           ty (ck-r M1)]
       (cond (= ty 0) (ck-err M1 E-CHECK-SCHEMA k 0)
+            (= ty ck-ty-vf64) (ck-err M1 E-CHECK-SCHEMA k 0)   ; JUN-846: :vector-f64 is no record field
             (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA k 0)
             :else (ck-sch-fields (ck-blk-put M1 blk i ks ty) nx blk (+ i 1))))))
@@ -218,6 +219,7 @@
                                         ;; R6D: :option-i64 (FNV-1a of its spelling) = CT (option :i64 1), distinct from [:option :i64]
                                         (= (nm-sf M (nm-sym-of M t) SF-HASH) 1323450292249949892) (ck-ct-intern M TC-OPTION TY-I64 1)
                                         (= (nm-sf M (nm-sym-of M t) SF-HASH) -8033845255403754116) (nm-put M MM-R0 ck-ty-f32)   ; R6F: :f32
+                                        (= (nm-sf M (nm-sym-of M t) SF-HASH) 8845521745355041115) (nm-put M MM-R0 ck-ty-vf64)   ; JUN-846: :vector-f64
                                         :else (throw t)))
         (= (ck-is-tform M t) 1) (ck-tf-vec M t)
         :else (throw t)))
@@ -315,6 +317,7 @@
       (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
             (nm-failed M1) (ck-touch M1)
             (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
+            (= ty ck-ty-vf64) (ck-err M1 E-CHECK-SCHEMA c 0)   ; JUN-846: :vector-f64 is no record field
             (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
             :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
@@ -3706,7 +3709,7 @@
                                  ty (ck-ty M3)]
                              (cond (nm-failed M3) M3
                                    (zero? ty) (ck-err M3 E-CHECK-ABORT-INFER n 0)
-                                   (or (= ty (ck-poison)) (= ty ck-ty-f32) (= (ck-tcon M3 ty) TC-FN)) (ck-err M3 E-CHECK-SCHEMA k 0)
+                                   (or (= ty (ck-poison)) (= ty ck-ty-f32) (= ty ck-ty-vf64) (= (ck-tcon M3 ty) TC-FN)) (ck-err M3 E-CHECK-SCHEMA k 0)
                                    :else (recur (ck-kopt-val M3 k ty) (nm-next M3 (nm-next M3 k)))))))]
             (if (nm-failed M1) (ck-touch M1) (ck-kwrec-type M1 n))))))
 ;; 1 when key node k repeats a key of literal n before it
@@ -4043,7 +4046,7 @@
             ty (ck-ty M1)]
         (cond (nm-failed M1) (ck-touch M1)
               (zero? ty) (ck-err M1 E-CHECK-ABORT-INFER k 0)
-              (or (= ty (ck-poison)) (= ty ck-ty-f32) (= (ck-tcon M1 ty) TC-FN)) (ck-err M1 E-CHECK-SCHEMA k 0)
+              (or (= ty (ck-poison)) (= ty ck-ty-f32) (= ty ck-ty-vf64) (= (ck-tcon M1 ty) TC-FN)) (ck-err M1 E-CHECK-SCHEMA k 0)
               (<= t 0) (nm-put M1 MM-R0 ty)
               (= ty t) (ck-ct-intern M1 TC-OPTION t 0)
               (and (= (ck-tcon M1 ty) TC-OPTION) (= (ck-ta M1 ty) t)) (nm-put M1 MM-R0 ty)
@@ -5917,7 +5920,8 @@
                       (or (= c 91) (= c 123)) (recur (+ i 1) used defd false (ck-r6b-push st 1))
                       (or (= c 41) (= c 93) (= c 125)) (recur (+ i 1) used defd false (quot st 2))
                       :else (recur (+ i (lx-cpw c)) used defd (if (lx-ws? c) pd false) st)))))
-        r2 (if (pos? (bit-and r (bit-or ck-r6b-g-exi ck-r6f-g-symp))) (bit-or r ck-r6b-g-doc) r)]   ; R6F: symbol? needs doc
+        r1 (if (pos? (bit-and r ck-r6m-g-vf64)) (bit-or r ck-r6b-g-vec) r)   ; JUN-846: vector-f64-drop / -take call vector-drop / -take
+        r2 (if (pos? (bit-and r1 (bit-or ck-r6b-g-exi ck-r6f-g-symp))) (bit-or r1 ck-r6b-g-doc) r1)]   ; R6F: symbol? needs doc
     ;; Document f64 and canonical codecs use the existing exact decimal and
     ;; UTF-8 groups. Their source is appended after scanning the user module.
     (let [r3 (if (pos? (bit-and r2 ck-r6b-g-doc))
@@ -6994,7 +6998,7 @@
 (defn- ck-hint-type-ok? [M :vector-i64 t :i64] :bool
   (cond (or (<= t 0) (= t TY-I64)) false
         (= t TY-REC-BASE) true   ; JUN-733: a row (ck-row-gen?)
-        (< t TY-REC-BASE) (or (= t TY-BOOL) (= t TY-STR) (= t TY-VEC) (= t TY-BYTES) (= t TY-KW) (= t TY-DOC) (= t TY-SYM) (= t TY-F64) (= t ck-ty-f32))
+        (< t TY-REC-BASE) (or (= t TY-BOOL) (= t TY-STR) (= t TY-VEC) (= t TY-BYTES) (= t TY-KW) (= t TY-DOC) (= t TY-SYM) (= t TY-F64) (= t ck-ty-f32) (= t ck-ty-vf64))
         (< t TY-COMP-BASE) (pos? (nm-sf M (- t TY-REC-BASE) SF-REC))
         :else (and (pos? (vector-at M MM-CT)) (< (- t TY-COMP-BASE) (vector-at M (+ (vector-at M MM-CT) CT-N))))))
 (defn- ck-hint-set [M :vector-i64 f :i64 k :i64 t :i64 tn :i64] :vector-i64
@@ -7308,11 +7312,18 @@
       (1735258452003540293 7828970525143101422 1569146262666716750 -7055665907701587864 5083591168744969843) ck-r6m-g-res   ; result-ok result-err result-ok? result-value result-error
       3450483058270114871 ck-r6m-g-repl   ; string-replace-all
       -1824377047816844663 ck-r6m-g-vnew   ; vector-new
+      (4611635352269453028 8455052825308581137 -8158213638247478922 -8283848943413677777 2864639296447667519 -636371219199054191 2321605471451843625 7239935634298295988) ck-r6m-g-vf64   ; JUN-846: vector-f64-new -count -get -at -drop -take -assoc -conj
       (-7628706683553491796 -3941283744650657794 -6567073642785683381 6637241187818425693 -2548592933955315681) ck-r6m-g-i32   ; i32-wrap i32-wrapping-add i32-wrapping-mul i32-xor xorshift32
       0)))
 ;; the i32 profile (measured on stage-0: an i32 is an i64 word holding the sign-extended value; xorshift32 answers the u32
 ;; (zero-extended) result of x ^= x << 13; x ^= x >> 17; x ^= x << 5 over the low 32 bits)
 (def ck-r6m-g-i32 4294967296)
+;; JUN-846: :vector-f64, a vector of binary64 values (as :vector-i64 over the bit patterns: a binary64 is its i64 word, as :f64),
+;; the reference's vector-f64-* heads (lang/surface-status, callable_values_test) as library defn-s over :vector-i64. A type of its
+;; own (code 12, distinct from :vector-i64 so bits and integers cannot be mixed), no record field, no export (E2104). Narrower
+;; than the reference by outcome only: vector-f64-new takes at most 8 items (a longer list is E2101, never another answer).
+(def ck-ty-vf64 12)
+(def ck-r6m-g-vf64 8589934592)
 (defn- ck-r6m-t-i32 [] :string
   (string-concat "(defn- __r6m-i32w [x :i64] :i64 (i64-shift-right (i64-shift-left x 32) 32))\n"
   (string-concat "(defn- i32-wrap [x :i64] :i64 (__r6m-i32w x))\n"
@@ -7326,11 +7337,21 @@
   (string-concat "(defn- result-ok? [r [:result :i64 :i64]] :bool (result-ok?-of [:result :i64 :i64] r))\n"
   (string-concat "(defn- result-value [r [:result :i64 :i64] d :i64] :i64 (result-value-of [:result :i64 :i64] r d))\n"
   "(defn- result-error [r [:result :i64 :i64] d :i64] :i64 (result-error-of [:result :i64 :i64] r d))\n")))))
+(defn- ck-r6m-t-vf64 [] :string
+  (string-concat "(defn- vector-f64-new ([] :vector-f64 (__r6-as :vector-f64 (vector-alloc 0))) ([a :f64] :vector-f64 (vector-f64-conj (vector-f64-new) a)) ([a :f64 b :f64] :vector-f64 (vector-f64-conj (vector-f64-new a) b)) ([a :f64 b :f64 c :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b) c)) ([a :f64 b :f64 c :f64 d :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b c) d)) ([a :f64 b :f64 c :f64 d :f64 e :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b c d) e)) ([a :f64 b :f64 c :f64 d :f64 e :f64 f :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b c d e) f)) ([a :f64 b :f64 c :f64 d :f64 e :f64 f :f64 g :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b c d e f) g)) ([a :f64 b :f64 c :f64 d :f64 e :f64 f :f64 g :f64 h :f64] :vector-f64 (vector-f64-conj (vector-f64-new a b c d e f g) h)))\n"
+  (string-concat "(defn- vector-f64-count [v :vector-f64] :i64 (vector-count (__r6-as :vector-i64 v)))\n"
+  (string-concat "(defn- vector-f64-at [v :vector-f64 i :i64] :f64 (__r6-as :f64 (vector-at (__r6-as :vector-i64 v) i)))\n"
+  (string-concat "(defn- vector-f64-get [v :vector-f64 i :i64 d :f64] :f64 (if (and (>= i 0) (< i (vector-f64-count v))) (vector-f64-at v i) d))\n"
+  (string-concat "(defn- vector-f64-conj [v :vector-f64 x :f64] :vector-f64 (__r6-as :vector-f64 (vector-conj (__r6-as :vector-i64 v) (__r6-as :i64 x))))\n"
+  (string-concat "(defn- vector-f64-assoc [v :vector-f64 i :i64 x :f64] :vector-f64 (__r6-as :vector-f64 (vector-assoc (__r6-as :vector-i64 v) i (__r6-as :i64 x))))\n"
+  (string-concat "(defn- vector-f64-drop [v :vector-f64 n :i64] :vector-f64 (__r6-as :vector-f64 (vector-drop (__r6-as :vector-i64 v) n)))\n"
+  "(defn- vector-f64-take [v :vector-f64 n :i64] :vector-f64 (__r6-as :vector-f64 (vector-take (__r6-as :vector-i64 v) n)))\n"))))))))
 (defn- ck-r6m-t-lib [m :i64] :string
   (-> ""
       (string-concat (ck-r6b-pick m ck-r6m-g-res (ck-r6m-t-res)))
       (string-concat (ck-r6b-pick m ck-r6m-g-repl "(defn- __r6m-repl [s :string a :string b :string i :i64 acc :string] :string (let [r (string-substring s i (string-byte-length s)) j (string-index-of r a)] (if (< j 0) (string-concat acc r) (__r6m-repl s a b (+ i (+ j (string-byte-length a))) (string-concat acc (string-concat (string-substring r 0 j) b))))))\n(defn- string-replace-all [s :string a :string b :string] :string (__r6m-repl s a b 0 (string-substring \"x\" 0 0)))\n"))
       (string-concat (ck-r6b-pick m ck-r6m-g-vnew "(defn- vector-new [] :vector-i64 (vector-alloc 0))\n"))
+      (string-concat (ck-r6b-pick m ck-r6m-g-vf64 (ck-r6m-t-vf64)))   ; JUN-846
       (string-concat (ck-r6b-pick m ck-r6m-g-i32 (ck-r6m-t-i32)))))
 ;; R6F: `(fs/app-data-bytes request content)`, the WRITE / APPEND spelling, is the one bytes request the wire carries:
 ;; `(fs/app-data-bytes (bytes-concat (string-to-utf8 request) content))` (kotoba-sema analyze expand-app-data-bytes-writes),
