@@ -60,6 +60,7 @@ jobs:
           --output "$RUNNER_TEMP/checked-definition"
           --benchmark-scc
       - name: Native record-schema closure and executed mutants
+        if: steps.gate.outputs.skip != 'true'
         run: >-
           python3 scripts/seed/native_build_queue.py
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
