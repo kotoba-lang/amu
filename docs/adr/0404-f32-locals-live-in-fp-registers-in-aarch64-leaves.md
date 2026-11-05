@@ -1,9 +1,10 @@
 # ADR-0404 -- f32 locals live in FP registers in aarch64 leaves (JUN-804 S1)
 
-- Status: **implemented; Mac core adoption candidate** (seed/41 `fh-*`, `gn-range-wrapper`, `gn-call-range`;
+- Status: **implemented** (seed/41 `fh-*`, `gn-range-wrapper`, `gn-call-range`;
   evidence `docs/evidence/s1-fp-homes-20261103/`; receipt `seed/adoption-jun804-s1-fp-homes-20261103.json`).
-  The signed Mac F builds G1 = G2 = G3 from the new core (`PASS_MAC_CORE_ADOPTION_FIXED_POINT`); native ARM/x86 CI
-  and the Linux controller qualification are pending.
+  Merged 2026-11-04 (#1813, `9ca2f3421`). The signed Mac F builds G1 = G2 = G3 from the new core
+  (`PASS_MAC_CORE_ADOPTION_FIXED_POINT`), and `selfhost-native` (native ARM/x86 qualification and the `native-cdci`
+  controller gate) passed on main at that commit.
 - Date: 2026-11-03
 - Owner direction: 2026-11-03, JUN-804: plan and build an inference-first Kotoba and Amu, with Kotoba and Amu
   selfhost on this Mac's architecture, compiled by Amu selfhost directly. This is that plan's stage S1.
