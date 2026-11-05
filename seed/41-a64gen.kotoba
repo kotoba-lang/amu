@@ -2256,11 +2256,27 @@
       (gn-emit (enc-bcond (enc-cond-gt) 2))
       (gn-emit (enc-brk 0))
       (gn-emit (enc-fcvtzs 0 d 0))))
+;; f64 -> i64 (UOP-F64-TO-I64, JUN-846): the f32 guard above at double precision, the reference's semantics (NaN, +-Inf and every
+;; |x| >= 2^63 trap; in range truncates toward zero) instead of fcvtzs's saturated answer. -2^63 is 0xc3e0000000000000 in xD.
+;;   fmov d0,xX ; movz xD,#0xc3e0,lsl #48 ; fmov d1,xD (-2^63) ; fcmp d0,d1 ; b.lt trap (below, or unordered) ;
+;;   fneg d1,d1 (2^63) ; fcmp d1,d0 ; b.gt ok (2^63 > x, ordered) ; trap: brk #0 ; ok: fcvtzs xD,d0
+(defn- gn-fl-f64-to-i64 [M :vector-i64 d :i64 x :i64] :vector-i64
+  (-> M
+      (gn-emit (enc-fmov-to-fp 1 0 x))
+      (gn-emit (enc-movz d 0xc3e0 3))
+      (gn-emit (enc-fmov-to-fp 1 1 d))
+      (gn-emit (enc-fcmp 1 0 1))
+      (gn-emit (enc-bcond (enc-cond-lt) 4))
+      (gn-emit (enc-fop1 0 1 1 1))
+      (gn-emit (enc-fcmp 1 1 0))
+      (gn-emit (enc-bcond (enc-cond-gt) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-fcvtzs 1 d 0))))
 ;; d := (uop) x
 (defn- gn-fl-un [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
   (cond (<= uop UOP-F64-SQRT) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fop1 (- uop UOP-F64-NEG) 1 0 0)) (gn-fl-out 1 d))
         (<= uop UOP-F32-SQRT) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fop1 (- uop UOP-F32-NEG) 0 0 0)) (gn-fl-out 0 d))
-        (= uop UOP-F64-TO-I64) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvtzs 1 d 0)))
+        (= uop UOP-F64-TO-I64) (gn-fl-f64-to-i64 M d x)   ; JUN-846
         (= uop UOP-I64-TO-F64) (-> M (gn-emit (enc-scvtf 1 0 x)) (gn-fl-out 1 d))
         (= uop UOP-F64-TO-F32) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 0 0)) (gn-fl-out 0 d))
         (= uop UOP-F32-TO-F64) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvt 0 0 0)) (gn-fl-out 1 d))
