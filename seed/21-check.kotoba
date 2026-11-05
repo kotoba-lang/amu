@@ -176,7 +176,8 @@
           M1 (ck-tform M (nm-next M k))
           ty (ck-r M1)]
       (cond (= ty 0) (ck-err M1 E-CHECK-SCHEMA k 0)
-            (or (= ty ck-ty-f32) (= ty ck-ty-vf64)) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: :f32 is no record field (JUN-846: nor :vector-f64); JUN-728: :f64 is (an i64 word of bits)
+            (= ty ck-ty-vf64) (ck-err M1 E-CHECK-SCHEMA k 0)   ; JUN-846: :vector-f64 is no record field
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA k 0)
             :else (ck-sch-fields (ck-blk-put M1 blk i ks ty) nx blk (+ i 1))))))
 
@@ -316,7 +317,8 @@
       (cond (nm-ne (nm-kind M1 c) ND-SYM) (ck-err M1 E-CHECK-SCHEMA c 0)
             (nm-failed M1) (ck-touch M1)
             (= ty 0) (ck-err M1 E-CHECK-SCHEMA c 0)
-            (or (= ty ck-ty-f32) (= ty ck-ty-vf64)) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: :f32 is no record field (JUN-846: nor :vector-f64); JUN-728: :f64 is (an i64 word of bits)
+            (= ty ck-ty-vf64) (ck-err M1 E-CHECK-SCHEMA c 0)   ; JUN-846: :vector-f64 is no record field
+            (= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)   ; R6C: :f32 is no record field; JUN-728: :f64 is (an i64 word of bits)
             (= (ck-key-fresh M1 blk i ks) 0) (ck-err M1 E-CHECK-SCHEMA c 0)
             :else (ck-rec-store (ck-blk-put M1 blk i ks ty) S fs blk (inc i))))))
 (defn- ck-rec-fields [M :vector-i64 S :string c :i64 blk :i64 i :i64] :vector-i64
