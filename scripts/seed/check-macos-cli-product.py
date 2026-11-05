@@ -55,6 +55,44 @@ def check(cli, out):
     float_greater = source('float-negative-greater', '(defn main [] :i64 (if (f64-lt -1.0 -2.0) 42 7))')
     run('float-negative-less', 'run', float_less.name, stdout=b'42\n')
     run('float-negative-greater', 'run', float_greater.name, stdout=b'7\n')
+    # JUN-846: f64-to-bits answers one canonical quiet NaN (0x7FF8000000000000) for every NaN, as the reference
+    # does, so an x86 default NaN, a negative NaN and a payload NaN cannot make bits/serialisation host-dependent.
+    # Infinity and -0.0 keep their exact bits. Each term is a distinct decimal digit; the pre-fix compiler answers 111001.
+    nan_canonical = source('f64-nan-canonical', '''(defn main [] :i64
+  (let [nan (f64-div (i64-to-f64-rounded 0) (i64-to-f64-rounded 0))
+        neg-nan (f64-from-bits -2251799813685248)
+        payload (f64-from-bits 9218868437227405313)
+        neg-zero (f64-neg (i64-to-f64-rounded 0))
+        inf (f64-div (i64-to-f64-rounded 1) (i64-to-f64-rounded 0))]
+    (+ (if (= (f64-to-bits nan) 9221120237041090560) 1 0)
+       (if (= (f64-to-bits neg-nan) 9221120237041090560) 10 0)
+       (if (= (f64-to-bits payload) 9221120237041090560) 100 0)
+       (if (= (f64-to-bits neg-zero) -9223372036854775808) 1000 0)
+       (if (= (f64-to-bits 1.5) 4609434218613702656) 10000 0)
+       (if (= (f64-to-bits inf) 9218868437227405312) 100000 0))))''')
+    run('f64-nan-canonical', 'run', nan_canonical.name, stdout=b'111111\n')
+    # JUN-846: :vector-f64 (library defn-s over :vector-i64; a type of its own). 7221907 = 7 + 100*19 + 10000*2 + 100000*2 +
+    # 1000000*7 over new/conj/assoc/take/drop/get/at/count; the two mixes with :vector-i64 are E2104.
+    vf64 = source('vector-f64', '''(defn sum [v :vector-f64] :f64
+  (loop [i 0 acc 0.0]
+    (if (>= i (vector-f64-count v)) acc (recur (+ i 1) (f64-add acc (vector-f64-at v i))))))
+(defn main [] :i64
+  (let [v (vector-f64-new 1.5 2.5 3.0)
+        w (vector-f64-assoc (vector-f64-conj v 4.0) 0 10.0)
+        t (vector-f64-take w 2)
+        d (vector-f64-drop w 2)]
+    (+ (f64-to-i64-truncating (sum v))
+       (* 100 (f64-to-i64-truncating (sum w)))
+       (* 10000 (vector-f64-count t))
+       (* 100000 (vector-f64-count d))
+       (* 1000000 (f64-to-i64-truncating (vector-f64-get v 9 7.0))))))''')
+    run('vector-f64', 'run', vf64.name, stdout=b'7221907\n')
+    vf64_as_i64 = source('vector-f64-as-i64', '(defn f [v :vector-i64] :i64 (vector-count v))\n(defn main [] :i64 (f (vector-f64-new 1.5)))')
+    run('vector-f64-as-i64', 'check', vf64_as_i64.name, expected=1, diagnostic=b'E2104 type mismatch in')
+    i64_as_vf64 = source('vector-i64-as-f64', '(defn f [v :vector-f64] :i64 (vector-f64-count v))\n(defn main [] :i64 (f (vector-alloc 3)))')
+    run('vector-i64-as-f64', 'check', i64_as_vf64.name, expected=1, diagnostic=b'E2104 type mismatch in')
+    vf64_field = source('vector-f64-field', '(defrecord R [v :vector-f64])\n(defn main [] :i64 1)')
+    run('vector-f64-field', 'check', vf64_field.name, expected=1, diagnostic=b'E2128')
     # KOTOBA-13: the public host stages a locked KSL2 namespace map,
     # verifies every original source digest, then asks the pinned Kotoba
     # compiler to check the rewritten project lock in its private FS2 root.

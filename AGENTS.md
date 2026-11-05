@@ -185,8 +185,8 @@ whole seed tree. When a seed PR conflicts with main in them:
 - leave `sourceRevision` `null` after regeneration: it means the descriptor's
   own commit and the source-revision audit checks that commit. Do not open a
   follow-up PR to name a squash commit.
-- Target (stage 2, not implemented): PRs carry source only, CI derives the
-  compilers from the PR, and a post-merge job repins main.
+- Target (stage 2, design in ADR 0406, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
+  post-merge bot PR repins main. Do not enable it or relax PR pin checks without the owner (needs a token/App).
 
 ## Bounded canonical Kototama native frontend (JUN-369)
 
@@ -449,6 +449,9 @@ bytes, limits, case expectations or native gate commands change in this split.
 
 Every job of `selfhost-native` and of the other native workflows starts with `./.github/actions/ci-gate`
 (`scripts/ci/ci_gate.py`) and guards its later steps; required check names are never changed or made conditional.
+- A step added after the gate needs `if: steps.gate.outputs.skip != 'true'`, or it runs without the job's earlier
+  steps when the gate skips. `scripts/ci/test_ci_gate.py` fails on a missing guard; the one step meant to run on a skip
+  is named in its `MAY_RUN_WHEN_SKIPPED`.
 - Docs-only (pull_request / merge_group whose changed files are only top-level or non-evidence `*.md`, `LICENSE`,
   `.DS_Store`, `.github/dependabot.yml`) skips the heavy steps. Everything else, including every workflow, action,
   script, `seed/**`, `docs/evidence/**` and `examples/**`, runs.
