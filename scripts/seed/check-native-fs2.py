@@ -122,7 +122,7 @@ def main(compiler, out):
         os.close(prior_cwd)
     try:
         refusals = [
-            ("unknown-form", "U", scope / "ascii", "", b":stage 8}"),
+            ("unknown-form", "V", scope / "ascii", "", b":stage 8}"),
             ("empty-path", "A", "", "", b":stage 2}"),
             ("forbidden-tail", "D", scope / "ascii", "x", b":stage 2}"),
             ("bad-mode", "H", scope / "ascii", "8", b":stage 7}"),
