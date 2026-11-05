@@ -796,6 +796,9 @@
       (vector-assoc! 203 (b-direct (+ start 812) (+ start 304)))))
 
 ;; Diagnostic Darwin FS2 E/F, draft O/U metadata and H/I/L/M/T mutation.
+;; E accepts starting offsets through 2^34-1 (16 GiB - 1), sufficient to
+;; address the 8.6 GB Bonsai blob. The request remains limited to 256 KiB;
+;; this does not provide a stable file identity across separate reads.
 ;; The derivation is evidence; Kotoba literals are the build input. O masks
 ;; mode to 0777, U keeps 07777. This is not a qualified complete provider.
 (defn- fs2-ef-helper-words [start :i64 da-start :i64] :vector-i64
@@ -821,8 +824,8 @@
       (append-runtime-words 96 [
        0x71001d1f 0x54004348 0xf1001b7f 0x54004302 0xd37df318 0x8b080318 0x9100077b 0x910006f7
        0x17fffff4 0xb400425b 0x92402318 0x1400002a 0xd2800018 0xd2800019 0xd280001b 0xeb1602ff
-       0x54004162 0x38776aa8 0x7100e91f 0x54000200 0x5100c108 0x7100251f 0x540040a8 0xd2933329
-       0xf2a33329 0xeb09031f 0x54004028 0xd2800149 0x9b092318 0x12800009 0xeb09031f 0x54003f88
+       0x54004162 0x38776aa8 0x7100e91f 0x54000200 0x5100c108 0x7100251f 0x540040a8 0xd28cccc9
+       0xf2acccc9 0xeb09031f 0x54004028 0xd2800149 0x9b092318 0xb24087e9 0xeb09031f 0x54003f88
       ])
       (append-runtime-words 128 [
        0x910006f7 0x9100077b 0x17ffffed 0xb4003f1b 0x910006f7 0xd280001b 0xeb1602ff 0x540001a2
