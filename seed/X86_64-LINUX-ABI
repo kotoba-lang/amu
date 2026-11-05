@@ -150,6 +150,34 @@ No other wire inherits these combinations. Form T is no-replace publication
 through Linux renameat2; it has no ordinary-rename fallback. Wire40 is an
 explicit string/string sys/cwd grant and does not inherit wire35 authority.
 
+Draft form D now reports `1` only after a successful scoped open, `0` only
+for Linux ENOENT, and `?` for scope-admission failure or other open errors.
+An unsuccessful close still refuses. This is an incompatible error-response
+change: a caller must explicitly require `0` before acting on absence rather
+than infer absence from a non-`1` response. The shared source is a candidate,
+not a released runtime. ARM64 test-only execution and its old-runtime control
+are recorded in docs/evidence/awai154-linux-fs2-existence-20261103/README.md;
+x86, all errno cases, races and full compiler qualification remain open.
+
+Draft FS2 form U is a no-follow metadata read with the same four-field
+response as O, except that its first field is `mode & 07777`, preserving
+setuid, setgid and sticky bits. O remains `mode & 0777`. U has no tail and
+uses the same scope and final-component semantics as O. This source candidate
+is unqualified: no regenerated Linux runtime, macOS provider, public compiler,
+or compatibility with the old loader is claimed. The `full-mode` fixture in
+`seed/tests/fs2-product.kotoba` expects real regular/0644, special/4644,
+group/2644, sticky/1644, link (symlink) and directory entries under its path.
+On 2026-11-03 a disposable 1 CPU / 2 GiB ARM64 Linux VM compiled this
+fixture with the pre-change root SHA-256
+`914b828a24ced086e09929894bb64806dea103bf79766ef144001a076717b1c4`.
+Fixture SHA-256 `a4c2f8f21b4c6a32b5d4c6d8e7419f07180785d1009fe5bb4f6f89e42bc774a0`,
+ELF SHA-256 `07a38364e57273873498ff104c95997fc775053d6d58094329a9a6a43a70a890`.
+The old embedded runtime refused U with `:fs2/refused` stage 8 / exit 126.
+A separately staged test compiler with the candidate runtime built the same
+fixture; it passed on the Linux ARM64 VM. See
+`docs/evidence/awai154-fs2-test-compiler/positive-20261103.json`. This is not
+an x86 runtime test, a compiler self-build, or Darwin qualification.
+
 These are candidate source contracts. Complete selfbuild, conformance,
 actual x86 execution and public/CDCI image pins must be regenerated before
 the candidate replaces the qualified main product.
@@ -567,3 +595,47 @@ Linear memory:
 | 5120 | G |
 | 65536 | the literal pool (a data segment) |
 | after the pool, 64 KiB aligned | the runtime's arena (memory.grow) |
+
+On 2026-11-03, the diagnostic Darwin packager gained partial O/U handling
+using FD3-scoped fstatat64; O keeps 0777 and U exposes 07777. Both return
+the block count in field three as in the Linux candidate, while the pre-existing
+Darwin F diagnostic keeps its historical time field. An actual FS2-framed
+probe on one Mac covers common modes, special bits, directory and symlink,
+scoped refusal, missing metadata and E/F regressions. It also fixes a prior
+one-character path refusal. See docs/evidence/awai154-darwin-fs2-ou-20261103.
+This is not a complete FS2 provider, a deployed checkpoint or a release gate.
+
+The diagnostic Darwin handler additionally implements FS2 H (chmod with a
+bounded octal argument) and M (fsync) using scoped no-follow descriptors.
+It checks output capacity before mutation. A one-Mac framed probe and O/U
+regression test are in docs/evidence/awai154-darwin-fs2-hm-20261103. A
+successful fsync syscall is not a power-loss durability qualification;
+I, L, T and the complete checkpoint/runtime are still unqualified.
+
+The Darwin diagnostic also handles FS2 I using a scoped, no-follow parent
+descriptor and mkdirat. It bounds paths to 1023 bytes, components to 255,
+and refuses dot/empty components. One-Mac framed tests and H/M/O/U/E/F
+regressions are recorded under docs/evidence/awai154-darwin-fs2-mkdir-20261103.
+I is a partial, stricter candidate and does not qualify the whole provider.
+
+The Darwin diagnostic adds scoped FS2 L and T through separately opened
+parent descriptors and renameatx_np with NOFOLLOW_ANY; T adds EXCL and has
+no replacing fallback. It keeps the strict bounded path rules used by I.
+One-Mac tests are recorded in docs/evidence/awai154-darwin-fs2-rename-20261103.
+This is not whole-provider or crash-durability qualification.
+
+The Darwin diagnostic B/C byte writer now accepts bounded nested ASCII paths
+beneath FD3 while rejecting dot and empty components and symlinks. A one-Mac
+framed fixture covers binary write, append, 4096-byte chunks, sync and
+no-replace publication; the previous basename-only handler refused the
+nested control. See docs/evidence/awai154-darwin-fs2-bc-nested-20261103.
+The diagnostic is not a full checkpoint or product FS2 qualification.
+
+The Darwin private host adapter now dispatches scoped FS2 string requests
+and framed FS2 byte requests to the existing FS2 callback, while retaining
+the distinct private AMUH host protocol. One Mac fixture runs a bounded Git
+query via the private host API and real checkpoint block helper code using
+FS2; ordinary diagnostic and public program images refuse that host request.
+See docs/evidence/awai154-private-host-fs2-20261103. The private host is
+privileged; this is not a guest spawn boundary, a full checkpoint integration
+or authorization to give bot code host authority.

@@ -67,8 +67,8 @@
   (and (>= n 8) (= (kxrt-f2-byte kind req 0) 0) (= (kxrt-f2-byte kind req 1) 70)
        (= (kxrt-f2-byte kind req 2) 83) (= (kxrt-f2-byte kind req 3) 50) (= (kxrt-f2-byte kind req 4) 0)))
 (defn- kxrt-f2-form-ok? [kind :i64 sk :i64 form :i64] :bool
-  (cond (or (< form 0) (> form 19)) false
-        (and (= kind 1) (= sk 1)) (or (< form 16) (= form 19))
+  (cond (or (< form 0) (> form 20)) false
+        (and (= kind 1) (= sk 1)) (or (< form 16) (= form 19) (= form 20))
         (and (= kind 8) (= sk 8)) (or (= form 1) (= form 2))
         (and (= kind 11) (= sk 11)) (or (= form 1) (= form 2) (= form 16) (= form 17) (= form 18))
         (and (= kind 1) (or (= sk 8) (= sk 11))) (or (= form 0) (= form 4)) :else false))
@@ -95,6 +95,8 @@
                 (recur (+ at size) (kxrt-conj out h))))))))
 (defn- kxrt-f2-boolean [sk :i64 yes :bool] :i64
   (let [b (kxrt-f2-at 256) z (kxrt-store8 b (if yes 49 48))] (kxrt-f2-answer sk b 1)))
+(defn- kxrt-f2-unknown [sk :i64] :i64
+  (let [b (kxrt-f2-at 256) z (kxrt-store8 b 63)] (kxrt-f2-answer sk b 1)))
 (defn- kxrt-f2-absent [sk :i64 form :i64] :i64
   (if (or (= form 3) (= form 7) (= form 8) (= form 9) (= form 10) (= form 11) (= form 12) (= form 16) (= form 18) (= form 19))
     (kxrt-f2-boolean sk false) (kxrt-f2-answer sk (kxrt-f2-at 256) 0)))
@@ -147,14 +149,14 @@
           (let [dst (+ (kxrt-gl 24) (kxrt-gl 32) 5)
                 c (kxrt-f2-copy-request dst kind req start n)] (kxrt-f2-answer sk dst n)))))))
 (defn- kxrt-f2-metadata [sk :i64 form :i64 path :i64 pn :i64] :i64
-  (let [fd (kxrt-f2-io-failed (kxrt-f2-open path pn (kxrt-f2-flags (if (or (= form 14) (= form 15)) 3 0)) 0))]
+  (let [fd (kxrt-f2-io-failed (kxrt-f2-open path pn (kxrt-f2-flags (if (or (= form 14) (= form 15) (= form 20)) 3 0)) 0))]
     (if (< fd 0) (kxrt-f2-answer sk (kxrt-f2-at 256) 0)
       (let [st (kxrt-f2-at 512) r (kxrt-f2-sys 2 fd st 0 0 0 0) closed (kxrt-close fd)
             b (kxrt-f2-at 256) mode (kxrt-f2-mode st) ft (bit-and mode 61440)
             n (cond (not= r 0) 0 (= form 6) (kxrt-dec b (kxrt-load64 (+ st 88)))
                     (= form 15) (let [i (kxrt-dec b (kxrt-f2-uid st)) z (kxrt-store8 (+ b i) 32)]
                       (+ i 1 (kxrt-dec (+ b i 1) (kxrt-f2-sys 8 0 0 0 0 0 0))))
-                    :else (let [i (kxrt-dec b (bit-and mode 511)) z (kxrt-store8 (+ b i) 32)
+                    :else (let [i (kxrt-dec b (bit-and mode (if (= form 20) 4095 511))) z (kxrt-store8 (+ b i) 32)
                       j (+ i 1 (kxrt-dec (+ b i 1) (kxrt-load64 (+ st 48)))) y (kxrt-store8 (+ b j) 32)
                       k (+ j 1 (kxrt-dec (+ b j 1) (kxrt-load64 (+ st 64)))) x (kxrt-store8 (+ b k) 32)]
                       (+ k 1 (kxrt-dec (+ b k 1) (if (= form 5) (if (= ft 16384) 1 0)
@@ -348,13 +350,16 @@
                        (loop [i 0] (cond (= i tn) false (= (kxrt-load8 (+ tbuf i)) 0) true :else (recur (inc i)))))
                    (kxrt-f2-refused 2) 0) 0)
         sink (kxrt-sink-close)]
-    (if (< scoped 0) (kxrt-f2-absent sk form)
+    (if (< scoped 0) (if (= form 3) (kxrt-f2-unknown sk) (kxrt-f2-absent sk form))
       (case form
         0 (kxrt-f2-read sk path pn 0 0 false)
         1 (kxrt-f2-write sk kind req path pn tail total false)
         2 (kxrt-f2-write sk kind req path pn tail total true)
         3 (let [fd (kxrt-f2-open path pn (kxrt-f2-flags 0) 0) c (if (< fd 0) 0 (kxrt-close fd))]
-            (if (not= c 0) (kxrt-f2-refused 4) (kxrt-f2-boolean sk (>= fd 0))))
+            (cond (not= c 0) (kxrt-f2-refused 4)
+                  (>= fd 0) (kxrt-f2-boolean sk true)
+                  (= fd -2) (kxrt-f2-boolean sk false)
+                  :else (kxrt-f2-unknown sk)))
         4 (let [colon (loop [i 0] (cond (>= i tn) -1 (= (kxrt-load8 (+ tbuf i)) 58) i :else (recur (inc i))))
                 off (if (< colon 0) -1 (kxrt-fs-span tbuf colon))
                 n (if (< colon 0) -1 (kxrt-fs-span (+ tbuf colon 1) (- tn colon 1)))]
@@ -365,6 +370,7 @@
         11 (kxrt-f2-rename sk path pn tbuf tn false) 12 (kxrt-f2-fsync sk path pn)
         13 (kxrt-f2-temp sk path pn tbuf tn)
         14 (kxrt-f2-metadata sk form path pn) 15 (kxrt-f2-metadata sk form path pn)
+        20 (kxrt-f2-metadata sk form path pn)
         16 (kxrt-f2-stage sk kind req path pn tail total)
         17 (kxrt-f2-begin sk path pn) 18 (kxrt-f2-discard sk path pn)
         19 (kxrt-f2-rename sk path pn tbuf tn true)

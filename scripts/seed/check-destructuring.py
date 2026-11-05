@@ -57,9 +57,9 @@ REFUSALS = [
     ("as-not-symbol", "(defn main [] :i64 (let [[a :as [b]] [1 2]] a))", "E2111"),
     ("or-not-map", "(defn main [] :i64 (let [{:keys [a] :or [a 1]} {:a 1}] a))", "E2111"),
     ("unspelled-key", "(defn main [] :i64 (let [{:keys [nope] :or {nope 1}} (typed-map-new [:map :keyword :i64] :a 1)] nope))", "E2111"),
+    ("unspelled-record-key", "(defn main [] :i64 (let [{:keys [nope] :or {nope 1}} {:other 2}] nope))", "E2111"),
     ("string-key", "(defn main [] :i64 (let [{a \"a\"} {:a 1}] a))", "E2111"),
     ("rest-of-list", "(defn main [] :i64 (let [[a & r] (typed-list-new [:list :i64] 1 2)] a))", "E2104"),
-    # or-on-record removed: JUN-733 row inference (#1807) types get with a default on a record, so this now checks ok
     # JUN-734: (get g :a) on a typed map is [:option :i64], so `a` is an option and main's :i64 result refuses
     ("typed-map-no-default", "(defn main [] :i64 (let [{:keys [a]} (typed-map-new [:map :keyword :i64] :a 2)] a))", "E2121"),
     ("untyped-pattern-param", "(defn f [[a b]] :i64 (+ a b))\n(defn main [] :i64 (f 1))", "E2104"),

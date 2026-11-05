@@ -56,4 +56,10 @@
           (not= (+ (:q m 0) (:absent m 40)) 48) 20
           (not= (let [sm (typed-map-new [:map :string :i64] "k" 5)] (option-or (get sm "k") 0)) 5) 21
           (not= (+ (get r :b) (:c r)) 5) 22
+          ;; JUN-733: keyword defaults on records use an existing field or
+          ;; the supplied default for a field absent from the record.
+          (not= (:a r 9) 1) 23
+          (not= (:missing r 40) 40) 24
+          (not= (:x kw 9) 1) 25
+          (not= (:missing kw 41) 41) 26
           :else 0)))

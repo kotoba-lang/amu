@@ -93,8 +93,7 @@ REFUSALS = [
      "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (option-or (get m \"a\") 0)))", "E2104"),
     ("get-is-option", "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (get m :a)))", "E2121"),
     ("kw-default-type", "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (:a m \"d\")))", "E2104"),
-    # kw-default-record removed: JUN-733 row inference (#1807) types get with a default on a record, so this now checks ok
-    # kw-default-map-literal-record removed: JUN-733 row inference (#1807) types get with a default on a record
+    ("kw-default-record-type", "(defn main [] :i64 (let [s (->S 1 2)] (:a s \"x\")))", "E2104"),
     ("kw-default-vector", "(defn main [] :i64 (let [v [1 2]] (:a v 0)))", "E2103"),
     ("bare-record-type", "(defn f [s S] :i64 (:a s))\n(defn main [] :i64 (f (->S 1 2)))", "E2105 unsupported type 'S'"),
     ("bare-record-param", "(defn f [S] :i64 0)\n(defn main [] :i64 (f 1))", "E2105 unsupported type 'S'"),

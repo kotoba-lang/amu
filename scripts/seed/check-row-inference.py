@@ -26,10 +26,9 @@ This gate, on Apple Silicon:
 * builds seed/tests/native-row-inference.kotoba with --compiler (the Mac fixed
   point of this tree) and the descriptor's packager and runs it: exit 0;
 * checks that each refusal below is refused at check time with its named code;
-* definition-cids: the hand-annotated twin is refused unbridged-source (the
-  definition bridge carries no records) and the row module whole-module
-  DSB:BRIDGE (exit 66), as for any template with specializations
-  (docs/definition-cids-native.md), so no CID is observable for these forms;
+* definition-cids: both the annotated and row modules are refused atomically
+  (exit 66) because their generated record constructor is not bridged; no CID
+  equivalence is observable for these forms;
 * negative controls: one mutant full compiler per change, built from this
   tree's FULL-MANIFEST with that change removed, must refuse the corpus with
   the old code;
@@ -147,16 +146,15 @@ def main(compiler, output):
 
     ids = output / "cids"; ids.mkdir(mode=0o700)
     status, out, err = native(compiler, ids, "definition-cids", "annotated", CIDS["annotated"])
-    # JUN-358 (#1788/#1789): a source holding a form with no bridge (records) refuses atomically, exit 66 DSB:BRIDGE:3:<offset>,
-    # instead of per-definition REFUSED:unbridged-source (docs/definition-cids-native.md; check-checked-source-native.py).
     if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
-        raise ValueError(f"definition-cids annotated: expected the atomic DSB:BRIDGE:3 refusal, got exit "
+        raise ValueError(f"definition-cids annotated: expected atomic defrecord refusal, got exit "
                          f"{status}: {(out + err)[-300:]!r}")
-    # a row generic is a template with specializations: whole-module DSB:BRIDGE (docs/definition-cids-native.md)
+    # Both modules contain a defrecord whose generated constructor must be
+    # refused atomically before any per-definition identities are emitted.
     status, out, err = native(compiler, ids, "definition-cids", "row", CIDS["row"])
-    if status != 66 or out or not err.startswith("DSB:BRIDGE:"):
-        raise ValueError(f"definition-cids row: expected exit 66 with DSB:BRIDGE, got exit {status}: {(out + err)[-300:]!r}")
-    print("definition-cids: annotated twin unbridged-source; the row module is DSB:BRIDGE (templates/specializations)",
+    if status != 66 or out or not err.startswith("DSB:BRIDGE:3:"):
+        raise ValueError(f"definition-cids row: expected atomic defrecord refusal, got exit {status}: {(out + err)[-300:]!r}")
+    print("definition-cids: both record modules refused atomically",
           flush=True)
 
     names = [line for line in (ROOT / "seed/FULL-MANIFEST").read_text().splitlines()

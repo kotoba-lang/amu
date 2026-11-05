@@ -31,13 +31,13 @@
 (def BYTES-SLICE-START 7296)
 (def STDOUT-TYPED-START 7488)
 (def BYTES-CONCAT-START 7872)
-(def FS2-DA-BYTES 736)
-(def FS2-BC-BYTES 776)
+(def FS2-DA-BYTES 752)
+(def FS2-BC-BYTES 908)
 (def FS2-KIND9-BYTES 256)
 (def FS2-LOCK-ONE-BYTES 792)
 (def FS2-READ-BYTES 816)
 (def FS2-LOCK-BYTES (+ FS2-LOCK-ONE-BYTES FS2-READ-BYTES))
-(def FS2-EF-BYTES 1172)
+(def FS2-EF-BYTES 2552)
 (def FS35-BYTES 1768)
 (def METAL-BYTES 152)
 (def METAL-BIND-BYTES 16)
@@ -164,7 +164,8 @@
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes) SLICE-SETUP-START))
+   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes)
+                     (if (string=? mode "fs2-cli-stdio-cwd") (+ (mh-extra-start raw-bytes) FS35-BYTES) SLICE-SETUP-START)))
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
@@ -635,75 +636,89 @@
 ;; and assembler are not inputs to the native Kotoba packager. Other forms
 ;; still trap at brk #0x35.
 (defn- fs2-da-helper-words [start :i64] :vector-i64
-  (-> (vector-alloc 184)
+  (-> (vector-alloc 188)
       (append-runtime-words 0 [
-       0xf1008c3f 0x54001621 0xa9b07bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xaa0003f3 0xaa0403f4
-       0xf9400a68 0xd2c00109 0xea09011f 0x54001540 0xf100045f 0x540014e1 0xf100047f 0x540014a1
-       0xb40014b4 0xf9409268 0xf9400108 0xeb08029f 0x54001428 0xf9409668 0xd1000689 0x8b091108
-       0xa9400901 0xaa0203f6 0xaa1303e0 0x9400009b 0xaa0003f5 0xf10022df 0x540012e3 0xd28200c8
-       0xeb0802df 0x54001288 0x394002a8 0x35001248 0x394006a8 0x7101191f 0x540011e1 0x39400aa8
-       0x71014d1f 0x54001181 0x39400ea8 0x7100c91f 0x54001121 0x394012a8 0x350010e8 0x394016a8
-       0x7101111f 0x54000060 0x7101051f 0x54001021 0xd28000c9 0xeb16013f 0x54000fe2 0x38696aa8
-       0x34000068 0x91000529 0x17fffffb 0x91000529 0xeb16013f 0x54000f01 0x91001aa1 0x39400028])
+       0xf1008c3f 0x540016a1 0xa9b07bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xaa0003f3 0xaa0403f4
+       0xf9400a68 0xd2c00109 0xea09011f 0x540015c0 0xf100045f 0x54001561 0xf100047f 0x54001521
+       0xb4001534 0xf9409268 0xf9400108 0xeb08029f 0x540014a8 0xf9409668 0xd1000689 0x8b091108
+       0xa9400901 0xaa0203f6 0xaa1303e0 0x9400009f 0xaa0003f5 0xf10022df 0x54001363 0xd28200c8
+       0xeb0802df 0x54001308 0x394002a8 0x350012c8 0x394006a8 0x7101191f 0x54001261 0x39400aa8
+       0x71014d1f 0x54001201 0x39400ea8 0x7100c91f 0x540011a1 0x394012a8 0x35001168 0x394016a8
+       0x7101111f 0x54000060 0x7101051f 0x540010a1 0xd28000c9 0xeb16013f 0x54001062 0x38696aa8
+       0x34000068 0x91000529 0x17fffffb 0x91000529 0xeb16013f 0x54000f81 0x91001aa1 0x39400028])
       (append-runtime-words 64 [
        0x7100bd1f 0x54000041 0x91000421 0xd2800060 0xd2820082 0xf2a42002 0xd2800003 0xd28039f0
-       0xf2a40010 0xd4001001 0x54000182 0xaa0003f4 0x394016a8 0x7101051f 0x540003c0 0xaa1403e0
-       0xd28000d0 0xf2a40010 0xd4001001 0x54000c42 0x52800636 0x14000005 0x394016a8 0x7101051f
-       0x54000ba0 0x52800616 0xf940ce68 0xd2a20009 0xd1001929 0xeb09011f 0x54000ae8 0xf940ca69
-       0x8b080129 0x5288c00a 0x72a64a6a 0xb900012a 0x3900113f 0x39001536 0x9100190b 0xf900ce6b
-       0xaa1303e0 0xaa2803e1 0xd28000c2 0x14000040 0xaa1403e0 0x910143e1 0xd2802a70 0xf2a40010
-       0xd4001001 0x54000882 0x7940abe8 0x12140d08 0x7140211f 0x54000801 0xf940ce77 0xd2a20008
-       0xd1001508 0xeb0802ff 0x54000768 0xcb170118 0xd2a01008 0xd1001508 0xeb08031f 0x9a988118])
+       0xf2a40010 0xd4001001 0x54000182 0xaa0003f4 0x394016a8 0x7101051f 0x54000440 0xaa1403e0
+       0xd28000d0 0xf2a40010 0xd4001001 0x54000cc2 0x52800636 0x14000009 0x394016a8 0x7101051f
+       0x54000c20 0xf100081f 0x54000061 0x52800616 0x14000002 0x528007f6 0xf940ce68 0xd2a20009
+       0xd1001929 0xeb09011f 0x54000ae8 0xf940ca69 0x8b080129 0x5288c00a 0x72a64a6a 0xb900012a
+       0x3900113f 0x39001536 0x9100190b 0xf900ce6b 0xaa1303e0 0xaa2803e1 0xd28000c2 0x14000040
+       0xaa1403e0 0x910143e1 0xd2802a70 0xf2a40010 0xd4001001 0x54000882 0x7940abe8 0x12140d08
+       0x7140211f 0x54000801 0xf940ce77 0xd2a20008 0xd1001508 0xeb0802ff 0x54000768 0xcb170118])
       (append-runtime-words 128 [
-       0xf940ca75 0x8b1702b5 0x910016b5 0xd2800016 0xcb160302 0xb4000142 0xaa1403e0 0x8b1602a1
-       0xd2800070 0xf2a40010 0xd4001001 0x540001a2 0xb40001e0 0x8b0002d6 0x17fffff6 0xaa1403e0
-       0x910103e1 0xd2800022 0xd2800070 0xf2a40010 0xd4001001 0x54000062 0xb50003e0 0x14000004
-       0xf100101f 0x54fffd60 0x1400001b 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x540002c2
-       0xd10016a9 0x5288c00a 0x72a64a6a 0xb900012a 0x3900113f 0x8b1602eb 0x9100156b 0xf900ce6b
-       0xaa1303e0 0xaa3703e1 0x910016c2 0xf9401e70 0xd63f0200 0xa94363f7 0xa9425bf5 0xa94153f3
-       0xa8d07bfd 0xd65f03c0 0xf100983f 0x14000004 0xd42006a0 0xd42006c0 0xd4202020 0xd4202040])
+       0xd2a01008 0xd1001508 0xeb08031f 0x9a988118 0xf940ca75 0x8b1702b5 0x910016b5 0xd2800016
+       0xcb160302 0xb4000142 0xaa1403e0 0x8b1602a1 0xd2800070 0xf2a40010 0xd4001001 0x540001a2
+       0xb40001e0 0x8b0002d6 0x17fffff6 0xaa1403e0 0x910103e1 0xd2800022 0xd2800070 0xf2a40010
+       0xd4001001 0x54000062 0xb50003e0 0x14000004 0xf100101f 0x54fffd60 0x1400001b 0xaa1403e0
+       0xd28000d0 0xf2a40010 0xd4001001 0x540002c2 0xd10016a9 0x5288c00a 0x72a64a6a 0xb900012a
+       0x3900113f 0x8b1602eb 0x9100156b 0xf900ce6b 0xaa1303e0 0xaa3703e1 0x910016c2 0xf9401e70
+       0xd63f0200 0xa94363f7 0xa9425bf5 0xa94153f3 0xa8d07bfd 0xd65f03c0 0xf100983f 0x14000004
+       0xd42006a0 0xd42006c0 0xd4202020 0xd4202040])
       (vector-assoc! 27 (bl-direct (+ start 108) (+ RUNTIME-START 52)))
-      (vector-assoc! 179 (b-direct (+ start 716) (+ TYPED-START 4)))))
+      (vector-assoc! 183 (b-direct (+ start 732) (+ TYPED-START 4)))))
 
-;; FS2 B/C bytes writer follows the D/A callback. The literal words are
-;; emitted by this Kotoba packager; the derivation object is not a build input.
-;; Requests are checked before opening a scoped, no-symlink basename.
-;; The returned vector acknowledges the exact payload bytes.
+;; Diagnostic scoped FS2 B/C byte writer. Nested ASCII paths are validated
+;; before openat under FD3; scope and no-follow are enforced by Darwin flags.
+;; The derivation is evidence and the Kotoba literal vector is the build input.
+;; This remains a partial, unqualified FS2 provider.
 (defn- fs2-bc-helper-words [start :i64 da-start :i64] :vector-i64
-  (-> (vector-alloc 194)
+  (-> (vector-alloc 227)
       (append-runtime-words 0 [
-       0xf1008c3f 0x540017c1 0xf100205f 0x54001781 0xf100207f 0x54001741 0xd1400bff 0xa9007bfd
+       0xf1008c3f 0x54001be1 0xf100205f 0x54001ba1 0xf100207f 0x54001b61 0xd1400bff 0xa9007bfd
        0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xaa0003f3 0xaa0403f4 0xf9400a68
-       0xd2c00109 0xea09011f 0x540015c0 0xb40015b4 0xf95f4668 0xeb08029f 0x54001548 0xf95f4268
-       0xd1000689 0x8b091108 0xa9405909 0xf10022df 0x54001483 0xd2a01008 0xeb0802df 0x54001428])
+       0xd2c00109 0xea09011f 0x540019e0 0xb40019d4 0xf95f4668 0xeb08029f 0x54001968 0xf95f4268
+       0xd1000689 0x8b091108 0xa9405909 0xf10022df 0x540018a3 0xd2a01008 0xeb0802df 0x54001848
+      ])
       (append-runtime-words 32 [
-       0xf95f4e68 0xeb08013f 0x540013c8 0xcb090108 0xeb0802df 0x54001368 0xf95f4a68 0x8b090d15
-       0xf94002a8 0xb50012e8 0xf94006a8 0xf101191f 0x54001281 0xf9400aa8 0xf1014d1f 0x54001221
-       0xf9400ea8 0xf100c91f 0x540011c1 0xf94012a8 0xb5001188 0xf94016bc 0xf1010b9f 0x54000060
-       0xf1010f9f 0x540010e1 0xd28000c9 0x910203ea 0xeb16013f 0x54001062 0xd100192b 0xf103fd7f])
+       0xf95f4e68 0xeb08013f 0x540017e8 0xcb090108 0xeb0802df 0x54001788 0xf95f4a68 0x8b090d15
+       0xf94002a8 0xb5001708 0xf94006a8 0xf101191f 0x540016a1 0xf9400aa8 0xf1014d1f 0x54001641
+       0xf9400ea8 0xf100c91f 0x540015e1 0xf94012a8 0xb50015a8 0xf94016bc 0xf1010b9f 0x54000060
+       0xf1010f9f 0x54001501 0xd28000c9 0x910203ea 0xd280000b 0xd280000c 0xf8697aa8 0xf100bd1f
+      ])
       (append-runtime-words 64 [
-       0x54001002 0xf8697aa8 0xb4000148 0xf100851f 0x54000f83 0xf101f91f 0x54000f48 0xf100bd1f
-       0x54000f00 0x382b6948 0x91000529 0x17fffff1 0xf100193f 0x54000e60 0x382b695f 0x91000537
-       0xcb1702db 0xaa1703e9 0xeb16013f 0x540000c2 0xf8697aa8 0xf103fd1f 0x54000d48 0x91000529
-       0x17fffffa 0x91001761 0xaa1303e0 0xf9406670 0xd63f0200 0xaa0003fa 0xb4000c5a 0xf95f4668])
+       0x54000041 0x91000529 0xeb16013f 0x540013c2 0xf8697aa8 0xb40002a8 0xf100851f 0x54001343
+       0xf101f91f 0x54001308 0xf10ffd7f 0x540012c2 0xf100bd1f 0x540000c1 0xb400126c 0x94000019
+       0xb5001220 0xd280000c 0x14000004 0xf103fd9f 0x540011a2 0x9100058c 0x382b6948 0x9100056b
+       0x91000529 0x17ffffe9 0xb40010ec 0x9400000d 0xb50010a0 0x382b695f 0x91000537 0xcb1702db
+      ])
       (append-runtime-words 96 [
-       0xeb08035f 0x54000be8 0xf95f4268 0xd1000749 0x8b091108 0xa9402909 0x9100176b 0xeb0b015f
-       0x54000b01 0xf95f4a68 0x8b090d19 0xf900033f 0xd28008c8 0xf9000728 0xd2800a68 0xf9000b28
-       0xd2800648 0xf9000f28 0xf900133f 0xd2800009 0xeb1b013f 0x540000e2 0x8b0902ea 0xf86a7aa8
-       0x9100a32a 0xf8297948 0x91000529 0x17fffff9 0xd2800060 0x910203e1 0xd282c0a2 0xf2a42002])
+       0xaa1703e9 0xeb16013f 0x54000302 0xf8697aa8 0xf103fd1f 0x54000f88 0x91000529 0x17fffffa
+       0xf100059f 0x54000060 0xf100099f 0x54000161 0xcb0c016d 0x386d694e 0x7100b9df 0x540000e1
+       0xf100059f 0x540000e0 0x910005ad 0x386d694e 0x7100b9df 0x54000060 0xd2800000 0xd65f03c0
+       0xd2800020 0xd65f03c0 0x91001761 0xaa1303e0 0xf9406670 0xd63f0200 0xaa0003fa 0xb4000c5a
+      ])
       (append-runtime-words 128 [
-       0xf1010b9f 0x54000060 0xd28201a2 0xf2a42002 0xd2803483 0xd28039f0 0xf2a40010 0xd4001001
-       0x54000702 0xaa0003f8 0xd2800014 0xeb1b029f 0x540004a2 0xcb140376 0xf14006df 0x54000049
-       0xd2820016 0xd2800009 0x910803ea 0xeb16013f 0x540000e2 0x8b1402eb 0x8b09016b 0xf86b7aa8
-       0x38296948 0x91000529 0x17fffff9 0xd2800009 0xeb16013f 0x54000242 0xaa1803e0 0x8b090141])
+       0xf95f4668 0xeb08035f 0x54000be8 0xf95f4268 0xd1000749 0x8b091108 0xa9402909 0x9100176b
+       0xeb0b015f 0x54000b01 0xf95f4a68 0x8b090d19 0xf900033f 0xd28008c8 0xf9000728 0xd2800a68
+       0xf9000b28 0xd2800648 0xf9000f28 0xf900133f 0xd2800009 0xeb1b013f 0x540000e2 0x8b0902ea
+       0xf86a7aa8 0x9100a32a 0xf8297948 0x91000529 0x17fffff9 0xd2800060 0x910203e1 0xd282c0a2
+      ])
       (append-runtime-words 160 [
-       0xcb0902c2 0xd2800090 0xf2a40010 0xd4001001 0x54000082 0xb40000a0 0x8b000129 0x17fffff5
-       0xf100101f 0x54fffe60 0xaa1803e0 0xd28000d0 0xf2a40010 0xd4001001 0x14000012 0x8b160294
-       0x17ffffdb 0xaa1803e0 0xd28000d0 0xf2a40010 0xd4001001 0x54000162 0xaa1a03e0 0xa94573fb
-       0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd 0x91400bff 0xd65f03c0 0x14000002])
+       0xf2a42002 0xf1010b9f 0x54000060 0xd28201a2 0xf2a42002 0xd2803483 0xd28039f0 0xf2a40010
+       0xd4001001 0x54000702 0xaa0003f8 0xd2800014 0xeb1b029f 0x540004a2 0xcb140376 0xf14006df
+       0x54000049 0xd2820016 0xd2800009 0x910803ea 0xeb16013f 0x540000e2 0x8b1402eb 0x8b09016b
+       0xf86b7aa8 0x38296948 0x91000529 0x17fffff9 0xd2800009 0xeb16013f 0x54000242 0xaa1803e0
+      ])
       (append-runtime-words 192 [
-       0xd42006c0 0xd4202040])
-      (vector-assoc! 193 (b-direct (+ start 772) (+ start FS2-BC-BYTES)))))
+       0x8b090141 0xcb0902c2 0xd2800090 0xf2a40010 0xd4001001 0x54000082 0xb40000a0 0x8b000129
+       0x17fffff5 0xf100101f 0x54fffe60 0xaa1803e0 0xd28000d0 0xf2a40010 0xd4001001 0x14000012
+       0x8b160294 0x17ffffdb 0xaa1803e0 0xd28000d0 0xf2a40010 0xd4001001 0x54000162 0xaa1a03e0
+       0xa94573fb 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd 0x91400bff 0xd65f03c0
+      ])
+      (append-runtime-words 224 [
+       0x14000002 0xd42006c0 0xd4202040
+      ])
+      (vector-assoc! 226 (b-direct (+ start 904) (+ start FS2-BC-BYTES)))))
 
 ;; The adopted Mac core sends :bytes read as a pair-backed request with
 ;; kind 9 -> 9. Reuse the checked D/A read, then copy its reply into the
@@ -779,61 +794,133 @@
       (append-runtime-words 198 [0x39400028 0x7100bd1f 0x54000041 0x91000421 0xd2800060 0x14000000])
       (vector-assoc! 203 (b-direct (+ start 812) (+ start 304)))))
 
-;; Scoped Darwin FS2 F metadata and E range read. The one-time assembly
-;; derivation is review evidence; emitted words are owned by this Kotoba source.
-;; This callback accepts pair-backed 1->1 requests only, verifies the FD3
-;; regular-file scope, and bounds each E response to 262144 bytes.
+;; Diagnostic Darwin FS2 E/F, draft O/U metadata and H/I/L/M/T mutation.
+;; The derivation is evidence; Kotoba literals are the build input. O masks
+;; mode to 0777, U keeps 07777. This is not a qualified complete provider.
 (defn- fs2-ef-helper-words [start :i64 da-start :i64] :vector-i64
-  (-> (vector-alloc 293)
+  (-> (vector-alloc 638)
       (append-runtime-words 0 [
-       0xf1008c3f 0x54002261 0xf100045f 0x54002221 0xf100047f 0x540021e1 0xb4002384 0xd10503ff
+       0xf1008c3f 0x54004d81 0xf100045f 0x54004d41 0xf100047f 0x54004d01 0xb4004ea4 0xd12603ff
        0xa9007bfd 0xa90153f3 0xa9025bf5 0xa90363f7 0xa9046bf9 0xa90573fb 0xaa0003f3 0xaa0403f4
-       0xf9400a68 0xd2c00109 0xea09011f 0x540021e0 0xf9409268 0xf9400108 0xeb08029f 0x54002168
-       0xf9409668 0xd1000689 0x8b091108 0xa9405901 0xaa1303e0 0xaa1603e2 0x94000105 0xaa0003f5])
+       0xf9400a68 0xd2c00109 0xea09011f 0x54004d00 0xf9409268 0xf9400108 0xeb08029f 0x54004c88
+       0xf9409668 0xd1000689 0x8b091108 0xa9405901 0xaa1303e0 0xaa1603e2 0x9400025e 0xaa0003f5
+      ])
       (append-runtime-words 32 [
-       0xf10026df 0x54002023 0xd28200c8 0xeb0802df 0x54001fc8 0x394002a8 0x35001f88 0x394006a8
-       0x7101191f 0x54001f21 0x39400aa8 0x71014d1f 0x54001ec1 0x39400ea8 0x7100c91f 0x54001e61
-       0x394012a8 0x35001e28 0x394016ba 0x7101175f 0x54000060 0x71011b5f 0x54001be1 0xd28000d7
-       0xeb1602ff 0x54001d22 0x38776aa8 0x34000068 0x910006f7 0x17fffffb 0x910006f7 0x71011b5f])
+       0xf10022df 0x54004b43 0xd28200c8 0xeb0802df 0x54004ae8 0x394002a8 0x35004aa8 0x394006a8
+       0x7101191f 0x54004a41 0x39400aa8 0x71014d1f 0x540049e1 0x39400ea8 0x7100c91f 0x54004981
+       0x394012a8 0x35004948 0x394016ba 0x7101175f 0x54000220 0x71011b5f 0x540001e0 0x71013f5f
+       0x540001a0 0x7101575f 0x54000160 0x7101235f 0x54000120 0x7101375f 0x540000e0 0x7101275f
+      ])
       (append-runtime-words 64 [
-       0x54000081 0xeb1602ff 0x54001c01 0x1400002a 0xd2800018 0xd2800019 0xd280001b 0xeb1602ff
-       0x54001b42 0x38776aa8 0x7100e91f 0x54000200 0x5100c108 0x7100251f 0x54001a88 0xd2933329
-       0xf2a33329 0xeb09031f 0x54001a08 0xd2800149 0x9b092318 0x12800009 0xeb09031f 0x54001968
-       0x910006f7 0x9100077b 0x17ffffed 0xb40018fb 0x910006f7 0xd280001b 0xeb1602ff 0x540001a2])
+       0x540000a0 0x7101335f 0x54000060 0x7101535f 0x54004541 0xd28000d7 0xeb1602ff 0x54004682
+       0x38776aa8 0x34000068 0x910006f7 0x17fffffb 0x910006f7 0x7101175f 0x540003c0 0x7101235f
+       0x54000140 0x7101335f 0x54001580 0x7101535f 0x54001540 0xeb1602ff 0x540044a1 0x7101275f
+       0x540022a0 0x1400003c 0xd2800018 0xd280001b 0xeb1602ff 0x54000180 0x38776aa8 0x5100c108
+      ])
       (append-runtime-words 96 [
-       0x38776aa8 0x5100c108 0x7100251f 0x540017e8 0xd2800149 0x9b092339 0xd2a00089 0xeb09033f
-       0x54001748 0x910006f7 0x9100077b 0x17fffff3 0xb40016db 0x91001aa1 0x39400028 0x7100bd1f
-       0x54000041 0x91000421 0xd2800060 0xd2820082 0xf2a42002 0xd2800003 0xd28039f0 0xf2a40010
-       0xd4001001 0x54000e02 0xaa0003f4 0xaa1403e0 0x9101c3e1 0xd2802a70 0xf2a40010 0xd4001001])
+       0x71001d1f 0x54004348 0xf1001b7f 0x54004302 0xd37df318 0x8b080318 0x9100077b 0x910006f7
+       0x17fffff4 0xb400425b 0x92402318 0x1400002a 0xd2800018 0xd2800019 0xd280001b 0xeb1602ff
+       0x54004162 0x38776aa8 0x7100e91f 0x54000200 0x5100c108 0x7100251f 0x540040a8 0xd2933329
+       0xf2a33329 0xeb09031f 0x54004028 0xd2800149 0x9b092318 0x12800009 0xeb09031f 0x54003f88
+      ])
       (append-runtime-words 128 [
-       0x54001442 0x7940ebe8 0x12140d09 0x7140213f 0x540013c1 0x71011b5f 0x54000780 0xf9406be8
-       0xf100011f 0x5400132b 0x8b190309 0xeb08013f 0x540012c8 0xf940ce77 0xd2a20008 0xd1001508
-       0xeb0802ff 0x54001228 0xcb170108 0xeb08033f 0x540011c8 0xaa1403e0 0xaa1803e1 0xd2800002
-       0xd28018f0 0xf2a40010 0xd4001001 0x540010e2 0xeb18001f 0x540010a1 0xf940ca75 0x8b1702b5])
+       0x910006f7 0x9100077b 0x17ffffed 0xb4003f1b 0x910006f7 0xd280001b 0xeb1602ff 0x540001a2
+       0x38776aa8 0x5100c108 0x7100251f 0x54003e08 0xd2800149 0x9b092339 0xd2a00089 0xeb09033f
+       0x54003d68 0x910006f7 0x9100077b 0x17fffff3 0xb4003cfb 0x91001aa1 0x39400028 0x7100bd1f
+       0x54000041 0x91000421 0x71013f5f 0x540027a0 0x7101575f 0x54002760 0x39400028 0x35000168
+      ])
       (append-runtime-words 160 [
-       0x910016b5 0xd280001b 0xeb19037f 0x540001c2 0xaa1403e0 0x8b1b02a1 0xcb1b0322 0xd2800070
-       0xf2a40010 0xd4001001 0x54000082 0xb4000ee0 0x8b00037b 0x17fffff5 0xf100101f 0x54fffe60
-       0x14000072 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x54000da2 0xd10016b5 0x5288c008
-       0x72a64a68 0xb90002a8 0x390012bf 0x8b1902e8 0x91001508 0xf900ce68 0xaa1303e0 0xaa3703e1])
+       0x7101235f 0x54000060 0x7101375f 0x540000e1 0xd2800060 0xd2800530 0xf2a40010 0xd4001001
+       0x54003042 0x14000009 0xd2800060 0xd2820082 0xf2a42002 0xd2800003 0xd28039f0 0xf2a40010
+       0xd4001001 0x54002f22 0xaa0003f4 0x7101235f 0x540021e0 0x7101375f 0x540021a0 0xaa1403e0
+       0x9101c3e1 0xd2802a70 0xf2a40010 0xd4001001 0x540037e2 0x7940ebe8 0x12140d09 0x7140213f
+      ])
       (append-runtime-words 192 [
-       0x91001722 0x1400003a 0xf940ce77 0xd2a20008 0xd1018108 0xeb0802ff 0x54000b88 0xf940ca75
-       0x8b1702b5 0x5288c008 0x72a64a68 0xb90002a8 0x390012bf 0x910016a1 0x7940ebe0 0x12002000
-       0x94000035 0x52800408 0x38001428 0xf9406be0 0x94000031 0x52800408 0x38001428 0xf94053e0
-       0x9400002d 0x52800408 0x38001428 0x52800608 0x38001428 0xcb150039 0x8b1902e8 0xf900ce68])
+       0x54003761 0x71011b5f 0x540024e0 0xf9406be8 0xf100011f 0x540036cb 0x8b190309 0xeb08013f
+       0x54003668 0xf940ce77 0xd2a20008 0xd1001508 0xeb0802ff 0x540035c8 0xcb170108 0xeb08033f
+       0x54003568 0xaa1403e0 0xaa1803e1 0xd2800002 0xd28018f0 0xf2a40010 0xd4001001 0x54003482
+       0xeb18001f 0x54003441 0xf940ca75 0x8b1702b5 0x910016b5 0xd280001b 0xeb19037f 0x540001c2
+      ])
       (append-runtime-words 224 [
-       0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x540007c2 0xaa1303e0 0xaa3703e1 0xaa1903e2
-       0x14000013 0x71011b5f 0x54000701 0xf940ce77 0xd2a20008 0xd1001508 0xeb0802ff 0x54000668
-       0xf940ca75 0x8b1702b5 0x5288c008 0x72a64a68 0xb90002a8 0x390012bf 0x910016e8 0xf900ce68
-       0xaa1303e0 0xaa3703e1 0xd28000a2 0xf9401e70 0xd63f0200 0xa94573fb 0xa9446bf9 0xa94363f7])
+       0xaa1403e0 0x8b1b02a1 0xcb1b0322 0xd2800070 0xf2a40010 0xd4001001 0x54000082 0xb4003280
+       0x8b00037b 0x17fffff5 0xf100101f 0x54fffe60 0x1400018f 0xaa1403e0 0xd28000d0 0xf2a40010
+       0xd4001001 0x54003142 0xd10016b5 0x5288c008 0x72a64a68 0xb90002a8 0x390012bf 0x8b1902e8
+       0x91001508 0xf900ce68 0xaa1303e0 0xaa3703e1 0x91001722 0x14000157 0xf940ce68 0xd2a20009
+      ])
       (append-runtime-words 256 [
-       0xa9425bf5 0xa94153f3 0xa9407bfd 0x910503ff 0xd65f03c0 0xd2800002 0xd2800148 0x9ac80809
-       0x9b08812a 0x1100c14a 0x910443eb 0x3822696a 0x91000442 0xaa0903e0 0xb5ffff20 0xd1000442
-       0x3862696a 0x3800142a 0xb5ffffa2 0xd65f03c0 0x14000010 0xaa1303e0 0xd2800461 0xd2800022
-       0xd2800023 0xaa1403e4 0xa94573fb 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd])
+       0xd1001929 0xeb09011f 0x54002f28 0x91001aa0 0xd1001ee1 0x910503e2 0x9400002a 0xb100041f
+       0x54002720 0xaa0003f8 0xf9003be1 0x8b1702a0 0xcb1702c1 0x911503e2 0x94000022 0xb100041f
+       0x54000340 0xaa0003f9 0xaa0103e3 0xaa1803e0 0xf9403be1 0xaa1903e2 0xd2800204 0x7101535f
+       0x54000041 0xd2800284 0xd2803d10 0xf2a40010 0xd4001001 0x9a9f27fc 0xaa1803e0 0xd28000d0
+      ])
       (append-runtime-words 288 [
-       0x910503ff 0x14000003 0xd42006c0 0xd4202020 0xd4202040])
-      (vector-assoc! 291 (b-direct (+ start 1164) (+ RUNTIME-START 52)))
-      (vector-assoc! 292 (b-direct (+ start 1168) da-start))))
+       0xf2a40010 0xd4001001 0x54002b22 0xaa1903e0 0xd28000d0 0xf2a40010 0xd4001001 0x54002a82
+       0xaa1c03f8 0x14000119 0xaa1803e0 0xd28000d0 0xf2a40010 0xd4001001 0x540029a2 0x14000112
+       0xf90087fe 0xaa0003e3 0xaa0103e4 0xb40006e4 0x39400068 0x7100bd1f 0x54000061 0x91000463
+       0xd1000484 0xb4000624 0xf10ffc9f 0x540005e8 0xd2800005 0xd280001c 0x9280001b 0xeb0400bf
+      ])
+      (append-runtime-words 320 [
+       0x540001a0 0x38656868 0x34000508 0x7100bd1f 0x540000c1 0xcb1c00a9 0x94000069 0xb5000460
+       0xaa0503fb 0x910004bc 0x38256848 0x910004a5 0x17fffff3 0xcb1c00a9 0x94000061 0xb5000360
+       0x3825685f 0xaa0203e6 0xb100077f 0x54000121 0xd2800060 0xd2800530 0xf2a40010 0xd4001001
+       0x54000242 0xaa0603e1 0xf94087fe 0xd65f03c0 0x383b68df 0xd2800060 0xaa0603e1 0xd2820082
+      ])
+      (append-runtime-words 352 [
+       0xf2a42202 0xd2800003 0xd28039f0 0xf2a40010 0xd4001001 0x540000a2 0x8b1b00c1 0x91000421
+       0xf94087fe 0xd65f03c0 0x92800000 0xf94087fe 0xd65f03c0 0xf940ce77 0xd2a20008 0xd1001908
+       0xeb0802ff 0x54002148 0x91001aa1 0x39400028 0x7100bd1f 0x54000041 0x91000421 0x910503e2
+       0xd2800019 0xd280001c 0x9280001b 0x38796828 0x340001a8 0xf10fff3f 0x54001862 0x7100bd1f
+      ])
+      (append-runtime-words 384 [
+       0x540000c1 0xcb1c0329 0x9400002d 0xb50017c0 0xaa1903fb 0x9100073c 0x38396848 0x91000739
+       0x17fffff3 0xcb1c0329 0x94000025 0xb50016c0 0x3839685f 0xd2800074 0xd280001c 0xb100077f
+       0x54000220 0x383b685f 0xd2800060 0xaa0203e1 0xd2820082 0xf2a42202 0xd2800003 0xd28039f0
+       0xf2a40010 0xd4001001 0x540014e2 0xaa0003f4 0xd280003c 0x910503e1 0x8b1b0021 0x91000421
+      ])
+      (append-runtime-words 416 [
+       0x14000002 0x910503e1 0xaa1403e0 0xd2803fe2 0xd2803b70 0xf2a40010 0xd4001001 0x9a9f27f8
+       0xb400135c 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x540019c2 0x14000094 0xb4000249
+       0xf103fd3f 0x54000208 0xf100053f 0x54000060 0xf100093f 0x54000141 0x387c684a 0x7100b95f
+       0x540000e1 0xf100053f 0x540000e0 0x9100078a 0x386a684a 0x7100b95f 0x54000060 0xd2800000
+      ])
+      (append-runtime-words 448 [
+       0xd65f03c0 0xd2800020 0xd65f03c0 0xf940ce77 0xd2a20008 0xd1001908 0xeb0802ff 0x54001688
+       0xaa1403e0 0x7101235f 0x54000081 0xaa1803e1 0xd2800f90 0x14000002 0xd2800bf0 0xf2a40010
+       0xd4001001 0x9a9f27f8 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x540014a2 0x1400006b
+       0x39400028 0x35000108 0xd2800060 0x9101c3e1 0xd2802a70 0xf2a40010 0xd4001001 0x54000962
+      ])
+      (append-runtime-words 480 [
+       0x14000009 0xd2800060 0x9101c3e2 0xd2850403 0xd2803ad0 0xf2a40010 0xd4001001 0x54000862
+       0x14000001 0xf940ce77 0xd2a20008 0xd1018108 0xeb0802ff 0x540011c8 0xf940ca75 0x8b1702b5
+       0x5288c008 0x72a64a68 0xb90002a8 0x390012bf 0x910016a1 0x7940ebe0 0x7101575f 0x54000061
+       0x12002c00 0x14000002 0x12002000 0x94000063 0x52800408 0x38001428 0xf9406be0 0x9400005f
+      ])
+      (append-runtime-words 512 [
+       0x52800408 0x38001428 0x71011b5f 0x54000061 0xf94053e0 0x14000002 0xf9406fe0 0x94000057
+       0x52800408 0x38001428 0x7940ebe8 0x12140d08 0x7140111f 0x540000e0 0x7140291f 0x540000e0
+       0x7140211f 0x540000e0 0x52800668 0x14000006 0x52800628 0x14000004 0x52800648 0x14000002
+       0x52800608 0x38001428 0xcb150039 0x8b1902e8 0xf900ce68 0x71013f5f 0x54000100 0x7101575f
+      ])
+      (append-runtime-words 544 [
+       0x540000c0 0xaa1403e0 0xd28000d0 0xf2a40010 0xd4001001 0x54000ac2 0xaa1303e0 0xaa3703e1
+       0xaa1903e2 0x1400002b 0x7101175f 0x54000a00 0x7101235f 0x54000280 0x7101375f 0x54000240
+       0xf940ce77 0xd2a20008 0xd1001508 0xeb0802ff 0x540008e8 0xf940ca75 0x8b1702b5 0x5288c008
+       0x72a64a68 0xb90002a8 0x390012bf 0x910016e8 0xf900ce68 0xaa1303e0 0xaa3703e1 0xd28000a2
+      ])
+      (append-runtime-words 576 [
+       0x14000014 0xd2800018 0xf940ce77 0xd2a20008 0xd1001908 0xeb0802ff 0x540006a8 0xf940ca75
+       0x8b1702b5 0x5288c008 0x72a64a68 0xb90002a8 0x390012bf 0x1100c308 0x390016a8 0x91001ae8
+       0xf900ce68 0xaa1303e0 0xaa3703e1 0xd28000c2 0xf9401e70 0xd63f0200 0xa94573fb 0xa9446bf9
+       0xa94363f7 0xa9425bf5 0xa94153f3 0xa9407bfd 0x912603ff 0xd65f03c0 0xd2800002 0xd2800148
+      ])
+      (append-runtime-words 608 [
+       0x9ac80809 0x9b08812a 0x1100c14a 0x910443eb 0x3822696a 0x91000442 0xaa0903e0 0xb5ffff20
+       0xd1000442 0x3862696a 0x3800142a 0xb5ffffa2 0xd65f03c0 0x14000010 0xaa1303e0 0xd2800461
+       0xd2800022 0xd2800023 0xaa1403e4 0xa94573fb 0xa9446bf9 0xa94363f7 0xa9425bf5 0xa94153f3
+       0xa9407bfd 0x912603ff 0x14000003 0xd42006c0 0xd4202020 0xd4202040
+      ])
+      (vector-assoc! 636 (b-direct (+ start 2544) (+ RUNTIME-START 52)))
+      (vector-assoc! 637 (b-direct (+ start 2548) da-start))))
 
 ;; JUN-593: legacy wire-35 text requests (the Linux kxrt-fs grammar) for the
 ;; fs2-cli-stdio-general runtime and the explicit amu-program-fs35 profile:
@@ -954,7 +1041,7 @@
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
-        fs35 (or (string=? mode "fs2-cli-stdio-general") (amu-program-fs35? mode))
+        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd") (amu-program-fs35? mode))
         extra (mh-extra-start raw-bytes)
         fs35-start (if (amu-program-fs35? mode)
           (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))) extra)
@@ -1084,8 +1171,10 @@
                 at total-bytes)
               :else program)))
         (if fs35
-          (words-at result (+ at extra)
-            (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
+          (let [with-fs (words-at result (+ at extra)
+                         (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))]
+            (if (string=? mode "fs2-cli-stdio-cwd")
+              (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES))) with-fs))
           result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
@@ -1103,7 +1192,7 @@
   (let [path (typed-cap-call :cli/args :string :string "0")
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
-        general (or (string=? mode "fs2-cli-stdio-general")
+        general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
                     (string=? mode "fs2-cli-stdio-general-command")
                     (string=? mode "amu-cli-host") (amu-program-mode? mode))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
@@ -1136,7 +1225,8 @@
             (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
               (if (amu-program-fs35? mode) FS35-BYTES 0)
               (if (amu-program-metal? mode) METAL-BYTES 0))
-            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES 0))))
+            (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
+              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
@@ -1146,6 +1236,9 @@
             (and (amu-program-mode? mode)
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
+            (and (string=? mode "fs2-cli-stdio-cwd")
+              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
+                (or (= words 0) (> (* words 4) 1024))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
                   (< entry-offset 0) (not= (bit-and entry-offset 3) 0)
@@ -1224,6 +1317,16 @@
   (mh-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
 (defn- mh-lb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
+(defn- mh-lh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-lw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-sh [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0x79000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 2) 10))))))
+(defn- mh-sw [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
+  (mh-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 4) 10))))))
+(defn- mh-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (mh-i s (bit-or 0x8a000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
 (defn- mh-sb [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left offset 10))))))
 (defn- mh-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
@@ -1276,6 +1379,58 @@
   [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
    0xf9400a68 0xd2a00209 0xaa090108 0xf9000a68 0xa8c17bfd 0xd65f03c0])
 
+;; Diagnostic launchd command mode: bind FD3 to the already selected working
+;; directory. Never replace an existing FD3, and require stdin/stdout/stderr to
+;; be open so open() must return exactly 3. The launcher/host must establish a
+;; alias-free WorkingDirectory before exec. fstat64 then requires a directory
+;; owned by the process effective UID with exact mode 0700 and no ACL. The
+;; path used to enter it remains a host duty. This is not a process sandbox.
+(defn- mh-cwd-scope-words [base :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-sub 31 31 384) (mh-str 30 31 16)
+    ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
+    (mh-imm 0 3) (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92)
+    (mh-b 0x54000003 2) (mh-cmpi 0 9) (mh-b 0x54000001 2)
+    ;; open(".", O_RDONLY|O_DIRECTORY|O_NOFOLLOW, 0).
+    (mh-imm 8 46) (mh-sb 8 31 0) (mh-sb 31 31 1)
+    (mh-add 0 31 0) (mh-imm 1 1048832) (mh-imm 2 0) (mh-sys 5)
+    (mh-b 0x54000002 2) (mh-cmpi 0 3) (mh-b 0x54000001 1)
+    ;; fstat64(3): Darwin stat64 mode@4, uid@16. Reject other kinds,
+    ;; special bits and group/other permissions, then require effective UID.
+    (mh-imm 0 3) (mh-add 1 31 32) (mh-sys 339) (mh-b 0x54000002 2)
+    (mh-lh 8 31 36) (mh-imm 9 16832) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-sys 25) (mh-b 0x54000002 2) (mh-lw 8 31 48) (mh-cmp 0 8) (mh-b 0x54000001 2)
+    ;; Require the volume to report native extended-security support. This
+    ;; prevents treating an unsupported ACL query as an absent ACL. attrlist
+    ;; is at sp+192 and the fixed 96-byte volume reply at sp+224.
+    (mh-str 31 31 192) (mh-str 31 31 200) (mh-str 31 31 208)
+    (mh-imm 8 5) (mh-sh 8 31 192) (mh-imm 8 2147483648) (mh-sw 8 31 196)
+    (mh-imm 8 3221356544) (mh-sw 8 31 200)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 224) (mh-imm 3 96) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 224) (mh-cmpi 8 96) (mh-b 0x54000001 2)
+    (mh-lw 8 31 228) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 232) (mh-imm 9 1073872896) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; Both valid and supported ACL capability, plus valid/native attribute.
+    (mh-imm 9 1024) (mh-lw 8 31 252) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 268) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-imm 9 4194304) (mh-lw 8 31 280) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-lw 8 31 300) (mh-and 8 8 9) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    ;; A no-ACL APFS reply has only returned-attrs and an empty reference.
+    ;; Any ACL, unsupported/malformed response, or syscall error refuses.
+    (mh-imm 8 2151677952) (mh-sw 8 31 196) (mh-sw 31 31 200)
+    (mh-str 31 31 320) (mh-str 31 31 328) (mh-str 31 31 336) (mh-str 31 31 344)
+    (mh-imm 0 3) (mh-add 1 31 192) (mh-add 2 31 320) (mh-imm 3 32) (mh-imm 4 0) (mh-sys 228)
+    (mh-b 0x54000002 2) (mh-lw 8 31 320) (mh-cmpi 8 32) (mh-b 0x54000001 2)
+    (mh-lw 8 31 324) (mh-imm 9 2147483648) (mh-cmp 8 9) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 328) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 336) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-ldr 8 31 344) (mh-cmpi 8 0) (mh-b 0x54000001 2)
+    (mh-mov 7 19) (mh-call SLICE-SETUP-START)
+    (mh-ldr 30 31 16) (mh-add 31 31 384) (mh-i 0xd65f03c0)
+    ;; An unexpected descriptor is ours; close it and refuse.
+    (mh-label 1) (mh-sys 6)
+    (mh-label 2) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000))))
+
 ;; AMUH1: NUL AMUH 1 op, then bounded UTF-8/NUL fields or binary tail.
 ;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
 ;; wire35 owns file/host-info operations, wire20 owns only child execution.
@@ -1283,8 +1438,16 @@
 (defn- mh-service-words [base :i64 fallback :i64] :vector-i64
   (let [s (-> (mh-new base)
     ;; Other capabilities retain the existing CLI/stdio dispatch.
-    (mh-cmpi 1 35) (mh-b 0x54000000 1)
+    (mh-cmpi 1 35) (mh-b 0x54000000 116)
     (mh-cmpi 1 20) (mh-b 0x54000000 1) (mh-jump fallback)
+    ;; The private host service uses byte/vector FS requests; ordinary FS2
+    ;; strings and string-to-bytes go to the existing scoped dispatcher.
+    (mh-label 116) (mh-cmpi 2 1) (mh-b 0x54000001 125)
+    ;; String-to-string needs prefix validation before FS2 dispatch: otherwise
+    ;; malformed host requests trap instead of reporting the host ABI error.
+    (mh-cmpi 3 1) (mh-b 0x54000000 1) (mh-jump fallback)
+    (mh-label 125) (mh-cmpi 2 9) (mh-b 0x54000000 117) (mh-b 0x14000000 1)
+    (mh-label 117) (mh-jump fallback)
     (mh-label 1)
     (mh-sub 31 31 128)
     (mh-i 0xa9007bfd) (mh-i 0xa90153f3) (mh-i 0xa9025bf5)
@@ -1300,6 +1463,7 @@
     (mh-imm 8 8388608) (mh-ar 22 21 8 0)
     (mh-imm 8 16777216) (mh-ar 23 21 8 0)
     (mh-cmpi 28 20) (mh-b 0x54000000 8)
+    (mh-cmpi 2 1) (mh-b 0x54000000 8)
     (mh-cmpi 2 8) (mh-b 0x54000001 98)
     (mh-cmpi 3 8) (mh-b 0x54000001 98)
     ;; Validate the complete vector descriptor and every byte before use.
@@ -1330,6 +1494,18 @@
     (mh-ar 10 26 9 0) (mh-lb 8 10 0) (mh-ar 10 21 9 0) (mh-sb 8 10 0)
     (mh-add 9 9 1) (mh-b 0x14000000 9)
     (mh-label 4)
+    ;; Only a complete FS2 prefix is delegated; AMUH remains host-private.
+    (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 123)
+    (mh-lb 8 21 1) (mh-cmpi 8 70) (mh-b 0x54000001 123)
+    (mh-lb 8 21 2) (mh-cmpi 8 83) (mh-b 0x54000001 123)
+    (mh-lb 8 21 3) (mh-cmpi 8 50) (mh-b 0x54000001 123)
+    (mh-lb 8 21 4) (mh-b (bit-or 0xb4000000 8) 122)
+    (mh-label 123)
+    ;; Wire35 string requests must be FS2; the private AMUH host protocol
+    ;; accepts byte vectors only. Wire20's string AMUH remains unchanged.
+    (mh-cmpi 28 35) (mh-b 0x54000001 124)
+    (mh-ldr 8 31 96) (mh-cmpi 8 1) (mh-b 0x54000000 98)
+    (mh-label 124)
     (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
     (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
     (mh-lb 8 21 2) (mh-cmpi 8 77) (mh-b 0x54000001 90)
@@ -1535,7 +1711,10 @@
     ;; Minimal environment; no caller secrets or runtime override variables.
     (mh-label 75) (mh-b (bit-or 0x10000000 8) 111) (mh-str 8 23 768)
     (mh-b (bit-or 0x10000000 8) 112) (mh-str 8 23 776)
-    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784) (mh-str 31 23 792)
+    (mh-imm 8 2097152) (mh-ar 27 23 8 0) (mh-str 27 23 784)
+    ;; Do not inherit machine-wide Git helpers, URL rewrites or proxies.
+    ;; Per-repository configuration is still checked by the caller.
+    (mh-b (bit-or 0x10000000 8) 118) (mh-str 8 23 792) (mh-str 31 23 800)
     (mh-imm 8 0x003d524944504d54) (mh-str 8 27 0)
     (mh-add 27 27 7) (mh-ldr 26 23 528)
     (mh-label 76) (mh-lb 8 26 0) (mh-sb 8 27 0)
@@ -1586,12 +1765,20 @@
     (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
     (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
     (mh-add 31 31 128) (mh-i 0xd65f03c0)
+    ;; Restore the original call before handing an FS2 byte frame to the
+    ;; scoped dispatcher. No guest image receives this private host service.
+    (mh-label 122) (mh-mov 0 19) (mh-mov 1 28)
+    (mh-ldr 2 31 96) (mh-ldr 3 31 104) (mh-mov 4 27)
+    (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 128) (mh-jump fallback)
     (mh-label 98) (mh-imm 0 2) (mh-b (bit-or 0x10000000 1) 115)
     (mh-imm 2 (string-length "amu: EHOST invalid host ABI or exhausted buffer\n"))
     (mh-sys 4) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000)
     (mh-label 110) (mh-text ".")
     (mh-label 111) (mh-text "PATH=/usr/bin:/bin")
     (mh-label 112) (mh-text "LANG=C")
+    (mh-label 118) (mh-text "GIT_CONFIG_NOSYSTEM=1")
     (mh-label 114) (mh-text "amu: EHOST child setup/exec failed\n")
     (mh-label 115) (mh-text "amu: EHOST invalid host ABI or exhausted buffer\n"))]
     (mh-finish s)))
