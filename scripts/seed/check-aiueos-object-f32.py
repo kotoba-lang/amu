@@ -8,7 +8,7 @@ native Amu compiler and checks (Python stages and observes; it emits nothing):
 * fops: one object exporting every admitted operation behind an op selector (the source of
   docs/evidence/f32-sse-20261030/fops.kotoba), whose text carries each operation's instruction exactly once
   (addss subss mulss divss and the sd forms, sqrtss / sqrtsd, cvtsi2ss / cvtsi2sd, cvtsd2ss / cvtss2sd, six
-  ucomiss and six ucomisd, two setnp for the two eq, btc / btr rax,63 for f64 neg / abs) and no minss / maxss /
+  ucomiss and seven ucomisd (six comparisons plus the NaN test of the f64-to-bits prelude, JUN-846), two setnp for the two eq, btc / btr rax,63 for f64 neg / abs) and no minss / maxss /
   cvttss2si / cvttsd2si;
 * trap: f32-from-bits is this route's definition, an out-of-range pattern reaching ud2 rather than a vector access;
 * unchanged: the 512-byte width object keeps its pinned SHA-256 (an integer object's bytes do not move);
@@ -33,7 +33,7 @@ EXPECTED = {
     "addsd": ("f20f5885", 1), "subsd": ("f20f5c85", 1), "mulsd": ("f20f5985", 1), "divsd": ("f20f5e85", 1),
     "sqrtss": ("f30f5185", 1), "sqrtsd": ("f20f5185", 1),
     "cvtsi2ss": ("f3480f2a85", 1), "cvtsi2sd": ("f2480f2a85", 1), "cvtsd2ss": ("f20f5a85", 1), "cvtss2sd": ("f30f5a85", 1),
-    "ucomisd": ("660f2e85", 6), "setnp-cl": ("0f9bc1", 2),
+    "ucomisd": ("660f2e85", 7), "setnp-cl": ("0f9bc1", 2),
     "btc-rax-63": ("480fbaf83f", 1), "btr-rax-63": ("480fbaf03f", 1),
     "minss": ("f30f5d", 0), "maxss": ("f30f5f", 0), "minsd": ("f20f5d", 0), "maxsd": ("f20f5f", 0),
     "cvttss2si": ("f3480f2c", 0), "cvttsd2si": ("f2480f2c", 0),

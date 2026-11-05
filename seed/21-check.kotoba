@@ -6903,7 +6903,7 @@
   "(defn- into [a :vector-i64 b :vector-i64] :vector-i64 (loop [i 0 acc a] (if (>= i (vector-count b)) acc (recur (+ i 1) (vector-conj acc (vector-at b i))))))\n"))))))
 (defn- ck-r6b-t-vec [] :string (ck-r6b-t-vec0))
 (defn- ck-r6b-t-f640 [] :string
-  (string-concat "(defn- f64-to-bits [x :f64] :i64 (__r6-as :i64 x))\n"
+  (string-concat "(defn- f64-to-bits [x :f64] :i64 (if (f64-unordered x x) 9221120237041090560 (__r6-as :i64 x)))\n"
   "(defn- f64-from-bits [b :i64] :f64 (__r6-as :f64 b))\n"))
 (defn- ck-r6b-t-f64 [] :string (ck-r6b-t-f640))
 (defn- ck-r6b-t-oi640 [] :string
