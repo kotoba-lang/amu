@@ -185,8 +185,8 @@ whole seed tree. When a seed PR conflicts with main in them:
 - leave `sourceRevision` `null` after regeneration: it means the descriptor's
   own commit and the source-revision audit checks that commit. Do not open a
   follow-up PR to name a squash commit.
-- Target (stage 2, not implemented): PRs carry source only, CI derives the
-  compilers from the PR, and a post-merge job repins main.
+- Target (stage 2, design in ADR 0406, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
+  post-merge bot PR repins main. Do not enable it or relax PR pin checks without the owner (needs a token/App).
 
 ## Bounded canonical Kototama native frontend (JUN-369)
 
@@ -444,3 +444,56 @@ Every previous ARM/x86 gate, uncached main/full tier and fresh controller
 verdict remains required. The ARM artifact includes root and final generations
 for unchanged native producer pin checks after transport. No compiler/image
 bytes, limits, case expectations or native gate commands change in this split.
+
+## CI input-hash gate (JUN-759)
+
+Every job of `selfhost-native` and of the other native workflows starts with `./.github/actions/ci-gate`
+(`scripts/ci/ci_gate.py`) and guards its later steps; required check names are never changed or made conditional.
+- A step added after the gate needs `if: steps.gate.outputs.skip != 'true'`, or it runs without the job's earlier
+  steps when the gate skips. `scripts/ci/test_ci_gate.py` fails on a missing guard; the one step meant to run on a skip
+  is named in its `MAY_RUN_WHEN_SKIPPED`.
+- Docs-only (pull_request / merge_group whose changed files are only top-level or non-evidence `*.md`, `LICENSE`,
+  `.DS_Store`, `.github/dependabot.yml`) skips the heavy steps. Everything else, including every workflow, action,
+  script, `seed/**`, `docs/evidence/**` and `examples/**`, runs.
+- Marker jobs skip when the same tree already passed that job (cache key = tree hash + runner arch + tier). Derivation
+  jobs (`bootstrap-arm64-root`, `one-compiler-arm64`, `x86-native-qualification`, `x86-complete`) restore the exact
+  derived compiler files when their inputs (tree minus gate-only `check-*`/`test_*` scripts they do not reference)
+  are unchanged. Markers/caches are saved only after a job passed.
+- push to main, the schedule and workflow_dispatch never skip and never restore: they run the full suite and only save.
+- A new gate-only script that a derivation starts to call must be reachable by name from the derivation's roots in
+  the workflow (`roots:`), or its edits will not bust that derivation's key.
+
+## All derived pins in one command (JUN-759)
+
+`scripts/seed/repin-derived-pins.py` covers the bootstrap roots, Linux images, product descriptors and Mac CLI.
+`scripts/seed/repin-all-pins.py` (Mac arm64, native only) adds the two pin kinds that PRs used to hand-edit:
+
+- **Core adoption**: when the `seed/MANIFEST` modules change, it rebuilds the Mac G1/G2/G3 core generations with the
+  Mac fixed point (the same procedure as `check-macos-core-adoption.py`) and rewrites the sources, source unity,
+  native image, container and generations of the receipt named by `seed/compiler-core.json` `adoptionReceipt`,
+  plus the sources and unity of `seed/compiler-core.json`.
+- **Native CDCI**: `seed/cdci/policy.json` (core source/container, amu-selfhost gate, kotoba-native gate, gate source),
+  the five pin rows of `seed/cdci/controller.kotoba`, the 24 case image rows of `seed/cdci/kotoba-gate.kotoba` and the
+  two role source hashes in `seed/79-native-cdci.kotoba`, all from the Mac fixed point
+  (`compile --target x86_64-linux --format static`, `cdci-build`). The compiler embeds `seed/79`, so the command
+  repeats repin + sync until the pins reach a fixed point (normally 3 rounds, about 8 minutes).
+
+```
+scripts/seed/repin-all-pins.py --merge origin/main   # merge, resolve mechanically, regenerate; then review + commit
+scripts/seed/repin-all-pins.py --check               # never writes; exit 10 CDCI stale, 11 core adoption stale
+scripts/seed/test-repin-all-pins.py                  # negative controls: each stale pin must fail --check
+```
+
+`--merge` resolves conflicts only in pin files, `seed/cdci/{policy.json,controller.kotoba,kotoba-gate.kotoba}`,
+`seed/compiler-core.json`, `seed/adoption-*.json` (main's side, then regenerated) and the role-hash lines of
+`seed/79-native-cdci.kotoba` (three-way merge ignoring them). Anything else exits 12 with the file list.
+
+What it does not cover (exit 12 `OWNER_AUTHORED_CONTENT_NEEDED`, or documented here):
+- semantic edits to `seed/79`, `seed/cdci/{entry,runtime}.kotoba`, new `static-cases.json` cases (new gate vectors) or
+  a changed case count; the entry/runtime hashes embedded in `seed/79` are not recomputed;
+- a core change whose G1/G2/G3 do not self-reproduce (fix the source);
+- a PR that creates a new `seed/adoption-*.json` and repoints `compiler-core.json`: main's pointer wins and the
+  PR's new file stays as a record; repointing is an owner decision;
+- `docs/evidence` and `docs/*.json` receipts are historical records bound to their own sources, are not read by any
+  CI check against current sources, and are not regenerated (`--report-receipts` lists drifted pins, informational);
+- native Linux execution of the controller/gate: CI remains the verdict; this command only reproduces the pinned bytes.

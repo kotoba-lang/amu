@@ -34,14 +34,17 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "seed/tests/native-keyword-map-record.kotoba"
 CHECK = "seed/21-check.kotoba"
-LITERAL = "(if (= (nm-kind M (nm-first M n)) ND-KW) (ck-kwrec M n fx) (ck-maplit2 M n fx))"
+# Mutate the actual keyword branch, not the enclosing conditional: the
+# latter also handles JUN-733 empty row literals on newer main revisions.
+LITERAL = "(ck-kwrec M n fx)"
 F64 = ["(= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA k 0)", "(= ty ck-ty-f32) (ck-err M1 E-CHECK-SCHEMA c 0)"]
 MUTANTS = [
     ("no-keyword-literal", [(LITERAL, "(ck-maplit2 M n fx)")], "E2105"),
     ("no-f64-field", [(x, x.replace("(= ty ck-ty-f32)", "(or (= ty TY-F64) (= ty ck-ty-f32))")) for x in F64], "E2128"),
 ]
 REFUSALS = [
-    ("assoc-new-key", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:b m)))", "E2127"),
+    # JUN-733: (assoc {:a 1} :b 2) extends the row (check-row-operations.py); a field the record lacks is still refused
+    ("assoc-new-key-read-absent", "(defn main [] :i64 (let [m (assoc {:a 1} :b 2)] (:c m)))", "E2127"),
     ("absent-key", "(defn main [] :i64 (let [m {:a 1}] (:z m)))", "E2127"),
     ("mixed-key-kinds", "(defn main [] :i64 (let [m {:a 1 \"b\" 2}] 0))", "E2105"),
     ("repeated-key", "(defn main [] :i64 (let [m {:a 1 :a 2}] 0))", "E2128"),

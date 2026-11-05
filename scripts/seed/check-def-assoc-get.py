@@ -83,7 +83,9 @@ REFUSALS = [
     ("def-mixed-vector", "(def x [1 :a])\n(defn main [] :i64 0)", "E2116"),
     ("def-unknown-symbol", "(def x {:a 0.5 :b nope})\n(defn main [] :i64 0)", "E2102"),
     ("assoc-odd", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :b))))", "E2103"),
-    ("assoc-absent-field", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :z 2))))", "E2127"),
+    # JUN-733: assoc of a key the record does not have extends the row (check-row-operations.py); reading a field
+    # the record does not have is still refused
+    ("assoc-absent-field", "(defn main [] :i64 (let [s (->S 1 2)] (:z (assoc s :a 1 :b 2))))", "E2127"),
     ("assoc-field-type", "(defn main [] :i64 (let [s (->S 1 2)] (:a (assoc s :a 1 :b \"x\"))))", "E2104"),
     ("assoc-map-value-type",
      "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (get (assoc m :a 1 :b true) :a 0)))", "E2104"),
@@ -91,8 +93,7 @@ REFUSALS = [
      "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (option-or (get m \"a\") 0)))", "E2104"),
     ("get-is-option", "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (get m :a)))", "E2121"),
     ("kw-default-type", "(defn main [] :i64 (let [m (typed-map-new [:map :keyword :i64] :a 1)] (:a m \"d\")))", "E2104"),
-    ("kw-default-record", "(defn main [] :i64 (let [s (->S 1 2)] (:a s 0)))", "E2103"),
-    ("kw-default-map-literal-record", "(defn main [] :i64 (let [s {:a 1 :b true}] (:a s 0)))", "E2103"),
+    ("kw-default-record-type", "(defn main [] :i64 (let [s (->S 1 2)] (:a s \"x\")))", "E2104"),
     ("kw-default-vector", "(defn main [] :i64 (let [v [1 2]] (:a v 0)))", "E2103"),
     ("bare-record-type", "(defn f [s S] :i64 (:a s))\n(defn main [] :i64 (f (->S 1 2)))", "E2105 unsupported type 'S'"),
     ("bare-record-param", "(defn f [S] :i64 0)\n(defn main [] :i64 (f 1))", "E2105 unsupported type 'S'"),

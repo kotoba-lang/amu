@@ -1,0 +1,15 @@
+(ns x86-project-fs.io
+  (:export [roundtrip])
+  (:capabilities [:fs/app-data]))
+(defn- fs [request :string] :string
+  (typed-cap-call :fs/app-data :string :string request))
+(defn roundtrip [base :string] :bool
+  (let [lock (string-concat base "/lock") pending (string-concat base "/pending")
+        final (string-concat base "/final")]
+    (and (= (fs (string-concat lock "FLOCK_SEP")) "1")
+         (= (fs (string-concat pending "WRITE_SEPnative")) "native")
+         (= (fs (string-concat pending "FSYNC_SEP")) "1")
+         (= (fs (string-concat pending (string-concat "RENAME_SEP" final))) "1")
+         (= (fs (string-concat base "FSYNC_SEP")) "1")
+         (= (fs final) "native")
+         (= (fs (string-concat lock "UNLOCK_SEP")) "1"))))

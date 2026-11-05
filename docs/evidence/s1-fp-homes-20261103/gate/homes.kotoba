@@ -1,0 +1,44 @@
+(ns gate.homes (:export [main]))
+
+;; Every FP-home path: a homed accumulator returned (tri), compares and neg/abs/sqrt on homed operands (wave),
+;; an f64 -> f32 result into a home (conv), two homes (swap), a home copied into a general-register local with an
+;; aliased temp materialized first (rot). No user calls inside them, so they stay leaves. gate/twin.c PROG 3.
+
+(defn- mix [c :i64 x :f32] :i64 (bit-and (+ (* c 31) (bit-and (f32-to-bits x) 4294967295)) 281474976710655))
+
+(defn- tri [n :i64] :f32
+  (loop [i 0 acc (i64-to-f32-rounded 1)]
+    (if (= i n) acc
+      (recur (+ i 1) (f32-add acc (f32-mul (i64-to-f32-rounded i) (f32-from-bits 1009736745)))))))
+
+(defn- wave [n :i64] :i64
+  (loop [i 0 c 0 b (i64-to-f32-rounded 0) a (i64-to-f32-rounded 0)]
+    (if (= i n)
+      (bit-and (+ (* (bit-and (+ (* c 31) (bit-and (f32-to-bits a) 4294967295)) 281474976710655) 31)
+                  (bit-and (f32-to-bits b) 4294967295)) 281474976710655)
+      (recur (+ i 1)
+             (if (f32-lt a b) (+ c 1) (if (f32-ge a (f32-from-bits 1077936128)) (+ c 3) c))
+             (f32-sub (f32-mul (i64-to-f32-rounded (- i 37)) (f32-from-bits 1009736745)) (f32-from-bits 1056964608))
+             (f32-add (f32-sqrt (f32-abs a)) (f32-neg b))))))
+
+(defn- conv [n :i64] :f32
+  (loop [i 0 acc (f64-to-f32-rounded (f64-from-bits 4598175219545276416))]
+    (if (= i n) acc
+      (recur (+ i 1) (f32-add acc (f64-to-f32-rounded (f64-mul (i64-to-f64-rounded i) (f64-from-bits 4562254508917369340))))))))
+
+(defn- swap [n :i64] :f32
+  (loop [i 0 p (i64-to-f32-rounded 1) q (i64-to-f32-rounded 2)]
+    (if (= i n) (f32-sub p q)
+      (recur (+ i 1) (f32-mul q (f32-from-bits 1056964608)) (f32-add p q)))))
+
+(defn- rot [n :i64] :f32
+  (loop [i 0 p (i64-to-f32-rounded 3) q (i64-to-f32-rounded 5)]
+    (if (= i n) (f32-div p q)
+      (recur (+ i 1) q (f32-add (f32-mul p (f32-from-bits 1056964608)) q)))))
+
+(defn main [] :i64
+  (let [c0 (mix 7 (tri 1000))
+        c1 (bit-and (+ (* c0 31) (wave 500)) 281474976710655)
+        c2 (mix c1 (conv 300))
+        c3 (mix c2 (swap 40))]
+    (mix c3 (rot 25))))

@@ -160,13 +160,27 @@
 (defn- gn-isk [M :vector-i64 t :i64 k :i64] :bool (= (gn-dk M t) k))
 ;; register of local slot s, -1 = frame slot
 (defn- gn-sreg [M :vector-i64 s :i64] :i64 (dec (gn-g M (+ gn-a-sreg s))))
+;; FP homes (S1, JUN-804): in an ordinary leaf whose SIR is plain scalar code with a float operation, a local slot that
+;; only ever receives f32 results lives in s(16+i) instead of a general register (fh-admit). Its use count holds
+;; -(i+1) and use cell 0 holds -(number of homes). The slot has no general register, so every existing reader and
+;; writer reaches it through gn-ld / gn-st, which move it with fmov (sign-extending the 32-bit carrier on the way
+;; out); the f32 emitters read and write the FP register directly (fh-op-bin, fh-op-un, gn-fl-cmp-emit).
+(defn- gn-fhr [M :vector-i64 k :i64] :i64
+  (let [u (if (and (> k 0) (<= k (gn-g M gn-f-ns))) (gn-g M (+ gn-a-use k)) 0)]
+    (if (< u 0) (- 15 u) -1)))
 (defn- gn-lpos [M :vector-i64 l :i64] :i64 (if (and (> l 0) (< l MM-LABEL-CAP)) (gn-g M (+ gn-a-lp l)) 0))
 
 ;; ---- frame slots ----------------------------------------------------------------------------------------------------
 (defn- gn-soff [M :vector-i64 k :i64] :i64 (- (gn-g M gn-f-fb) (* 8 (inc k))))
 (defn- gn-home [M :vector-i64 t :i64] :i64 (+ (gn-g M gn-f-ns) 1 t))
-(defn- gn-ld [M :vector-i64 r :i64 k :i64] :vector-i64 (gn-emit M (enc-ldr r 31 (gn-soff M k))))
-(defn- gn-st [M :vector-i64 r :i64 k :i64] :vector-i64 (gn-emit M (enc-str r 31 (gn-soff M k))))
+(defn- gn-ld [M :vector-i64 r :i64 k :i64] :vector-i64
+  (let [h (gn-fhr M k)]
+    (if (>= h 0)
+      (-> M (gn-emit (enc-fmov-from-fp 0 r h)) (gn-emit (enc-sxtw r r)))
+      (gn-emit M (enc-ldr r 31 (gn-soff M k))))))
+(defn- gn-st [M :vector-i64 r :i64 k :i64] :vector-i64
+  (let [h (gn-fhr M k)]
+    (if (>= h 0) (gn-emit M (enc-fmov-to-fp 0 h r)) (gn-emit M (enc-str r 31 (gn-soff M k))))))
 (defn- gn-mov [M :vector-i64 d :i64 s :i64] :vector-i64 (if (= d s) M (gn-emit M (enc-mov-r d s))))
 
 ;; ---- constants --------------------------------------------------------------------------------------------------
@@ -504,9 +518,38 @@
                  (= (gn-op M (+ q 15)) OP-RET) (= (gn-sir M (+ q 15) IF-A) 0)
                  (= (gn-op M (+ q 16)) OP-END))
           (+ 1024 (gn-tz (inc mask) 0) (* fuel 512)) 0)))))
+;; Exact 32-bit range identity (S1, JUN-804): (assert (and (>= b -2^31) (<= b 2^31-1))) then b, the body of the
+;; f32-from-bits library function (an f32 carrier is its bits sign-extended from 32). Token 1280 (+512 for entry
+;; fuel), disjoint from the sign wrapper's 1024 + width (width <= 32). No source names.
+(defn- gn-range-wrapper [M :vector-i64 f :i64 n :i64] :i64
+  (let [p (gn-fnf M f FF-SIR)]
+    (if (or (< p 1) (not= n 1) (not= (gn-op M p) OP-FN)
+            (not= (gn-sir M p IF-A) f) (not= (gn-sir M p IF-B) 1)) 0
+      (let [fuel (if (= (gn-op M (inc p)) OP-FUEL) 1 0)
+            q (gn-skiplab M (+ p 1 fuel))
+            lx (gn-sir M (+ q 3) IF-B) le (gn-sir M (+ q 8) IF-B) l1 (gn-sir M (+ q 10) IF-A)]
+        (if (and (= (gn-op M q) OP-LGET) (= (gn-sir M q IF-A) 0) (= (gn-sir M q IF-B) 1)
+                 (= (gn-op M (+ q 1)) OP-CONST) (= (gn-sir M (+ q 1) IF-A) 1) (= (gn-sir M (+ q 1) IF-B) -2147483648)
+                 (= (gn-op M (+ q 2)) OP-CMP) (= (gn-sir M (+ q 2) IF-A) CC-GE) (= (gn-sir M (+ q 2) IF-B) 0)
+                 (= (gn-op M (+ q 3)) OP-BRZ) (= (gn-sir M (+ q 3) IF-A) 0) (> lx 0)
+                 (= (gn-op M (+ q 4)) OP-LGET) (= (gn-sir M (+ q 4) IF-A) 0) (= (gn-sir M (+ q 4) IF-B) 1)
+                 (= (gn-op M (+ q 5)) OP-CONST) (= (gn-sir M (+ q 5) IF-A) 1) (= (gn-sir M (+ q 5) IF-B) 2147483647)
+                 (= (gn-op M (+ q 6)) OP-CMP) (= (gn-sir M (+ q 6) IF-A) CC-LE) (= (gn-sir M (+ q 6) IF-B) 0)
+                 (= (gn-op M (+ q 7)) OP-LABEL) (= (gn-sir M (+ q 7) IF-A) lx)
+                 (= (gn-op M (+ q 8)) OP-BRZ) (= (gn-sir M (+ q 8) IF-A) 0) (> le 0) (not= le lx)
+                 (= (gn-op M (+ q 9)) OP-CONST) (= (gn-sir M (+ q 9) IF-A) 0) (= (gn-sir M (+ q 9) IF-B) 0)
+                 (= (gn-op M (+ q 10)) OP-BR) (> l1 0) (not= l1 le) (not= l1 lx)
+                 (= (gn-op M (+ q 11)) OP-LABEL) (= (gn-sir M (+ q 11) IF-A) le)
+                 (= (gn-op M (+ q 12)) OP-TRAP) (= (gn-sir M (+ q 12) IF-A) 0)
+                 (= (gn-op M (+ q 13)) OP-LABEL) (= (gn-sir M (+ q 13) IF-A) l1)
+                 (= (gn-op M (+ q 14)) OP-LGET) (= (gn-sir M (+ q 14) IF-A) 0) (= (gn-sir M (+ q 14) IF-B) 1)
+                 (= (gn-op M (+ q 15)) OP-RET) (= (gn-sir M (+ q 15) IF-A) 0)
+                 (= (gn-op M (+ q 16)) OP-END))
+          (+ 1280 (* fuel 512)) 0)))))
 (defn- gn-call-wrapper [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :i64
   (if (= (gn-op M (inc i)) OP-RES2) 0
-      (let [w (gn-wrapper M f t n)] (if (> w 0) w (gn-sign-wrapper M f n)))))
+      (let [w (gn-wrapper M f t n)]
+        (if (> w 0) w (let [g (gn-sign-wrapper M f n)] (if (> g 0) g (gn-range-wrapper M f n)))))))
 
 ;; Exact charged mask-and-write composition. Keep it outside gn-call-wrapper
 ;; so prescan retains the caller's original nonleaf frame and fuel publication.
@@ -1103,7 +1146,7 @@
 
 ;; ---- register assignment ----------------------------------------------------------------------------------------
 (defn- gn-lowregs [M :vector-i64 k :i64 n :i64] :vector-i64
-  (if (> k n) M (gn-lowregs (gn-gs M (+ gn-a-sreg k) k) (inc k) n)))
+  (if (> k n) M (gn-lowregs (if (< (gn-g M (+ gn-a-use k)) 0) M (gn-gs M (+ gn-a-sreg k) k)) (inc k) n)))   ; FP home: none
 ;; the unassigned slot in k..ns with the highest use (first on ties), 0 = none
 (defn- gn-best [M :vector-i64 k :i64 ns :i64 bk :i64 bu :i64] :i64
   (if (> k ns)
@@ -1928,6 +1971,67 @@
        (case k 1 (enc-cond-lt) 3 8 5 (enc-cond-eq) (enc-cond-hs))) (inc k))))]
    (gn-gs m5 gn-f-skip 1))))
 
+;; ---- FP homes (S1, JUN-804): admission ----------------------------------------------------------------------------
+(defn- fh-range? [w :i64] :bool (and (>= w 1024) (= (bit-and w 511) 256)))
+;; SIR j produces an f32 carrier: an f32 BIN, f32 neg/abs/sqrt, i64->f32, f64->f32, or a 32-bit range identity call
+(defn- fh-f32-at? [M :vector-i64 j :i64] :bool
+  (let [op (gn-op M j) a (gn-sir M j IF-A)]
+    (or (and (= op OP-BIN) (>= a BOP-F32-ADD) (<= a BOP-F32-MAX))
+        (and (= op OP-UN) (or (and (>= a UOP-F32-NEG) (<= a UOP-F32-SQRT)) (= a UOP-I64-TO-F32) (= a UOP-F64-TO-F32)))
+        (and (= op OP-CALL) (fh-range? (gn-call-wrapper M j a (gn-sir M j IF-B) (gn-sir M j IF-C)))))))
+;; the temp SIR j writes: -2 none (LSET, FUEL), -1 not straight-line or not known here
+(defn- fh-wt [M :vector-i64 j :i64] :i64
+  (let [op (gn-op M j)]
+    (cond (or (= op OP-CONST) (= op OP-LGET)) (gn-sir M j IF-A)
+          (or (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-RT) (= op OP-CALL)) (gn-sir M j IF-B)
+          (or (= op OP-LSET) (= op OP-FUEL)) -2
+          :else -1)))
+;; (LSET s u) at j: the latest straight-line writer of temp u (at most 512 back, never before lo) produces an f32.
+;; Loop-sets evaluate every binding before the first LSET, so with several accumulators the producer of the first
+;; one sits a whole expression per later binding away.
+(defn- fh-def-f32? [M :vector-i64 j :i64 u :i64 lo :i64] :bool
+  (loop [k (dec j) n 0]
+    (if (or (<= k lo) (>= n 512)) false
+      (let [w (fh-wt M k)]
+        (cond (= w u) (fh-f32-at? M k)
+              (= w -1) false
+              :else (recur (dec k) (inc n)))))))
+;; plain scalar leaf code: these ops, inlined runtime operations, identity or range wrapper calls. A NEON peephole
+;; (tables, zero fills, matrix rows, SHA rounds) never admits such a body with a float operation in it.
+(defn- fh-plain? [M :vector-i64 j :i64] :bool
+  (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
+    (cond (or (= op OP-CONST) (= op OP-LGET) (= op OP-LSET) (= op OP-BIN) (= op OP-CMP) (= op OP-UN)
+              (= op OP-BRZ) (= op OP-BRNZ) (= op OP-BR) (= op OP-LABEL) (= op OP-FUEL) (= op OP-RET) (= op OP-TRAP)) true
+          (= op OP-RT) (gn-inl a b c)
+          (= op OP-CALL) (let [w (gn-call-wrapper M j a b c)] (or (= w 1) (= w 257) (fh-range? w)))
+          :else false)))
+;; the body from j to its END: 1 = plain with a float operation, 0 = plain without, -1 = not plain
+(defn- fh-scan [M :vector-i64 j :i64 fl :i64] :i64
+  (let [op (gn-op M j) a (gn-sir M j IF-A)]
+    (cond (or (>= j (vector-at M MM-SIR-N)) (= op OP-END)) fl
+          (not (fh-plain? M j)) -1
+          :else (fh-scan M (inc j) (if (or (and (= op OP-BIN) (>= a BOP-F64-ADD)) (and (= op OP-CMP) (>= a CC-F64-EQ))
+                                             (and (= op OP-UN) (>= a UOP-F64-NEG))) 1 fl)))))
+;; every (LSET s u) with s past the parameters: sreg cell 1 = only f32 producers so far, 2 = some other producer
+(defn- fh-mark [M :vector-i64 j :i64 lo :i64 np :i64] :vector-i64
+  (let [op (gn-op M j) s (gn-sir M j IF-A)]
+    (cond (or (>= j (vector-at M MM-SIR-N)) (= op OP-END)) M
+          (and (= op OP-LSET) (> s np) (<= s (gn-g M gn-f-ns)))
+          (fh-mark (gn-gs M (+ gn-a-sreg s)
+                          (if (and (not= (gn-g M (+ gn-a-sreg s)) 2) (fh-def-f32? M j (gn-sir M j IF-B) lo)) 1 2))
+                   (inc j) lo np)
+          :else (fh-mark M (inc j) lo np))))
+;; slots marked 1 get s16 .. s31 in slot order; the sreg scratch is cleared for gn-assign
+(defn- fh-assign [M :vector-i64 k :i64 n :i64] :vector-i64
+  (cond (> k (gn-g M gn-f-ns)) (gn-gs M gn-a-use (- n))
+        (and (= (gn-g M (+ gn-a-sreg k)) 1) (< n 16))
+        (fh-assign (-> M (gn-gs (+ gn-a-sreg k) 0) (gn-gs (+ gn-a-use k) (- (inc n)))) (inc k) (inc n))
+        :else (fh-assign (gn-gs M (+ gn-a-sreg k) 0) (inc k) n)))
+(defn- fh-admit [M :vector-i64 i :i64 np :i64] :vector-i64
+  (if (and (= (gn-g M gn-f-leaf) 1) (= (fh-scan M (inc i) 0) 1))
+    (fh-assign (fh-mark M (inc i) i np) 1 0)
+    M))
+
 (defn- gn-op-fn2 [M1 :vector-i64 i :i64 f :i64 np :i64] :vector-i64
   (let [ns (gn-g M1 gn-f-ns)
         dp (gn-g M1 gn-f-dp)]
@@ -1937,7 +2041,7 @@
           ;; rather than emit an entry a native caller would call with the wrong arguments.
           (and (= (gn-fnf M1 f FF-EXPORT) 1) (> np 5)) (gn-err M1 E-GEN-OP OP-FN)
           :else
-          (let [MM (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1)
+          (let [MM (fh-admit (if (gn-small-tail M1 i f np) (gn-gs M1 gn-f-leaf 2) M1) i np)
                 M2 (sl-assign (gn-vmode (gn-assign MM) i) i f np)
                 F (gn-g M2 gn-f-fb)
                 leaf (gn-g M2 gn-f-leaf)]
@@ -2087,17 +2191,48 @@
         (gn-emit (enc-fop2 (bit-and bop 7) sz 0 0 1))
         (gn-emit (enc-fmov-from-fp sz d 0))
         (cond-> (= sz 0) (gn-emit (enc-sxtw d d))))))
-;; flags := fcmp temp t, temp t+1
+;; FP homes: the FP register of temp t when its value is an FP-homed local, else -1
+(defn- fh-treg [M :vector-i64 t :i64] :i64 (if (gn-isk M t gn-k-local) (gn-fhr M (gn-dv M t)) -1))
+(defn- fh-on? [M :vector-i64] :bool (< (gn-g M gn-a-use) 0))
+;; FP homes: the FP-homed local s the result t of op i can be written to directly, else 0. The next (LSET s t) is
+;; at most 512 straight-line instructions away (loop-sets evaluate every binding before the first LSET: in
+;; (recur (+ k 1) (f32-add a0 ..) (f32-add a1 ..)) the update of a0 is followed by a1's whole expression and the
+;; LSET of k), nothing in between reads or writes s or writes t, and t is dead after it. fh-fin then records
+;; t = local s, so that LSET finds its value already in place; temps below t holding "local s" are materialized
+;; first (gn-protect).
+(defn- fh-gap? [M :vector-i64 j0 :i64 e :i64 s :i64 t :i64] :bool
+  (loop [j j0]
+    (if (>= j e) true
+      (let [op (gn-op M j) a (gn-sir M j IF-A) b (gn-sir M j IF-B) c (gn-sir M j IF-C)]
+        (if (and (or (= op OP-CONST) (= op OP-BIN) (= op OP-CMP) (= op OP-UN) (= op OP-FUEL)
+                     (and (= op OP-LGET) (not= b s)) (and (= op OP-LSET) (not= a s))
+                     (and (= op OP-RT) (gn-inl a b c))
+                     (and (= op OP-CALL) (let [w (gn-call-wrapper M j a b c)] (or (= w 1) (= w 257) (fh-range? w)))))
+                 (not= (fh-wt M j) t))
+          (recur (inc j))
+          false)))))
+(defn- fh-co [M :vector-i64 i :i64 t :i64] :i64
+  (loop [j (inc i) n 0]
+    (cond (>= n 512) 0
+          (and (= (gn-op M j) OP-LSET) (= (gn-sir M j IF-B) t))
+          (let [s (gn-sir M j IF-A)]
+            (if (and (>= (gn-fhr M s) 0) (gn-kills M (inc j) t 16) (fh-gap? M (inc i) j s t)) s 0))
+          (or (= (gn-op M j) OP-LABEL) (= (gn-op M j) OP-END)) 0
+          :else (recur (inc j) (inc n)))))
+(defn- fh-fin [M :vector-i64 t :i64 s :i64] :vector-i64 (gn-def (gn-vdrop M s) t gn-k-local s))
+;; flags := fcmp temp t, temp t+1 (an f32 operand that is an FP-homed local is compared in place)
 (defn- gn-fl-cmp-emit [M :vector-i64 cc :i64 t :i64] :vector-i64
   (let [sz (gn-fl-csz cc)
+        hx (if (= sz 0) (fh-treg M t) -1)
+        hy (if (= sz 0) (fh-treg M (inc t)) -1)
         x (gn-src M t 16 1)
         y (gn-src M (inc t) 17 1)]
     (-> M
-        (gn-ldt t 16 1)
-        (gn-ldt (inc t) 17 1)
-        (gn-emit (enc-fmov-to-fp sz 0 x))
-        (gn-emit (enc-fmov-to-fp sz 1 y))
-        (gn-emit (enc-fcmp sz 0 1)))))
+        (cond-> (< hx 0) (gn-ldt t 16 1))
+        (cond-> (< hy 0) (gn-ldt (inc t) 17 1))
+        (cond-> (< hx 0) (gn-emit (enc-fmov-to-fp sz 0 x)))
+        (cond-> (< hy 0) (gn-emit (enc-fmov-to-fp sz 1 y)))
+        (gn-emit (enc-fcmp sz (if (< hx 0) 0 hx) (if (< hy 0) 1 hy))))))
 ;; the result of an f32 operation in s0 -> d (fmov w, sxtw); of an f64 one in d0 -> d
 (defn- gn-fl-out [M :vector-i64 sz :i64 d :i64] :vector-i64
   (-> M (gn-emit (enc-fmov-from-fp sz d 0)) (cond-> (= sz 0) (gn-emit (enc-sxtw d d)))))
@@ -2121,23 +2256,79 @@
       (gn-emit (enc-bcond (enc-cond-gt) 2))
       (gn-emit (enc-brk 0))
       (gn-emit (enc-fcvtzs 0 d 0))))
+;; f64 -> i64 (UOP-F64-TO-I64, JUN-846): the f32 guard above at double precision, the reference's semantics (NaN, +-Inf and every
+;; |x| >= 2^63 trap; in range truncates toward zero) instead of fcvtzs's saturated answer. -2^63 is 0xc3e0000000000000 in xD.
+;;   fmov d0,xX ; movz xD,#0xc3e0,lsl #48 ; fmov d1,xD (-2^63) ; fcmp d0,d1 ; b.lt trap (below, or unordered) ;
+;;   fneg d1,d1 (2^63) ; fcmp d1,d0 ; b.gt ok (2^63 > x, ordered) ; trap: brk #0 ; ok: fcvtzs xD,d0
+(defn- gn-fl-f64-to-i64 [M :vector-i64 d :i64 x :i64] :vector-i64
+  (-> M
+      (gn-emit (enc-fmov-to-fp 1 0 x))
+      (gn-emit (enc-movz d 0xc3e0 3))
+      (gn-emit (enc-fmov-to-fp 1 1 d))
+      (gn-emit (enc-fcmp 1 0 1))
+      (gn-emit (enc-bcond (enc-cond-lt) 4))
+      (gn-emit (enc-fop1 0 1 1 1))
+      (gn-emit (enc-fcmp 1 1 0))
+      (gn-emit (enc-bcond (enc-cond-gt) 2))
+      (gn-emit (enc-brk 0))
+      (gn-emit (enc-fcvtzs 1 d 0))))
 ;; d := (uop) x
 (defn- gn-fl-un [M :vector-i64 uop :i64 d :i64 x :i64] :vector-i64
   (cond (<= uop UOP-F64-SQRT) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fop1 (- uop UOP-F64-NEG) 1 0 0)) (gn-fl-out 1 d))
         (<= uop UOP-F32-SQRT) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fop1 (- uop UOP-F32-NEG) 0 0 0)) (gn-fl-out 0 d))
-        (= uop UOP-F64-TO-I64) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvtzs 1 d 0)))
+        (= uop UOP-F64-TO-I64) (gn-fl-f64-to-i64 M d x)   ; JUN-846
         (= uop UOP-I64-TO-F64) (-> M (gn-emit (enc-scvtf 1 0 x)) (gn-fl-out 1 d))
         (= uop UOP-F64-TO-F32) (-> M (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 0 0)) (gn-fl-out 0 d))
         (= uop UOP-F32-TO-F64) (-> M (gn-emit (enc-fmov-to-fp 0 0 x)) (gn-emit (enc-fcvt 0 0 0)) (gn-fl-out 1 d))
         (= uop UOP-I64-TO-F32) (-> M (gn-emit (enc-scvtf 0 0 x)) (gn-fl-out 0 d))
         :else (gn-fl-f32-to-i64 M d x)))
+;; FP homes: an f32 result (neg/abs/sqrt, i64->f32, f64->f32) goes straight into the FP home of the local it is
+;; stored to, else through s0 as before; neg/abs/sqrt read an FP-homed operand in place
+(defn- fh-f32-un? [uop :i64] :bool
+  (or (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT)) (= uop UOP-I64-TO-F32) (= uop UOP-F64-TO-F32)))
+(defn- fh-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
+  (let [one (and (>= uop UOP-F32-NEG) (<= uop UOP-F32-SQRT))
+        hx (if one (fh-treg M t) -1)
+        sf (fh-co M i t)
+        s (if (> sf 0) sf (gn-co M i t))
+        x (gn-src M t 16 1)
+        h (if (> sf 0) (gn-fhr M sf) 0)
+        M1 (cond-> (gn-protect M t s) (< hx 0) (gn-ldt t 16 1))
+        M2 (cond one (-> M1 (cond-> (< hx 0) (gn-emit (enc-fmov-to-fp 0 0 x)))
+                         (gn-emit (enc-fop1 (- uop UOP-F32-NEG) 0 h (if (< hx 0) 0 hx))))
+                 (= uop UOP-I64-TO-F32) (gn-emit M1 (enc-scvtf 0 h x))
+                 :else (-> M1 (gn-emit (enc-fmov-to-fp 1 0 x)) (gn-emit (enc-fcvt 1 h 0))))]
+    (if (> sf 0)
+      (fh-fin M2 t sf)
+      (let [d (gn-dreg M2 t s)] (-> M2 (gn-fl-out 0 d) (gn-fin t s d))))))
 (defn- gn-fl-op-un [M :vector-i64 i :i64 uop :i64 t :i64] :vector-i64
+  (if (and (fh-on? M) (fh-f32-un? uop)) (fh-op-un M i uop t)
   (if (gn-fl-un-ok? uop)
     (let [s (gn-co M i t)
           d (gn-dreg M t s)
           x (gn-src M t 16 1)]
       (-> M (gn-protect t s) (gn-ldt t 16 1) (gn-fl-un uop d x) (gn-fin t s d)))
-    (gn-err M E-GEN-OP OP-UN)))
+    (gn-err M E-GEN-OP OP-UN))))
+;; FP homes: an f32 BIN reads FP-homed operands in place and writes the FP home of the local it is stored to
+;; (op; LSET s t; t dead); otherwise the result goes through s0 to the general register as before
+(defn- fh-op-bin [M :vector-i64 i :i64 bop :i64 t :i64] :vector-i64
+  (let [hx (fh-treg M t)
+        hy (fh-treg M (inc t))
+        sf (fh-co M i t)
+        s (if (> sf 0) sf (gn-co M i t))
+        x (gn-src M t 16 1)
+        y (gn-src M (inc t) 17 1)
+        a (if (< hx 0) 0 hx)
+        b (if (< hy 0) 1 hy)
+        M1 (-> (gn-protect M t s)
+               (cond-> (< hx 0) (gn-ldt t 16 1))
+               (cond-> (< hy 0) (gn-ldt (inc t) 17 1))
+               (cond-> (< hx 0) (gn-emit (enc-fmov-to-fp 0 0 x)))
+               (cond-> (< hy 0) (gn-emit (enc-fmov-to-fp 0 1 y))))]
+    (if (> sf 0)
+      (-> M1 (gn-emit (enc-fop2 (bit-and bop 7) 0 (gn-fhr M sf) a b)) (fh-fin t sf))
+      (let [d (gn-dreg M1 t s)]
+        (-> M1 (gn-emit (enc-fop2 (bit-and bop 7) 0 0 a b)) (gn-fl-out 0 d) (gn-fin t s d))))))
 ;; ---- END FLOAT ------------------------------------------------------------------------------------------------------
 
 ;; ---- data processing ------------------------------------------------------------------------------------------------
@@ -2703,6 +2894,18 @@
       (let [s (gn-co M1 i t) d (gn-dreg M1 t s) x (gn-src M1 t 16 1)]
         (-> M1 (gn-protect t s) (gn-ldt t 16 1)
             (gn-emit (gn-e-bf 0x93400000 d x 0 (dec width))) (gn-fin t s d))))))
+;; The 32-bit range identity inline (S1, JUN-804): a constant is checked here; anything else by
+;; sxtw x17, wX ; cmp x17, xX ; b.eq +2 ; brk #0 (the callee's assert trap). The argument temp is the result.
+(defn- gn-call-range [M :vector-i64 i :i64 t :i64 w :i64] :vector-i64
+  (let [M1 (if (>= w 1536) (gn-op-fuel M) M)]
+    (if (gn-isk M1 t gn-k-const)
+      (let [v (gn-dv M1 t)]
+        (gn-gs (if (and (>= v -2147483648) (<= v 2147483647)) M1 (gn-emit M1 (enc-brk 0))) gn-f-h (inc t)))
+      (let [x (gn-src M1 t 16 1)]
+        (-> M1 (gn-ldt t 16 1)
+            (gn-emit (enc-sxtw 17 x)) (gn-emit (enc-cmp-r 17 x))
+            (gn-emit (enc-bcond (enc-cond-eq) 2)) (gn-emit (enc-brk 0))
+            (gn-gs gn-f-h (inc t)))))))
 ;; Emulate the callee leaf transaction in x8, not caller gn-op-fuel.
 ;; x0/x8 are free in the retained nonleaf caller; pinned argument/live temps
 ;; are x9..x15, callee-saved locals or homes. Traps keep the pre-call fuel,
@@ -3895,6 +4098,7 @@
 (defn- gn-op-call [M :vector-i64 i :i64 f :i64 t :i64 n :i64] :vector-i64
   (let [packed-inline (qi-admit M i f t n) pair-inline (pi-admit M i f t n) table-inline (ti-admit M i f t n) clipped (rp-admit M i f t n) composition (rc-admit M i f t n) begin (vector-at M MM-CODE-N) w (gn-call-wrapper M i f t n) q (if (= (gn-g M gn-f-leaf) 2) 0 (gn-clamp M i f n)) mask (if (= (gn-g M gn-f-leaf) 2) 0 (gn-scalar-mask M i f n)) reader (if (= (gn-g M gn-f-leaf) 2) 0 (gn-affine-reader M i f n)) matrix (mr-reader M i f n) dag (di-admit M i f t n) collapsed (tc-admit M i f t n) twin (tb-admit M i f t n) affine-write (aw-admit M i f t n) out
    (cond (> packed-inline 0) (qi-call M i f t packed-inline) (> pair-inline 0) (pi-call M i f t) (> table-inline 0) (ti-call M i f t table-inline) (> clipped 0) (rp-call M i t clipped) (> composition 0) (rc-call M i t composition) (> matrix 0) (mr-call M i t f matrix) (> affine-write 0) (aw-call M i f t affine-write) (> reader 0) (gn-call-affine-reader M i t f reader) (> mask 0) (gn-call-scalar-mask M i t mask) (> q 0) (gn-call-clamp M i f t q) (gn-mask-writer M i f t n) (gn-call-mask-writer M t)
+         (fh-range? w) (gn-call-range M i t w)
          (>= w 1024) (gn-call-sign M i t w)
          (> w 0) (let [M1 (if (>= w 256) (gn-op-fuel M) M)
                        slot (bit-and w 255)]
@@ -4823,7 +5027,7 @@
           (not (gn-clamp-open M (gn-sir M (+ (gn-skiplab M (+ (gn-fnf M f FF-SIR) 2)) 5) IF-A)))) 3
          (and (= n 1) (>= t 0) (<= t 5))
           (let [w (gn-call-wrapper M j f t n) q (gn-clamp M j f n)]
-           (cond (and (>= w 1024) (< w 1536)) 1
+           (cond (and (>= w 1024) (< w 1536) (not (fh-range? w))) 1
                  (> q 0) (let [p (gn-fnf M f FF-SIR)
                                z (gn-sign-wrapper M (gn-sir M (inc q) IF-A) 1)]
                            (if (and (>= z 1024) (< z 1536))
@@ -17609,7 +17813,8 @@
   (srf-original-op-bin M i bop t)))
 
 (defn- gn-op-bin [M :vector-i64 i :i64 bop :i64 t :i64] :vector-i64
- (if (srf-admit M i bop t) (srf-emit M i t) (spr-op-bin M i bop t)))
+ (if (and (fh-on? M) (>= bop BOP-F32-ADD) (<= bop BOP-F32-MAX)) (fh-op-bin M i bop t)   ; FP homes
+ (if (srf-admit M i bop t) (srf-emit M i t) (spr-op-bin M i bop t))))
 ;; ADR0357 novel whole-leaf memory-generation witness; no names/IDs/PC dispatch.
 ;; Runs after existing generator postpasses, before layout/literal placement.
 (defn- hld-counts [M :vector-i64] :bool
