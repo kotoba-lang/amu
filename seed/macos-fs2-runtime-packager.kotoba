@@ -152,12 +152,13 @@
    (adr8 1152 TYPED-START) 0xf9004268
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
-   (if (or (string=? mode "amu-program") (amu-program-metal? mode)) 0xd2c01c08
+   (if (string=? mode "fs2-cli-stdio-read") 0xd2c05d08
+    (if (or (string=? mode "amu-program") (amu-program-metal? mode)) 0xd2c01c08
      (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
        (if (string=? mode "cli") 0xd2c00808
-         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008)))))) 0xf9000a68
+         (if (string=? mode "cli-stderr") 0xd2c01808 0xd2800008))))))) 0xf9000a68
    (adr8 1184 RAW-START) 0xf900c268
    (bit-or 0xd2800008 (i64-shift-left (bit-and raw-bytes 65535) 5))
    (bit-or 0xf2a00008 (i64-shift-left (u64-shift-right raw-bytes 16) 5))
@@ -1041,7 +1042,8 @@
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
         host (string=? mode "amu-cli-host")
-        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd") (amu-program-fs35? mode))
+        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
+                 (string=? mode "fs2-cli-stdio-read") (amu-program-fs35? mode))
         extra (mh-extra-start raw-bytes)
         fs35-start (if (amu-program-fs35? mode)
           (+ extra 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))) extra)
@@ -1112,7 +1114,7 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (cond host (+ extra 64) fs35 fs35-start metal metal-start
+                  8 (b-direct TYPED-START (cond host (+ extra 64) (string=? mode "fs2-cli-stdio-read") (+ extra FS35-BYTES) fs35 fs35-start metal metal-start
                                            :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
@@ -1173,8 +1175,11 @@
         (if fs35
           (let [with-fs (words-at result (+ at extra)
                          (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))]
-            (if (string=? mode "fs2-cli-stdio-cwd")
-              (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES))) with-fs))
+            (cond (string=? mode "fs2-cli-stdio-cwd")
+                    (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES)))
+                  (string=? mode "fs2-cli-stdio-read")
+                    (words-at with-fs (+ at extra FS35-BYTES) (mh-stdin-words (+ extra FS35-BYTES) extra))
+                  :else with-fs))
           result)))))
 
 (defn- acknowledged-image? [request :vector-i64 offset :i64 reply :vector-i64 total-bytes :i64] :bool
@@ -1193,7 +1198,7 @@
         raw-path (typed-cap-call :cli/args :string :string "1")
         mode (typed-cap-call :cli/args :string :string "2")
         general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
-                    (string=? mode "fs2-cli-stdio-general-command")
+                    (string=? mode "fs2-cli-stdio-read") (string=? mode "fs2-cli-stdio-general-command")
                     (string=? mode "amu-cli-host") (amu-program-mode? mode))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
@@ -1226,7 +1231,7 @@
               (if (amu-program-fs35? mode) FS35-BYTES 0)
               (if (amu-program-metal? mode) METAL-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
-              (if (string=? mode "fs2-cli-stdio-cwd") (+ FS35-BYTES 1024) 0)))))
+              (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
@@ -1238,6 +1243,9 @@
                 (or (= words 0) (> (* words 4) 512))))
             (and (string=? mode "fs2-cli-stdio-cwd")
               (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
+                (or (= words 0) (> (* words 4) 1024))))
+            (and (string=? mode "fs2-cli-stdio-read")
+              (let [words (vector-count (mh-stdin-words (+ (mh-extra-start raw-bytes) FS35-BYTES) (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 1024))))
             (if general
               (or (< raw-bytes 4) (> raw-bytes 4194304)
@@ -1374,6 +1382,57 @@
               bits (bit-and delta mask)
               word (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))]
           (recur (+ i 1) (vector-assoc! out pc word))))))))
+
+;; Diagnostic opt-in wire 41 provider for fs2-cli-stdio-read only. Empty
+;; request reads through EOF, bounded to 1 MiB; decimal requests read at most
+;; that many bytes (up to 1 MiB) and share the underlying stdin cursor.
+;; Traps on malformed requests, oversized streams or read errors; never returns
+;; a truncated read-all as complete. The pool retains bytes until arena cleanup:
+;; this is not secret isolation or a qualified credential-delivery boundary.
+(defn- mh-stdin-words [base :i64 fallback :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-cmpi 1 41) (mh-b 0x54000000 1) (mh-jump fallback)
+    (mh-label 1) (mh-sub 31 31 128)
+    (mh-i 0xa9007bfd) (mh-i 0xa90153f3) (mh-i 0xa9025bf5)
+    (mh-i 0xa90363f7) (mh-i 0xa9046bf9) (mh-i 0xa90573fb)
+    (mh-mov 19 0) (mh-mov 20 4)
+    (mh-cmpi 2 1) (mh-b 0x54000001 10) (mh-cmpi 3 1) (mh-b 0x54000001 10)
+    ;; Explicit io/read grant and a valid pool-string request handle.
+    (mh-ldr 8 19 16) (mh-imm 9 2199023255552) (mh-and 8 8 9)
+    (mh-b (bit-or 0xb4000000 8) 10) (mh-b (bit-or 0xb4000000 20) 10)
+    (mh-ldr 8 19 288) (mh-ldr 8 8 0) (mh-cmp 20 8) (mh-b 0x54000008 10)
+    (mh-ldr 8 19 296) (mh-sub 9 20 1) (mh-ar 8 8 9 4)
+    (mh-ldr 1 8 0) (mh-ldr 24 8 8) (mh-mov 0 19) (mh-mov 2 24)
+    (mh-call (+ RUNTIME-START 52)) (mh-mov 27 0)
+    (mh-imm 23 0) (mh-imm 25 0)
+    (mh-b (bit-or 0xb4000000 24) 4)
+    ;; A bounded decimal count. Reject values above 1 MiB before multiplying.
+    (mh-cmpi 24 20) (mh-b 0x54000008 10) (mh-imm 26 0)
+    (mh-label 2) (mh-cmp 26 24) (mh-b 0x54000002 3)
+    (mh-ar 8 27 26 0) (mh-lb 8 8 0) (mh-cmpi 8 48) (mh-b 0x54000003 10)
+    (mh-cmpi 8 57) (mh-b 0x54000008 10) (mh-sub 8 8 48)
+    (mh-ar 25 25 25 2) (mh-ar 25 25 25 0) (mh-ar 25 25 8 0)
+    (mh-imm 9 1048576) (mh-cmp 25 9) (mh-b 0x54000008 10)
+    (mh-add 26 26 1) (mh-b 0x14000000 2)
+    (mh-label 3) (mh-mov 24 25) (mh-b 0x14000000 5)
+    (mh-label 4) (mh-imm 23 1) (mh-imm 24 1048577)
+    (mh-label 5) (mh-ldr 25 19 408) (mh-imm 8 267386879) (mh-cmp 25 8)
+    (mh-b 0x54000008 10) (mh-ldr 26 19 400) (mh-ar 26 26 25 0) (mh-imm 22 0)
+    (mh-b (bit-or 0xb4000000 24) 8)
+    (mh-label 6) (mh-imm 0 0) (mh-ar 1 26 22 0) (mh-i 0xcb160302)
+    (mh-sys 3) (mh-b 0x54000002 9) (mh-b (bit-or 0xb4000000 0) 8)
+    (mh-ar 22 22 0 0) (mh-b (bit-or 0xb4000000 23) 8)
+    (mh-imm 8 1048576) (mh-cmp 22 8) (mh-b 0x54000008 10) (mh-b 0x14000000 6)
+    (mh-label 9) (mh-cmpi 0 4) (mh-b 0x54000000 6) (mh-b 0x14000000 10)
+    ;; Publish exactly the bytes read as a new pool string.
+    (mh-label 8) (mh-ar 8 25 22 0) (mh-str 8 19 408)
+    ;; Dynamic-pool offsets use bitwise complement to distinguish them from
+    ;; offsets into the immutable program pool.
+    (mh-mov 0 19) (mh-i 0xaa3903e1) (mh-mov 2 22) (mh-ldr 16 19 56) (mh-i 0xd63f0200)
+    (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 128) (mh-i 0xd65f03c0)
+    (mh-label 10) (mh-i 0xd4200020))))
 
 (defn- mh-startup-words [start :i64] :vector-i64
   [0xa9bf7bfd (bl-direct (+ start 4) SLICE-SETUP-START)
