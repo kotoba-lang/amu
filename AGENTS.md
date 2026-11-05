@@ -452,9 +452,12 @@ Every job of `selfhost-native` and of the other native workflows starts with `./
 - A step added after the gate needs `if: steps.gate.outputs.skip != 'true'`, or it runs without the job's earlier
   steps when the gate skips. `scripts/ci/test_ci_gate.py` fails on a missing guard; the one step meant to run on a skip
   is named in its `MAY_RUN_WHEN_SKIPPED`.
-- Docs-only (pull_request / merge_group whose changed files are only top-level or non-evidence `*.md`, `LICENSE`,
-  `.DS_Store`, `.github/dependabot.yml`) skips the heavy steps. Everything else, including every workflow, action,
-  script, `seed/**`, `docs/evidence/**` and `examples/**`, runs.
+- Docs-only (pull_request / merge_group whose changed files are only inert) skips the heavy steps. Inert, per `INERT` in
+  `scripts/ci/ci_gate.py`: top-level `*.md`, `docs/**/*.md` outside `docs/evidence/`, `LICENSE`, `.DS_Store`,
+  `.github/dependabot.yml`, and the tooling no native job reads (JUN-818), named one by one:
+  `scripts/ci/{pr_batch,test_pr_batch,repin_allowlist,test_repin_allowlist}.py` and
+  `.github/workflows/post-merge-repin.yml`. Everything else runs, including every other workflow, action and script,
+  all of `seed/**` and `examples/**` (their `*.md` too) and `docs/evidence/**`.
 - Marker jobs skip when the same tree already passed that job (cache key = tree hash + runner arch + tier). Derivation
   jobs (`bootstrap-arm64-root`, `one-compiler-arm64`, `x86-native-qualification`, `x86-complete`) restore the exact
   derived compiler files when their inputs (tree minus gate-only `check-*`/`test_*` scripts they do not reference)
