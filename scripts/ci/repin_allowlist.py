@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when a post-merge repin touched anything other than derived pins (ADR 0404, JUN-818).
+"""Fail when a post-merge repin touched anything other than derived pins (ADR 0406, JUN-818).
 
 Usage: repin_allowlist.py [--root DIR]   (reads `git status --porcelain` in DIR)
 """

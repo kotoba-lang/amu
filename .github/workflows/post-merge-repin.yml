@@ -1,5 +1,5 @@
 name: post-merge-repin
-# ADR 0404 (JUN-818). DISABLED by default: the push trigger runs only when the repository variable
+# ADR 0406 (JUN-818). DISABLED by default: the push trigger runs only when the repository variable
 # AMU_POST_MERGE_REPIN_ENABLED is 'true'; workflow_dispatch is for owner-run trials. Regenerates the derived
 # pins on the merged main commit and lands them as ONE bot pull request through the merge queue. It never
 # pushes to main. Needs secret AMU_REPIN_TOKEN (GitHub App installation token: contents+pull-requests write).
@@ -55,10 +55,10 @@ jobs:
           git config user.email "amu-repin-bot@users.noreply.github.com"
           git checkout -b "$branch"
           git add -A
-          git commit -m "repin: regenerate derived pins on $short (JUN-818, ADR 0404)"
+          git commit -m "repin: regenerate derived pins on $short (JUN-818, ADR 0406)"
           git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
             --title "repin: regenerate derived pins on $short" \
-            --body "Bot pin regeneration of main@$SHA (ADR 0404, JUN-818). Pin files only; allowlist and --check passed in the generating job.")
+            --body "Bot pin regeneration of main@$SHA (ADR 0406, JUN-818). Pin files only; allowlist and --check passed in the generating job.")
           id=$(gh pr view "$url" --repo "$GITHUB_REPOSITORY" --json id --jq .id)
           gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' -f id="$id"

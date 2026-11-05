@@ -1,4 +1,4 @@
-# ADR 0404: Derived pins are regenerated after merge by a bot pull request (JUN-818)
+# ADR 0406: Derived pins are regenerated after merge by a bot pull request (JUN-818)
 
 Status: proposed (design only). The workflow `.github/workflows/post-merge-repin.yml` ships
 **disabled**; enabling it is an owner action listed under "Owner decisions".
