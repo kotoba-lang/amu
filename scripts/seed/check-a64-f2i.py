@@ -209,6 +209,20 @@ def main(compiler, output, measure):
     report["unchanged"] = digests
     report["f64Guard"] = [4 * i for i in at64]
 
+    # The independent aarch64-linux emitter (seed/80 xa-un) carries the same guard, once per use. Compile only: this
+    # gate runs on macOS, which cannot execute the ELF (docs/evidence/f64-to-i64-a64-linux-20261105 runs it on arm64 Linux).
+    for name, n in (("linux64", 1), ("linux64x2", 2)):
+        body = ("(f64-to-i64-truncating (f64-from-bits 4614256656552045848))" if n == 1 else
+                "(+ (f64-to-i64-truncating (f64-from-bits 4614256656552045848)) (f64-to-i64-truncating (f64-from-bits 4611686018427387904)))")
+        (output / f"{name}.kotoba").write_text(f"(ns {name} (:export [main]))\n(defn main [] :i64 {body})\n")
+        gate.native_run(compiler, output, "compile", f"{name}.kotoba", "--target", "aarch64-linux", "--output", f"{name}.elf",
+                        "--format", "static")
+        lws = words((output / f"{name}.elf").read_bytes())
+        lat = guards64(lws)
+        if len(lat) != n or guards(lws):
+            raise ValueError(f"{name}: aarch64-linux f64 -> i64 guards {lat}, expected {n} double guards")
+        report[name] = {"guards": len(lat)}
+
     # These literals intentionally lower to different bytes in the decimal
     # frontend. Execute each result as well as pinning its emitted payload.
     literal_results = {}

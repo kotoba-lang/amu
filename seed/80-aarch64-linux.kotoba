@@ -99,7 +99,11 @@
     (and (>= op UOP-F64-TO-I64) (<= op UOP-F32-TO-I64))
     (let [g (-> M (xa-lt 9 t) (xa-fp-begin))
           h (case op
-              UOP-F64-TO-I64 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-fcvtzs 1 9 0)))
+              UOP-F64-TO-I64 (-> g (xa-w (enc-fmov-to-fp 1 0 9)) (xa-w (enc-movz 9 0xc3e0 3))   ; JUN-846: the f32 guard below at double precision
+                                 (xa-w (enc-fmov-to-fp 1 1 9)) (xa-w (enc-fcmp 1 0 1))
+                                 (xa-w (enc-bcond (enc-cond-lt) 4)) (xa-w (enc-fop1 0 1 1 1))
+                                 (xa-w (enc-fcmp 1 1 0)) (xa-w (enc-bcond (enc-cond-gt) 2))
+                                 (xa-w (enc-brk 0)) (xa-w (enc-fcvtzs 1 9 0)))
               UOP-F32-TO-I64 (-> g (xa-w (enc-fmov-to-fp 0 0 9)) (xa-w (enc-movz 9 0xdf00 1))
                                  (xa-w (enc-fmov-to-fp 0 1 9)) (xa-w (enc-fcmp 0 0 1))
                                  (xa-w (enc-bcond (enc-cond-lt) 4)) (xa-w (enc-fop1 0 0 1 1))
