@@ -94,7 +94,7 @@ def main(out):
     # Negative control: disabling the helper branch leaves the request to the
     # FS2 chain even when the explicit profile is selected.
     source = PACKAGER_SOURCE.read_text()
-    hook = '        fs35 (or (string=? mode "fs2-cli-stdio-general") (amu-program-fs35? mode))\n'
+    hook = '        fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd") (amu-program-fs35? mode))\n'
     assert source.count(hook) == 1, "FS35 hook drifted"
     (build / "packager-control.kotoba").write_text(source.replace(hook, "        fs35 false\n"))
     packager_control, _ = macos.build(compiler, bootstrap, build, "packager-control.kotoba", "packager-control")
