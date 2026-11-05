@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Runner capacity monitor and hosted fail-over for ADR 0406. Read-only unless --apply.
+"""Runner capacity monitor and hosted fail-over for ADR 0407. Read-only unless --apply.
 
-Needs a repository-scoped GH_TOKEN with Administration read (and write for --apply) in the environment.
+Needs a repository-scoped GH_TOKEN with Administration (read; self-hosted runners), Actions read and
+Variables read/write (--apply) in the environment.
 Decision rule (pure function `decide`, unit-tested): fall back to hosted when a needed label has no online
 runner, or when a queued self-hosted job has waited longer than --max-wait seconds.
 """
@@ -37,10 +38,15 @@ def main():
     a = ap.parse_args()
     rows = gh("api", f"repos/{REPO}/actions/runners?per_page=100")["runners"]
     online = {l["name"] for r in rows if r["status"] == "online" for l in r["labels"]}
-    var = subprocess.run(["gh", "variable", "get", "AMU_RUNNER_PROFILE", "-R", REPO],
-                         capture_output=True, text=True).stdout.strip()
+    r = subprocess.run(["gh", "variable", "get", "AMU_RUNNER_PROFILE", "-R", REPO], capture_output=True, text=True)
+    if r.returncode and "Not Found" not in r.stderr and "HTTP 404" not in r.stderr:
+        sys.exit("cannot read AMU_RUNNER_PROFILE (token needs Variables read): " + r.stderr.strip())
+    var = r.stdout.strip()
     waits, now = [], datetime.now(timezone.utc)
-    for run in gh("api", f"repos/{REPO}/actions/runs?status=queued&per_page=50")["workflow_runs"]:
+    # Jobs of an in_progress run can still be queued, so look at both run states.
+    runs = [r for st in ("queued", "in_progress")
+            for r in gh("api", f"repos/{REPO}/actions/runs?status={st}&per_page=50")["workflow_runs"]]
+    for run in runs:
         for j in gh("api", f"repos/{REPO}/actions/runs/{run['id']}/jobs?per_page=100")["jobs"]:
             if j["status"] == "queued" and any(l.startswith("amu-") for l in j["labels"]):
                 waits.append((now - datetime.fromisoformat(j["created_at"].replace("Z", "+00:00"))).total_seconds())

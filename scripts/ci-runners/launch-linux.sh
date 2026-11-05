@@ -18,9 +18,9 @@ run_one() {
   name="amu-$label-$(hostname -s)-$$-$1-$(date +%s)"
   jit=$(gh api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
         -f name="$name" -F runner_group_id=1 -f 'labels[]='"$label" -f work_folder=_work --jq .encoded_jit_config)
-  # JIT blob goes to the container by env only; no token, no mounts, tmpfs work dir, no extra caps.
+  # JIT blob goes to the container by env only; no token, no mounts, tmpfs work dir, no extra caps (the runner writes _diag under its install root, so the root fs stays writable but is discarded with --rm).
   ACTIONS_RUNNER_JITCONFIG=$jit podman run --rm --name "$name" --cpus 4 --memory 4g --pids-limit 4096 \
-      --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /home/runner/_work:rw,exec,size=24g \
+      --cap-drop ALL --security-opt no-new-privileges --tmpfs /home/runner/_work:rw,exec,size=24g \
       --tmpfs /tmp:rw,exec,size=4g -e ACTIONS_RUNNER_JITCONFIG "$image" || true
 }
 i=0

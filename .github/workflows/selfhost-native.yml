@@ -522,7 +522,7 @@ jobs:
           PY_NEEDS
   qualify-arm64-runtime:
     needs: one-compiler-arm64
-    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}  # amu-runner: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1167,7 +1167,7 @@ jobs:
   wasm32-browser-chrome:
     name: wasm32-browser target (headless Chrome, x86_64)
     needs: wasm32-browser-compile
-    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

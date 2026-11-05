@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render and check the variable-driven `runs-on` lines of the amu workflows (ADR 0406).
+"""Render and check the variable-driven `runs-on` lines of the amu workflows (ADR 0407).
 
 Every covered job keeps its GitHub-hosted label as the default.  The repo
 variable AMU_RUNNER_PROFILE selects self-hosted labels:
@@ -32,6 +32,8 @@ COVERED = {
     "mac-selfhost-aiueos.yml": {"ubuntu-24.04-arm", "ubuntu-latest", "macos-15"},
 }
 # Never covered, whatever the file: jobs with secrets or write tokens.
+# (file, job) that stay hosted: they need Docker-in-job or Chrome, which the runner image does not provide.
+HOSTED_ONLY = {("selfhost-native.yml", "qualify-arm64-runtime"), ("selfhost-native.yml", "wasm32-browser-chrome")}
 NEVER = {"post-merge-repin.yml"}
 
 ARM_PROFILES = '["selfhosted","selfhosted-arm"]'
@@ -51,12 +53,21 @@ EXPR = {
 LINE = re.compile(r"^(\s*)runs-on: (.*?)(\s+# amu-runner: (.+))?$")
 
 
-def transform(text, covered, write):
+def transform(text, covered, write, fname=""):
     out, problems = [], []
+    job = ""
     for n, line in enumerate(text.split("\n"), 1):
+        jm = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if jm:
+            job = jm.group(1)
         m = LINE.match(line)
         if m:
             indent, value, _, tag = m.groups()
+            if (fname, job) in HOSTED_ONLY:
+                if tag or "amu-" in value:
+                    problems.append((n, "hosted-only job carries a self-hosted label"))
+                out.append(line)
+                continue
             if tag:  # already rendered
                 if value != EXPR[tag]:
                     problems.append((n, "differs from template for " + tag))
@@ -79,7 +90,7 @@ def main(argv):
     for p in sorted(WORKFLOWS.glob("*.yml")):
         text = p.read_text()
         covered = set() if p.name in NEVER else COVERED.get(p.name, set())
-        new, problems = transform(text, covered, write)
+        new, problems = transform(text, covered, write, p.name)
         if p.name in NEVER and re.search(r"amu-(linux|macos)", text):
             problems.append((0, "self-hosted label in a secret-bearing workflow"))
         if write and new != text:

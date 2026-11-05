@@ -1,6 +1,6 @@
-# amu self-hosted CI runners (ADR 0406, JUN-852)
+# amu self-hosted CI runners (ADR 0407, JUN-852)
 
-Design: `docs/adr/0406-self-hosted-ephemeral-oci-runners-for-amu-ci.md`. Nothing here is run by CI except
+Design: `docs/adr/0407-self-hosted-ephemeral-oci-runners-for-amu-ci.md`. Nothing here is run by CI except
 the two checks below; the launchers are dry-run unless `--apply` and are meant to be started by the owner.
 
 | file | purpose |
@@ -34,6 +34,9 @@ x86_64 on `amu-linux-x86_64`. Fork PRs always stay hosted. Back to hosted:
   netavark with a bridge network (rootful podman in the VM, or `--network` with the rules applied to that
   bridge), then verify from inside a container that `curl 100.x`/LAN addresses fail and github.com works.
   This verification is part of acceptance before any runner is registered.
+- Public egress is not allowlisted yet (see ADR); only private ranges are blocked.
+- `qualify-arm64-runtime` (docker) and `wasm32-browser-chrome` (Chrome) stay hosted.
+- Monitor token needs Administration, Actions read and Variables read/write.
 - Do not reuse the persistent `mithril-actions` runner on benjamin.
 - Never put the launcher token into the VM, an image layer or a log; JIT blobs are single use.
 - Image digests and the runner tarball SHA-256 are filled in by whoever builds the images.

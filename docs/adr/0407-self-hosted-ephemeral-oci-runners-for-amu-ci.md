@@ -1,4 +1,4 @@
-# ADR 0406: Self-hosted ephemeral OCI runners for amu CI, selected by one repository variable (JUN-852)
+# ADR 0407: Self-hosted ephemeral OCI runners for amu CI, selected by one repository variable (JUN-852)
 
 Status: proposed. The workflow change ships inert: with `AMU_RUNNER_PROFILE` unset every job runs on the
 same GitHub-hosted runner as before. Installing runners, creating VMs, registering them and setting the
@@ -31,6 +31,11 @@ Raw table: `qw.txt` in the session notes; regenerate with the `gh api` query abo
   Linux host or stay hosted.
 - `mac-root` (`mac-selfhost-aiueos`) asserts `Darwin`/`arm64` and runs Mach-O programs: a macOS VM (Tart)
   on an Apple-silicon Mac. Apple's licence allows at most two macOS VMs per Mac.
+- `qualify-arm64-runtime` runs `docker run` fault injection and `wasm32-browser-chrome` needs
+  `google-chrome`; the runner image has neither, so both stay on hosted runners
+  (`HOSTED_ONLY` in `runs_on.py`) until a nested-container service / Chrome image is qualified.
+  Other tools the hosted images provide implicitly (jq, zip, ...) must exist in the image; a pilot run
+  in `selfhosted-arm` is the check.
 - `post-merge-repin` holds a bot token: never self-hosted (`scripts/ci-runners/runs_on.py` refuses it).
 
 Job classes after this ADR: `linux-arm64` (12 jobs), `linux-x86_64` (about 15 jobs + matrix legs),
@@ -76,15 +81,18 @@ this repository, and set "Require approval for all outside collaborators" for wo
 - The JIT config is minted by a small launcher on the host with a credential that never enters the VM:
   the VM receives only the one JIT config blob, via a read-only mount (Tart `--dir`) or container env that
   is not logged (`set +x`). The launcher credential is owner-provided (a fine-grained token or a GitHub
-  App with `Administration: write` on this repository only) and stored in the host's keychain/secret file,
+  App with `Administration: write` on this repository only, plus Variables read/write for the monitor) and stored in the host's keychain/secret file,
   never in the repo.
 - No secrets are mounted; the workflows already use `permissions: contents: read` and
   `persist-credentials: false`.
-- Network: egress only to GitHub (`api`, `github.com`, `*.actions.githubusercontent.com`,
-  `*.blob.core.windows.net` for the cache, `pipelines.actions.githubusercontent.com`) and the registries
-  the image build needs. The VM/container must not reach the tailnet (100.64.0.0/10), RFC 1918 LAN
-  or the host's loopback: the Mac forwards VM traffic, so a NATed VM can otherwise reach every tailnet node.
-  Linux VM: nftables rules in `scripts/ci-runners/netpolicy.nft` (default-drop for those ranges).
+- Network: the VM/container must not reach the tailnet (100.64.0.0/10), RFC 1918 LAN, link-local or the
+  host's loopback; this is what `netpolicy.nft` and Tart softnet enforce. Public internet egress is NOT
+  restricted to GitHub and registries by this change (arbitrary job code can reach any public host); a
+  default-drop allowlist needs a controlled egress proxy and is a required follow-up before `selfhosted`
+  is used for anything beyond the pilot. Reachable-by-design hosts: `api.github.com`, `github.com`,
+  `*.actions.githubusercontent.com`, the Actions cache/artifact blob hosts and the registries used.
+  Why the private ranges matter: the Mac forwards VM traffic, so a NATed VM can otherwise reach every tailnet node.
+  Linux VM: nftables rules in `scripts/ci-runners/netpolicy.nft` (drop for those ranges).
   Tart: `--net-softnet` with `--net-softnet-block` of the same ranges.
 - Images are OCI artifacts pinned by digest: the Linux runner image (`scripts/ci-runners/linux/Containerfile`,
   built per ISA, runner tarball verified against a SHA-256 supplied at build time) and the macOS base
@@ -143,7 +151,7 @@ and artifact reuse are other work. Nothing here removes the hosted fallback.
 ## Owner decisions
 
 - Which nodes host runners, and permission to install Lima/podman and Tart there.
-- A launcher credential scoped to this repository (Administration: write) or an App, kept on the hosts.
+- A launcher credential scoped to this repository (Administration write for JIT runners; `capacity.py` also needs Actions read and Variables read/write) or an App, kept on the hosts.
 - Runner group restricted to this repository; workflow approval setting for outside collaborators.
 - SSH access to the Linux nodes (or their specs) to decide x86_64.
 - Apple macOS licence limit (2 VMs per host) and Tart licence terms accepted for this fleet.

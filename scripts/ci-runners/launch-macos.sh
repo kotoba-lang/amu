@@ -1,5 +1,5 @@
 #!/bin/sh
-# One ephemeral macOS VM per job with Tart (ADR 0406). Dry-run unless --apply. Not run by CI.
+# One ephemeral macOS VM per job with Tart (ADR 0407). Dry-run unless --apply. Not run by CI.
 #   launch-macos.sh --image <registry>/amu-macos@sha256:... [--apply]     (max 2 concurrent VMs per host)
 # The base image has the Actions runner at /Users/admin/actions-runner and a LaunchDaemon that runs
 #   run.sh --jitconfig "$(cat /Volumes/My Shared Files/jit/config)" then powers off.
