@@ -10,7 +10,7 @@ variable AMU_RUNNER_PROFILE selects self-hosted labels:
 
 A self-hosted label is selected only when the event is not a pull request or
 the pull request head is this repository.  Fork pull requests always get the
-hosted label.  Jobs that hold secrets (post-merge-repin) are never covered.
+hosted label.  Jobs that hold secrets are never covered.
 
   runs_on.py --write   rewrite the covered workflow lines
   runs_on.py --check   fail if any covered line differs from the template

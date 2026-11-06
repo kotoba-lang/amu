@@ -189,8 +189,8 @@ whole seed tree. When a seed PR conflicts with main in them:
 - leave `sourceRevision` `null` after regeneration: it means the descriptor's
   own commit and the source-revision audit checks that commit. Do not open a
   follow-up PR to name a squash commit.
-- Target (stage 2, design in ADR 0406, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
-  post-merge bot PR repins main. Do not enable it or relax PR pin checks without the owner (needs a token/App).
+- The post-merge bot repin (ADR 0406) was withdrawn by the owner (2026-11-06): no bot token/App. Pins stay in the PR.
+  Do not add a bot or relax PR pin checks; latency work is bot-free (see ADR 0406 "Withdrawn").
 
 ## Bounded canonical Kototama native frontend (JUN-369)
 
@@ -459,8 +459,7 @@ Every job of `selfhost-native` and of the other native workflows starts with `./
 - Docs-only (pull_request / merge_group whose changed files are only inert) skips the heavy steps. Inert, per `INERT` in
   `scripts/ci/ci_gate.py`: top-level `*.md`, `docs/**/*.md` outside `docs/evidence/`, `LICENSE`, `.DS_Store`,
   `.github/dependabot.yml`, and the tooling no native job reads (JUN-818), named one by one:
-  `scripts/ci/{pr_batch,test_pr_batch,repin_allowlist,test_repin_allowlist}.py` and
-  `.github/workflows/post-merge-repin.yml`. Everything else runs, including every other workflow, action and script,
+  `scripts/ci/{pr_batch,test_pr_batch}.py`. Everything else runs, including every other workflow, action and script,
   all of `seed/**` and `examples/**` (their `*.md` too) and `docs/evidence/**`.
 - Marker jobs skip when the same tree already passed that job (cache key = tree hash + runner arch + tier). Derivation
   jobs (`bootstrap-arm64-root`, `one-compiler-arm64`, `x86-native-qualification`, `x86-complete`) restore the exact
