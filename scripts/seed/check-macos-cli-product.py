@@ -157,6 +157,25 @@ def check(cli, out):
             '-o', tc_program.name, stdout=('compiled ' + str(tc_program) + '\n').encode())
         run('test-conv-' + suffix + '-execute', image=tc_program, stdout=expected_output)
 
+    # JUN-933: the cljk reader-syntax converter (#( ) / #_ / #?) is a multi-module native program over the same
+    # CST. Same shape as test-conv: the self-gate answers the number of failed fixtures; one expected text turned
+    # wrong must turn the same program red.
+    sc_project = out / 'syntax-conv-project'
+    sc_dir = sc_project / 'kotoba/compiler/refactor'
+    sc_dir.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/refactor/cst.kotoba', sc_dir / 'cst.kotoba')
+    sc_source = (ROOT / 'src/kotoba/compiler/refactor/syntax_conv.kotoba').read_text()
+    sc_entry = sc_dir / 'syntax_conv.kotoba'
+    sc_right = '"(map (fn [p1] (+ p1 1)) xs)"'
+    assert sc_source.count(sc_right) == 1
+    for suffix, body, expected_output in (('positive', sc_source, b'0\n'),
+                                          ('negative', sc_source.replace(sc_right, '"(map (fn [p2] (+ p1 1)) xs)"'), b'1\n')):
+        sc_entry.write_text(body)
+        sc_program = out / ('syntax-conv-' + suffix)
+        run('syntax-conv-' + suffix + '-compile', 'compile', sc_entry, '--source-path', sc_project,
+            '-o', sc_program.name, stdout=('compiled ' + str(sc_program) + '\n').encode())
+        run('syntax-conv-' + suffix + '-execute', image=sc_program, stdout=expected_output)
+
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
     run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
