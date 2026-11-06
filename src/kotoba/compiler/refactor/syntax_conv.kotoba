@@ -177,6 +177,10 @@
                                 (rw src r fa fb n pct))]
                     (if (refused? piece) piece (recur e (string-concat out piece))))))))
 
+          (and (= kd 8) (string=? (tok-text src r j) "'") (< (skip-layout r (+ j 1) b) b) (= (t-kind r (skip-layout r (+ j 1) b)) 7))
+          (let [m (skip-layout r (+ j 1) b)]
+            (recur (+ m 1) (string-concat out (string-concat (string-concat "(quote " (tok-text src r m)) ")"))))
+
           (and (= kd 7) pct (> (pct-index (tok-text src r j)) 0))
           (recur (+ j 1) (string-concat out (string-concat "p" (digits (pct-index (tok-text src r j))))))
 
@@ -217,7 +221,12 @@
 
 (defn- case-unchanged [] :i64
   (+ (same? (convert "(ns a (:require [b :as c]))\n(defn f [x] (+ x 1)) ; keep\n") "(ns a (:require [b :as c]))\n(defn f [x] (+ x 1)) ; keep\n")
-     (same? (convert "(f \"#(not % touched)\" 'x)") "(f \"#(not % touched)\" 'x)")))
+     (same? (convert "(f \"#(not % touched)\" x)") "(f \"#(not % touched)\" x)")))
+
+(defn- case-quote [] :i64
+  (+ (same? (convert "(f 'x 'a/b)") "(f (quote x) (quote a/b))")
+     (same? (convert "(f \"'x\" '(1 2))") "(f \"'x\" '(1 2))")
+     (same? (convert "(f #(g 'x %))") "(f (fn [p1] (g (quote x) p1)))")))
 
 (defn- case-refusals [] :i64
   (+ (same? (convert "(map #(apply f %&) xs)") "")
@@ -227,4 +236,4 @@
      (same? (convert "") "")))
 
 (defn main [] :i64
-  (+ (case-anon-fn) (case-discard) (case-reader-conditional) (case-unchanged) (case-refusals)))
+  (+ (case-anon-fn) (case-discard) (case-reader-conditional) (case-unchanged) (case-quote) (case-refusals)))
