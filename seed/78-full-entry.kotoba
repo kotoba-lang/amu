@@ -86,14 +86,12 @@
   (if (or (string=? (io-arg 0) "check") (string=? (io-arg 0) "compile"))
     (let [index (if (full-native?) 1 (drv-pos 1 (io-argc) 0)) source (drv-arg index) length (string-length source)]
       (or (full-canonical-source? source)
-          (full-mapped-source? source))) true))
+          (full-mapped-source? source)
+          ;; JUN-579: a lone `check FILE.cljk` reads input sugar through the same frontend. Compile and every locked
+          ;; or project route stay canonical-only.
+          (and (string=? (io-arg 0) "check") (= (io-argc) 2) (dsr-suffix? source ".cljk")))) true))
 (defn- full-canonical-source? [source :string] :bool
-  (let [length (string-length source)]
-    (if (< length 7) false
-      (loop [i 0]
-        (cond (> i (- length 7)) false
-              (= i (- length 7)) (string=? (string-substring source i length) ".kotoba")
-              :else (recur (+ i (mem-cpw (string-code-point-at source i)))))))))
+  (dsr-suffix? source ".kotoba"))
 (defn- full-lock-ok? [] :bool
   (let [index (drv-pj-flag 1 (io-argc) "--source-lock")]
     (or (< index 0) (> (vector-count (io-read-source-lock (io-arg index))) 0))))
@@ -102,7 +100,7 @@
     (and (>= index 0) (string=? (io-arg index) "platform-linked"))))
 ;; malformed x86_64-linux arguments (70's xg-main) are a usage error, as in 73
 (defn- xg-default [] :i64 (drv-fail0 E-USAGE))
-;; `definition-cids <file.kotoba> [--groups]` (ADR 0300, JUN-584): one row per top-level definition in declaration
+;; `definition-cids <file.kotoba|file.cljk> [--groups]` (ADR 0300, JUN-584, JUN-579): one row per top-level definition in declaration
 ;; order, `name<TAB>CID` or `name<TAB>REFUSED:<marker>`, then `SCANNED<TAB><identified>/<total>`. No admission runs
 ;; and nothing is granted: a CID is identity, never authority. Exit 0 = report, 66 = no identity could be computed
 ;; (stdout empty, a DSB:* line on stderr), 2 = usage. Identity: payload-v2, profile 6 / desugar 2.
@@ -115,7 +113,8 @@
         (string=? (io-arg 0) "compile-kototama")
           (if (string=? (io-arg 9) "kototama.pure-i64-receipt/v2") (k2-command) (kt-command))
         (string=? (io-arg 0) "definition-cids")
-          (cond (= (io-argc) 2) (full-definition-cids 1)
+          (cond (or (< (io-argc) 2) (not (dsr-source-input? (io-arg 1)))) (drv-usage)
+                (= (io-argc) 2) (full-definition-cids 1)
                 (and (= (io-argc) 3) (string=? (io-arg 2) "--groups")) (full-definition-cids 2)
                 :else (drv-usage))
         (= (drv-pj-has 1 (io-argc) "--module-lock") 1) (drv-fail0 E-PROJ-UNPINNED)

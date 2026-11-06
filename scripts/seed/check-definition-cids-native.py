@@ -311,6 +311,37 @@ def main(compiler, out):
     for image, tag in ((cli, ""), (compiler, "full-")):
         run(tag + "usage-extra-arg", [image, "definition-cids", order, "--nope"], 2)
         run(tag + "usage-missing-file-arg", [image, "definition-cids"], 2)
+    # JUN-579: `.cljk` is input sugar through the same frontend. A sugar spelling and its pure `.kotoba` spelling mint
+    # one CID, a meaning change does not, and retired extensions are usage errors with no report.
+    def spelled(name, suffix, source):
+        p = out / (name + suffix)
+        p.write_text("\n".join(source) + "\n")
+        return p
+
+    def rows(name, path, image=cli):
+        stdout, stderr = run(name, [image, "definition-cids", path])
+        assert stderr == "", (name, stderr)
+        return dict(r.split("\t") for r in stdout.splitlines()[:-1])
+
+    g = fn("g", ["x"], "(+ x 1)")
+    pure = rows("cljk-pure", spelled("cljk-pure", ".kotoba", [g, fn("f", ["n"], "(g (g n))")]))
+    for image, tag in ((cli, ""), (compiler, "full-")):
+        same = rows(tag + "cljk-same-text", spelled(tag + "cljk-same-text", ".cljk", [g, fn("f", ["n"], "(g (g n))")]), image)
+        assert same == pure, (tag, same, pure)
+        sugar = rows(tag + "cljk-thread", spelled(tag + "cljk-thread", ".cljk", [g, fn("f", ["n"], "(-> n g g)")]), image)
+        assert sugar == pure, (tag, sugar, pure)
+        control = rows(tag + "cljk-control", spelled(tag + "cljk-control", ".cljk", [g, fn("f", ["n"], "(-> n g)")]), image)
+        assert control["f"] != pure["f"] and control["g"] == pure["g"], (tag, control, pure)
+        branch = rows(tag + "cljk-reader-branch", spelled(tag + "cljk-reader-branch", ".cljk",
+                      [g, fn("f", ["n"], "#?(:kotoba (g (g n)) :clj (g n))")]), image)
+        assert branch == pure, (tag, branch, pure)
+        for suffix in (".cljc", ".cljs", ".clj", ".txt"):
+            stdout, _ = run(tag + "retired" + suffix, [image, "definition-cids", spelled(tag + "retired", suffix, [g])], 2)
+            assert stdout == "", (tag, suffix, stdout)
+    stdout, _ = run("full-check-cljk", [compiler, "check", spelled("full-check-cljk", ".cljk", [g])])
+    assert stdout.strip() == "ok", stdout
+    run("full-check-cljc", [compiler, "check", spelled("full-check-cljc", ".cljc", [g])], 2)
+    run("full-compile-cljk", [compiler, "compile", spelled("full-compile-cljk", ".cljk", [g])], 2)
     # The unchanged core driver still answers its own commands through this entry.
     ok = out / "ok.kotoba"
     ok.write_text(fn("f", ["x"], "(+ x 1)") + "\n")

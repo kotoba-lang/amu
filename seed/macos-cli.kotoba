@@ -652,7 +652,7 @@
   (or (string=? command "measure-runtime") (string=? command "package-ios")
       (string=? command "package-macos") (string=? command "test")))
 (defn- mc-usage [] :i64
-  (mc-error "usage: amu check FILE.kotoba | check ENTRY.kotoba --source-lock FILE.ksl | check ENTRY.kotoba --source-path DIR [--source-path DIR...] (up to 16) | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
+  (mc-error "usage: amu check FILE.kotoba|FILE.cljk | check ENTRY.kotoba --source-lock FILE.ksl | check ENTRY.kotoba --source-path DIR [--source-path DIR...] (up to 16) | compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT] | run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...] | run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]" 2))
 (defn- mc-program-profile? [profile :string] :bool
   (or (string=? profile "amu-program") (string=? profile "amu-program-fs35")
       (string=? profile "amu-program-metal")
@@ -726,7 +726,7 @@
                      output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
     (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba|FILE.cljk\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
       (and (> (mc-sp-mode command n) 0) (mc-path? source) (mc-ends? source ".kotoba"))
         (let [info (hc-call 0 [])
               mode (mc-sp-mode command n)
@@ -748,7 +748,7 @@
               profile (if project-run? project-run-start 0) info)
             (mc-error "EHOST cannot resolve native host context" 70)))
       (not (mc-path? source)) (mc-usage)
-      (or (and (string=? command "check") (= n 2) (mc-ends? source ".kotoba"))
+      (or (and (string=? command "check") (= n 2) (or (mc-ends? source ".kotoba") (mc-ends? source ".cljk")))
           (and (string=? command "compile") (or (= n 2) output-flag simple-profile? simple-profile-output?)
                (mc-ends? source ".kotoba") (mc-path? output))
           (and (string=? command "run") (< n 64)
