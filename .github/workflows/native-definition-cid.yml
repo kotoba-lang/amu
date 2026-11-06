@@ -42,7 +42,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             isa: arm64
             compiler: seed/bootstrap/aarch64-linux-static-root.elf
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             isa: x86_64
             compiler: bin/amu-linux-x86_64
     runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}

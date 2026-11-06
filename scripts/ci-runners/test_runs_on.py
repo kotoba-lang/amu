@@ -72,7 +72,7 @@ def main():
     }
     fails = 0
     for (f, value, tag), (ev, ectx), prof in itertools.product(covered, events.items(), ["", "hosted", "selfhosted-arm", "selfhosted"]):
-        for matrix in (["ubuntu-24.04-arm", "ubuntu-latest"] if tag == "${{ matrix.runner }}" else [tag]):
+        for matrix in (["ubuntu-24.04-arm", "ubuntu-24.04"] if tag == "${{ matrix.runner }}" else [tag]):
             ctx = dict(ectx, **{"github.repository": repo, "vars.AMU_RUNNER_PROFILE": prof, "matrix.runner": matrix})
             got = evaluate(value.strip()[3:-2], ctx)
             arm = matrix == "ubuntu-24.04-arm"
@@ -80,7 +80,7 @@ def main():
             want = matrix
             if selfhost_ok and prof in ("selfhosted", "selfhosted-arm") and (arm or matrix == "macos-15"):
                 want = "amu-macos-arm64" if matrix == "macos-15" else "amu-linux-arm64"
-            elif selfhost_ok and prof == "selfhosted" and matrix == "ubuntu-latest":
+            elif selfhost_ok and prof == "selfhosted" and matrix == "ubuntu-24.04":
                 want = "amu-linux-x86_64"
             if got != want:
                 fails += 1

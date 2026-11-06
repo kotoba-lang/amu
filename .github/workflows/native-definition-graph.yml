@@ -36,7 +36,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             isa: arm64
             compiler: seed/bootstrap/aarch64-linux-static-root.elf
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             isa: x86_64
             compiler: bin/amu-linux-x86_64
     runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}
@@ -93,9 +93,9 @@ jobs:
           - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: TOK}
           - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: NODE}
           - {runner: ubuntu-24.04-arm, isa: arm64, compiler: seed/bootstrap/aarch64-linux-static-root.elf, table: FN}
-          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: TOK}
-          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: NODE}
-          - {runner: ubuntu-latest, isa: x86_64, compiler: bin/amu-linux-x86_64, table: FN}
+          - {runner: ubuntu-24.04, isa: x86_64, compiler: bin/amu-linux-x86_64, table: TOK}
+          - {runner: ubuntu-24.04, isa: x86_64, compiler: bin/amu-linux-x86_64, table: NODE}
+          - {runner: ubuntu-24.04, isa: x86_64, compiler: bin/amu-linux-x86_64, table: FN}
     name: headroom-shard (${{ matrix.isa }}, ${{ matrix.table }})
     runs-on: ${{ matrix.runner == 'ubuntu-24.04-arm' && (contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-arm64' || matrix.runner) || (vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || matrix.runner) }}  # amu-runner: ${{ matrix.runner }}
     timeout-minutes: 20
@@ -146,10 +146,10 @@ jobs:
           - runner: ubuntu-24.04-arm
             isa: arm64
             compiler: seed/bootstrap/aarch64-linux-static-root.elf
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             isa: x86_64
             compiler: bin/amu-linux-x86_64
-    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-24.04' }}  # amu-runner: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: All headroom table shards passed
