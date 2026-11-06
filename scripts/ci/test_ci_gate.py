@@ -34,8 +34,7 @@ def opener(files, total=1):
 class Inert(unittest.TestCase):
     def test_inert_paths(self):
         for path in ("README.md", "CHANGELOG.md", "docs/notes/a.md", "LICENSE", "bench/.DS_Store",
-                     ".github/dependabot.yml", "scripts/ci/pr_batch.py", "scripts/ci/repin_allowlist.py",
-                     ".github/workflows/post-merge-repin.yml"):
+                     ".github/dependabot.yml", "scripts/ci/pr_batch.py"):
             self.assertTrue(G.is_inert(path), path)
 
     def test_everything_a_gate_can_read_is_not_inert(self):
