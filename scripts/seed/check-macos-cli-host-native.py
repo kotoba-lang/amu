@@ -157,27 +157,36 @@ def main(out):
     (out / "bad-abi.kotoba").write_text('(ns bad (:export [main]))\n(defn main [] :i64 (let [s (typed-cap-call :fs/app-data :string :string "anything")] 0))\n')
     images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
     run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
-    # String wire 35 must retain both scoped FS2 and the legacy lock grammar.
-    # This diagnostic supplies FD3 explicitly: the host startup does not yet
-    # establish an FS2 scope. It is not evidence of automatic host setup.
+    # String wire 35 in the macOS host profiles keeps the scoped FS2 grammar only.
+    # The legacy absolute-path lock grammar ("/pathFLOCK_SEP", "/pathUNLOCK_SEP") is
+    # served by the FS35 helper, which the host layouts do not contain: any string
+    # request that is not FS2-framed is a host ABI error (the Linux runtime and the
+    # FS35 profiles keep the scoped legacy lock). Adding the FS35 helper to the host
+    # layout is a follow-up. This diagnostic supplies FD3 explicitly: the host startup
+    # does not yet establish an FS2 scope. It is not evidence of automatic host setup.
     (out / "string-fs2-lock.kotoba").write_text(
         '(ns string-fs2-lock (:export [main]))\n'
         '(defn main [] :i64\n'
-        '  (let [d (typed-cap-call 35 :string :string "\\u0000FS2\\u0000D/regular\\u0000")\n'
-        '        l (typed-cap-call 35 :string :string "/regularFLOCK_SEP")\n'
-        '        u (typed-cap-call 35 :string :string "/regularUNLOCK_SEP")]\n'
-        '    (if (and (= d "\\u0000FS2\\u00001") (= l "1") (= u "1"))\n'
-        '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2_LOCK\\n")] 0) 1)))\n')
+        '  (let [d (typed-cap-call 35 :string :string "\\u0000FS2\\u0000D/regular\\u0000")]\n'
+        '    (if (= d "\\u0000FS2\\u00001")\n'
+        '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2\\n")] 0) 1)))\n')
+    (out / "legacy-lock.kotoba").write_text(
+        '(ns legacy-lock (:export [main]))\n'
+        '(defn main [] :i64 (let [l (typed-cap-call 35 :string :string "/regularFLOCK_SEP")] 0))\n')
+    images["legacy-lock"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock", packager, "amu-cli-host")
+    images["legacy-lock-cwd"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock-cwd", packager, "amu-cli-host-cwd")
     images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
     images["string-fs2-lock-cwd"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock-cwd", packager, "amu-cli-host-cwd")
     images["spawn-cwd"] = build(["seed/tests/macos-cli-host-spawn.kotoba", "seed/macos-cli-api.kotoba"], "spawn-cwd", packager, "amu-cli-host-cwd")
     scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.set_inheritable(scope_fd, True)
-        run("string-fs2-lock", expected=b"PASS_STRING_FS2_LOCK\n", scope_fd=scope_fd)
+        run("string-fs2-lock", expected=b"PASS_STRING_FS2\n", scope_fd=scope_fd)
+        run("legacy-lock", exit_code=70, diagnostic=b"EHOST invalid host ABI", scope_fd=scope_fd)
         # The opt-in cwd profile must open its own FD3, and must refuse an
         # already occupied FD3 rather than silently replacing it.
-        run("string-fs2-lock-cwd", expected=b"PASS_STRING_FS2_LOCK\n")
+        run("string-fs2-lock-cwd", expected=b"PASS_STRING_FS2\n")
+        run("legacy-lock-cwd", exit_code=70, diagnostic=b"EHOST invalid host ABI")
         run("string-fs2-lock-cwd", scope_fd=scope_fd, exit_code=70)
     finally:
         os.close(scope_fd)
