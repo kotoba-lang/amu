@@ -1,0 +1,200 @@
+{
+  "schema": "amu.target-coverage-table.v1",
+  "decision": "ADR 0410",
+  "thresholdBasisPoints": 9900,
+  "coverageLevel": "L1",
+  "maxEvidenceAgeDays": 30,
+  "denominator": {
+    "source": "StatCounter, operating system market share, all platforms, worldwide",
+    "url": "https://gs.statcounter.com/os-market-share/all/worldwide/",
+    "period": "2026-10",
+    "retrieved": "2026-11-06",
+    "note": "Web traffic. It has no ISA split, and it does not count servers or embedded devices. macOS is the sum of the page's OS X (3.74) and macOS (2.2) rows.",
+    "slices": {
+      "android": {
+        "shareBasisPoints": 4456,
+        "targets": ["aarch64-android", "armv7-android", "x86_64-android"]
+      },
+      "windows": {
+        "shareBasisPoints": 2908,
+        "targets": ["x86_64-windows", "aarch64-windows"]
+      },
+      "ios": {
+        "shareBasisPoints": 1745,
+        "targets": ["aarch64-ios"]
+      },
+      "macos": {
+        "shareBasisPoints": 594,
+        "targets": ["aarch64-macos", "x86_64-macos"]
+      },
+      "linux": {
+        "shareBasisPoints": 215,
+        "targets": ["x86_64-linux", "aarch64-linux"]
+      }
+    }
+  },
+  "developmentHosts": [
+    "x86_64-linux",
+    "aarch64-linux",
+    "aarch64-macos",
+    "x86_64-macos",
+    "x86_64-windows",
+    "aarch64-windows"
+  ],
+  "caveatFields": [
+    "fullRuntimeQualified",
+    "independentUserQualified",
+    "independentHostProfilesQualified",
+    "nativeCDCIExecutionQualified"
+  ],
+  "targets": {
+    "x86_64-linux": {
+      "host": ["Linux", "x86_64"],
+      "cells": {
+        "L1": {
+          "receipts": [
+            {
+              "path": "x86_64-native-receipt/x86/x86_64-native.json",
+              "status": "PASS_NATIVE_X86_64_LOADERLESS",
+              "fields": {"nativeX86_64Kernel": true, "emulation": false, "cCompilerOrLoader": false}
+            }
+          ]
+        },
+        "L2": {
+          "receipts": [
+            {
+              "path": "x86_64-native-receipt/public-product/public-product.json",
+              "status": "PASS_PUBLIC_NATIVE_PRODUCT",
+              "fields": {"nativeResult": 42, "legacyRuntimeFallback": false}
+            }
+          ]
+        },
+        "L3": {
+          "receipts": [
+            {
+              "path": "x86_64-native-receipt/complete/complete-x86.json",
+              "status": "PASS_COMPLETE_NATIVE_X86_COMPILER_BUILD",
+              "fields": {"emulation": false, "cCompilerOrLoader": false, "JVMNodeOrGraalFallback": false},
+              "identicalGenerations": true
+            }
+          ]
+        }
+      }
+    },
+    "aarch64-linux": {
+      "host": ["Linux", "aarch64"],
+      "cells": {
+        "L1": {
+          "receipts": [
+            {
+              "path": "bootstrap-arm64/selfhost-bootstrap.json",
+              "status": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP",
+              "fields": {"emulation": false, "cCompilerOrLoader": false}
+            }
+          ]
+        },
+        "L2": {"missing": "No public Linux ARM64 entry (docs/native-public-entry.md). JUN-899."},
+        "L3": {
+          "receipts": [
+            {
+              "path": "bootstrap-arm64/selfhost-bootstrap.json",
+              "status": "PASS_LOADERLESS_SELFHOST_BOOTSTRAP",
+              "fields": {"rootReproduces": true, "emulation": false, "cCompilerOrLoader": false, "JVMNodeOrGraalFallback": false}
+            }
+          ]
+        }
+      }
+    },
+    "aarch64-macos": {
+      "host": ["Darwin", "arm64"],
+      "cells": {
+        "L1": {
+          "receipts": [
+            {
+              "path": "mac-aiueos-user-root/public-macos-product/public-macos-product.json",
+              "status": "PASS_PUBLIC_MACOS_PRODUCT",
+              "fields": {"hostedFallback": false}
+            },
+            {"path": "mac-aiueos-user-root/mac-smoke/execution/receipt.json", "fields": {"positiveExit": 42}}
+          ]
+        },
+        "L2": {
+          "receipts": [
+            {
+              "path": "mac-aiueos-user-root/public-macos-product/public-macos-product.json",
+              "status": "PASS_PUBLIC_MACOS_PRODUCT",
+              "fields": {"nativeRebuildMatchesPublicPayload": true, "manualFD3": false, "hostedFallback": false}
+            },
+            {"path": "mac-aiueos-user-root/mac-smoke/execution/receipt.json", "fields": {"positiveExit": 42}}
+          ]
+        },
+        "L3": {
+          "receipts": [
+            {
+              "path": "mac-aiueos-user-root/mac-root/mac-aiueos-user-target.json",
+              "status": "PASS_MAC_NATIVE_USER_TARGET_SELFHOST",
+              "fields": {"fixedPointGeneration": 2, "linuxProcessInThisGate": false}
+            },
+            {"path": "mac-aiueos-user-root/mac-smoke/execution/receipt.json", "fields": {"positiveExit": 42}}
+          ]
+        }
+      }
+    },
+    "x86_64-macos": {
+      "host": ["Darwin", "x86_64"],
+      "cells": {
+        "L1": {"missing": "JUN-900. Rosetta is not native evidence."},
+        "L2": {"missing": "JUN-900."},
+        "L3": {"missing": "JUN-900."}
+      }
+    },
+    "x86_64-windows": {
+      "host": ["Windows", "AMD64"],
+      "cells": {
+        "L1": {"missing": "JUN-901."},
+        "L2": {"missing": "JUN-906."},
+        "L3": {"missing": "JUN-906."}
+      }
+    },
+    "aarch64-windows": {
+      "host": ["Windows", "ARM64"],
+      "cells": {
+        "L1": {"missing": "JUN-907."},
+        "L2": {"missing": "JUN-907."},
+        "L3": {"missing": "JUN-907."}
+      }
+    },
+    "aarch64-android": {
+      "host": ["Android", "aarch64"],
+      "cells": {
+        "L1": {"missing": "JUN-902, JUN-908."},
+        "L2": {"missing": "Open: JUN-909. API 29+ apps cannot execve from their home directory."},
+        "L3": {"missing": "Open: JUN-909."}
+      }
+    },
+    "armv7-android": {
+      "host": ["Android", "armv7l"],
+      "cells": {
+        "L1": {"missing": "Not a compiler target. Inclusion is open: no measured share (ADR 0410)."},
+        "L2": {"missing": "Not a compiler target."},
+        "L3": {"missing": "Not a compiler target."}
+      }
+    },
+    "x86_64-android": {
+      "host": ["Android", "x86_64"],
+      "cells": {
+        "L1": {"missing": "Not a compiler target. Inclusion is open: no measured share (ADR 0410)."},
+        "L2": {"missing": "Not a compiler target."},
+        "L3": {"missing": "Not a compiler target."}
+      }
+    },
+    "aarch64-ios": {
+      "host": ["iOS", "arm64"],
+      "cells": {
+        "L1": {"missing": "JUN-903."},
+        "L2": {"prohibited": "App Review Guideline 2.5.2 for App Store apps. Final level: JUN-909."},
+        "L3": {"prohibited": "App Review Guideline 2.5.2 for App Store apps. Final level: JUN-909."}
+      }
+    }
+  }
+}
