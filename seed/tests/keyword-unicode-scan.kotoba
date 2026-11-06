@@ -1,0 +1,8 @@
+(ns keyword-unicode-scan (:export [main]))
+
+;; The map-projection scanner must not inspect UTF-8 continuation bytes while
+;; looking ahead from unrelated symbols such as keyword-name.
+(defn main [] :i64
+  (if (and (string=? (keyword-name :𐀀) "𐀀")
+           (string=? (keyword-name :) ""))
+    42 7))

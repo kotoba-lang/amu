@@ -1,0 +1,41 @@
+;; Archive the actual runtime, link an independently compiled app, then
+;; replace the reserved main with a validated call to the app's entry.
+(defn- xg-default [] :i64 2)
+(defn- seed-main [] :i64
+  (let [T (mem-new) A (pj-new-l)
+        small (-> A (pj-put32 0 5) (pj-ibset 4 0) (pj-put32 5 1) (pj-ibset 9 0)
+                  (pj-put32 10 6) (pj-ibset 14 0) (pj-put32 15 4)
+                  (pj-ibset 19 0) (pj-ibset 20 66) (pj-ibset 21 42) (pj-ibset 22 11) (pj-ls pj-k-img 23))
+        grown (xw-project-trampoline T A 1 2 6)
+        grow-ok (and (pj-ok grown) (= (pj-l A pj-k-img) 30) (= (xw-project-archive-u32 A 17) 6)
+                     (= (pj-ib A 28) 42) (xw-project-archive-readable? A 5 2))
+        dummy "(ns sample (:export [main]))\n(defn main [] :i64 0)\n"
+        app "(ns sample (:export [main]))\n(defn main [] :i64 (+ 40 2))\n"
+        S (string-concat dummy (xw-rt-src)) M (xg-front S) L (pj-new-l)
+        V (vector-alloc (+ 1 MM-CODE-CAP)) R (vector-alloc XW-RT-MAP-WORDS)
+        checked (-> M (xs-clear 197) (mem-set 197 (string-length dummy))
+                    (xg-set 0 0) (xg-set 1 0) (xg-set 2 0) (xg-set 3 0) (xg-set 4 1)
+                    (xg-check-fns S 1) (xg-check-sir 1) (xr-check 1) (xs-scan S 1) (xs-check 1 0))
+        assigned (xw-assign checked S 1 XW-NIMPORT)
+        captured (xw-project-runtime-capture assigned R)
+        pool (-> captured (mem-set MM-CODE-N 1) (mem-set MM-FIX-N 1) (xw-pool 1) (xw-project-pool-append V))
+        bodies (-> pool (xw-tables 1) (xw-code 1))
+        saved (xw-project-archive bodies L XW-NIMPORT)
+        nrt (vector-at R 0) start (vector-at R 1)
+        G (xg-front app)
+        guest (-> G (mem-set 197 (string-length app)) (xg-set 0 0) (xg-set 1 0) (xg-set 4 1)
+                  (xg-check-fns app 1) (xg-check-sir 1) (xr-check 1))
+        bound (xw-project-runtime-bind guest R L)
+        compiled (xw-project-compile-unit bound L V app 1 0 (+ XW-NIMPORT nrt))
+        compiled-ok (pj-ok compiled)
+        entry (xw-idx compiled (xg-get compiled 1)) total (xg-get compiled 3)
+        before (pj-l L pj-k-img) old (pj-ib L 9)
+        invalid (xw-project-trampoline compiled L nrt total XW-NIMPORT)]
+    (cond (not grow-ok) 7 (not (pj-ok saved)) 1 (not compiled-ok) 2 (pj-ok invalid) 3
+          (not= before (pj-l L pj-k-img)) 4 (not= old (pj-ib L 9)) 5
+          :else (let [clear (mem-set G MM-ERR 0) linked (xw-project-trampoline clear L nrt total entry)
+                      module (xw-project-module linked L V total start)]
+                  (if (not (pj-ok module)) 6
+                    (let [begin (io-out "TRAMPOLINE-BEGIN\n")
+                          bytes (io-write-hex G (+ MM-OUT-BASE 1) (- (vector-at G MM-OUT-N) 1))
+                          end (io-out "TRAMPOLINE-END\n")] 0))))))

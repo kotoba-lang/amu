@@ -1,0 +1,64 @@
+name: ci-gate
+description: >-
+  JUN-759 input-hash gate for the native CI jobs. Computes the job's input hash, reports docs-only
+  changes, and looks up a marker (kind marker) or restores derived artifacts (kind derive).
+  Pushes to main, the schedule and manual dispatch never skip and never restore.
+inputs:
+  job:
+    description: Stable job identity for the cache key (include the shard).
+    required: true
+  kind:
+    description: marker or derive.
+    default: marker
+  roots:
+    description: derive only, comma separated scripts/seed/*.py that start the derivation.
+    default: ""
+  path:
+    description: derive only, the files restored on a hit and saved after a successful derivation.
+    default: ""
+outputs:
+  skip:
+    description: true when the job's heavy steps must not run (docs-only change, or a marker hit).
+    value: ${{ steps.final.outputs.skip }}
+  hit:
+    description: true when derived artifacts were restored from the cache (derive).
+    value: ${{ steps.final.outputs.hit }}
+  key:
+    description: The exact cache key to save under after a successful run.
+    value: ${{ steps.calc.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - id: calc
+      shell: bash
+      env:
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python3 scripts/ci/ci_gate.py --job "${{ inputs.job }}" --kind "${{ inputs.kind }}" --roots "${{ inputs.roots }}"
+    - id: cache
+      if: steps.calc.outputs.restore == 'true'
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ inputs.kind == 'marker' && format('{0}/ci-marker', runner.temp) || inputs.path }}
+        key: ${{ steps.calc.outputs.key }}
+        restore-keys: ${{ steps.calc.outputs.restore_keys }}
+        lookup-only: ${{ inputs.kind == 'marker' }}
+    - id: final
+      shell: bash
+      env:
+        KIND: ${{ inputs.kind }}
+        DOCS_ONLY: ${{ steps.calc.outputs.docs_only }}
+        MATCHED: ${{ steps.cache.outputs.cache-matched-key }}
+        JOB: ${{ inputs.job }}
+      run: |
+        skip=false; hit=false
+        if [ "$DOCS_ONLY" = true ]; then skip=true; echo "::notice title=$JOB::docs-only change, steps skipped (JUN-759)"; fi
+        if [ -n "$MATCHED" ]; then
+          if [ "$KIND" = marker ]; then skip=true; else hit=true; fi
+          echo "::notice title=$JOB::input-hash hit $MATCHED (JUN-759)"
+        fi
+        echo "skip=$skip" >> "$GITHUB_OUTPUT"
+        echo "hit=$hit" >> "$GITHUB_OUTPUT"

@@ -102,7 +102,9 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
         (output / "calls.json").write_text(json.dumps(calls, indent=2) + "\n")
         return r, dst
 
-    formats = FORMATS + ([("aarch64-linux", "packed")] if payload else [])
+    host_target = {"aarch64": "aarch64-linux", "arm64": "aarch64-linux",
+                   "x86_64": "x86_64-linux"}[platform.machine()]
+    formats = FORMATS + ([(host_target, "packed")] if payload else [])
     refused, positives = [], []
     for target, fmt in formats:
         for name, body in PROBES.items():
@@ -150,7 +152,6 @@ def main(compiler, output, previous_root, payload, definition_only_root=None):
         previous.append(dict(compiler="definition-only", name="fn-ref-invoke", admitted=True, executed=False))
     # The closest runtime corpus: same result, fuel, and refusals as the
     # repository's immutable expectations. Only the native host ISA executes.
-    host_target = {"aarch64": "aarch64-linux", "arm64": "aarch64-linux", "x86_64": "x86_64-linux"}[platform.machine()]
     cases = []
     for case in json.loads((ROOT / "seed/static-cases.json").read_text())["cases"]:
         r, dst = compile_("new", "case-" + case["name"], case["source"], host_target, "static")

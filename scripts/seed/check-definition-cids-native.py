@@ -120,6 +120,11 @@ def main(compiler, out):
                                 "code (cond false 2 (> n 8) 1 :else 0)]", 1)
     assert blocked_text != text
     mutant_blocked = build("mutant-no-blocked", blocked_text)
+    record_guard = "(= (nm-form-head M n) HD-DEFRECORD) (let [bad (dsb-bad C 3 n)] 0)"
+    assert text.count(record_guard) == 1
+    record_text = text.replace(record_guard, "false (let [bad (dsb-bad C 3 n)] 0)", 1)
+    assert record_text != text
+    mutant_record = build("mutant-no-record-guard", record_text)
 
     def cids(name, source, image=cli, code=0, groups=False):
         p = out / (name + ".kotoba")
@@ -214,6 +219,18 @@ def main(compiler, out):
     cids("refuse-syntax", ["(defn f [x :i64] :i64 (+ x 1)"], code=66)
     # No definition at all is no identity (reference: `:entries :unavailable`), not an empty report.
     cids("refuse-no-definitions", ["(def k 5)"], code=66)
+    # Constructor identities for defrecord are not bridged; never emit a
+    # partial report even when the generated constructor is unused.
+    for suffix, fun in [("unused", "(defn- f [] :i64 42)"),
+                        ("referenced", "(defn- f [x [:ref :demo/Pair]] :i64 42)")]:
+        cids("refuse-defrecord-" + suffix,
+             ["(ns demo (:export []))", "(defrecord Pair [a :i64 b :string])", fun], code=66)
+    # Executing the removed-guard mutant demonstrates the omission: it reports
+    # f but not the implicitly generated ->Pair constructor.
+    record_mutant = cids("mutant-defrecord-unused",
+                        ["(ns demo (:export []))", "(defrecord Pair [a :i64 b :string])",
+                         "(defn- f [] :i64 42)"], image=mutant_record)
+    assert list(record_mutant) == ["f"]
     cids("refuse-closure-unbound", [fn("f", ["n"], "(let [g (fn [x] (+ x missing))] (g n))")], code=66)
     cids("refuse-closure-callback", ["(defn ap [g [:fn [:i64] :i64] x :i64] :i64 (g x))",
                                      fn("f", ["n"], "(ap (fn [x] (+ x 1)) n)")], code=66)
@@ -223,6 +240,33 @@ def main(compiler, out):
                        ("loop-in-closure", "(let [g (fn [x] (loop [i 0] (if (< i x) (recur (+ i 1)) i)))] (g n))"),
                        ("closure-operator", "((fn [x] (+ x 1)) n)")]:
         assert cids("refuse-" + name, [fn("f", ["n"], body)]) == {"f": ["REFUSED:unbridged-source"]}
+    # Abort control rows are not yet sealed from fresh source facts.  The
+    # public report must refuse both escaping and caught aborts; it must not
+    # give their transitive callers an identity or poison independent rows.
+    aborting = "(defn- bad [x :i64] :i64 (if (= x 0) (throw 7) x))"
+    caller_abort = "(defn- caller [x :i64] :i64 (bad x))"
+    caught_direct = "(defn- direct [x :i64] :i64 (try (if (= x 0) (throw 7) x) (catch :i64 e (+ e 2))))"
+    caught_callee = "(defn- caught [x :i64] :i64 (try (bad x) (catch :i64 e (+ e 2))))"
+    throwing_handler = "(defn- handler [x :i64] :i64 (try (if (= x 0) (throw x) 4) (catch :i64 e (throw (+ e 1)))))"
+    abort_cases = [aborting, caller_abort, caught_direct, caught_callee, throwing_handler, fn("clean", ["x"], "(+ x 1)")]
+    for grouped in (False, True):
+        rows = cids("abort-report", abort_cases, groups=grouped)
+        assert list(rows) == ["bad", "caller", "direct", "caught", "handler", "clean"]
+        assert rows["bad"][0] == rows["direct"][0] == rows["caught"][0] == rows["handler"][0] == "REFUSED:unbridged-source"
+        assert rows["caller"][0] == "REFUSED:dependency-unavailable"
+        assert rows["clean"][0] == golden("leaf")
+    cids("mutant-no-close-abort", abort_cases, image=mutant_close, code=66)
+    # Explicit namespace record schemas reach the report bridge; an unrelated
+    # unsupported row and its caller remain refused without changing f's CID.
+    schema_ns = "(ns demo (:export []) (:schemas {:s/r [:record :s/r [[:a :i64]]]}))"
+    schema_fn = "(defn- f [x [:ref :s/r]] :i64 42)"
+    schema_leaf = cids("schema-leaf", [schema_ns, schema_fn])
+    assert schema_leaf["f"][0] == "bafyreiagssxmxbxfy7i3zq4m6ayucfkyjylomcruexauvgvw6dtjqtfeeu"
+    schema_mixed = cids("schema-mixed", [schema_ns, fn("bad", ["n"], "((fn [x] (+ x 1)) n)"),
+                                         schema_fn, fn("caller", ["x"], "(bad x)")])
+    assert schema_mixed["bad"][0] == "REFUSED:unbridged-source"
+    assert schema_mixed["caller"][0] == "REFUSED:dependency-unavailable"
+    assert schema_mixed["f"] == schema_leaf["f"]
     # Per-definition refusal parity with the reference shape: the refused row keeps its place in declaration
     # order, its callers are dependency-unavailable (also through a loop helper), everything else keeps the CID
     # it has in a module without the refused definitions.

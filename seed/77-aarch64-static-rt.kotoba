@@ -360,7 +360,11 @@
 (defn- kxrt-vec [h :i64] :i64
   (if (or (<= h 0) (> h (kxrt-gl 48))) (kxrt-fail) (+ (kxrt-gl 40) (* (dec h) 16))))
 (defn- kxrt-voff [h :i64] :i64 (kxrt-load64 (kxrt-vec h)))
-(defn- kxrt-vlen [h :i64] :i64 (kxrt-load64 (+ (kxrt-vec h) 8)))
+(defn- kxrt-vlen [h :i64] :i64
+  ;; Validate the handle freshly, then derive its descriptor in this operation.
+  (let [g (+ (kxrt-ctx) 1024)]
+    (if (or (<= h 0) (> h (kxrt-load64 (+ g 48)))) (kxrt-fail)
+      (kxrt-load64 (+ (kxrt-load64 (+ g 40)) (* (dec h) 16) 8)))))
 (defn- kxrt-item [off :i64 i :i64] :i64 (+ (kxrt-gl 56) (* 8 (+ off i))))
 (defn- kxrt-vnew [off :i64 n :i64] :i64
   (let [u (kxrt-gl 48)]
@@ -368,7 +372,12 @@
       (let [p (+ (kxrt-gl 40) (* u 16)) x (kxrt-store64 p off) y (kxrt-store64 (+ p 8) n) r (kxrt-store64 (+ (kxrt-gl 688) (* u 8)) 0) high (if (> (+ off n) (kxrt-gl 760)) (kxrt-gs 760 (+ off n)) 0) w (kxrt-gs 48 (inc u))]
         (inc u)))))
 (defn- kxrt-icopy [d :i64 s :i64 n :i64] :i64
-  (loop [i 0] (if (>= i n) d (let [z (kxrt-store64 (kxrt-item d i) (kxrt-load64 (kxrt-item s i)))] (recur (inc i))))))
+  ;; The items mapping is immutable during this private forward-copy loop.
+  ;; Hoist address derivation; retain scalar forward order even for overlap.
+  (let [dst (kxrt-item d 0) src (kxrt-item s 0)]
+    (loop [i 0] (if (>= i n) d
+      (let [offset (* 8 i) z (kxrt-store64 (+ dst offset) (kxrt-load64 (+ src offset)))]
+        (recur (inc i)))))))
 (defn- kxrt-vector-alloc [n :i64] :i64
   (let [u (kxrt-gl 64)]
     (if (or (< n 0) (> n KXRT-VECTOR-MAX) (> n (- KXRT-ITEMS u))) (kxrt-fail)
@@ -379,7 +388,13 @@
             w (kxrt-gs 64 (+ u n))]
         (kxrt-vnew u n)))))
 (defn- kxrt-vector-at [h :i64 i :i64] :i64
-  (let [n (kxrt-vlen h)] (if (or (< i 0) (>= i n)) (kxrt-fail) (kxrt-load64 (kxrt-item (kxrt-voff h) i)))))
+  ;; Same handle and index guards as vec/vlen/voff; no callback or metadata
+  ;; mutation occurs between these checks and the final item load.
+  (let [g (+ (kxrt-ctx) 1024)]
+    (if (or (<= h 0) (> h (kxrt-load64 (+ g 48)))) (kxrt-fail)
+      (let [p (+ (kxrt-load64 (+ g 40)) (* (dec h) 16)) n (kxrt-load64 (+ p 8))]
+        (if (or (< i 0) (>= i n)) (kxrt-fail)
+          (kxrt-load64 (+ (kxrt-load64 (+ g 56)) (* 8 (+ (kxrt-load64 p) i)))))))))
 (defn- kxrt-assoc-in-place [h :i64 i :i64 x :i64] :i64
   (let [n (kxrt-vlen h)]
     (if (or (< i 0) (>= i n)) (kxrt-fail) (let [z (kxrt-store64 (kxrt-item (kxrt-voff h) i) x)] h))))
@@ -434,13 +449,17 @@
   (let [u (kxrt-gl 64)]
     (cond (> n KXRT-VALUE-MAX) (kxrt-value 10)
           (> n (- KXRT-ITEMS u)) (kxrt-arena 3)
-          :else (let [z (loop [i 0] (if (= i n) 0 (let [w (kxrt-store64 (kxrt-item u i) (kxrt-load8 (+ a i)))] (recur (inc i)))))
+          :else (let [dst (kxrt-item u 0)
+                      z (loop [i 0] (if (= i n) 0
+                          (let [w (kxrt-store64 (+ dst (* 8 i)) (kxrt-load8 (+ a i)))]
+                            (recur (inc i)))))
                       w (kxrt-gs 64 (+ u n))]
                   (kxrt-vnew u n)))))
 (defn- kxrt-bytes-ok? [off :i64 n :i64] :bool
-  (loop [i 0] (cond (= i n) true
-                    (let [v (kxrt-load64 (kxrt-item off i))] (or (< v 0) (> v 255))) false
-                    :else (recur (inc i)))))
+  (let [base (kxrt-item off 0)]
+    (loop [i 0] (cond (= i n) true
+                      (let [v (kxrt-load64 (+ base (* 8 i)))] (or (< v 0) (> v 255))) false
+                      :else (recur (inc i))))))
 (defn- kxrt-bytes-from-vector [h :i64] :i64
   (let [n (kxrt-vlen h) off (kxrt-voff h) u (kxrt-gl 64)]
     (cond (> n KXRT-VALUE-MAX) (kxrt-value 10)
@@ -568,12 +587,13 @@
         (let [k (kxrt-admit-root m i)]
           (if (< k 0) (recur (inc i)) (let [z (kxrt-gs 664 (kxrt-gl (+ 528 (* 8 i))))] k)))))))
 ;; openat2(root, rest, {flags, mode, RESOLVE_BENEATH|RESOLVE_NO_MAGICLINKS}); fd or negative
-(defn- kxrt-open [m :i64 flags :i64 mode :i64] :i64
+(defn- kxrt-open-mode [m :i64 flags :i64 mode :i64 strict :bool] :i64
   (let [k (kxrt-admit m) d (kxrt-gl 208) how (+ (kxrt-gl 200) 4096)]
     (if (< k 0) -1
       (let [rest (if (>= k m) (let [z (kxrt-store8 (+ d m 1) 46) y (kxrt-store8 (+ d m 2) 0)] (+ d m 1)) (+ d k))
-            x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) 10)]
+            x (kxrt-store64 how flags) y (kxrt-store64 (+ how 8) mode) z (kxrt-store64 (+ how 16) (if strict 14 10))]
         (kxrt-syscall 437 (kxrt-gl 664) rest how 24 0 0)))))
+(defn- kxrt-open [m :i64 flags :i64 mode :i64] :i64 (kxrt-open-mode m flags mode false))
 (defn- kxrt-sink-close [] :i64
   (let [fd (kxrt-gl 112)] (if (< fd 0) 1 (let [z (kxrt-gs 112 -1) y (kxrt-gs 128 0)] (if (= (kxrt-close fd) 0) 1 (kxrt-fail))))))
 (defn- kxrt-fs-exists [a :i64 n :i64] :i64
@@ -592,7 +612,7 @@
         (cond (= k -2) (kxrt-budget 4) (< k 0) (kxrt-fail)
               :else (let [w (kxrt-gs 32 (+ u k))] (kxrt-pair-new (- -1 u) k)))))))
 
-;; Private byte source-lock frame: NUL KSL1 NUL + exact path bytes.
+;; Bounded scoped byte read, shared by the source-lock and KFR1 frames.
 ;; Status byte 1 plus the complete regular-file bytes, or status 0.
 ;; One nonblocking no-follow FD supplies metadata and bytes; no token scan.
 (defn- kxrt-lock-answer [u :i64 n :i64 ok :bool] :i64
@@ -605,10 +625,10 @@
     (if (= i n) n
       (let [k (kxrt-syscall 67 fd (+ p i) (- n i) i 0 0)]
         (cond (= k -4) (recur i) (<= k 0) -1 :else (recur (+ i k)))))))
-(defn- kxrt-fs-source-lock [a :i64 n :i64] :i64
+(defn- kxrt-fs-bounded-read [a :i64 n :i64 strict :bool] :i64
   (let [u (kxrt-gl 32) clean (and (> n 0) (< n 4096)
         (loop [i 0] (cond (= i n) true (= (kxrt-load8 (+ a i)) 0) false :else (recur (inc i)))))
-        m (if clean (kxrt-path a n) -1) fd (if (< m 0) -1 (kxrt-open m 559104 0))]
+        m (if clean (kxrt-path a n) -1) fd (if (< m 0) -1 (kxrt-open-mode m 559104 0 strict))]
     (if (< fd 0) (kxrt-lock-answer u 0 false)
       (let [st (+ (kxrt-gl 200) 8192) f (kxrt-syscall 80 fd st 0 0 0 0)
             size (kxrt-load64 (+ st 48)) mode (kxrt-load64 (+ st 16))
@@ -775,11 +795,12 @@
         wi (kxrt-find a n 0x45535f4554495257 0x50 9) ai (kxrt-find a n 0x535f444e45505041 0x5045 10) ei (kxrt-find a n 0x535f535453495845 0x5045 10)
         ri (kxrt-find a n 0x45535f45474e4152 0x50 9) rni (kxrt-find a n 0x535f454d414e4552 0x5045 10) fi (kxrt-find a n 0x45535f434e595346 0x50 9)
         li (kxrt-find a n 4995441188540468294 80 9) ui (kxrt-find a n 6007603180400823893 20549 10)
+        uni (kxrt-find a n 0x535f4b4e494c4e55 0x5045 10)
         append (and (>= ai 0) (or (< wi 0) (< ai wi)))]
     (cond (and (>= n 6) (kxrt-tok-at a 0x3156504b00 0 6))
           (let [z (kxrt-sink-close)] (kxrt-fs-private (+ a 6) (- n 6)))
           (and (>= n 6) (kxrt-tok-at a 0x314c534b00 0 6))
-          (let [z (kxrt-sink-close)] (kxrt-fs-source-lock (+ a 6) (- n 6)))
+          (let [z (kxrt-sink-close)] (kxrt-fs-bounded-read (+ a 6) (- n 6) false))
           append (if (= (kxrt-count2 a n 0x535f444e45505041 0x5045 10) 1) (kxrt-fs-write a n ai 10 true) (kxrt-fail))
           (>= wi 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x45535f4554495257 0x50 9) 1) (kxrt-fs-write a n wi 9 false) (kxrt-fail)))
@@ -791,10 +812,12 @@
           ;; directory)
           (>= rni 0) (let [z (kxrt-sink-close)]
                       (if (= (kxrt-count2 a n 0x535f454d414e4552 0x5045 10) 1) (kxrt-fs-rename a n rni) (kxrt-fail)))
+          (>= uni 0) (let [z (kxrt-sink-close)]
+                      (if (= (kxrt-count2 a n 0x535f4b4e494c4e55 0x5045 10) 1) (kxrt-fs-unlink a n uni) (kxrt-fail)))
           (>= fi 0) (let [z (kxrt-sink-close)] (if (= (+ fi 9) n) (kxrt-fs-fsync a fi) (kxrt-fail)))
           (>= li 0) (let [z (kxrt-sink-close)] (if (= (+ li 9) n) (kxrt-fs-lock a li false) (kxrt-fail)))
           (>= ui 0) (let [z (kxrt-sink-close)] (if (= (+ ui 10) n) (kxrt-fs-lock a ui true) (kxrt-fail)))
-          ;; STAT, MTIME, ... are not provided by this runtime: refused.
+          ;; STAT, MTIME, RMDIR and the remaining metadata forms are not provided: refused.
           (kxrt-fs-other? a n) (kxrt-fail)
           :else (let [z (kxrt-sink-close)] (kxrt-fs-read a n)))))
 ;; FSYNC_SEP: fsync(2) of the file or directory at <path>, opened beneath the
@@ -826,6 +849,15 @@
         f2 (if (< f1 0) -1 (let [m (kxrt-path (+ a i 10) (- n (+ i 10)))] (if (< m 0) -1 (kxrt-fs-parent m b2))))
         r (if (< f2 0) -1 (kxrt-syscall 38 f1 b1 f2 b2 0 0))
         z1 (if (>= f1 0) (kxrt-close f1) 0) z2 (if (>= f2 0) (kxrt-close f2) 0)]
+    (kxrt-intern-dec (if (= r 0) 1 0))))
+;; UNLINK_SEP: remove the final directory entry without following it. Resolve
+;; the parent beneath the granted app-data root, then unlinkat its basename.
+(defn- kxrt-fs-unlink [a :i64 n :i64 i :i64] :i64
+  (let [s (kxrt-gl 200) base (+ s 9216)
+        m (kxrt-path a i)
+        fd (if (< m 0) -1 (kxrt-fs-parent m base))
+        r (if (< fd 0) -1 (kxrt-syscall 35 fd base 0 0 0 0))
+        z (if (>= fd 0) (kxrt-close fd) 0)]
     (kxrt-intern-dec (if (= r 0) 1 0))))
 ;; Scope-bound single-writer fencing. One cooperative lock per process;
 ;; a nonblocking kernel flock persists across arena resets and is released
@@ -1237,11 +1269,19 @@
   (let [st (+ (kxrt-gl 232) 4194304)]
     (loop [k 0] (let [r (kxrt-syscall 260 pid (+ st 8) 0 0 0 0)] (if (= r -4) (recur (inc k)) (bit-and (kxrt-load64 (+ st 8)) 4294967295))))))
 (defn- kxrt-sp-kill [pid :i64] :i64 (let [z (kxrt-syscall 129 pid 9 0 0 0 0)] (kxrt-sp-reap pid)))
+;; Bound each direct child to the process that forked it. Check the saved
+;; parent after installing the signal to close the fork/prctl race. This is
+;; not a process-tree fence: an executed program can fork or alter its signal.
+(defn- kxrt-sp-parent-bound? [parent :i64] :bool
+  (and (> parent 0) (>= (kxrt-syscall 167 1 9 0 0 0 0) 0)
+       (= (kxrt-syscall 173 0 0 0 0 0 0) parent)))
 ;; the child: stdio, every other descriptor close-on-exec, no new privileges,
 ;; the scope root as its directory, execve. A failure goes to the status
 ;; pipe as step * 4096 + errno (op 42), then exit 127.
-(defn- kxrt-sp-child [in-r :i64 out-w :i64 st-w :i64 prog :i64 argv :i64 envp :i64] :i64
+(defn- kxrt-sp-child [in-r :i64 out-w :i64 st-w :i64 prog :i64 argv :i64 envp :i64 parent :i64] :i64
   (let [s (+ (kxrt-gl 232) 4194304)
+        bound (if (kxrt-sp-parent-bound? parent) 0
+                (let [z (kxrt-store64 s 8193) y (kxrt-write-all st-w s 8)] (kxrt-exit 127)))
         ;; the helper ignores SIGPIPE; the program starts with the default
         q (+ s 128) d0 (kxrt-store64 q 0) d1 (kxrt-store64 (+ q 8) 0) d2 (kxrt-store64 (+ q 16) 0) d3 (kxrt-store64 (+ q 24) 0)
         dfl (kxrt-signal 13 q)
@@ -1288,7 +1328,7 @@
       (if (< k 0) (kxrt-store64 (+ ap (* 8 (inc c))) 0)
         (recur (+ e 7) (+ d (inc (- e st))) (inc c))))))
 ;; the output, until end of file, within the deadline and the budget:
-;; got >= 0, -4 the deadline, -3 the budget
+;; got >= 0, -4 the deadline, -3 the budget, -5 an output read error
 (defn- kxrt-sp-output [fd :i64 o :i64 dl :i64] :i64
   (loop [got 0]
     (let [left (- dl (kxrt-now-ns))]
@@ -1299,7 +1339,8 @@
                 (= r 0) (recur got)
                 :else (let [m (kxrt-syscall 63 fd (+ o got) (- 16385 got) 0 0 0)]
                         (cond (= m -4) (recur got)
-                              (<= m 0) got
+                              (= m 0) got
+                              (< m 0) -5
                               (> (+ got m) 16384) -3
                               :else (recur (+ got m))))))))))
 ;; wait for the exit within the deadline (10 ms slices, op 40): raw status, or -1
@@ -1343,9 +1384,9 @@
         out-r (bit-and x 4294967295) out-w (u64-shift-right x 32)
         st-r (bit-and y 4294967295) st-w (u64-shift-right y 32)]
     (if (or (< p1 0) (< p2 0) (< p3 0)) (kxrt-sp-refused an 7)
-      (let [dl (+ (kxrt-now-ns) 10000000000)
+      (let [dl (+ (kxrt-now-ns) 10000000000) parent (kxrt-syscall 172 0 0 0 0 0 0)
             pid (kxrt-syscall 220 17 0 0 0 0 0)]
-        (cond (= pid 0) (kxrt-sp-child in-r out-w st-w (kxrt-sp-prog k) argv envp)
+        (cond (= pid 0) (kxrt-sp-child in-r out-w st-w (kxrt-sp-prog k) argv envp parent)
               (< pid 0) (let [z (kxrt-sp-close4 in-r in-w out-r out-w) y (kxrt-close st-r) v (kxrt-close st-w)] (kxrt-sp-refused an 7))
               :else
               (let [c (let [x (kxrt-close in-r) y (kxrt-close out-w)] (kxrt-close st-w))
@@ -1359,6 +1400,7 @@
                         o (+ io 3145728) got (if (= fed -4) -4 (kxrt-sp-output out-r (+ o 32) dl)) e (kxrt-close out-r)]
                     (cond (= got -4) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 4))
                           (= got -3) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 3))
+                          (= got -5) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 7))
                           :else (let [raw (kxrt-sp-wait pid dl)]
                                   (if (< raw 0) (let [r (kxrt-sp-kill pid)] (kxrt-sp-refused an 4))
                                     (let [ex (if (= (bit-and raw 127) 0) (bit-and (u64-shift-right raw 8) 255) -1)
@@ -1409,9 +1451,9 @@
           rq-r (bit-and w 4294967295) rq-w (u64-shift-right w 32)
           an-r (bit-and x 4294967295) an-w (u64-shift-right x 32)]
       (if (or (< p1 0) (< p2 0)) (kxrt-die)
-        (let [pid (kxrt-syscall 220 17 0 0 0 0 0)]
+        (let [parent (kxrt-syscall 172 0 0 0 0 0 0) pid (kxrt-syscall 220 17 0 0 0 0 0)]
           (cond (< pid 0) (kxrt-die)
-                (= pid 0) (let [z (kxrt-close rq-w) y (kxrt-close an-r)
+                (= pid 0) (let [bound (if (kxrt-sp-parent-bound? parent) 0 (kxrt-exit 127)) z (kxrt-close rq-w) y (kxrt-close an-r)
                                 act (+ (kxrt-gl 200) 8192)
                                 a0 (kxrt-store64 act 1) a1 (kxrt-store64 (+ act 8) 0) a2 (kxrt-store64 (+ act 16) 0) a3 (kxrt-store64 (+ act 24) 0)
                                 g (kxrt-signal 13 act)]
@@ -1540,7 +1582,16 @@
              (kxrt-tok-at (kxrt-vbytes req) 0x314c534b00 0 6))
           (let [n (kxrt-vlen req) p (kxrt-vbytes req)
                 checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
-                closed (kxrt-sink-close) r (kxrt-fs-source-lock (+ p 6) (- n 6))]
+                closed (kxrt-sink-close) r (kxrt-fs-bounded-read (+ p 6) (- n 6) false)]
+            (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
+        ;; KFR1 is an explicit bounded application read, distinct from KSL1.
+        ;; A zero status reports I/O refusal; a one prefixes exact file bytes.
+        ;; Only raw bytes use this operation, so file names cannot invoke it.
+        (and (= id 35) (= rk 8) (= sk 8) (>= (kxrt-vlen req) 6)
+             (kxrt-tok-at (kxrt-vbytes req) 0x3152464b00 0 6))
+          (let [n (kxrt-vlen req) p (kxrt-vbytes req)
+                checked (if (> n KXRT-VALUE-MAX) (kxrt-fail) 0)
+                closed (kxrt-sink-close) r (kxrt-fs-bounded-read (+ p 6) (- n 6) true)]
             (kxrt-bytes-raw (kxrt-saddr r) (kxrt-ps r)))
         ;; KPV1 is also an exact byte frame; route it before FS2 can reject
         ;; raw bytes. Other byte requests still require the FS2 contract.

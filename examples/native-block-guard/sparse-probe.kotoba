@@ -1,0 +1,63 @@
+(ns examples.native-block-guard.sparse-probe (:export [main]))
+
+;; Experimental sparse sampling only. It provides neither device access nor
+;; authority, does not estimate capacity, and cannot establish full capacity.
+;; Addresses 0, powers of two below the final sector, then the final sector.
+;; The host must write unique full-sector patterns at all addresses, flush,
+;; reopen, and compare all reads; immediate write/read misses later aliasing.
+(defn plan [sectors] :vector-i64
+  (if (or (< sectors 2) (> sectors 2251799813685247)) []
+    (loop [p 1 out [0]]
+      (if (>= p (- sectors 1))
+        (vector-conj out (- sectors 1))
+        (recur (* p 2) (vector-conj out p))))))
+
+;; Positive means every provided observation matches; it is never a capacity
+;; verdict. A short/empty observation is an error, not a passing result.
+(defn matching-samples [expected :vector-i64 observed :vector-i64]
+  (if (or (= (vector-count expected) 0)
+          (not= (vector-count expected) (vector-count observed))) 0
+    (loop [i 0]
+      (if (= i (vector-count expected)) 1
+        (if (= (vector-at expected i) (vector-at observed i))
+          (recur (inc i)) 0)))))
+
+;; Independent synthetic medium: sector values contain the writer's unique
+;; address tag. Mode 0 is honest, mode 1 wraps at physical sector count,
+;; mode 2 drops writes to the final address. No real I/O occurs here.
+(defn simulate [addresses :vector-i64 physical mode] :vector-i64
+  (let [n (vector-count addresses) disk (vector-alloc physical)]
+    (loop [i 0]
+      (if (< i n)
+        (let [address (vector-at addresses i)
+              slot (if (= mode 1) (mod address physical) address)]
+          (if (or (>= slot physical) (and (= mode 2) (= i (- n 1))))
+            (recur (inc i))
+            (do (vector-assoc! disk slot (inc i)) (recur (inc i)))))
+        (loop [j 0 result []]
+          (if (= j n) result
+            (let [address (vector-at addresses j)
+                  slot (if (= mode 1) (mod address physical) address)]
+              (recur (inc j)
+                (vector-conj result (if (>= slot physical) 0 (vector-at disk slot)))))))))))
+
+(defn tags [n] :vector-i64
+  (loop [i 0 out []]
+    (if (= i n) out (recur (inc i) (vector-conj out (inc i))))))
+
+(defn main [] :i64
+  (let [p (plan 16) want (tags (vector-count p)) large (plan 4096000000)]
+    (+ (if (= (vector-count (plan 1)) 0) 0 1)
+       (if (= (vector-count (plan 2251799813685248)) 0) 0 1)
+       (if (= (vector-count (plan 2)) 2) 0 1)
+       (if (= (vector-at (plan 2) 1) 1) 0 1)
+       (if (= (vector-count p) 6) 0 1)
+       (if (= (vector-at p 0) 0) 0 1)
+       (if (= (vector-at p 4) 8) 0 1)
+       (if (= (vector-at p 5) 15) 0 1)
+       (if (= (vector-at large (- (vector-count large) 1)) 4095999999) 0 1)
+       (if (= (matching-samples want (simulate p 16 0)) 1) 0 1)
+       (if (= (matching-samples want (simulate p 4 1)) 0) 0 1)
+       (if (= (matching-samples want (simulate p 16 2)) 0) 0 1)
+       (if (= (matching-samples want [1 2 3 4 5 6 7]) 0) 0 1)
+       (if (= (matching-samples [] []) 0) 0 1))))

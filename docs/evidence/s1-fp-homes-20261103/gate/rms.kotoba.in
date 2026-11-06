@@ -1,0 +1,35 @@
+(ns gate.rms (:export [main]))
+
+;; RMSNorm of one @COLS@-wide row, @REPS@ times: ss = sum x*x left to right, r = sqrt(ss / n + 1e-5),
+;; y = (x / r) * w, every y folded into the checksum. gate/twin.c PROG 2 is the C twin.
+
+(defn- mask48 [] :i64 281474976710655)
+(defn- lcg [s :i64] :i64 (bit-and (+ (* s 1103515245) 12345) 2147483647))
+(defn- fill [v :vector-i64 n :i64 seed :i64] :i64
+  (loop [i 0 s seed]
+    (if (= i n) s
+      (let [t (lcg s)
+            k (- (bit-and (i64-shift-right t 16) 255) 128)
+            u (vector-assoc! v i (f32-to-bits (f32-mul (i64-to-f32-rounded k) (f32-from-bits 1009736745))))]
+        (recur (+ i 1) t)))))
+(defn- mix [c :i64 x :f32] :i64 (bit-and (+ (* c 31) (bit-and (f32-to-bits x) 4294967295)) (mask48)))
+
+(defn- sumsq [x :vector-i64 n :i64] :f32
+  (loop [i 0 ss (i64-to-f32-rounded 0)]
+    (if (= i n) ss
+      (recur (+ i 1) (let [v (f32-from-bits (vector-at x i))] (f32-add ss (f32-mul v v)))))))
+
+(defn- scale [x :vector-i64 w :vector-i64 n :i64 r :f32 c0 :i64] :i64
+  (loop [i 0 c c0]
+    (if (= i n) c
+      (recur (+ i 1) (mix c (f32-mul (f32-div (f32-from-bits (vector-at x i)) r) (f32-from-bits (vector-at w i))))))))
+
+(defn main [] :i64
+  (let [x (vector-alloc @COLS@)
+        w (vector-alloc @COLS@)
+        s1 (fill x @COLS@ 777)
+        s2 (fill w @COLS@ s1)]
+    (loop [rep 0 c (bit-and s2 (mask48))]
+      (if (= rep @REPS@) c
+        (let [r (f32-sqrt (f32-add (f32-div (sumsq x @COLS@) (i64-to-f32-rounded @COLS@)) (f32-from-bits 925353388)))]
+          (recur (+ rep 1) (scale x w @COLS@ r c)))))))
