@@ -1,6 +1,6 @@
 # ADR 0410: what 99% coverage means
 
-- Status: Proposed. It takes effect when the owner approves it (JUN-890).
+- Status: Accepted (owner decision, 2026-11-06, JUN-890).
 - Date: 2026-11-06
 - Related: JUN-889 (the coverage plan), JUN-890, ADR 0409, ADR 0407.
 
@@ -8,7 +8,7 @@
 
 JUN-889 aims for Amu selfhost to run on 99% of the world's devices. That number needs a denominator, a meaning for "runs", and a way to measure it that cannot overclaim.
 
-## Decision proposed
+## Decision
 
 ### Denominator
 
@@ -84,7 +84,7 @@ JUN-889 expected x86_64 and aarch64 to be enough. That is unproven, and 32-bit A
 ## Refused and not decided
 
 - This report is not a gate. `AGENTS.md` keeps verdicts with the native controller, so the report sets `gateVerdict: false`. A digest shows that a receipt has not changed since collection. It does not authenticate the receipt.
-- Whether `armv7-android` and `x86_64-android` stay in the denominator is **not decided**. JUN-890 asks for a decision from a measured share, and no measured share exists yet. They stay listed, so they hold the lower bound down.
+- `armv7-android` and `x86_64-android` stay listed until a share is measured, so they hold the lower bound down. Whether to drop them later is **not decided**: that needs a measured share, and how to measure it is open (JUN-890).
 - Refreshing a snapshot is manual (`scoreboard.py collect`). Nothing regenerates it after each merge.
 
 ## Consequences
