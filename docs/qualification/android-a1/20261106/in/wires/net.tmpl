@@ -1,0 +1,18 @@
+(ns wnet (:export [main]))
+(defn- listen [s :string] :string (typed-cap-call 43 :string :string s))
+(defn- accept [s :string] :string (typed-cap-call 44 :string :string s))
+(defn- dial [s :string] :string (typed-cap-call 45 :string :string s))
+(defn- rd [s :string] :string (typed-cap-call 46 :string :string s))
+(defn- wr [s :string] :string (typed-cap-call 47 :string :string s))
+(defn- say [s :string] :i64 (let [x (typed-cap-call :io/write :string :string (string-concat s "\n"))] 0))
+(defn- sp [a :string b :string] :string (string-concat a (string-concat " " b)))
+(defn main [] :i64
+  (let [l (listen "127.0.0.1:39021") a (say l)
+        c (dial "127.0.0.1:39021 1000") b (say c)
+        s (accept (sp l "1000")) d (say s)
+        w (wr (sp c "68656c6c6f")) e (say w)
+        r (rd (sp s "16 1000")) f (say r)
+        x (wr c) g (say x)
+        r2 (rd (sp s "16 1000")) h (say r2)
+        y (wr s) i (say y)]
+    7))

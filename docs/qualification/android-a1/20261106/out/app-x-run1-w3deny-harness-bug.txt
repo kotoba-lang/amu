@@ -1,0 +1,69 @@
+device Pixel 10 Pro Fold sdk=37 targetSdk=36 pageSize=4096
+context u:r:untrusted_app_34:s0:c110,c257,c512,c768
+NoNewPrivs: 0
+Seccomp: 2
+Seccomp_filters: 1
+nativeLibraryDir=/data/app/~~WZGh9d77YREmnfN2kR1jcA==/dev.kotoba.jun902-iLq-EXU3m58__fW2eyWSrw==/lib/arm64 extractNativeLibs=true
+libs=15
+filesDir=/data/user/0/dev.kotoba.jun902/files
+PASS hello-exit exit=42 want=42 ms=9 :: 
+PASS hello-report exit=0 want=0 ms=3 :: {:status :ok :result 42 :fuel {:initial 9007199254740991 :remaining 9007199254740991 :metered false}}|
+PASS seccomp-default exit=0 want=0 ms=3 :: {:status :ok :result 42 :fuel {:initial 9007199254740991 :remaining 9007199254740991 :metered false}}|
+PASS sandbox-probe exit=120 want=120 ms=1 :: KEXE_TRAP {:kind :signal :signal :SIGSYS}|{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740991 :metered false}}|
+PASS cpu1 exit=120 want=120 ms=1393 :: KEXE_TRAP {:kind :signal :signal :SIGXCPU}|{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199205290143 :metered false}}|
+PASS wall3 exit=120 want=120 ms=2009 :: KEXE_TRAP {:kind :signal :signal :SIGALRM}|{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199194974193 :metered false}}|
+PASS stack exit=120 want=120 ms=33 :: KEXE_TRAP {:kind :signal :signal :SIGSEGV}|{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254735397 :metered false}}|
+DIFF exec-filesDir exit=-1 want=42 ms=12 :: IOException: Cannot run program "/data/user/0/dev.kotoba.jun902/files/hello-copy" (in directory "/data/user/0/dev.kotoba.jun902/files"): error=13, Permission denied
+DIFF exec-externalFilesDir exit=-1 want=42 ms=9 :: IOException: Cannot run program "/storage/emulated/0/Android/data/dev.kotoba.jun902/files/hello-copy" (in directory "/data/user/0/dev.kotoba.jun902/files"): error=13, Permission denied
+DIFF exec-data-local-tmp exit=-1 want=42 ms=10 :: IOException: Cannot run program "/data/local/tmp/jun902/hello.elf" (in directory "/data/user/0/dev.kotoba.jun902/files"): error=13, Permission denied
+DIFF sh-filesDir exit=126 want=42 ms=74 :: /system/bin/sh: /data/user/0/dev.kotoba.jun902/files/hello-copy: Permission denied|
+PASS w3 exit=7 want=7 ms=22 :: 
+DIFF w3-deny exit=7 want=120 ms=10 :: 
+PASS w7 exit=7 want=7 ms=22 :: 
+PASS w7-deny exit=120 want=120 ms=21 :: KEXE_CAP {:wire 7 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w23 exit=7 want=7 ms=21 :: 
+PASS w23-deny exit=120 want=120 ms=18 :: KEXE_CAP {:wire 23 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w37 exit=7 want=7 ms=21 :: hello-37|
+PASS w37-deny exit=120 want=120 ms=16 :: KEXE_CAP {:wire 37 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w38 exit=7 want=7 ms=19 :: 
+PASS w38-deny exit=120 want=120 ms=19 :: KEXE_CAP {:wire 38 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w39 exit=7 want=7 ms=20 :: hello-39|
+PASS w39-deny exit=120 want=120 ms=18 :: KEXE_CAP {:wire 39 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w40 exit=7 want=7 ms=21 :: /data/data/dev.kotoba.jun902/files
+PASS w40-deny exit=120 want=120 ms=16 :: KEXE_CAP {:wire 40 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w41 exit=7 want=7 ms=21 :: hello-41|
+PASS w41-deny exit=120 want=120 ms=18 :: KEXE_CAP {:wire 41 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w20 exit=7 want=7 ms=98 :: 0|hello-20|
+PASS w20-deny exit=120 want=120 ms=15 :: KEXE_CAP {:wire 20 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w43-47 exit=7 want=7 ms=30 :: 1|2|3|5|68656c6c6f|closed||closed|
+PASS w43-47-deny exit=120 want=120 ms=16 :: KEXE_CAP {:wire 43 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS original-forms exit=0 want=0 ms=76 :: 
+  stageLeft=0
+PASS raw exit=0 want=0 ms=54 :: 
+  stageLeft=0
+PASS managed exit=0 want=0 ms=91 :: 
+  stageLeft=0
+PASS no-replace exit=0 want=0 ms=55 :: 
+  stageLeft=0
+PASS large exit=0 want=0 ms=28950 :: 
+  stageLeft=0
+PASS managed-return exit=0 want=0 ms=80 :: 
+  stageLeft=0
+PASS managed-publish exit=0 want=0 ms=73 :: 
+  stageLeft=0
+PASS managed-publish-exclusive exit=0 want=0 ms=70 :: 
+  stageLeft=0
+PASS full-mode exit=0 want=0 ms=57 :: 
+PASS exists-errors exit=0 want=0 ms=56 :: 
+PASS fault exit=120 want=120 ms=64 :: KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS cpu exit=120 want=120 ms=1041 :: KEXE_TRAP {:kind :signal :signal :SIGXCPU}|
+PASS wall exit=120 want=120 ms=1055 :: KEXE_TRAP {:kind :signal :signal :SIGALRM}|
+PASS compile-hello exit=0 want=0 ms=3528 :: {:ok true, :target :aarch64-linux, :format :static, :code-bytes 312272, :bytes 320000, :runtime-profile :standard-v1, :vector-descriptors 4194304}|
+hello2 sha=4a27ae3a38b5a61fceae156ef73a191f825bd57cb558ebd2b229977b0f08424f bundled=4a27ae3a38b5a61fceae156ef73a191f825bd57cb558ebd2b229977b0f08424f
+DIFF exec-compiled-output exit=-1 want=42 ms=11 :: IOException: Cannot run program "/data/user/0/dev.kotoba.jun902/files/hello2.elf" (in directory "/data/user/0/dev.kotoba.jun902/files"): error=13, Permission denied
+PASS F1-compile exit=0 want=0 ms=202585 :: {:ok true, :target :aarch64-macos, :output "/data/user/0/dev.kotoba.jun902/files/F1.kseed", :bytes 3856803}|
+PASS F1-pack exit=0 want=0 ms=15561 :: {:ok true, :target :aarch64-linux, :format :packed, :code-bytes 4172168, :bytes 4178432, :runtime-profile :standard-v1, :vector-descriptors 4194304}|
+F1.kseed sha=f3d07778e2470a86d70f7404aac5e32d099dc77777a6d8655d5f3d1fce012e7d
+F1.elf sha=e53fedb67597aff8659c2715f8b3ecdbab814bc59b0a693792fb30a5d62a764f
+root sha=e53fedb67597aff8659c2715f8b3ecdbab814bc59b0a693792fb30a5d62a764f
+ROOT_REPRODUCES=true
