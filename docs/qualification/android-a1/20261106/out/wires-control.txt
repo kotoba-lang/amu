@@ -1,0 +1,39 @@
+Linux 6.15.10-200.fc42.aarch64 aarch64
+compile w20spawn exit=0 
+compile w23entropy exit=0 
+compile w35fs exit=0 
+compile w37write exit=0 
+compile w38args exit=0 
+compile w39err exit=1 seed: E2115 unsupported capability call ':io/error' (byte 158)
+compile w3hash exit=0 
+compile w40cwd exit=0 
+compile w41read exit=0 
+compile w7clock exit=0 
+compile wnet exit=0 
+PASS w3 exit=7 want=7 :: |
+PASS w3-deny exit=120 want=120 :: KEXE_CAP {:wire 3 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w7 exit=7 want=7 :: |
+PASS w7-deny exit=120 want=120 :: KEXE_CAP {:wire 7 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w23 exit=7 want=7 :: |
+PASS w23-deny exit=120 want=120 :: KEXE_CAP {:wire 23 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w37 exit=7 want=7 :: hello-37|
+PASS w37-deny exit=120 want=120 :: KEXE_CAP {:wire 37 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w38 exit=7 want=7 :: |
+PASS w38-deny exit=120 want=120 :: KEXE_CAP {:wire 38 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+DIFF w39 exit=127 want=7 :: env: './w39err.elf': No such file or directory|
+DIFF w39-deny exit=127 want=120 :: env: './w39err.elf': No such file or directory|
+PASS w40 exit=7 want=7 :: /tmp/jun902/wires|
+PASS w40-deny exit=120 want=120 :: KEXE_CAP {:wire 40 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+stdin w41 exit=7 want=7 :: hello-41
+PASS w41-deny exit=120 want=120 :: KEXE_CAP {:wire 41 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w20 exit=7 want=7 :: 0| hello-20|
+PASS w20-deny exit=120 want=120 :: KEXE_CAP {:wire 20 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+PASS w43-47 exit=7 want=7 :: 1|2|3|5|68656c6c6f|closed||closed|
+PASS w43-deny exit=120 want=120 :: KEXE_CAP {:wire 43 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|
+DIFF w35-full-mode exit=28 want=0 :: |
+PASS w35-raw exit=0 want=0 :: |
+DIFF w35-original-forms exit=126 want=0 :: KEXE_TRAP {:kind :capability :capability :fs/app-data :reason :fs2/refused :stage 6}|
+DIFF w35-managed exit=126 want=0 :: KEXE_TRAP {:kind :capability :capability :fs/app-data :reason :fs2/refused :stage 2}|
+DIFF w35-no-replace exit=126 want=0 :: KEXE_TRAP {:kind :capability :capability :fs/app-data :reason :fs2/refused :stage 6}|
+PASS w35-large exit=0 want=0 :: |
+PASS w35-deny exit=120 want=120 :: KEXE_CAP {:wire 35 :refused :not-granted}|KEXE_TRAP {:kind :signal :signal :SIGILL}|

@@ -1,0 +1,24 @@
+--- hello-exit
+exit=42
+--- hello-report
+{:status :ok :result 42 :fuel {:initial 9007199254740991 :remaining 9007199254740991 :metered false}}
+exit=0
+--- sandbox-probe
+KEXE_TRAP {:kind :signal :signal :SIGSYS}
+{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254740991 :metered false}}
+exit=120
+--- cpu1
+KEXE_TRAP {:kind :signal :signal :SIGXCPU}
+{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199086405662 :metered false}}
+exit=120
+--- wall3
+KEXE_TRAP {:kind :signal :signal :SIGALRM}
+{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007198885929700 :metered false}}
+exit=120
+--- stack
+KEXE_TRAP {:kind :signal :signal :SIGSEGV}
+{:status :trap :exit 120 :fuel {:initial 9007199254740991 :remaining 9007199254735391 :metered false}}
+exit=120
+NoNewPrivs:	0
+Seccomp:	0
+Seccomp_filters:	0
