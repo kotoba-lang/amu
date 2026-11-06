@@ -8,6 +8,10 @@ Mac target explicitly, and manages a private source snapshot, KSL1 lock,
 native compilation, packaging and platform signing. The user supplies no
 FD3. Follow the [Mac first run](../examples/foundation-starter/MACOS-ARM64.md).
 
+`amu check FILE.cljk` reads `.cljk` input sugar through the same frontend
+(JUN-579). `compile`, `run` and every `--source-lock` / `--source-path` route
+remain canonical `.kotoba` only. `.clj`, `.cljc` and `.cljs` are refused.
+
 The CLI contains the exact adopted lexer/reader/namer/checker to validate
 one exported `main [] :i64`; it delegates compilation to the hash-pinned full
 root. The low-level compiler at `amu-full-root.macho` and packager remain

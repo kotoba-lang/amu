@@ -27,8 +27,14 @@ https://kotoba-lang.org/blog/embench-c-parity-20261015/.
   retained" wording). The reader is implemented in Kotoba, and each sugar
   spelling must desugar to the same canonical Kotoba form and mint the same
   Definition CID as pure `.kotoba`
-  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). CLJC/CLJS/CLJ still
-  retire.
+  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). The compiler's own
+  closure stays free of them. Native entry so far (owner decision 2026-11-06):
+  a lone `check FILE.cljk` and `definition-cids FILE.cljk`, through the same
+  frontend; compile, run, lock and project routes are `.kotoba` only, and
+  `.edn` has no native entry yet.
+- CLJC/CLJS/CLJ are refused as native input. They may remain only as a local
+  reference oracle under a project-root `oracle/` holding an `ORACLE.edn`
+  (owner decision 2026-11-06, JUN-579; see the local reference oracle rules).
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
@@ -147,8 +153,8 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
 - A reference value is evidence of the reference's behavior. It is not proof
   that a native implementation is correct, and a mismatch is reported, not
   forced to agree.
-- The oracle languages are nbb, JVM, C and Python (owner decision 2026-11-06): the
-  old reference implementations and prototypes in those languages. The same rules apply
+- The oracle languages are nbb, JVM, C, Python, Hy, jank and Fennel (owner decision
+  2026-11-06): reference implementations and prototypes in those languages. The same rules apply
   to every use, including a Workflow subagent running one on a developer machine: one-off,
   dated evidence, never in CI, gates, builds or runtime paths.
 

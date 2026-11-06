@@ -49,6 +49,14 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # JUN-579: a lone `check` reads `.cljk` input sugar; compile and the retired extensions refuse.
+    sugar = out / 'hello-sugar.cljk'
+    sugar.write_text(hello.read_text())
+    run('check-cljk', 'check', sugar.name, stdout=b'ok\n')
+    run('compile-cljk', 'compile', sugar.name, expected=2, diagnostic=b'usage')
+    retired = out / 'hello-retired.cljc'
+    retired.write_text(hello.read_text())
+    run('check-cljc', 'check', retired.name, expected=2, diagnostic=b'usage')
     # KOTOBA-161: negative float comparisons catch the previously observed
     # integer-condition lowering error; the reversed operands are the control.
     float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')

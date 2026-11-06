@@ -7,6 +7,10 @@ Earlier status (2026-10-29): candidate, qualified on aarch64-linux, x86_64-linux
 Goal (JUN-579): cljk/edn reader sugar must mint the same Definition CID as pure `.kotoba`. Checking that natively
 needs a `definition-cids` command in every Amu host. Semantics: ADR 0300; payload-version 2, dag-cbor, sha2-256.
 
+Input (JUN-579, owner decision 2026-11-06): `definition-cids` takes `FILE.kotoba` or `FILE.cljk`, both through the
+same frontend. `.clj`, `.cljc`, `.cljs` and any other extension exit 2 with no report. `.edn` has no native entry yet.
+A form the frontend does not admit stays a named refusal; it is not interpreted with Clojure semantics.
+
 ## 1. What exists vs what is missing
 
 The 2026-10-29 brief said seed/04 does not implement the producer and that nothing sits between checked KIR and 04.
