@@ -1,0 +1,147 @@
+;; Fixed-function Darwin directory identity + snapshot diagnostic. The emitted
+;; Mach-O reads only an already-open directory FD 3. The caller owns the FD,
+;; validates this executable, binds the result to a trusted identity and holds
+;; exclusive control. This frame is not an authentication or an atomic seal.
+(ns seed.macos-directory-identity-snapshot-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64 (vector-assoc! v at (bit-and value 255)))
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (byte-at at value) (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16)) (byte-at (+ at 3) (u64-shift-right value 24))))
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (u32-at at (bit-and value 4294967295)) (u32-at (+ at 4) (u64-shift-right value 32))))
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v] (if (= i (vector-count b)) out (recur (+ i 1) (byte-at out (+ at i) (vector-at b i)))))))
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v] (if (= i (vector-count words)) out (recur (+ i 1) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Fixed instruction builder. Branch fixups are checked before emitting.
+(defn- ds-new [] :vector-i64 (vector-alloc 4096))
+(defn- ds-i [s :vector-i64 word :i64] :vector-i64
+  (let [n (vector-at s 0)] (if (>= n 2816) (vector-assoc! s 3 1)
+    (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
+(defn- ds-label [s :vector-i64 label :i64] :vector-i64
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
+(defn- ds-b [s :vector-i64 op :i64 label :i64] :vector-i64
+  (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) op) (vector-assoc! (+ at 2) label)
+          (vector-assoc! 1 (+ f 1)) (ds-i op)))))
+(defn- ds-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
+  (-> s (ds-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
+      (ds-i (bit-or 0xf2a00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 16) 65535) 5))))))
+(defn- ds-add [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0x91000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-sub [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xd1000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-ldr [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-str [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-lw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-lb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xf100001f (bit-or (i64-shift-left rn 5) (i64-shift-left value 10)))))
+(defn- ds-cmp [s :vector-i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0xeb00001f (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16)))))
+(defn- ds-sys [s :vector-i64 number :i64] :vector-i64 (-> s (ds-imm 16 (+ 33554432 number)) (ds-i 0xd4001001)))
+(defn- ds-hex-digit [s :vector-i64] :vector-i64
+  ;; Input nibble x11, result x11: 0..15 -> ASCII lowercase hex.
+  (-> s (ds-add 11 11 48) (ds-cmpi 11 57) (ds-add 12 11 39)
+      (ds-i 0x9a8b818b)))
+(defn- ds-finish [s :vector-i64] :vector-i64
+  (let [n (vector-at s 0) valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3))))) 0) false (recur (+ i 1))))))
+        out (loop [i 0 v (vector-alloc n)] (if (= i n) v (recur (+ i 1) (vector-assoc! v i (vector-at s (+ 256 i))))))]
+    (if (not valid) []
+      (loop [i 0 v out] (if (= i (vector-at s 1)) v
+        (let [at (+ 3072 (* i 3)) pc (vector-at s at) op (vector-at s (+ at 1))
+              delta (- (- (vector-at s (+ 8 (vector-at s (+ at 2)))) 1) pc)
+              mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
+              bits (bit-and delta mask)]
+          (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
+
+;; Already-open FD 3 is rewound, checked as a directory, and read at most
+;; 4096 bytes. A second read must return EOF; no truncated listing is emitted.
+;; Output: hex-encoded ADI2, u32 dirent-byte length, u64 zero-extended dev,
+;; u64 inode, then dirent64 bytes, all little-endian, followed by LF. The
+;; consumer checks framing, identity, all records and helper exit status.
+(defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
+(defn- ds-ar [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0x8b000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
+(defn- observer-words [] :vector-i64
+  (ds-finish (-> (ds-new)
+    (ds-cmpi 0 1) (ds-b 0x54000001 9)
+    (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048)
+    (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048) (ds-sub 31 31 2048)
+    ;; fstat64(3, stat), then require S_IFDIR.
+    (ds-imm 0 3) (ds-add 1 31 0) (ds-sys 339) (ds-b 0x54000002 9)
+    (ds-lh 8 31 4) (ds-i 0x12140d09) (ds-imm 10 16384) (ds-cmp 9 10) (ds-b 0x54000001 9)
+    ;; Darwin stat64 dev@0 (u32), inode@8 (u64), from this same open FD.
+    (ds-lw 24 31 0) (ds-ldr 25 31 8)
+    ;; A caller could pass an already-consumed FD: force cursor to zero.
+    (ds-imm 0 3) (ds-imm 1 0) (ds-imm 2 0) (ds-sys 199) (ds-b 0x54000002 9)
+    (ds-cmpi 0 0) (ds-b 0x54000001 9)
+    ;; First chunk, followed by a second read that must reach EOF.
+    (ds-imm 8 0) (ds-str 8 31 256)
+    (ds-imm 0 3) (ds-add 1 31 536) (ds-imm 2 4096) (ds-add 3 31 256)
+    (ds-sys 344) (ds-b 0x54000002 9) (ds-imm 8 4096) (ds-cmp 0 8) (ds-b 0x54000008 9)
+    (ds-i 0xaa0003f3)
+    (ds-imm 0 3) (ds-add 1 31 2048) (ds-add 1 1 2048) (ds-add 1 1 1024)
+    (ds-imm 2 4096) (ds-add 3 31 256) (ds-sys 344) (ds-b 0x54000002 9)
+    (ds-cmpi 0 0) (ds-b 0x54000001 9)
+    (ds-imm 8 843662401) (ds-sw 8 31 512) (ds-sw 19 31 516)
+    (ds-str 24 31 520) (ds-str 25 31 528)
+    ;; Hex framing avoids depending on UTF-8 interpretation of binary inodes.
+    (ds-add 21 31 512) (ds-add 22 19 24)
+    (ds-add 20 31 2048) (ds-add 20 20 2048) (ds-add 20 20 2048) (ds-add 20 20 2048) (ds-add 20 20 2048)
+    (ds-i 0xaa1403f8) (ds-imm 23 0)
+    (ds-label 1) (ds-cmp 23 22) (ds-b 0x54000000 2)
+    (ds-lb 10 21 0) (ds-i 0xd344fd4b) (ds-hex-digit) (ds-sb 11 20 0)
+    (ds-imm 12 15) (ds-i 0x8a0c014b) (ds-hex-digit) (ds-sb 11 20 1)
+    (ds-add 21 21 1) (ds-add 20 20 2) (ds-add 23 23 1) (ds-b 0x14000000 1)
+    (ds-label 2) (ds-imm 8 10) (ds-sb 8 20 0) (ds-ar 25 22 22) (ds-add 25 25 1)
+    (ds-imm 0 1) (ds-i 0xaa1803e1) (ds-i 0xaa1903e2)
+    (ds-sys 4) (ds-b 0x54000002 9) (ds-cmp 0 25) (ds-b 0x54000001 9)
+    (ds-imm 0 0) (ds-sys 1)
+    (ds-label 9) (ds-imm 0 1) (ds-sys 1) (ds-i 0xd4200000))))
+
+(defn- body-at [v :vector-i64 at :i64] :vector-i64
+  (-> v (u32-at at 4277009103) (u32-at (+ at 4) 16777228) (u32-at (+ at 12) 2)
+      (u32-at (+ at 16) 7) (u32-at (+ at 20) 344) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72) (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296) (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT") (u64-at (+ at 128) 4294967296) (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES) (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72) (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680) (u64-at (+ at 208) IMAGE-BYTES) (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1) (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24) (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24) (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (u32-at (+ at 328) 2147483682) (u32-at (+ at 332) 48) (words-at (+ at 1024) (observer-words))))
+(defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (and (= (vector-count reply) (+ IMAGE-BYTES 5)) (= (vector-at reply 0) 0)
+       (= (vector-at reply 1) 70) (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
+       (loop [i 0] (if (= i IMAGE-BYTES) true
+         (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i))) (recur (+ i 1)) false)))))
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0") extra (typed-cap-call :cli/args :string :string "1")
+        length (string-byte-length path) offset (+ 7 length)]
+    (if (or (= length 0) (> length 255) (not (= extra "")) (= (vector-count (observer-words)) 0)) 2
+      (let [v (-> (vector-alloc (+ offset IMAGE-BYTES)) (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                  (byte-at 3 50) (byte-at 4 0) (byte-at 5 66) (text-at 6 path) (byte-at (+ 6 length) 0) (body-at offset))
+            reply (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v))]
+        (if (acknowledged? v offset (vector-i64-from-bytes reply)) 0 3)))))
