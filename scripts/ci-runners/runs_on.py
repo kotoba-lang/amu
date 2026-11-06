@@ -21,15 +21,15 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 # file -> hosted labels that are covered (others stay literal).
 COVERED = {
-    "selfhost-native.yml": {"ubuntu-24.04-arm", "ubuntu-latest", "${{ matrix.runner }}"},
-    "native-definition-graph.yml": {"ubuntu-24.04-arm", "ubuntu-latest", "${{ matrix.runner }}"},
+    "selfhost-native.yml": {"ubuntu-24.04-arm", "ubuntu-24.04", "${{ matrix.runner }}"},
+    "native-definition-graph.yml": {"ubuntu-24.04-arm", "ubuntu-24.04", "${{ matrix.runner }}"},
     "native-definition-build.yml": {"${{ matrix.runner }}"},
     "native-definition-cid.yml": {"${{ matrix.runner }}"},
     "native-definition-cids.yml": {"${{ matrix.runner }}"},
     "native-checked-definition.yml": {"${{ matrix.runner }}"},
     "native-checked-source.yml": {"${{ matrix.runner }}"},
     "native-capability-names.yml": {"ubuntu-24.04-arm"},
-    "mac-selfhost-aiueos.yml": {"ubuntu-24.04-arm", "ubuntu-latest", "macos-15"},
+    "mac-selfhost-aiueos.yml": {"ubuntu-24.04-arm", "ubuntu-24.04", "macos-15"},
 }
 # Never covered, whatever the file: jobs with secrets or write tokens.
 # (file, job) that stay hosted: they need Docker-in-job or Chrome, which the runner image does not provide.
@@ -44,7 +44,7 @@ X86 = f"vars.AMU_RUNNER_PROFILE == 'selfhosted' && {GUARD}"
 
 EXPR = {
     "ubuntu-24.04-arm": "${{ %s && 'amu-linux-arm64' || 'ubuntu-24.04-arm' }}" % ARM,
-    "ubuntu-latest": "${{ %s && 'amu-linux-x86_64' || 'ubuntu-latest' }}" % X86,
+    "ubuntu-24.04": "${{ %s && 'amu-linux-x86_64' || 'ubuntu-24.04' }}" % X86,
     "macos-15": "${{ %s && 'amu-macos-arm64' || 'macos-15' }}" % ARM,
     "${{ matrix.runner }}": (
         "${{ matrix.runner == 'ubuntu-24.04-arm' && (%s && 'amu-linux-arm64' || matrix.runner)"
