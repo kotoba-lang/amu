@@ -55,8 +55,10 @@
 (defn- mh-extra-start [raw-bytes :i64] :i64
   (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4))
      FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES FS2-LOCK-BYTES FS2-EF-BYTES))
+(defn- mh-host? [mode :string] :bool
+  (or (string=? mode "amu-cli-host") (string=? mode "amu-cli-host-cwd")))
 (defn- mh-data-bytes [mode :string] :i64
-  (if (or (string=? mode "amu-cli-host") (amu-program-metal? mode)) 32768 DATA-BYTES))
+  (if (or (mh-host? mode) (amu-program-metal? mode)) 32768 DATA-BYTES))
 ;; Bytes after __DATA: the dyld bind stream of the Metal profile, in __LINKEDIT.
 (defn- mh-tail-bytes [mode :string] :i64
   (if (amu-program-metal? mode) METAL-BIND-BYTES 0))
@@ -165,8 +167,9 @@
    0xf900c668
    ;; The pure helper setup installs four additional ABI callbacks and then
    ;; invokes the existing bounded pool setup at 2048.
-   (bl-direct 1204 (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes)
-                     (if (string=? mode "fs2-cli-stdio-cwd") (+ (mh-extra-start raw-bytes) FS35-BYTES) SLICE-SETUP-START)))
+   (bl-direct 1204 (if (string=? mode "amu-cli-host-cwd") (+ (mh-extra-start raw-bytes) 8192)
+                    (if (string=? mode "amu-cli-host") (mh-extra-start raw-bytes)
+                     (if (string=? mode "fs2-cli-stdio-cwd") (+ (mh-extra-start raw-bytes) FS35-BYTES) SLICE-SETUP-START))))
    (bl-direct 1208 (+ RAW-START entry-offset))
    ;; The full compiler is a CLI: propagate its actual exit status after
    ;; check/compile. Short fixed fixtures keep their expected-result check.
@@ -1044,7 +1047,7 @@
   (let [raw-bytes (- (vector-count raw) 5)
         fs2-start (+ RAW-START (* 4 (quot (+ raw-bytes 3) 4)))
         total-bytes (+ text-bytes (mh-data-bytes mode))
-        host (string=? mode "amu-cli-host")
+        host (mh-host? mode)
         fs35 (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
                  (string=? mode "fs2-cli-stdio-read") (amu-program-fs35? mode))
         extra (mh-extra-start raw-bytes)
@@ -1152,10 +1155,13 @@
                   fs2-start))
       (generated-at (+ at RAW-START) raw))]
     (if host
-      (-> result
+      (let [with-host (-> result
           (words-at (+ at extra) (mh-startup-words extra))
           (words-at (+ at extra 64)
-            (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))
+            (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))]
+        (if (string=? mode "amu-cli-host-cwd")
+          (words-at with-host (+ at extra 8192) (mh-cwd-scope-words (+ extra 8192) true))
+          with-host))
       (if (amu-program-mode? mode)
         (let [start (+ extra 512)]
           (let [program (-> result
@@ -1179,7 +1185,7 @@
           (let [with-fs (words-at result (+ at extra)
                          (fs35-helper-words extra (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))]
             (cond (string=? mode "fs2-cli-stdio-cwd")
-                    (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES)))
+                    (words-at with-fs (+ at extra FS35-BYTES) (mh-cwd-scope-words (+ extra FS35-BYTES) false))
                   (string=? mode "fs2-cli-stdio-read")
                     (words-at with-fs (+ at extra FS35-BYTES) (mh-stdin-words (+ extra FS35-BYTES) extra))
                   :else with-fs))
@@ -1202,7 +1208,7 @@
         mode (typed-cap-call :cli/args :string :string "2")
         general (or (string=? mode "fs2-cli-stdio-general") (string=? mode "fs2-cli-stdio-cwd")
                     (string=? mode "fs2-cli-stdio-read") (string=? mode "fs2-cli-stdio-general-command")
-                    (string=? mode "amu-cli-host") (amu-program-mode? mode))
+                    (mh-host? mode) (amu-program-mode? mode))
         entry-text (if general (typed-cap-call :cli/args :string :string "3") "")
         selected-entry (if general (decimal-entry entry-text) 0)
         admitted (or (string=? mode "stdout")
@@ -1228,24 +1234,28 @@
             (string-concat fs2-prefix (string-concat "A" (string-concat
               (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
           [0 70 83 50 0])
-        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host") 8192
+        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host-cwd") 9216
+          (if (string=? mode "amu-cli-host") 8192
           (if (amu-program-mode? mode)
             (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
               (if (amu-program-fs35? mode) FS35-BYTES 0)
               (if (amu-program-metal? mode) METAL-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
-              (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0)))))
+              (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0))))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
-            (and (string=? mode "amu-cli-host")
+            (and (mh-host? mode)
               (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
                 (or (= words 0) (> (+ 64 (* words 4)) 8192))))
+            (and (string=? mode "amu-cli-host-cwd")
+              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) 8192) true))]
+                (or (= words 0) (> (* words 4) 1024))))
             (and (amu-program-mode? mode)
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
             (and (string=? mode "fs2-cli-stdio-cwd")
-              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES)))]
+              (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES) false))]
                 (or (= words 0) (> (* words 4) 1024))))
             (and (string=? mode "fs2-cli-stdio-read")
               (let [words (vector-count (mh-stdin-words (+ (mh-extra-start raw-bytes) FS35-BYTES) (mh-extra-start raw-bytes)))]
@@ -1447,7 +1457,11 @@
 ;; alias-free WorkingDirectory before exec. fstat64 then requires a directory
 ;; owned by the process effective UID with exact mode 0700 and no ACL. The
 ;; path used to enter it remains a host duty. This is not a process sandbox.
-(defn- mh-cwd-scope-words [base :i64] :vector-i64
+(defn- mh-cwd-host-grant [s :vector-i64 host :bool] :vector-i64
+  (if host
+    (-> s (mh-ldr 8 19 16) (mh-imm 9 1048576) (mh-i 0xaa090108) (mh-str 8 19 16))
+    s))
+(defn- mh-cwd-scope-words [base :i64 host :bool] :vector-i64
   (mh-finish (-> (mh-new base)
     (mh-sub 31 31 384) (mh-str 30 31 16)
     ;; fcntl(3, F_GETFD): success means FD3 is occupied; only EBADF is safe.
@@ -1488,6 +1502,9 @@
     (mh-ldr 8 31 336) (mh-cmpi 8 0) (mh-b 0x54000001 2)
     (mh-ldr 8 31 344) (mh-cmpi 8 0) (mh-b 0x54000001 2)
     (mh-mov 7 19) (mh-call SLICE-SETUP-START)
+    ;; The scoped host needs the same process capability as amu-cli-host;
+    ;; ordinary fs2-cli-stdio-cwd must retain its previous grant mask.
+    (mh-cwd-host-grant host)
     (mh-ldr 30 31 16) (mh-add 31 31 384) (mh-i 0xd65f03c0)
     ;; An unexpected descriptor is ours; close it and refuse.
     (mh-label 1) (mh-sys 6)
