@@ -47,3 +47,17 @@ A successfully compiled and executed old-slot mutant must return failure.
 Both native ISAs run this gate in addition to the existing zeroing controls.
 New source/root/public/controller images require current native qualification;
 the historical full31 receipt above does not qualify this combined source.
+
+## macOS host profiles (AWAI-156)
+
+`amu-cli-host` and `amu-cli-host-cwd` carry the same FS35 helper as
+`fs2-cli-stdio-general`, placed after the host service (and, for the cwd
+profile, after its scope setup). Wire-35 string requests are routed as follows:
+FS2-framed strings go to the scoped FS2 chain as before; strings starting with
+`/` go to the FS35 helper (legacy grammar beneath FD3, `FLOCK_SEP`/`UNLOCK_SEP`
+with `O_RESOLVE_BENEATH|O_NOFOLLOW_ANY`, one lock per process); every other
+wire-35 string stays the host ABI error (exit 70). Without an FD3 scope the
+lock is refused; no new authority or wire is added. The host gate
+(`scripts/seed/check-macos-cli-host-native.py`) covers acquire/reentry/wrong
+unlock/symlink/escape/release on both profiles, the no-FD3 refusal, and a
+built mutant with the route removed that must hit the host ABI error again.

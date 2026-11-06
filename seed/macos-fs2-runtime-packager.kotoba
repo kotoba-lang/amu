@@ -1158,7 +1158,10 @@
       (let [with-host (-> result
           (words-at (+ at extra) (mh-startup-words extra))
           (words-at (+ at extra 64)
-            (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))]
+            (mh-service-words (+ extra 64) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)
+              (+ extra 9216)))
+          (words-at (+ at extra 9216)
+            (fs35-helper-words (+ extra 9216) (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES))))]
         (if (string=? mode "amu-cli-host-cwd")
           (words-at with-host (+ at extra 8192) (mh-cwd-scope-words (+ extra 8192) true))
           with-host))
@@ -1234,19 +1237,18 @@
             (string-concat fs2-prefix (string-concat "A" (string-concat
               (typed-cap-call :cli/args :string :string "4") (string-from-utf8 (bytes-from-vector-i64 [0])))))))
           [0 70 83 50 0])
-        fs2-end (+ (mh-extra-start raw-bytes) (if (string=? mode "amu-cli-host-cwd") 9216
-          (if (string=? mode "amu-cli-host") 8192
+        fs2-end (+ (mh-extra-start raw-bytes) (if (mh-host? mode) (+ 9216 FS35-BYTES)
           (if (amu-program-mode? mode)
             (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
               (if (amu-program-fs35? mode) FS35-BYTES 0)
               (if (amu-program-metal? mode) METAL-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
-              (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0))))))
+              (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
         total-bytes (+ text-bytes (mh-data-bytes mode) (mh-tail-bytes mode))]
     (if (or (= length 0) (> length 255) (not admitted)
             (and (mh-host? mode)
-              (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0))]
+              (let [words (vector-count (mh-service-words (+ (mh-extra-start raw-bytes) 64) 0 0))]
                 (or (= words 0) (> (+ 64 (* words 4)) 8192))))
             (and (string=? mode "amu-cli-host-cwd")
               (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) 8192) true))]
@@ -1514,7 +1516,7 @@
 ;; Reply: status byte (0 success), payload; errors are [1, Darwin errno, 0].
 ;; wire35 owns file/host-info operations, wire20 owns only child execution.
 ;; Scratch is private to this host image at ctx+16384, outside the old ABI.
-(defn- mh-service-words [base :i64 fallback :i64] :vector-i64
+(defn- mh-service-words [base :i64 fallback :i64 fs35 :i64] :vector-i64
   (let [s (-> (mh-new base)
     ;; Other capabilities retain the existing CLI/stdio dispatch.
     (mh-cmpi 1 35) (mh-b 0x54000000 116)
@@ -1582,8 +1584,16 @@
     (mh-label 123)
     ;; Wire35 string requests must be FS2; the private AMUH host protocol
     ;; accepts byte vectors only. Wire20's string AMUH remains unchanged.
+    ;; FS35 (scoped legacy grammar beneath FD3): only "/"-rooted text goes to
+    ;; the FS35 helper; any other wire35 string is a host ABI error.
     (mh-cmpi 28 35) (mh-b 0x54000001 124)
-    (mh-ldr 8 31 96) (mh-cmpi 8 1) (mh-b 0x54000000 98)
+    (mh-ldr 8 31 96) (mh-cmpi 8 1) (mh-b 0x54000001 124)
+    (mh-lb 8 21 0) (mh-cmpi 8 47) (mh-b 0x54000001 98)
+    (mh-mov 0 19) (mh-mov 1 28)
+    (mh-ldr 2 31 96) (mh-ldr 3 31 104) (mh-mov 4 27)
+    (mh-i 0xa94573fb) (mh-i 0xa9446bf9) (mh-i 0xa94363f7)
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 128) (mh-jump fs35)
     (mh-label 124)
     (mh-lb 8 21 0) (mh-b (bit-or 0xb5000000 8) 90)
     (mh-lb 8 21 1) (mh-cmpi 8 65) (mh-b 0x54000001 90)
