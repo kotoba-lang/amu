@@ -1,0 +1,5 @@
+(ns merge-metal-probe (:export [main]))
+(defn main [] :i64
+  (let [f (__r6-as [:fn [[:i64 :i64 :i64] :i64]] (typed-cap-call :gpu/compute :string :string ""))
+        p (f 4 0 0) resolver (f 0 p 0) wrote (f 1 (+ p 8) 12345) read (f 0 (+ p 8) 0)]
+    (if (and (> p 0) (> resolver 0) (= read 12345)) 0 1)))

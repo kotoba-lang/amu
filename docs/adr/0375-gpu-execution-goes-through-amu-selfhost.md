@@ -104,6 +104,13 @@ The owner's answers on 2026-10-24:
    Mach-O loader for libSystem and Metal.framework, with kernels in MSL.
    W through the browser is the other route.
 
+   **Amended by the owner, 2026-11-04 (JUN-819, ADR 0405): 「dyld で進める」.**
+   Metal.framework has no image on disk; its code exists only in the dyld
+   shared cache. So on macOS, and only for OS frameworks, dyld resolves the
+   imports of an Amu-built Mach-O, and decision 1's "not the system's dynamic
+   loader" does not apply there. The executor is still an Amu-built program,
+   with no C compiler, linker, C source or C loader.
+
 ## Measured: what B's loader must bring up (2026-10-24)
 
 On gad (Ubuntu 24.04, glibc 2.39, Mesa 25.2.8, the B70's Mesa version), the
