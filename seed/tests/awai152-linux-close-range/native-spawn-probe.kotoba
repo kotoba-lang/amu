@@ -1,0 +1,8 @@
+(ns spawn-probe (:export [main]))
+(defn main [] :i64
+  (let [mode (typed-cap-call 38 :string :string "0")
+        cmd (if (= mode "missing") "/definitely-missing-awai"
+          "/bin/shARG_SEP-cARG_SEPtest ! -e /proc/self/fd/50 && test ! -e /proc/self/fd/200 && test \"$(pwd -P)\" = \"$AWAI_SCOPE\" && /bin/grep -q '^NoNewPrivs:[[:space:]]*1' /proc/self/status && printf ran > marker && printf ok")
+        result (typed-cap-call :process/spawn :string :string cmd)
+        written (typed-cap-call :io/write :string :string result)]
+    0))

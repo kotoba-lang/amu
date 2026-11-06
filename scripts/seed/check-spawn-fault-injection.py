@@ -11,6 +11,8 @@ gate runs the same guest under a seccomp profile that makes one of them return E
   --fault close_range  -> spawn/isolation-unavailable, no marker file
   --fault fchdir       -> spawn/setup-failed, no marker file
   --fault none         -> the program runs (answer "0", the marker file exists): the control
+  --fault legacy       -> flags 4 gets EINVAL; flags 0 works; the program runs
+  --fault legacy-denied -> flags 4 gets EINVAL; flags 0 gets EPERM; no marker
 
 The image itself installs its own filter only after forking the helper, so the outer profile is
 the one the child meets. prctl and dup3 are not injected: the runtime and the container's process
@@ -32,7 +34,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "seed/x86_64-kx64-runner.kotoba"
 S = "ARG_SEP"
-WANT = {"close_range": b"spawn/isolation-unavailable", "fchdir": b"spawn/setup-failed"}
+WANT = {"close_range": b"spawn/isolation-unavailable", "fchdir": b"spawn/setup-failed",
+        "legacy-denied": b"spawn/isolation-unavailable"}
 GUEST = ('(ns t (:export [main]))\n'
          '(defn main [] :i64\n'
          '  (let [a (typed-cap-call :process/spawn :string :string "/bin/sh' + S + '-c' + S + 'echo ran > mark")\n'
@@ -47,6 +50,13 @@ def pin(path):
 
 def profile(fault):
     # everything allowed except the one injected failure: this container exists only for the case
+    if fault in ("legacy", "legacy-denied"):
+        calls = [{"names": ["close_range"], "action": "SCMP_ACT_ERRNO", "errnoRet": 22,
+                  "args": [{"index": 2, "value": 4, "op": "SCMP_CMP_EQ"}]}]
+        if fault == "legacy-denied":
+            calls.append({"names": ["close_range"], "action": "SCMP_ACT_ERRNO", "errnoRet": 1,
+                          "args": [{"index": 2, "value": 0, "op": "SCMP_CMP_EQ"}]})
+        return {"defaultAction": "SCMP_ACT_ALLOW", "architectures": ["SCMP_ARCH_AARCH64"], "syscalls": calls}
     return {"defaultAction": "SCMP_ACT_ALLOW", "architectures": ["SCMP_ARCH_AARCH64"],
             "syscalls": [{"names": [fault], "action": "SCMP_ACT_ERRNO", "errnoRet": 1}]}
 
@@ -76,7 +86,7 @@ def main(compiler, fault, output):
            "KEXE_ALLOW": "20,35,37", "KEXE_CAP_RESOURCES_20": "/bin/sh", "KEXE_CAP_RESOURCES_35": str(scope)}
     x = subprocess.run([str(image)], env=env, capture_output=True, timeout=120)
     mark = scope / "mark"
-    if fault == "none":
+    if fault in ("none", "legacy"):
         assert x.returncode == 0 and x.stdout.startswith(b"0\n") and mark.read_text() == "ran\n", (x.returncode, x.stdout[-200:], x.stderr[-200:])
         verdict = "program ran"
     else:
@@ -97,12 +107,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--write-profile", nargs=2, metavar=("FAULT", "PATH"), help="write the seccomp profile for FAULT and exit")
     p.add_argument("--compiler", type=Path)
-    p.add_argument("--fault", choices=("close_range", "fchdir", "none"))
+    p.add_argument("--fault", choices=("close_range", "fchdir", "legacy", "legacy-denied", "none"))
     p.add_argument("--output", type=Path)
     a = p.parse_args()
     if a.write_profile:
         fault, path = a.write_profile
-        assert fault in WANT, fault
+        assert fault in (*WANT, "legacy"), fault
         Path(path).write_text(json.dumps(profile(fault), indent=2) + "\n")
     else:
         assert a.compiler and a.fault and a.output, "--compiler, --fault and --output are required"
