@@ -139,7 +139,30 @@
           (string=? (string-substring src (t-start r (kid-start ks i)) (t-end r (- (kid-end ks i) 1))) feature) (+ i 1)
           :else (recur (+ i 2)))))
 
-(defn- rw [src :string r :vector-i64 a :i64 b :i64 n :i64 pct :bool] :string
+;; the name of the first (ns NAME ...) form, "" when there is none
+(defn- ns-name [src :string r :vector-i64] :string
+  (let [n (cst/tok-count r)]
+    (loop [j 0]
+      (if (>= (+ j 1) n)
+        ""
+        (if (and (= (t-kind r j) 2) (= (t-sub r j) 0))
+          (let [h (skip-layout r (+ j 1) n)]
+            (if (and (< h n) (= (t-kind r h) 7) (string=? (tok-text src r h) "ns"))
+              (let [m (skip-layout r (+ h 1) n)]
+                (if (and (< m n) (= (t-kind r m) 7)) (tok-text src r m) ""))
+              (recur (+ j 1))))
+          (recur (+ j 1)))))))
+
+;; ::name (no alias) becomes :NS/name; "" when it is not a plain auto-resolved keyword or NS is unknown
+(defn- auto-kw [t :string ns :string] :string
+  (if (and (> (string-length ns) 0)
+           (> (string-length t) 2)
+           (string=? (string-substring t 0 2) "::")
+           (not (string-contains? t "/")))
+    (string-concat (string-concat (string-concat ":" ns) "/") (string-substring t 2 (string-length t)))
+    ""))
+
+(defn- rw [src :string r :vector-i64 a :i64 b :i64 n :i64 pct :bool ns :string] :string
   (loop [j a out ""]
     (if (>= j b)
       out
@@ -154,7 +177,7 @@
                 mx (max-pct src r (+ j 1) (- e 1))]
             (if (< mx 0)
               "@@refuse@@"
-              (let [inner (rw src r (+ j 1) (- e 1) n true)]
+              (let [inner (rw src r (+ j 1) (- e 1) n true ns)]
                 (if (refused? inner)
                   inner
                   (recur e (string-concat out (string-concat (string-concat (string-concat "(fn [" (params mx)) "] (") (string-concat inner "))"))))))))
@@ -173,8 +196,8 @@
                         fb (kid-end ks k2)
                         vec? (and splice (= (t-kind r fa) 2) (= (t-sub r fa) 1))
                         piece (if vec?
-                                (rw src r (+ fa 1) (- fb 1) n pct)
-                                (rw src r fa fb n pct))]
+                                (rw src r (+ fa 1) (- fb 1) n pct ns)
+                                (rw src r fa fb n pct ns))]
                     (if (refused? piece) piece (recur e (string-concat out piece))))))))
 
           (and (= kd 8) (string=? (tok-text src r j) "'") (< (skip-layout r (+ j 1) b) b) (= (t-kind r (skip-layout r (+ j 1) b)) 7))
@@ -184,6 +207,9 @@
           (and (= kd 7) pct (> (pct-index (tok-text src r j)) 0))
           (recur (+ j 1) (string-concat out (string-concat "p" (digits (pct-index (tok-text src r j))))))
 
+          (and (= kd 7) (> (string-length (auto-kw (tok-text src r j) ns)) 0))
+          (recur (+ j 1) (string-concat out (auto-kw (tok-text src r j) ns)))
+
           :else (recur (+ j 1) (string-concat out (tok-text src r j))))))))
 
 ;; the converted source, or "" when the input is empty, does not read, or is refused
@@ -191,7 +217,7 @@
   (let [r (cst/read src)]
     (if (not (= (vector-at r 0) 0))
       ""
-      (let [out (rw src r 0 (cst/tok-count r) (cst/tok-count r) false)]
+      (let [out (rw src r 0 (cst/tok-count r) (cst/tok-count r) false (ns-name src r))]
         (if (refused? out) "" out)))))
 
 ;; ---------------------------------------------------------------- self-gate
@@ -228,6 +254,11 @@
      (same? (convert "(f \"'x\" '(1 2))") "(f \"'x\" '(1 2))")
      (same? (convert "(f #(g 'x %))") "(f (fn [p1] (g (quote x) p1)))")))
 
+(defn- case-auto-keyword [] :i64
+  (+ (same? (convert "(ns a.b)\n(f ::x {::y 1})") "(ns a.b)\n(f :a.b/x {:a.b/y 1})")
+     (same? (convert "(ns a.b)\n(f ::al/x \"::s\")") "(ns a.b)\n(f ::al/x \"::s\")")
+     (same? (convert "(f ::x)") "(f ::x)")))
+
 (defn- case-refusals [] :i64
   (+ (same? (convert "(map #(apply f %&) xs)") "")
      (same? (convert "(map #(#(inc %) %) xs)") "")
@@ -236,4 +267,4 @@
      (same? (convert "") "")))
 
 (defn main [] :i64
-  (+ (case-anon-fn) (case-discard) (case-reader-conditional) (case-unchanged) (case-quote) (case-refusals)))
+  (+ (case-anon-fn) (case-discard) (case-reader-conditional) (case-unchanged) (case-quote) (case-auto-keyword) (case-refusals)))
