@@ -58,6 +58,15 @@ apply to end-user apps.
    closure, never runs in CDCI, and never qualifies a C-free surface. This
    does not admit a C loader, a C runtime object or any other foreign code.
    Owner decision, 2026-10-22.
+7. **A declared import of the OS's own system library is platform.** On
+   Windows (`ntdll`, `kernel32`) and on iOS and macOS (`libSystem`), an image,
+   including the compiler, may import that library when the import is declared
+   and a native gate checks it against the image in both directions. Linux stays
+   loaderless with no imports. C runtimes, bundled libraries, our own loaders
+   and any other library stay refused. See
+   [ADR 0409](adr/0409-declared-os-library-imports-are-platform.md), which also
+   records that moving macOS from raw system calls to `libSystem` is undecided.
+   Owner decision, 2026-11-06.
 
 ## Migration gates
 
