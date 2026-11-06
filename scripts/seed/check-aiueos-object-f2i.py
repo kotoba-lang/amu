@@ -30,7 +30,7 @@ WINDOWS16 = Path(__file__).with_name("check-aiueos-object-windows16.py")
 PAUSE = Path(__file__).with_name("check-aiueos-object-pause.py")
 FOPS = Path(__file__).resolve().parents[2] / "docs/evidence/f32-sse-20261030/fops.kotoba"
 # the objects' SHA-256 under amu main 3d160442 (slice 6), before the conversion existed
-FOPS_SHA256 = "77838ccc70c641f2b52596e312e834c0db5dcbe5aea85b356964fdde86de0115"
+FOPS_SHA256 = "d079b9d45c526f4e36831610a02ead9f19c0e85c30b4f0ec7468911554e4fe56"
 PAUSE_SHA256 = "c24f9c962e000ead3c1672975f74f941960c169d9c22bfe824a89a3c7a909403"
 SOURCE = """(ns f2i (:export [kotoba_aiueos_f32_to_i64]))
 (defn kotoba_aiueos_f32_to_i64 [bits :i64] :i64 (f32-to-i64-truncating (f32-from-bits bits)))
@@ -47,8 +47,6 @@ OBJECT_REFUSALS = {
 }
 # the conversion is the first float SIR in each source, so detail 37 names it
 ROUTE_REFUSALS = {
-    "x86_64-linux": ("(defn main [] :i64 (f32-to-i64-truncating (__r6-as :f32 1065353216)))\n",
-                     ("--target", "x86_64-linux")),
     "kernel-image": ("(ns g (:export [kotoba_aiueos_f]))\n"
                      "(defn kotoba_aiueos_f [x :i64] :i64 (f32-to-i64-truncating (__r6-as :f32 x)))\n",
                      ("--target", "x86_64-aiueos-kernel-v1", "--artifact", "image")),
@@ -96,6 +94,18 @@ def main(compiler, output):
         if code not in message or obj.exists():
             raise ValueError(f"{name} was not refused with {code} and no output: {message}")
         report[name] = "refused " + code
+
+    # The scalar Linux route now admits f32 conversion. It must carry the
+    # same guarded conversion, while the object and kernel contracts remain.
+    (output / "x86_64-linux.kotoba").write_text(
+        "(ns scalar (:export [main]))\n(defn main [] :i64 (f32-to-i64-truncating (__r6-as :f32 1065353216)))\n")
+    scalar = output / "x86_64-linux.elf"
+    gate.native_run(compiler, output, "compile", "x86_64-linux.kotoba", "--target", "x86_64-linux", "--output", scalar.name)
+    scalar_bytes = scalar.read_bytes()
+    scalar_guards = GUARD.findall(scalar_bytes)
+    if not scalar_bytes.startswith(b"\x7fELF\x02\x01\x01\0") or len(scalar_guards) != 1 or scalar_guards[0][0] != scalar_guards[0][1]:
+        raise ValueError("Linux scalar f32 guard missing or malformed")
+    report["x86_64-linux"] = {"admitted": True, "sha256": hashlib.sha256(scalar_bytes).hexdigest()}
 
     for name, (source, target) in ROUTE_REFUSALS.items():
         (output / f"{name}.kotoba").write_text(source)

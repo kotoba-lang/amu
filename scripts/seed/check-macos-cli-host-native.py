@@ -50,9 +50,11 @@ def main(out):
               for case in ("info", "files", "spawn", "refusals", "fds", "timeout", "loop", "write-failure")}
     calls = []
 
-    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None):
+    def run(case, *args, expected=None, inherited=False, alarm=False, file_limit=None, exit_code=0, diagnostic=None, scope_fd=None, cwd=None):
         # Intentionally no inherited directory FD, external environment or PATH.
         def inherited_setup():
+            if scope_fd is not None:
+                os.dup2(scope_fd, 3, inheritable=True)
             if inherited:
                 os.dup2(secret, 3)
                 os.dup2(secret, 91)
@@ -63,10 +65,10 @@ def main(out):
                 signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
                 resource.setrlimit(resource.RLIMIT_FSIZE, (file_limit, file_limit))
 
-        r = subprocess.run([str(images[case]), *map(str, args)], cwd=out,
+        r = subprocess.run([str(images[case]), *map(str, args)], cwd=out if cwd is None else cwd,
                            env={"PATH": "/nonexistent", "LANG": "C"},
-                           capture_output=True, timeout=20, close_fds=not inherited,
-                           preexec_fn=inherited_setup if inherited or alarm or file_limit is not None else None)
+                           capture_output=True, timeout=20, close_fds=not (inherited or scope_fd is not None),
+                           preexec_fn=inherited_setup if inherited or alarm or file_limit is not None or scope_fd is not None else None)
         name = f"{len(calls):02d}-{case}"
         (out / (name + ".stdout")).write_bytes(r.stdout)
         (out / (name + ".stderr")).write_bytes(r.stderr)
@@ -155,10 +157,55 @@ def main(out):
     (out / "bad-abi.kotoba").write_text('(ns bad (:export [main]))\n(defn main [] :i64 (let [s (typed-cap-call :fs/app-data :string :string "anything")] 0))\n')
     images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
     run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
+    # String wire 35 in the macOS host profiles keeps the scoped FS2 grammar only.
+    # The legacy absolute-path lock grammar ("/pathFLOCK_SEP", "/pathUNLOCK_SEP") is
+    # served by the FS35 helper, which the host layouts do not contain: any string
+    # request that is not FS2-framed is a host ABI error (the Linux runtime and the
+    # FS35 profiles keep the scoped legacy lock). Adding the FS35 helper to the host
+    # layout is a follow-up. This diagnostic supplies FD3 explicitly: the host startup
+    # does not yet establish an FS2 scope. It is not evidence of automatic host setup.
+    (out / "string-fs2-lock.kotoba").write_text(
+        '(ns string-fs2-lock (:export [main]))\n'
+        '(defn main [] :i64\n'
+        '  (let [d (typed-cap-call 35 :string :string "\\u0000FS2\\u0000D/regular\\u0000")]\n'
+        '    (if (= d "\\u0000FS2\\u00001")\n'
+        '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2\\n")] 0) 1)))\n')
+    (out / "legacy-lock.kotoba").write_text(
+        '(ns legacy-lock (:export [main]))\n'
+        '(defn main [] :i64 (let [l (typed-cap-call 35 :string :string "/regularFLOCK_SEP")] 0))\n')
+    images["legacy-lock"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock", packager, "amu-cli-host")
+    images["legacy-lock-cwd"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock-cwd", packager, "amu-cli-host-cwd")
+    images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
+    images["string-fs2-lock-cwd"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock-cwd", packager, "amu-cli-host-cwd")
+    images["spawn-cwd"] = build(["seed/tests/macos-cli-host-spawn.kotoba", "seed/macos-cli-api.kotoba"], "spawn-cwd", packager, "amu-cli-host-cwd")
+    scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.set_inheritable(scope_fd, True)
+        run("string-fs2-lock", expected=b"PASS_STRING_FS2\n", scope_fd=scope_fd)
+        run("legacy-lock", exit_code=70, diagnostic=b"EHOST invalid host ABI", scope_fd=scope_fd)
+        # The opt-in cwd profile must open its own FD3, and must refuse an
+        # already occupied FD3 rather than silently replacing it.
+        run("string-fs2-lock-cwd", expected=b"PASS_STRING_FS2\n")
+        run("legacy-lock-cwd", exit_code=70, diagnostic=b"EHOST invalid host ABI")
+        run("string-fs2-lock-cwd", scope_fd=scope_fd, exit_code=70)
+    finally:
+        os.close(scope_fd)
+    (out / "child.stdout").unlink()
+    run("spawn-cwd", out, images["info"], expected=b"PASS_NATIVE_HOST_SPAWN\n")
+    assert (out / "child.stdout").read_bytes() == (str(images["info"]) + "\n").encode()
+    (out / "child.stdout").unlink()
+    run("spawn-cwd", out, images["fds"], expected=b"PASS_NATIVE_HOST_SPAWN\n")
+    assert (out / "child.stdout").read_bytes() == b"PASS_NATIVE_CHILD_FDS_CLOSED\n"
+    # Scope startup must refuse a cwd that grants group or other access.
+    unsafe_cwd = out / "unsafe-cwd"
+    unsafe_cwd.mkdir(mode=0o700)
+    unsafe_cwd.chmod(0o755)
+    run("string-fs2-lock-cwd", cwd=unsafe_cwd, exit_code=70)
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
-                  calls=calls, manualFD3=False, linuxProcess=False, hostedFallback=False,
+                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs2DiagnosticManualFD3=True,
+                  cwdHostDiagnostic=True, linuxProcess=False, hostedFallback=False,
                   builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")

@@ -1,0 +1,27 @@
+;; Unity fragment for a bounded regular-file test only. The harness creates
+;; an empty scope and checks the file from outside the guest after exit.
+;; Records are synthetic; this does not implement real trusted UI or device I/O.
+(defn- seed-main [] :i64
+  (let [mode (io-arg 0)
+        ticket (if (string=? mode "deny") [7 11 13 4096 4096 100 0 0]
+                 (if (string=? mode "replay") [7 11 13 4096 4096 100 1 1]
+                   [7 11 13 4096 4096 100 1 0]))
+        device (if (string=? mode "different") [7 11 14 4096 4096 1 0 1]
+                 (if (string=? mode "mounted") [7 11 13 4096 4096 1 1 1]
+                   (if (string=? mode "session") [8 11 13 4096 4096 1 0 1]
+                     (if (string=? mode "size") [7 11 13 4097 4096 1 0 1]
+                       (if (string=? mode "internal") [7 11 13 4096 4096 0 0 1]
+                         (if (string=? mode "busy") [7 11 13 4096 4096 1 0 0]
+                           [7 11 13 4096 4096 1 0 1]))))))
+        now (if (string=? mode "expired") 100 99)]
+    (if (not (or (string=? mode "allow") (string=? mode "deny")
+                 (string=? mode "replay") (string=? mode "different")
+                 (string=? mode "mounted") (string=? mode "expired")
+                 (string=? mode "session") (string=? mode "size")
+                 (string=? mode "internal") (string=? mode "busy"))) 1
+      (if (= (guard ticket device now) 1)
+        (let [used (consume ticket device now)]
+          (if (not= (guard used device now) 0) 2
+            (let [w (io-write-bytes [65 77 85 10] "fixture" 0 4)]
+              (if (= w 4) 0 3))))
+        0))))

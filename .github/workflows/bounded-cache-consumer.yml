@@ -1,0 +1,36 @@
+name: experimental-bounded-cache-consumer
+# Diagnostic only: this does not replace native gates or qualify whole builds.
+on:
+  workflow_run:
+    workflows: [experimental-bounded-cache-producer]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+jobs:
+  consume:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.repository.id == 1297097065 &&
+      github.event.workflow_run.head_repository.id == 1297097065
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Stage the pinned provenance verifier
+        run: |
+          curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 --max-filesize 33554432 --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+          python3 scripts/seed/stage_pinned_gh.py --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
+      - name: Fetch exact signed objects and run fresh native admission
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          python3 scripts/seed/fetch_bounded_cache.py --source-sha "$SOURCE_SHA"
+          --gh "$RUNNER_TEMP/pinned-gh" --output "$RUNNER_TEMP/verified-cache"

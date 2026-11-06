@@ -317,7 +317,7 @@
             (not (or (= format ":kotoba.kir/v3") (= format ":kotoba.kir/v4")))
             (not= (kr-kind M functions) ND-VEC) (= count 0) (>= count MM-FN-CAP)) 1
       (< (dcp-effect-mask M S doc) 0) 4
-      (and (> schemas 0) (or (not= (kr-kind M schemas) ND-MAP) (> (kr-count M schemas) 0))) 5
+      (and (> schemas 0) (not= (kr-kind M schemas) ND-MAP)) 5
       (not (dcs-native-checked? S)) 8
       :else 0)))
 ;; Structured, freshly checked graph for native build consumers. It produces
@@ -328,7 +328,8 @@
         count (kr-count M functions)]
     (if (not= status 0) (vector-assoc! (vector-alloc 16) 0 status)
       (let [A (dcs-init-resource M S doc functions resource)
-            graph (loop [f 0 state A]
+            validated (if (= (vector-at A 0) 0) (dsq-catalog M S A doc) A)
+            graph (loop [f 0 state validated]
               (if (or (= f count) (not= (vector-at state 0) 0)) state
                 (let [walked (arena-scope
                         (let [params (dcp-params M S state f)
