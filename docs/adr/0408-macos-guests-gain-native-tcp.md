@@ -1,4 +1,4 @@
-# ADR 0404: macOS guests gain native TCP (wires 43..47)
+# ADR 0408: macOS guests gain native TCP (wires 43..47)
 
 Status: proposed (JUN-817); owner answered the four open questions on 2026-11-04 (recorded below). Design only: no runtime, packager, CLI or pin changes.
 

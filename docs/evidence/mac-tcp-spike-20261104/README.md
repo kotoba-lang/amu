@@ -2,7 +2,7 @@
 
 `tcpspike.s` is a standalone arm64 program (assembled with the system `clang`, not by Amu, not part of any
 pinned image) that listens on `127.0.0.1:18766` with direct `svc #0x80` calls only, accepts one connection,
-reads up to 64 bytes and writes them back. It exists to turn the constants recalled in ADR 0404 D2 into
+reads up to 64 bytes and writes them back. It exists to turn the constants recalled in ADR 0408 D2 into
 measured ones before any machine code goes into a runtime variant.
 
 Run on macOS arm64 (`uname -m` = arm64), started in the background, a loopback Python client connected,
