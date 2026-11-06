@@ -1,5 +1,5 @@
 // Spike: Darwin arm64 direct-syscall TCP listener on 127.0.0.1:18766.
-// Qualifies the constants recalled in ADR 0404 D2 (not part of amu).
+// Qualifies the constants recalled in ADR 0408 D2 (not part of amu).
 // step 1 socket 2 setsockopt 3 bind 4 listen 5 fcntl 6 poll 7 accept 8 read 9 write
 .globl _main
 .p2align 2
