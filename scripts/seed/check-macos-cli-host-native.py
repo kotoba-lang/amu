@@ -157,13 +157,12 @@ def main(out):
     (out / "bad-abi.kotoba").write_text('(ns bad (:export [main]))\n(defn main [] :i64 (let [s (typed-cap-call :fs/app-data :string :string "anything")] 0))\n')
     images["bad-abi"] = build([str(out / "bad-abi.kotoba")], "bad-abi", packager, "amu-cli-host")
     run("bad-abi", exit_code=70, diagnostic=b"EHOST invalid host ABI")
-    # String wire 35 in the macOS host profiles keeps the scoped FS2 grammar only.
-    # The legacy absolute-path lock grammar ("/pathFLOCK_SEP", "/pathUNLOCK_SEP") is
-    # served by the FS35 helper, which the host layouts do not contain: any string
-    # request that is not FS2-framed is a host ABI error (the Linux runtime and the
-    # FS35 profiles keep the scoped legacy lock). Adding the FS35 helper to the host
-    # layout is a follow-up. This diagnostic supplies FD3 explicitly: the host startup
-    # does not yet establish an FS2 scope. It is not evidence of automatic host setup.
+    # String wire 35 in the macOS host profiles serves the scoped FS2 grammar and,
+    # through the FS35 helper, the legacy "/path" grammar beneath FD3 (FLOCK_SEP /
+    # UNLOCK_SEP: one nonblocking exclusive flock per process, openat
+    # O_RESOLVE_BENEATH|O_NOFOLLOW_ANY). Wire-35 strings that are neither FS2-framed
+    # nor "/"-rooted remain a host ABI error. These diagnostics supply FD3 explicitly
+    # (amu-cli-host) or use the cwd profile's own FD3; neither is automatic host setup.
     (out / "string-fs2-lock.kotoba").write_text(
         '(ns string-fs2-lock (:export [main]))\n'
         '(defn main [] :i64\n'
@@ -172,21 +171,50 @@ def main(out):
         '      (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS2\\n")] 0) 1)))\n')
     (out / "legacy-lock.kotoba").write_text(
         '(ns legacy-lock (:export [main]))\n'
-        '(defn main [] :i64 (let [l (typed-cap-call 35 :string :string "/regularFLOCK_SEP")] 0))\n')
+        '(defn- fs [r :string] :string (typed-cap-call 35 :string :string r))\n'
+        '(defn main [] :i64\n'
+        '  (cond (not (= (fs "/lockedFLOCK_SEP") "1")) 1\n'
+        '        (not (= (fs "/lockedFLOCK_SEP") "0")) 2\n'
+        '        (not (= (fs "/otherFLOCK_SEP") "0")) 3\n'
+        '        (not (= (fs "/otherUNLOCK_SEP") "0")) 4\n'
+        '        (not (= (fs "/linkFLOCK_SEP") "0")) 5\n'
+        '        (not (= (fs "/../escapeFLOCK_SEP") "0")) 6\n'
+        '        (not (= (fs "/lockedUNLOCK_SEP") "1")) 7\n'
+        '        (not (= (fs "/lockedUNLOCK_SEP") "0")) 8\n'
+        '        (not (= (fs "/lockedFLOCK_SEP") "1")) 9\n'
+        '        :else (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS35_LOCK\\n")] 0)))\n')
+    (out / "legacy-lock-noscope.kotoba").write_text(
+        '(ns legacy-lock-noscope (:export [main]))\n'
+        '(defn main [] :i64\n'
+        '  (if (= (typed-cap-call 35 :string :string "/lockedFLOCK_SEP") "0")\n'
+        '    (let [x (typed-cap-call 37 :string :string "PASS_STRING_FS35_NOSCOPE\\n")] 0) 1))\n')
     images["legacy-lock"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock", packager, "amu-cli-host")
     images["legacy-lock-cwd"] = build([str(out / "legacy-lock.kotoba")], "legacy-lock-cwd", packager, "amu-cli-host-cwd")
+    images["legacy-lock-noscope"] = build([str(out / "legacy-lock-noscope.kotoba")], "legacy-lock-noscope", packager, "amu-cli-host")
     images["string-fs2-lock"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock", packager, "amu-cli-host")
     images["string-fs2-lock-cwd"] = build([str(out / "string-fs2-lock.kotoba")], "string-fs2-lock-cwd", packager, "amu-cli-host-cwd")
     images["spawn-cwd"] = build(["seed/tests/macos-cli-host-spawn.kotoba", "seed/macos-cli-api.kotoba"], "spawn-cwd", packager, "amu-cli-host-cwd")
+    # Negative control: a built-and-executed host packager whose FS35 route is
+    # removed (every non-FS2 wire-35 string is a host ABI error again) must fail
+    # the legacy lock gate.
+    route = "(mh-lb 8 21 0) (mh-cmpi 8 47) (mh-b 0x54000001 98)"
+    assert original.count(route) == 1
+    (out / "removed-fs35-route.kotoba").write_text(original.replace(route,
+        "(mh-lb 8 21 0) (mh-cmpi 8 47) (mh-b 0x14000000 98)"))
+    removed_route = build([str(out / "removed-fs35-route.kotoba")], "removed-fs35-route-packager", bootstrap, "fs2-cli-stdio-general")
+    images["removed-fs35-route"] = build([str(out / "legacy-lock.kotoba")], "removed-fs35-route", removed_route, "amu-cli-host")
     scope_fd = os.open(out, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.set_inheritable(scope_fd, True)
         run("string-fs2-lock", expected=b"PASS_STRING_FS2\n", scope_fd=scope_fd)
-        run("legacy-lock", exit_code=70, diagnostic=b"EHOST invalid host ABI", scope_fd=scope_fd)
+        run("legacy-lock", expected=b"PASS_STRING_FS35_LOCK\n", scope_fd=scope_fd)
+        run("removed-fs35-route", exit_code=70, diagnostic=b"EHOST invalid host ABI", scope_fd=scope_fd)
+        # Without an FD3 scope the legacy lock is refused (no ambient authority).
+        run("legacy-lock-noscope", expected=b"PASS_STRING_FS35_NOSCOPE\n")
         # The opt-in cwd profile must open its own FD3, and must refuse an
         # already occupied FD3 rather than silently replacing it.
         run("string-fs2-lock-cwd", expected=b"PASS_STRING_FS2\n")
-        run("legacy-lock-cwd", exit_code=70, diagnostic=b"EHOST invalid host ABI")
+        run("legacy-lock-cwd", expected=b"PASS_STRING_FS35_LOCK\n")
         run("string-fs2-lock-cwd", scope_fd=scope_fd, exit_code=70)
     finally:
         os.close(scope_fd)
@@ -204,9 +232,9 @@ def main(out):
     report = dict(schema="amu.macos-cli-host-observation.v1", status="PASS_NATIVE_MACOS_CLI_HOST",
                   compiler=mac.pin(compiler), bootstrap=mac.pin(bootstrap), packager=mac.pin(packager),
                   sources=sources, images={k: mac.pin(v) for k, v in images.items()},
-                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs2DiagnosticManualFD3=True,
+                  calls=calls, manualFD3=True, hostAutomaticFD3=False, fs35HostHelper=True, fs2DiagnosticManualFD3=True,
                   cwdHostDiagnostic=True, linuxProcess=False, hostedFallback=False,
-                  builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup"],
+                  builtExecutedMutants=["removed-process-grant-guard", "removed-child-fd-close", "removed-write-failure-cleanup", "removed-fs35-route"],
                   publicCLIIntegrated=False, independentUserQualified=False)
     (out / "host-service.json").write_text(json.dumps(report, indent=2) + "\n")
     print(report["status"], len(calls), "native observations")
