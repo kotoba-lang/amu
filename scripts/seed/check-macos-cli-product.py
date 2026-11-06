@@ -138,6 +138,25 @@ def check(cli, out):
             '-o', f64_program.name, stdout=('compiled ' + str(f64_program) + '\n').encode())
         run('f64-resource-' + suffix + '-execute', image=f64_program, stdout=expected_output)
 
+    # JUN-924: the clojure.test -> plain defn/main converter is a multi-module native program over the
+    # lossless CST. Its self-gate answers the number of failed fixtures (0 = all hold); changing one expected
+    # text must turn the same program red, so the observation cannot pass by building and printing 0.
+    tc_project = out / 'test-conv-project'
+    tc_dir = tc_project / 'kotoba/compiler/refactor'
+    tc_dir.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/refactor/cst.kotoba', tc_dir / 'cst.kotoba')
+    tc_source = (ROOT / 'src/kotoba/compiler/refactor/test_conv.kotoba').read_text()
+    tc_entry = tc_dir / 'test_conv.kotoba'
+    expected_tail = '(not (two)) 2 :else 42))\\n"))'
+    assert tc_source.count(expected_tail) == 1
+    for suffix, body, expected_output in (('positive', tc_source, b'0\n'),
+                                          ('negative', tc_source.replace(expected_tail, '(not (two)) 2 :else 43))\\n"))'), b'1\n')):
+        tc_entry.write_text(body)
+        tc_program = out / ('test-conv-' + suffix)
+        run('test-conv-' + suffix + '-compile', 'compile', tc_entry, '--source-path', tc_project,
+            '-o', tc_program.name, stdout=('compiled ' + str(tc_program) + '\n').encode())
+        run('test-conv-' + suffix + '-execute', image=tc_program, stdout=expected_output)
+
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
     run('locked-project-check', 'check', app, '--source-lock', lock, stdout=b'ok\n')
