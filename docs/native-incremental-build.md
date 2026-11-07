@@ -250,7 +250,7 @@ This is a same-principal compiler-owned store, not a remote/untrusted code
 admission authority. Checksums detect corruption; an administrator who can
 replace trusted compiler/store bytes remains in the trust base.
 
-`scripts/seed/check-definition-build-native.py` stages fixed inputs and
+`scripts/seed/check-definition-build-native.cljc` stages fixed inputs and
 observes native execution only. The native producer performs checking,
 canonical identity production, encoding/store operations, emission and link.
 It compares every candidate ELF with the unchanged `xg-build` reference for
