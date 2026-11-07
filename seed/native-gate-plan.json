@@ -5,14 +5,18 @@
     "arm64": [
       {
         "name": "runtime-profile",
-        "argv": ["python3", "scripts/seed/check-native-runtime-profile.py", "--compiler",
+        "argv": ["basilisp", "run", "-p", "scripts/seed", "scripts/seed/check-native-runtime-profile.cljc", "--", "--compiler",
                  "@TEMP@/boot/F1.elf", "--output", "@TEMP@/runtime-profile-arm64"]
       },
       {
         "name": "label-proof-index",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-label-index.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-label-index.cljc",
+          "--",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
@@ -70,8 +74,12 @@
       {
         "name": "zero-watermark",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-zero-watermark.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-zero-watermark.cljc",
+          "--",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
@@ -81,8 +89,12 @@
       {
         "name": "ccf-filter",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-ccf-filter.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-ccf-filter.cljc",
+          "--",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
@@ -92,8 +104,12 @@
       {
         "name": "flock-vector",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-flock-vector.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-flock-vector.cljc",
+          "--",
           "--compiler",
           "@TEMP@/boot/F1.elf",
           "--output",
@@ -108,14 +124,18 @@
     "x86": [
       {
         "name": "runtime-profile",
-        "argv": ["python3", "scripts/seed/check-native-runtime-profile.py", "--compiler",
+        "argv": ["basilisp", "run", "-p", "scripts/seed", "scripts/seed/check-native-runtime-profile.cljc", "--", "--compiler",
                  "@TEMP@/complete/F3.elf", "--output", "@TEMP@/runtime-profile-x86"]
       },
       {
         "name": "label-proof-index",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-label-index.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-label-index.cljc",
+          "--",
           "--compiler",
           "@TEMP@/complete/F3.elf",
           "--output",
@@ -126,8 +146,12 @@
       {
         "name": "native-cdci",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-cdci.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-cdci.cljc",
+          "--",
           "--complete",
           "@TEMP@/complete",
           "--output",
@@ -139,7 +163,7 @@
         "argv": [
           "bash",
           "-c",
-          "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 \"scripts/seed/check-aiueos-$suite-native.py\" --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
+          "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run \"scripts/seed/check-aiueos-$suite-native.cljc\" -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
         ]
       },
       {
@@ -158,7 +182,7 @@
         "argv": [
           "bash",
           "-c",
-          "python3 scripts/seed/check-static-profile-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/static-profile-x86\" && python3 scripts/seed/check-aiueos-value-call-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/live-call-x86\" && python3 scripts/seed/check-aiueos-user-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/user-context-x86\" && python3 scripts/seed/check-aiueos-desktop-regions-native.py --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/desktop-regions-x86\""
+          "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-static-profile-native.cljc -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/static-profile-x86\" && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-value-call-native.cljc -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/live-call-x86\" && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-user-native.cljc -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/user-context-x86\" && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-desktop-regions-native.cljc -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/desktop-regions-x86\""
         ]
       },
       {
@@ -208,8 +232,12 @@
       {
         "name": "aiueos-image",
         "argv": [
-          "python3",
-          "scripts/seed/check-aiueos-image-native.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-aiueos-image-native.cljc",
+          "--",
           "--complete",
           "@TEMP@/complete",
           "--output",
@@ -219,8 +247,12 @@
       {
         "name": "fs2-x86",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-fs2.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-fs2.cljc",
+          "--",
           "--compiler",
           "@TEMP@/complete/F3.elf",
           "--output",
@@ -230,8 +262,12 @@
       {
         "name": "aiueos-boot",
         "argv": [
-          "python3",
-          "scripts/seed/check-aiueos-boot-native.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-aiueos-boot-native.cljc",
+          "--",
           "--complete",
           "@TEMP@/complete",
           "--output",
@@ -252,8 +288,12 @@
       {
         "name": "zero-watermark",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-zero-watermark.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-zero-watermark.cljc",
+          "--",
           "--compiler",
           "@TEMP@/complete/F3.elf",
           "--output",
@@ -263,8 +303,12 @@
       {
         "name": "ccf-filter",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-ccf-filter.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-ccf-filter.cljc",
+          "--",
           "--compiler",
           "@TEMP@/complete/F3.elf",
           "--output",
@@ -274,8 +318,12 @@
       {
         "name": "flock-vector",
         "argv": [
-          "python3",
-          "scripts/seed/check-native-flock-vector.py",
+          "basilisp",
+          "run",
+          "-p",
+          "scripts/seed",
+          "scripts/seed/check-native-flock-vector.cljc",
+          "--",
           "--compiler",
           "@TEMP@/complete/F2.elf",
           "--output",

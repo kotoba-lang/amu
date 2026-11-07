@@ -81,7 +81,7 @@ on:
       - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.py'
       - 'scripts/seed/collect-macos-crash-summary.py'
-      - 'scripts/seed/native_build_queue.py'
+      - 'scripts/seed/native_build_queue.cljc'
       - 'seed/FULL-MANIFEST'
       - 'seed/X86_64-LINUX-SELFHOST-MANIFEST'
       - 'seed/*.kotoba'
@@ -127,7 +127,7 @@ jobs:
       - name: Rebuild Amu root and AIUEOS user target
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/native_build_queue.py \
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- \
             --phase mac-aiueos-user-root \
             --slot-dir "$RUNNER_TEMP/native-build-slots" \
             --output "$RUNNER_TEMP/mac-root-admission.json" -- \
@@ -180,7 +180,7 @@ jobs:
       - name: Native Darwin bounded I/O and error refusal probe
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/native_build_queue.py \
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- \
             --phase mac-exec-smoke \
             --slot-dir "$RUNNER_TEMP/native-build-slots" -- \
             python3 scripts/seed/check-macos-exec-smoke-native.py \

@@ -29,6 +29,12 @@ outputs:
 runs:
   using: composite
   steps:
+    - id: basilisp
+      shell: bash
+      run: |
+        python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+        "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+        echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
     - id: calc
       shell: bash
       env:
@@ -37,7 +43,7 @@ runs:
         MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         GITHUB_TOKEN: ${{ github.token }}
-      run: python3 scripts/ci/ci_gate.py --job "${{ inputs.job }}" --kind "${{ inputs.kind }}" --roots "${{ inputs.roots }}"
+      run: basilisp run scripts/ci/ci_gate.cljc -- --job "${{ inputs.job }}" --kind "${{ inputs.kind }}" --roots "${{ inputs.roots }}"
     - id: cache
       if: steps.calc.outputs.restore == 'true'
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5

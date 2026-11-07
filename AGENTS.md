@@ -491,12 +491,12 @@ bytes, limits, case expectations or native gate commands change in this split.
 ## CI input-hash gate (JUN-759)
 
 Every job of `selfhost-native` and of the other native workflows starts with `./.github/actions/ci-gate`
-(`scripts/ci/ci_gate.py`) and guards its later steps; required check names are never changed or made conditional.
+(`scripts/ci/ci_gate.cljc`) and guards its later steps; required check names are never changed or made conditional.
 - A step added after the gate needs `if: steps.gate.outputs.skip != 'true'`, or it runs without the job's earlier
-  steps when the gate skips. `scripts/ci/test_ci_gate.py` fails on a missing guard; the one step meant to run on a skip
+  steps when the gate skips. `scripts/ci/test_ci_gate.cljc` fails on a missing guard; the one step meant to run on a skip
   is named in its `MAY_RUN_WHEN_SKIPPED`.
 - Docs-only (pull_request / merge_group whose changed files are only inert) skips the heavy steps. Inert, per `INERT` in
-  `scripts/ci/ci_gate.py`: top-level `*.md`, `docs/**/*.md` outside `docs/evidence/`, `LICENSE`, `.DS_Store`,
+  `scripts/ci/ci_gate.cljc`: top-level `*.md`, `docs/**/*.md` outside `docs/evidence/`, `LICENSE`, `.DS_Store`,
   `.github/dependabot.yml`, and the tooling no native job reads (JUN-818), named one by one:
   `scripts/ci/{pr_batch,test_pr_batch}.py`. Everything else runs, including every other workflow, action and script,
   all of `seed/**` and `examples/**` (their `*.md` too) and `docs/evidence/**`.

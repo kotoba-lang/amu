@@ -85,10 +85,10 @@ JUN-889 expected x86_64 and aarch64 to be enough. That is unproven, and 32-bit A
 
 - This report is not a gate. `AGENTS.md` keeps verdicts with the native controller, so the report sets `gateVerdict: false`. A digest shows that a receipt has not changed since collection. It does not authenticate the receipt.
 - `armv7-android` and `x86_64-android` stay listed until a share is measured, so they hold the lower bound down. Whether to drop them later is **not decided**: that needs a measured share, and how to measure it is open (JUN-890).
-- Refreshing a snapshot is manual (`scoreboard.py collect`). Nothing regenerates it after each merge.
+- Refreshing a snapshot is manual (`scoreboard.cljc collect`). Nothing regenerates it after each merge.
 
 ## Consequences
 
 - JUN-890's `verify-target-qualification` does not exist on `main` or in its history, so this report is new rather than an extension. The inputs are the receipts CI already uploads.
 - Without a refreshed snapshot, the number falls to 0 after 30 days.
-- `scripts/coverage/test_scoreboard.py` damages copies of the snapshot and requires the number to fall.
+- `scripts/coverage/test_scoreboard.cljc` damages copies of the snapshot and requires the number to fall.

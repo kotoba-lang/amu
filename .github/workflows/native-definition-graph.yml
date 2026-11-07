@@ -51,13 +51,13 @@ jobs:
           job: native-definition-graph-graph-${{ matrix.runner }}
       - name: Verify current compiler source and image pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Native sparse graph, complete compiler input and executed mutants
         if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --phase native-definition-graph
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/graph-admission.json" --
@@ -109,13 +109,13 @@ jobs:
           job: native-definition-graph-headroom-${{ matrix.runner }}-${{ matrix.table }}
       - name: Verify current compiler source and image pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Compiler table headroom of the largest static builds, with negative controls
         if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --phase native-table-headroom
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/table-headroom-admission.json" --

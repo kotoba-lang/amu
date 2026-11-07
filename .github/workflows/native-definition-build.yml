@@ -10,10 +10,10 @@ on:
       - "seed/**"
       - "bin/amu-linux-x86_64"
       - "native-product.json"
-      - "scripts/seed/check-definition-build-native.py"
-      - "scripts/seed/sealed_image.py"
-      - "scripts/seed/verified_attestation.py"
-      - "scripts/seed/test_verified_attestation.py"
+      - "scripts/seed/check-definition-build-native.cljc"
+      - "scripts/seed/sealed_image.cljc"
+      - "scripts/seed/verified_attestation.cljc"
+      - "scripts/seed/test_verified_attestation.cljc"
       - ".github/workflows/native-definition-build.yml"
   push:
     branches: [main]
@@ -21,10 +21,10 @@ on:
       - "seed/**"
       - "bin/amu-linux-x86_64"
       - "native-product.json"
-      - "scripts/seed/check-definition-build-native.py"
-      - "scripts/seed/sealed_image.py"
-      - "scripts/seed/verified_attestation.py"
-      - "scripts/seed/test_verified_attestation.py"
+      - "scripts/seed/check-definition-build-native.cljc"
+      - "scripts/seed/sealed_image.cljc"
+      - "scripts/seed/verified_attestation.cljc"
+      - "scripts/seed/test_verified_attestation.cljc"
       - ".github/workflows/native-definition-build.yml"
 permissions:
   contents: read
@@ -55,16 +55,16 @@ jobs:
           job: native-definition-build-objects-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Verify provenance policy negative controls (not artifact qualification)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/test_verified_attestation.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_verified_attestation.cljc
       - name: Native object storage, symbolic relink, fresh refusals and executed mutants
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
-          python3 scripts/seed/check-definition-build-native.py
+          basilisp run scripts/seed/check-definition-build-native.cljc --
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-build"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

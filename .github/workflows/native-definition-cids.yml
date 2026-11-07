@@ -60,11 +60,11 @@ jobs:
           job: native-definition-cids-cids-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Native definition-cids against the independent oracle, with negative controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
           python3 scripts/seed/check-definition-cids-native.py
           --compiler "$PWD/${{ matrix.compiler }}"

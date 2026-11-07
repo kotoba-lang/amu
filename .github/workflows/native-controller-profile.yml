@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - "scripts/seed/native_process_profile.py"
-      - "scripts/seed/check-native-cdci.py"
+      - "scripts/seed/check-native-cdci.cljc"
       - ".github/workflows/native-controller-profile.yml"
   workflow_dispatch:
     inputs:
@@ -37,18 +37,28 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify current source and native image pins
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Native localization only; preserve the frozen workload and output
         env:
           MODE: ${{ inputs.mode }}
         run: |
           if [ "$MODE" = pass-label ]; then
-            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
           elif [ "$MODE" = proof-current ]; then
-            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
           else
-            python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
@@ -69,10 +79,20 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify current source and native image pins
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Native isolated candidates then B C C B source comparison
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/compare-source-refinements.py --output "$RUNNER_TEMP/refinements"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/compare-source-refinements.py --output "$RUNNER_TEMP/refinements"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -91,10 +111,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Native semantic and mutation controls first
-        run: python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-native-label-index.py --compiler "$GITHUB_WORKSPACE/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/label-index" --controls-only
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- basilisp run -p scripts/seed scripts/seed/check-native-label-index.cljc -- --compiler "$GITHUB_WORKSPACE/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/label-index" --controls-only
       - name: Same-host native baseline candidate candidate baseline
-        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/compare-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/comparison"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/compare-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/comparison"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -116,8 +141,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Profile native proof scans (diagnostic only)
-        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -137,10 +167,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Profile observer and scheduler controls
-        run: python3 scripts/seed/test_native_iteration.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_iteration.cljc
       - name: Current source and pinned images
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: one-compiler-receipt
@@ -150,9 +185,9 @@ jobs:
       - name: Fresh native x86 fixed point and roles from source-identical derivation
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Early native controller controls without completing the expensive rebuild
-        run: python3 scripts/seed/check-native-cdci.py --stage preflight --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/local-cdci"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-cdci.cljc -- --stage preflight --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/local-cdci"
       - name: Isolated full controller with external phase observations
-        run: python3 scripts/seed/native_build_queue.py --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/check-native-cdci.py --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --output "$RUNNER_TEMP/admission.json" -- PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-cdci.cljc -- --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/native-cdci"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

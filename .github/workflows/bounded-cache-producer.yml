@@ -9,20 +9,20 @@ on:
       - "seed/**"
       - "bin/**"
       - "native-product.json"
-      - "scripts/seed/check-definition-build-native.py"
-      - "scripts/seed/check-native-identities.py"
-      - "scripts/seed/check-native-cdci.py"
-      - "scripts/seed/sealed_image.py"
-      - "scripts/seed/verified_attestation.py"
-      - "scripts/seed/test_verified_attestation.py"
-      - "scripts/seed/bounded_cache_bundle.py"
-      - "scripts/seed/test_bounded_cache_bundle.py"
-      - "scripts/seed/fetch_bounded_cache.py"
-      - "scripts/seed/test_fetch_bounded_cache.py"
-      - "scripts/seed/stage_pinned_gh.py"
-      - "scripts/seed/test_stage_pinned_gh.py"
-      - "scripts/seed/check_bounded_producer_attestation.py"
-      - "scripts/seed/test_bounded_producer_attestation.py"
+      - "scripts/seed/check-definition-build-native.cljc"
+      - "scripts/seed/check-native-identities.cljc"
+      - "scripts/seed/check-native-cdci.cljc"
+      - "scripts/seed/sealed_image.cljc"
+      - "scripts/seed/verified_attestation.cljc"
+      - "scripts/seed/test_verified_attestation.cljc"
+      - "scripts/seed/bounded_cache_bundle.cljc"
+      - "scripts/seed/test_bounded_cache_bundle.cljc"
+      - "scripts/seed/fetch_bounded_cache.cljc"
+      - "scripts/seed/test_fetch_bounded_cache.cljc"
+      - "scripts/seed/stage_pinned_gh.cljc"
+      - "scripts/seed/test_stage_pinned_gh.cljc"
+      - "scripts/seed/check_bounded_producer_attestation.cljc"
+      - "scripts/seed/test_bounded_producer_attestation.cljc"
       - ".github/workflows/bounded-cache-producer.yml"
       - ".github/workflows/bounded-cache-consumer.yml"
   push:
@@ -40,30 +40,40 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify adopted identities
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Refuse untrusted producer contexts
-        run: python3 scripts/seed/test_bounded_producer_attestation.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_bounded_producer_attestation.cljc
       - name: Check every attestation policy field
-        run: python3 scripts/seed/test_verified_attestation.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_verified_attestation.cljc
       - name: Check pinned provenance-verifier staging
-        run: python3 scripts/seed/test_stage_pinned_gh.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_stage_pinned_gh.cljc
       - name: Fresh native candidate and negative controls
         run: >-
-          python3 scripts/seed/check-definition-build-native.py
+          basilisp run scripts/seed/check-definition-build-native.cljc --
           --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/bounded-producer"
       - name: Native artifact round trip and hostile archive refusals
         env:
           AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
-        run: python3 scripts/seed/test_bounded_cache_bundle.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_bounded_cache_bundle.cljc
       - name: Exact source selection, hostile ZIP and fresh native consumer
         env:
           AMU_BOUNDED_FIXTURE: ${{ runner.temp }}/bounded-producer
-        run: python3 scripts/seed/test_fetch_bounded_cache.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_fetch_bounded_cache.cljc
       - name: Bundle only the candidate and its private object artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: >-
-          python3 scripts/seed/bounded_cache_bundle.py
+          basilisp run scripts/seed/bounded_cache_bundle.cljc --
           --producer "$RUNNER_TEMP/bounded-producer/producer.elf"
           --cache "$RUNNER_TEMP/bounded-producer/cache" --output "$RUNNER_TEMP/bounded-cache.tar"
       - name: Stage only the candidate bundle from this run
@@ -95,13 +105,18 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: ${{ runner.temp }}/bounded-producer/bounded-cache.tar
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Download and verify the pinned provenance verifier
         run: |
           curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 --max-filesize 33554432 --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
-          python3 scripts/seed/stage_pinned_gh.py --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
+          basilisp run scripts/seed/stage_pinned_gh.cljc -- --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
       - name: Verify and freshly execute the signed candidate and its objects
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          python3 scripts/seed/check_bounded_producer_attestation.py
+          basilisp run scripts/seed/check_bounded_producer_attestation.cljc --
           --artifact "$RUNNER_TEMP/bounded-producer/bounded-cache.tar" --gh "$RUNNER_TEMP/pinned-gh"

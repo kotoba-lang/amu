@@ -23,14 +23,19 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Stage the pinned provenance verifier
         run: |
           curl --fail --location --silent --show-error --connect-timeout 20 --max-time 120 --max-filesize 33554432 --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/gh.tar.gz" https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
-          python3 scripts/seed/stage_pinned_gh.py --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
+          basilisp run scripts/seed/stage_pinned_gh.cljc -- --archive "$RUNNER_TEMP/gh.tar.gz" --output "$RUNNER_TEMP/pinned-gh"
       - name: Fetch exact signed objects and run fresh native admission
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: >-
-          python3 scripts/seed/fetch_bounded_cache.py --source-sha "$SOURCE_SHA"
+          basilisp run scripts/seed/fetch_bounded_cache.cljc -- --source-sha "$SOURCE_SHA"
           --gh "$RUNNER_TEMP/pinned-gh" --output "$RUNNER_TEMP/verified-cache"
