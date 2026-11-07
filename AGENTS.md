@@ -182,6 +182,10 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
   native result must not silently fall back to it. Making an oracle job a required check is a separate
   owner decision; until then it is not required. The ban on JVM, nbb, Babashka and GraalVM in CI for any
   other purpose (JUN-290) is unchanged.
+- Policy and plan: ADR `adr-2611071200-cljk-oracle-cljc-standard` (com-junkawasaki/root `90-docs/adr/`), tracked in
+  Linear JUN-579 and JUN-967 to JUN-973. cljk sources follow standard cljc; cljc itself is not customised. Moving
+  the `:kotoba/*` namespace attribute-map keys to a quoted spelling (JUN-967 to JUN-969) is a plan, not yet
+  implemented; until then a JVM run stops on `{:kotoba/export [...]}`.
 - Before a selfhost refactor of a cljk component, take its reference values first from the JVM and
   node (nbb) oracles (owner decision 2026-11-07). Hand an oracle the source as `.cljc`; Basilisp reads
   `.cljc` with the `:lpy` feature key and does not read the `.cljk` extension. Record versions,
