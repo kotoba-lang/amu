@@ -49,6 +49,59 @@ def check(cli, out):
 
     hello = source('hello', '(defn main [] :i64 42)')
     run('check', 'check', hello.name, stdout=b'ok\n')
+    # The public CLI must run the watcher frame classifier and reject a
+    # deliberately fail-open implementation. This exercises source compiled
+    # by the CLI; it does not execute the watcher or qualify a governor.
+    watch_source = (ROOT / 'seed/darwin-watch-reply.kotoba').read_text()
+    declaration = '(ns amu.darwin-watch-reply (:export [darwin-watch-ready? darwin-watch-heartbeat? darwin-watch-exit-class darwin-watch-status darwin-watch-monitor-start darwin-watch-monitor-step darwin-watch-reply-class]))'
+    assert watch_source.count(declaration) == 1
+    watch_source = watch_source.replace(declaration, '')
+    watch_cases = (ROOT / 'seed/tests/awai152-darwin-watch/reply-cases.kotoba').read_text()
+    watch_main = '\n(defn main [] :i64 (if (and (test-darwin-watch-reply) (test-darwin-watch-monitor)) 42 7))\n'
+    refusal = '"observer/bound-exit-observed" "observer/unknown"'
+    assert watch_source.count(refusal) == 2
+    split = watch_source.rindex(refusal)
+    watch_mutant = (watch_source[:split] + watch_source[split:].replace(
+        refusal, '"observer/bound-exit-observed" "observer/bound-exit-observed"', 1))
+    watch = source('watch-reply', watch_source + '\n' + watch_cases + watch_main)
+    mutant = source('watch-reply-mutant', watch_mutant + '\n' + watch_cases + watch_main)
+    # A frame-only rollback check misses a clock regression after a poll.
+    # Keep the control on the actual monitor source and run the same cases.
+    rollback_guard = '(< now observed)'
+    assert watch_source.count(rollback_guard) == 1
+    rollback = source('watch-reply-rollback-mutant',
+                      watch_source.replace(rollback_guard, '(< now last)') + '\n' + watch_cases + watch_main)
+    # A contradictory high byte must not turn signal termination into a
+    # valid status; exercise the same source cases with that guard removed.
+    status_guard = '(and (< status 256) (> signal 0) (< signal 127))'
+    assert watch_source.count(status_guard) == 1
+    invalid_status = source('watch-reply-status-mutant',
+                            watch_source.replace(status_guard, '(and (> signal 0) (< signal 127))')
+                            + '\n' + watch_cases + watch_main)
+    run('watch-reply', 'run', watch.name, stdout=b'42\n')
+    run('watch-reply-mutant', 'run', mutant.name, stdout=b'7\n')
+    run('watch-reply-rollback-mutant', 'run', rollback.name, stdout=b'7\n')
+    run('watch-reply-status-mutant', 'run', invalid_status.name, stdout=b'7\n')
+    # Exercise the pure identity/event composition and a fail-open transition
+    # mutant. Source namespaces are removed only in this test composition.
+    watch_paths = ['seed/darwin-proc-identity.kotoba', 'seed/darwin-kqueue-event.kotoba',
+                   'seed/darwin-proc-watch.kotoba', 'seed/tests/awai152-darwin-kqueue/event-cases.kotoba',
+                   'seed/tests/awai152-darwin-watch/watch-cases.kotoba']
+    watch_compose = '\n'.join('\n'.join(line for line in (ROOT / path).read_text().splitlines()
+                                         if not line.startswith('(ns ')) for path in watch_paths)
+    transition_guard = '(= (bit-and (vector-at event 15) 96) 0)'
+    assert watch_compose.count(transition_guard) == 1
+    transition_mutant = watch_compose.replace(transition_guard, 'true')
+    watch_tail = '\n(defn main [] :i64 (if (and (test-darwin-proc-watch) (test-darwin-kqueue-event)) 42 7))\n'
+    event_case = source('watch-events', watch_compose + watch_tail)
+    event_mutant = source('watch-events-mutant', transition_mutant + watch_tail)
+    status_guard = '(not (= (bit-and (vector-at event 15) 4) 0))'
+    assert watch_compose.count(status_guard) == 1
+    status_mutant = source('watch-events-status-mutant',
+                           watch_compose.replace(status_guard, 'true') + watch_tail)
+    run('watch-events', 'run', event_case.name, stdout=b'42\n')
+    run('watch-events-mutant', 'run', event_mutant.name, stdout=b'7\n')
+    run('watch-events-status-mutant', 'run', status_mutant.name, stdout=b'7\n')
     # JUN-579: a lone `check` reads `.cljk` input sugar; compile and the retired extensions refuse.
     sugar = out / 'hello-sugar.cljk'
     sugar.write_text(hello.read_text())

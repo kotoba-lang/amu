@@ -1,0 +1,29 @@
+;; Source cases; no native provider or recovery semantics are qualified.
+(ns amu.darwin-proc-identity-cases (:export [test-darwin-proc-identity]))
+
+(defn- dpi-test-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
+  (loop [i 0 x n out v]
+    (if (= i 4) out (recur (+ i 1) (quot x 256) (vector-assoc! out (+ at i) (mod x 256))))))
+(defn- dpi-test-data [] :vector-i64
+  (let [z (loop [i 0 out (vector-alloc 136)] (if (= i 136) out (recur (+ i 1) (vector-assoc! out i 0))))]
+    (dpi-test-u32 (dpi-test-u32 (dpi-test-u32 z 12 1234) 120 1700000000) 128 999999)))
+(defn test-darwin-proc-identity [] :bool
+  (let [data (dpi-test-data) result (darwin-proc-identity "25G332" 1234 136 data)
+        bad-usec (dpi-test-u32 (dpi-test-data) 128 1000000)
+        bad-usec-high (dpi-test-u32 (dpi-test-data) 132 1)
+        bad-sec (dpi-test-u32 (dpi-test-data) 124 2097152)
+        zero-sec (dpi-test-u32 (dpi-test-data) 120 0)
+        bad-byte (vector-assoc! (dpi-test-data) 50 256)]
+    (and (= (vector-count result) 3) (= (vector-at result 0) 1234)
+         (= (vector-at result 1) 1700000000) (= (vector-at result 2) 999999)
+         (= (vector-count (darwin-proc-identity "" 1234 136 data)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 0 136 data)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1235 136 data)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 -1 data)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 135 data)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 (vector-alloc 0))) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 bad-usec)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 bad-usec-high)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 bad-sec)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 zero-sec)) 0)
+         (= (vector-count (darwin-proc-identity "25G332" 1234 136 bad-byte)) 0))))

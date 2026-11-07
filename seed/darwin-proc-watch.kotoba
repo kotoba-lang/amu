@@ -1,0 +1,27 @@
+;; Pure composition for a future Darwin process watcher, not a host or proof.
+;; The caller must own a trusted kernel event queue, preserve call ordering,
+;; bind identity to an authenticated boot/session and durable launch record,
+;; and keep missing data or observer loss unknown. No result is a reservation
+;; release, a successful workload receipt, or proof that descendants stopped.
+(ns amu.darwin-proc-watch (:export [darwin-proc-watch-class]))
+
+(defn- dpw-identity= [a :vector-i64 pid :i64 sec :i64 usec :i64] :bool
+  (if (not (= (vector-count a) 3)) false
+    (and (= (vector-at a 0) pid) (= (vector-at a 1) sec) (= (vector-at a 2) usec))))
+
+;; Context [pid expected-sec expected-usec token before-count registration-rc
+;;          after-count event-count]. The caller supplies raw kernel results;
+;; those arguments cannot themselves authenticate that syscalls were made.
+;; Only exact observations qualify as a bound event candidate; everything else
+;; stays unknown. The token is correlation only, not a secret or signature.
+(defn darwin-proc-watch-class [os-build :string ctx :vector-i64 before :vector-i64 after :vector-i64 event :vector-i64] :string
+  (if (not (= (vector-count ctx) 8)) "observer/unknown"
+    (let [pid (vector-at ctx 0) sec (vector-at ctx 1) usec (vector-at ctx 2)
+          token (vector-at ctx 3) before-count (vector-at ctx 4) registration-rc (vector-at ctx 5)
+          after-count (vector-at ctx 6) event-count (vector-at ctx 7)
+          id-before (darwin-proc-identity os-build pid before-count before)
+          id-after (darwin-proc-identity os-build pid after-count after)]
+      (if (and (= registration-rc 0)
+               (dpw-identity= id-before pid sec usec) (dpw-identity= id-after pid sec usec)
+               (= (darwin-proc-event-class os-build pid token event-count event) "observer/exit-observed"))
+        "observer/bound-exit-observed" "observer/unknown"))))

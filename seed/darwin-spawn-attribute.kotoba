@@ -1,0 +1,28 @@
+;; Experimental Darwin ARM64 spawn attribute for a future qualified host.
+;; This builds data only. It does not spawn, install a sandbox, reserve memory,
+;; bind an executable, supervise descendants or qualify the host ABI.
+;; The private 248-byte layout is observed on arm64 macOS build 25G332 only.
+;; The input is not an attestation. A trusted caller must independently identify
+;; the actual OS/runtime and architecture before using any bytes.
+(ns amu.darwin-spawn-attribute (:export [darwin-spawn-attribute]))
+
+(defn- dsa-u32 [v :vector-i64 at :i64 n :i64] :vector-i64
+  (loop [i 0 x n out v]
+    (if (= i 4) out
+      (recur (+ i 1) (quot x 256) (vector-assoc! out (+ at i) (mod x 256))))))
+
+;; SETEXEC replaces the caller instead of creating a child: its supervisor
+;; and sandbox must be established first. This flag is not that boundary.
+;; An empty vector means refusal, not an unlimited attribute or launch grant.
+(defn darwin-spawn-attribute [os-build :string limit-mib :i64 setexec :bool] :vector-i64
+  (if (or (not (= os-build "25G332")) (< limit-mib 1) (> limit-mib 32767)) (vector-alloc 0)
+    (let [blank (loop [i 0 out (vector-alloc 248)]
+                  (if (= i 248) out (recur (+ i 1) (vector-assoc! out i 0))))
+          flags (vector-assoc! blank 0 (if setexec 192 128))
+          reserved (vector-assoc! flags 56 1)
+          jetsam (vector-assoc! (vector-assoc! reserved 64 12) 65 128)
+          priority (dsa-u32 jetsam 68 4294967295)
+          active (dsa-u32 priority 72 limit-mib)
+          inactive (dsa-u32 active 76 limit-mib)]
+      (loop [i 112 out inactive]
+        (if (= i 128) out (recur (+ i 1) (vector-assoc! out i 255)))))))
