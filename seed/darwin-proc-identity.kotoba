@@ -1,0 +1,28 @@
+;; Experimental parser for one observed Darwin ARM64 proc_bsdinfo layout.
+;; It neither invokes proc_info nor authenticates the source, boot, process,
+;; executable, user, liveness or descendants. A trusted host must qualify the
+;; OS and architecture, bind the observation to its kernel call and durable
+;; launch record, and reject races. Empty output always means unknown.
+(ns amu.darwin-proc-identity (:export [darwin-proc-identity]))
+
+(defn- dpi-get32 [v :vector-i64 at :i64] :i64
+  (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
+     (* 65536 (vector-at v (+ at 2))) (* 16777216 (vector-at v (+ at 3)))))
+
+;; Given a proc_info return value and bytes, return [pid seconds microseconds]
+;; only for the observed profile. The pid and time alone are not a globally
+;; unique identity, proof of a live process, an exit receipt, or launch grant.
+(defn darwin-proc-identity [os-build :string pid :i64 count :i64 data :vector-i64] :vector-i64
+  (if (or (not (= os-build "25G332")) (< pid 1) (> pid 2147483647)
+          (not (= count 136)) (not (= (vector-count data) 136))) (vector-alloc 0)
+    (if (not (loop [i 0]
+               (if (= i 136) true
+                 (let [b (vector-at data i)]
+                   (and (>= b 0) (<= b 255) (recur (+ i 1))))))) (vector-alloc 0)
+      (let [got-pid (dpi-get32 data 12) sec-lo (dpi-get32 data 120)
+            sec-hi (dpi-get32 data 124) usec-lo (dpi-get32 data 128)
+            usec-hi (dpi-get32 data 132)]
+        (if (or (not (= got-pid pid)) (> sec-hi 2097151)
+                (and (= sec-hi 0) (= sec-lo 0)) (not (= usec-hi 0)) (> usec-lo 999999))
+          (vector-alloc 0)
+          [pid (+ sec-lo (* sec-hi 4294967296)) usec-lo])))))

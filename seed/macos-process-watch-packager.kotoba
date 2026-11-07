@@ -1,0 +1,220 @@
+;; Diagnostic Darwin ARM64 process watcher packager candidate.
+;; Any emitted binary is diagnostic only. The trusted host MUST bind FD 3 to a
+;; private fixed 32-byte request and authenticate build, boot/session, PID,
+;; process birth and queue ownership. FD 3 can block before any timeout;
+;; the host must supply the request and supervise the helper's whole lifetime.
+;; This is NOT a reservation release,
+;; process-tree proof, completion receipt, or governor. Failure is unknown.
+(ns seed.macos-process-watch-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64 (vector-assoc! v at (bit-and value 255)))
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (byte-at at value) (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16)) (byte-at (+ at 3) (u64-shift-right value 24))))
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (u32-at at (bit-and value 4294967295)) (u32-at (+ at 4) (u64-shift-right value 32))))
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v] (if (= i (vector-count b)) out (recur (+ i 1) (byte-at out (+ at i) (vector-at b i)))))))
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v] (if (= i (vector-count words)) out (recur (+ i 1) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Fixed instruction builder. Branch fixups are checked before emitting.
+(defn- ds-new [] :vector-i64 (vector-alloc 4096))
+(defn- ds-i [s :vector-i64 word :i64] :vector-i64
+  (let [n (vector-at s 0)] (if (>= n 2816) (vector-assoc! s 3 1)
+    (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
+(defn- ds-label [s :vector-i64 label :i64] :vector-i64
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
+(defn- ds-b [s :vector-i64 op :i64 label :i64] :vector-i64
+  (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) op) (vector-assoc! (+ at 2) label)
+          (vector-assoc! 1 (+ f 1)) (ds-i op)))))
+(defn- ds-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
+  (-> s (ds-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
+      (ds-i (bit-or 0xf2a00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 16) 65535) 5))))))
+(defn- ds-add [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0x91000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-sub [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xd1000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-ldr [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-str [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-lw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-lb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xf100001f (bit-or (i64-shift-left rn 5) (i64-shift-left value 10)))))
+(defn- ds-cmp [s :vector-i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0xeb00001f (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16)))))
+(defn- ds-sys [s :vector-i64 number :i64] :vector-i64 (-> s (ds-imm 16 (+ 33554432 number)) (ds-i 0xd4001001)))
+(defn- ds-hex-digit [s :vector-i64] :vector-i64
+  ;; Input nibble x11, result x11: 0..15 -> ASCII lowercase hex.
+  (-> s (ds-add 11 11 48) (ds-cmpi 11 57) (ds-add 12 11 39)
+      (ds-i 0x9a8b818b)))
+(defn- ds-finish [s :vector-i64] :vector-i64
+  (let [n (vector-at s 0) valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3))))) 0) false (recur (+ i 1))))))
+        out (loop [i 0 v (vector-alloc n)] (if (= i n) v (recur (+ i 1) (vector-assoc! v i (vector-at s (+ 256 i))))))]
+    (if (not valid) []
+      (loop [i 0 v out] (if (= i (vector-at s 1)) v
+        (let [at (+ 3072 (* i 3)) pc (vector-at s at) op (vector-at s (+ at 1))
+              delta (- (- (vector-at s (+ 8 (vector-at s (+ at 2)))) 1) pc)
+              mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
+              bits (bit-and delta mask)]
+          (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
+
+;; Fixed request: "WP01" or "WP02", pid u32, start-sec u64, start-usec u64,
+;; token u32, timeout seconds u32. After registration and the second identity
+;; check emit "WR01", four zero bytes and the request (40 bytes). Only a
+;; matching exit later emits "WO01", four zero bytes and the same request.
+;; The host must consume the exact ready frame before resuming the workload.
+;; Errors, timeouts, changed identity and malformed fields cannot be success.
+;; A failed or short stdout write can leave a partial response. The host must
+;; require an exact frame and successful exit and treat all else as unknown.
+;; External boot identity and durable recovery are essential; the 32-bit token
+;; is correlation only.
+;; WP01 refuses after one timeout. WP02 repeats waits on the same queue and
+;; emits "WH01", a strictly increasing nonzero u32 sequence, and the exact
+;; request on each empty wait. The host must drain and authenticate the pipe,
+;; enforce its own deadline, reject missing, stale or malformed heartbeats and
+;; treat loss as unknown. A heartbeat is not proof that the workload is safe.
+(defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
+(defn- ds-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0x8a000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
+(defn- watcher-words [] :vector-i64
+  (ds-finish (-> (ds-new)
+    (ds-sub 31 31 2048)
+    ;; Read exactly 32 bytes from FD 3. The host must also exclude trailing
+    ;; data; this read alone cannot prove end-of-input or prevent blocking.
+    (ds-imm 0 3) (ds-add 1 31 0) (ds-imm 2 32) (ds-sys 3) (ds-b 0x54000002 9)
+    (ds-cmpi 0 32) (ds-b 0x54000001 9)
+    (ds-lw 8 31 0) (ds-imm 25 0) (ds-imm 26 0) (ds-imm 9 825249879) (ds-cmp 8 9) (ds-b 0x54000000 1)
+    (ds-imm 9 842027095) (ds-cmp 8 9) (ds-b 0x54000000 10)
+    (ds-imm 9 858804311) (ds-cmp 8 9) (ds-b 0x54000000 16)
+    (ds-imm 9 875581527) (ds-cmp 8 9) (ds-b 0x54000001 9)
+    (ds-imm 25 3) (ds-b 0x14000000 1)
+    (ds-label 16) (ds-imm 25 2) (ds-b 0x14000000 1)
+    (ds-label 10) (ds-imm 25 1)
+    (ds-label 1)
+    (ds-lw 19 31 4) (ds-cmpi 19 0) (ds-b 0x54000000 9)
+    (ds-imm 8 2147483647) (ds-cmp 19 8) (ds-b 0x54000008 9)
+    (ds-ldr 20 31 8) (ds-cmpi 20 0) (ds-b 0x54000000 9)
+    (ds-ldr 21 31 16) (ds-imm 8 999999) (ds-cmp 21 8) (ds-b 0x54000008 9)
+    (ds-lw 22 31 24) (ds-cmpi 22 0) (ds-b 0x54000000 9)
+    (ds-imm 8 2147483647) (ds-cmp 22 8) (ds-b 0x54000008 9)
+    (ds-lw 24 31 28) (ds-cmpi 24 0) (ds-b 0x54000000 9)
+    (ds-imm 8 900) (ds-cmp 24 8) (ds-b 0x54000008 9)
+    ;; proc_info(PIDINFO, pid, TBSDINFO, 0, buffer, 136) before registration.
+    (ds-imm 0 2) (ds-i 0xaa1303e1) (ds-imm 2 3) (ds-imm 3 0) (ds-add 4 31 256) (ds-imm 5 136)
+    (ds-sys 336) (ds-b 0x54000002 9) (ds-cmpi 0 136) (ds-b 0x54000001 9)
+    (ds-lw 8 31 268) (ds-cmp 8 19) (ds-b 0x54000001 9)
+    (ds-ldr 8 31 376) (ds-cmp 8 20) (ds-b 0x54000001 9)
+    (ds-ldr 8 31 384) (ds-cmp 8 21) (ds-b 0x54000001 9)
+    ;; Open kqueue, then build the exact zeroed kevent64 registration.
+    (ds-sys 362) (ds-b 0x54000002 9) (ds-i 0xaa0003f7)
+    (ds-str 31 31 512) (ds-str 31 31 520) (ds-str 31 31 528)
+    (ds-str 31 31 536) (ds-str 31 31 544) (ds-str 31 31 552)
+    (ds-str 19 31 512) (ds-imm 8 1179643) (ds-sw 8 31 520)
+    ;; Exit, fork and exec are all one-shot observations. Fork or exec must
+    ;; stop this watcher as unknown, even if coalesced with an exit event.
+    (ds-cmpi 25 2) (ds-b 0x54000003 11)
+    (ds-imm 8 3825205248) (ds-b 0x14000000 12)
+    (ds-label 11) (ds-imm 8 3758096384) (ds-label 12)
+    (ds-sw 8 31 524) (ds-str 22 31 536)
+    (ds-i 0xaa1703e0) (ds-add 1 31 512) (ds-imm 2 1) (ds-imm 3 0)
+    (ds-imm 4 0) (ds-imm 5 0) (ds-imm 6 0) (ds-sys 369) (ds-b 0x54000002 9)
+    (ds-cmpi 0 0) (ds-b 0x54000001 9)
+    ;; Repeat identity after registration; absence or PID reuse stays unknown.
+    (ds-imm 0 2) (ds-i 0xaa1303e1) (ds-imm 2 3) (ds-imm 3 0) (ds-add 4 31 768) (ds-imm 5 136)
+    (ds-sys 336) (ds-b 0x54000002 9) (ds-cmpi 0 136) (ds-b 0x54000001 9)
+    (ds-lw 8 31 780) (ds-cmp 8 19) (ds-b 0x54000001 9)
+    (ds-ldr 8 31 888) (ds-cmp 8 20) (ds-b 0x54000001 9)
+    (ds-ldr 8 31 896) (ds-cmp 8 21) (ds-b 0x54000001 9)
+    ;; A ready frame binds registration to the exact request. Partial output,
+    ;; failure, loss of the watcher, and host crash remain unknown.
+    (ds-str 31 31 1200) (ds-imm 8 825250391) (ds-sw 8 31 1200)
+    (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)
+    (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)
+    (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 40) (ds-b 0x54000001 9)
+    ;; Retain the same registration across WP02 timeout intervals; re-registering
+    ;; after timeout would leave a gap in event observation.
+    (ds-label 2)
+    (ds-str 24 31 1104) (ds-str 31 31 1112)
+    (ds-i 0xaa1703e0) (ds-imm 1 0) (ds-imm 2 0) (ds-add 3 31 1024)
+    (ds-imm 4 1) (ds-imm 5 0) (ds-add 6 31 1104) (ds-sys 369) (ds-b 0x54000002 9)
+    (ds-cmpi 0 0) (ds-b 0x54000001 3)
+    (ds-imm 10 1) (ds-and 9 25 10) (ds-cmpi 9 1) (ds-b 0x54000001 9)
+    ;; WP02: bounded, request-bound heartbeat; sequence wrap is unknown.
+    (ds-add 26 26 1) (ds-imm 8 4294967295) (ds-cmp 26 8) (ds-b 0x54000008 9)
+    (ds-str 31 31 1200) (ds-imm 8 825247831) (ds-sw 8 31 1200) (ds-sw 26 31 1204)
+    (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 40) (ds-b 0x54000001 9) (ds-b 0x14000000 2)
+    (ds-label 3)
+    (ds-cmpi 0 1) (ds-b 0x54000001 9)
+    ;; PID, filter, EV_ERROR absent, EV_EOF and NOTE_EXIT set, token match;
+    ;; a concurrent or prior observed NOTE_FORK/NOTE_EXEC remains unknown.
+    (ds-ldr 8 31 1024) (ds-cmp 8 19) (ds-b 0x54000001 9)
+    (ds-lh 8 31 1032) (ds-imm 10 65531) (ds-cmp 8 10) (ds-b 0x54000001 9)
+    (ds-lh 8 31 1034) (ds-imm 10 16384) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
+    (ds-imm 10 32768) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    (ds-lw 8 31 1036) (ds-imm 10 1610612736) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000001 9)
+    (ds-imm 10 2147483648) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    ;; WP03/WP04 request exit status; missing status or a nonterminal/malformed
+    ;; wait value must not be turned into a successful exit observation.
+    (ds-cmpi 25 2) (ds-b 0x54000003 13)
+    (ds-imm 10 67108864) (ds-and 9 8 10) (ds-cmpi 9 0) (ds-b 0x54000000 9)
+    (ds-ldr 8 31 1040) (ds-imm 10 65535) (ds-cmp 8 10) (ds-b 0x54000008 9)
+    (ds-imm 10 127) (ds-and 9 8 10) (ds-cmpi 9 127) (ds-b 0x54000000 9)
+    (ds-str 8 31 1152) (ds-label 13)
+    (ds-ldr 8 31 1048) (ds-cmp 8 22) (ds-b 0x54000001 9)
+    ;; Emit the final frame; a lost or partial write is still unknown to host.
+    (ds-str 31 31 1200) (ds-cmpi 25 2) (ds-b 0x54000003 14)
+    (ds-imm 8 825250647) (ds-sw 8 31 1200) (ds-lw 8 31 1152) (ds-sw 8 31 1204) (ds-b 0x14000000 15)
+    (ds-label 14) (ds-imm 8 825249623) (ds-sw 8 31 1200) (ds-label 15)
+    (ds-ldr 8 31 0) (ds-str 8 31 1208) (ds-ldr 8 31 8) (ds-str 8 31 1216)
+    (ds-ldr 8 31 16) (ds-str 8 31 1224) (ds-ldr 8 31 24) (ds-str 8 31 1232)
+    (ds-imm 0 1) (ds-add 1 31 1200) (ds-imm 2 40) (ds-sys 4) (ds-b 0x54000002 9)
+    (ds-cmpi 0 40) (ds-b 0x54000001 9) (ds-imm 0 0) (ds-sys 1)
+    (ds-label 9) (ds-imm 0 1) (ds-sys 1) (ds-i 0xd4200000))))
+
+(defn- body-at [v :vector-i64 at :i64] :vector-i64
+  (-> v (u32-at at 4277009103) (u32-at (+ at 4) 16777228) (u32-at (+ at 12) 2)
+      (u32-at (+ at 16) 7) (u32-at (+ at 20) 344) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72) (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296) (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT") (u64-at (+ at 128) 4294967296) (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES) (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72) (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680) (u64-at (+ at 208) IMAGE-BYTES) (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1) (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24) (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24) (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (u32-at (+ at 328) 2147483682) (u32-at (+ at 332) 48) (words-at (+ at 1024) (watcher-words))))
+(defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (and (= (vector-count reply) (+ IMAGE-BYTES 5)) (= (vector-at reply 0) 0)
+       (= (vector-at reply 1) 70) (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
+       (loop [i 0] (if (= i IMAGE-BYTES) true
+         (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i))) (recur (+ i 1)) false)))))
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0") extra (typed-cap-call :cli/args :string :string "1")
+        length (string-byte-length path) offset (+ 7 length)]
+    (if (or (= length 0) (> length 255) (not (= extra "")) (= (vector-count (watcher-words)) 0)) 2
+      (let [v (-> (vector-alloc (+ offset IMAGE-BYTES)) (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                  (byte-at 3 50) (byte-at 4 0) (byte-at 5 66) (text-at 6 path) (byte-at (+ 6 length) 0) (body-at offset))
+            reply (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v))]
+        (if (acknowledged? v offset (vector-i64-from-bytes reply)) 0 3)))))

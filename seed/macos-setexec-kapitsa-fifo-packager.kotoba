@@ -1,0 +1,183 @@
+;; Diagnostic only: fixed Kapitsa paths and a nonce-derived model directory.
+;; The caller must control that directory and supply only a test fixture;
+;; this helper does not enforce its contents. Not a supervisor or deployment tool.
+(ns seed.macos-setexec-kapitsa-fifo-packager (:export [main]))
+
+(def IMAGE-BYTES 16384)
+(defn- byte-at [v :vector-i64 at :i64 value :i64] :vector-i64 (vector-assoc! v at (bit-and value 255)))
+(defn- u32-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (byte-at at value) (byte-at (+ at 1) (u64-shift-right value 8))
+      (byte-at (+ at 2) (u64-shift-right value 16)) (byte-at (+ at 3) (u64-shift-right value 24))))
+(defn- u64-at [v :vector-i64 at :i64 value :i64] :vector-i64
+  (-> v (u32-at at (bit-and value 4294967295)) (u32-at (+ at 4) (u64-shift-right value 32))))
+(defn- text-at [v :vector-i64 at :i64 text :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 text))]
+    (loop [i 0 out v] (if (= i (vector-count b)) out (recur (+ i 1) (byte-at out (+ at i) (vector-at b i)))))))
+(defn- words-at [v :vector-i64 at :i64 words :vector-i64] :vector-i64
+  (loop [i 0 out v] (if (= i (vector-count words)) out (recur (+ i 1) (u32-at out (+ at (* i 4)) (vector-at words i))))))
+
+;; Fixed instruction builder. Branch fixups are checked before emitting.
+(defn- ds-new [] :vector-i64 (vector-alloc 4096))
+(defn- ds-i [s :vector-i64 word :i64] :vector-i64
+  (let [n (vector-at s 0)] (if (>= n 2816) (vector-assoc! s 3 1)
+    (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
+(defn- ds-label [s :vector-i64 label :i64] :vector-i64
+  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+    (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
+(defn- ds-b [s :vector-i64 op :i64 label :i64] :vector-i64
+  (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
+    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+      (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) op) (vector-assoc! (+ at 2) label)
+          (vector-assoc! 1 (+ f 1)) (ds-i op)))))
+(defn- ds-imm [s :vector-i64 rd :i64 value :i64] :vector-i64
+  (-> s (ds-i (bit-or 0xd2800000 (bit-or rd (i64-shift-left (bit-and value 65535) 5))))
+      (ds-i (bit-or 0xf2a00000 (bit-or rd (i64-shift-left (bit-and (u64-shift-right value 16) 65535) 5))))))
+(defn- ds-add [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0x91000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-sub [s :vector-i64 rd :i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xd1000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left value 10))))))
+(defn- ds-ldr [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-str [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xf9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 8) 10))))))
+(defn- ds-lw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-lb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sb [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x39000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left off 10))))))
+(defn- ds-sw [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0xb9000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 4) 10))))))
+(defn- ds-cmpi [s :vector-i64 rn :i64 value :i64] :vector-i64
+  (ds-i s (bit-or 0xf100001f (bit-or (i64-shift-left rn 5) (i64-shift-left value 10)))))
+(defn- ds-cmp [s :vector-i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0xeb00001f (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16)))))
+(defn- ds-sys [s :vector-i64 number :i64] :vector-i64 (-> s (ds-imm 16 (+ 33554432 number)) (ds-i 0xd4001001)))
+(defn- ds-hex-digit [s :vector-i64] :vector-i64
+  ;; Input nibble x11, result x11: 0..15 -> ASCII lowercase hex.
+  (-> s (ds-add 11 11 48) (ds-cmpi 11 57) (ds-add 12 11 39)
+      (ds-i 0x9a8b818b)))
+(defn- ds-finish [s :vector-i64] :vector-i64
+  (let [n (vector-at s 0) valid (and (= (vector-at s 3) 0)
+          (loop [i 0] (if (= i (vector-at s 1)) true
+            (if (= (vector-at s (+ 8 (vector-at s (+ 3074 (* i 3))))) 0) false (recur (+ i 1))))))
+        out (loop [i 0 v (vector-alloc n)] (if (= i n) v (recur (+ i 1) (vector-assoc! v i (vector-at s (+ 256 i))))))]
+    (if (not valid) []
+      (loop [i 0 v out] (if (= i (vector-at s 1)) v
+        (let [at (+ 3072 (* i 3)) pc (vector-at s at) op (vector-at s (+ at 1))
+              delta (- (- (vector-at s (+ 8 (vector-at s (+ at 2)))) 1) pc)
+              mask (if (= (bit-and op 0x7c000000) 0x14000000) 0x03ffffff 0x0007ffff)
+              bits (bit-and delta mask)]
+          (recur (+ i 1) (vector-assoc! v pc (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))))))))))
+
+;; Fixed request: "WP01" or "WP02", pid u32, start-sec u64, start-usec u64,
+;; token u32, timeout seconds u32. After registration and the second identity
+;; check emit "WR01", four zero bytes and the request (40 bytes). Only a
+;; matching exit later emits "WO01", four zero bytes and the same request.
+;; The host must consume the exact ready frame before resuming the workload.
+;; Errors, timeouts, changed identity and malformed fields cannot be success.
+;; A failed or short stdout write can leave a partial response. The host must
+;; require an exact frame and successful exit and treat all else as unknown.
+;; External boot identity and durable recovery are essential; the 32-bit token
+;; is correlation only.
+;; WP01 refuses after one timeout. WP02 repeats waits on the same queue and
+;; emits "WH01", a strictly increasing nonzero u32 sequence, and the exact
+;; request on each empty wait. The host must drain and authenticate the pipe,
+;; enforce its own deadline, reject missing, stale or malformed heartbeats and
+;; treat loss as unknown. A heartbeat is not proof that the workload is safe.
+(defn- ds-lh [s :vector-i64 rd :i64 rn :i64 off :i64] :vector-i64
+  (ds-i s (bit-or 0x79400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot off 2) 10))))))
+(defn- ds-and [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (ds-i s (bit-or 0x8a000000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
+;; Diagnostic only: fixed Kapitsa FIFO startup probe with a bounded nonce.
+;; A host must install and authenticate the sandbox, enforce the OS/build,
+;; protect executable identity, reservations and lifetime; this does none.
+(defn- dl-clear [s :vector-i64 off :i64 count :i64] :vector-i64
+  (loop [i 0 out s]
+    (if (= i count) out (recur (+ i 1) (ds-str out 31 31 (+ off (* i 8)))))))
+(defn- dl-byte [b :vector-i64 i :i64] :i64
+  (if (< i (vector-count b)) (vector-at b i) 0))
+(defn- dl-write [s :vector-i64 off :i64 target :string] :vector-i64
+  (let [b (vector-i64-from-bytes (string-to-utf8 target)) n (vector-count b)]
+    (loop [i 0 out s]
+      (if (>= i (+ n 1)) out
+        (let [word (+ (dl-byte b i) (* 256 (dl-byte b (+ i 1)))
+                      (* 65536 (dl-byte b (+ i 2))) (* 16777216 (dl-byte b (+ i 3))))]
+          (recur (+ i 4) (-> out (ds-imm 8 word) (ds-sw 8 31 (+ off i)))))))))
+(defn- launcher-words [target :string model :string] :vector-i64
+  (let [z (-> (ds-new) (ds-sub 31 31 2048) (dl-clear 256 31) (dl-clear 512 18)
+              (dl-write 768 target) (dl-write 1280 "serve") (dl-write 1296 "--model")
+              (dl-write 1312 model) (dl-write 1536 "--host") (dl-write 1552 "127.0.0.1")
+              (dl-write 1568 "--port") (dl-write 1584 "42781") (dl-write 1600 "--private")
+              (dl-write 1616 "--local") (dl-write 1640 (str "HOME=" model))
+              (dl-write 1816 "KAPITSA_NO_AUTO_UPDATE=1") (dl-write 1856 "CI=true")
+              (dl-write 1888 "PATH=/usr/bin:/bin"))]
+    (ds-finish (-> z
+      ;; 248-byte private spawn attribute and 18-word descriptor.
+      (ds-imm 8 192) (ds-sw 8 31 256)
+      (ds-imm 8 1) (ds-str 8 31 312)
+      (ds-imm 8 32780) (ds-sw 8 31 320)
+      (ds-imm 8 4294967295) (ds-sw 8 31 324)
+      (ds-imm 8 256) (ds-sw 8 31 328) (ds-sw 8 31 332)
+      (ds-imm 8 4294967295) (ds-sw 8 31 368) (ds-sw 8 31 372)
+      (ds-sw 8 31 376) (ds-sw 8 31 380)
+      (ds-imm 8 248) (ds-str 8 31 512) (ds-add 8 31 256) (ds-str 8 31 520)
+      ;; The caller must ensure the model path contains only a bounded test fixture.
+      (ds-add 8 31 768) (ds-str 8 31 1024) (ds-add 8 31 1280) (ds-str 8 31 1032)
+      (ds-add 8 31 1296) (ds-str 8 31 1040) (ds-add 8 31 1312) (ds-str 8 31 1048)
+      (ds-add 8 31 1536) (ds-str 8 31 1056) (ds-add 8 31 1552) (ds-str 8 31 1064)
+      (ds-add 8 31 1568) (ds-str 8 31 1072) (ds-add 8 31 1584) (ds-str 8 31 1080)
+      (ds-add 8 31 1600) (ds-str 8 31 1088) (ds-add 8 31 1616) (ds-str 8 31 1096)
+      (ds-str 31 31 1104)
+      (ds-add 8 31 1640) (ds-str 8 31 1120) (ds-add 8 31 1816) (ds-str 8 31 1128)
+      (ds-add 8 31 1856) (ds-str 8 31 1136) (ds-add 8 31 1888) (ds-str 8 31 1144)
+      (ds-str 31 31 1152)
+      (ds-imm 8 4294967295) (ds-sw 8 31 1000)
+      ;; SETEXEC success does not return; any return is failure, exit 1.
+      (ds-add 0 31 1000) (ds-add 1 31 768) (ds-add 2 31 512)
+      (ds-add 3 31 1024) (ds-add 4 31 1120) (ds-sys 244)
+      (ds-imm 0 1) (ds-sys 1) (ds-i 0xd4200000)))))
+
+(defn- body-at [v :vector-i64 at :i64 target :string model :string] :vector-i64
+  (-> v (u32-at at 4277009103) (u32-at (+ at 4) 16777228) (u32-at (+ at 12) 2)
+      (u32-at (+ at 16) 7) (u32-at (+ at 20) 344) (u32-at (+ at 24) 2097157)
+      (u32-at (+ at 32) 25) (u32-at (+ at 36) 72) (text-at (+ at 40) "__PAGEZERO")
+      (u64-at (+ at 64) 4294967296) (u32-at (+ at 104) 25) (u32-at (+ at 108) 72)
+      (text-at (+ at 112) "__TEXT") (u64-at (+ at 128) 4294967296) (u64-at (+ at 136) IMAGE-BYTES)
+      (u64-at (+ at 152) IMAGE-BYTES) (u32-at (+ at 160) 5) (u32-at (+ at 164) 5)
+      (u32-at (+ at 176) 25) (u32-at (+ at 180) 72) (text-at (+ at 184) "__LINKEDIT")
+      (u64-at (+ at 200) 4294983680) (u64-at (+ at 208) IMAGE-BYTES) (u64-at (+ at 216) IMAGE-BYTES)
+      (u32-at (+ at 232) 1) (u32-at (+ at 236) 1) (u32-at (+ at 248) 14) (u32-at (+ at 252) 32)
+      (u32-at (+ at 256) 12) (text-at (+ at 260) "/usr/lib/dyld")
+      (u32-at (+ at 280) 2147483688) (u32-at (+ at 284) 24) (u64-at (+ at 288) 1024)
+      (u32-at (+ at 304) 50) (u32-at (+ at 308) 24) (u32-at (+ at 312) 1)
+      (u32-at (+ at 316) 851968) (u32-at (+ at 320) 851968)
+      (u32-at (+ at 328) 2147483682) (u32-at (+ at 332) 48) (words-at (+ at 1024) (launcher-words target model))))
+(defn- acknowledged? [request :vector-i64 offset :i64 reply :vector-i64] :bool
+  (and (= (vector-count reply) (+ IMAGE-BYTES 5)) (= (vector-at reply 0) 0)
+       (= (vector-at reply 1) 70) (= (vector-at reply 2) 83) (= (vector-at reply 3) 50) (= (vector-at reply 4) 0)
+       (loop [i 0] (if (= i IMAGE-BYTES) true
+         (if (= (vector-at reply (+ i 5)) (vector-at request (+ offset i))) (recur (+ i 1)) false)))))
+(defn- nonce? [s :string] :bool
+  (and (= (string-length s) 32)
+       (loop [i 0]
+         (if (= i 32) true
+           (let [c (string-code-point-at s i)]
+             (and (or (and (>= c 48) (<= c 57)) (and (>= c 97) (<= c 102)))
+                  (recur (+ i 1))))))))
+(defn main [] :i64
+  (let [path (typed-cap-call :cli/args :string :string "0") profile (typed-cap-call :cli/args :string :string "1")
+        nonce (typed-cap-call :cli/args :string :string "2")
+        extra (typed-cap-call :cli/args :string :string "3")
+        model (str "/private/tmp/awai152-kapitsa-fifo-" nonce)
+        target (cond (= profile "naphtali") "/Users/naphtali/.local/share/awai/flint16-0.2.26/kapitsa-0.2.26-darwin-arm64/kapitsa"
+                     (= profile "benjamin") "/Users/benjamin/.local/share/awai/flint16-0.2.26/kapitsa-0.2.26-darwin-arm64/kapitsa"
+                     (= profile "judah") "/Users/judah/.local/share/awai/flint16-0.2.26/kapitsa-0.2.26-darwin-arm64/kapitsa"
+                     :else "")
+        length (string-byte-length path) offset (+ 7 length)]
+    ;; The fixed path's padded bytes must remain below the pid slot at 1000.
+    (if (or (= length 0) (> length 255) (not (= extra "")) (not (nonce? nonce)) (= target "") (> (string-byte-length target) 224) (= (vector-count (launcher-words target model)) 0)) 2
+      (let [v (-> (vector-alloc (+ offset IMAGE-BYTES)) (byte-at 0 0) (byte-at 1 70) (byte-at 2 83)
+                  (byte-at 3 50) (byte-at 4 0) (byte-at 5 66) (text-at 6 path) (byte-at (+ 6 length) 0) (body-at offset target model))
+            reply (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 v))]
+        (if (acknowledged? v offset (vector-i64-from-bytes reply)) 0 3)))))

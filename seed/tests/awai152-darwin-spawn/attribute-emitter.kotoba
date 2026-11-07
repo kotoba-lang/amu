@@ -1,0 +1,16 @@
+;; Diagnostic fixture; compose after darwin-spawn-attribute with main export.
+;; The caller supplies an exclusive private FS2 root; this does not spawn work.
+(defn main [] :i64
+  (let [payload (darwin-spawn-attribute "25G332" 64 false)
+        prefix (vector-i64-from-bytes (string-to-utf8 "\u0000FS2\u0000Battributes.bin\u0000"))
+        n (vector-count prefix)
+        request (loop [i 0 v (vector-alloc (+ n (vector-count payload)))]
+                  (if (= i (+ n (vector-count payload))) v
+                    (recur (+ i 1) (vector-assoc! v i
+                      (if (< i n) (vector-at prefix i) (vector-at payload (- i n)))))))
+        reply (typed-cap-call :fs/app-data-bytes :bytes :bytes (bytes-from-vector-i64 request))]
+    (if (and (= (vector-count payload) 248) (= (bytes-count reply) 253)
+             (= (bytes-at reply 0) 0) (= (bytes-at reply 1) 70) (= (bytes-at reply 2) 83)
+             (= (bytes-at reply 3) 50) (= (bytes-at reply 4) 0)
+             (loop [i 0] (if (= i 248) true
+               (and (= (bytes-at reply (+ i 5)) (vector-at payload i)) (recur (+ i 1)))))) 0 1)))

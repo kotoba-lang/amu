@@ -1,0 +1,142 @@
+(ns watcher-replay (:export [main]))
+;; Pure framing check for the experimental Darwin watcher. The trusted host
+;; must itself launch the pinned helper, authenticate the boot and process
+;; identity, obtain EOF, and bind these bytes and exit status to that launch.
+;; A matched frame is not a successful workload receipt, a process-tree proof,
+;; or permission to release a resource reservation.
+
+
+(defn- dwr-u32 [v :vector-i64 at :i64] :i64
+  (+ (vector-at v at) (* 256 (vector-at v (+ at 1)))
+     (* 65536 (vector-at v (+ at 2))) (* 16777216 (vector-at v (+ at 3)))))
+
+(defn- dwr-bytes? [v :vector-i64] :bool
+  (loop [i 0]
+    (if (= i (vector-count v)) true
+      (let [x (vector-at v i)]
+        (and (>= x 0) (<= x 255) (recur (+ i 1)))))))
+
+;; Validate one 32-byte WP01, WP02, WP03 or WP04 request independently,
+;; including the high half of microseconds and the approved timeout limit.
+(defn- dwr-request? [r :vector-i64] :bool
+  (if (not (= (vector-count r) 32)) false
+    (and (dwr-bytes? r) (= (vector-at r 0) 87) (= (vector-at r 1) 80)
+         (= (vector-at r 2) 48) (or (= (vector-at r 3) 49) (= (vector-at r 3) 50) (= (vector-at r 3) 51) (= (vector-at r 3) 52))
+         (> (dwr-u32 r 4) 0) (<= (dwr-u32 r 4) 2147483647)
+         (or (> (dwr-u32 r 8) 0) (> (dwr-u32 r 12) 0))
+         (= (dwr-u32 r 20) 0) (<= (dwr-u32 r 16) 999999)
+         (> (dwr-u32 r 24) 0) (<= (dwr-u32 r 24) 2147483647)
+         (> (dwr-u32 r 28) 0) (<= (dwr-u32 r 28) 900))))
+
+;; Accept readiness only from exactly one complete frame from a live, pinned
+;; watcher which the trusted host owns. This pure check authenticates nothing.
+(defn darwin-watch-ready? [request :vector-i64 ready :vector-i64] :bool
+  (and (dwr-request? request) (= (vector-count ready) 40) (dwr-bytes? ready)
+       (= (vector-at ready 0) 87) (= (vector-at ready 1) 82)
+       (= (vector-at ready 2) 48) (= (vector-at ready 3) 49)
+       (= (dwr-u32 ready 4) 0)
+       (loop [i 0] (if (= i 32) true
+         (and (= (vector-at request i) (vector-at ready (+ i 8))) (recur (+ i 1)))))))
+
+;; The host supplies the next sequence from its own state and must enforce a
+;; deadline with an independent monotonic clock. A received frame cannot prove
+;; freshness by itself, authenticate the pipe, or establish workload safety.
+(defn darwin-watch-heartbeat? [request :vector-i64 frame :vector-i64 next :i64] :bool
+  (and (dwr-request? request) (or (= (vector-at request 3) 50) (= (vector-at request 3) 52))
+       (> next 0) (<= next 4294967295)
+       (= (vector-count frame) 40) (dwr-bytes? frame)
+       (= (vector-at frame 0) 87) (= (vector-at frame 1) 72)
+       (= (vector-at frame 2) 48) (= (vector-at frame 3) 49) (= (dwr-u32 frame 4) next)
+       (loop [i 0] (if (= i 32) true
+         (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1)))))))
+
+;; Streaming WP02 consumers validate readiness and every heartbeat separately;
+;; this final frame cannot prove those prior observations or descendant exit.
+(defn darwin-watch-exit-class [request :vector-i64 frame :vector-i64 exit-code :i64 eof :bool] :string
+  (if (and (dwr-request? request) (= (vector-at request 3) 50)
+           (= exit-code 0) eof (= (vector-count frame) 40) (dwr-bytes? frame)
+           (= (vector-at frame 0) 87) (= (vector-at frame 1) 79)
+           (= (vector-at frame 2) 48) (= (vector-at frame 3) 49) (= (dwr-u32 frame 4) 0)
+           (loop [i 0] (if (= i 32) true
+             (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))
+    "observer/bound-exit-observed" "observer/unknown"))
+
+;; WP03 is one-shot; WP04 streams heartbeats. Return raw status or -1.
+;; Status is not a reservation release or proof of child/descendant reaping.
+(defn darwin-watch-status [request :vector-i64 frame :vector-i64 exit-code :i64 eof :bool] :i64
+  (if (not (and (dwr-request? request) (or (= (vector-at request 3) 51) (= (vector-at request 3) 52))
+                (= exit-code 0) eof (= (vector-count frame) 40) (dwr-bytes? frame)
+                (= (vector-at frame 0) 87) (= (vector-at frame 1) 83)
+                (= (vector-at frame 2) 48) (= (vector-at frame 3) 49)
+                (loop [i 0] (if (= i 32) true
+                  (and (= (vector-at request i) (vector-at frame (+ i 8))) (recur (+ i 1))))))) -1
+    (let [status (dwr-u32 frame 4)]
+      (if (or (> status 65535) (= (bit-and status 127) 127)) -1 status))))
+
+;; Host-owned volatile state has five numeric fields followed by the exact
+;; 32-byte request. WP04 appends a status slot; -1 until terminal observation.
+;; This is correlation, not authentication; the host must
+;; protect the state and bind the request to its own authenticated launch.
+(defn- dwr-monitor-state [request :vector-i64 phase :i64 next :i64 last :i64 timeout :i64 observed :i64] :vector-i64
+  (let [status-mode (= (vector-at request 3) 52)
+        base (-> (vector-alloc (if status-mode 38 37)) (vector-assoc! 0 phase) (vector-assoc! 1 next)
+                 (vector-assoc! 2 last) (vector-assoc! 3 timeout) (vector-assoc! 4 observed))]
+    (loop [i 0 out (if status-mode (vector-assoc! base 37 -1) base)]
+      (if (= i 32) out (recur (+ i 1) (vector-assoc! out (+ i 5) (vector-at request i)))))))
+(defn- dwr-state-request? [request :vector-i64 state :vector-i64] :bool
+  (and (= (vector-count request) 32) (= (vector-count state) (if (= (vector-at request 3) 52) 38 37))
+       (loop [i 0]
+         (if (= i 32) true
+           (and (= (vector-at request i) (vector-at state (+ i 5))) (recur (+ i 1)))))))
+(defn darwin-watch-monitor-start [request :vector-i64 now :i64 timeout :i64] :vector-i64
+  (if (and (dwr-request? request) (or (= (vector-at request 3) 50) (= (vector-at request 3) 52))
+           (> now 0) (<= now 9007199254740991) (> timeout 0) (<= timeout 900000))
+    (dwr-monitor-state request 0 1 now timeout now) [3 0 0 0 0]))
+
+;; Numeric fields: [phase next-sequence last-frame-ms timeout-ms last-observed-ms].
+;; Start with darwin-watch-monitor-start, advance only after reading from the
+;; authenticated helper pipe, and retain a separate durable reservation. A
+;; timeout, clock rollback, pipe loss, bad frame or inconsistent status makes
+;; state [3 0 0 0 0] (unknown). Phase 2 observes one bound exit only; it never
+;; authorizes a release or proves descendant termination. Buffered frames do
+;; not themselves prove freshness; the host must enforce its I/O deadline.
+(defn darwin-watch-monitor-step [request :vector-i64 state :vector-i64 event :string frame :vector-i64
+                                exit-code :i64 eof :bool now :i64 alive :bool] :vector-i64
+  (if (not (dwr-state-request? request state)) [3 0 0 0 0]
+    (let [phase (vector-at state 0) next (vector-at state 1)
+          last (vector-at state 2) timeout (vector-at state 3) observed (vector-at state 4)]
+      (if (or (not (dwr-request? request)) (not (or (= (vector-at request 3) 50) (= (vector-at request 3) 52)))
+              (and (= (vector-at request 3) 52) (not (= (vector-at state 37) -1)))
+              (< phase 0) (> phase 1) (< next 1) (> next 4294967296) (and (= phase 0) (not (= next 1)))
+              (<= last 0) (> last 9007199254740991) (< observed last) (< now observed) (> now 9007199254740991)
+              (< timeout 1) (> timeout 900000) (> (- now last) timeout)) [3 0 0 0 0]
+        (cond (and (= event "ready") (= phase 0) (= next 1) alive (= exit-code -1) (not eof)
+                   (darwin-watch-ready? request frame)) (dwr-monitor-state request 1 next now timeout now)
+              (and (= event "heartbeat") (= phase 1) alive (= exit-code -1) (not eof)
+                   (darwin-watch-heartbeat? request frame next)) (dwr-monitor-state request 1 (+ next 1) now timeout now)
+              (and (= event "poll") alive (= exit-code -1) (not eof) (= (vector-count frame) 0)) (dwr-monitor-state request phase next last timeout now)
+              (and (= event "exit") (= phase 1) (not alive)
+                   (if (= (vector-at request 3) 52)
+                     (>= (darwin-watch-status request frame exit-code eof) 0)
+                     (= (darwin-watch-exit-class request frame exit-code eof) "observer/bound-exit-observed")))
+                (let [done (dwr-monitor-state request 2 next now timeout now)]
+                  (if (= (vector-at request 3) 52)
+                    (vector-assoc! done 37 (darwin-watch-status request frame exit-code eof)) done))
+              :else [3 0 0 0 0])))))
+
+;; eof must mean the complete output was observed, not a read timeout or
+;; truncated buffer. The total response is WR01/request then WO01/request.
+;; Nonzero/unknown status and every mismatch stay unknown.
+(defn darwin-watch-reply-class [request :vector-i64 reply :vector-i64 exit-code :i64 eof :bool] :string
+  (if (and (= exit-code 0) eof (dwr-request? request) (= (vector-at request 3) 49) (= (vector-count reply) 80)
+           (dwr-bytes? reply) (= (vector-at reply 0) 87) (= (vector-at reply 1) 82)
+           (= (vector-at reply 2) 48) (= (vector-at reply 3) 49) (= (dwr-u32 reply 4) 0)
+           (= (vector-at reply 40) 87) (= (vector-at reply 41) 79)
+           (= (vector-at reply 42) 48) (= (vector-at reply 43) 49) (= (dwr-u32 reply 44) 0)
+           (loop [i 0]
+             (if (= i 32) true
+               (and (= (vector-at request i) (vector-at reply (+ i 8)))
+                    (= (vector-at request i) (vector-at reply (+ i 48))) (recur (+ i 1))))))
+    "observer/bound-exit-observed" "observer/unknown"))
+
+(defn main [] :i64 (let [req [87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] s0 (darwin-watch-monitor-start req 310990672 2500) s1 (darwin-watch-monitor-step req s0 "ready" [87 82 48 49 0 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] -1 false 310990674 true) s2 (darwin-watch-monitor-step req s1 "poll" [] -1 false 310990926 true) s3 (darwin-watch-monitor-step req s2 "poll" [] -1 false 310991186 true) s4 (darwin-watch-monitor-step req s3 "poll" [] -1 false 310991441 true) s5 (darwin-watch-monitor-step req s4 "heartbeat" [87 72 48 49 1 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] -1 false 310991676 true) s6 (darwin-watch-monitor-step req s5 "poll" [] -1 false 310991933 true) s7 (darwin-watch-monitor-step req s6 "poll" [] -1 false 310992193 true) s8 (darwin-watch-monitor-step req s7 "poll" [] -1 false 310992453 true) s9 (darwin-watch-monitor-step req s8 "heartbeat" [87 72 48 49 2 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] -1 false 310992678 true) s10 (darwin-watch-monitor-step req s9 "poll" [] -1 false 310992939 true) s11 (darwin-watch-monitor-step req s10 "poll" [] -1 false 310993193 true) s12 (darwin-watch-monitor-step req s11 "poll" [] -1 false 310993444 true) s13 (darwin-watch-monitor-step req s12 "heartbeat" [87 72 48 49 3 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] -1 false 310993680 true) s14 (darwin-watch-monitor-step req s13 "poll" [] -1 false 310993940 true) s15 (darwin-watch-monitor-step req s14 "poll" [] -1 false 310994195 true) s16 (darwin-watch-monitor-step req s15 "poll" [] -1 false 310994455 true) s17 (darwin-watch-monitor-step req s16 "heartbeat" [87 72 48 49 4 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] -1 false 310994682 true) s18 (darwin-watch-monitor-step req s17 "exit" [87 83 48 49 0 0 0 0 87 80 48 52 37 76 1 0 68 101 235 106 0 0 0 0 206 247 4 0 0 0 0 0 57 48 0 0 1 0 0 0] 0 true 310994684 false)] (if (and (= (vector-at s1 0) 1) (= (vector-at s2 0) 1) (= (vector-at s3 0) 1) (= (vector-at s4 0) 1) (= (vector-at s5 0) 1) (= (vector-at s6 0) 1) (= (vector-at s7 0) 1) (= (vector-at s8 0) 1) (= (vector-at s9 0) 1) (= (vector-at s10 0) 1) (= (vector-at s11 0) 1) (= (vector-at s12 0) 1) (= (vector-at s13 0) 1) (= (vector-at s14 0) 1) (= (vector-at s15 0) 1) (= (vector-at s16 0) 1) (= (vector-at s17 0) 1) (= (vector-at s18 0) 2) (= (vector-at s18 37) 0)) 0 1)))

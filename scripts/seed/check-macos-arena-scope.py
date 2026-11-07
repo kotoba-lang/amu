@@ -114,6 +114,21 @@ def main(output):
     if result is None or result.returncode == 0:
         raise ValueError("unscoped allocations were not refused at the original budget")
     print("PASS_MAC_ARENA_SCOPE exit 0 controls, depth 257 -> 70, unscoped refused", flush=True)
+    # Exercise the separate experimental watcher after the arena gate. Its
+    # result is not proof of process-tree containment or governor qualification.
+    watch_spec = importlib.util.spec_from_file_location(
+        "mac_watch_helper", ROOT / "scripts/seed/check-macos-watch-helper.py")
+    watch = importlib.util.module_from_spec(watch_spec)
+    watch_spec.loader.exec_module(watch)
+    public_receipt = output.parent / "public-macos-product"
+    artifact = public_receipt / "experimental-watch-fixture" if public_receipt.is_dir() else None
+    watch.run(compiler, packager, output / "watch-helper", artifact)
+    attr_spec = importlib.util.spec_from_file_location(
+        "mac_spawn_attribute", ROOT / "scripts/seed/check-macos-spawn-attribute.py")
+    attr = importlib.util.module_from_spec(attr_spec)
+    attr_spec.loader.exec_module(attr)
+    artifact = public_receipt / "experimental-spawn-attribute" if public_receipt.is_dir() else None
+    attr.run(compiler, packager, output / "spawn-attribute", artifact)
 
 
 if __name__ == "__main__":
