@@ -32,9 +32,17 @@ https://kotoba-lang.org/blog/embench-c-parity-20261015/.
   a lone `check FILE.cljk` and `definition-cids FILE.cljk`, through the same
   frontend; compile, run, lock and project routes are `.kotoba` only, and
   `.edn` has no native entry yet.
-- CLJC/CLJS/CLJ are refused as native input. They may remain only as a local
+- CLJS/CLJ are refused as native input. They may remain only as a local
   reference oracle under a project-root `oracle/` holding an `ORACLE.edn`
   (owner decision 2026-11-06, JUN-579; see the local reference oracle rules).
+- CLJK is treated as CLJC (owner decision 2026-11-07, JUN-579; supersedes the
+  2026-11-06 "CLJC is refused" wording): both are the same reader sugar,
+  with `#?(:kotoba …)` selecting the Kotoba branch, and `#?@` is not read.
+  This is the target contract. Native behavior is whatever the code does;
+  the entry points above are the last verified state, and the change to
+  accept `.cljc` natively is implementation work not yet done here. Where
+  the code and this text disagree, the code is the state and the
+  disagreement is reported.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
@@ -153,10 +161,26 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
 - A reference value is evidence of the reference's behavior. It is not proof
   that a native implementation is correct, and a mismatch is reported, not
   forced to agree.
-- The oracle languages are nbb, JVM, C, Python, Hy, jank and Fennel (owner decision
-  2026-11-06): reference implementations and prototypes in those languages. The same rules apply
+- The oracle languages are nbb, JVM, C, Python, Basilisp, jank and Fennel (owner decision
+  2026-11-06; Hy replaced by Basilisp 2026-11-07): reference implementations and prototypes in those
+  languages. The same rules apply
   to every use, including a Workflow subagent running one on a developer machine: one-off,
   dated evidence, never in CI, gates, builds or runtime paths.
+- Every language that supports `.cljc` is also an oracle language (owner decision 2026-11-07), for
+  example Clojure, ClojureScript, ClojureCLR, Babashka, Squint, Cherry, ClojureDart, jank, Clojerl, Lokke
+  and Phel. The unverified candidate table is `docs/oracle-cljc-dialects-20261107.md` in
+  kotoba-lang/kotoba-lang; confirm the tool version, feature key and `.cljc` handling at first use and
+  record it.
+- CI exception (owner decision 2026-11-07; relaxes the "never in CI" and CDCI JVM/nbb wording above for
+  oracle use only): JVM, nbb and Babashka may run in CI as oracle jobs. Keep each in its own job, named
+  and reported as an oracle. Native build, gates, packaging and runtime must not depend on it, and a
+  native result must not silently fall back to it. Making an oracle job a required check is a separate
+  owner decision; until then it is not required. The ban on JVM, nbb, Babashka and GraalVM in CI for any
+  other purpose (JUN-290) is unchanged.
+- Before a selfhost refactor of a cljk component, take its reference values first from the JVM and
+  node (nbb) oracles (owner decision 2026-11-07). Hand an oracle the source as `.cljc`; Basilisp reads
+  `.cljc` with the `:lpy` feature key and does not read the `.cljk` extension. Record versions,
+  inputs and outputs with the date.
 
 ## Shared agent rule
 
