@@ -109,12 +109,17 @@ jobs:
           name: foundation-starter-functional-smoke
           path: ${{ runner.temp }}/foundation-starter
           if-no-files-found: warn
+      - name: Install Basilisp (pinned) for the .cljc gate scripts
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m pip install --user basilisp==0.5.1 pytest
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Observer and admission negative controls
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/test_content_reuse_trust.py -v
           python3 scripts/seed/test_native_iteration.py -v
-          python3 scripts/seed/test_native_preflight_projects.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test --rootdir scripts/seed scripts/seed/test_native_preflight_projects.cljc
           python3 scripts/seed/test_native_gate_shard.py -v
           python3 scripts/ci/test_ci_gate.py -v
       - name: QMP observer pipe framing and deadline controls
