@@ -22,7 +22,7 @@ name: selfhost-native
 # (bootstrap -> one-compiler | x86 qualification -> complete -> gates; the benchmark mutants in three shards;
 # the arm64 runtime checks beside the arm64 gates; the x86 runtime checks beside the x86 gate shards), and a
 # lightweight job with each original name needs its parts and fails unless all of them succeeded. Every job
-# starts with ci-gate (scripts/ci/ci_gate.py): a docs-only change skips the heavy steps inside the job, and an
+# starts with ci-gate (scripts/ci/ci_gate.cljc): a docs-only change skips the heavy steps inside the job, and an
 # input-hash marker/cache skips, or restores the derivation of, exactly the same inputs. Push to main, the
 # schedule and a manual dispatch always run everything and only write the markers/caches, after a job passed.
 #
@@ -112,8 +112,9 @@ jobs:
       - name: Install Basilisp (pinned) for the .cljc gate scripts
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 -m pip install --user basilisp==0.5.1 pytest
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Observer and admission negative controls
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -121,7 +122,7 @@ jobs:
           python3 scripts/seed/test_native_iteration.py -v
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test --rootdir scripts/seed scripts/seed/test_native_preflight_projects.cljc
           python3 scripts/seed/test_native_gate_shard.py -v
-          python3 scripts/ci/test_ci_gate.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/ci basilisp test -p no:cacheprovider --rootdir scripts/ci scripts/ci/test_ci_gate.cljc scripts/ci/test_pr_batch.cljc
       - name: QMP observer pipe framing and deadline controls
         if: steps.gate.outputs.skip != 'true'
         env:
