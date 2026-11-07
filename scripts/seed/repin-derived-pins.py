@@ -134,9 +134,9 @@ def main():
         "--output", out / "mac-cross", "--produce-candidates")
     run(sys.executable, SEED / "write-bootstrap-descriptors.py", "--mac-build", out / "mac-root",
         "--cross-build", out / "mac-cross", "--phase", "final", "--install", "--write")
-    run(sys.executable, SEED / "build-macos-cli.py", "--output", out / "cli")
+    run("basilisp", "run", "-p", SEED, SEED / "build-macos-cli.cljc", "--", "--output", out / "cli")
     repin_cli(out)
-    run(sys.executable, SEED / "check-public-macos-product.py", "--output", out / "public")
+    run("basilisp", "run", "-p", SEED, SEED / "check-public-macos-product.cljc", "--", "--output", out / "public")
     run(sys.executable, SEED / "write-bootstrap-descriptors.py", "--mac-build", out / "mac-root",
         "--cross-build", out / "mac-cross", "--phase", "final", "--check")
     git("add", "--", *PINS)

@@ -133,7 +133,7 @@ Each slice is its own change; none is half of another.
 
 ## Implementation notes (from reading `seed/macos-fs2-runtime-packager.kotoba`, 2026-11-04)
 
-* **The build loop is fast and reproduces.** `python3 scripts/seed/build-macos-cli.py --output DIR` rebuilds the
+* **The build loop is fast and reproduces.** `basilisp run -p scripts/seed scripts/seed/build-macos-cli.cljc -- --output DIR` rebuilds the
   packager and the CLI from source in about 12 s on this machine and asserts the packager fixed point
   (`root.json` `expectedFixedPoint.packagerUnsignedSha256`). So a change can be iterated, and a re-pin is a
   mechanical consequence of a passing build rather than a leap.

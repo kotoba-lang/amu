@@ -117,7 +117,7 @@ A successful author/maintainer-agent trial is not independent-user evidence.
 Maintainers can reproduce the public image and run all ordinary CLI controls:
 
 ```sh
-python3 scripts/seed/check-public-macos-product.py --output /a/new/output-directory
+basilisp run -p scripts/seed scripts/seed/check-public-macos-product.cljc -- --output /a/new/output-directory
 ```
 
 That observer only stages/hashes bytes and observes native processes.

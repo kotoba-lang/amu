@@ -68,9 +68,9 @@ on:
       - 'scripts/seed/write-bootstrap-descriptors.py'
       - 'scripts/seed/test-write-bootstrap-descriptors.py'
       - 'scripts/seed/check-descriptor-writer-ci.py'
-      - 'scripts/seed/check-public-macos-product.py'
-      - 'scripts/seed/build-macos-cli.py'
-      - 'scripts/seed/check-macos-cli-product.py'
+      - 'scripts/seed/check-public-macos-product.cljc'
+      - 'scripts/seed/build-macos-cli.cljc'
+      - 'scripts/seed/macos_cli_product.cljc'
       - 'scripts/seed/check-macos-cli-host-native.py'
       - 'bin/amu'
       - 'bin/kotoba'
@@ -118,7 +118,7 @@ jobs:
       - name: Rebuild the public Mac CLI and execute ordinary check compile run
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-public-macos-product.py
+          basilisp run -p scripts/seed scripts/seed/check-public-macos-product.cljc --
           --output "$RUNNER_TEMP/public-macos-product"
       - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
