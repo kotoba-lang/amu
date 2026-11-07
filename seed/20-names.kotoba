@@ -1214,9 +1214,127 @@
       (if (nm-failed M1) M1 (nm-put (nm-dp-relink M1) (+ MM-STAT-BASE 21) 1)))))
 ;; ==== END JUN-730 ====
 
+;; ==== JUN-950: the pure heads lam, app and ref (kotoba-lang lang/pure-form.edn), lowered to the forms the checker has ====
+;;   (def NAME (lam [x T ..] R BODY))  -> (defn NAME [x T ..] R BODY); every parameter and the result annotated (E2184)
+;;   (lam [x ..] BODY)                 -> (fn [x ..] BODY); one body (E2184); an annotation stays E2139
+;;   (ref NAME)                        -> NAME; (ref "bafy..") stays E2101 until a definition can be read by CID
+;;   (app NAME a ..)                   -> (NAME a ..)
+;;   (app COMPUTED a ..)               -> (invoke COMPUTED a ..)
+;; These names are not reserved: a module that defines or binds one (it is a top-level name or appears in a vector)
+;; keeps its own meaning, and nothing changes for a module that spells none of them.
+(def nm-pf-lam 1325620804343422057)   ; FNV-1a of the spelling, as ck-list recognizes reify and merge
+(def nm-pf-app -1779019601881169012)
+(def nm-pf-ref -8509058805706472062)
+
+(defn- nm-pf-spelled? [M :vector-i64 hash :i64] :bool
+  (loop [s 1]
+    (cond (>= s (vector-at M MM-SYM-N)) false
+          (= (nm-sf M s SF-HASH) hash) true
+          :else (recur (+ s 1)))))
+(defn- nm-pf-sym-is? [M :vector-i64 c :i64 hash :i64] :bool
+  (and (= (nm-kind M c) ND-SYM) (= (nm-sf M (nm-sym-of M c) SF-HASH) hash)))
+(defn- nm-pf-in-vector? [M :vector-i64 v :i64 hash :i64] :bool
+  (loop [c (nm-first M v)]
+    (cond (= c 0) false
+          (nm-pf-sym-is? M c hash) true
+          :else (recur (nm-next M c)))))
+;; the spelling names a top-level definition or sits in a vector (a parameter, a let binding, a destructured key)
+(defn- nm-pf-user? [M :vector-i64 hash :i64] :bool
+  (or (loop [n (nm-first M (vector-at M MM-ROOT))]
+        (cond (= n 0) false
+              (and (> (nm-form-kind (nm-form-head M n)) 0) (nm-pf-sym-is? M (nm-nth M n 1) hash)) true
+              :else (recur (nm-next M n))))
+      (loop [n 1]
+        (cond (>= n (vector-at M MM-NODE-N)) false
+              (and (= (nm-kind M n) ND-VEC) (nm-pf-in-vector? M n hash)) true
+              :else (recur (+ n 1))))))
+(defn- nm-pf-on? [M :vector-i64 hash :i64] :bool
+  (and (nm-pf-spelled? M hash) (not (nm-pf-user? M hash))))
+(defn- nm-pf-head? [M :vector-i64 n :i64 hash :i64] :bool
+  (and (= (nm-kind M n) ND-LIST) (nm-ne (nm-first M n) 0) (nm-pf-sym-is? M (nm-first M n) hash)))
+;; head node h of a list now reads as the head code
+(defn- nm-pf-rehead [M :vector-i64 h :i64 code :i64] :vector-i64
+  (let [M1 (nm-gensym M (nm-tf M (nm-nf M h NF-TOK) TF-START) code)
+        s (vector-at M1 MM-R0)]
+    (nm-set-nf M1 h NF-SYM s)))
+
+;; (ref NAME) becomes the symbol node NAME, in place
+(defn- nm-pf-ref1 [M :vector-i64 n :i64] :vector-i64
+  (let [x (nm-next M (nm-first M n))]
+    (if (and (nm-ne x 0) (= (nm-next M x) 0) (= (nm-kind M x) ND-SYM))
+      (let [s (nm-sym-of M x) t (nm-nf M x NF-TOK)]
+        (-> M (nm-set-nf n NF-KIND ND-SYM) (nm-set-nf n NF-SYM s) (nm-set-nf n NF-TOK t) (nm-set-nf n NF-FIRST 0)))
+      (nm-touch M))))
+(defn- nm-pf-refs [M :vector-i64 n :i64] :vector-i64
+  (cond (>= n (vector-at M MM-NODE-N)) (nm-touch M)
+        (nm-pf-head? M n nm-pf-ref) (nm-pf-refs (nm-pf-ref1 M n) (+ n 1))
+        :else (nm-pf-refs M (+ n 1))))
+
+(defn- nm-pf-app1 [M :vector-i64 n :i64] :vector-i64
+  (let [h (nm-first M n) op (nm-next M h)]
+    (cond (= op 0) (nm-touch M)
+          (= (nm-kind M op) ND-SYM) (nm-set-nf M n NF-FIRST op)
+          :else (nm-pf-rehead M h HD-INVOKE))))
+(defn- nm-pf-apps [M :vector-i64 n :i64] :vector-i64
+  (cond (>= n (vector-at M MM-NODE-N)) (nm-touch M)
+        (nm-pf-head? M n nm-pf-app) (nm-pf-apps (nm-pf-app1 M n) (+ n 1))
+        :else (nm-pf-apps M (+ n 1))))
+
+(defn- nm-pf-type? [M :vector-i64 c :i64] :bool
+  (or (= (nm-kind M c) ND-KW)
+      (and (= (nm-kind M c) ND-VEC) (nm-ne (nm-first M c) 0) (= (nm-kind M (nm-first M c)) ND-KW))))
+(defn- nm-pf-typed-params? [M :vector-i64 v :i64] :bool
+  (loop [c (nm-first M v)]
+    (cond (= c 0) true
+          (or (nm-ne (nm-kind M c) ND-SYM) (= (nm-head-of M c) HD-AMP)) false
+          (= (nm-next M c) 0) false
+          (nm-pf-type? M (nm-next M c)) (recur (nm-next M (nm-next M c)))
+          :else false)))
+;; the lam of a top-level def: (lam [x T ..] R BODY)
+(defn- nm-pf-top-lam? [M :vector-i64 l :i64] :bool
+  (let [v (nm-nth M l 1) r (nm-nth M l 2)]
+    (and (= (nm-count M l) 4) (= (nm-kind M v) ND-VEC) (nm-pf-typed-params? M v) (nm-pf-type? M r))))
+;; (def NAME LAM) reads as (defn NAME ..LAM's parameters onward..); LAM's list node is emptied and no longer in the tree
+(defn- nm-pf-def1 [M :vector-i64 n :i64 l :i64] :vector-i64
+  (if (nm-pf-top-lam? M l)
+    (let [h (nm-first M n)
+          nm (nm-next M h)
+          v (nm-next M (nm-first M l))
+          M1 (nm-set-nf M nm NF-NEXT v)
+          M2 (nm-set-nf M1 l NF-FIRST 0)]
+      (nm-pf-rehead M2 h HD-DEFN))
+    (nm-err-node M E-CHECK-PURE-LAM (nm-first M l) 0)))
+(defn- nm-pf-defs [M :vector-i64 n :i64] :vector-i64
+  (cond (= n 0) (nm-touch M)
+        (nm-failed M) (nm-touch M)
+        :else
+        (let [nx (nm-next M n)
+              l (nm-nth M n 2)]
+          (if (and (= (nm-form-head M n) HD-DEF) (= (nm-count M n) 3) (nm-pf-head? M l nm-pf-lam))
+            (nm-pf-defs (nm-pf-def1 M n l) nx)
+            (nm-pf-defs M nx)))))
+(defn- nm-pf-lam1 [M :vector-i64 n :i64] :vector-i64
+  (if (and (= (nm-count M n) 3) (= (nm-kind M (nm-nth M n 1)) ND-VEC))
+    (nm-pf-rehead M (nm-first M n) HD-FN)
+    (nm-err-node M E-CHECK-PURE-LAM (nm-first M n) 0)))
+(defn- nm-pf-lams [M :vector-i64 n :i64] :vector-i64
+  (cond (>= n (vector-at M MM-NODE-N)) (nm-touch M)
+        (nm-failed M) (nm-touch M)
+        (nm-pf-head? M n nm-pf-lam) (nm-pf-lams (nm-pf-lam1 M n) (+ n 1))
+        :else (nm-pf-lams M (+ n 1))))
+(defn- nm-pure-norm [M :vector-i64] :vector-i64
+  (cond (nm-failed M) (nm-touch M)
+        :else
+        (let [M1 (if (nm-pf-on? M nm-pf-ref) (nm-pf-refs M 1) (nm-touch M))
+              M2 (if (nm-pf-on? M1 nm-pf-app) (nm-pf-apps M1 1) (nm-touch M1))]
+          (if (nm-pf-on? M2 nm-pf-lam)
+            (nm-pf-lams (nm-pf-defs M2 (nm-first M2 (vector-at M2 MM-ROOT))) 1)
+            (nm-touch M2)))))
+;; ==== END JUN-950 ====
+
 ;; the whole pass
 (defn- nm-run [M :vector-i64 S :string] :vector-i64
-  (nm-run-defs (nm-dp-norm (nm-r6b-norm (nm-intern-nodes M S 1)))))   ; R6B: + nm-r6b-norm; JUN-730: + nm-dp-norm
+  (nm-run-defs (nm-dp-norm (nm-pure-norm (nm-r6b-norm (nm-intern-nodes M S 1))))))   ; R6B: + nm-r6b-norm; JUN-950: + nm-pure-norm; JUN-730: + nm-dp-norm
 
 (defn- nm-run-defs [M :vector-i64] :vector-i64
   (let [ns (nm-first M (vector-at M MM-ROOT))]
