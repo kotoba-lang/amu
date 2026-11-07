@@ -260,7 +260,7 @@ jobs:
         with:
           job: bootstrap-arm64-root
           kind: derive
-          roots: selfhost-bootstrap.py,check-tiered-float-fuel.py,check-tiered-document-decimal-fuel.py,check-tiered-document-decimal-refusals.py
+          roots: selfhost-bootstrap.py,check-tiered-float-fuel.cljc,check-tiered-document-decimal-fuel.cljc,check-tiered-document-decimal-refusals.cljc
           path: |
             ${{ runner.temp }}/boot/selfhost-bootstrap.json
             ${{ runner.temp }}/boot/root.elf
@@ -279,13 +279,13 @@ jobs:
         run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Float result and fuel corpus through the tiered native bootstrap
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-tiered-float-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-tiered-float-fuel.cljc -- --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
       - name: Document and decimal positive and fuel corpus through tiered native bootstrap
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-tiered-document-decimal-fuel.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-fuel-arm64"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-tiered-document-decimal-fuel.cljc -- --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-fuel-arm64"
       - name: Document and decimal refusal corpus through tiered native bootstrap
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-tiered-document-decimal-refusals.py --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-refusals-arm64"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-tiered-document-decimal-refusals.cljc -- --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/document-decimal-refusals-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true'
         with:
