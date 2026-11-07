@@ -43,6 +43,11 @@ https://kotoba-lang.org/blog/embench-c-parity-20261015/.
   pursued. This replaces the earlier 2026-11-07 wording that made native
   `.cljc` acceptance the target. Where the code and this text disagree, the
   code is the state and the disagreement is reported.
+- Kotoba and AIUEOS stay a Kotoba / Amu selfhost-only Lisp machine, language and
+  compiler (owner decision 2026-11-07, AWAI-160). Apps and OS features are built
+  first in `.cljc` as Otehon, which may use NixOS and other stacks, and are used
+  later as an oracle for the selfhost implementation under the oracle rules. See
+  network-awai-apex ADR 0026 D18. Otehon never enters a native route.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
