@@ -162,7 +162,7 @@ jobs:
       - name: Check the SHA-256 crypto-hardware option (on by default, --no-crypto-hw scalar)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-crypto-hw-option-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-crypto-hw-option-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-crypto-hw"
       - name: T2 derives no whole-program facts from import stubs (JUN-595)
