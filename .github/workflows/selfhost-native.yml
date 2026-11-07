@@ -132,12 +132,12 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python3 scripts/seed/test_embench_candidate.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_embench_candidate.cljc
       - name: Closed benchmark factory and immutable oracle source controls
         if: steps.gate.outputs.skip != 'true'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python3 scripts/seed/test_native_benchmark_host.py -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_benchmark_host.cljc
       - name: Proof record audits (not native verdict or performance qualification)
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -803,10 +803,10 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- basilisp run -p scripts/seed scripts/seed/stage-native-benchmark-corpus.cljc -- --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
       - name: Closed measurement host, original full counts and native accounting oracle
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- basilisp run -p scripts/seed scripts/seed/check-native-benchmark-host.cljc -- --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -869,13 +869,13 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- basilisp run -p scripts/seed scripts/seed/stage-native-benchmark-corpus.cljc -- --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
       - name: Closed measurement host, original full counts and native accounting oracle
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- basilisp run -p scripts/seed scripts/seed/check-native-benchmark-host.cljc -- --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
       - name: Actually built and executed timing/accounting/reset/highwater mutants (shard ${{ matrix.shard }} of 3)
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations" --shard ${{ matrix.shard }}/3
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- basilisp run -p scripts/seed scripts/seed/check-native-benchmark-mutations.cljc -- --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations" --shard ${{ matrix.shard }}/3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -1316,10 +1316,10 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           chmod 700 "$RUNNER_TEMP/native-proof/complete/F3.elf"
-          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- basilisp run -p scripts/seed scripts/seed/stage-native-benchmark-corpus.cljc -- --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
       - name: Native x86 factory and exact equality to the executed ARM host/payloads
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- basilisp run -p scripts/seed scripts/seed/check-native-benchmark-host.cljc -- --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
