@@ -33,7 +33,7 @@ Raw table: `qw.txt` in the session notes; regenerate with the `gh api` query abo
   on an Apple-silicon Mac. Apple's licence allows at most two macOS VMs per Mac.
 - `qualify-arm64-runtime` runs `docker run` fault injection and `wasm32-browser-chrome` needs
   `google-chrome`; the runner image has neither, so both stay on hosted runners
-  (`HOSTED_ONLY` in `runs_on.py`) until a nested-container service / Chrome image is qualified.
+  (`hosted-only` in `runs_on.cljc`) until a nested-container service / Chrome image is qualified.
   Other tools the hosted images provide implicitly (jq, zip, ...) must exist in the image; a pilot run
   in `selfhosted-arm` is the check.
 - `post-merge-repin` holds a bot token: never self-hosted (`scripts/ci-runners/runs_on.py` refuses it).

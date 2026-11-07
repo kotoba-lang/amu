@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - run: python3 -I scripts/ci-runners/runs_on.py --check
-      - run: python3 -I scripts/ci-runners/test_runs_on.py
-      - run: python3 -I scripts/ci-runners/test_capacity.py
+      - run: |
+          python3 -m pip install --user basilisp==0.5.1 pytest
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: basilisp run scripts/ci-runners/runs_on.cljc -- --check
+      - run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/ci-runners basilisp test -p no:cacheprovider --rootdir scripts/ci-runners scripts/ci-runners/test_runs_on.cljc scripts/ci-runners/test_capacity.cljc

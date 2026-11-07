@@ -5,9 +5,9 @@ the two checks below; the launchers are dry-run unless `--apply` and are meant t
 
 | file | purpose |
 | --- | --- |
-| `runs_on.py` | single definition of the variable-driven `runs-on`; `--write` renders, `--check` verifies |
-| `test_runs_on.py` | fork-PR / profile matrix over the rendered workflow text (negative controls) |
-| `capacity.py`, `test_capacity.py` | online-runner and queue monitor; sets `AMU_RUNNER_PROFILE=hosted` on `--apply` |
+| `runs_on.cljc` | single definition of the variable-driven `runs-on`; `--write` renders, `--check` verifies |
+| `test_runs_on.cljc` | fork-PR / profile matrix over the rendered workflow text (negative controls) |
+| `capacity.cljc`, `test_capacity.cljc` | online-runner and queue monitor; sets `AMU_RUNNER_PROFILE=hosted` on `--apply` |
 | `linux/Containerfile` | arm64 / x64 runner image; `RUNNER_VERSION`, `RUNNER_SHA256`, `RUNNER_ARCH` required |
 | `launch-linux.sh` | keeps N one-job JIT runner containers alive (podman, digest-pinned image) |
 | `launch-macos.sh` | one Tart VM per job from a digest-pinned OCI image, softnet blocks tailnet/LAN |
@@ -16,9 +16,9 @@ the two checks below; the launchers are dry-run unless `--apply` and are meant t
 Checks (python3 only, no JVM/nbb):
 
 ```sh
-python3 scripts/ci-runners/runs_on.py --check
-python3 scripts/ci-runners/test_runs_on.py
-python3 scripts/ci-runners/test_capacity.py
+basilisp run scripts/ci-runners/runs_on.cljc -- --check
+PYTHONPATH=scripts/ci-runners basilisp test --rootdir scripts/ci-runners scripts/ci-runners/test_runs_on.cljc
+PYTHONPATH=scripts/ci-runners basilisp test --rootdir scripts/ci-runners scripts/ci-runners/test_capacity.cljc
 ```
 
 ## Switch
