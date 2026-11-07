@@ -1,6 +1,6 @@
 # Android A1: does the Linux ARM64 static image run on a device? (JUN-902)
 
-Measured 2026-11-06 on one physical device. This is an observation, not a qualification. It adds no target, no gate and no receipt that `scripts/coverage/scoreboard.py` reads, so the coverage number does not change.
+Measured 2026-11-06 on one physical device. This is an observation, not a qualification. It adds no target, no gate and no receipt that `scripts/coverage/scoreboard.cljc` reads, so the coverage number does not change.
 
 ## Answer
 
