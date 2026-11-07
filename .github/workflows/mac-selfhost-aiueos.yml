@@ -12,7 +12,8 @@ on:
       - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
       - 'scripts/seed/check-aiueos-user-v5-layout-macos-native.py'
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
-      - 'scripts/seed/check-macos-exec-smoke*.py'
+      - 'scripts/seed/check-macos-exec-smoke*.cljc'
+      - 'scripts/seed/macos_exec_smoke.cljc'
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-externs.py'
       - 'scripts/seed/check-aiueos-object-records.py'
@@ -183,7 +184,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- \
             --phase mac-exec-smoke \
             --slot-dir "$RUNNER_TEMP/native-build-slots" -- \
-            python3 scripts/seed/check-macos-exec-smoke-native.py \
+            basilisp run -p scripts/seed scripts/seed/check-macos-exec-smoke-native.cljc -- \
               --mac-build "$RUNNER_TEMP/mac-root" \
               --output "$RUNNER_TEMP/mac-smoke"
       - name: Mac runtime implements arena-scope (JUN-546)
