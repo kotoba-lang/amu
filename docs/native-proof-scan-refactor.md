@@ -44,7 +44,7 @@ binding, CCF suffix binding, extent freshness, the CCF window, its reserved
 operands, the top-of-heap release guard and optional heap fallback must compile successfully and then fail semantic
 execution. A deliberate wrong-mode control must also fail.
 
-`scripts/seed/compare-proof-scans.py` stages the baseline revision from Git,
+`scripts/seed/compare-proof-scans.cljc` stages the baseline revision from Git,
 builds both C0 images through the admitted public compiler, and compiles the
 same original normal core18 source and lock in ABBA order. One CPU affinity,
 producer, environment, target, limits and output digest are fixed. It records

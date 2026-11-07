@@ -128,7 +128,7 @@ pins recomputed; see the PR).
   to `aarch64-macos`, `extract-native` takes `main`, the Mac packager wraps it in `fs2-cli-stdio-general`, a copy is
   ad-hoc signed; FD 3 is the file root and file arguments are basenames (KOTOBA-169). On the Mac, main's result is the
   exit code (Linux prints `:result N` under `KEXE_STRUCTURED_REPORT`), so the codec gate compares exit codes there.
-  - `check-definition-cid-native.py` -> `PASS_NATIVE_DEFINITION_CID_CODEC` (10 frozen vectors decoded and constructed,
+  - `check-definition-cid-native.cljc` -> `PASS_NATIVE_DEFINITION_CID_CODEC` (10 frozen vectors decoded and constructed,
     26 refusal controls, boundary/encoder self-checks, 7 mutants detected; 55 calls).
   - `check-definition-cids-native.py` -> `PASS_NATIVE_DEFINITION_CIDS` (the same 64 calls as on Linux).
   - F1 = F2: the Mac gate rebuilt the full compiler from the same source (F1 = F2 container `48c1d8f3…`; F2 is the

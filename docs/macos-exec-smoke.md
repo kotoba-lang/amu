@@ -26,7 +26,7 @@ structurally recognizable, signable image that macOS kills before the entry.
 The emitter was built and run by the pinned selfhost root in a network-disabled
 ARM Linux container, under `scripts/seed/native_build_queue.py`. Two independent
 emissions had identical unsigned bytes. On Apple Silicon,
-`scripts/seed/check-macos-exec-smoke.py UNSIGNED_MACHO NEW_OUTPUT_DIR` signs
+`scripts/seed/macos_exec_smoke.cljc (check UNSIGNED_MACHO NEW_OUTPUT_DIR; driven by check-macos-exec-smoke-native.cljc)` signs
 **copies** with the system `codesign`, verifies them, executes the positive and
 negative controls, and writes a JSON receipt. Python stages and observes; it
 does not emit the Mach-O. The negative control changes only the header flags.
