@@ -80,8 +80,8 @@ CIDS = {
 # (label, file, [(old, new)], expected: a refusal string, "run" (built corpus must not exit 0) or "reify")
 MUTANTS = [
     ("no-dispatch-expansion", NAMES, [
-        ("  (nm-run-defs (nm-dp-norm (nm-r6b-norm (nm-intern-nodes M S 1)))))",
-         "  (nm-run-defs (nm-r6b-norm (nm-intern-nodes M S 1))))")],
+        ("  (nm-run-defs (nm-dp-norm (nm-pure-norm (nm-r6b-norm (nm-intern-nodes M S 1))))))",
+         "  (nm-run-defs (nm-pure-norm (nm-r6b-norm (nm-intern-nodes M S 1)))))")],
      "E2003 unsupported top-level form 'defmethod'"),
     ("no-protocol-call", CHECK, [
         ("          (ck-pr-head? M n) (ck-pr-call M n fx ctx)   ; JUN-730: a protocol method\n", "")],
