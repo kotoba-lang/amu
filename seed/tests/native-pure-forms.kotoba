@@ -1,0 +1,46 @@
+;; JUN-950: the pure heads lam, app and ref, admitted natively (scripts/seed/check-pure-forms.py). main answers 0.
+;; kotoba-lang lang/pure-form.edn. (app (ref f) ..) is the spelling already in pure library sources; it stays admitted
+;; until those sources are converted.
+(ns d (:export [main]))
+
+;; -- a top-level definition: every parameter and the result annotated --
+(def inc1 (lam [n :i64] :i64 (+ n 1)))
+(def add (lam [a :i64 b :i64] :i64 (+ a b)))
+(def constant (lam [] :i64 42))
+(def first-or (lam [o [:option :i64] d :i64] :i64 (option-or o d)))
+(def apply1 (lam [f [:fn [[:i64] :i64]] x :i64] :i64 (f x)))
+(def maker (lam [] [:fn [[:i64] :i64]] (lam [x] (+ x 1))))
+
+;; -- iteration is a tail-recursive definition, including across definitions --
+(def sum-to (lam [i :i64 acc :i64] :i64 (if (= i 0) acc (sum-to (- i 1) (+ acc i)))))
+(def even-at (lam [n :i64] :i64 (if (= n 0) 1 (odd-at (- n 1)))))
+(def odd-at (lam [n :i64] :i64 (if (= n 0) 0 (even-at (- n 1)))))
+
+;; -- an inner lam takes its type from the context --
+(def inner-argument (lam [] :i64 (apply1 (lam [x] (* x 2)) 21)))
+(def inner-let (lam [] :i64 (let [k 2 g (lam [x] (+ x k))] (g 40))))
+
+;; -- app and ref --
+(def by-ref (lam [] :i64 (app (ref inc1) (app (ref inc1) 40))))
+(def by-name (lam [] :i64 (app inc1 41)))
+(def ref-head (lam [] :i64 ((ref inc1) 41)))
+(def computed (lam [] :i64 (app (maker) 41)))
+(def beta (lam [] :i64 (app (lam [x] (+ x 1)) 41)))
+
+(def failed (lam [got :i64 want :i64 bit :i64] :i64 (if (= got want) 0 bit)))
+(def checks-a (lam [] :i64
+  (+ (failed (constant) 42 1)
+     (+ (failed (add 40 2) 42 2)
+        (+ (failed (apply1 (maker) 41) 42 4)
+           (+ (failed (sum-to 100000 0) 5000050000 8)
+              (+ (failed (even-at 100000) 1 16)
+                 (failed (inner-argument) 42 32))))))))
+(def checks-b (lam [] :i64
+  (+ (failed (inner-let) 42 64)
+     (+ (failed (by-ref) 42 128)
+        (+ (failed (by-name) 42 256)
+           (+ (failed (ref-head) 42 512)
+              (+ (failed (computed) 42 1024)
+                 (failed (beta) 42 2048))))))))
+
+(def main (lam [] :i64 (+ (checks-a) (checks-b))))

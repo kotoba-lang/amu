@@ -418,6 +418,8 @@
   [:c HD-FN 131 "(fn [p :T ..] e ..) -> [:fn [[T ..] R]] 0..4 params (E2137 with the captures); a closure value. As the init of a
                  let binding it is a KNOWN function of that slot: (f a ..) calls the lifted function directly (HD-CALLK), and no
                  closure is built when f is never used as a value (a syntactic scan of the rest of the let)"]
+  ;; JUN-950: lam, app and ref are not heads. seed/20-names lowers them to defn, fn, invoke and the plain symbol before any
+  ;;    name is registered, unless the module defines or binds that spelling. E2184: lam's shape (kotoba-lang lang/pure-form.edn).
   [:c HD-FN-REF 132 "(fn-ref f) f a single-clause, non-variadic, non-aborting defn of the file -> its fn type (E2134 otherwise);
                      the closure is pair(address of f, 0): f ignores the env argument"]
   [:c HD-INVOKE 133 "(invoke c a ..) / (invoke R c a ..) c a fn value, R its result type (E2104 when it differs) -> R"]
@@ -652,6 +654,8 @@
   [:c E-CHECK-NILKEY 2182 "nil at key '{name}' has no field type: no declared record takes this literal and no other value at that key says T"]
   ;; JUN-733 slice 3: an unannotated parameter used as a record is a row; its function exists only as its specializations
   [:c E-CHECK-ROW-EXPORT 2183 "a function with a row parameter has no single interface and cannot be exported: '{name}'"]
+  ;; JUN-950: lam's shape (kotoba-lang lang/pure-form.edn); seed/20-names refuses it before any name is registered
+  [:c E-CHECK-PURE-LAM 2184 "lam takes one body, and at the top level every parameter and its result are annotated: '{name}'"]
   ;; -- R5B (agent R5B, 2026-10-03): effects. Texts = the reference's (lang/local-state.edn :refusals, lang/state-ability.edn
   ;;    :refusals, the capability texts of stage-0) where it has one, so the pinned negatives compare with =. Placeholders beyond
   ;;    {name} {n} {t} (90-drv drv-r5b-text, a template filled at print time): {op} = get/put (MM-ERR-N bits 48..49), {ty1} / {ty2} =
