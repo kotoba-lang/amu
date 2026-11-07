@@ -56,7 +56,7 @@ on:
       - 'scripts/seed/check-row-inference.py'
       - 'seed/tests/native-row-inference.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
-      - 'scripts/seed/check-definition-cid-native.py'
+      - 'scripts/seed/check-definition-cid-native.cljc'
       - 'scripts/seed/check-definition-cids-native.py'
       - 'scripts/seed/macos_native_image.py'
       - 'scripts/seed/check-macos-fs35.py'
@@ -393,7 +393,7 @@ jobs:
       - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 -I scripts/seed/check-definition-cid-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-definition-cid-native.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-definition-cid"
       - name: Native definition-cids on the Mac fixed point (JUN-586)
