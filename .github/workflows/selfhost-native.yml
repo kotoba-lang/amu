@@ -596,7 +596,7 @@ jobs:
       - name: Native private store and STOP/CONT sleep resume (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-private-store.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/private-store"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-sleep-resume.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
@@ -1094,7 +1094,7 @@ jobs:
       - name: Native private store and STOP/CONT sleep resume (x86_64)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-private-store.py --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-private-store.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/private-store"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-sleep-resume.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
