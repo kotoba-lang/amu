@@ -118,7 +118,7 @@ pins recomputed; see the PR).
 ## 3. Evidence (what was actually run)
 - aarch64-linux, **native** in podman (`python:3.12-slim`, arm64 host), compiler
   `seed/bootstrap/aarch64-linux-static-root.elf`:
-  `python3 -I scripts/seed/check-definition-cids-native.py --compiler ... --output ...` -> `PASS_NATIVE_DEFINITION_CIDS`
+  `basilisp run -p scripts/seed scripts/seed/check-definition-cids-native.cljc -- --compiler ... --output ...` -> `PASS_NATIVE_DEFINITION_CIDS`
   (69 native calls). Controls: CIDs for const/leaf/caller/dependency-edit/self/cycle2/cycle8 equal the independent
   oracle image; rename and reordering preserve CIDs; dependency edit changes caller CID; unbound name and unbalanced
   source exit 66 with empty stdout; `--groups` keeps CIDs and adds group/member columns; declaration order is preserved; usage errors exit 2; an encoder mutant is refused by its own validator; closure controls (hand-authored oracle payloads for closure/capture/dependency/nested/two-capture, rename invariance, body and captured-binder sensitivity, five closure refusals, two closure mutants); `check` still works through the
@@ -130,7 +130,7 @@ pins recomputed; see the PR).
   exit code (Linux prints `:result N` under `KEXE_STRUCTURED_REPORT`), so the codec gate compares exit codes there.
   - `check-definition-cid-native.cljc` -> `PASS_NATIVE_DEFINITION_CID_CODEC` (10 frozen vectors decoded and constructed,
     26 refusal controls, boundary/encoder self-checks, 7 mutants detected; 55 calls).
-  - `check-definition-cids-native.py` -> `PASS_NATIVE_DEFINITION_CIDS` (the same 64 calls as on Linux).
+  - `check-definition-cids-native.cljc` -> `PASS_NATIVE_DEFINITION_CIDS` (the same 64 calls as on Linux).
   - F1 = F2: the Mac gate rebuilt the full compiler from the same source (F1 = F2 container `48c1d8f3…`; F2 is the
     checked-in root's bytes). Images built by F2 are byte-identical to those built by the root (5 unsigned images),
     and all observations are identical (64 + 55 calls).

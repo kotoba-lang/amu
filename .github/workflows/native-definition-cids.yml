@@ -18,7 +18,7 @@ on:
       - "seed/tests/native-checked-definition-oracle.kotoba"
       - "seed/bootstrap/**"
       - "bin/amu-linux-x86_64"
-      - "scripts/seed/check-definition-cids-native.py"
+      - "scripts/seed/check-definition-cids-native.cljc"
       - "scripts/seed/macos_native_image.py"
       - ".github/workflows/native-definition-cids.yml"
   push:
@@ -28,7 +28,7 @@ on:
       - "seed/FULL-MANIFEST"
       - "seed/DEFINITION-CIDS-MANIFEST"
       - "seed/99-definition-cids-entry.kotoba"
-      - "scripts/seed/check-definition-cids-native.py"
+      - "scripts/seed/check-definition-cids-native.cljc"
       - "scripts/seed/macos_native_image.py"
       - ".github/workflows/native-definition-cids.yml"
 permissions:
@@ -66,7 +66,7 @@ jobs:
         run: >-
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
-          python3 scripts/seed/check-definition-cids-native.py
+          basilisp run -p scripts/seed scripts/seed/check-definition-cids-native.cljc --
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/definition-cids"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
