@@ -665,7 +665,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-fs2.cljc -- --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: |
