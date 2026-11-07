@@ -77,7 +77,7 @@ concurrency:
 permissions:
   contents: read
 env:
-  # JUN-629: the runner has 4 vCPUs; every native_build_queue.py call in a job uses this shared-slot capacity.
+  # JUN-629: the runner has 4 vCPUs; every native_build_queue.cljc call in a job uses this shared-slot capacity.
   KOTOBA_NATIVE_SLOT_CAPACITY: "4"
   SOURCE_CANDIDATE_SHA256: ${{ inputs.source_candidate_sha256 }}
 jobs:
@@ -101,7 +101,7 @@ jobs:
           if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
             args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
           fi
-          python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py \
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/check-foundation-starter.py \
             --output "$RUNNER_TEMP/foundation-starter" --host-profile github-ubuntu-x86-64 "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
@@ -119,9 +119,9 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/test_content_reuse_trust.py -v
-          python3 scripts/seed/test_native_iteration.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_iteration.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test --rootdir scripts/seed scripts/seed/test_native_preflight_projects.cljc
-          python3 scripts/seed/test_native_gate_shard.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_gate_shard.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/ci basilisp test -p no:cacheprovider --rootdir scripts/ci scripts/ci/test_ci_gate.cljc scripts/ci/test_pr_batch.cljc
       - name: QMP observer pipe framing and deadline controls
         if: steps.gate.outputs.skip != 'true'
@@ -158,7 +158,7 @@ jobs:
       - name: Independent native preflight controls through the shared two-slot plan
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --manifest seed/native-preflight-plan.json --phase preflight --jobs 4
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/preflight-schedule"
@@ -235,7 +235,7 @@ jobs:
           if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
             args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
           fi
-          python3 scripts/seed/native_build_queue.py -- python3 scripts/seed/check-foundation-starter.py \
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/check-foundation-starter.py \
             --experimental-arm64 --output "$RUNNER_TEMP/foundation-starter-arm" \
             --host-profile github-ubuntu-arm64-diagnostic "${args[@]}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -347,7 +347,7 @@ jobs:
         with:
           job: one-compiler-arm64
           kind: derive
-          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.py
+          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.cljc
           path: |
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
@@ -366,7 +366,7 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Fresh one-compiler derivation before independent ISA qualification
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --manifest seed/native-gate-plan.json --phase derive-arm64 --jobs 4 --output "$RUNNER_TEMP/pg-derive-arm64"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -477,7 +477,7 @@ jobs:
         with:
           job: x86-complete
           kind: derive
-          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.py,check-complete-x86.py,check-public-native-product.py
+          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.py
           path: |
             ${{ runner.temp }}/complete
             ${{ runner.temp }}/public-product
@@ -662,7 +662,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Independent arm64 gates (bounded native build queue)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
@@ -803,10 +803,10 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
       - name: Closed measurement host, original full counts and native accounting oracle
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -869,13 +869,13 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
       - name: Closed measurement host, original full counts and native accounting oracle
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-host-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --one "$RUNNER_TEMP/one" --corpus "$RUNNER_TEMP/benchmark-arm/corpus" --output "$RUNNER_TEMP/benchmark-arm/host" --full-counts
       - name: Actually built and executed timing/accounting/reset/highwater mutants (shard ${{ matrix.shard }} of 3)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations" --shard ${{ matrix.shard }}/3
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-mutants-admission.json" -- python3 scripts/seed/check-native-benchmark-mutations.py --one "$RUNNER_TEMP/one" --controls "$RUNNER_TEMP/benchmark-arm/host" --output "$RUNNER_TEMP/benchmark-arm/mutations" --shard ${{ matrix.shard }}/3
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -917,7 +917,7 @@ jobs:
       fail-fast: false
       # JUN-629 (owner decision 2026-10-30): the x86 copies of label-proof-index, runtime-profile and ccf-filter run on
       # main, the schedule and a manual dispatch only; on a pull request the arm64 phase runs them, and
-      # native_gate_shard.py --tier pr refuses the deferral if it no longer does.
+      # native_gate_shard.cljc --tier pr refuses the deferral if it no longer does.
       matrix:
         include: ${{ fromJSON((github.event_name == 'pull_request' || github.event_name == 'merge_group') && '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"}]' || '[{"shard":"core","receipt":"x86_64-native-receipt","schedule":"native-scheduling-x86"},{"shard":"extensions","receipt":"x86_64-native-extension-receipt","schedule":"native-scheduling-x86-extensions"},{"shard":"x86-dupes","receipt":"x86_64-native-dupes-receipt","schedule":"native-scheduling-x86-dupes"}]') }}
     runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-24.04' }}  # amu-runner: ubuntu-24.04
@@ -960,8 +960,8 @@ jobs:
       - name: Independent x86 gates (bounded native build queue)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
-          python3 scripts/seed/native_build_queue.py --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_gate_shard.cljc -- --manifest seed/native-gate-plan.json --shard "${{ matrix.shard }}" --output "$RUNNER_TEMP/x86-shard-plan.json"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --manifest "$RUNNER_TEMP/x86-shard-plan.json" --phase x86 --jobs 4 --output "$RUNNER_TEMP/pg-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true' && (matrix.shard == 'core')
         with:
@@ -1279,7 +1279,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
-        run: python3 scripts/seed/native_gate_shard.py --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --tier "$TIER" --output "$RUNNER_TEMP/x86-partition-review.json"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_gate_shard.cljc -- --manifest seed/native-gate-plan.json --verify-root "$RUNNER_TEMP/x86-shards" --workflow-result "${{ needs.qualify-x86-shards.result }}" --tier "$TIER" --output "$RUNNER_TEMP/x86-partition-review.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -1316,10 +1316,10 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           chmod 700 "$RUNNER_TEMP/native-proof/complete/F3.elf"
-          python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --complete "$RUNNER_TEMP/native-proof/complete" --out "$RUNNER_TEMP/benchmark-x86/corpus"
       - name: Native x86 factory and exact equality to the executed ARM host/payloads
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --jobs 1 --output "$RUNNER_TEMP/benchmark-x86-factory-admission.json" -- python3 scripts/seed/check-native-benchmark-host.py --complete "$RUNNER_TEMP/native-proof/complete" --arm-controls "$RUNNER_TEMP/arm-host-reference/observations.json" --corpus "$RUNNER_TEMP/benchmark-x86/corpus" --output "$RUNNER_TEMP/benchmark-x86/factory" --full-counts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:

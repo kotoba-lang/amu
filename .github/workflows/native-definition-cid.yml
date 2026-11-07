@@ -61,7 +61,7 @@ jobs:
       - name: Native payload-v2 encoding, CIDs and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
           python3 scripts/seed/check-definition-cid-native.py
           --compiler "$PWD/${{ matrix.compiler }}"

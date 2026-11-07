@@ -62,7 +62,7 @@ jobs:
       - name: Native object storage, symbolic relink, fresh refusals and executed mutants
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --slot-dir "$RUNNER_TEMP/native-build-slots" --
           basilisp run scripts/seed/check-definition-build-native.cljc --
           --compiler "$PWD/${{ matrix.compiler }}"

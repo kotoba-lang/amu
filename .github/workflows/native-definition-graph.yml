@@ -57,7 +57,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --phase native-definition-graph
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/graph-admission.json" --
@@ -115,7 +115,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --phase native-table-headroom
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/table-headroom-admission.json" --

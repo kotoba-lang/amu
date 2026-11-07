@@ -93,7 +93,7 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: >-
-          python3 scripts/seed/native_build_queue.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc --
           --manifest "$RUNNER_TEMP/source-identity-plan.json"
           --phase source-identity --jobs 2
           --slot-dir "$RUNNER_TEMP/native-build-slots"
