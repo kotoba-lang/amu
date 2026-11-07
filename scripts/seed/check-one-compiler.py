@@ -199,8 +199,11 @@ def main(boot, out):
     shutil.copyfile(ROOT / "seed/tests/keyword-map-keys-malformed.kotoba", malformed_kwmap)
     large = out / "public-large-unknown.kotoba"
     large.write_bytes((out / "full.kotoba").read_bytes() + b"\n(defn- public-unresolved [] :i64 (amu-unresolved 0))\n")
-    legacy = out / "public-legacy.cljk"
+    # JUN-579: `.cljk` is accepted by a lone `check` (positive control below); `.cljc` is retired.
+    legacy = out / "public-legacy.cljc"
     legacy.write_bytes(good.read_bytes())
+    sugar = out / "public-sugar.cljk"
+    sugar.write_bytes(good.read_bytes())
     refusals = []
     containers_before_refusals = set(out.glob("*.kseed"))
     probes = [("c-linked-format", ["compile", good, "--target", "x86_64-linux", "--output", out / "c-linked.elf", "--format", "platform-linked"], "E2"),
@@ -210,6 +213,8 @@ def main(boot, out):
               ("malformed-keyword-map", ["check", malformed_kwmap], "E2105"),
               ("unknown-large", ["check", large], "E2101"),
               ("legacy-source", ["check", legacy], "E1"),
+              ("sugar-compile", ["compile", sugar, "--target", "aarch64-macos", "--output", out / "sugar.kseed"], "E1"),
+              ("sugar-locked", ["check", sugar, "--source-lock", source_lock], "E1"),
               ("default-target", ["compile", good, "--output", out / "default.kseed"], "E2"),
               ("unknown-target", ["compile", good, "--target", "unknown", "--output", out / "target.kseed"], "E2"),
               ("unknown-verb", ["unknown-verb", good], "E1")]

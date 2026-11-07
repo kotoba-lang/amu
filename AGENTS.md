@@ -27,8 +27,27 @@ https://kotoba-lang.org/blog/embench-c-parity-20261015/.
   retained" wording). The reader is implemented in Kotoba, and each sugar
   spelling must desugar to the same canonical Kotoba form and mint the same
   Definition CID as pure `.kotoba`
-  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). CLJC/CLJS/CLJ still
-  retire.
+  (`kotoba-lang/lang/surface-equivalence-corpus.edn`). The compiler's own
+  closure stays free of them. Native entry so far (owner decision 2026-11-06):
+  a lone `check FILE.cljk` and `definition-cids FILE.cljk`, through the same
+  frontend; compile, run, lock and project routes are `.kotoba` only, and
+  `.edn` has no native entry yet.
+- CLJC/CLJS/CLJ are refused as native input. They may remain only as a local
+  reference oracle under a project-root `oracle/` holding an `ORACLE.edn`
+  (owner decision 2026-11-06, JUN-579; see the local reference oracle rules).
+- CLJK stays as a reference oracle source and is treated as CLJC-equivalent
+  for oracle runs (owner decision 2026-11-07, JUN-579): `#?(:kotoba …)`
+  selects the Kotoba branch, `#?@` is not read, and an oracle is handed the
+  source as `.cljc`. The route stays `.kotoba`: the native entries above are
+  unchanged and are not extended, and native acceptance of `.cljc` is not
+  pursued. This replaces the earlier 2026-11-07 wording that made native
+  `.cljc` acceptance the target. Where the code and this text disagree, the
+  code is the state and the disagreement is reported.
+- Kotoba and AIUEOS stay a Kotoba / Amu selfhost-only Lisp machine, language and
+  compiler (owner decision 2026-11-07, AWAI-160). Apps and OS features are built
+  first in `.cljc` as Otehon, which may use NixOS and other stacks, and are used
+  later as an oracle for the selfhost implementation under the oracle rules. See
+  network-awai-apex ADR 0026 D18. Otehon never enters a native route.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
@@ -147,10 +166,30 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
 - A reference value is evidence of the reference's behavior. It is not proof
   that a native implementation is correct, and a mismatch is reported, not
   forced to agree.
-- The oracle languages are nbb, JVM, C and Python (owner decision 2026-11-06): the
-  old reference implementations and prototypes in those languages. The same rules apply
+- The oracle languages are nbb, JVM, C, Python, Basilisp, jank and Fennel (owner decision
+  2026-11-06; Hy replaced by Basilisp 2026-11-07): reference implementations and prototypes in those
+  languages. The same rules apply
   to every use, including a Workflow subagent running one on a developer machine: one-off,
   dated evidence, never in CI, gates, builds or runtime paths.
+- Every language that supports `.cljc` is also an oracle language (owner decision 2026-11-07), for
+  example Clojure, ClojureScript, ClojureCLR, Babashka, Squint, Cherry, ClojureDart, jank, Clojerl, Lokke
+  and Phel. The unverified candidate table is `docs/oracle-cljc-dialects-20261107.md` in
+  kotoba-lang/kotoba-lang; confirm the tool version, feature key and `.cljc` handling at first use and
+  record it.
+- CI exception (owner decision 2026-11-07; relaxes the "never in CI" and CDCI JVM/nbb wording above for
+  oracle use only): JVM, nbb, Babashka and every other `.cljc` language above may run in CI as oracle jobs. Keep each in its own job, named
+  and reported as an oracle. Native build, gates, packaging and runtime must not depend on it, and a
+  native result must not silently fall back to it. Making an oracle job a required check is a separate
+  owner decision; until then it is not required. The ban on JVM, nbb, Babashka and GraalVM in CI for any
+  other purpose (JUN-290) is unchanged.
+- Policy and plan: ADR `adr-2611071200-cljk-oracle-cljc-standard` (com-junkawasaki/root `90-docs/adr/`), tracked in
+  Linear JUN-579 and JUN-967 to JUN-973. cljk sources follow standard cljc; cljc itself is not customised. Moving
+  the `:kotoba/*` namespace attribute-map keys to a quoted spelling (JUN-967 to JUN-969) is a plan, not yet
+  implemented; until then a JVM run stops on `{:kotoba/export [...]}`.
+- Before a selfhost refactor of a cljk component, take its reference values first from the JVM and
+  node (nbb) oracles (owner decision 2026-11-07). Hand an oracle the source as `.cljc`; Basilisp reads
+  `.cljc` with the `:lpy` feature key and does not read the `.cljk` extension. Record versions,
+  inputs and outputs with the date.
 
 ## Shared agent rule
 
@@ -189,8 +228,8 @@ whole seed tree. When a seed PR conflicts with main in them:
 - leave `sourceRevision` `null` after regeneration: it means the descriptor's
   own commit and the source-revision audit checks that commit. Do not open a
   follow-up PR to name a squash commit.
-- Target (stage 2, design in ADR 0406, workflow `post-merge-repin.yml` shipped disabled): PRs carry source only and a
-  post-merge bot PR repins main. Do not enable it or relax PR pin checks without the owner (needs a token/App).
+- The post-merge bot repin (ADR 0406) was withdrawn by the owner (2026-11-06): no bot token/App. Pins stay in the PR.
+  Do not add a bot or relax PR pin checks; latency work is bot-free (see ADR 0406 "Withdrawn").
 
 ## Bounded canonical Kototama native frontend (JUN-369)
 
@@ -459,8 +498,7 @@ Every job of `selfhost-native` and of the other native workflows starts with `./
 - Docs-only (pull_request / merge_group whose changed files are only inert) skips the heavy steps. Inert, per `INERT` in
   `scripts/ci/ci_gate.py`: top-level `*.md`, `docs/**/*.md` outside `docs/evidence/`, `LICENSE`, `.DS_Store`,
   `.github/dependabot.yml`, and the tooling no native job reads (JUN-818), named one by one:
-  `scripts/ci/{pr_batch,test_pr_batch,repin_allowlist,test_repin_allowlist}.py` and
-  `.github/workflows/post-merge-repin.yml`. Everything else runs, including every other workflow, action and script,
+  `scripts/ci/{pr_batch,test_pr_batch}.py`. Everything else runs, including every other workflow, action and script,
   all of `seed/**` and `examples/**` (their `*.md` too) and `docs/evidence/**`.
 - Marker jobs skip when the same tree already passed that job (cache key = tree hash + runner arch + tier). Derivation
   jobs (`bootstrap-arm64-root`, `one-compiler-arm64`, `x86-native-qualification`, `x86-complete`) restore the exact

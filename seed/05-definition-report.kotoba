@@ -12,6 +12,17 @@
 ;; helpers and closures never reach the KIR, and a row is kept only when nothing it calls was refused, so the
 ;; KIR handed to the freshly checking producer is closed and every kept CID is the one the whole module gives.
 ;; Frontend errors, computed defs, templates and unexpected FN kinds still refuse the whole module.
+;; JUN-579: `.kotoba` is canonical and `.cljk` is input sugar through this same frontend, so a sugar spelling and its
+;; pure spelling mint one identity. Every other extension (the retired .clj/.cljc/.cljs included) is a usage error.
+(defn- dsr-suffix? [path :string suffix :string] :bool
+  (let [length (string-length path) tail (string-length suffix)]
+    (if (< length tail) false
+      (loop [i 0]
+        (cond (> i (- length tail)) false
+              (= i (- length tail)) (string=? (string-substring path i length) suffix)
+              :else (recur (+ i (mem-cpw (string-code-point-at path i)))))))))
+(defn- dsr-source-input? [path :string] :bool
+  (or (dsr-suffix? path ".kotoba") (dsr-suffix? path ".cljk")))
 (defn- dsr-row? [M :vector-i64 f :i64] :bool
   (let [kind (nm-ff M f FF-KIND)]
     (and (or (= kind FK-DEFN) (= kind FK-PRIV)) (not (dsb-cdef? M f)))))

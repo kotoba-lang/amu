@@ -45,6 +45,8 @@ on:
       - 'scripts/seed/check-def-assoc-get.py'
       - 'seed/tests/native-def-assoc-get.kotoba'
       - 'scripts/seed/check-closed-dispatch.py'
+      - 'scripts/seed/check-pure-forms.py'
+      - 'seed/tests/native-pure-forms.kotoba'
       - 'seed/tests/native-closed-dispatch.kotoba'
       - 'scripts/seed/check-record-identity-option.py'
       - 'seed/tests/native-record-identity-option.kotoba'
@@ -238,6 +240,12 @@ jobs:
           python3 scripts/seed/check-closed-dispatch.py \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-closed-dispatch"
+      - name: the pure heads lam, app and ref lower to existing forms (JUN-950)
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-pure-forms.py \
+            --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
+            --output "$RUNNER_TEMP/mac-pure-forms"
       - name: keyword map literals have structural identity; nil is an [:option T] field's none (JUN-733)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -548,7 +556,7 @@ jobs:
           key: ${{ steps.gate.outputs.key }}
   native-cross-x86_64:
     needs: mac-root
-    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-latest' }}  # amu-runner: ubuntu-latest
+    runs-on: ${{ vars.AMU_RUNNER_PROFILE == 'selfhosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-linux-x86_64' || 'ubuntu-24.04' }}  # amu-runner: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

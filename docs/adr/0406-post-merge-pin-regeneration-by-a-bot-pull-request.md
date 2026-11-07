@@ -1,7 +1,13 @@
 # ADR 0406: Derived pins are regenerated after merge by a bot pull request (JUN-818)
 
-Status: proposed (design only). The workflow `.github/workflows/post-merge-repin.yml` ships
-**disabled**; enabling it is an owner action listed under "Owner decisions".
+Status: **withdrawn** (owner, 2026-11-06). No Bot token/App will be provided, so the bot-free path is used.
+The workflow `post-merge-repin.yml` and `repin_allowlist.py` were deleted. Text below is kept as design history.
+
+## Withdrawn
+
+Pins stay in the PR. Remaining bot-free levers: sharding and input-hash skips (done), `pr_batch.py` (explicit use),
+and sharing derived outputs from the PR run to its `merge_group` run, which needs a digest-verified trust-boundary
+change and a separate owner decision.
 
 ## Problem
 

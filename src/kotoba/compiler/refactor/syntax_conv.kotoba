@@ -1,0 +1,270 @@
+;; cljk reader syntax -> constructs the native reader admits (JUN-933).
+;;
+;; Pure source-to-source converter over the lossless CST of cst.kotoba. Three mechanical rules:
+;;   #( .. % %2 ..)      -> (fn [p1 p2] ( .. p1 p2 ..))   the native `fn` takes its parameter types from context
+;;   #_ FORM             -> (removed)                      the marker, the form it discards and the layout after it
+;;                                                         (k consecutive markers discard the next k forms)
+;;   #?( f1 a f2 b ..)   -> the :kotoba arm, else the :default arm, else nothing
+;;   #?@( f1 [a b] ..)   -> the chosen arm's items in place (a vector arm is spliced; any other arm stays one form)
+;; Every other byte is copied verbatim, so a file with none of these syntaxes converts to itself.
+;;
+;; Refused (answer ""): a CST that does not read (unbalanced, unterminated), `%&` rest arguments, a
+;; nested #( ), and a reader conditional with an odd number of forms. A refusal never rewrites.
+;; An empty input also answers "".
+;;
+;; Not here, each its own rule: regex literals #"..", quote ', char literals, ::kw, #inst/#uuid, @deref.
+;;
+;; Run (a multi-module program: the CST module is the source path):
+;;   bin/amu compile src/kotoba/compiler/refactor/syntax_conv.kotoba --source-path src -o /tmp/syntax_conv
+;;   /tmp/syntax_conv      # prints the number of failed checks, 0 = all held
+(ns kotoba.compiler.refactor.syntax-conv
+  (:export [main convert])
+  (:require [kotoba.compiler.refactor.cst :as cst]))
+
+;; ---------------------------------------------------------------- token table access
+;; token k occupies slots 2+4k .. 5+4k of the CST result: kind sub start end
+
+(defn- t-kind [r :vector-i64 k :i64] :i64 (vector-at r (+ 2 (* 4 k))))
+(defn- t-sub [r :vector-i64 k :i64] :i64 (vector-at r (+ 3 (* 4 k))))
+(defn- t-start [r :vector-i64 k :i64] :i64 (vector-at r (+ 4 (* 4 k))))
+(defn- t-end [r :vector-i64 k :i64] :i64 (vector-at r (+ 5 (* 4 k))))
+
+(defn- tok-text [src :string r :vector-i64 k :i64] :string
+  (string-substring src (t-start r k) (t-end r k)))
+
+(defn- layout? [r :vector-i64 k :i64] :bool
+  (let [kd (t-kind r k)] (or (= kd 0) (= kd 1))))
+
+(defn- skip-layout [r :vector-i64 k :i64 n :i64] :i64
+  (loop [j k] (if (and (< j n) (layout? r j)) (recur (+ j 1)) j)))
+
+;; the token index just past the form that starts at token k (k is not layout)
+(defn- form-end [r :vector-i64 k :i64 n :i64] :i64
+  (let [kd (t-kind r k)]
+    (cond
+      (= kd 2)
+      (loop [j (+ k 1) depth 1]
+        (cond (>= j n) n
+              (= (t-kind r j) 2) (recur (+ j 1) (+ depth 1))
+              (= (t-kind r j) 3) (if (= depth 1) (+ j 1) (recur (+ j 1) (- depth 1)))
+              :else (recur (+ j 1) depth)))
+      (or (= kd 8) (= kd 9))
+      (let [m (skip-layout r (+ k 1) n)] (if (>= m n) n (form-end r m n)))
+      (= kd 10)
+      (let [m (skip-layout r (+ k 1) n)]
+        (if (>= m n) n
+          (let [e (form-end r m n) m2 (skip-layout r e n)] (if (>= m2 n) n (form-end r m2 n)))))
+      :else (+ k 1))))
+
+;; children of the list starting at token k: a flat vector [start end start end ..] (end exclusive)
+(defn- kids [r :vector-i64 k :i64 n :i64] :vector-i64
+  (let [close (- (form-end r k n) 1)]
+    (loop [j (+ k 1) out (vector-i64)]
+      (let [m (skip-layout r j close)]
+        (if (>= m close)
+          out
+          (let [e (form-end r m n)]
+            (recur e (vector-conj (vector-conj out m) e))))))))
+
+(defn- kid-count [ks :vector-i64] :i64 (quot (vector-count ks) 2))
+(defn- kid-start [ks :vector-i64 i :i64] :i64 (vector-at ks (* 2 i)))
+(defn- kid-end [ks :vector-i64 i :i64] :i64 (vector-at ks (+ 1 (* 2 i))))
+
+;; ---------------------------------------------------------------- % parameters
+
+(defn- digits [k :i64] :string
+  (if (< k 10)
+    (string-substring "0123456789" k (+ k 1))
+    (string-concat (digits (quot k 10)) (digits (rem k 10)))))
+
+;; 0 = not a % parameter; 1 = "%"; N = "%N"; -1 = "%&"
+(defn- pct-index [t :string] :i64
+  (let [len (string-byte-length t)]
+    (cond (or (= len 0) (not (= (string-code-point-at t 0) 37))) 0
+          (= len 1) 1
+          (and (= len 2) (= (string-code-point-at t 1) 38)) -1
+          :else
+          (loop [i 1 v 0]
+            (if (>= i len)
+              v
+              (let [c (string-code-point-at t i)]
+                (if (and (>= c 48) (<= c 57))
+                  (recur (+ i 1) (+ (* v 10) (- c 48)))
+                  0)))))))
+
+;; the highest parameter index used by the atoms in tokens [a, b); -1 for a %& rest argument,
+;; -2 for a nested #( )
+(defn- max-pct [src :string r :vector-i64 a :i64 b :i64] :i64
+  (loop [j a mx 0]
+    (cond (>= j b) mx
+          (and (= (t-kind r j) 2) (= (t-sub r j) 3)) -2
+          (= (t-kind r j) 7)
+          (let [ix (pct-index (tok-text src r j))]
+            (if (= ix -1) -1 (recur (+ j 1) (if (> ix mx) ix mx))))
+          :else (recur (+ j 1) mx))))
+
+(defn- params [mx :i64] :string
+  (loop [i 1 out ""]
+    (if (> i mx)
+      out
+      (recur (+ i 1) (string-concat (string-concat out (if (= i 1) "" " ")) (string-concat "p" (digits i)))))))
+
+;; ---------------------------------------------------------------- the rewrite
+
+(defn- refused? [s :string] :bool (string=? s "@@refuse@@"))
+
+
+;; the token index after a run of #_ markers starting at token j and the forms they discard: k
+;; consecutive markers discard the next k forms (#_#_ a b discards both); -1 when a form is missing
+(defn- discard-end [r :vector-i64 j :i64 b :i64 n :i64] :i64
+  (let [stop (loop [m j k 0]
+               (let [m2 (skip-layout r m b)]
+                 (if (and (< m2 b) (= (t-kind r m2) 9))
+                   (recur (+ m2 1) (+ k 1))
+                   (+ (* m2 1000000) k))))
+        start (quot stop 1000000)
+        k (rem stop 1000000)]
+    (loop [m start left k]
+      (if (= left 0)
+        m
+        (if (>= m b)
+          -1
+          (recur (skip-layout r (form-end r m n) b) (- left 1)))))))
+
+;; the arm of a reader conditional list (children ks) whose feature text is `feature`: the index of
+;; its form among the children, or -1
+(defn- arm-index [src :string r :vector-i64 ks :vector-i64 feature :string] :i64
+  (loop [i 0]
+    (cond (>= i (kid-count ks)) -1
+          (string=? (string-substring src (t-start r (kid-start ks i)) (t-end r (- (kid-end ks i) 1))) feature) (+ i 1)
+          :else (recur (+ i 2)))))
+
+;; the name of the first (ns NAME ...) form, "" when there is none
+(defn- ns-name [src :string r :vector-i64] :string
+  (let [n (cst/tok-count r)]
+    (loop [j 0]
+      (if (>= (+ j 1) n)
+        ""
+        (if (and (= (t-kind r j) 2) (= (t-sub r j) 0))
+          (let [h (skip-layout r (+ j 1) n)]
+            (if (and (< h n) (= (t-kind r h) 7) (string=? (tok-text src r h) "ns"))
+              (let [m (skip-layout r (+ h 1) n)]
+                (if (and (< m n) (= (t-kind r m) 7)) (tok-text src r m) ""))
+              (recur (+ j 1))))
+          (recur (+ j 1)))))))
+
+;; ::name (no alias) becomes :NS/name; "" when it is not a plain auto-resolved keyword or NS is unknown
+(defn- auto-kw [t :string ns :string] :string
+  (if (and (> (string-length ns) 0)
+           (> (string-length t) 2)
+           (string=? (string-substring t 0 2) "::")
+           (not (string-contains? t "/")))
+    (string-concat (string-concat (string-concat ":" ns) "/") (string-substring t 2 (string-length t)))
+    ""))
+
+(defn- rw [src :string r :vector-i64 a :i64 b :i64 n :i64 pct :bool ns :string] :string
+  (loop [j a out ""]
+    (if (>= j b)
+      out
+      (let [kd (t-kind r j)]
+        (cond
+          (= kd 9)
+          (let [e (discard-end r j b n)]
+            (if (< e 0) "@@refuse@@" (recur e out)))
+
+          (and (= kd 2) (= (t-sub r j) 3))
+          (let [e (form-end r j n)
+                mx (max-pct src r (+ j 1) (- e 1))]
+            (if (< mx 0)
+              "@@refuse@@"
+              (let [inner (rw src r (+ j 1) (- e 1) n true ns)]
+                (if (refused? inner)
+                  inner
+                  (recur e (string-concat out (string-concat (string-concat (string-concat "(fn [" (params mx)) "] (") (string-concat inner "))"))))))))
+
+          (and (= kd 2) (= (t-sub r j) 5))
+          (let [e (form-end r j n)
+                ks (kids r j n)
+                splice (> (- (t-end r j) (t-start r j)) 3)]
+            (if (not (= (rem (kid-count ks) 2) 0))
+              "@@refuse@@"
+              (let [k1 (arm-index src r ks ":kotoba")
+                    k2 (if (< k1 0) (arm-index src r ks ":default") k1)]
+                (if (< k2 0)
+                  (recur e out)
+                  (let [fa (kid-start ks k2)
+                        fb (kid-end ks k2)
+                        vec? (and splice (= (t-kind r fa) 2) (= (t-sub r fa) 1))
+                        piece (if vec?
+                                (rw src r (+ fa 1) (- fb 1) n pct ns)
+                                (rw src r fa fb n pct ns))]
+                    (if (refused? piece) piece (recur e (string-concat out piece))))))))
+
+          (and (= kd 8) (string=? (tok-text src r j) "'") (< (skip-layout r (+ j 1) b) b) (= (t-kind r (skip-layout r (+ j 1) b)) 7))
+          (let [m (skip-layout r (+ j 1) b)]
+            (recur (+ m 1) (string-concat out (string-concat (string-concat "(quote " (tok-text src r m)) ")"))))
+
+          (and (= kd 7) pct (> (pct-index (tok-text src r j)) 0))
+          (recur (+ j 1) (string-concat out (string-concat "p" (digits (pct-index (tok-text src r j))))))
+
+          (and (= kd 7) (> (string-length (auto-kw (tok-text src r j) ns)) 0))
+          (recur (+ j 1) (string-concat out (auto-kw (tok-text src r j) ns)))
+
+          :else (recur (+ j 1) (string-concat out (tok-text src r j))))))))
+
+;; the converted source, or "" when the input is empty, does not read, or is refused
+(defn convert [src :string] :string
+  (let [r (cst/read src)]
+    (if (not (= (vector-at r 0) 0))
+      ""
+      (let [out (rw src r 0 (cst/tok-count r) (cst/tok-count r) false (ns-name src r))]
+        (if (refused? out) "" out)))))
+
+;; ---------------------------------------------------------------- self-gate
+;; main answers the number of failed checks: 0 = every fixture converts as expected
+
+(defn- same? [got :string want :string] :i64 (if (string=? got want) 0 1))
+
+(defn- case-anon-fn [] :i64
+  (+ (same? (convert "(map #(+ % 1) xs)") "(map (fn [p1] (+ p1 1)) xs)")
+     (same? (convert "(reduce #(+ %1 %2) 0 xs)") "(reduce (fn [p1 p2] (+ p1 p2)) 0 xs)")
+     (same? (convert "(run #(f % %3))") "(run (fn [p1 p2 p3] (f p1 p3)))")
+     (same? (convert "(thunk #(g))") "(thunk (fn [] (g)))")
+     (same? (convert "(a #(b #?(:clj % :default %2)))") "(a (fn [p1 p2] (b p2)))")))
+
+(defn- case-discard [] :i64
+  (+ (same? (convert "(f #_(dead 1) x)") "(f x)")
+     (same? (convert "[1 #_2 #_#_3 4 5]") "[1 5]")
+     (same? (convert "#_ (a) (b)") "(b)")))
+
+(defn- case-reader-conditional [] :i64
+  (+ (same? (convert "(f #?(:clj 1 :default 2))") "(f 2)")
+     (same? (convert "(f #?(:clj 1 :kotoba 3 :default 2))") "(f 3)")
+     (same? (convert "(f #?(:clj 1 :cljs 2) x)") "(f  x)")
+     (same? (convert "[a #?@(:default [b c]) d]") "[a b c d]")
+     (same? (convert "(f #?@(:clj [1 2]) x)") "(f  x)")
+     (same? (convert "(f #?(:default #(inc %)))") "(f (fn [p1] (inc p1)))")))
+
+(defn- case-unchanged [] :i64
+  (+ (same? (convert "(ns a (:require [b :as c]))\n(defn f [x] (+ x 1)) ; keep\n") "(ns a (:require [b :as c]))\n(defn f [x] (+ x 1)) ; keep\n")
+     (same? (convert "(f \"#(not % touched)\" x)") "(f \"#(not % touched)\" x)")))
+
+(defn- case-quote [] :i64
+  (+ (same? (convert "(f 'x 'a/b)") "(f (quote x) (quote a/b))")
+     (same? (convert "(f \"'x\" '(1 2))") "(f \"'x\" '(1 2))")
+     (same? (convert "(f #(g 'x %))") "(f (fn [p1] (g (quote x) p1)))")))
+
+(defn- case-auto-keyword [] :i64
+  (+ (same? (convert "(ns a.b)\n(f ::x {::y 1})") "(ns a.b)\n(f :a.b/x {:a.b/y 1})")
+     (same? (convert "(ns a.b)\n(f ::al/x \"::s\")") "(ns a.b)\n(f ::al/x \"::s\")")
+     (same? (convert "(f ::x)") "(f ::x)")))
+
+(defn- case-refusals [] :i64
+  (+ (same? (convert "(map #(apply f %&) xs)") "")
+     (same? (convert "(map #(#(inc %) %) xs)") "")
+     (same? (convert "(f #?(:clj 1 :default))") "")
+     (same? (convert "(f #(g %") "")
+     (same? (convert "") "")))
+
+(defn main [] :i64
+  (+ (case-anon-fn) (case-discard) (case-reader-conditional) (case-unchanged) (case-quote) (case-auto-keyword) (case-refusals)))

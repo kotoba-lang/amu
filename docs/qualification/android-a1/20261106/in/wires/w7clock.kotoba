@@ -1,0 +1,3 @@
+(ns w7clock (:export [main]))
+(defn- say [s :string] :i64 (let [x (typed-cap-call :io/write :string :string s)] 0))
+(defn main [] :i64 (let [a (string-length (typed-cap-call :clock/now :string :string "wall")) b (string-length (typed-cap-call :clock/now :string :string "monotonic"))] (if (and (> a 0) (> b 0)) 7 1)))

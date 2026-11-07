@@ -1,0 +1,354 @@
+;; clojure.test-style deftest/is/testing -> plain `defn NAME [] :bool` + generated `main` (JUN-924).
+;;
+;; Pure source-to-source converter over the lossless CST of cst.kotoba. It reads
+;; one `.cljk`/`.cljc` test source and answers the converted `.kotoba` source, or
+;; an empty string when the file is refused (a refusal never rewrites).
+;;
+;; The rule (the same output the measured prototype produced):
+;;   (deftest N B...)          -> (defn N [] :bool T(B...))
+;;   (is X) / (is X MSG)       -> X
+;;   (testing S B...)          -> T(B...)            (the title is dropped)
+;;   (let [..] B...)           -> (let [..] T(B...))
+;;   (do B...)                 -> T(B...)
+;;   a statement with no test  -> (do E true)        (still evaluated)
+;;   T(B1 .. Bn)               -> true | T(B1) | (and T(B1) .. T(Bn))
+;;   an `is` under any other form (doseq, thrown?, try, ...) refuses the file.
+;; After the forms: the test requires (kotoba.test, clojure.test, cljs.test) are
+;; dropped from the ns, `(:export [main])` is added when the ns has no export, and
+;; a `main` is appended unless the file already defines one:
+;;   (defn main [] :i64 (cond (not (t1)) 1 (not (t2)) 2 .. :else 42))
+;; so 42 means every test held and any other value is the 1-based index of the
+;; first failing deftest. A failure stops at the first `is` (clojure.test reports
+;; every failure): a named divergence.
+;;
+;; Not here: reader syntax rewrites (#( ) #_ #?), regex, host interop. Those are
+;; separate rules; this one only changes the test forms.
+;;
+;; Run (a multi-module program: the CST module is the source path):
+;;   bin/amu check src/kotoba/compiler/refactor/test_conv.kotoba --source-path src
+;;   bin/amu compile src/kotoba/compiler/refactor/test_conv.kotoba --source-path src -o /tmp/test_conv
+;;   /tmp/test_conv        # prints the number of failed checks, 0 = all held
+(ns kotoba.compiler.refactor.test-conv
+  (:export [main convert])
+  (:require [kotoba.compiler.refactor.cst :as cst]))
+
+;; ---------------------------------------------------------------- token table access
+;; token k occupies slots 2+4k .. 5+4k of the CST result: kind sub start end
+
+(defn- t-kind [r :vector-i64 k :i64] :i64 (vector-at r (+ 2 (* 4 k))))
+(defn- t-sub [r :vector-i64 k :i64] :i64 (vector-at r (+ 3 (* 4 k))))
+(defn- t-start [r :vector-i64 k :i64] :i64 (vector-at r (+ 4 (* 4 k))))
+(defn- t-end [r :vector-i64 k :i64] :i64 (vector-at r (+ 5 (* 4 k))))
+
+;; whitespace, comments and #_ discards are layout: a form never starts on them
+(defn- layout? [r :vector-i64 k :i64] :bool
+  (let [kd (t-kind r k)] (or (= kd 0) (= kd 1))))
+
+;; index of the first token at or after k that is not whitespace or a comment
+(defn- skip-layout [r :vector-i64 k :i64 n :i64] :i64
+  (loop [j k] (if (and (< j n) (layout? r j)) (recur (+ j 1)) j)))
+
+;; the token index just past the form that starts at token k (k is not layout)
+;; kind 2 open .. matching close; 8 prefix, 9 discard, 10 meta: the prefix plus the
+;; next form (meta takes two forms); anything else is one token
+(defn- form-end [r :vector-i64 k :i64 n :i64] :i64
+  (let [kd (t-kind r k)]
+    (cond
+      (= kd 2)
+      (loop [j (+ k 1) depth 1]
+        (cond (>= j n) n
+              (= (t-kind r j) 2) (recur (+ j 1) (+ depth 1))
+              (= (t-kind r j) 3) (if (= depth 1) (+ j 1) (recur (+ j 1) (- depth 1)))
+              :else (recur (+ j 1) depth)))
+      (or (= kd 8) (= kd 9))
+      (let [m (skip-layout r (+ k 1) n)] (if (>= m n) n (form-end r m n)))
+      (= kd 10)
+      (let [m (skip-layout r (+ k 1) n)]
+        (if (>= m n) n
+          (let [e (form-end r m n) m2 (skip-layout r e n)] (if (>= m2 n) n (form-end r m2 n)))))
+      :else (+ k 1))))
+
+;; ---------------------------------------------------------------- children of a list form
+;; a list (open at token k) has children = the forms between the open and its close, in order;
+;; kids answers a flat vector [start end start end ..] of token indexes (end exclusive)
+
+(defn- kids [r :vector-i64 k :i64 n :i64] :vector-i64
+  (let [close (- (form-end r k n) 1)]
+    (loop [j (+ k 1) out (vector-i64)]
+      (let [m (skip-layout r j close)]
+        (if (>= m close)
+          out
+          (let [e (form-end r m n)]
+            (recur e (vector-conj (vector-conj out m) e))))))))
+
+(defn- kid-count [ks :vector-i64] :i64 (quot (vector-count ks) 2))
+(defn- kid-start [ks :vector-i64 i :i64] :i64 (vector-at ks (* 2 i)))
+(defn- kid-end [ks :vector-i64 i :i64] :i64 (vector-at ks (+ 1 (* 2 i))))
+
+;; source text of tokens [a, b)
+(defn- text [src :string r :vector-i64 a :i64 b :i64] :string
+  (if (>= a b) "" (string-substring src (t-start r a) (t-end r (- b 1)))))
+
+;; the head symbol text of a list form starting at token k, or "" when not a list / not led by a symbol
+(defn- head-text [src :string r :vector-i64 k :i64 n :i64] :string
+  (if (and (= (t-kind r k) 2) (= (t-sub r k) 0))
+    (let [ks (kids r k n)]
+      (if (and (> (kid-count ks) 0) (= (t-kind r (kid-start ks 0)) 7))
+        (text src r (kid-start ks 0) (kid-end ks 0))
+        ""))
+    ""))
+
+;; the part after the last '/' of a symbol (t/is, clojure.test/is -> is)
+(defn- base-name [s :string] :string
+  (let [n (string-byte-length s)]
+    (loop [i 0 at 0]
+      (if (>= i n)
+        (string-substring s at n)
+        (recur (+ i 1) (if (= (string-code-point-at s i) 47) (+ i 1) at))))))
+
+;; does the source text of tokens [a, b) contain a call form (is|testing|are|deftest ...)?
+(defn- test-head? [h :string] :bool
+  (let [b (base-name h)]
+    (or (string=? b "is") (string=? b "testing") (string=? b "are") (string=? b "deftest"))))
+
+(defn- has-test-form? [src :string r :vector-i64 a :i64 b :i64 n :i64] :bool
+  (loop [j a]
+    (cond (>= j b) false
+          (and (= (t-kind r j) 2) (= (t-sub r j) 0) (test-head? (head-text src r j n))) true
+          :else (recur (+ j 1)))))
+
+
+;; ---------------------------------------------------------------- the rule T
+;; answers the converted text, or "@@refuse@@" when the form cannot be converted
+
+(defn- refused? [s :string] :bool (string=? s "@@refuse@@"))
+
+;; statements from kid index `from`: tests convert, effect-only statements become (do E true).
+;; One statement stays as it is; several are joined with (and ..); none is `true`.
+(defn- tseq [src :string r :vector-i64 ks :vector-i64 from :i64 n :i64] :string
+  (let [c (kid-count ks)
+        cnt (- c from)]
+    (if (<= cnt 0)
+      "true"
+      (let [joined (loop [i from acc ""]
+                     (if (>= i c)
+                       acc
+                       (let [a (kid-start ks i)
+                             b (kid-end ks i)
+                             piece (if (has-test-form? src r a b n)
+                                     (tform src r a b n)
+                                     (string-concat (string-concat "(do " (text src r a b)) " true)"))]
+                         (if (refused? piece)
+                           piece
+                           (recur (+ i 1) (if (= i from) piece (string-concat (string-concat acc " ") piece)))))))]
+        (cond (refused? joined) joined
+              (= cnt 1) joined
+              :else (string-concat (string-concat "(and " joined) ")"))))))
+
+(defn- tform [src :string r :vector-i64 a :i64 b :i64 n :i64] :string
+  (let [hb (base-name (head-text src r a n))]
+    (cond
+      (string=? hb "is")
+      (let [ks (kids r a n)]
+        (if (< (kid-count ks) 2)
+          "@@refuse@@"
+          (let [x (text src r (kid-start ks 1) (kid-end ks 1))
+                xh (if (= (t-kind r (kid-start ks 1)) 2) (base-name (head-text src r (kid-start ks 1) n)) "")]
+            (if (or (string=? xh "thrown?") (string=? xh "thrown-with-msg?")) "@@refuse@@" x))))
+      (string=? hb "testing")
+      (tseq src r (kids r a n) 2 n)
+      (string=? hb "do")
+      (tseq src r (kids r a n) 1 n)
+      (string=? hb "let")
+      (let [ks (kids r a n)]
+        (if (< (kid-count ks) 2)
+          "@@refuse@@"
+          (let [body (tseq src r ks 2 n)]
+            (if (refused? body)
+              body
+              (string-concat (string-concat (string-concat "(let " (text src r (kid-start ks 1) (kid-end ks 1))) " ") (string-concat body ")"))))))
+      :else "@@refuse@@")))
+
+
+;; ---------------------------------------------------------------- file level
+
+(defn- test-lib? [s :string] :bool
+  (or (string=? s "kotoba.test") (string=? s "clojure.test") (string=? s "cljs.test")))
+
+(defn- bstart [r :vector-i64 k :i64] :i64 (t-start r k))
+(defn- bend [r :vector-i64 k :i64] :i64 (t-end r (- k 1)))
+
+(defn- list-head? [src :string r :vector-i64 k :i64 n :i64 name :string] :bool
+  (and (= (t-kind r k) 2) (= (t-sub r k) 0) (string=? (head-text src r k n) name)))
+
+;; byte ranges [start end] to cut out of an ns form: each test-lib vector of its :require clauses,
+;; with the layout before it (from the end of the previous child)
+(defn- ns-cuts [src :string r :vector-i64 ks :vector-i64 n :i64] :vector-i64
+  (loop [i 2 cuts (vector-i64)]
+    (if (>= i (kid-count ks))
+      cuts
+      (let [ci (kid-start ks i)]
+        (if (list-head? src r ci n ":require")
+          (let [cs (kids r ci n)]
+            (recur (+ i 1)
+                   (loop [j 1 acc cuts]
+                     (if (>= j (kid-count cs))
+                       acc
+                       (let [vs (kid-start cs j)
+                             isvec (and (= (t-kind r vs) 2) (= (t-sub r vs) 1))
+                             vk (if isvec (kids r vs n) (vector-i64))
+                             lib (if (and isvec (> (kid-count vk) 0)) (text src r (kid-start vk 0) (kid-end vk 0)) "")]
+                         (if (test-lib? lib)
+                           (recur (+ j 1) (vector-conj (vector-conj acc (bend r (kid-end cs (- j 1)))) (bend r (kid-end cs j))))
+                           (recur (+ j 1) acc)))))))
+          (recur (+ i 1) cuts))))))
+
+(defn- ns-has-export? [src :string r :vector-i64 ks :vector-i64 n :i64] :bool
+  (loop [i 2]
+    (cond (>= i (kid-count ks)) false
+          (list-head? src r (kid-start ks i) n ":export") true
+          :else (recur (+ i 1)))))
+
+;; the ns form without test requires, with (:export [main]) added when it had no export
+(defn- ns-text [src :string r :vector-i64 a :i64 b :i64 n :i64] :string
+  (let [ks (kids r a n)
+        cuts (ns-cuts src r ks n)
+        add (and (> (kid-count ks) 1) (not (ns-has-export? src r ks n)))
+        s0 (bstart r a)
+        namee (if (> (kid-count ks) 1) (bend r (kid-end ks 1)) s0)
+        out0 (if add
+               (string-concat (string-substring src s0 namee) "\n  (:export [main])")
+               "")
+        cur0 (if add namee s0)
+        end (bend r b)]
+    (loop [c 0 cur cur0 out out0]
+      (if (>= c (quot (vector-count cuts) 2))
+        (string-concat out (string-substring src cur end))
+        (let [cs (vector-at cuts (* 2 c)) ce (vector-at cuts (+ 1 (* 2 c)))]
+          (recur (+ c 1) ce (string-concat out (string-substring src cur cs))))))))
+
+(defn- main-def [names :string] :string
+  (string-concat
+   (string-concat "\n(defn main [] :i64 (cond " (cond-cases names))
+   " :else 42))\n"))
+
+;; "t1 t2 t3" -> "(not (t1)) 1 (not (t2)) 2 (not (t3)) 3"
+(defn- cond-cases [names :string] :string
+  (let [len (string-byte-length names)]
+    (loop [i 0 start 0 k 1 out ""]
+      (if (>= i (+ len 1))
+        out
+        (if (or (= i len) (= (string-code-point-at names i) 32))
+          (recur (+ i 1) (+ i 1) (+ k 1)
+                 (string-concat (string-concat out (if (= k 1) "" " "))
+                                (string-concat (string-concat (string-concat "(not (" (string-substring names start i)) ")) ") (digits k))))
+          (recur (+ i 1) start k out))))))
+
+(defn- digits [k :i64] :string
+  (if (< k 10)
+    (string-substring "0123456789" k (+ k 1))
+    (string-concat (digits (quot k 10)) (digits (rem k 10)))))
+
+;; the converted source, or "" when the file is refused or has no deftest
+(defn convert [src :string] :string
+  (let [r (cst/read src)]
+    (if (not (= (vector-at r 0) 0))
+      ""
+      (let [n (cst/tok-count r)
+            tops (loop [j 0 out (vector-i64)]
+                   (let [m (skip-layout r j n)]
+                     (if (>= m n)
+                       out
+                       (let [e (form-end r m n)]
+                         (recur e (vector-conj (vector-conj out m) e))))))
+            res (convert-tops src r n tops)]
+        (if (refused? res) "" res)))))
+
+(defn- convert-tops [src :string r :vector-i64 n :i64 tops :vector-i64] :string
+  (let [tc (kid-count tops)]
+    (loop [i 0 last 0 out "" names "" count 0 has-main false]
+      (if (>= i tc)
+        (if (= count 0)
+          ""
+          (string-concat (string-concat out (string-substring src last (string-byte-length src)))
+                         (if has-main "" (main-def names))))
+        (let [a (kid-start tops i)
+              b (kid-end tops i)
+              h (base-name (head-text src r a n))]
+          (cond
+            (string=? h "deftest")
+            (let [ks (kids r a n)]
+              (if (< (kid-count ks) 2)
+                "@@refuse@@"
+                (let [body (tseq src r ks 2 n)]
+                  (if (refused? body)
+                    "@@refuse@@"
+                    (let [name (text src r (kid-start ks 1) (kid-end ks 1))
+                          def (string-concat (string-concat (string-concat "(defn " name) " [] :bool ") (string-concat body ")"))]
+                      (recur (+ i 1) (bend r b)
+                             (string-concat (string-concat out (string-substring src last (bstart r a))) def)
+                             (if (= count 0) name (string-concat (string-concat names " ") name))
+                             (+ count 1) has-main))))))
+            (string=? h "ns")
+            (recur (+ i 1) (bend r b)
+                   (string-concat (string-concat out (string-substring src last (bstart r a))) (ns-text src r a b n))
+                   names count has-main)
+            (string=? h "defn")
+            (let [ks (kids r a n)]
+              (recur (+ i 1) last out names count
+                     (or has-main (and (> (kid-count ks) 1) (string=? (text src r (kid-start ks 1) (kid-end ks 1)) "main")))))
+            :else (recur (+ i 1) last out names count has-main)))))))
+
+;; ---------------------------------------------------------------- self-gate
+;; main answers the number of failed checks: 0 = every fixture converts as expected
+
+(defn- same? [got :string want :string] :i64 (if (string=? got want) 0 1))
+
+(defn- case-simple [] :i64
+  (same? (convert "(ns a.b-test\n  (:require [kotoba.test :refer [deftest is]]\n            [a.b :as b]))\n(deftest one (is (= 1 (b/f 1))) (is (b/ok? 2)))\n(deftest two (is (b/ok? 1)))\n")
+         "(ns a.b-test\n  (:export [main])\n  (:require\n            [a.b :as b]))\n(defn one [] :bool (and (= 1 (b/f 1)) (b/ok? 2)))\n(defn two [] :bool (b/ok? 1))\n\n(defn main [] :i64 (cond (not (one)) 1 (not (two)) 2 :else 42))\n"))
+
+(defn- case-nested [] :i64
+  (same? (convert "(ns n\n  (:require [clojure.test :refer [deftest is testing]]))\n(deftest a\n  (testing \"x\" (is (= 1 1)) (is (= 2 2) \"msg\"))\n  (let [v 3] (is (= v 3)) (is (pos? v))))\n")
+         "(ns n\n  (:export [main])\n  (:require))\n(defn a [] :bool (and (and (= 1 1) (= 2 2)) (let [v 3] (and (= v 3) (pos? v)))))\n\n(defn main [] :i64 (cond (not (a)) 1 :else 42))\n"))
+
+(defn- case-effect [] :i64
+  (same? (convert "(ns e (:export [main]) (:require [kotoba.test :refer [deftest is]]))\n(deftest a (println 1) (is (= 1 1)))\n")
+         "(ns e (:export [main]) (:require))\n(defn a [] :bool (and (do (println 1) true) (= 1 1)))\n\n(defn main [] :i64 (cond (not (a)) 1 :else 42))\n"))
+
+(defn- case-keeps-main [] :i64
+  (same? (convert "(ns k (:export [main]) (:require [kotoba.test :refer [deftest is]]))\n(deftest a (is true))\n(defn main [] :i64 7)\n")
+         "(ns k (:export [main]) (:require))\n(defn a [] :bool true)\n(defn main [] :i64 7)\n"))
+
+(defn- case-alias [] :i64
+  (same? (convert "(ns al (:require [clojure.test :as t]))\n(t/deftest a (t/is (= 1 1)))\n")
+         "(ns al\n  (:export [main]) (:require))\n(defn a [] :bool (= 1 1))\n\n(defn main [] :i64 (cond (not (a)) 1 :else 42))\n"))
+
+;; the cljs.test require is dropped like the other two
+(defn- case-cljs-test [] :i64
+  (same? (convert "(ns c\n  (:require [cljs.test :refer [deftest is]]\n            [a.b :as b]))\n(deftest a (is (b/ok? 1)))\n")
+         "(ns c\n  (:export [main])\n  (:require\n            [a.b :as b]))\n(defn a [] :bool (b/ok? 1))\n\n(defn main [] :i64 (cond (not (a)) 1 :else 42))\n"))
+
+;; refusals: a file that cannot be converted answers "" and is never half-rewritten
+(defn- case-refuse-doseq [] :i64
+  (same? (convert "(ns r (:require [kotoba.test :refer [deftest is]]))\n(deftest a (doseq [x [1 2]] (is (pos? x))))\n") ""))
+
+(defn- case-refuse-thrown [] :i64
+  (same? (convert "(ns r (:require [kotoba.test :refer [deftest is]]))\n(deftest a (is (thrown? Exception (f))))\n") ""))
+
+(defn- case-refuse-no-deftest [] :i64
+  (same? (convert "(ns r (:require [a.b :as b]))\n(defn f [] 1)\n") ""))
+
+(defn- case-refuse-unbalanced [] :i64
+  (same? (convert "(ns r (:require [kotoba.test :refer [deftest is]]))\n(deftest a (is (= 1 1))\n") ""))
+
+(defn- case-two-digit-index [] :i64
+  ;; eleven deftests: the 10th and 11th case labels use two digits
+  (let [src "(ns d (:require [kotoba.test :refer [deftest is]]))\n(deftest t1 (is true))(deftest t2 (is true))(deftest t3 (is true))(deftest t4 (is true))(deftest t5 (is true))(deftest t6 (is true))(deftest t7 (is true))(deftest t8 (is true))(deftest t9 (is true))(deftest t10 (is true))(deftest t11 (is true))\n"
+        out (convert src)]
+    (if (string-contains? out "(not (t10)) 10 (not (t11)) 11 :else 42") 0 1)))
+
+(defn main [] :i64
+  (+ (case-simple) (case-nested) (case-effect) (case-keeps-main) (case-alias)
+     (case-refuse-doseq) (case-refuse-thrown) (case-refuse-no-deftest) (case-refuse-unbalanced)
+     (case-two-digit-index) (case-cljs-test)))

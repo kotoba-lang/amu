@@ -1,0 +1,36 @@
+e53fedb67597aff8659c2715f8b3ecdbab814bc59b0a693792fb30a5d62a764f  root.elf
+--- context
+u:r:shell:s0
+u:object_r:shell_data_file:s0 root.elf
+--- compile-hello
+{:ok true, :target :aarch64-linux, :format :static, :code-bytes 312272, :bytes 320000, :runtime-profile :standard-v1, :vector-descriptors 4194304}
+exit=0
+--- compile-spin
+{:ok true, :target :aarch64-linux, :format :static, :code-bytes 312428, :bytes 320000, :runtime-profile :standard-v1, :vector-descriptors 4194304}
+exit=0
+--- compile-deep
+{:ok true, :target :aarch64-linux, :format :static, :code-bytes 312556, :bytes 320000, :runtime-profile :standard-v1, :vector-descriptors 4194304}
+exit=0
+-rw-r--r-- 1 shell shell  320000 2026-11-06 17:50 deep.elf
+-rw-r--r-- 1 shell shell  320000 2026-11-06 17:50 hello.elf
+-rwxr-xr-x 1 shell shell 4178432 2026-11-06 17:49 root.elf
+-rw-r--r-- 1 shell shell  320000 2026-11-06 17:50 spin.elf
+4a27ae3a38b5a61fceae156ef73a191f825bd57cb558ebd2b229977b0f08424f  hello.elf
+--- hello-exit
+exit=126
+--- hello-report
+/data/local/tmp/jun902/probe1.sh[8]: ./hello.elf: can't execute: Permission denied
+env: exec ./hello.elf: Permission denied
+exit=126
+--- sandbox-probe
+env: exec ./hello.elf: Permission denied
+exit=126
+--- cpu1
+env: exec ./spin.elf: Permission denied
+exit=126
+--- wall3
+env: exec ./spin.elf: Permission denied
+exit=126
+--- stack
+env: exec ./deep.elf: Permission denied
+exit=126

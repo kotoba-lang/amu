@@ -1,5 +1,5 @@
 ;; seed/99-definition-cids-entry.kotoba -- candidate entry for seed/DEFINITION-CIDS-MANIFEST (JUN-583/JUN-584).
-;; `definition-cids <file.kotoba> [--groups]` is the ADR 0300 report: one `name<TAB>CID` line per top-level
+;; `definition-cids <file.kotoba|file.cljk> [--groups]` is the ADR 0300 report: one `name<TAB>CID` line per top-level
 ;; definition in declaration order, then `SCANNED<TAB>n/n`. `--groups` appends `<TAB>group-CID-or-dash<TAB>index`
 ;; (SCC member index, -1 outside a recursive group). Identity comes from the checked-source bridge
 ;; (05-checked-source -> 06 producer, report in 05-definition-report, payload-v2, profile 6 / desugar 2, resource profile 0).
@@ -13,6 +13,7 @@
   (if (= (dsr-source-report (io-fs2-text 65 (io-arg 1) "") 0 format) 0) 0 66))
 (defn- seed-main [] :i64
   (cond (not (and (>= (io-argc) 1) (string=? (io-arg 0) "definition-cids"))) (drv-main)
+        (or (< (io-argc) 2) (not (dsr-source-input? (io-arg 1)))) 2
         (= (io-argc) 2) (dci-run 1)
         (and (= (io-argc) 3) (string=? (io-arg 2) "--groups")) (dci-run 2)
         :else 2))

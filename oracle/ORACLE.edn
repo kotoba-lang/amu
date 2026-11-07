@@ -1,0 +1,25 @@
+;; Local reference oracle for amu (owner decision 2026-11-06, JUN-579).
+;; One-off measurements on a developer machine only. Nothing here may enter CI,
+;; a gate, a workflow, a build, packaging or a runtime path, and it is never a
+;; fallback. A reference value is evidence of the reference's behavior, not proof
+;; that the native route is correct; a mismatch is reported, not forced to agree.
+;; Allowed languages: nbb, JVM, C, Python, Hy, jank, Fennel. .clj, .cljc and .cljs
+;; live only under a project-root oracle/.
+;; Each measurement goes in runs/<date>-<name>/ with its command, tool versions,
+;; inputs and outputs. Source goes in src/ only when no pinned commit can hold it.
+{:format :kotoba.oracle/v1
+ :project "kotoba-lang/amu"
+ :external
+ [{:repo "kotoba-lang/kotoba-sema"
+   :commit "a3303527008c7e52b33c08cd580c7dc71eeead60"
+   :archived true
+   :purpose "JVM reference for KIR and Definition CIDs, as measured in docs/definition-cids-native.md"}
+  {:repo "kotoba-lang/osaho"
+   :commit "e20c9affa6ed3e9fc847146829685365cb47481e"
+   :archived true
+   :purpose "KIR alpha normalization paired with the kotoba-sema commit above"}]
+ :ports-to
+ ["seed/05-checked-source.kotoba"
+  "seed/05-checked-definition.kotoba"
+  "seed/06-definition-groups.kotoba"
+  "seed/05-definition-report.kotoba"]}

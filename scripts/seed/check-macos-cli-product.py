@@ -102,6 +102,14 @@ def check(cli, out):
     run('watch-events', 'run', event_case.name, stdout=b'42\n')
     run('watch-events-mutant', 'run', event_mutant.name, stdout=b'7\n')
     run('watch-events-status-mutant', 'run', status_mutant.name, stdout=b'7\n')
+    # JUN-579: a lone `check` reads `.cljk` input sugar; compile and the retired extensions refuse.
+    sugar = out / 'hello-sugar.cljk'
+    sugar.write_text(hello.read_text())
+    run('check-cljk', 'check', sugar.name, stdout=b'ok\n')
+    run('compile-cljk', 'compile', sugar.name, expected=2, diagnostic=b'usage')
+    retired = out / 'hello-retired.cljc'
+    retired.write_text(hello.read_text())
+    run('check-cljc', 'check', retired.name, expected=2, diagnostic=b'usage')
     # KOTOBA-161: negative float comparisons catch the previously observed
     # integer-condition lowering error; the reversed operands are the control.
     float_less = source('float-negative-less', '(defn main [] :i64 (if (f64-lt -2.0 -1.0) 42 7))')
@@ -190,6 +198,44 @@ def check(cli, out):
         run('f64-resource-' + suffix + '-compile', 'compile', f64_entry, '--source-lock', f64_lock,
             '-o', f64_program.name, stdout=('compiled ' + str(f64_program) + '\n').encode())
         run('f64-resource-' + suffix + '-execute', image=f64_program, stdout=expected_output)
+
+    # JUN-924: the clojure.test -> plain defn/main converter is a multi-module native program over the
+    # lossless CST. Its self-gate answers the number of failed fixtures (0 = all hold); changing one expected
+    # text must turn the same program red, so the observation cannot pass by building and printing 0.
+    tc_project = out / 'test-conv-project'
+    tc_dir = tc_project / 'kotoba/compiler/refactor'
+    tc_dir.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/refactor/cst.kotoba', tc_dir / 'cst.kotoba')
+    tc_source = (ROOT / 'src/kotoba/compiler/refactor/test_conv.kotoba').read_text()
+    tc_entry = tc_dir / 'test_conv.kotoba'
+    expected_tail = '(not (two)) 2 :else 42))\\n"))'
+    assert tc_source.count(expected_tail) == 1
+    for suffix, body, expected_output in (('positive', tc_source, b'0\n'),
+                                          ('negative', tc_source.replace(expected_tail, '(not (two)) 2 :else 43))\\n"))'), b'1\n')):
+        tc_entry.write_text(body)
+        tc_program = out / ('test-conv-' + suffix)
+        run('test-conv-' + suffix + '-compile', 'compile', tc_entry, '--source-path', tc_project,
+            '-o', tc_program.name, stdout=('compiled ' + str(tc_program) + '\n').encode())
+        run('test-conv-' + suffix + '-execute', image=tc_program, stdout=expected_output)
+
+    # JUN-933: the cljk reader-syntax converter (#( ) / #_ / #?) is a multi-module native program over the same
+    # CST. Same shape as test-conv: the self-gate answers the number of failed fixtures; one expected text turned
+    # wrong must turn the same program red.
+    sc_project = out / 'syntax-conv-project'
+    sc_dir = sc_project / 'kotoba/compiler/refactor'
+    sc_dir.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'src/kotoba/compiler/refactor/cst.kotoba', sc_dir / 'cst.kotoba')
+    sc_source = (ROOT / 'src/kotoba/compiler/refactor/syntax_conv.kotoba').read_text()
+    sc_entry = sc_dir / 'syntax_conv.kotoba'
+    sc_right = '"(map (fn [p1] (+ p1 1)) xs)"'
+    assert sc_source.count(sc_right) == 1
+    for suffix, body, expected_output in (('positive', sc_source, b'0\n'),
+                                          ('negative', sc_source.replace(sc_right, '"(map (fn [p2] (+ p1 1)) xs)"'), b'1\n')):
+        sc_entry.write_text(body)
+        sc_program = out / ('syntax-conv-' + suffix)
+        run('syntax-conv-' + suffix + '-compile', 'compile', sc_entry, '--source-path', sc_project,
+            '-o', sc_program.name, stdout=('compiled ' + str(sc_program) + '\n').encode())
+        run('syntax-conv-' + suffix + '-execute', image=sc_program, stdout=expected_output)
 
     lock = project / 'project.ksl'
     lock.write_text(project_lock(app, [('app', app), ('util', util)], [app, util]))
