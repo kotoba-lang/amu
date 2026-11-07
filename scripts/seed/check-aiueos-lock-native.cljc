@@ -6,7 +6,7 @@
 ;; Run: basilisp run scripts/seed/check-aiueos-lock-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-lock-native
   (:require [aiueos-gate :as g]
-            [aiueos-proof :as proof]
+            [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [gate-util :as u])
   (:import sys))

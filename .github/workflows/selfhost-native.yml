@@ -548,11 +548,17 @@ jobs:
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
+      - name: Install Basilisp (pinned) for the .cljc gates
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
-          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
@@ -643,27 +649,27 @@ jobs:
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
-      - name: Verify current source/image/receipt bindings before transported native execution
-        if: steps.gate.outputs.skip != 'true'
-        run: |
-          python3 scripts/seed/check-native-identities.py
-          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
-      - name: Independent arm64 gates (bounded native build queue)
-        if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
-      - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
-        if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Install Basilisp (pinned) for the .cljc gates
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 -m venv "$RUNNER_TEMP/basilisp-venv"
           "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
           echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
+      - name: Verify current source/image/receipt bindings before transported native execution
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+      - name: Independent arm64 gates (bounded native build queue)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/native_build_queue.py --manifest seed/native-gate-plan.json --phase arm64 --jobs 4 --output "$RUNNER_TEMP/pg-arm64"
+      - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
+        if: steps.gate.outputs.skip != 'true'
+        run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
       - name: Native typed live ABI and user-context admission (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-static-profile-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-value-call-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-user-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-desktop-regions-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
@@ -784,11 +790,17 @@ jobs:
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
+      - name: Install Basilisp (pinned) for the .cljc gates
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
-          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
@@ -844,11 +856,17 @@ jobs:
         with:
           name: one-compiler-receipt
           path: ${{ runner.temp }}/one
+      - name: Install Basilisp (pinned) for the .cljc gates
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-native-identities.py
-          python3 scripts/seed/check-native-arm-transport.py --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/native_build_queue.py --jobs 1 --output "$RUNNER_TEMP/benchmark-arm-stage-admission.json" -- python3 scripts/seed/stage-native-benchmark-corpus.py --one "$RUNNER_TEMP/one" --out "$RUNNER_TEMP/benchmark-arm/corpus"
@@ -933,6 +951,12 @@ jobs:
           python3 scripts/seed/check-native-identities.py
           python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
+      - name: Install Basilisp (pinned) for the .cljc gates in the x86 plan
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Independent x86 gates (bounded native build queue)
         if: steps.gate.outputs.skip != 'true'
         run: |

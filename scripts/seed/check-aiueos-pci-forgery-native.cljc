@@ -6,7 +6,7 @@
 ;; Ported from check-aiueos-pci-forgery-native.py (Basilisp). Linux only.
 ;; Run: basilisp run scripts/seed/check-aiueos-pci-forgery-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-pci-forgery-native
-  (:require [aiueos-proof :as proof]
+  (:require [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [gate-util :as u])
   (:import json operator sys))

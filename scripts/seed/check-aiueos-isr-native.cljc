@@ -4,7 +4,7 @@
 ;; Ported from check-aiueos-isr-native.py (Basilisp). Linux only.
 ;; Run: basilisp run scripts/seed/check-aiueos-isr-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-isr-native
-  (:require [aiueos-proof :as proof]
+  (:require [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [gate-util :as u])
   (:import json operator os pathlib struct subprocess sys))

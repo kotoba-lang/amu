@@ -2,7 +2,7 @@
 ;; Ported from check-aiueos-pci-private-native.py (Basilisp). Linux only.
 ;; Run: basilisp run scripts/seed/check-aiueos-pci-private-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-pci-private-native
-  (:require [aiueos-proof :as proof]
+  (:require [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [gate-util :as u])
   (:import json operator sys))

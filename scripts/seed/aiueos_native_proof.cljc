@@ -1,8 +1,8 @@
 ;; Bind AIUEOS diagnostics to actual native compiler generations and source.
 ;;
 ;; Process orchestration only. This does not own the native CDCI verdict.
-;; Ported from aiueos_native_proof.py (Basilisp). Linux only. Named aiueos_proof while the Python original is still imported by unported gates.
-(ns aiueos-proof
+;; Ported from aiueos_native_proof.py (Basilisp). Linux only.
+(ns aiueos-native-proof
   (:require [gate-util :as u])
   (:import hashlib platform))
 

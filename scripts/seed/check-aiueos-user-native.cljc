@@ -3,7 +3,7 @@
 ;; Run: basilisp run scripts/seed/check-aiueos-user-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-user-native
   (:require [aiueos-gate :as g]
-            [aiueos-proof :as proof]
+            [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [aiueos-value-fixture :as fixture]
             [gate-util :as u])

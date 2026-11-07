@@ -3,7 +3,7 @@
 ;; Run: basilisp run scripts/seed/check-aiueos-owned-window-native.cljc -- (--build DIR | --complete DIR) --output OUT
 (ns check-aiueos-owned-window-native
   (:require [aiueos-gate :as g]
-            [aiueos-proof :as proof]
+            [aiueos-native-proof :as proof]
             [basilisp.string :as str]
             [gate-util :as u])
   (:import sys))
