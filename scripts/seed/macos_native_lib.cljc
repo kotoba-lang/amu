@@ -3,7 +3,7 @@
 ;; Python module stays until its last Python importer is ported. Apple Silicon macOS only.
 (ns macos-native-lib
   (:require [gate-util :as u])
-  (:import json os pathlib platform re shutil struct subprocess))
+  (:import json operator os pathlib platform re shutil struct subprocess sys))
 
 (def manifest (.joinpath u/root "seed/FULL-MANIFEST"))
 (def root-descriptor (.joinpath u/root "seed/bootstrap/aarch64-macos/root.json"))
@@ -106,3 +106,46 @@
 
 (defn available? []
   (and (= "Darwin" (platform/system)) (contains? #{"arm64" "aarch64"} (platform/machine))))
+
+(defn stage-unity
+  "Write directory/full-unity.kotoba from FULL-MANIFEST; returns [sources unity-pin]."
+  [directory]
+  (let [directory (pathlib/Path directory)
+        names (vec (filter #(and (seq %) (not (.startswith % "#"))) (.splitlines (.read_text manifest))))]
+    (when (or (not= 61 (count names)) (not= 61 (count (set names))))
+      (fail "FULL-MANIFEST must contain 61 unique modules"))
+    (let [unity (.joinpath directory "full-unity.kotoba")
+          stream (.open unity "wb")
+          sources (try
+                    (vec (for [name names]
+                           (let [part (pathlib/Path name)]
+                             (when (or (.is_absolute part) (.__contains__ (.-parts part) "..") (not= "seed" (first (.-parts part))))
+                               (fail "invalid source path in FULL-MANIFEST"))
+                             (let [path (.joinpath u/root part)
+                                   row (python/dict (.items (python/dict (concat [["name" name]] (.items (require-regular path))))))]
+                               (.write stream (operator/add (.read_bytes path) (.encode "\n")))
+                               row))))
+                    (finally (.close stream)))]
+      [sources (pin unity)])))
+
+(defn generation
+  "One bootstrap generation: compile the unity, extract main, package, sign. Returns [signed row]."
+  [number producer packager directory]
+  (let [directory (pathlib/Path directory)
+        container (.joinpath directory (str "F" number ".kseed"))
+        raw (.joinpath directory (str "F" number ".raw"))
+        unsigned (.joinpath directory (str "F" number "-unsigned.macho"))
+        signed (.joinpath directory (str "F" number "-signed.macho"))]
+    (native-run producer directory ["compile" "full-unity.kotoba" "--target" "aarch64-macos" "--output" (.-name container)])
+    (let [extracted (native-run producer directory ["extract-native" (.-name container) "--symbol" "main" "--output" (.-name raw)])
+          m (re/search (.encode ":offset (\\d+), :length (\\d+), :arity 0}") (.-stdout extracted))]
+      (when (or (nil? m) (not= (python/int (.group m 2)) (.-st_size (.stat raw))))
+        (fail "native main extraction did not match raw bytes"))
+      (let [entry (python/int (.group m 1))]
+        (native-run packager directory [(.-name unsigned) (.-name raw) "fs2-cli-stdio-general" (str entry)])
+        (let [signed-pin (sign unsigned signed)
+              row (u/pydict "number" number "producer" (pin producer) "container" (pin container) "raw" (pin raw)
+                            "entry" entry "unsigned" (pin unsigned) "signed" signed-pin)]
+          (println (str "F" number " container " (u/geti (u/geti row "container") "sha256")))
+          (.flush sys/stdout)
+          [signed row])))))
