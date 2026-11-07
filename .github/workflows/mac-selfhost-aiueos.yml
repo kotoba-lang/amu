@@ -12,7 +12,8 @@ on:
       - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
       - 'scripts/seed/check-aiueos-user-v5-layout-macos-native.py'
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
-      - 'scripts/seed/check-macos-exec-smoke*.py'
+      - 'scripts/seed/check-macos-exec-smoke*.cljc'
+      - 'scripts/seed/macos_exec_smoke.cljc'
       - 'scripts/seed/check-aiueos-object-exports.py'
       - 'scripts/seed/check-aiueos-object-externs.py'
       - 'scripts/seed/check-aiueos-object-records.py'
@@ -55,7 +56,7 @@ on:
       - 'scripts/seed/check-row-inference.py'
       - 'seed/tests/native-row-inference.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
-      - 'scripts/seed/check-definition-cid-native.py'
+      - 'scripts/seed/check-definition-cid-native.cljc'
       - 'scripts/seed/check-definition-cids-native.py'
       - 'scripts/seed/macos_native_image.py'
       - 'scripts/seed/check-macos-fs35.py'
@@ -162,7 +163,7 @@ jobs:
       - name: Check the SHA-256 crypto-hardware option (on by default, --no-crypto-hw scalar)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-crypto-hw-option-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-crypto-hw-option-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-crypto-hw"
       - name: T2 derives no whole-program facts from import stubs (JUN-595)
@@ -183,7 +184,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- \
             --phase mac-exec-smoke \
             --slot-dir "$RUNNER_TEMP/native-build-slots" -- \
-            python3 scripts/seed/check-macos-exec-smoke-native.py \
+            basilisp run -p scripts/seed scripts/seed/check-macos-exec-smoke-native.cljc -- \
               --mac-build "$RUNNER_TEMP/mac-root" \
               --output "$RUNNER_TEMP/mac-smoke"
       - name: Mac runtime implements arena-scope (JUN-546)
@@ -392,7 +393,7 @@ jobs:
       - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 -I scripts/seed/check-definition-cid-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-definition-cid-native.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-definition-cid"
       - name: Native definition-cids on the Mac fixed point (JUN-586)
