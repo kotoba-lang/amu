@@ -1,0 +1,75 @@
+amu-gpu s186 (2026-11-01 UTC / 2026-11-02 JST, cron) -- SEVENTEENTH
+CUT MEASUREMENT HALF, window poll: STARTED, NOT FINISHED (session
+186 -- the s185 carry-forward (a) started exactly: the host run
+window polled live; local runtime-budget cutoff at 53 of 54 runs,
+BEFORE the window's completion, the driver's aggregate tail, the
+host-runs-s185.txt whole-file capture and the post-window binary
+re-census; the
+s119/s133/s141/s143/s148/s150/s151/s152/s157/s164/s169/s172/s176/
+s177/s178/s179/s180/s185 interrupted-tick precedent).
+
+FINDING (verified by real tool output, live ssh captures quoted
+below): THE SEVENTEENTH-CUT FROZEN-ORDER RUN WINDOW IS STILL
+RUNNING ON aiueos-6600hs (murakumo-ci@100.98.24.37,
+~/anv-b3bisect17-20261101) AND WAS CLEAN ON EVERY RUN LINE PRINTED
+THIS TICK -- the per-run census line count polled live: 30 lines at
+2026-11-01T17:46:56Z (c2-r01..03 + q1-r01..27, the last then
+q1-r27 @17:46:56Z), 51 at POLL-END 17:59:46Z (through q1-r48
+@17:59:24Z), 52 at POLL-END 18:06:03Z (c8 bookend started), 53 at
+POLL-END 18:12:12Z (this cutoff). The detached driver stayed alive
+throughout (PID 2575039 'bash s185-driver.sh', re-observed at every
+poll; pgrep at 18:12:12Z still listed it). Every run line printed
+verbatim in this tick's captures is clean in the frozen census
+fields: run_rc=0, stderr_bytes=0, samples=115200 (= 18 pipeline-ok
+cells x frozen R = 6,400 exactly), verifies=24, cells=24, tail
+'# done cells=24' -- namely c2-r01..03, q1-r01..05 and q1-r20..27
+(the 30-line probe, head-8 + tail-8 verbatim) and q1-r45..48 (the
+51-line probe tail-4 verbatim). q1 run headers seen at s185 carry
+batch=3 work_mul=313 ndiv=1229 n=254,679 == the frozen knob
+arithmetic; this tick added no new header capture.
+
+NAMED, NOT HIDDEN: the full-file clean-pattern census (the s170
+'grep -c clean-pattern = 54/54' row) is NOT run this tick -- the
+counts above are line counts + the lines printed verbatim, NOT a
+whole-file census; the c8-r01/r02 host-date stamps are NOT captured
+(the 52/53-line polls printed counts only). The c8 bookend is the
+slow arm again (q1 cadence ~35s/run vs c8 several minutes/run, the
+s169 shape -- descriptive observation from the poll timestamps, not
+a class claim). NO seventeenth-cut class/verdict/claim exists: NO
+unit class, NO C1, NO C2, NO W1/W2/W3/X1 computed or claimed --
+every seventeenth-cut quantity REMAINS UNMEASURED at this cutoff
+(the analysis half is (c), its own session(s) after the pull). MID-
+ONLY NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY
+(254,557, 255,045].
+
+BAR: INSTRUMENT channel -- NO settle-bar-ledger line
+(settle-bar-ledger.txt byte-identical to HEAD), NO day-slot
+consumption (any further counted-day slot needs its own freeze and
+is NOT touched). RULE 4 unchanged: NOTHING MOVES -- the
+accelerator-targets workgroup rows stay exactly as ADR-0358 left
+them (NO :measured? movement asserted this tick); NO vendor
+optimization exists for Intel (or for any vendor). Diff touches NO
+committed .cljk namespace (this .txt only; no scoped-gate re-run
+needed, the s160/s166 precedent; full suite RED AT BASE kotoba.form
+ADR-0362 outside this diff -- NO green full suite claimed). Local
+commit only -- NOT pushed (slice unfinished, the s158/s169/s185
+precedent). Linear progress comment on JUN-499 this tick.
+
+NOT DONE (s187 carries exactly this list): (a) poll the host window
+to 54/54 + the full-file clean census + host-runs-s185.txt whole +
+the driver's aggregate tail + post-window binary re-census 3/3 ==
+the s185 first-measured pins (c2 b791b71a73671f2ed0882d1376d13294ece4
+0b64320db828c94985959e734c48 / q1
+f22502bdbbafda1089486eb3a4f94b6d89306c86ee50a1892366cec0e0ec208f /
+c8 2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831);
+(b) the pull + raw aggregate host==local byte-identity + the gzip
+-n commit form + derivation/build census (the s157/s158/s160
+capture-form procedure); (c) the analysis half ONLY at its own
+session(s) (analysis-s185.py twice byte-identical -> publication,
+frozen letters C1/C2/W1/W2/W3/X1 under the frozen deep-pooling CI
+class statistic R=6,400, standing gates (a)-(f), record.txt, the
+ADR-0355 dated note, landing tail + the JUN-499 landing comment);
+(d) standing, not queued: any further counted-day slot (each needs
+its own freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

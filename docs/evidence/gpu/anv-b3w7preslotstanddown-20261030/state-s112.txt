@@ -1,0 +1,67 @@
+2026-10-30 (session 112) -- PRE-W7-SLOT STAND-DOWN.
+NO row taken: the s111 carry-forward's only queued row (the W7
+measurement half, the s85 freeze) is day-slot-gated to the first
+measurement session starting at or after 2026-10-31T00:00:00Z.
+
+TIMING (python3 datetime arithmetic, UTC):
+  session_start  2026-10-30T04:01:53Z
+  slot_open      2026-10-31T00:00:00Z
+  delta          71887 s = 19 h 58 m 07 s
+  session qualifies as W7 session? False
+(the slot = 00:00:00Z of the first UTC day STRICTLY AFTER the day
+on W6's committed ledger line day=2026-10-30 session=s105, read
+from settle-bar-ledger.txt -- the s85 freeze definition.)
+
+This tick's duties and their results (the standing gate set,
+byte-compared to the s88 pins in anv-b3w6tailrep-20261030/ and
+the s106 post-append pins in anv-b3w6ledgerappend-20261030/):
+- (a) classify --self-test 2649/0, 17,925 bytes == pin
+      (cmp exit 0), .err 0.
+- (b) scoped GPU gate GREEN 123 tests / 12162 assertions /
+      0 failures / 0 errors, run 1 AND run 2 == each other ==
+      both s88 pins (919 bytes, cmp exit 0 x3), .err 0 x2
+      (scratch runner scratch/scoped-gpu-gate.cljk, created/
+      run/deleted this tick, never committed).
+- (c) FULL run-tests.cljk RUN LIVE exit 1 RED AT BASE
+      kotoba.form (ADR-0362, outside this diff -- this tick
+      touches NO .cljk namespace), .err 879 bytes == pin,
+      stdout 0 bytes == pin. NO green full suite claimed.
+- (d) evaluator --self-test 38/0 3,590 bytes == pin; ledger
+      eval twice byte-identical (907 bytes) == the s106
+      post-append pins (cmp exit 0 x2) -> VERDICT: PENDING 3/4
+      (counted s31/s73/s105).
+- (e) find docs/evidence/gpu -name '*.sh' -> 0.
+- (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+      --exit-code rc=0 -- no emit, no ledger line, no
+      day-slot consumption).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(prlist-s112.json at 2026-10-30T04:13:17Z; re-checked before
+push); chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-
+20261028-4).
+
+THE BAR: stand-down session -> NO hardware runs -> NO reading
+-> NO settle-bar-ledger line, NO day-slot consumption; the bar
+stays PENDING 3/4 and settles nothing. RULE 4 unchanged:
+NOTHING MOVES; NO vendor optimization exists for any vendor.
+
+ONE stand-down record suffices for the W7 pre-slot period: any
+further tick that also starts before 2026-10-31T00:00:00Z
+stands down WITHOUT a second commit and WITHOUT a report
+(respond [SILENT]) unless the state changes (a hermes/ blocker
+PR appears, the chain PR merges or conflicts, the gate state
+moves); the first tick whose START is at or after
+2026-10-31T00:00:00Z is the W7 session.
+
+Landing: commit + push to the ONE chain PR (#1665,
+bot/amu-gpu-chain-20261028-4); Linear landing comment posted to
+JUN-499 (if the connector is unavailable, the tick report says
+'Linear 未記録').
+
+Carry-forward to s113: (a) the W7 measurement half (the s85
+freeze; the first session at/after 2026-10-31T00:00:00Z adopts
+the v2 chain via adoption-manifest-v2 fail-closed and re-runs
+the v2 --compat GREEN post-append in its own record -- the s109
+interim must not be cited as governing); (b) any further
+counted-day slot (its own pre-registration freeze) and a
+cross-day tail-movement row (not queued).

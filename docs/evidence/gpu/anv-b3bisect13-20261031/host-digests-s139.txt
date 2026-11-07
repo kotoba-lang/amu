@@ -1,0 +1,45 @@
+== host-digests (post-pull byte-identity verification, session 139) ==
+== the 204 logs pulled via scp; the canonical aggregate is computed ==
+== over the sorted 204 this-cut log names (run-<tag>-r<NN>.txt and   ==
+== run-<tag>-r<NN>.stderr.txt, NN zero-padded; c2/c8 r01..r03,       ==
+== mid/bis r01..r48) on both sides, each name verified to exist     ==
+== host-side first (missing=0). ==
+
+NAMED, NOT HIDDEN -- two driver-capture defects, neither reaching
+any evidence value:
+1. the raw driver capture host-runs-s139.txt carries its aggregate
+   line under a '204 log names' label but the ls glob over the host
+   shaders/ directory counted 252 UNIQUE names: the shaders/ corpus
+   directory was byte-copied from ~/anv-b3bisect12-20261031 and
+   carries 48 STALE run logs of an earlier cut's hi arm
+   (run-hi-r01..r24 .txt/.stderr.txt -- verified in the stale-name
+   census below). That 252-name double-set aggregate
+   47f07e0eecddc29d4abb6ad7f1e077976dba7940ebdb62fe2505bec3ff326ee9
+   is kept verbatim in the raw capture and is NEVER used as
+   evidence. The stale logs are not this cut's (this cut's frozen
+   arm table has no hi arm) and were never read by any run.
+2. my first local name-list generator used `seq -w 1 3`, which pads
+   to width 1 (names run-c2-r1.* etc., 12 wrong names) -- the scp
+   of that list failed for exactly those 12 nonexistent names and
+   pulled nothing wrong; the list was regenerated with printf '%02d'
+   and re-verified (204 names, missing=0 host-side) before the pull.
+
+== live captures, verbatim: ==
+== host-side (re-run binary digest census, post-run-window) ==
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589  anv-bb-mid
+440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440  anv-bb-bis
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+== stale-name census (host shaders/ names NOT in this cut's name set) ==
+48 (run-hi-r01..run-hi-r24 .txt/.stderr.txt -- an earlier cut's hi arm
+   logs carried along with the byte-copied shaders/ directory; NOT
+   this cut's logs, NOT read by any run, NOT in any aggregate below)
+== this-cut name set verification ==
+204 names generated (printf '%02d' zero-padded), host-side existence
+check: missing=0
+== host-side canonical aggregate over the exact 204 names (sorted) ==
+338a212cfad611962a3fe0cd1c0f72db1c24111d2665053693b119c2466ff1d9  -
+== local side (the pulled tree, same 204 sorted names) ==
+     204
+338a212cfad611962a3fe0cd1c0f72db1c24111d2665053693b119c2466ff1d9  -
+host == local -> MATCH (204/204 logs byte-identical)

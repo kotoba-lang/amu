@@ -1,0 +1,56 @@
+JUN-59 session 92 -- T18 ANALYSIS PRE-BUILD, --compat VALIDATION
+(the s84-frozen T18 analysis machinery recomputed over the FIVE
+committed windows and two-way-checked against the committed
+publication bytes; want values PARSED from publication-s78.txt /
+publication-s82.txt, never transcribed). NO W6 quantity exists or
+is computed (the W6 run logs do not exist); NO T18 quantity
+exists (T18 is frozen ONLY at the (s36, W6) pair and its null
+runs only after the W6 measurement half commits the logs). What
+runs here: the s84 section-6 PARSER VALIDITY PINS, the
+integrity/C1 parser rows, and the s78 NULL REPRODUCTION (the
+same frozen engine at the T15 row's seed 2026102815, probe order
+INNER then OUTER, pair (s36, W5) -- reproducing publication-
+s78.txt's PUBLISHED T15 counts/p exactly; a validity
+recomputation of published frozen content, not a T18 statistic).
+
+row sec1 integrity s36: got    s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | want    s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | EXACT: True
+row sec1 integrity s38: got    s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | want    s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | EXACT: True
+row sec1 integrity s39: got    s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | want    s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | EXACT: True
+row sec1 integrity s51: got    s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | want    s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | EXACT: True
+row sec1 integrity s73: got    s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | want    s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True | EXACT: True
+row sec1 named cell: got    named cell present as ok-map cell 5 (raw idx 7 == (max,128,S=default)): True | want    named cell present as ok-map cell 5 (raw idx 7 == (max,128,S=default)): True | EXACT: True
+row sec2 c2 class: got    c2 class: FLOOR (FLOOR required; committed floor band 31..32) | want    c2 class: FLOOR (FLOOR required; committed floor band 31..32) | EXACT: True
+row sec2 c8 pooled median: got    c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required) | want    c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required) | EXACT: True
+row sec2 C1 branch: got    C1 branch: (a) both controls replicate | want    C1 branch: (a) both controls replicate | EXACT: True
+row s78 null reproduction INNER (28,48) (2L_A/2L_B/2C/count/p): got (118, 100, 18, 1477, '0.073896') | want (118, 100, 18, 1477, '0.073896') | EXACT: True
+row s78 null reproduction OUTER (9,67) (2L_A/2L_B/2C/count/p): got (496, 502, -6, 11558, '0.577921') | want (496, 502, -6, 11558, '0.577921') | EXACT: True
+row INNER (28,48) five-window 2*L: got (118, 102, 128, 113, 100) | want (118, 102, 128, 113, 100) | EXACT: True
+row INNER (28,48) W5 block D: got (42, 34, 40, 48, 74, 48, 60, 39, 74, 56, 52, 57) | want (42, 34, 40, 48, 74, 48, 60, 39, 74, 56, 52, 57) | EXACT: True
+row OUTER (9,67) five-window 2*L: got (496, 429, 437, 446, 502) | want (496, 429, 437, 446, 502) | EXACT: True
+row OUTER (9,67) W5 block D: got (267, 189, 242, 377, 340, 278, 214, 181, 255, 247, 268, 194) | want (267, 189, 242, 377, 340, 278, 214, 181, 255, 247, 268, 194) | EXACT: True
+row DL4 (x_(34),x_(42)) five-window 2*L: got (46, 47, 48, 38, 40) | want (46, 47, 48, 38, 40) | EXACT: True
+row DL4 (x_(34),x_(42)) W5 block D: got (20, 17, 18, 21, 33, 17, 20, 15, 36, 20, 16, 23) | want (20, 17, 18, 21, 33, 17, 20, 15, 36, 20, 16, 23) | EXACT: True
+row DL8 (x_(30),x_(46)) five-window 2*L: got (97, 84, 99, 79, 83) | want (97, 84, 99, 79, 83) | EXACT: True
+row DL8 (x_(30),x_(46)) W5 block D: got (35, 27, 34, 44, 61, 38, 48, 25, 57, 42, 41, 45) | want (35, 27, 34, 44, 61, 38, 48, 25, 57, 42, 41, 45) | EXACT: True
+row DL16 (x_(22),x_(54)) five-window 2*L: got (238, 187, 201, 188, 178) | want (238, 187, 201, 188, 178) | EXACT: True
+row DL16 (x_(22),x_(54)) W5 block D: got (74, 63, 70, 87, 116, 91, 96, 70, 113, 103, 92, 81) | want (74, 63, 70, 87, 116, 91, 96, 70, 113, 103, 92, 81) | EXACT: True
+row DL32 (x_(6),x_(70)) five-window 2*L: got (655, 537, 572, 564, 658) | want (655, 537, 572, 564, 658) | EXACT: True
+row DL32 (x_(6),x_(70)) W5 block D: got (360, 261, 287, 429, 430, 399, 277, 279, 323, 335, 368, 297) | want (360, 261, 287, 429, 430, 399, 277, 279, 323, 335, 368, 297) | EXACT: True
+row ref X constant s36: got (991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982) | want (991, 989, 981, 998, 993, 985, 984, 997, 994, 994, 980, 982) | EXACT: True
+row ref Y constant s36: got (988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981) | want (988, 985, 994, 993, 994, 995, 992, 984, 987, 984, 993, 981) | EXACT: True
+row ref X constant s38: got (992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997) | want (992, 988, 984, 1007, 985, 984, 986, 983, 992, 991, 982, 997) | EXACT: True
+row ref Y constant s38: got (988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992) | want (988, 987, 980, 980, 991, 994, 991, 994, 988, 991, 1001, 992) | EXACT: True
+row ref X constant s39: got (986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981) | want (986, 991, 984, 985, 989, 989, 986, 990, 995, 986, 987, 981) | EXACT: True
+row ref Y constant s39: got (988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986) | want (988, 989, 987, 990, 990, 988, 991, 983, 985, 988, 983, 986) | EXACT: True
+row ref X constant s51: got (988, 986, 1000, 986, 989, 983, 995, 983, 994, 991, 984, 985) | want (988, 986, 1000, 986, 989, 983, 995, 983, 994, 991, 984, 985) | EXACT: True
+row ref Y constant s51: got (980, 975, 991, 979, 986, 986, 992, 991, 988, 993, 995, 996) | want (980, 975, 991, 979, 986, 986, 992, 991, 988, 993, 995, 996) | EXACT: True
+row ref X constant s73: got (998, 978, 985, 983, 982, 980, 981, 982, 974, 988, 977, 988) | want (998, 978, 985, 983, 982, 980, 981, 982, 974, 988, 977, 988) | EXACT: True
+row ref Y constant s73: got (992, 984, 982, 985, 993, 972, 979, 990, 978, 982, 987, 987) | want (992, 984, 982, 985, 993, 972, 979, 990, 978, 982, 987, 987) | EXACT: True
+row ref anchor constant s36: got (1142, 991, 1438) | want (1142, 991, 1438) | EXACT: True
+row ref anchor constant s38: got (1132, 992, 1443) | want (1132, 992, 1443) | EXACT: True
+row ref anchor constant s39: got (1146, 986, 1432) | want (1146, 986, 1432) | EXACT: True
+row ref anchor constant s51: got (1137, 988, 1430) | want (1137, 988, 1430) | EXACT: True
+
+c2 pooled-medians min..max at W5: 31..32 (floor band 31..32; within: True)
+
+TOTAL: 37 rows, 0 mismatched

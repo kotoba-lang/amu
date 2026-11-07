@@ -1,0 +1,143 @@
+JUN-59 session 103 -- THE W6 CUSTODY-TO-LEDGER WIRING
+REHEARSAL (the W6 measurement row's WIRING-VERIFICATION
+preparation half; NO hardware runs, NO builds, NO compiles, NO
+GO stamp, NO host writes, NO day-slot consumption, NO ledger
+line; the W6 measurement half REMAINS day-slot-gated behind the
+2026-10-30T00:00:00Z slot -- this tick runs 2026-10-29T20:46Z-
+21:1xZ UTC, ~3h before it -- STARTED, NOT FINISHED).
+
+1. FINDING (verified by real tool output): the s97/s98 adoption
+   contracts' one hand-wired composition -- "the wiring the s97
+   adoption contract left to the running session": the
+   custody-check-prego.py decide_ledger_inputs ledger-pin/ledger-go
+   tokens fed VERBATIM into ledger-s<NN>.py --emit -- has now been
+   EXECUTED end to end on real committed window bytes for the
+   first time (it had run only on MOCK self-test fixtures), and it
+   composes cleanly: over the three committed 78-run windows the
+   chain custody-check --check -> ledger-pin/ledger-go -> ledger
+   --emit re-derives each window's committed settle-bar-ledger.txt
+   line BYTE-EXACT (s36 day=2026-10-28 median=1142 min=991; s51
+   day=2026-10-28 median=1137 min=988; s73 day=2026-10-29
+   median=1131 min=998 -- all class=INTERMEDIATE/MIXED
+   flag=none), and the negative wiring rows replay the frozen
+   flag precedence (pin-missing > custody-go) and the fail-closed
+   refusals (REFUSED-INPUT-UNDECIDED, exit 3) on real window
+   bytes.  ZERO defects found by this execution -- the composition
+   behaved as the contracts specify at every row.  The W6 session
+   under slot pressure now has byte-pinned expected outputs for
+   its wiring step instead of prose.
+
+2. VERIFIED (real tool output, all runs this tick; the rehearsal
+   driver scratch/wiring-s103.py is SCRATCH -- created, run twice,
+   deleted this tick, never committed -- the scoped-gpu-gate.cljk
+   convention; committed windows are STAND-INS for the future W6
+   window, never measurements; the driver WRITES NO LEDGER LINE --
+   the emit prints to stdout and the append is the W6 session's
+   act):
+   (a) choreography step 0, the W6 adoption contract's own first
+       command: adoption-check-prego.py --check over the real
+       tree, VERDICT: CONSISTENT (matched 25, mismatched 0),
+       exit 0, run 1 AND run 2 BYTE-IDENTICAL, stderr 0 bytes;
+   (b) the adoption copies (the name-gated ledger must run as
+       ledger-s<NN>.py, so the manifest ledger source was copied
+       per window tag as ledger-s36.py / ledger-s51.py /
+       ledger-s73.py): all three copies sha256 64a54e4051fcd8e7a4
+       ca1ce95ce99e60b019bdb84f845ea78c21085cc104069b == the
+       manifest's frozen ledger-slot token -- byte-equal adoption
+       verified mechanically; the copies are SCRATCH (created, run,
+       deleted this tick, never committed -- named, not hidden);
+   (c) the positive wiring rows (3 windows x custody-check --check
+       -> parse -> ledger --emit): custody-check exit 0 at all
+       three (flag=none, ledger-pin=ok ledger-go=ok), the pin/go
+       tokens fed VERBATIM into --emit, emit exit 0 at all three,
+       emitted line == the committed settle-bar-ledger.txt line
+       BYTE-EXACT at all three -- s36/s51/s73 re-derived from
+       their windows' committed run-log bytes through the full
+       checker-to-emitter path;
+   (d) the negative wiring rows on the s73 stand-in (real window
+       bytes, not MOCK): pin=flagged -> flag=pin-missing (exit 0);
+       go=flagged -> flag=custody-go (exit 0); pin=flagged AND
+       go=flagged -> flag=pin-missing (the frozen precedence,
+       exit 0); pin=undecided -> REFUSED-INPUT-UNDECIDED (exit 3);
+       go=undecided -> REFUSED-INPUT-UNDECIDED (exit 3) -- the
+       mock battery's semantics hold on real bytes;
+   (e) determinism: the whole composition run twice BYTE-IDENTICAL
+       -- 25 capture pairs compared, 0 differing (wiring summaries
+       included; run-2 stderr 0 bytes); TOTAL: 31 claim rows, 0
+       mismatched in each summary; the tracked settle-bar-ledger
+       .txt sha256 before == after (the emit path never appends;
+       git diff empty re-verified at the gates);
+   (f) standing gates (byte-compared to the s88 committed pins in
+       anv-b3w6tailrep-20261030/): gpu_regime_classify.py
+       --self-test exit 0 == pin (17,925 bytes, cmp exit 0), .err
+       0 bytes; scoped GPU gate GREEN run 1 AND run 2 -- "Ran 123
+       tests containing 12162 assertions. 0 failures, 0 errors."
+       (scratch runner scratch/scoped-gpu-gate.cljk, the eight
+       GPU-owned test namespaces, created/run/deleted, never
+       committed) run 1 == run 2 == both s88 pins (919 bytes, cmp
+       exit 0 x4), .err 0 bytes; FULL run-tests.cljk RUN LIVE:
+       exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this diff touches NO .cljk namespace), .err 879 bytes ==
+       the s88 pin, stdout 0 bytes == pin -- NO green full suite
+       claimed; settle-bar evaluator --self-test 38/0 (3,590
+       bytes == pin) + ledger eval twice byte-identical == pin
+       (823 bytes) -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73); find docs/evidence/gpu -name '*.sh' -> 0;
+       settle-bar-ledger.txt == HEAD (git diff empty).
+
+3. THE BAR: preparation session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption.  The bar
+   stays PENDING 2/4.
+
+4. UNMEASURED (named): the W6 window itself (day-slot-gated to
+   the 2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z; this
+   tick runs ~3h before it); every W6 live field.  The three
+   positive rows are RE-DERIVATIONS of already-committed ledger
+   lines on stand-in windows -- no new measurement quantity
+   exists anywhere in this tick.  RULE 4 unchanged: NOTHING
+   MOVES -- the accelerator-targets workgroup rows stay exactly
+   as ADR-0358 left them (:measured? true scoped to each row's
+   one named measured device for :nvidia/:apple/:intel/:amd;
+   :arm and :unknown remain provisional, :measured? false); NO
+   vendor optimization exists for Intel (or for any vendor);
+   this is wiring-verification machinery, not a device
+   measurement.
+
+5. NAMED, NOT HIDDEN (limits): (a) the rehearsal exercises the
+   wiring at the three windows whose custody records exist
+   (s36/s51/W5) -- flag=none is the only positive flag path with
+   committed data; the flagged/undecided input paths are replayed
+   as EXPLICIT --emit inputs over the s73 stand-in (the checker's
+   decide_ledger_inputs mapping to those inputs stays covered by
+   its own s98 MOCK battery; wiring real checker MISMATCH records
+   to real emit runs is impossible without a broken committed
+   window); (b) the driver was scratch and is deleted -- the
+   captures are the evidence; (c) the adoption copies were
+   scratch and are deleted -- the W6 session's adoption stays
+   its own act, now with byte-pinned expectations.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (the one open chain PR is
+   the chain PR this commit pushes to).
+
+Carry-forward to session 104: the W6 measurement half (the s80
+freeze; the first measurement session starting at or after
+2026-10-30T00:00:00Z adopts the seven tools -- manifest-checked
+-- and owns their record) -- the gate for the T18 analysis half
+(s92 pre-build + s84 freeze bind), the T20 analysis half (s93
+pre-build + s88 freeze bind) and the W7 measurement half (s85
+freeze; behind W6's ledger line); then any further counted-day
+slot (its own freeze) and a cross-day tail-movement row (not
+queued).  With the adoption manifest (s102) and this wiring
+rehearsal (s103), every W6 record surface and composition is now
+bound to committed bytes or byte-pinned expectations; a tick
+running before the slot opens has no remaining honest preparation
+row and should say so rather than pad.
+
+Evidence: docs/evidence/gpu/anv-b3w6wiringrehearsal-20261029/
+(wiring-summary-run1/2.txt + check-adoption/check-s36/check-s51/
+check-s73/emit-s36/emit-s51/emit-s73/neg-*-run1/2 .txt/.err
+captures + this record + the s103 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

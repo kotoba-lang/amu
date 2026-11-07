@@ -1,0 +1,150 @@
+2026-10-31T01:2x:00Z (written at runtime-budget cutoff)
+== session 115 W7 CUSTODY-RECOVERY state capture ==
+STARTED, NOT FINISHED (the s110/s113/s114 budget-cut precedent:
+nothing committed, nothing pushed). This session executed state-
+s114.txt duty (1) COMPLETE and wrote the two custody records it
+named; the derivation chain (duty (2)), the derivation outputs and
+the gates (duty (3)) remain. NO gate, NO adoption, NO reading, NO
+census, NO custody check, NO emit, NO append, NO hardware runs,
+NO host writes, NO day-slot consumption, NO ledger line.
+
+SESSION IDENTITY: session 115 (the third W7-chain continuation;
+s113 = the measuring session, s114 = the map-only continuation;
+cron start 2026-10-31T01:01:04Z, `date -u` first tick). The
+record's identity session remains s113 (the measuring session):
+tools are adopted as *-s113.py and the ledger line's session=
+field (the emitter filename) reads s113; s115's own captures keep
+s115 names (state-s114.txt naming rule, the s106 precedent).
+
+DUTY (1) -- CUSTODY CAPTURES: DONE THIS TICK.
+- The s113 session transcript was scrolled (session_search scroll,
+  @session:amu-gpu/local-8b9af0c5e622e91b0ecb535812a5728e6927c9ea8
+  030b543ceaada543fa73eca, message ids 54990-55063 + the tail): the
+  verbatim host-verify / corpus / GO-stamp tool outputs of
+  2026-10-31T00:16-00:20Z EXIST (messages 55037-55041).
+- THE GO STAMP EXISTS: 2026-10-31T00:20:08Z (message 55041 -- the
+  build command printed `date -u` first, then ran the four pinned
+  compiles in the same invocation). The frozen FLAGGED criterion
+  "the custody GO is missing/after the builds" DOES NOT FIRE; the
+  'custody-go-missing' branch of state-s114.txt is NOT taken.
+- host-verify-s113.txt and build-census-s113.txt are WRITTEN in
+  anv-b3w7daybar-20261031/, quoting the transcript verbatim with
+  named provenance (session link + message ids 55017/55034/55036/
+  55037-55041) per state-s114.txt duty (1). NOT YET VERIFIED by
+  custody-s113.py --check (that run is duty (3); the checker's
+  parser grammar -- RE_MATCH/RE_GO/RE_BUILD/RE_DIGEST/RE_PINS/
+  RE_CORPUS_SUM/RE_CORPUS_RC/RE_STDERR_COUNT/RE_STDERR_TOTAL, the
+  exact summary line "== local-vs-host 3/3 MATCH; corpus 16/16 ==")
+  was read at s115 and the records were written to its grammar,
+  but only the tool's own run verifies them. If a row mismatches,
+  the record is FLAGGED or REFUSED-RECORD-INCONSISTENT fail-closed
+  -- do not hand-wave it.
+
+TOOL SURFACES MAPPED THIS TICK (verified by reading the committed
+frozen bytes; no tool byte changed):
+- adoption: python3 docs/evidence/gpu/anv-b3w6adoptionprego-20261029/
+  adoption-check-prego.py --check docs/evidence/gpu/anv-b3ledgersupersede-20261030/
+  adoption-manifest-v2.txt .   (from the worktree root, BEFORE any
+  copy, fail-closed; VERDICT CONSISTENT required).
+- reading-prego-fixed.py: MODE="w6" iff its filename matches
+  reading-s(\d+)\.py (adopted as reading-s113.py -> SESSION=113,
+  NEW_WIN="s113"); W6_DIR (line 95) is the ONE sanctioned edit ->
+  "anv-b3w7daybar-20261031" (the s94-named repoint). Everything
+  else -- including the header literal "anv-b3w6daybar-20261030",
+  "THIRD COUNTED-DAY", "the W6 window", the stale tail note -- is
+  FROZEN W6 PROSE, not edited (the s105 section-9(a) precedent;
+  NAMED in the record when the reading lands).
+- THE S113/S114 FRESH-CENSUS DISAGREEMENT IS RESOLVED IN S114'S
+  FAVOR (verified this tick by reading both tools): the reading
+  tool's header freeze stamp is a FROZEN LITERAL in its prose
+  ("freeze stamp 2026-10-29T04:23:51Z", reading-prego-fixed.py
+  header block) and fresh-census-prego.py's "header freeze stamp
+  vs protocol.txt stamp" claim compares that literal to
+  parse_stamp(PROTOCOL) where PROTOCOL is HARDCODED to
+  anv-b3w6daybar-20261030/protocol.txt (same stamp). Both sides
+  are the W6 stamp BY CONSTRUCTION, so the claim matches at the
+  W7 window with NO fresh-census edit. fresh-census is adopted
+  BYTE-EQUAL; its --w6 mode takes <publication> <fresh-window-dir>
+  as arguments (no constant edit needed). The s113 report's
+  "those two slots need NAMED adaptations" over-scoped the
+  fresh-census half (named).
+- run-window-prego.py --rebuild --window-dir <dir> --live <live>
+  [--out <file>] -> the 78-line table + 3 trailer lines; the
+  session composes run-window.txt = session-written prose header
+  (W7 header, honest prose) + that body (the s105 shape).
+- custody-check-prego.py --check <dirname> <tag> <manifest-name>
+  (run_check at line 611 -- real implementation, not a stub; the
+  s115 draft excerpt that looked like a stub was a sed-range
+  artifact, refuted by the committed custody-s105-run1.txt's full
+  row stream). Reads host-verify-<tag>.txt, build-census-<tag>.txt,
+  run-window.txt and the run logs from the window dir.
+- ledger-prego-v2.py (adopted ledger-s113.py; name gate:
+  ledger-s(\d+)\.py -> session=s113):
+  --emit <window-dir> <pin> <go> [day-quoted] -- emits the one
+  line, never appends. day= derives from run-window.txt
+  host-date= fields (expect day=2026-10-31).
+
+NEXT TICK (s116) -- FIRST DUTY, in order (state-s114.txt duty
+(2)+(3) with the s115 findings folded in):
+(1) adoption-check-prego.py --check adoption-manifest-v2.txt .
+    twice byte-identical (captures adoption-check-s116-run{1,2}.txt)
+    BEFORE any copy; then adopt the seven tools as *-s113.py into
+    anv-b3w7daybar-20261031/ (reading-s113.py carries the ONE
+    repoint; every other tool byte-equal to its manifest pin --
+    verify digests after copy, and the reading repoint diff is ONE
+    line, checked and named).
+(2) run-window-s113.py --rebuild --window-dir
+    anv-b3w7daybar-20261031 --live anv-b3w7daybar-20261031/live-fields.txt
+    --out <body>; compose run-window.txt (header + body).
+(3) reading-s113.py -> publication-s113-run1.txt /
+    publication-s113.txt, twice BYTE-IDENTICAL.
+(4) fresh-census-s113.py --w6 publication-s113.txt
+    anv-b3w7daybar-20261031 -> fresh-census-s113-run1.txt /
+    fresh-census-s113.txt, twice BYTE-IDENTICAL.
+(5) custody-s113.py --check anv-b3w7daybar-20261031 s113
+    cases-s113-a.txt -> custody-s116-run{1,2}.txt twice
+    BYTE-IDENTICAL -> flag=none, ledger-pin=ok, ledger-go=ok.
+(6) ledger-s113.py --emit anv-b3w7daybar-20261031 ok ok ->
+    ledgerline-s116-run{1,2}.txt twice BYTE-IDENTICAL (the emit
+    path never appends; settle-bar-ledger.txt == HEAD at commit).
+(7) standing gates (a)-(f) (the s88 pins in
+    anv-b3w6tailrep-20261030/): (a) gpu_regime_classify.py
+    --self-test 2649/0 17,925 bytes == pin; (b) scoped GPU gate
+    twice via a scratch runner (the eight GPU-owned namespaces:
+    accelerator-targets/-variants/-/-pipeline/-subgroup-reduce/
+    -simdgroup-reduce/-spirv/-spirv-compile tests; same kbb engine
+    and classpath; created/run/deleted, never committed) -- 919
+    bytes == the s88 pins; (c) FULL run-tests.cljk live (expect
+    exit 1 RED AT BASE kotoba.form, .err 879 bytes == pin -- NO
+    green full suite claimed if so; report any drift honestly);
+    (d) settle-bar-eval.py --self-test 38/0 + ledger eval twice
+    (expect PENDING 3/4 before the append); (e) find
+    docs/evidence/gpu -name '*.sh' -> 0; (f) git diff --exit-code
+    -- docs/evidence/gpu/settle-bar-ledger.txt.
+(8) record.txt in anv-b3w7daybar-20261031/ + the ADR-0355 dated
+    note + commit to bot/amu-gpu-chain (blocker-first re-check
+    first) + the Linear comment on JUN-499.
+(9) THEN the append tick (the s105/s106 split): the append of the
+    byte-pinned line, the post-append evaluator pair (the verdict
+    is the evaluator's alone), reconcile-s113.py --line, and the
+    v2 --compat GREEN post-append re-run in the record.
+
+BLOCKER-FIRST at this tick's start (2026-10-31T01:03Z, gh pr list
+--repo kotoba-lang/amu --state open): 0 open PRs with a hermes/
+head; chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-20261028-4,
+the one this work will push to). Re-check before any push.
+NAMED, NOT HIDDEN: scratch/ holds pre-slot gate captures from
+earlier ticks (gate-s113-*, gate-sl-*, mtimes 2026-10-30T17:06Z-
+20:56Z, before the W7 slot opened) -- not this row's, never
+committed, not cited anywhere; untracked scratch/ and deps.edn
+are not committed. The kbb engine's standing "2 dep(s) are not
+:local/root" warning reaches no capture.
+Linear: recorded at s115 on JUN-499 (see the tick's comment); if
+this file is read before that comment exists, the tick report
+says so.
+Carry-forward: the W7 derivation chain (duties (2)(3) above), then
+the append tail (9). Evidence: docs/evidence/gpu/anv-b3w7daybar-20261031/
+(host-verify-s113.txt + build-census-s113.txt reconstructed this
+tick + state-s113.txt + state-s114.txt + this file + the s113
+measurement bytes) + the ADR-0355 dated note (NOT yet written this
+tick -- budget cutoff; lands with the record commit).

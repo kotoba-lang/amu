@@ -1,0 +1,60 @@
+host-shape-s239-identity.txt -- run-pair identity for session 239
+(host-shape-s239.py; the s238 carry-forward's QUEUED row -- the
+host_ns channel's per-sample shape confrontation at the reading
+cell under its own criterion frozen before the numbers -- taken
+as its row).
+
+SCRIPT: host-shape-s239.py
+  sha256 6fcf0a0617575454e589e01fc6ba1ba235e1715a6705a573706327acb007fab7
+
+THE CRITERION was frozen in the script docstring BEFORE any host
+per-sample shape number existed (BIN = 1000 ns quantization; the
+s234 W_in/W_out share-L1 rule shape; letters = the gpu_ticks
+letters, bound to the committed s234 rows; robustness family
+(100, 250, 500, 2000, 5000, 10000) ns also frozen there).
+
+OFFICIAL PAIR (run TWICE, byte-identical):
+  run1: host-shape-s239-run1.txt  95,694 bytes
+        sha256 5ea13677b06c5163d4a6bbb406a194c75b318f3d4e144f9a3ec3a1f6ee9d32fd
+        host-shape-s239-run1.err  0 bytes; rc 0
+  run2: host-shape-s239-run2.txt  95,694 bytes
+        sha256 5ea13677b06c5163d4a6bbb406a194c75b318f3d4e144f9a3ec3a1f6ee9d32fd
+        host-shape-s239-run2.err  0 bytes; rc 0
+  cmp run1 run2 (stdout): exit 0
+  cmp run1 run2 (stderr): exit 0
+  tail: '# host-shape s239 (host-shape-s239.py): 83 ok / 0 failed'
+
+DEV ATTEMPTS KEPT VISIBLE (NONE is evidence; every fix touches the
+VERIFIER only -- no committed capture, publication or record byte
+changed, no parsed sample value changed):
+  (i) host-shape-s239-devrun.txt/.err (95,734/0 bytes, rc 1,
+      '79 ok / 4 failed'): the S239.D3-D6 s238-report row parses
+      collected 0 rows -- TWO verifier-side defects against the
+      committed s238 row FORMS (the s235 (i.c) precedent shape):
+      (i.a) RE_S238_HOSTTAB_ROW/RE_S238_HOSTMED_ROW expected the
+      wrong inter-field spacing and the wrong leading indent of
+      the committed rows ('     1  (sum,128,16) ... 678155.0
+      678255.5    70.9392' carries TWO spaces between the medians
+      and SIX spaces before the row index; the regexes now walk
+      the committed forms flexibly); (i.b) the host-median table
+      carries a COLUMN-HEADER line ('   cell  s158 ...') directly
+      under its anchor which stopped the row collector before any
+      row -- both collectors now skip up to 3 header lines before
+      collecting.  Both fixes are VERIFIER regex/walk fixes; no
+      committed byte changed and no parsed value changed.
+  (ii) host-shape-s239-devrun2.txt/.err (95,694/0 bytes, rc 0,
+      '83 ok / 0 failed'): the clean pre-pair confirmation run,
+      BYTE-IDENTICAL to both official pair legs (cmp exit 0).
+
+KNOWN Pyright false-positive family on regex-match accesses and
+union-opener/dict returns (the s199/s209 artifact; runtime
+unaffected -- the official pair ran rc 0 with stderr 0 bytes).
+
+GATES:
+  (e) gate-s239-nosh.txt 0 bytes (find docs/evidence/gpu -name '*.sh'
+      -> 0 POSIX shell execution files in the evidence tree)
+  (f) gate-s239-ledger.txt 0 bytes (git diff --exit-code --
+      docs/evidence/gpu/settle-bar-ledger.txt rc 0)
+
+BLOCKER-FIRST: see prlist-s239-prepush.json (committed with this
+slice; captured immediately before the push).

@@ -1,0 +1,127 @@
+JUN-59 session 81 record (ONE-TICK LAND, DESIGN slice):
+THE DOUBLING LADDER (DL) -- THE NEW NAMED RANK-PAIR VOCABULARY
+/ SELECTION RULE (the s80 record section-9(c) carry-forward item
+taken to its DESIGN half -- the vocabulary the s63-retired
+rank-pair program's route back needs; vocabulary.txt of THIS
+directory is the contract; chain branch
+bot/amu-gpu-chain-20261028-4, the ONE open chain PR -- commit +
+push only).
+
+1. WHAT THIS SESSION IS: ONE design decision -- name the NEW
+   named rank-pair vocabulary/selection rule and freeze it BEFORE
+   any statistic of its pairs exists. NO hardware runs, NO
+   builds, NO compiles, NO GO stamp, NO analysis row, NO
+   statistics: the four DL pairs' levels are UNMEASURED. Per
+   protocol section 5 NO reading -> NO settle-bar-ledger line
+   (settle-bar-ledger.txt byte-identical to HEAD -- git diff
+   empty, 0 bytes, verified this tick). WHY THIS ROW (named): the
+   W6 measurement half is day-slot-gated (first session at/after
+   2026-10-30T00:00:00Z; this tick runs 2026-10-29T04:5xZ) and
+   the fourth day slot is slot-order-dependent (its day follows
+   W6's actual run day).
+
+2. WHAT WAS FROZEN (vocabulary.txt, written once at freeze stamp
+   2026-10-29T04:58:52Z): the DOUBLING LADDER -- DL4 (x_(34),
+   x_(42)) k=4 span 8; DL8 (x_(30), x_(46)) k=8 span 16; DL16
+   (x_(22), x_(54)) k=16 span 32; DL32 (x_(6), x_(70)) k=32 span
+   64 -- k = half-distance from the pooled-75 deviation-center
+   rank x_(38), pair (x_(38-k), x_(38+k)); the frozen rule: k
+   runs over the powers of two <= 37 that no committed record has
+   named ({1,2} named at s58-s61 -> free {4,8,16,32}); the
+   selection rule for future rows (name pairs only from this
+   vocabulary; each row freezes its own estimator/null/thresholds;
+   no silent extension).
+
+3. VERIFIED BY TOOL OUTPUT (all real runs this tick):
+   (a) rankpair-vocab-s81.py (pure Python, deterministic): run
+       twice BYTE-IDENTICAL (1,176 bytes, sha256 9b6b0c3a6d5c0c98
+       5f6ce0cec80d42c0053579169117fa044fd40d65f1da360b both,
+       cmp exit 0; stderr 0 bytes both runs); --self-test exit 0,
+       "TOTAL: 179 assertions passed, 0 failed" (39-byte capture,
+       stderr 0 bytes). The self-test checks, per pair: ranks in
+       1..75, midpoint 38, self-mirror under r <-> 76-r,
+       disjointness from EACH of the 16 previously named pooled-75
+       rank pairs, spacing repair (each k strictly between
+       consecutive named k); and for the rule: powers-of-two <= 37
+       == {1,2,4,8,16,32}, named {1,2}, free == {4,8,16,32} ==
+       K_DOUBLING, spans == 8/16/32/64, the ladder tops out.
+   (b) FRESHNESS (bounded, named): grep -F over docs/evidence/gpu
+       for the four pair forms (34,42)/(30,46)/(22,54)/(6,70) and
+       the eight rank tokens x_(34)/x_(42)/x_(30)/x_(46)/x_(22)/
+       x_(54)/x_(6)/x_(70), excluding this directory: 0 hits. The
+       claim is exactly that grep -- nothing outside the committed
+       evidence tree is certified by it.
+   (c) STANDING GATES (real runs, byte-compared to the s80
+       committed pins):
+       gpu_regime_classify.py --self-test: exit 0, TOTAL 2649/0,
+       capture 17,925 bytes BYTE-IDENTICAL to the s80 pin (cmp
+       exit 0); .err 0 bytes.
+       scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run twice, deleted this
+       tick, never committed): GREEN run 1 AND run 2 -- "Ran 123
+       tests containing 12162 assertions. 0 failures, 0 errors.";
+       run 1 == run 2 == the s80 run-1 pin == the s80 run-2 pin
+       (cmp exit 0 x3, 919 bytes); stderr 0 bytes both runs.
+       FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk,
+       worktree root): exit 1, RED AT BASE kotoba.form ("Could not
+       find namespace: kotoba.form", ADR-0362, outside this diff
+       -- this session touches NO .cljk namespace). Capture .err
+       879 bytes BYTE-IDENTICAL to the s80 pin (cmp exit 0);
+       stdout content 0 bytes == the pin. NO green full suite is
+       claimed.
+       settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes
+       BYTE-IDENTICAL to the s80 pin; ledger eval twice, exit 0,
+       run1 == run2 == the s80 pin (823 bytes) -> VERDICT:
+       PENDING 2/4 (counted day=2026-10-28 session=s31; counted
+       day=2026-10-29 session=s73) unchanged. The frozen
+       evaluator is the ONLY source of the bar verdict.
+       find docs/evidence/gpu -name '*.sh' -> 0 files (no POSIX
+       shell execution files, ever).
+
+4. THE BAR (protocol section 5): NO hardware runs at this DESIGN
+   session -> NO reading -> NO settle-bar-ledger line, NO day-slot
+   consumption. The bar stays PENDING 2/4 and settles nothing.
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel. This freeze names rank pairs; it measures
+   nothing and replaces no workgroup default.
+
+6. STATE (the three states, named): this vocabulary is ACCEPTED
+   DESIGN ONLY (vocabulary.txt + this record + the ADR-0355 dated
+   note). It is NOT implemented compiler code and NOT a
+   measurement. The DL levels remain UNMEASURED until a future
+   pre-registered row measures them on the ANV host.
+
+7. WHAT CHANGED (this commit): this directory gains vocabulary.txt
+   (the s81 freeze), rankpair-vocab-s81.py (the deterministic
+   enumerator + self-test), rankpair-vocab-s81.txt (the double-run
+   output) and vocab-s81-selftest.txt/.err, freeze-record-s81.txt
+   (this file) and the s81 gate captures (gate-s81-classify.txt/
+   .err, gate-s81-run1/2.txt/.err, gate-s81-full.out/.err,
+   bar-s81-selftest.txt/.err, bar-s81-eval-run1/2.txt/.err); plus
+   the ADR-0355 dated note (this session's step). The chain commit
+   cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+8. NOT DONE (carry-forward to session 82, named):
+   (a) the W6 measurement half -- the first measurement session
+       that starts at or after 2026-10-30T00:00:00Z (day-slot-
+       gated; the s80 freeze binds);
+   (b) the fourth counted-day bar measurement -- a NEW
+       pre-registration on a future UTC day after W6's (its own
+       design slice);
+   (c) any DL rank-pair row -- a NEW pre-registration (this
+       vocabulary is the route back; the row itself is NOT taken
+       here);
+   (d) the tail-side/asymmetric vocabulary (named limitation 4(b)
+       of the freeze) -- future design work, not queued as a row;
+   (e) the standing gate set runs with each such tick.
+
+Evidence: docs/evidence/gpu/anv-b3dladder-20261029/ (this file,
+vocabulary.txt, rankpair-vocab-s81.py/.txt,
+vocab-s81-selftest.txt/.err and the s81 gate captures) + the
+ADR-0355 dated note. (JUN-55, JUN-59; Linear tracking JUN-499)

@@ -1,0 +1,68 @@
+host-extent-s240-identity.txt -- run-pair identity for session 240
+(host-extent-s240.py; the s239 carry-forward's QUEUED row -- the
+host_ns channel's cross-cell shape extent under the same frozen
+quantization (this row's reading-cell confrontation extended over
+the 18 pipeline-ok cells, supplementary REPORT) -- taken as its
+row).
+
+SCRIPT: host-extent-s240.py
+  sha256 791e545003464aec2d5acd79c8befa7395820ff003340874167caa6a4c165b7a
+
+THE CRITERION is the s239 frozen host criterion applied per cell
+UNCHANGED (BIN = 1000 ns quantization; the s234-style share-L1
+W_in/W_out rule shape; letters = the gpu_ticks letters, the fixed
+split re-derived at the reading cell and BOUND to the committed
+s234 group rows; the s239 pre-frozen robustness family
+(100, 250, 500, 2000, 5000, 10000) ns also carried per cell).
+No new frozen choice was made in this slice; the queue itself
+prescribes the extension to the 18 pipeline-ok cells.
+
+PRE-RUN FIX (no run captured; noted for completeness): one
+verifier-side set-vs-tuple comparison (S240.C15's expected width
+set) was corrected before the first execution of the script.
+
+OFFICIAL PAIR (run TWICE, byte-identical):
+  run1: host-extent-s240-run1.txt  48,106 bytes
+        sha256 1aaa4f11d65196ada5a19bdae175960cd94663c2460c54c9f96657f3b4c7c13a
+        host-extent-s240-run1.err  0 bytes; rc 0
+  run2: host-extent-s240-run2.txt  48,106 bytes
+        sha256 1aaa4f11d65196ada5a19bdae175960cd94663c2460c54c9f96657f3b4c7c13a
+        host-extent-s240-run2.err  0 bytes; rc 0
+  cmp run1 run2 (stdout): exit 0
+  cmp run1 run2 (stderr): exit 0
+  tail: '# host-extent s240 (host-extent-s240.py): 126 ok / 0 failed'
+
+DEV ATTEMPTS KEPT VISIBLE (NONE is evidence beyond the official
+pair):
+  (i) host-extent-s240-devrun.txt/.err (48,106/0 bytes, rc 0,
+      '126 ok / 0 failed'): the clean pre-pair confirmation run,
+      BYTE-IDENTICAL to both official pair legs (cmp exit 0).
+      No defective dev attempt exists in this slice.
+
+KNOWN Pyright false-positive family on regex-match accesses and
+union-opener/dict returns (the s199/s209 artifact; runtime
+unaffected -- the official pair ran rc 0 with stderr 0 bytes).
+
+BINDS (fail-closed, all 126 checks ok): the reading-cell rows
+re-derived from the run logs EQUAL the committed s239 report rows
+(host-shape-s239-run1.txt pin 95,694 bytes sha256 5ea13677... --
+9 census rows, occupied-bins row, pair census, W_in/W_out/
+D_groups/verdict rows, 7 robustness rows, 3 raw-support rows);
+the per-cell host descriptive rows EQUAL the committed s238
+report rows (crosscell-extent-s238-run1.txt pin 27,113 bytes
+sha256 eee0472f...) at ALL 18 pipeline-ok cells (18 host-table
+rows incl. cell desc, 18 host-median rows x 9 values) and the
+re-derived gpu_ticks separating-cell count EQUALS the committed
+s238 extent row (18 of 18); the letters EQUAL the committed s234
+group rows (identity-shape-s234-run1.txt pin 14,830 bytes sha256
+2b00a0a6...).
+
+GATES:
+  (e) gate-s240-nosh.txt 0 bytes (find docs/evidence/gpu -name
+      '*.sh' -> 0 POSIX shell execution files in the evidence
+      tree)
+  (f) gate-s240-ledger.txt 0 bytes (git diff --exit-code --
+      docs/evidence/gpu/settle-bar-ledger.txt rc 0)
+
+BLOCKER-FIRST: see prlist-s240-prepush.json (committed with this
+slice; captured immediately before the push).

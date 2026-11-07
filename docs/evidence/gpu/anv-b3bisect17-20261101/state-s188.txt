@@ -1,0 +1,105 @@
+amu-gpu s188 (2026-11-01/02 UTC / 2026-11-02 JST, cron) --
+SEVENTEENTH CUT MEASUREMENT HALF -- PULL + CUSTODY COMPLETE (the
+s187 carry-forward (b) completed exactly: the 108-run-log pull +
+host==local byte-identity + the gzip -n commit form + the raw-
+aggregate record + derivation/build census + the q1 header census +
+this state update).
+
+ROW TAKEN THIS TICK (one row: the s187 carry-forward (b) -- pull the
+108 run logs and discharge custody; the analysis half (c) is NOT
+this row).
+
+VERIFIED THIS TICK (real tool output, docs/evidence/gpu/anv-
+b3bisect17-20261101/):
+- The canonical aggregate construction is PINNED THREE INDEPENDENT
+  WAYS before use (host-digests-s185.txt): KAT-1 over the 108
+  committed s147 logs reproduces 8c8ef864... EXACTLY and the
+  sha256sum-line construction does NOT (7c52eb63... == the
+  s158-recorded negative control, both computed fresh); KAT-2
+  through the committed s158 form reproduces 97bd3d33... EXACTLY;
+  the s185 driver's construction is the same one.
+- The 108 run logs (run-<tag>-r<NN>.txt + run-<tag>-r<NN>.stderr.txt,
+  c2/c8 r01..r03, q1 r01..r48, printf '%02d') pulled plain via scp
+  from murakumo-ci@100.98.24.37:~/anv-b3bisect17-20261101/shaders/
+  (741M raw, 2m08s). HOST-SIDE name-existence check: missing=0; the
+  host-side canonical aggregate re-derived FRESH after the window
+  acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+  == the s185 driver-tail capture; host wc -c census 776,686,013
+  bytes (54 stdout logs) + 0 (54 stderr logs).
+- HOST == LOCAL byte-identity 108/108 at the canonical raw aggregate
+  acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+  (local name construction == the host names file byte-identically;
+  pulled tree name set == expected 108/108; raw stdout bytes
+  776,686,013 == the host census total).
+- gzip -n COMMIT FORM executed (the s157 capture-form deviation):
+  54 stdout logs committed as run-<tag>-r<NN>.txt.gz (87M evidence
+  dir total), 54 stderr logs plain 0-byte .stderr.txt, raw pulled
+  copies removed after the check; raw digests recorded in
+  raw-digests-s185.txt (54 lines, sha256 + name + raw bytes).
+- pull-verify-s185.py (sha256 6505587b...) run TWICE byte-identical
+  (rc 0 both, stdout 1,316 bytes sha256 2ce66c29... both, stderr 0
+  bytes; pull-verify-s185-identity.txt), fail-closed over the
+  committed bytes only: name set 108/108, raw-digest rows 54/54
+  (bytes total == the host census), gzip fidelity checked=54
+  mismatch=0, the canonical aggregate re-derived THROUGH THE
+  COMMITTED FORM == acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+  (the raw aggregate -> the committed form preserves the raw byte
+  content exactly).
+- THE Q1 HEADER CENSUS (parsed from the 54 committed logs, never
+  transcribed): q1 n=254,679 rounds=6400 batch=3 work_mul=313
+  ndiv=1229 -- 48/48 uniform == the frozen knob arithmetic
+  ((1,000,003*313)//1,229 = 254,679, gcd 1, re-derived by tool);
+  c2 n=1,000,003 batch=2 work_mul=1 ndiv=1 3/3 uniform; c8
+  n=1,000,003 batch=8 work_mul=1 ndiv=1 3/3 uniform.
+- CUSTODY + BUILD CENSUS (derivation-census-s185.txt /
+  build-census-s185.txt): instrument ROUNDS6400
+  c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8386e84e0
+  == the s179/s182 adopted pin; expected-corpus eefba52e... ==
+  pin; cases-s185-a.txt whole-file 76715d79... == the s185 staging
+  pin, cell-line block 873025d6... == the s25/s27 pin; builds 3/3
+  rc 0 at GO 2026-11-01T17:25:48Z, binary pins c2 b791b71a... ==
+  the s169 digest (observation), q1 f22502bdbbafda1089486eb3a4f94b6d89306c86ee50a1892366cec0e0ec208f
+  NEW first-measured (no committed pin exists), c8 2f25d678... ==
+  the s169 digest (observation); binary re-census at the pull
+  session 3/3 == pins.
+
+NAMED, NOT HIDDEN:
+- The staging-cleanup rm glob (run-*.txt) also matched the 54
+  STAGING copies of the 0-byte .stderr.txt logs; only staging
+  copies were removed -- the committed .stderr.txt files were
+  created earlier from the same 0-byte host files and are
+  re-verified empty by pull-verify-s185.py. No evidence byte is
+  affected.
+- pull-verify-s185.py passed fail-closed on its FIRST run -- no
+  draft pair exists; the run-twice pair is the first capture.
+- NO seventeenth-cut class/verdict/claim exists -- NO unit class,
+  NO C1, NO C2, NO W1/W2/W3/X1 computed or claimed; every such
+  quantity REMAINS UNMEASURED (the analysis half is (c), its own
+  session(s) -- analysis-s185.py twice byte-identical ->
+  publication, frozen letters under the frozen deep-pooling CI
+  class statistic R=6,400). MID-ONLY NARROWING CLAIM stays
+  SUSPENDED; bracket stays EXACTLY (254,557, 255,045]. RULE 4
+  unchanged: NOTHING MOVES; NO vendor optimization exists for
+  Intel (or for any vendor); the accelerator-targets workgroup
+  rows stay exactly as ADR-0358 left them (provisional
+  :measured? false rows are NOT optimization evidence).
+- Diff touches NO committed .cljk namespace (evidence .txt/.py/
+  .gz/.err only; no scoped-gate re-run needed, the s160/s166
+  precedent; full suite RED AT BASE kotoba.form ADR-0362 outside
+  this diff -- NO green full suite claimed). Untracked scratch/,
+  deps.edn, .DS_Store NOT staged.
+- BAR: INSTRUMENT channel -- NO settle-bar-ledger line
+  (settle-bar-ledger.txt byte-identical to HEAD), NO day-slot
+  consumption (any further counted-day slot needs its own freeze
+  and is NOT touched).
+
+NOT DONE (s189 carries exactly this list):
+(c) the analysis half ONLY at its own session(s) (analysis-s185.py
+    twice byte-identical -> publication, frozen letters C1/C2/W1/
+    W2/W3/X1 under the frozen deep-pooling CI class statistic
+    R=6,400, standing gates (a)-(f), record.txt, the ADR-0355
+    dated note, landing tail + the JUN-499 landing comment);
+(d) standing, not queued: any further counted-day slot (each needs
+    its own freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

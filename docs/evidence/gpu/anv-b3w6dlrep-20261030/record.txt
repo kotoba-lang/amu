@@ -1,0 +1,178 @@
+JUN-59 session 107 -- THE T18 ANALYSIS HALF (the s84-frozen DL
+LADDER CROSS-DAY LEVEL REPLICATION AT W6, computed at last: the s92
+pre-build adopted as analysis-s107.py and run over the COMMITTED
+windows; ANALYSIS session -- NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO host writes, NO day-slot consumption, NO
+ledger line). Row: the s106 carry-forward's item (b), taken now
+that W6's ledger line landed at s106 and the freeze's named gate
+(the W6 measurement half's committed run logs) is behind us.
+
+1. ROW AND HONEST STATES: the T18 machinery was IMPLEMENTED at s92
+   (code + fixture tests, validated against committed publication
+   bytes); the row itself was ACCEPTED DESIGN ONLY (the s84 freeze,
+   protocol.txt freeze stamp 2026-10-29T06:14:31Z -- written before
+   any W6 quantity existed); THIS session computes the row's
+   quantities for the first and only frozen pair (s36, W6) over
+   committed run logs -- deterministic apart from the frozen null's
+   seeded stream -- and the T18 row's ANALYSIS half is now COMPLETE
+   with its verdict recorded in publication-s107.txt. This is
+   frozen statistical machinery applied to measurements taken at
+   s36/s38/s39/s51/s73/s105; this session takes NO new measurement
+   and moves NO compiler state.
+
+2. ADOPTION (byte-level binding, the s100 precedent): analysis-
+   s107.py is a byte-identical copy of the s92 pre-build
+   analysis-t18-prego.py (49,842 bytes, sha256
+   425c75418432b729fc22e51fef206707c8fde785b0afb3e8d04bca28eb3806d9
+   BOTH -- == the s92 record's pinned hash; cmp exit 0). The
+   filename IS the mode switch (full mode unreachable under the
+   pre-build name). Input binding: the five prior windows of
+   publication-s82.txt section 0 (s36 anv-b3commonmode-20261028 /
+   s38 anv-b3joint3-20261028 / s39 anv-b3joint4-20261028 / s51
+   anv-b3levelrep-20261028 / s73 anv-b3w5xdayrep-20261029) plus
+   anv-b3w6daybar-20261030 = the s80-frozen W6 window (window tag
+   s105, parsed from run-window.txt's "session 105"; 78 committed
+   run logs), measured by the W6 measurement half at s105 on
+   aiueos-6600hs.
+
+3. FINDING (verified by real tool output -- publication-s107.txt,
+   7,832 bytes, sha256
+   3cdc0d80b962f4554578f56ead3c1eb08b0d643f0569963da090c7cc614a4458,
+   produced ONLY by analysis-s107.py, run twice BYTE-IDENTICAL
+   (cmp exit 0; run stdout/stderr 0 bytes both runs)): the s84 row
+   question -- does the cross-day narrowing of the DL ladder
+   pair-spread levels vs the s36 anchor CONTINUE at W6? -- answers
+   NO as a joint: **JOINT T18 = (b) NOT-REPLICATED** (named
+   failing: DL8 (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-
+   SIGNIFICANT] | DL32 (b) NOT-REPLICATED [DIRECTION-REVERSED];
+   IUT over the three informative steps, NO multiplicity
+   correction). Per-pair (72 tw runs exchangeable, ONE
+   random.Random(2026102918), probe order DL4/DL8/DL16/DL32, 20,000
+   trials per probe, p = (1+count(C* >= C_obs))/(1+20,000) one-
+   sided):
+   - DL4 (x_(34),x_(42)): 2*L_s36 46 -> 2*L_s105 40 (2*C_obs 6);
+     count 5035/20001; p 0.251787; letter (b) NOT-REPLICATED
+     [DIRECTION-CONSISTENT-NOT-SIGNIFICANT] [UNINFORMATIVE-BY-S81-
+     CAVEAT] -- never enters the joint (the s81 section-4(c)
+     sanction, frozen before any DL statistic existed);
+   - DL8 (x_(30),x_(46)): 97 -> 85 (2*C_obs 12); count 2453/20001;
+     p 0.122694; letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-
+     NOT-SIGNIFICANT] (the pre-registered direction C_obs > 0 holds
+     but not significant);
+   - DL16 (x_(22),x_(54)): 238 -> 184 (2*C_obs 54); count
+     12/20001; p 0.000650; letter (a) LEVEL-NARROWING-REPLICATED-
+     CONTINUED (the one step that carries the replication);
+   - DL32 (x_(6),x_(70)): 655 -> 656 (2*C_obs -1); count
+     10256/20001; p 0.512824; letter (b) NOT-REPLICATED
+     [DIRECTION-REVERSED] -- the demanding axis the s82 quote-only
+     priors named (DL32 3/4 with the W5 exception) has now MISSED
+     TWICE (W5 exception, W6 reversal).
+   Invalidation CLEAN (section 6 machinery): six windows 78 runs /
+   VERIFY mismatch 0 / counts/knobs/S=8 fail-closed/cell map all ok
+   at every window; named cell present as ok-map cell 5 (raw idx 7
+   == (max,128,S=default)); C1 at W6 branch (a) both controls
+   replicate (c2 class FLOOR, pooled medians 31..32 within the
+   committed floor band 31..32; c8 (sum,128,S=16) pooled median
+   32821 vs committed 32915 = 0.29% delta, +/-5% required); prior-
+   window reproduction + parser validity pins ALL EXACT (block-min
+   vectors 10/10, anchors 4/4, pins 6/6 five-window 2*L vectors +
+   4/4 W5 block D -- the want values recomputed from the committed
+   publication bytes, never transcribed). D-family (descriptive
+   only, NO letter): D1 six-window 2*L vectors published (s36/s38/
+   s39/s51/W5/s105); D2 the 12 s105 block D values per pair
+   published for a future census; D3 s105-vs-post-shift-band under
+   the s83/s89 CORRECTED CLOSED-INTERVAL [MIN,MAX] convention (NOT
+   min..median): DL4 INSIDE (40 vs 38..48), DL8 INSIDE (85 vs
+   79..99), DL16 OUTSIDE-BELOW (184 vs 187..201), DL32 OUTSIDE-
+   ABOVE (656 vs 537..572).
+
+4. VERIFIED (the standing gate set this tick, byte-compared to the
+   s88 committed pins in docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed"; capture 17,925 bytes == the
+       s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run 2
+       -- "Ran 123 tests containing 12162 assertions. 0 failures,
+       0 errors."; run 1 == run 2 == both s88 pins (919 bytes,
+       cmp exit 0 x3); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk,
+       worktree root): exit 1, RED AT BASE kotoba.form ("Could not
+       find namespace: kotoba.form", ADR-0362, outside this diff --
+       this diff touches NO .cljk namespace). Capture .err 879
+       bytes == the s88 pin (cmp exit 0); stdout 0 bytes == the
+       pin. NO green full suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL 38
+       assertions passed, 0 failed, capture 3,590 bytes == the s88
+       pin (cmp exit 0); the LEDGER EVAL pair twice BYTE-IDENTICAL
+       (907 bytes, cmp exit 0) and == the s106 post-append pins
+       (anv-b3w6ledgerappend-20261030/bar-s106-eval-post-run1/2.txt,
+       cmp exit 0 x2) -> VERDICT: PENDING 3/4 (counted day=2026-
+       10-28 session=s31; counted day=2026-10-29 session=s73;
+       counted day=2026-10-30 session=s105). NAMED, NOT HIDDEN:
+       the eval capture necessarily DIFFERS from the PRE-APPEND s88
+       pin (823 bytes) -- diff = exactly the s106 append (the
+       counted s105 line + VERDICT PENDING 2/4 -> 3/4, nothing
+       else); post-append, the eval pin IS the s106 post-append
+       pair and that is what gate (d) binds to here;
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+       --exit-code rc=0 -- the emit path never ran this tick).
+
+5. THE BAR: ANALYSIS session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 3/4 and settles nothing; no day slot is touched
+   by this row.
+
+6. UNMEASURED (named) / RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358
+   left them (:measured? true scoped to each row's one named
+   measured device for :nvidia/:apple/:intel/:amd; :arm and
+   :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor). The T18
+   letters and p values are DERIVED inferential quantities under
+   the frozen null from previously committed measurements -- they
+   are not new device measurements, and this row is not a
+   workgroup-default measurement.
+
+7. WHAT CHANGED (this commit): docs/evidence/gpu/anv-b3w6dlrep-
+   20261030/ gains analysis-s107.py, publication-s107.txt, this
+   record (record.txt -- the analysis session owns record.txt in
+   the freeze directory, the s65 convention), state-s107.txt and
+   the s107 gate/bar captures (gate-s107-classify.txt/.err,
+   gate-s107-run1/2.txt/.err, gate-s107-full.out/.err,
+   bar-s107-selftest.txt/.err, bar-s107-eval-run1/2.txt/.err);
+   plus the ADR-0355 dated note. NO run logs (no hardware this
+   tick), NO .sh files. The chain commit cites JUN-55/JUN-59
+   (Linear tracking JUN-499).
+
+8. NOT DONE (carry-forward to session 108, named):
+   (a) the T20 ANALYSIS half (the s88 freeze binds; the s93
+       pre-build anv-b3t20prego-20261029/analysis-t20-prego.py) --
+       now the next unblocked analysis row (the same adoption/run/
+       record shape as this one);
+   (b) the --compat post-append design decision (PROPOSED only at
+       s106 -- nothing accepted, nothing implemented; a frozen-tool
+       change needs its own freeze);
+   (c) the W7 measurement half (the s85 freeze; the 2026-10-31 day
+       slot; the W7 record faces the same --compat refusal until
+       (b) resolves);
+   (d) any further counted-day slot (its own pre-registration
+       freeze) and a cross-day tail-movement row (not queued);
+   (e) the standing gate set runs with each such tick.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and again immediately before this push; the
+one open chain PR is the chain PR this commit pushes to).
+NAMED, NOT HIDDEN: the kbb engine's standing "2 dep(s) are not
+:local/root" warning reaches no capture (.err 0 bytes wherever the
+pins are 0).
+
+Evidence: docs/evidence/gpu/anv-b3w6dlrep-20261030/ (this file +
+analysis-s107.py + publication-s107.txt + state-s107.txt + the
+s107 gate/bar captures). (JUN-55, JUN-59; Linear tracking JUN-499)

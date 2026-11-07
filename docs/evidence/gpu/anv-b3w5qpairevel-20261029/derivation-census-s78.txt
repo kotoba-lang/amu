@@ -1,0 +1,124 @@
+JUN-59 session 78 -- the T15 derivation census
+(derivation-census-s78.py, the INDEPENDENT second parser for
+publication-s78.txt; the s65-frozen protocol.txt section 6
+implementation paths). Two-way rows: published =
+publication-s78.txt lines parsed find/split from the committed
+bytes, census = the same lines re-derived in full here from the
+390 committed run logs of the five fixed directories; NO
+in-memory state of analysis-s78.py is consulted. Split-based
+parsing, no re module; observed block quantile-pair spreads are
+pure-Python sorted() order statistics over the explicitly
+pooled 75 (inner sorted(pooled75)[47] - sorted(pooled75)[27],
+outer sorted(pooled75)[66] - sorted(pooled75)[8]) cross-checked
+in-loop against the np.partition kth paths; the resampling's
+estimators use the np.partition kth paths, NOT np.sort
+(analysis-s78.py used np.sort); the observed 12-value level
+medians via sorted() explicit order statistics, the resampling's
+via np.partition kth=(5,6); the two-window repartition
+resampling and the RNG call order are re-implemented: ONE
+random.Random(2026102815), consumed in the frozen probe order
+INNER then OUTER, 20000 trials per probe, one fresh-list
+rng.shuffle of list(range(72)) per trial.
+
+row 01: sec1 s36 integrity: published [   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | census [   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | match True
+row 02: sec1 s38 integrity: published [   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | census [   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | match True
+row 03: sec1 s39 integrity: published [   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | census [   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | match True
+row 04: sec1 s51 integrity: published [   s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | census [   s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | match True
+row 05: sec1 s73 integrity: published [   s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | census [   s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True] | match True
+row 06: sec1 named cell position: published [   named cell present as ok-map cell 5 (raw idx 7 == (max,128,S=default)): True] | census [   named cell present as ok-map cell 5 (raw idx 7 == (max,128,S=default)): True] | match True
+row 07: sec2 c2 class: published [   c2 class: FLOOR (FLOOR required; committed floor band 31..32)] | census [   c2 class: FLOOR (FLOOR required; committed floor band 31..32)] | match True
+row 08: sec2 c8 pooled median: published [   c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required)] | census [   c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required)] | match True
+row 09: sec2 C1 branch: published [   C1 branch: (a) both controls replicate] | census [   C1 branch: (a) both controls replicate] | match True
+row 10: sec3 s36 X (hi): published [   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982] | census [   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982] | match True
+row 11: sec3 s36 Y (tw): published [   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981] | census [   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981] | match True
+row 12: sec3 s36 reproduction EXACT: published [   s36 reproduction EXACT: True] | census [   s36 reproduction EXACT: True] | match True
+row 13: sec3 s38 X (hi): published [   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997] | census [   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997] | match True
+row 14: sec3 s38 Y (tw): published [   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992] | census [   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992] | match True
+row 15: sec3 s38 reproduction EXACT: published [   s38 reproduction EXACT: True] | census [   s38 reproduction EXACT: True] | match True
+row 16: sec3 s39 X (hi): published [   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981] | census [   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981] | match True
+row 17: sec3 s39 Y (tw): published [   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986] | census [   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986] | match True
+row 18: sec3 s39 reproduction EXACT: published [   s39 reproduction EXACT: True] | census [   s39 reproduction EXACT: True] | match True
+row 19: sec3 s51 X (hi): published [   s51 X (hi): 988 986 1000 986 989 983 995 983 994 991 984 985] | census [   s51 X (hi): 988 986 1000 986 989 983 995 983 994 991 984 985] | match True
+row 20: sec3 s51 Y (tw): published [   s51 Y (tw): 980 975 991 979 986 986 992 991 988 993 995 996] | census [   s51 Y (tw): 980 975 991 979 986 986 992 991 988 993 995 996] | match True
+row 21: sec3 s51 reproduction EXACT: published [   s51 reproduction EXACT: True] | census [   s51 reproduction EXACT: True] | match True
+row 22: sec3 s73 X (hi): published [   s73 X (hi): 998 978 985 983 982 980 981 982 974 988 977 988] | census [   s73 X (hi): 998 978 985 983 982 980 981 982 974 988 977 988] | match True
+row 23: sec3 s73 Y (tw): published [   s73 Y (tw): 992 984 982 985 993 972 979 990 978 982 987 987] | census [   s73 Y (tw): 992 984 982 985 993 972 979 990 978 982 987 987] | match True
+row 24: sec3 prior vector reproduction (8/8): published [   all four prior windows reproduce EXACTLY (8/8): True] | census [   all four prior windows reproduce EXACTLY (8/8): True] | match True
+row 25: sec3b s36 anchor: published [    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True] | census [    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True] | match True
+row 26: sec3b s38 anchor: published [    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True] | census [    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True] | match True
+row 27: sec3b s39 anchor: published [    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True] | census [    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True] | match True
+row 28: sec3b s51 anchor: published [    s51: median 1137 min..max 988..1430 (want 1137 / 988..1430); reproduction EXACT: True] | census [    s51: median 1137 min..max 988..1430 (want 1137 / 988..1430); reproduction EXACT: True] | match True
+row 29: sec3b prior anchor reproduction: published [    all four prior windows reproduce EXACTLY: True] | census [    all four prior windows reproduce EXACTLY: True] | match True
+row 30: sec4 T15 inner axis: published [   INNER (28,48): 2*L_s36 = 118 (59.0); 2*L_s73 = 100 (50.0); 2*C_obs = 18 (C_obs = 9.0); count 1477 / 20001; p = 0.073896; axis letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]] | census [   INNER (28,48): 2*L_s36 = 118 (59.0); 2*L_s73 = 100 (50.0); 2*C_obs = 18 (C_obs = 9.0); count 1477 / 20001; p = 0.073896; axis letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]] | match True
+row 31: sec4 T15 outer axis: published [   OUTER (9,67): 2*L_s36 = 496 (248.0); 2*L_s73 = 502 (251.0); 2*C_obs = -6 (C_obs = -3.0); count 11558 / 20001; p = 0.577921; axis letter (b) NOT-REPLICATED [DIRECTION-REVERSED]] | census [   OUTER (9,67): 2*L_s36 = 496 (248.0); 2*L_s73 = 502 (251.0); 2*C_obs = -6 (C_obs = -3.0); count 11558 / 20001; p = 0.577921; axis letter (b) NOT-REPLICATED [DIRECTION-REVERSED]] | match True
+row 32: sec4 T15 joint letter: published [   T15 = (b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES (named failing: INNER (28,48) (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]|OUTER (9,67) (b) NOT-REPLICATED [DIRECTION-REVERSED])] | census [   T15 = (b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES (named failing: INNER (28,48) (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]|OUTER (9,67) (b) NOT-REPLICATED [DIRECTION-REVERSED])] | match True
+row 33: sec5 D1 inner vector: published [      INNER (28,48): 2*L s36/s38/s39/s51/s73 = 118/102/128/113/100 (L 59.0/51.0/64.0/56.5/50.0)] | census [      INNER (28,48): 2*L s36/s38/s39/s51/s73 = 118/102/128/113/100 (L 59.0/51.0/64.0/56.5/50.0)] | match True
+row 34: sec5 D1 inner W5 block D: published [      INNER (28,48) W5 block D values: 42 34 40 48 74 48 60 39 74 56 52 57] | census [      INNER (28,48) W5 block D values: 42 34 40 48 74 48 60 39 74 56 52 57] | match True
+row 35: sec5 D1 inner band: published [      INNER (28,48) W5-vs-post-shift-band: 2*L_W5 = 100 vs band 2*L 102..113 (closed interval spanned by {s38,s39,s51}): OUTSIDE-BELOW] | census [      INNER (28,48) W5-vs-post-shift-band: 2*L_W5 = 100 vs band 2*L 102..113 (closed interval spanned by {s38,s39,s51}): OUTSIDE-BELOW] | match True
+row 36: sec5 D1 inner prior reproduction: published [      INNER (28,48) prior-window reproduction vs quote-only s53/s54 priors 2*L 118/102/128/113: EXACT True] | census [      INNER (28,48) prior-window reproduction vs quote-only s53/s54 priors 2*L 118/102/128/113: EXACT True] | match True
+row 37: sec5 D1 outer vector: published [      OUTER (9,67): 2*L s36/s38/s39/s51/s73 = 496/429/437/446/502 (L 248.0/214.5/218.5/223.0/251.0)] | census [      OUTER (9,67): 2*L s36/s38/s39/s51/s73 = 496/429/437/446/502 (L 248.0/214.5/218.5/223.0/251.0)] | match True
+row 38: sec5 D1 outer W5 block D: published [      OUTER (9,67) W5 block D values: 267 189 242 377 340 278 214 181 255 247 268 194] | census [      OUTER (9,67) W5 block D values: 267 189 242 377 340 278 214 181 255 247 268 194] | match True
+row 39: sec5 D1 outer band: published [      OUTER (9,67) W5-vs-post-shift-band: 2*L_W5 = 502 vs band 2*L 429..437 (closed interval spanned by {s38,s39,s51}): OUTSIDE-ABOVE] | census [      OUTER (9,67) W5-vs-post-shift-band: 2*L_W5 = 502 vs band 2*L 429..437 (closed interval spanned by {s38,s39,s51}): OUTSIDE-ABOVE] | match True
+row 40: sec5 D1 outer prior reproduction: published [      OUTER (9,67) prior-window reproduction vs quote-only s53/s54 priors 2*L 496/429/437/446: EXACT True] | census [      OUTER (9,67) prior-window reproduction vs quote-only s53/s54 priors 2*L 496/429/437/446: EXACT True] | match True
+row 41: sec5 D2 scoreboard (sum,128,S=16): published [      scoreboard cell (sum,128,S=16): INNER 2*L_W5 = 56 (28.0); OUTER 2*L_W5 = 571 (285.5)] | census [      scoreboard cell (sum,128,S=16): INNER 2*L_W5 = 56 (28.0); OUTER 2*L_W5 = 571 (285.5)] | match True
+row 42: sec5 D2 scoreboard (sum,128,S=32): published [      scoreboard cell (sum,128,S=32): INNER 2*L_W5 = 97 (48.5); OUTER 2*L_W5 = 499 (249.5)] | census [      scoreboard cell (sum,128,S=32): INNER 2*L_W5 = 97 (48.5); OUTER 2*L_W5 = 499 (249.5)] | match True
+row 43: sec5 D2 scoreboard (sum,128,S=default): published [      scoreboard cell (sum,128,S=default): INNER 2*L_W5 = 109 (54.5); OUTER 2*L_W5 = 519 (259.5)] | census [      scoreboard cell (sum,128,S=default): INNER 2*L_W5 = 109 (54.5); OUTER 2*L_W5 = 519 (259.5)] | match True
+row 44: sec5 D2 scoreboard (max,128,S=16): published [      scoreboard cell (max,128,S=16): INNER 2*L_W5 = 54 (27.0); OUTER 2*L_W5 = 510 (255.0)] | census [      scoreboard cell (max,128,S=16): INNER 2*L_W5 = 54 (27.0); OUTER 2*L_W5 = 510 (255.0)] | match True
+row 45: sec5 D2 scoreboard (max,128,S=32): published [      scoreboard cell (max,128,S=32): INNER 2*L_W5 = 100 (50.0); OUTER 2*L_W5 = 514 (257.0)] | census [      scoreboard cell (max,128,S=32): INNER 2*L_W5 = 100 (50.0); OUTER 2*L_W5 = 514 (257.0)] | match True
+row 46: sec5 D2 scoreboard (max,128,S=default): published [      scoreboard cell (max,128,S=default): INNER 2*L_W5 = 100 (50.0); OUTER 2*L_W5 = 502 (251.0)] | census [      scoreboard cell (max,128,S=default): INNER 2*L_W5 = 100 (50.0); OUTER 2*L_W5 = 502 (251.0)] | match True
+row 47: sec5 D2 scoreboard (min,128,S=16): published [      scoreboard cell (min,128,S=16): INNER 2*L_W5 = 53 (26.5); OUTER 2*L_W5 = 527 (263.5)] | census [      scoreboard cell (min,128,S=16): INNER 2*L_W5 = 53 (26.5); OUTER 2*L_W5 = 527 (263.5)] | match True
+row 48: sec5 D2 scoreboard (min,128,S=32): published [      scoreboard cell (min,128,S=32): INNER 2*L_W5 = 101 (50.5); OUTER 2*L_W5 = 538 (269.0)] | census [      scoreboard cell (min,128,S=32): INNER 2*L_W5 = 101 (50.5); OUTER 2*L_W5 = 538 (269.0)] | match True
+row 49: sec5 D2 scoreboard (min,128,S=default): published [      scoreboard cell (min,128,S=default): INNER 2*L_W5 = 108 (54.0); OUTER 2*L_W5 = 528 (264.0)] | census [      scoreboard cell (min,128,S=default): INNER 2*L_W5 = 108 (54.0); OUTER 2*L_W5 = 528 (264.0)] | match True
+row 50: sec5 D2 scoreboard (sum,256,S=16): published [      scoreboard cell (sum,256,S=16): INNER 2*L_W5 = 81 (40.5); OUTER 2*L_W5 = 369 (184.5)] | census [      scoreboard cell (sum,256,S=16): INNER 2*L_W5 = 81 (40.5); OUTER 2*L_W5 = 369 (184.5)] | match True
+row 51: sec5 D2 scoreboard (sum,256,S=32): published [      scoreboard cell (sum,256,S=32): INNER 2*L_W5 = 162 (81.0); OUTER 2*L_W5 = 459 (229.5)] | census [      scoreboard cell (sum,256,S=32): INNER 2*L_W5 = 162 (81.0); OUTER 2*L_W5 = 459 (229.5)] | match True
+row 52: sec5 D2 scoreboard (sum,256,S=default): published [      scoreboard cell (sum,256,S=default): INNER 2*L_W5 = 146 (73.0); OUTER 2*L_W5 = 456 (228.0)] | census [      scoreboard cell (sum,256,S=default): INNER 2*L_W5 = 146 (73.0); OUTER 2*L_W5 = 456 (228.0)] | match True
+row 53: sec5 D2 scoreboard (max,256,S=16): published [      scoreboard cell (max,256,S=16): INNER 2*L_W5 = 76 (38.0); OUTER 2*L_W5 = 382 (191.0)] | census [      scoreboard cell (max,256,S=16): INNER 2*L_W5 = 76 (38.0); OUTER 2*L_W5 = 382 (191.0)] | match True
+row 54: sec5 D2 scoreboard (max,256,S=32): published [      scoreboard cell (max,256,S=32): INNER 2*L_W5 = 165 (82.5); OUTER 2*L_W5 = 468 (234.0)] | census [      scoreboard cell (max,256,S=32): INNER 2*L_W5 = 165 (82.5); OUTER 2*L_W5 = 468 (234.0)] | match True
+row 55: sec5 D2 scoreboard (max,256,S=default): published [      scoreboard cell (max,256,S=default): INNER 2*L_W5 = 162 (81.0); OUTER 2*L_W5 = 455 (227.5)] | census [      scoreboard cell (max,256,S=default): INNER 2*L_W5 = 162 (81.0); OUTER 2*L_W5 = 455 (227.5)] | match True
+row 56: sec5 D2 scoreboard (min,256,S=16): published [      scoreboard cell (min,256,S=16): INNER 2*L_W5 = 72 (36.0); OUTER 2*L_W5 = 371 (185.5)] | census [      scoreboard cell (min,256,S=16): INNER 2*L_W5 = 72 (36.0); OUTER 2*L_W5 = 371 (185.5)] | match True
+row 57: sec5 D2 scoreboard (min,256,S=32): published [      scoreboard cell (min,256,S=32): INNER 2*L_W5 = 145 (72.5); OUTER 2*L_W5 = 456 (228.0)] | census [      scoreboard cell (min,256,S=32): INNER 2*L_W5 = 145 (72.5); OUTER 2*L_W5 = 456 (228.0)] | match True
+row 58: sec5 D2 scoreboard (min,256,S=default): published [      scoreboard cell (min,256,S=default): INNER 2*L_W5 = 160 (80.0); OUTER 2*L_W5 = 470 (235.0)] | census [      scoreboard cell (min,256,S=default): INNER 2*L_W5 = 160 (80.0); OUTER 2*L_W5 = 470 (235.0)] | match True
+row 59: sec5 D2 contrast (sum,128,S=16): published [      contrast cell (sum,128,S=16): INNER (28,48) 2*L 73/56 C 8.5; OUTER (9,67) 2*L 657/571 C 43.0] | census [      contrast cell (sum,128,S=16): INNER (28,48) 2*L 73/56 C 8.5; OUTER (9,67) 2*L 657/571 C 43.0] | match True
+row 60: sec5 D2 contrast (sum,128,S=32): published [      contrast cell (sum,128,S=32): INNER (28,48) 2*L 121/97 C 12.0; OUTER (9,67) 2*L 435/499 C -32.0] | census [      contrast cell (sum,128,S=32): INNER (28,48) 2*L 121/97 C 12.0; OUTER (9,67) 2*L 435/499 C -32.0] | match True
+row 61: sec5 D2 contrast (sum,128,S=default): published [      contrast cell (sum,128,S=default): INNER (28,48) 2*L 137/109 C 14.0; OUTER (9,67) 2*L 455/519 C -32.0] | census [      contrast cell (sum,128,S=default): INNER (28,48) 2*L 137/109 C 14.0; OUTER (9,67) 2*L 455/519 C -32.0] | match True
+row 62: sec5 D2 contrast (max,128,S=16): published [      contrast cell (max,128,S=16): INNER (28,48) 2*L 64/54 C 5.0; OUTER (9,67) 2*L 651/510 C 70.5] | census [      contrast cell (max,128,S=16): INNER (28,48) 2*L 64/54 C 5.0; OUTER (9,67) 2*L 651/510 C 70.5] | match True
+row 63: sec5 D2 contrast (max,128,S=32): published [      contrast cell (max,128,S=32): INNER (28,48) 2*L 110/100 C 5.0; OUTER (9,67) 2*L 419/514 C -47.5] | census [      contrast cell (max,128,S=32): INNER (28,48) 2*L 110/100 C 5.0; OUTER (9,67) 2*L 419/514 C -47.5] | match True
+row 64: sec5 D2 contrast (max,128,S=default): published [      contrast cell (max,128,S=default): INNER (28,48) 2*L 118/100 C 9.0; OUTER (9,67) 2*L 496/502 C -3.0] | census [      contrast cell (max,128,S=default): INNER (28,48) 2*L 118/100 C 9.0; OUTER (9,67) 2*L 496/502 C -3.0] | match True
+row 65: sec5 D2 contrast (min,128,S=16): published [      contrast cell (min,128,S=16): INNER (28,48) 2*L 70/53 C 8.5; OUTER (9,67) 2*L 618/527 C 45.5] | census [      contrast cell (min,128,S=16): INNER (28,48) 2*L 70/53 C 8.5; OUTER (9,67) 2*L 618/527 C 45.5] | match True
+row 66: sec5 D2 contrast (min,128,S=32): published [      contrast cell (min,128,S=32): INNER (28,48) 2*L 128/101 C 13.5; OUTER (9,67) 2*L 488/538 C -25.0] | census [      contrast cell (min,128,S=32): INNER (28,48) 2*L 128/101 C 13.5; OUTER (9,67) 2*L 488/538 C -25.0] | match True
+row 67: sec5 D2 contrast (min,128,S=default): published [      contrast cell (min,128,S=default): INNER (28,48) 2*L 121/108 C 6.5; OUTER (9,67) 2*L 470/528 C -29.0] | census [      contrast cell (min,128,S=default): INNER (28,48) 2*L 121/108 C 6.5; OUTER (9,67) 2*L 470/528 C -29.0] | match True
+row 68: sec5 D2 contrast (sum,256,S=16): published [      contrast cell (sum,256,S=16): INNER (28,48) 2*L 77/81 C -2.0; OUTER (9,67) 2*L 417/369 C 24.0] | census [      contrast cell (sum,256,S=16): INNER (28,48) 2*L 77/81 C -2.0; OUTER (9,67) 2*L 417/369 C 24.0] | match True
+row 69: sec5 D2 contrast (sum,256,S=32): published [      contrast cell (sum,256,S=32): INNER (28,48) 2*L 156/162 C -3.0; OUTER (9,67) 2*L 441/459 C -9.0] | census [      contrast cell (sum,256,S=32): INNER (28,48) 2*L 156/162 C -3.0; OUTER (9,67) 2*L 441/459 C -9.0] | match True
+row 70: sec5 D2 contrast (sum,256,S=default): published [      contrast cell (sum,256,S=default): INNER (28,48) 2*L 150/146 C 2.0; OUTER (9,67) 2*L 404/456 C -26.0] | census [      contrast cell (sum,256,S=default): INNER (28,48) 2*L 150/146 C 2.0; OUTER (9,67) 2*L 404/456 C -26.0] | match True
+row 71: sec5 D2 contrast (max,256,S=16): published [      contrast cell (max,256,S=16): INNER (28,48) 2*L 84/76 C 4.0; OUTER (9,67) 2*L 422/382 C 20.0] | census [      contrast cell (max,256,S=16): INNER (28,48) 2*L 84/76 C 4.0; OUTER (9,67) 2*L 422/382 C 20.0] | match True
+row 72: sec5 D2 contrast (max,256,S=32): published [      contrast cell (max,256,S=32): INNER (28,48) 2*L 150/165 C -7.5; OUTER (9,67) 2*L 431/468 C -18.5] | census [      contrast cell (max,256,S=32): INNER (28,48) 2*L 150/165 C -7.5; OUTER (9,67) 2*L 431/468 C -18.5] | match True
+row 73: sec5 D2 contrast (max,256,S=default): published [      contrast cell (max,256,S=default): INNER (28,48) 2*L 135/162 C -13.5; OUTER (9,67) 2*L 436/455 C -9.5] | census [      contrast cell (max,256,S=default): INNER (28,48) 2*L 135/162 C -13.5; OUTER (9,67) 2*L 436/455 C -9.5] | match True
+row 74: sec5 D2 contrast (min,256,S=16): published [      contrast cell (min,256,S=16): INNER (28,48) 2*L 95/72 C 11.5; OUTER (9,67) 2*L 411/371 C 20.0] | census [      contrast cell (min,256,S=16): INNER (28,48) 2*L 95/72 C 11.5; OUTER (9,67) 2*L 411/371 C 20.0] | match True
+row 75: sec5 D2 contrast (min,256,S=32): published [      contrast cell (min,256,S=32): INNER (28,48) 2*L 142/145 C -1.5; OUTER (9,67) 2*L 405/456 C -25.5] | census [      contrast cell (min,256,S=32): INNER (28,48) 2*L 142/145 C -1.5; OUTER (9,67) 2*L 405/456 C -25.5] | match True
+row 76: sec5 D2 contrast (min,256,S=default): published [      contrast cell (min,256,S=default): INNER (28,48) 2*L 150/160 C -5.0; OUTER (9,67) 2*L 434/470 C -18.0] | census [      contrast cell (min,256,S=default): INNER (28,48) 2*L 150/160 C -5.0; OUTER (9,67) 2*L 434/470 C -18.0] | match True
+row 77: sec6 verdict T15: published [   T15 = (b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES (named failing: INNER (28,48) (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]|OUTER (9,67) (b) NOT-REPLICATED [DIRECTION-REVERSED])] | census [   T15 = (b) NOT-CROSS-DAY-REPLICATED-ON-BOTH-AXES (named failing: INNER (28,48) (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]|OUTER (9,67) (b) NOT-REPLICATED [DIRECTION-REVERSED])] | match True
+row 78: sec6 verdict inner: published [   INNER (28,48): 2*L_s36 118 -> 2*L_s73 100 (2*C_obs 18); count 1477/20001; p 0.073896; letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]] | census [   INNER (28,48): 2*L_s36 118 -> 2*L_s73 100 (2*C_obs 18); count 1477/20001; p 0.073896; letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]] | match True
+row 79: sec6 verdict outer: published [   OUTER (9,67): 2*L_s36 496 -> 2*L_s73 502 (2*C_obs -6); count 11558/20001; p 0.577921; letter (b) NOT-REPLICATED [DIRECTION-REVERSED]] | census [   OUTER (9,67): 2*L_s36 496 -> 2*L_s73 502 (2*C_obs -6); count 11558/20001; p 0.577921; letter (b) NOT-REPLICATED [DIRECTION-REVERSED]] | match True
+
+TOTAL: 79 rows, 0 mismatched
+
+SECTION B -- observed-estimator cross-check (the in-loop dual
+computation of every observed block quantile-pair spread: 5
+windows x 2 axes x 12 blocks x 18 ok cells):
+block-D cross-check: 2160 comparisons
+block-D cross-check mismatches (pure-Python sorted() vs np.partition kth paths): want [0] got [0] | match True
+
+TOTAL: 1 checks, 0 mismatched
+
+SECTION C -- evidence hygiene:
+evidence .sh count: want [0] got [0] | match True
+W5 run-window run count (host-date lines): want [78] got [78] | match True
+W5 run-window UTC day: want [2026-10-29] got [2026-10-29] | match True
+ledger reading-line count (this row writes NO line -- protocol section 5): want [9] got [9] | match True
+ledger session=s78 line count: want [0] got [0] | match True
+
+TOTAL: 5 checks, 0 mismatched
+
+DETERMINISM: this generator run twice yields byte-identical
+output (double-run status named in the s78 record; RNG seeded,
+no set iteration).

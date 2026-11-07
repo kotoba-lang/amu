@@ -1,0 +1,28 @@
+== analysis-s147.py determinism check (session 149 landing) ==
+$ python3 analysis-s147.py  (run 1 -> publication-s147.txt)
+rc=0, stdout 0 bytes, stderr 0 bytes (analysis-s147-run1.stdout/.err)
+$ cp publication-s147.txt <session scratch>/pub-s147-A.txt
+$ python3 analysis-s147.py  (run 2)
+rc=0, stdout 0 bytes, stderr 0 bytes (analysis-s147-run2.stdout/.err)
+$ cmp <session scratch>/pub-s147-A.txt publication-s147.txt
+cmp rc=0
+$ wc -c publication-s147.txt analysis-s147-run1.err analysis-s147-run2.err
+   29876 publication-s147.txt
+       0 analysis-s147-run1.err
+       0 analysis-s147-run2.err
+   29876 total
+$ shasum -a 256 publication-s147.txt
+d41df35aff0a0ff674549a9f4390752be27f28f71cce90dfdf54bb1b08d407aa  publication-s147.txt
+$ grep -c 'open(' analysis-s147.py  (input sites)
+8
+
+INPUT RULE (state-s147.txt NOT DONE (a); verified from the script
+source, the 8 open() sites above): the script parses ONLY (1) the 54
+committed run logs of the s147 measurement half in this directory
+(run-<tag>-r<NN>.txt, line 279), and (2) the NAMED COMMITTED WANT
+SOURCES, all parsed from committed bytes, never transcribed -- the
+s27 controls census (anv-b3bisect7-20261027, line 103) and the
+s125/s129/s132/s136/s139 publications (lines 105-113). The only
+output site (line 929) writes publication-s147.txt in this
+directory. No other input.
+(JUN-55, JUN-59; Linear tracking JUN-499)

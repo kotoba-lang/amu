@@ -1,0 +1,20 @@
+analysis-s158.py RUN IDENTITY (session 162, 2026-11-01 JST, cron)
+
+run 1: python3 analysis-s158.py rc 0, stderr 0 bytes
+       (scratch capture analysis-s158-run1.err), wall 1m40.5s,
+       publication-s158.txt 56,588 bytes
+       sha256 45538ad757bfa28821de2728000581897aaef8cc75f32ed656914509f400cd25
+run 2: python3 analysis-s158.py rc 0, stderr 0 bytes
+       (scratch capture analysis-s158-run2.err), wall 46.3s,
+       publication-s158.txt 56,588 bytes
+       sha256 45538ad757bfa28821de2728000581897aaef8cc75f32ed656914509f400cd25
+
+cmp publication-s158.txt (run 1 copy vs run 2 output): exit 0 --
+BYTE-IDENTICAL (deterministic analysis over the 54 committed run logs
+read through gzip + the named committed want sources).
+
+Both runs read ONLY: the 54 committed run-<tag>-r<NN>.txt.gz in this
+directory, derivation-census-s27.txt, publication-s132/136/139/147.txt,
+build-census-s158.txt. Both wrote ONLY publication-s158.txt (run 2
+overwrote run 1's identical bytes). Run 1's copy lived in the session
+scratch directory (never in the tree); its digest is recorded above.

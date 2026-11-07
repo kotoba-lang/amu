@@ -1,0 +1,89 @@
+2026-10-31 (session 129)
+== session 129 state capture -- TENTH CUT MEASUREMENT HALF,        ==
+== STARTED, NOT FINISHED (session budget exhausted mid slice)     ==
+
+ROW: the s128 carry-forward (a) -- the tenth cut's MEASUREMENT half
+(42 fresh processes under the frozen
+anv-b3bisect10prereg-20261031/protocol.txt, freeze stamp
+2026-10-31T07:35:39Z). s129 takes it as "frozen to run" per the s128
+carry-forward rule.
+
+DONE this tick (all real tool output, captures in
+docs/evidence/gpu/anv-b3bisect10-20261031/):
+- staging + verification on aiueos-6600hs (aiueos-6600hs-1, tailscale
+  100.98.24.37, user murakumo-ci), workdir ~/anv-b3bisect10-20261031:
+  corpus 16/16 sha256sum -c OK (corpus_rc=0, byte-copy of
+  ~/anv-b3bisect9-20261031's verified corpus); instrument
+  a5e539f0... == s26 committed source byte-identical; manifest
+  2e0cfd6c... (cell lines byte-copy of cases-s27-a.txt, verified);
+  expected-corpus eefba52e... == s27 byte-copy.
+- GO=2026-10-31T12:11:29Z before the build loop and all runs (NAMED:
+  GO shares its second-granular stamp with the first two build stamps;
+  ordering rests on the driver transcript; all run stamps strictly
+  later, 12:11:31Z..12:11:58Z).
+- builds 5/5 rc=0 stderr 0 bytes; BUILD PINS 5/5 BYTE-IDENTICAL (ZERO
+  NEW KNOB TRIPLES: c2 e5ed903e... == s27 pin, lo 0ce4616c... ==
+  s121's anv-bb-mid, mid cabff942... == s125's anv-bb-mid, hi
+  123e8f73... == s26 pin, c8 480925e5... == s27 pin; all parsed from
+  committed censuses in derivation-census-s129.txt).
+- runs: 42/42 rc=0 in the frozen order, stderr 0 bytes 42/42, 450
+  SAMPLE + 24 VERIFY + 24 CELL each, tail '# done cells=24' 42/42;
+  VERIFY mismatch total 0 (frozen INVALIDATION criterion did not
+  fire); 84 logs pulled byte-identical (aggregate 898872e7...
+  host==local).
+- analysis-s129.py run twice byte-identical -> publication-s129.txt
+  (19,034 bytes, sha256 87a02b4701edd81cf0e0b1dab19577134c4d11bc7
+  ff4a39e894a3f04c800ad1b).
+- THE FINDING (publication-s129.txt): C1 (a) True (c2 FLOOR 31 in
+  band 31..32; c8 32,948 vs committed 32,915 +0.10%). C2 (a)
+  STABLE-INTERMEDIATE at lo (405,1591) n=254,557 (4 blocks + pooled-12
+  all INTERMEDIATE/MIXED: blocks 1,138/1,138/1,155/1,146; pooled-12
+  1,141; 18-cell minima 985..998 -- the s125 CAPTURED reading is named
+  tail content). C3 (c) BLOCK-UNSTABLE at mid (248,973) n=254,882
+  (blocks 1/2/3 INTERMEDIATE/MIXED, block4 CAPTURED min 1,023;
+  pooled-12 INTERMEDIATE/MIXED 1,139). W1 (c) BLOCK-UNSTABLE at hi
+  (1213,4753) n=255,208 (block1 INTERMEDIATE/MIXED min 988, blocks
+  2-4 CAPTURED; pooled-12 CAPTURED 1,154). CUT VERDICT: the stability
+  precondition DOES NOT HOLD; L9 BINDS at mid AND at hi -- the class
+  label is block-run-unstable at the frozen 1,000-tick threshold at
+  two of the three committed points, including the bracket's upper
+  anchor. NO bracket movement under any outcome: the committed bracket
+  stays exactly (254,557, 255,208]. WHY is UNMEASURED; NO causal
+  mechanism is claimed. Per-run 18-cell min trajectories (W2) show the
+  boundary crossing inside single 12-run sets (mid mins 977..1,023;
+  hi mins 977..1,023).
+- gates (a) classify --self-test 17,925 bytes == s88 pin (cmp exit 0),
+  .err 0; (b) scoped GPU gate GREEN 'Ran 123 tests containing 12162
+  assertions. 0 failures, 0 errors.' run 1 == run 2 == both s88 pins
+  (919 bytes, cmp exit 0 x3), .err 0 (scratch runner created/run
+  twice/DELETED after run 2, never committed).
+
+NOT DONE (the landing tail -- the very next session must complete
+exactly this list before any push):
+- gates (c) FULL run-tests.cljk LIVE (expect exit 1 RED AT BASE
+  kotoba.form, ADR-0362; capture gate-s129-full.out/.err, cmp to the
+  s88 pins), (d) evaluator --self-test + ledger eval pair twice == the
+  s117 post-append pin (bar-s129-* captures), (e) find docs/evidence/gpu
+  -name '*.sh' -> 0, (f) settle-bar-ledger.txt == HEAD.
+- record.txt + the ADR-0355 dated note.
+- prlist-s129-prepush.json (blocker-first: 0 hermes/ heads required),
+  commit + push to the ONE chain PR #1665 (bot/amu-gpu-chain-20261028-4),
+  Linear comment on JUN-499.
+- NAMED, NOT HIDDEN (my own defects, fixed at source, no capture
+  touched): analysis-s129.py's first two runs failed on my parse
+  defects (re.match anchored before the 'committed controls:' prefix;
+  'this session' vs 'SESSION' case in the W2 row regex) -- fixed, then
+  ran twice byte-identical.
+
+STATE: the tenth cut's measurement quantities are MEASURED (the block
+classes, pooled-12 classes, dispersion, host_ns -- real tool output
+above) but NOT YET COMMITTED at this cutoff. RULE 4 unchanged: NOTHING
+MOVES -- the accelerator-targets rows stay as ADR-0358 left them
+(:measured? true scoped to each row's one named measured device for
+:nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+:measured? false); NO vendor optimization exists for Intel (or for any
+vendor). BAR NON-INTERFERENCE held (no ledger append, no day-slot
+consumption, no bar/Rule-4/:measured? movement). BLOCKER-FIRST not yet
+checked this tick (the pre-push prlist check is in the NOT DONE list).
+(JUN-55, JUN-59; Linear tracking JUN-499 -- Linear comment NOT yet
+posted this tick)

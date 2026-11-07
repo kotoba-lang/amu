@@ -1,0 +1,218 @@
+amu-gpu s216 (2026-11-02 UTC, cron) -- THE OPEN CONTROL QUESTION
+PRE-REGISTRATION, SECOND SLICE: THE COMMITTED-REFERENCE
+CONFRONTATION -- the provenance of the two committed control
+references themselves (the floor band "31..32 at B=2" and the c8
+reference "32,915 (session 4 pooled median)"), the s215 parse
+target -- COMPLETE at this cutoff (quote-only from committed bytes
+at the exact lines, every line extracted by tool this tick, never
+transcribed; the s202/s215 shape -- no census script this tick;
+git provenance via git log -S / git grep over committed bytes).
+
+ROW (decided, recorded here; ONE row per tick): the control-
+question pre-registration's committed-reference confrontation,
+taken as ONE finished slice. WHY THIS ROW (named): the s215
+carry-forward's FIRST named parse target is "the provenance of the
+two committed control references themselves -- the floor band
+'31..32 at B=2' and the c8 reference '32915 (session 4 pooled
+median)' -- WHICH the pre-registration must confront before any
+resolution act is frozen"; s215 recorded the four-cut control-
+state record and left the confrontation to this continuation. The
+two other standing rows stay standing: (a) any further counted-day
+slot -- each needs its OWN freeze (this row choice does NOT consume
+or forfeit any slot); (b) the cross-day tail-movement row (not
+queued).
+
+1. THE C8 REFERENCE "32,915 (session 4 pooled median)"
+
+PRIMARY MEASURED ORIGIN -- session 4 (docs/evidence/gpu/
+anv-batchscale-20261027/publication-s4.txt), quote-only at exact
+lines:
+  L51-53: "pooled median bracket gpu_ticks per (op, W, S, B) over
+   the 3 / runs x 25 rounds (75 samples); DERIVED per-dispatch =
+   bracket/B / (ticks and ns at timestampPeriod 52.083 ns)."
+  L57: "   (sum,W=128,S=16) B1:31(PIN)  B2:31(PIN)  B4:11674
+   B8:32915  B16:69838  B32:140398  B64:277902"
+  So 32,915 is ONE pooled median over 3 runs x 25 rounds (75
+  samples) at ONE (op, W, S, B) cell -- (sum, W=128, S=16, B=8).
+
+SAME-SESSION S-SENSITIVITY (quote-only; the same (op, W, B) cell
+at the other S settings of the SAME session):
+  L58: "   (sum,W=128,S=32) B1:31(PIN)  B2:31(PIN)  B4:11356
+   B8:32228  B16:68935  B32:139181  B64:277388"
+  L59: "   (sum,W=128,S=default) B1:31(PIN)  B2:32(PIN)  B4:11366
+   B8:32198  B16:68961  B32:139082  B64:276951"
+  L155: "     (sum,W=128) r1:32faster  r2:32faster  r3:32faster |
+   32faster in 3/3 (pooled med ticks S=16 32915 vs S=32 32228)"
+
+FIRST COMMITTED USE AS A COMMITTED REFERENCE (git log --oneline
+--reverse -S 'session 4 pooled median' -> commit 9e9674fe6,
+session 7; verified this tick):
+  docs/evidence/gpu/anv-bonset-20261027/analysis-s7.py L23:
+  "COMMITTED = {1: 31, 2: 31, 4: 11674, 8: 32915}   # session 4
+   pooled medians at (sum,128,S=16)"
+  (the comment names the S=16 scoping; the name "session 4 pooled
+  median" itself does not encode it).
+
+CANONICAL CITATION -- what the s125+ analysis chain parses as the
+committed control source (the s27 controls census):
+  docs/evidence/gpu/anv-b3bisect7-20261027/derivation-census-s27.txt
+  L43: "  committed controls: c2 31 (floor band 31..32); c8 32,915
+   (session 4 pooled median)"
+  (the same line at docs/evidence/gpu/anv-b3bisect6-20261027/
+  derivation-census-s26.txt L42; the s147 chain names its source
+  "the s27 controls census (anv-b3bisect7-20261027, line 103)" --
+  analysis-s147-identity.txt L24, the "line 103" being a line of
+  analysis-s147.py that names the file, not a census line).
+
+2. THE FLOOR BAND "31..32 AT B=2"
+
+PRIMARY MEASURED ORIGIN -- session 1 (docs/evidence/gpu/
+anv-subgroupsize-81632-20261027/publication.txt):
+  L1-2: "# publication -- JUN-59 subgroup 8/16/32, FIRST session,
+   INSTRUMENT / # channel (raw ANV on aiueos-6600hs-1; ..."
+  Session 1's floor pin as recorded in the committed instrument
+  comment (docs/evidence/gpu/anv-b3anchorrec-20261027/
+  gpu-subgroup-reduce-anv-ndiv.c.txt L4-7): " * DERIVED from
+  gpu-subgroup-reduce-anv-subgroupsize.c (the first session's
+   * instrument, kept byte-stable; ...). The / * first session's
+   * gpu_ns medians PINNED AT THE TIMESTAMP FLOOR (31 ticks = /
+   * 1614.6 ns at every (op, W, S) cell) ..."
+  and as quoted by publication-s4.txt L112-116 (a DERIVED quote of
+  the committed record, so labelled there): "   committed record:
+   session 1's single-dispatch bracket pinned at /   31 ticks =
+   1,614.6 ns at every cell): THIS instrument's B=1 /   bracket is
+   31 ticks (1614.57 ns) at (sum,128,16) -- the 31-tick floor /
+   value is REPRODUCED here at B<=2 (B=1 pooled medians are 31 /
+   ticks at all 18 arms; B=2 medians are 31-32 ticks -- section 3 /   data)".
+
+THE BAND'S UPPER EDGE (32) ORIGINATES IN SESSION 4's B=2 MEDIANS:
+  publication-s4.txt L57-59 (quoted in full above): B2 medians are
+  31 (S=16), 31 (S=32), 32 (S=default).
+
+FIRST COMMITTED USE OF THE PHRASE (git log --oneline --reverse
+-S 'floor band 31..32' -> commit 1ae759c1b, session 12; verified
+this tick):
+  docs/evidence/gpu/anv-workdown-20261027/protocol.txt L95:
+  "   sessions 7-11; committed floor band 31..32 ticks, committed"
+  docs/evidence/gpu/anv-workdown-20261027/analysis-s12.py L26:
+  "COMMITTED_SRC = {\"c2\": \"sessions 1-11 floor band 31..32\",
+   \"c8\": \"session 4 pooled median\"}"
+  The band's stated basis grows with the series -- analysis-s32.py
+  L41 "sessions 1-31 floor band 31..32", analysis-s33.py L40
+  "sessions 1-32 ...", analysis-s34.py L44 "sessions 1-33 ..."
+  (i.e. the claim as carried is "every committed floor pooled
+  median through session N is 31 or 32").
+
+CANONICAL CITATION: the s27 controls census L43 (quoted above).
+
+3. THE CONFRONTATION (trivial readings of the pinned lines --
+readings of committed content and DERIVED arithmetic on quoted
+values, NOT measurements):
+
+(i) The c8 reference is ONE pooled median (75 samples) at ONE S
+setting (S=16) from ONE session (session 4, 2026-10-27); the
+frozen +/-5% C1 band at every cut is +/-5% of that single number.
+DERIVED arithmetic on the quoted values (computed by tool this
+tick, not a measurement): the same session's same (op,W,B) cell at
+S=32 reads 32,228 (-2.09% of 32,915) and at S=default 32,198
+(-2.18%) -- the reference's own within-session cross-S spread is
+of the same order as the four cuts' deviations from it (the s215-
+pinned C1 lines, re-extracted at exact lines this tick):
+  publication-s169.txt L609: "     c8 (sum,128,S=16) pooled median
+   m 32820 within +/-5% of committed 32915 (session 4 pooled
+   median): True (-0.29%)"
+  publication-s185.txt L626: "... m 32775 ... True (-0.43%)"
+  publication-s197.txt L632: "... m 32778 ... True (-0.42%)"
+  publication-s209.txt L659: "... m 32559 ... True (-1.08%)"
+All four cut readings sit BELOW 32,915 and all four are inside
++/-5%; the derived cross-S spread of the reference itself is
+LARGER than the first three cuts' deviations. Reading only; no
+criterion is changed and no band is widened or narrowed by this
+slice.
+
+(ii) The floor band's committed floor observations parsed this
+tick are exactly {31, 32}: session 1's every-cell 31-tick pin
+(every (op,W,S) cell) and session 4's B=2 medians 31/31/32. The
+16th and 19th cuts' c2 pooled median m 30 (publication-s169.txt
+L607-608 "c2 ... m 30 ... FLOOR (committed floor band 31..32 at
+B=2): False"; publication-s209.txt L657-658 same shape at m 30)
+sits BELOW every floor observation in the provenance chain parsed
+this tick. Whether m 30 is a NEW control state of the instrument
+or a tolerance/defect reading is a DESIGN DECISION of this
+pre-registration -- NOT made this tick -- and its resolution is
+the resolution measurement act's own business.
+
+NAMED, NOT HIDDEN:
+(a) The "sessions 1-N floor band 31..32" basis claim is carried
+as the analysis chain states it; this tick did NOT enumerate every
+committed session 5..20 c2/c8 reading (the full enumeration is
+its own parse if a future slice needs it) -- the {31, 32} claim
+above is scoped to the provenance chain parsed this tick
+(sessions 1 and 4 primary records + the s27 census).
+(b) The c8 name "session 4 pooled median" does not encode the
+S=16 scoping (named above at analysis-s7.py L23); every cut's C1
+line carries the scoping in its own text ("c8 (sum,128,S=16)").
+(c) SESSION-ID READING, not a committed claim: the batch64 floor-
+lifting rerun dirs (anv-subgroupsize-batch64-20261027 and
+anv-subgroupsize-batch64-rep-20261027) are identified this tick
+as sessions 2/3 by their content (publication.txt of batch64:
+"JUN-59 subgroup 16-vs-32 FLOOR-LIFTING rerun (batch64 ...)";
+analysis.py L24 "FLOOR_LIFT_TICKS = 248  # 8 x session 1's 31-tick
+single-dispatch floor median" -- matching publication-s4.txt
+L54's "session 2's pre-registered 248-tick threshold"); sessions
+1-3 do NOT carry publication-sN.txt names (that naming starts at
+session 4).
+(d) The host named in session 1's record is aiueos-6600hs-1 (raw
+ANV); the four cuts' runs are on aiueos-6600hs under the ROUNDS6400
+instrument (the s215 record). The two names' relationship is NOT
+re-examined this tick (carried as committed).
+
+STATE (three-state discipline): NO control-question quantity
+exists -- no protocol, NOTHING frozen, NO measurement taken this
+tick (no hardware, no builds, no runs, no GO stamp); the content
+above is QUOTE-ONLY from committed bytes (extracted by tool at
+this cutoff, exact lines pinned), git provenance reads, one
+session-identification reading (named (c)), and DERIVED arithmetic
+on quoted values (labelled where used) -- NOT a measurement and
+NOT a class/verdict/claim of any cut or of the control question;
+the quoted values are the named sessions' landed MEASURED
+QUANTITIES (their own hardware runs under their own instruments
+and protocols). The committed-reference confrontation is ACCEPTED
+DESIGN ONLY -- pre-registration content IN DRAFT; the control
+question's pre-registration is NOT frozen and no protocol.txt for
+it exists at this cutoff. RULE 4 unchanged: NOTHING MOVES -- the
+committed bracket stays EXACTLY (254,923, 255,045]; L9 binds at
+n=254,984 (C2 (c), D3 (v)); the MID-ONLY NARROWING CLAIM stays
+SUSPENDED; NO vendor optimization exists for Intel (or for any
+vendor); the accelerator-targets workgroup rows stay as ADR-0358
+left them (:measured? false rows remain provisional -- NOT
+optimization evidence). BAR NON-INTERFERENCE held: NO settle-bar-
+ledger line, NO day-slot consumption, NO hardware, NO builds this
+tick; the bar's SETTLED INTERMEDIATE/MIXED verdict unmoved.
+Standing gates this tick, LIVE at this cutoff: (e) find
+docs/evidence/gpu -name '*.sh' -> 0 lines; (f) git diff --exit-code
+HEAD -- docs/evidence/gpu/settle-bar-ledger.txt rc 0 (no append
+this row). Gates (a)-(d) NOT run this tick (not a landing slice
+-- the s209/s212/s215 precedent). This diff touches NO committed
+.cljk namespace (this .txt only; the s160/s166 precedent; the
+full suite stands RED AT BASE kotoba.form (ADR-0362) outside this
+diff per the standing captures -- NOT re-run this tick -- NO green
+full suite claimed). Untracked scratch/, deps.edn and .DS_Store
+files are not this row's, NOT staged. BLOCKER-FIRST immediately
+before this push (prlist-s216-prepush.json, committed with this
+slice): 0 hermes/ heads among open kotoba-lang/amu PRs (python
+headRefName startswith filter); chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4 -- the one this push advances).
+
+NOT DONE (s217 carries exactly this list): the control-question
+pre-registration's own continuation at its own slice(s) -- the
+REMAINING design decisions (the resolution act's arms and
+statistic; the letters; the invalidation criteria; the
+"three-state" semantics) + design-verify + protocol freeze +
+landing; then the control question's RESOLUTION measurement act
+under that frozen protocol (NOT queued -- its own act); standing,
+not queued: any further counted-day slot (each needs its own
+freeze) and the cross-day tail-movement row. If a future slice
+needs it: the full enumeration of every committed session 5..20
+c2/c8 reading (NAMED (a) above).
+(JUN-55, JUN-59; Linear tracking JUN-499)

@@ -1,0 +1,76 @@
+== JUN-59 session 123 derivation (the NINTH CUT pre-registration:  ==
+== cut-point knob search + anchor-pair citations)                  ==
+== every value computed here from arithmetic or committed bytes    ==
+
+re-opened bracket (the eighth cut's W1 (b) verdict, named in protocol.txt): (254557, 255208] n-units
+bracket midpoint exact: 254882.5 -- exact_is_integer: False
+bisect grid n = (254557+255208)//2 = 254882 (the EXACT floor midpoint)
+knob arithmetic: n = (1,000,003*WORK_MUL)//NDIV (integer floor)
+search box (sessions 21-27's box): WORK_MUL 1..2,048 x NDIV 1..8,192
+
+SEARCH SELF-VALIDATION against session 27's committed census (253,255):
+  pairs found: 35 (s27 committed: 35) -> MATCH
+  smallest: (214, 845) (s27 committed: (214, 845)) -> MATCH
+  doubles in box: 9 (s27 committed: 9) -> MATCH
+
+SEARCH SELF-VALIDATION against session 119's committed run (254,557):
+  pairs found: 31 (s119 committed: 31) -> MATCH
+  smallest: (405, 1591) (s119 committed: (405, 1591)) -> MATCH
+  doubles in box: 7 (s119 committed: 7) -> MATCH
+
+pairs mapping to 254882 in-box: 35; smallest: (248, 973)
+in-box pairs whose same-ratio double is also in-box: 10
+bisect pair chosen: (248, 973); same-ratio double (496,1946) n=254882 in-box: True
+gcd(254882, 1,000,003) = 1 -- every knob pair is a floor approximation of the grid
+
+LOWER ANCHOR CITATION: pairs mapping to 254557 in-box: 31; smallest: (405, 1591)
+committed measurement pair (405, 1591): (1,000,003*405)//1591 = 254557 (== 254557) in the mapping set: True
+gcd(254557, 1,000,003) = 1
+the pair's same-ratio double (810, 3182): n=254557, in search box: True (session 121's eq3 pair)
+
+UPPER ANCHOR CITATION: pairs mapping to 255208 in-box: 18; smallest: (1213, 4753)
+  s119 committed cross-check: 18 vs 18 -> MATCH; (1213, 4753) vs (1213, 4753) -> MATCH
+committed measurement pair (1213, 4753): (1,000,003*1213)//4753 = 255208 (== 255208) in the mapping set: True
+gcd(255208, 1,000,003) = 1
+session-24 C3 (b) twin (2426, 9506): n=255208, in search box: False
+
+nominal work units (definition, L1):
+  c2   B=2 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 2.0000000
+  lo   B=3 WM=405   NDIV=1591  n=254557   per-dispatch 0.2545562 total 0.7636687
+  mid  B=3 WM=248   NDIV=973   n=254882   per-dispatch 0.2548812 total 0.7646437
+  eq3  B=3 WM=496   NDIV=1946  n=254882   per-dispatch 0.2548812 total 0.7646437
+  hi   B=3 WM=1213  NDIV=4753  n=255208   per-dispatch 0.2552072 total 0.7656217
+  b2m  B=2 WM=248   NDIV=973   n=254882   per-dispatch 0.2548812 total 0.5097625
+  c8   B=8 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 8.0000000
+
+arm n self-checks:
+  lo: n=254557 want=254557 -> ok
+  hi: n=255208 want=255208 -> ok
+  mid: n=254882 want=254882 -> ok
+  eq3: n=254882 want=254882 -> ok
+  b2m: n=254882 want=254882 -> ok
+
+BUILD REPLICATION PINS (parsed here from committed censuses):
+  c2 pin (s27 census anv-bb-c2 expected): e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+  c8 pin (s27 census anv-bb-c8 expected): 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+  lo (405,1591) triple pin (s121 build census anv-bb-mid -- s121's mid IS (3,405,1591), the pair's first measured digest): 0ce4616c2131389ec15fb0304c187a19ddd4e29edbabd6b620821f0a1bfe8941
+  hi (1213,4753) triple pin (s26 census anv-bb-hi expected -- s26's hi IS (1213,4753)): 123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec
+  context (NOT pins for this cut): s121 (810,3182) digest: 97d38f8f2488665e10894077f16905488ff62dd89088a8f68edea6619a0e71d7; s121 (2,405,1591) digest: 95fc34fe40b744066bb67febf1c77ac68a6000dee4b077b818193b5c74f0cc39 -- this cut's eq3/b2m are the NEW (2X,2Y)/(X,Y) triples (see below)
+  NEW knob triples (no prior binary, no pin applies -- named): mid (3,248,973), eq3 (3,496,1946), b2m (2,248,973)
+
+COMMITTED-BYTE CITATIONS (parsed here):
+  s27 census (1213,4753) triple readings: 1,166/1,166/1,156
+  s27 protocol section 3: 1,166 / 1,166 / 1,156 CAPTURED
+  s24 C3 (b) split minima ((1213,4753) vs (2426,9506)): 1,000 vs 994 at n=255,208
+  s27 census committed controls: c2 31 (floor band 31..32); c8 32,915 (session 4 pooled median)
+  s27 census b2m-class want: FLOOR (sessions 21-26: 31,32,31,31,31,32)
+  s121 publication W1 bracket (the re-opened bracket): (254,557, 255,208]
+  s121 publication lo-pair (s121 mid) reading: class INTERMEDIATE/MIXED, pooled median 1156, 18-cell 986..1459
+  s121 publication hi-pair reading: pooled median 1160, class CAPTURED
+  s121 publication b2m reading: class FLOOR, pooled median 32
+  settle-bar-ledger.txt counted rows (first qualifying per UTC day): 4
+    day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985
+    day=2026-10-29 session=s73 class=INTERMEDIATE/MIXED median=1131 min=998
+    day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133 min=993
+    day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED median=1137 min=986
+  frozen evaluator committed pin (bar-s117-eval-post-run1.txt) VERDICT: SETTLED INTERMEDIATE/MIXED

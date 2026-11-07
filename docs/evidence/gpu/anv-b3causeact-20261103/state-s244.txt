@@ -1,0 +1,117 @@
+state-s244.txt -- JUN-59 s244 (2026-11-03, amu-gpu cron tick): the
+cause-resolution act's MEASUREMENT HALF TAKEN AS ITS ROW, act
+measurement session m1 of 3 -- STARTED, NOT FINISHED (the s242 frozen
+protocol run plan requires the 3 sessions spread over >=2 distinct
+days; m2/m3 need later UTC days).
+
+ROW PROVENANCE (the s243 carry-forward's first standing row (a),
+quoted verbatim from the committed chain history):
+"standing, not queued: the act's MEASUREMENT half (3 sessions x 3 runs
+on aiueos-6600hs under the frozen protocol, the measuring session
+building this source and recording the first-measured binary digests
+with its own capture custody; every act quantity UNMEASURED until
+then and no claim is made now)"
+(chain precedent for taking a standing row as the tick's row:
+s118/s123/s125/s126/s129/s143/s238.)
+
+WHAT LANDED (verified by tool output, docs/evidence/gpu/anv-
+b3causeact-20261103/): THE ACT'S FIRST HARDWARE BYTES EXIST AND ARE
+IN COMMIT CUSTODY -- act measurement session m1 (UTC day 2026-11-03,
+run window 2026-11-03T00:38:47Z..00:42:50Z) ran 3 fresh processes
+(r01..r03) of the ARM-K control arm with the probe rows on
+aiueos-6600hs (Intel BMG G31) under the frozen protocol section 4/5:
+staged from LOCAL COMMITTED bytes (host pins == local 3/3: source
+68c629fb... / cases.txt 54831975... / expected-corpus.sha256
+eefba52e...; corpus 16/16 sha256sum -c OK, fresh dir, no stale run
+log), NEW build gcc -O2 (rc 0, stderr 0 bytes) with FIRST-MEASURED
+BINARY PIN anv-causeprobe 2c216ef2af510641568aaaa2bf2fadbc332ad2769
+c290fa020c6294aa50cf4e6 recorded by this measuring session (never
+transcribed; GO stamp 2026-11-03T00:38:35Z BEFORE the build), 3 runs
+rc 0 / stderr 0 bytes 3/3, each 134,456 lines (7 header + 24 CELL +
+19,200 PROBE + 115,200 SAMPLE + 24 VERIFY + tail '# done cells=24'),
+PROBE channels 6,400 each of ARM-Z1 zwts / ARM-Z2 zwbar / ARM-H
+isohost per run with rounds exactly 0..6399 (the frozen section-4
+row forms), O5 census clean (VERIFY ok rows mismatch=0 18/18 per
+run; 6 forced=8 pipeline-FAIL cells named, never read).  PULL +
+CUSTODY (the s228 precedent shape): host==local raw digests 3/3
+(r01 addce8e9... / r02 591e5026... / r03 212d6ade...), gzip -n
+commit form, canonical aggregate bb57b2ff... re-derived THROUGH the
+committed form; pull-verify-s244.py (sha256 232c396e...) run TWICE
+BYTE-IDENTICAL -> 89 ok / 0 failed (header lines 1-7 + 24 CELL + 24
+VERIFY rows BYTE-EQUAL to the committed c2 reference run-rd1-c2-r01;
+all 345,600 SAMPLE + 57,600 PROBE rows re-rendered byte-equal at
+f32(1000/19.2)).  ONE defective dev attempt kept visible (pull-
+verify-s244-devrun rc 1 TypeError, VERIFIER-side arg-count defect,
+fixed; NONE is evidence -- pull-verify-s244-identity.txt).
+
+THREE-STATE: this row is a MEASUREMENT-CUSTODY slice -- the 3 runs'
+bytes are MEASURED QUANTITIES on ONE named device (aiueos-6600hs,
+Intel BMG G31) under the named instrument (the act's probe build of
+the anv-subgroupsize-batch v2-batch64 family), landed in commit
+custody; the digests/census/byte-identity rows are READINGS of those
+bytes.  EVERY ACT QUANTITY STAYS UNMEASURED: no fresh letter, no
+R_a/R_b distance, no P_Z1, no P_Z2, no branch outcome is computed
+here (the ANALYSIS half's frozen rules R1-R5 execute in a later
+slice; no letter, share or classification appears in any file of
+this diff).  The workgroup rows of kotoba.compiler.accelerator-
+targets stay exactly as ADR-0358 left them (:measured? false rows
+remain provisional -- NOT optimization evidence); this is JUN-59
+instrument-machinery measurement, NOT a workgroup-default
+measurement.  NO vendor optimization exists for Intel (or for any
+vendor) and none follows from these runs.
+
+BAR NON-INTERFERENCE: NO settle-bar-ledger line (gate (f) rc 0,
+grep no-match, ledger sha256 3bb682e4d3a71929968c8bd5ba5a8cb0fea4784
+583e804aabce3fea103b12364 == the s241/s242/s243-recorded value; tail
+row day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED
+median=1137 min=986 flag=none UNMOVED), NO day-slot consumption (the
+act runs are INSTRUMENT channel per the s225 precedent); the bar's
+SETTLED INTERMEDIATE/MIXED verdict unmoved.  RULE 4 unchanged:
+NOTHING MOVES; the committed bracket stays EXACTLY (254,923,
+255,045]; L9 binds at n=254,984 (C2 (c), D3 (v)); the MID-ONLY
+NARROWING CLAIM stays SUSPENDED.
+
+GATES: (e) LIVE -- find docs/evidence/gpu -name '*.sh' -> 0 files rc 0
+(gate-s244-nosh.txt 0 bytes) -- NAMED, NOT HIDDEN (standing drift):
+a docs-WIDE find returns ONE file docs/evidence/spirv-to-wgsl-
+20261028/run-mac-native.sh committed at the chain base by PR #1644
+(JUN-377) OUTSIDE docs/evidence/gpu and OUTSIDE this diff, NOT
+staged, NOT touched; this slice adds NO POSIX .sh anywhere.
+(f) LIVE -- see the BAR row above.  Gates (a)-(d) are not a
+measurement/custody slice's gates (the s225/s228 precedent shape;
+the s197/s209/s225 records): the diff touches NO committed .cljk
+namespace (evidence .py/.txt/.gz only) and no gate-runner code.  The
+FULL run-tests.cljk is NOT re-run this tick: the full suite stands
+RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362)
+outside this diff per the standing captures -- NO green full suite
+claimed.
+
+NOT DONE (s245 carries exactly this list):
+(a) the act's measurement half CONTINUES (STARTED here, NOT
+    FINISHED): sessions m2 and m3 -- the frozen run plan section 5
+    requires the 3 sessions spread over >=2 distinct days (session
+    order and day recorded); m1 = 2026-11-03 UTC (this slice).  Each
+    later session: 3 runs (r01..r03) of the same ARM-K control arm
+    with the probe rows, rounds=6400 warmup=3, its OWN capture
+    custody; the binary pin 2c216ef2... is re-verified at each later
+    session start (the same build runs all 3 sessions -- if the
+    pinned binary is unavailable a rebuild gets NEW first-measured
+    pins recorded by that session and the build change is NAMED, L3
+    live).  QUEUED for s245: act session m2 (a later UTC day --
+    2026-11-04 or later, per the >=2 distinct days requirement).
+(b) standing, not queued until the measurement half lands: the act's
+    ANALYSIS half (rules R1-R5 of protocol.txt section 6 executed
+    fail-closed twice byte-identical over the act's committed run
+    logs; the rules are frozen, the script bytes come with the
+    analysis slice; every act quantity -- fresh letters, P_Z1, P_Z2,
+    branch outcome O1..O5 -- is UNMEASURED until then).
+(c) standing, not queued (carried unchanged): the s216 identity
+    hazard's residual -- the CAUSE of the (a)/(b) sample-shape
+    difference stays UNMEASURED and UNDECIDED until the act's
+    measurement + analysis halves land; the underlying-instrument-
+    state COUNT stays outside (s220 1(b)); at N=75 the s235/s237
+    classifications carry NO noise model and near-neither prevalence
+    needs higher-N readings -- new hardware runs, each with its own
+    freeze; any further counted-day slot (each needs its own freeze)
+    and the cross-day tail-movement row.
+(JUN-55, JUN-59; Linear tracking JUN-499)

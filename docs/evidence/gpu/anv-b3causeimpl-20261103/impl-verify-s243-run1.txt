@@ -1,0 +1,155 @@
+impl-verify s243 -- the act's instrument probe implementation, fail-closed over committed bytes
+scope: implementation + capture only; NO runs; every act quantity UNMEASURED (measurement half = the measuring session on aiueos-6600hs)
+universe: 27 committed c2 run logs (the s234 nine windows) + 3 committed c8 run logs (timestampPeriod discriminator)
+
+ok   S1.1 capture bytes == implementation bytes
+ok   S1.2 implementation is non-empty
+ok   S1.3 manifest bytes row == implementation length
+ok   S1.4 manifest sha256 row == implementation sha256
+ok   S1.5 manifest snapshotPath names the committed capture
+ok   S1.6 manifest channel is INSTRUMENT
+ok   S1.7 manifest asserts no binary built / no runs
+ok   S1.8 family base snapshot length == 27780
+ok   S1.9 family base snapshot sha256 == committed pin
+ok   S1.10 manifest derivedFrom row binds the family base
+ok   S1.11 the historical manifest's own base row == this base pin
+ok   S2.1 frozen protocol length == 16913
+ok   S2.2 frozen protocol sha256 == freeze pin
+ok   S2.3 frozen form present in protocol AND realized by source (zwts ticks=<d>)
+ok   S2.4 frozen form present in protocol AND realized by source (zwbar ticks=<d>)
+ok   S2.5 frozen form present in protocol AND realized by source (isohost raw_ns=<h>)
+ok   S2.6 frozen form present in protocol AND realized by source (SAMPLE)
+ok   S2.7 instrument identity literal in source == the committed c2 header line 1 form
+ok   S2.8 protocol section-1c metadata quote present in the frozen bytes
+ok   S2.9.ROUNDS knob #define ROUNDS = 6400 (the act's frozen set)
+ok   S2.9.WARMUP knob #define WARMUP = 3 (the act's frozen set)
+ok   S2.9.BATCH knob #define BATCH = 2 (the act's frozen set)
+ok   S2.9.BARRIER_N knob #define BARRIER_N = 0 (the act's frozen set)
+ok   S2.9.WORK_MUL knob #define WORK_MUL = 1 (the act's frozen set)
+ok   S2.9.NDIV knob #define NDIV = 1 (the act's frozen set)
+ok   S2.9.SEED knob #define SEED = 20261027u (the act's frozen set)
+ok   S2.9.N_ELEMENTS knob #define N_ELEMENTS = 1000003u (the act's frozen set)
+ok   S3.1 frozen placement order in the round loop (Z1/Z2 rows -> ARM-K stream -> H row at round end)
+ok   S3.2 Z1 pair: two vkCmdWriteTimestamp calls back to back, SAME stage, queries 2 then 3
+ok   S3.3 Z1 pair has NO command between the two timestamps
+ok   S3.4 Z2 pair: TOP_OF_PIPE q4 then BOTTOM_OF_PIPE q5
+ok   S3.5 Z2 has exactly ONE vkCmdPipelineBarrier and no other command between its timestamps
+ok   S3.6 Z2 barrier is empty (zero memory barriers, zero access masks, TOP_OF_PIPE -> BOTTOM_OF_PIPE)
+ok   S3.7 ARM-H times with CLOCK_MONOTONIC_RAW (the frozen host clock)
+ok   S3.8 ARM-H bracket is submit->completion by BUSY POLLING a fence
+ok   S3.9 ARM-H submits exactly ONE dispatch (batch=1)
+ok   S3.10 ARM-H reading-cell selection is fail-closed (op=sum wg=128 forced=16)
+ok   S3.11 ARM-K host_ns keeps the committed CLOCK_MONOTONIC submit->completion form
+ok   S3.12 ARM-K bracket byte-preserved (BATCH dispatches, BARRIER_N interleave inert at 0, TOP_OF_PIPE -> BOTTOM_OF_PIPE)
+ok   S3.13 per-round order algorithm byte-preserved (lcg_state = SEED + round, in-place FY)
+ok   S3.14 knob formula in source (n = floor(N_ELEMENTS * work_mul / ndiv))
+ok   S3.15 query pool carries 6 queries (K 0-1, Z1 2-3, Z2 4-5)
+ok   S3.16 source docstring pins the frozen protocol sha256 and the family base sha256
+ok   S3.17 source names the c2-source-absence reconstruction residual
+ok   S3.18 header knob-line printf form present (the committed c2 header form)
+ok   S3.19 CELL row printf form byte-preserved from the family base
+ok   S3.20 VERIFY row printf forms byte-preserved from the family base
+ok   S3.21 tail row form byte-preserved ('# done cells=%d')
+ok   S4.1 committed c2 header line 1 == the source's identity literal
+ok   S4.2 committed c2 knob line parses under the source's header form
+ok   S4.3 committed c2 knob line RE-RENDERED from parsed fields via the source's header form is byte-equal
+ok   S4.4 all 24 committed CELL rows re-render byte-equal via the source's CELL form
+ok   S4.5 all 24 committed VERIFY rows re-render byte-equal via the source's VERIFY forms
+ok   S4.6 act cases.txt data lines == committed batch64 cases.txt data lines (24)
+ok   S4.7 cases.txt fields == committed CELL rows (spv/op/wg/forced per idx)
+ok   S4.8 knob formula n == floor(1000003 * work_mul / ndiv) holds in EVERY committed knob-bearing run-log header (1644 logs)
+ok   S4.9 the committed c8 rows discriminate EXACTLY ONE timestampPeriod float (f32(1000/19.2) == 52.08333206176758; f32(52.083) refuted at the high-tick rows)
+ok   S4.10.s158-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s158-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s158-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s158-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s158-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s158-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s158-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s158-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s158-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s169-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s169-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s169-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s169-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s169-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s169-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s169-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s169-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s169-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s185-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s185-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s185-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s185-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s185-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s185-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s185-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s185-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s185-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s197-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s197-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s197-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s197-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s197-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s197-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s197-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s197-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s197-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s209-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s209-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s209-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s209-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s209-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s209-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.s209-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.s209-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.s209-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd1-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd1-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd1-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd1-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd1-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd1-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd1-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd1-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd1-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd2-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd2-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd2-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd2-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd2-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd2-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd2-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd2-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd2-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd3-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd3-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd3-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd3-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd3-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd3-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd3-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd3-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd3-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd4-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd4-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd4-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd4-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd4-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd4-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.act-rd4-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.act-rd4-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.act-rd4-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.c8-rd1-r01 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.c8-rd1-r01 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.c8-rd1-r01 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.c8-rd1-r02 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.c8-rd1-r02 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.c8-rd1-r02 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.10.c8-rd1-r03 SAMPLE rows re-render byte-equal via the source's SAMPLE form at PERIOD=52.08333206176758 (115200 rows)
+ok   S4.11.c8-rd1-r03 per-round cell order REPRODUCED by the source's algorithm (seeded FY, lcg_state=SEED+r, in-place; 6400 rounds, 18 ok cells)
+ok   S4.12.c8-rd1-r03 row census (8 '#' lines incl. the tail, 24 CELL, 115200 SAMPLE, 24 VERIFY, tail '# done cells=24')
+ok   S4.13 universe census: 30 committed run logs, 3,456,000 SAMPLE rows re-parsed from committed bytes
+ok   S4.14 NO run log / no '*.gz' in the act's evidence dir (implementation + capture only, NO runs)
+
+# impl-verify s243 (impl-verify-s243.py): 149 ok / 0 failed

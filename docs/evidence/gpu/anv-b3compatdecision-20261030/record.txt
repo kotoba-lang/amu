@@ -1,0 +1,205 @@
+JUN-59 session 109 -- THE --COMPAT POST-APPEND DESIGN DECISION
+(a DESIGN SLICE; NO hardware runs, NO builds, NO compiles, NO GO
+stamp, NO host writes, NO day-slot consumption, NO ledger line, NO
+tool byte changed, NO .cljk namespace touched).  Row: the s108
+carry-forward's item (a) -- the s106 record section 11(a) decision
+left PROPOSED: how the measuring record re-validates parser
+agreement post-append now that ledger-prego.py --compat refuses.
+
+1. ROW AND HONEST STATES: this row is ONE design decision and it
+   lands as ACCEPTED DESIGN ONLY (this record + the ADR-0355 dated
+   note) -- NOT implemented (no tool byte of the frozen
+   ledger-prego.py / reconcile-prego.py changes; the diff adds only
+   this evidence dir and the ADR note) and no longer merely
+   PROPOSED.  The implementation the decision specifies is spawned
+   as its own named row(s) in section 6, UNQUEUED.  This is
+   settling-bar validation machinery design, not a device
+   measurement; no vendor optimization exists for any vendor.
+
+2. THE PROBLEM (established at s106; re-verified LIVE this tick,
+   section 4 D1): the s99 adoption contract's clause -- "the W6
+   session re-runs --compat in its own record" -- is structurally
+   unsatisfiable after the first qualifying append.  The frozen
+   ledger-prego.py --compat (anv-b3w6ledgerrego-20261029/, frozen
+   s97; source excerpts tool-source-excerpt.txt) asserts that the
+   live settle-bar-ledger.txt day= session order EQUALS the frozen
+   nine (WIN9) exactly; the s105 append (landed at s106) made the
+   ledger ten rows, so every --compat run refuses fail-closed
+   (REFUSED-LEDGER-SHAPE, exit 2).  ANY future qualifying append
+   repeats this.  The refusal is a SHAPE GUARD, not a parser
+   disagreement -- but the clause's proof can only run green BEFORE
+   the first append, and that time is gone.
+
+3. THE DECISION (ACCEPTED -- design only until section 6 lands):
+
+   (a) STEADY STATE -- the --compat cohort assertion is corrected
+       from whole-ledger equality to a COHORT-PREFIX assertion and
+       lands as a SUPERSESSION (new frozen bytes under a new record
+       dir with its own freeze record; the s97 bytes are NEVER
+       edited, the s100 supersession convention):
+       - ASSERT: the live ledger's day= rows' first N (N = |WIN9| =
+         9) sessions equal WIN9's session order exactly (the ledger
+         is append-only chronological, so the frozen cohort is by
+         construction exactly the prefix); every cohort row
+         re-derives byte-exact against its want row exactly as
+         today; EVERY day= row (cohort or later) must satisfy the
+         frozen line grammar fail-closed; rows past the cohort are
+         shape-validated but NOT re-derived by --compat (each later
+         session's line is its own record's business; extending the
+         frozen cohort is a separate decision, NOT queued).
+       - FAIL-CLOSED RETAINED: a dropped, renamed, altered or
+         reordered cohort row still REFUSES/MISMATCHES; a malformed
+         day= row anywhere in the file REFUSES.
+       - THE SUPERSESSION SET (one implementation slice, or two):
+         ledger tool v2 (emit name-gate ledger-s<NN>.py preserved)
+         + reconcile driver v2 (its hardcoded LEDGER stage path
+         points at v2) + the adoption-manifest slot update under
+         the same freeze + v2 self-test with the new rows: the
+         post-append shape GREEN (the new positive), dropped cohort
+         row REFUSED, altered cohort row MISMATCH, reordered cohort
+         REFUSED, malformed appended row REFUSED.
+
+   (b) W7 INTERIM (ACCEPTED; in force for the W7 measurement
+       record ONLY IF the section-6 supersession has not landed and
+       verified before the W7 measurement session starts -- the
+       first session starting at/after 2026-10-31T00:00:00Z per the
+       s85 freeze; if the supersession has landed and verified,
+       W7 simply runs it and this interim does not apply).  The W7
+       record's parser-agreement step then:
+       - runs the frozen chain's --compat over the live ledger and
+         records its REFUSED-LEDGER-SHAPE output (twice
+         byte-identical) as the NAMED structural fact -- the s97
+         tool's designed whole-ledger shape check, NOT a parser
+         disagreement and NOT a validation failure;
+       - verifies mechanically that the live ledger's cohort rows
+         are byte-identical to the s97 pin's want rows (the
+         append-only invariant for the frozen cohort; the exact
+         check run at section 4);
+       - carries the s99 committed pin (the pre-append --compat
+         pair, anv-b3w6reconcilerego-20261029/, over the same
+         immutable committed windows) + the s102 adoption-manifest
+         byte-digests of the adopted copies as the parser-agreement
+         proof -- labeled CITED (executed at s99 over inputs proven
+         unchanged), never claiming a post-append green --compat.
+
+4. PREMISE EVIDENCE (executed this tick; every run twice, every
+   pair byte-identical; captures in this dir):
+   D1 (compat-live-refusal-run1/2.txt, 203 bytes both, stderr 0):
+   the frozen tool --compat against the LIVE ledger, rc 2 twice --
+   "REFUSED-LEDGER-SHAPE: committed ledger sessions [s31..s73,
+   s105] != the frozen nine" -- the structural fact is live today.
+   COHORT IDENTITY (cohort-identity-check-run1/2.txt): the live
+   ledger's ten day= rows; WIN9 is the EXACT PREFIX (True); the one
+   post-cohort row is s105; all nine cohort rows byte-identical to
+   the s97 committed pin's want rows (9/9 True).
+   D2 (compat-scratchcohort-run1/2.txt, 3,038 bytes both,
+   stderr 0, rc 0): the frozen tool BYTES (cmp-identical copy) run
+   against a COHORT-ONLY ledger stand-in (the live ledger minus
+   non-cohort day= lines, comments kept; nine WIN9 window dirs
+   symlinked read-only to the committed dirs) -- TOTAL: 9 rows, 0
+   mismatched | day-src derived 7 quoted 2 -- and the output is
+   BYTE-IDENTICAL to the committed s97 pin
+   (ledger-prego-compat-run1.txt, cmp exit 0).  THE PREMISE IS
+   EXECUTED-VERIFIED: the appended row is not an input to any
+   cohort quantity; the whole-ledger equality is the only assertion
+   it trips; with the cohort-only shape the frozen bytes reproduce
+   the s97 proof exactly.  The scratch staging tree (a scratch/
+   tree, created/run/deleted this tick, never committed) exists in
+   this capture ONLY as decision evidence -- it is NOT adopted as
+   contract (see section 5).
+
+5. REJECTED ALTERNATIVES (named):
+   - The staged-cohort scratch stand-in AS THE STANDING MECHANISM:
+     rejected -- a per-record staging ritual forever, with its own
+     provenance burden, unrehearsed-by-construction under slot
+     pressure; the one-time supersession removes the need.  Retained
+     as an UNQUEUED option for any record that wants an executed
+     cohort run before the supersession lands.  NAMED: D2 (section
+     4) is exactly this mechanism executed ONCE here to ground the
+     decision's premise -- executing it in a decision record does
+     not make it the W7 contract.
+   - Keeping whole-ledger equality and permanently carrying pins:
+     rejected as the steady state -- it permanently degrades every
+     future record's parser-agreement evidence from executed to
+     cited after the first append, and the assertion itself
+     conflates cohort integrity with legitimate append-only growth
+     -- that conflation is the design defect being corrected.
+   - Re-ordering the W7 record to re-run --compat BEFORE its own
+     append: rejected as insufficient -- the ledger already holds
+     the s105 row before W7 exists; the shape check fails on ANY
+     post-cohort row regardless of W7's append timing (s106's
+     structural statement).
+
+6. SPAWNED IMPLEMENTATION ROWS (UNQUEUED; each its own tick):
+   (i) the section-3(a) supersession freeze + implementation +
+       self-test/negative rows + adoption-manifest update, verified
+       through the standing gate set; (ii) the W7 measurement half
+       (s85 freeze, 2026-10-31 day slot) applying 3(b) or the
+       superseded chain, whichever is in force at its session
+       start.
+
+7. VERIFIED (real tool output, the standing gate set, byte-compared
+   to the s88 committed pins in anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test 2649/0 17,925 bytes ==
+       pin (cmp exit 0), .err 0;
+   (b) scoped GPU gate GREEN 'Ran 123 tests containing 12162
+       assertions. 0 failures, 0 errors.' run 1 AND run 2 == each
+       other == both s88 pins (919 bytes, cmp exit 0 x3), .err 0
+       (scratch runner scratch/scoped-gpu-gate.cljk, the eight
+       GPU-owned test namespaces, created/run/deleted this tick,
+       never committed);
+   (c) FULL run-tests.cljk RUN LIVE exit 1 RED AT BASE kotoba.form
+       ('Could not find namespace: kotoba.form', ADR-0362, outside
+       this diff -- this diff touches NO .cljk namespace), .err 879
+       bytes == pin, stdout 0 bytes == pin -- NO green full suite
+       claimed;
+   (d) settle-bar evaluator --self-test 38/0 3,590 bytes == pin +
+       ledger eval pair twice BYTE-IDENTICAL (907 bytes) == the
+       s106 post-append pins (cmp exit 0 x2) -> VERDICT: PENDING
+       3/4 (counted day=2026-10-28 session=s31;
+       counted day=2026-10-29 session=s73; counted day=2026-10-30
+       session=s105);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0.
+
+8. THE BAR: design session -> NO hardware runs -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD, git diff
+   --exit-code rc=0 -- the emit path never ran).  The bar stays
+   PENDING 3/4 and settles nothing.
+
+9. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor); this is settling-bar validation machinery
+   design, not a workgroup-default measurement.
+
+10. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+    checked at tick start and again immediately before this push
+    (state-s109.txt); chain PRs = exactly ONE (#1665
+    bot/amu-gpu-chain-20261028-4, MERGEABLE -- the one this commit
+    pushes to).
+
+11. NAMED, NOT HIDDEN: (a) the decision's honest state is ACCEPTED
+    DESIGN ONLY -- a reader must not cite section 3 as implemented
+    until section 6(i) lands with code + tests; (b) D2's stand-in
+    output being byte-identical to the s97 pin proves the PREMISE
+    (cohort invariance to appends), not the supersession's
+    correctness -- 6(i) carries its own tests; (c) the kbb engine's
+    standing "2 dep(s) are not :local/root" warning reaches no
+    capture (.err 0 wherever the pins are 0).
+
+12. Carry-forward to s110: (a) the section-6(i) supersession
+    freeze + implementation (the first unblocked row; it makes the
+    W7 interim unnecessary if it lands before the W7 session
+    starts); (b) the W7 measurement half (s85 freeze; the
+    2026-10-31 day slot; section 3(b) governs its parser-agreement
+    step); (c) any further counted-day slot (its own
+    pre-registration freeze) and a cross-day tail-movement row (not
+    queued).
+
+Evidence: docs/evidence/gpu/anv-b3compatdecision-20261030/ (this
+record + D1/D2/cohort-identity/tool-source-excerpt captures + the
+s109 gate/bar captures + state-s109.txt) + the ADR-0355 dated
+note.  (JUN-55, JUN-59; Linear tracking JUN-499)

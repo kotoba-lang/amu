@@ -1,0 +1,40 @@
+2026-10-30T01:58:28Z
+== session 108 T20 ANALYSIS state capture ==
+-- session start stamp (cron conversation start; first date -u this tick) --
+2026-10-30T01:53:05Z
+-- the s107 carry-forward item (a) taken this tick --
+the T20 ANALYSIS half (the s88 freeze + the s93 pre-build):
+analysis-s108.py == analysis-t20-prego.py byte-identical
+(53,387 bytes, sha256 f6c81ef15fd441efba9acbda7e0e178aadf9e3a220c697286b947329330ee076,
+cmp exit 0); full mode run twice BYTE-IDENTICAL ->
+publication-s108.txt (10,354 bytes, sha256
+2e5938ccab97440897380774d7305097607d19c1457341be1a7624b38b532402)
+-> JOINT T20 = (b) NOT-REPLICATED (named failing: k=16 (b)
+DIRECTION-CONSISTENT-NOT-SIGNIFICANT; k=32 (a)
+ASYMMETRY-LEFT-GREATER-REPLICATED p 0.0019531250 stands alone)
+-- standing gate set (byte-compared to the s88 pins in
+anv-b3w6tailrep-20261030/) --
+(a) classify --self-test 2649/0, 17,925 bytes == pin, .err 0
+(b) scoped GPU gate GREEN 123 tests / 12162 assertions / 0 failures
+    / 0 errors, run 1 == run 2 == both pins (919 bytes, cmp 0 x3)
+(c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form, .err 879
+    bytes == pin, stdout 0 bytes == pin -- NO green full suite
+(d) evaluator --self-test 38/0 == pin (3,590 bytes); ledger eval
+    pair twice byte-identical (907 bytes) == the s106 post-append
+    pins (cmp 0 x2) -> VERDICT: PENDING 3/4
+(e) find docs/evidence/gpu -name '*.sh' -> 0
+-- bar / ledger --
+settle-bar-ledger.txt byte-identical to HEAD (git diff --exit-code
+rc=0 -- the emit path never ran); NO reading, NO ledger line, NO
+day-slot consumption
+-- blocker-first: open kotoba-lang/amu PRs with headRefName startswith hermes/ --
+check 1 (tick start, 2026-10-30T01:53:05Z): 0
+check 2 (immediately before push, 2026-10-30T01:59:28Z): 0
+-- chain PRs (must be exactly ONE) --
+[{"headRefName":"bot/amu-gpu-chain-20261028-4","mergeable":"MERGEABLE","number":1665}]
+-- tree state --
+docs/evidence/gpu/settle-bar-ledger.txt: unchanged (rc=0 above)
+find docs/evidence/gpu -name '*.sh' -> 0
+scratch/scoped-gpu-gate.cljk: created, run, deleted this tick
+(never committed); scratch/ and deps.edn remain untracked and are
+NOT staged by this commit

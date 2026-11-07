@@ -1,0 +1,193 @@
+JUN-59 session 117 record (the W7 LEDGER-LANDING session -- the s116
+record's named carry-forward (a): THE APPEND TAIL, the s105/s106
+split completed: the standing gate set, THEN the settle-bar-ledger.txt
+APPEND of the byte-pinned s113 line, the post-append evaluator pair,
+reconcile-s113.py --line, and the v2 --compat GREEN post-append
+re-run behind the fail-closed adoption check). ROW: complete the
+settle bar's FOURTH counted-day landing (day=2026-10-31,
+session=s113). One finding (section 6). The named tail (a) is
+COMPLETE; (b) stays not-queued (section 11).
+
+1. GATES (the standing set, real runs this tick, byte-compared to the
+   s88 committed pins in anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture 17,925 bytes == s88 pin
+       (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk
+       (accelerator-targets / -variants / -test / -pipeline /
+       -subgroup-reduce / -simdgroup-reduce / -spirv /
+       -spirv-compile-test), same engine and classpath; created,
+       run twice, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin
+       == the s88 run-2 pin (cmp exit 0 x3, 919 bytes), stderr 0
+       bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO committed .cljk namespace). Capture .err
+       879 bytes == s88 pin (cmp exit 0); stdout 0 bytes == pin. NO
+       green full suite is claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == s88 pin;
+       pre-append ledger eval twice, exit 0, run 1 == run 2 == the
+       s106 post-append pin (907 bytes, cmp exit 0) -> VERDICT:
+       PENDING 3/4 (the pre-append state, recorded before the
+       append).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 entries (re-checked
+       after the append: 0).
+   (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-ledger.txt
+       rc 0 before the append (== HEAD).
+   With the standing set verified byte-equal to the pins, the s80
+   section-5 rule ("append ONLY after the standing gate set
+   verifies") is satisfied and the append gate opens.
+
+2. THE APPEND (the bar's data movement this tick): the s113 emitted
+   line -- byte-pinned at s116 (ledgerline-s116-run1.txt ==
+   ledgerline-s116-run2.txt, 83 bytes, sha256 c6698b6bebed9fae...,
+   re-verified this tick before the append) -- appended VERBATIM
+   (cat, no edit) to docs/evidence/gpu/settle-bar-ledger.txt:
+       day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED median=1137 min=986 flag=none
+   git diff exactly ONE insertion, nothing else changed
+   (append-s117-diff.txt; git diff --stat: 1 file changed, 1
+   insertion(+)). The pre-append bytes are the committed HEAD bytes.
+
+3. THE POST-APPEND EVALUATOR PAIR (the evaluator is the ONLY verdict
+   source): settle-bar-eval.py over the appended ledger, exit 0,
+   run 1 == run 2 BYTE-IDENTICAL (1,006 bytes), .err 0 bytes both ->
+   VERDICT: SETTLED INTERMEDIATE/MIXED -- counted day=2026-10-28
+   session=s31 class=INTERMEDIATE/MIXED median=1142 min=985;
+   counted day=2026-10-29 session=s73 median=1131 min=998; counted
+   day=2026-10-30 session=s105 median=1133 min=993; counted
+   day=2026-10-31 session=s113 median=1137 min=986; the seven
+   same-day descriptive rows unchanged. NAMED, NOT HIDDEN: the s116
+   carry-forward wrote "expected PENDING 4/4" -- that expectation
+   DOES NOT REALIZE and is corrected here, not silently: the frozen
+   evaluator's check order (settle-bar.txt V1..V4) prints PENDING
+   (V4) only BELOW four counted readings; at four counted the order
+   reaches V3, and all four counted readings being one class, every
+   median in band vs the frozen refs 1,129/1,132/1,131 and mutually
+   within 5% (max/min - 1 = 1142/1131 - 1 = 0.97%), the verdict is
+   SETTLED INTERMEDIATE/MIXED. The carry-forward's own instruction
+   ("do not assert it before the evaluator prints it") is followed:
+   section 6 quotes the evaluator's printed verdict, it does not
+   assert one. The 2026-10-31 day slot is CONSUMED by the s113
+   qualifying reading (the first qualifying reading of 2026-10-31
+   in ledger order; no other qualifying reading of that day exists).
+
+4. THE FRESH-PAIR RECONCILIATION (the adopted v2 reconciler, its
+   named post-append duty): reconcile-s113.py --line
+   publication-s113.txt ../settle-bar-ledger.txt s113 (run from the
+   W7 window dir), exit 0 twice BYTE-IDENTICAL (472 bytes), .err 0
+   -- publication rows parsed 2, pub-rows-agree=True (1137
+   986..1459 INTERMEDIATE/MIXED), ledger line "day=2026-10-31
+   class=INTERMEDIATE/MIXED median=1137 min=986 flag=none", X
+   median pub=1137 line=1137 MATCH, X min pub=986 line=986 MATCH,
+   X class MATCH -> RECONCILE VERDICT: CONSISTENT. The reconciler
+   self-test: reconcile-s113.py --self-test exit 0 twice
+   BYTE-IDENTICAL (711 bytes) == the s111 v2 pin
+   (anv-b3ledgersupersede-20261030/reconcile-v2-selftest-s111.txt,
+   cmp exit 0), "--self-test TOTAL 17 assertions passed 0 failed",
+   .err 0.
+
+5. THE V2 --COMPAT GREEN POST-APPEND RE-RUN (behind the fail-closed
+   adoption gate; the s110/s115 adoption contract): adoption-
+   check-prego.py --check docs/evidence/gpu/anv-b3ledgersupersede-
+   20261030/adoption-manifest-v2.txt . from the worktree root BEFORE
+   any adoption copy (none needed this tick -- the adopted *-s113.py
+   copies are already digest-equal to the manifest pins; the check
+   is the gate for running the v2 chain): VERDICT CONSISTENT
+   (matched 27, mismatched 0) twice BYTE-IDENTICAL (6,050 bytes ==
+   the s116 execution's pin), .err 0 -- the gate opened.
+   ledger-prego-v2.py --compat over the LIVE post-append eleven-row
+   ledger: exit 0 twice BYTE-IDENTICAL (3,241 bytes), .err 0 -- the
+   nine frozen cohort rows re-derive MATCH (want values PARSED from
+   the committed settle-bar-ledger.txt bytes, never transcribed),
+   "POST-COHORT: 2 row(s) shape-validated, not re-derived: s105
+   s113", "TOTAL: 9 rows, 0 mismatched | day-src derived 7 quoted
+   2". reconcile-s113.py --compat (the chain) over the same live
+   ledger: exit 0 twice BYTE-IDENTICAL (3,595 bytes), .err 0 -- all
+   seven stages OK ("STAGE ledger-prego-v2.py --compat rc=0 rows=9
+   -> OK"), "TOTAL: stage rows 7 failed 0 | cross rows 31 mismatched
+   0", RECONCILE VERDICT: CONSISTENT. The s106-named structurally-
+   unsatisfiable clause ("the measuring session re-runs --compat in
+   its own record") is SATISFIED in its superseded v2 form -- the
+   COHORT-PREFIX assertion holds after the second qualifying append;
+   the s109 interim is NOT cited as governing (superseded by the
+   s110/s111 landing).
+
+6. FINDING -- THE ANCHOR-CLASS SETTLING BAR SETTLES
+   INTERMEDIATE/MIXED (the bar's row question, answered by the
+   frozen evaluator over four counted days): the frozen class of
+   the (1024,4033) anchor knob pair at n=253,906, B=3 at the frozen
+   section-4 threshold is SETTLED to INTERMEDIATE/MIXED
+   (settle-bar.txt V3): four COUNTED readings from four distinct
+   UTC days (2026-10-28 s31 / 2026-10-29 s73 / 2026-10-30 s105 /
+   2026-10-31 s113), all classifying INTERMEDIATE/MIXED, every
+   median (1,142 / 1,131 / 1,133 / 1,137) in band vs the frozen
+   refs and mutually within 5%. WHAT THIS SETTLES (the frozen
+   scope, settle-bar.txt): ONLY that class -- it does NOT narrow
+   the flip bracket (252,604, 253,906], does NOT interpolate
+   between grid points, does NOT judge the (2048,8066) twin, does
+   NOT touch any Rule 4 row or :measured? flag, and claims NO
+   causal mechanism. Per the freeze, a SETTLED class re-opens the
+   bisect only through a NEW pre-registered cut session (whose
+   direction depends on the settled class -- named there, not
+   here; NOT queued this tick). Every number in this section is
+   the evaluator's printed output or arithmetic on it (1142/1131
+   - 1 = 0.97%, python3); no value here is unmeasured.
+
+7. NAMED, NOT HIDDEN: (a) my own first --line invocation pair
+   redirected its captures to a wrong path depth
+   ('../../anv-b3w7ledgerappend-20261031/...' from the W7 window
+   dir -- the append dir is a sibling, '../'); bash failed at the
+   redirect before the tool ran ("No such file or directory",
+   exit 1 -- no capture existed and none was overwritten);
+   corrected argv ran clean (section 4); no tool defect; (b) the
+   scoped-gate scratch runner was created, run twice, deleted this
+   tick (never committed; scratch/ untracked); (c) the kbb
+   engine's standing "2 dep(s) are not :local/root" warning
+   reaches no capture (.err 0 bytes wherever the pins are 0).
+
+8. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor). This is the settling bar's
+   ledger machinery and its frozen class verdict on the ANV host,
+   not a workgroup-default measurement; the settled class is the
+   bar's own frozen threshold class, not a vendor row.
+
+9. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked at tick start (2026-10-31T02:23:47Z, prlist-s117-
+   start.json) and again immediately before the commit+push
+   (timestamp in state-s117.txt); chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4 -- the one this commit pushes to).
+
+10. DOUBLE-RUNS: every derived output this tick ran twice and the
+    pairs are byte-identical (scoped gate 1/2, evaluator pre 1/2,
+    evaluator post 1/2, --line 1/2, --self-test 1/2, adoption
+    1/2, ledger --compat 1/2, reconcile --compat 1/2); the gate
+    captures compare byte-equal to committed pins.
+
+11. THE BAR STATE (evaluator output only): SETTLED
+    INTERMEDIATE/MIXED. The 2026-10-31 day slot is CONSUMED (first
+    qualifying reading, s113). Carry-forward to s118: (a) the
+    V3-named bisect re-open -- a NEW pre-registered cut session
+    (NOT queued; its own freeze required; its direction depends on
+    the settled class); (b) any further counted-day slot (its own
+    pre-registration freeze -- the verdict is over the FIRST four
+    counted readings and later counted days do not move it) and
+    the cross-day tail-movement row (not queued). NO queued row
+    remains: s118 takes a row only if one is queued or frozen,
+    else stands down.
+
+Evidence: docs/evidence/gpu/anv-b3w7ledgerappend-20261031/ (this
+record + state-s117.txt + the s117 gate/eval/append/reconcile/
+adoption/compat captures) + the W7 record dir
+anv-b3w7daybar-20261031/ + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)

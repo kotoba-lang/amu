@@ -1,0 +1,226 @@
+JUN-59 session 101 -- THE W6 FRESH-WINDOW CENSUS-CHECK PRE-BUILD
+(the fresh-window "every published integer cross-checked" duty --
+the NAMED gap session 100 left QUEUED ("derivation-census-prego.py
+is --compat-only and has NO w6 mode -- the fresh-window 'every
+published integer cross-checked' duty is a NAMED gap (queued)");
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line; the W6
+measurement half REMAINS day-slot-gated behind the
+2026-10-30T00:00:00Z slot -- this tick runs
+2026-10-29T19:16Z-19:4xZ UTC, ~4.5h before it -- STARTED, NOT
+FINISHED).
+
+PROVENANCE, NAMED NOT HIDDEN (the s92/s100 precedent):
+fresh-census-prego.py (draft: 1,199 lines / 49,610 bytes / sha256
+ca2ee86aefd9a9f0ee99b2e97145714a946fe2e73398cf4d0affc47e72667cfe)
+was DRAFTED by an interrupted tick of this same job (file created
+2026-10-29T19:13Z, ~3 minutes before this tick began; never run to
+completion -- no capture existed and the draft's --self-test died
+on its own first execution below) and COMPLETED by this
+continuation tick (review of all 1,217 final lines, the defect
+fixes, every run in sections 2-3, the gates, this record and the
+commit).  Final file: 1,217 lines / 50,203 bytes / sha256
+0d9ffc37d847dcea70fa57132e9010aa8a519bd3a3f7824e15489ac2dc0a14a0.
+
+1. FINDING (verified by real tool output): the fresh-window "every
+   published integer cross-checked" duty now EXISTS as machinery.
+   fresh-census-prego.py closes the last un-machinery'd W6 record
+   surface: at the W6 window the session publishes TWO artifacts
+   from the same fresh logs (publication-s<NN>.txt from the
+   reading pair, the settle-bar-ledger line from the emitter) and
+   s99's reconcile-prego.py --line checks the pair AFTER the
+   append -- but nothing checked the fresh publication's OWN
+   integers against the fresh run logs.  --w6 <publication>
+   <fresh-window-dir> [OUT] re-derives EVERY published integer of
+   the publication body (sections 1-6 claim rows) from the six
+   windows' run logs plus the named committed want sources
+   (publication-s73.txt / settle-bar.txt / protocol.txt -- parsed
+   from committed bytes, never transcribed) in two-way rows
+   (published = find/split-extracted from the publication bytes;
+   census = re-derived here) and enforces COVERAGE: every digit
+   run of the body must lie in a claim span or a NAMED structural
+   span (section B rows), fail-closed -- an unparsed body line, an
+   unclaimed digit run or a want-source parse failure is a hard
+   error / INCONSISTENT verdict, never a silent pass.  INDEPENDENCE
+   CONTRACT (the census lineage's side, frozen at s90): NO re
+   module (split()-based k=v run-log tokenising, find/split
+   publication parsing -- reading-prego-fixed.py parses with
+   re.compile regexes and imports NO numpy); estimators on the
+   numpy np.partition kth paths CROSS-CHECKED IN-LOOP against
+   pure-Python sorted() explicit order statistics (section D); NO
+   RNG, no clock; submits NOTHING to any GPU.  The header is
+   outside the digit-coverage body (provenance prose) and carries
+   two explicit identity claims instead (session number vs the
+   producing script name; the freeze stamp vs protocol.txt).
+
+   DEFECTS FOUND BY FIRST EXECUTION, FIXED AND NAMED (corrected at
+   source before the captures below, the s96 precedent; the draft
+   had never run -- every defect was live in the draft bytes):
+   (a) ENGINE WRONG: the note-line branch tested "ok-map cell '"
+       (quote after) while its body parsed "'ok-map cell " (quote
+       before) -- unreachable on the real note line, ParseError on
+       the first execution; condition corrected.
+   (b) ENGINE WRONG: the sec2 heading's "C1" digit registered no
+       coverage span (the coverage census would flag it on every
+       publication).
+   (c) ENGINE WRONG: same for the "c2 class:" label digit.
+   (d) ENGINE WRONG: the c8 delta extraction spanned from the
+       line's FIRST "(" (the c8 cell key) -- P["delta"] would have
+       parsed the whole "(sum,128,S=16) ... (0.63" substring and
+       the delta claim could never match; it now rfinds the "("
+       before "% delta".
+   (e) ENGINE WRONG: the "C1 branch:" label digit unregistered.
+   (f) ENGINE WRONG: the "c8 (" label digit unregistered.
+   (g) ENGINE WRONG: the host-dates branch parsed the distinct
+       COUNT from the date text after "distinct: " (and ran off
+       the end of the line on the real shape) and left the printed
+       count digit unclaimed; rewritten to read the count before
+       " distinct:" and the date list after it.
+   (h) ENGINE WRONG: parse_priors dropped the "(NEW)" row (its
+       tag test required pure digits; "s73 (NEW)" fails) although
+       its own fixture expects s73 in the want map and run_w6
+       asserts the five-tag set -- the " (NEW)" suffix is now
+       stripped before the tag test.
+   (i) ENGINE WRONG: the sec1 row spans were stored in the parsed
+       dict but NEVER registered in the claim-span map -- the
+       coverage census flagged every sec1 digit and run_w6's own
+       span lookup ([i for i in cs if span in cs[i]]) could not
+       resolve; registration added.
+   (j) ENGINE WRONG: the named-cell "raw idx" span ran to end of
+       line, so a trailing rogue digit sat INSIDE the claim span
+       and the coverage detector could not fire there; tightened
+       to the digit run (the fixture's stated intent).
+   (k) FIXTURE WRONG: "digit_runs mixed" miscounted its expected
+       spans ("1131" at (20,24), not (16,20)).
+   (l) FIXTURE WRONG: "rogue digit detected" expected absolute
+       mock line 10; the engine reports body-relative indices
+       (the named-cell line is body line 3).
+   (m) ENGINE WRONG: run_w6 wrote its report to sys.argv[3] (the
+       REQUIRED fresh-window-dir argument) instead of the optional
+       OUTPUT-PATH at argv[4] -- the first execution silently
+       created a junk file named after the window dir (removed);
+       output now lands at argv[4].  One cosmetic no-behaviour
+       edit (tag extraction made self-contained) is not counted.
+
+2. VERIFIED (real tool output, all runs this tick):
+   (a) fresh-census-prego.py --self-test: exit 0, TOTAL 51
+       assertions passed 0 failed (digit-run extraction, dual
+       estimators, class boundaries, every want-source parser on
+       synthetic bytes, the closed body grammar incl. the
+       alternate shapes branch (b) / False rows / multi-day census
+       / NOT-SINGLE-DAY / FLOOR-CAPTURED classes, fail-closed
+       unparsed line, span coverage with a rogue digit, claim
+       mismatch detection, the ok-map note and sec6/sec3
+       relations; MOCK values are FIXTURES, never measurements;
+       the battery reads NO committed window); run 1 AND run 2
+       BYTE-IDENTICAL (7,400 bytes, sha256
+       0f28cb04b5ce66cfb45175a06ae2a0f5437183e57eb982cb7f9b875d18daf369
+       both, cmp exit 0), stderr 0 bytes both.
+   (b) --w6 REHEARSAL -- REHEARSAL STAND-IN (the s100
+       convention: the COMMITTED W5 window
+       anv-b3w5xdayrep-20261029 stands in for the W6 window and
+       the committed s100 rehearsal publication
+       anv-b3w6censuscheckrego-20261029/rehearsal-fixed-run1.txt
+       is the publication input; EVERY rehearsal number is a
+       FIXTURE, NEVER a measurement): exit 0 twice
+       BYTE-IDENTICAL (9,240 bytes, sha256
+       6f4358597d13101a8c2f2ce22e145e3882b8f9ab5bb7d471f130a93d2ccba12f
+       both, cmp exit 0), stderr 0 bytes both.  Section A: 66
+       claim rows, 0 mismatched -- header identity (session 1001
+       == reading-s1001.py; freeze stamp 2026-10-29T04:23:51Z ==
+       protocol.txt), six sec1 rows (runs 78 / vmis 0 / flags),
+       named-cell key (max,128,S=default) / ok-map cell 5 / raw
+       idx 7 / note relation 5/6, sec2 (FLOOR / floor band 31..32
+       / c8 (sum,128,S=16) 32709 vs committed 32915 / 0.63% / +/-
+       5% / branch (a)), sec3 (anchor 1131 998..1442
+       INTERMEDIATE/MIXED / refs 1,129-1,132-1,131 / in-band
+       True), sec4 (five prior rows re-derived + want triples +
+       reproduction EXACT True all five + the all-five row), sec5
+       (78 parsed / 1 distinct / 2026-10-29 / ledger day), sec6
+       (bar row == sec3 fresh row), fresh-tag agreement.  Section
+       B: structural spans named (heading numbers, s80 protocol
+       cross-references, L12/F3/V1/D4 vocabulary, 0-based/1-based
+       labels).  Section C: 125 body digit runs, 0 UNCLAIMED.
+       Section D: 530 dual computations, 0 mismatched.  VERDICT:
+       CONSISTENT.
+   (c) NEGATIVE (a MOCK perturbation, never a measurement -- the
+       sec3 fresh median 1131 -> 1132 in a scratch copy of the
+       rehearsal publication, deleted after): exit 1 twice
+       BYTE-IDENTICAL; the perturbed digit is claimed (0
+       UNCLAIMED) but caught at the claim level -- row 36 "sec3
+       fresh anchor median: published [1132] | census [1131] |
+       match False" and row 65 the sec6/sec3 relation -- VERDICT:
+       INCONSISTENT.  The detector fires on the real parse path.
+   (d) Standing gates (the standing set, real runs this tick,
+       byte-compared to the s88 committed pins in
+       docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+       gpu_regime_classify.py --self-test exit 0, capture == pin
+       (17,925 bytes, cmp exit 0), .err 0 bytes;
+       scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s88 run-1 pin == the s88 run-2 pin (919
+       bytes, cmp exit 0 x4), .err 0 bytes both (the "kbb: 2
+       dep(s)... classpath notice is terminal output, not part of
+       the capture -- established convention);
+       FULL run-tests.cljk RUN LIVE (worktree root): exit 1, RED
+       AT BASE kotoba.form ("Could not find namespace:
+       kotoba.form", ADR-0362, outside this diff -- this diff
+       touches NO .cljk namespace), .err 879 bytes == the s88 pin
+       (cmp exit 0), stdout 0 bytes == the pin -- NO green full
+       suite claimed;
+       settle-bar evaluator --self-test == pin (3,590 bytes) +
+       ledger eval twice BYTE-IDENTICAL == the s88 pin (823
+       bytes) -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+       find docs/evidence/gpu -name '*.sh' -> 0 files;
+       settle-bar-ledger.txt == HEAD (git diff empty verified).
+
+3. THE BAR: preparation session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption.  The bar
+   stays PENDING 2/4.  Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- settle-bar.txt section 2).
+
+4. UNMEASURED (named): the W6 window itself (day-slot-gated to
+   the 2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z; this
+   tick runs 2026-10-29T19:16Z-19:4xZ); every W6 live field;
+   every rehearsal number above (W5 stand-in FIXTURES); every
+   T18/T20/W7 quantity (all gate behind W6's ledger line).  RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+   rows stay exactly as ADR-0358 left them; NO vendor optimization
+   exists for Intel (or for any vendor); this is record-checking
+   machinery, not a device measurement.
+
+5. ADOPTION CONTRACT (new tool, named): the W6 session adopts
+   THIS file as fresh-census-s<NN>.py alongside
+   reading-prego-fixed.py (as reading-s<NN>.py), the s90 census
+   twin, s91's custody baseline, s95's run-window driver, s98's
+   checker, s97's emitter and s99's reconciler: after the fresh
+   publication is produced and BEFORE the ledger pair is
+   reconciled (--line after the append), --w6 publication-s<NN>.txt
+   <the W6 window dir> runs the fresh duty; VERDICT INCONSISTENT
+   => no ledger line derives from the reading (fail-closed at the
+   reading); W7 the same.  The execution path (ssh, staging, GO,
+   record prose) stays session-owned exactly as at s51/s73.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (the one open chain PR is
+   the chain PR this commit pushes to).
+
+Carry-forward to session 102: the W6 measurement half (the s80
+freeze; the first measurement session starting at or after
+2026-10-30T00:00:00Z adopts the seven tools above and owns their
+record) -- the gate for the T18 analysis half (s92 pre-build + s84
+freeze bind), the T20 analysis half (s93 pre-build + s88 freeze
+bind) and the W7 measurement half (s85 freeze; behind W6's ledger
+line); then any further counted-day slot (its own freeze) and a
+cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6freshcensusprego-20261029/
+(fresh-census-prego.py + selftest-s101-run1/2 + w6-rehearsal-run1/2
++ negative-run1/2 run captures (.txt/.err) + this record + the
+s101 gate captures).
+(JUN-55, JUN-59; Linear tracking JUN-499)

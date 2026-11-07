@@ -1,0 +1,69 @@
+JUN-59 session 72 -- THE S71 CARRY-FORWARD BATCH (verification
+slice: the census double-run + FULL run-tests.cljk; NO instrument
+runs, NO compiles, NO GO stamp, NO day-slot consumption, NO ledger
+line). This session started 2026-10-28T23:30Z, ~30 min BEFORE the
+W5 slot (2026-10-29T00:00:00Z) opens, so it is NOT the W5
+measurement session (NAMED, not skipped silently).
+
+1. CARRY-FORWARD (a) -- the census DOUBLE-RUN, VERIFIED this tick:
+   the s71 in-flight background runs did not survive s71's session
+   (no output files, no live processes at s72 start -- NAMED), so
+   both runs were re-run fresh from derivation-census-s71.py at the
+   frozen 20,000-trial contract (started 2026-10-28T23:35:26Z,
+   both outputs written 23:58Z, ~22.8 min wall each, parallel).
+   VERIFIED (real tool output): run1 (derivation-census-s71.txt)
+   == run2 (scratch/census-s71-run2.txt) BYTE-IDENTICAL (cmp exit
+   0, 10,611 bytes each); TOTAL 44 rows / 0 mismatched (the full
+   three-way census INCLUDING the six RNG count/p rows at full
+   trials -- counts/p 99/9/2844/367/3657/12283 now reproduce, so
+   the s71 UNVERIFIED RNG-stream reproduction is VERIFIED);
+   SECTION B 2 rows / 0 mismatched; SECTION C hygiene 4 checks /
+   0 mismatched. derivation-census-s71.txt is COMMITTED this tick
+   (s71's record: uncommitted until the double-run is verified).
+
+2. CARRY-FORWARD (b) -- FULL run-tests.cljk RUN LIVE this tick
+   (2026-10-28T23:41:24Z, 23 s): exit 1, RED AT BASE kotoba.form
+   ("Could not find namespace: kotoba.form", ADR-0362, outside
+   this diff -- touches NO .cljk namespace), captures
+   scratch/gate-s72-full.out (0 bytes) / .err (879 bytes) BOTH
+   byte-identical to the s70 pins -- NO green full suite claimed.
+
+3. STANDING GATES, all byte-identical to the s71 pins:
+   gpu_regime_classify.py --self-test 2649/0 (== pin); scoped GPU
+   gate GREEN 123/12162/0/0 run 1 AND run 2 (pinned runner shape,
+   created/run/deleted scratch/scoped-gpu-gate.cljk), both 919
+   bytes, .err 0 bytes, byte-identical to each other and the pin;
+   settle-bar evaluator --self-test exit 0 == pin; ledger eval
+   twice byte-identical == pin -> VERDICT PENDING 1/4 unchanged
+   (counted day=2026-10-28 session=s31 only); find
+   docs/evidence/gpu -name '*.sh' -> 0 files.
+
+4. BAR / SLOT: no instrument runs -- nothing could produce a
+   bar-qualifying reading; NO ledger line, NO day-slot consumption
+   (the 2026-10-28 slot is s31's; the W5 slot opens
+   2026-10-29T00:00:00Z).
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel.
+
+6. QUEUE unchanged: the W5 measurement session (the first session
+   starting at/after 2026-10-29T00:00:00Z; pre-GO custody steps
+   per s67: host workdir staging ~/anv-b3w5xdayrep-20261029,
+   host-verify 3/3 + corpus 16/16, GO stamp before builds/runs;
+   bar line on hi block A of the W5 window), then T7 read, then
+   the three frozen analysis halves (T14 hi-wander, T15
+   quantile-pair level axes, T16 second-pair profile axis). With
+   this tick BOTH s71 carry-forward items are verified, so the W5
+   session's push-equivalent claim is unblocked.
+
+CHAIN: chain PR #1643 (bot/amu-gpu-chain-20261028-3) was MERGED
+2026-10-28T23:21:57Z; per the chain rule this tick starts the
+next chain branch bot/amu-gpu-chain-20261028-4 with one fresh PR.
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked before push).
+
+Evidence: this record + derivation-census-s71.py +
+derivation-census-s71.txt (committed this tick) + the s72 gate
+captures in scratch/ (untracked, established convention) + the
+ADR-0355 dated note. (JUN-55, JUN-59; Linear tracking JUN-499)

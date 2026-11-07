@@ -1,0 +1,123 @@
+JUN-59 session 80 record (ONE-TICK LAND, DESIGN slice):
+THE ANCHOR-CLASS SETTLING BAR'S THIRD COUNTED-DAY MEASUREMENT
+PRE-REGISTRATION (the s79 record section-10 carry-forward item
+(a) taken to its DESIGN half -- the freeze of the W6 measurement
+for the bar's 2026-10-30 UTC day slot; protocol.txt of THIS
+directory is the contract; chain branch
+bot/amu-gpu-chain-20261028-4, the ONE open chain PR -- commit +
+push only).
+
+1. WHAT THIS SESSION IS: ONE design decision -- pre-register the
+   hardware measurement the bar's third counted day slot needs.
+   NO hardware runs, NO builds, NO compiles, NO GO stamp, NO
+   day-slot consumption: 2026-10-29's slot is already consumed
+   (s73 is that day's counted reading; settle-bar.txt section 2:
+   only the FIRST qualifying reading of each UTC day counts), so
+   no run this UTC day can advance the bar and the W6 window is
+   defined at the 2026-10-30T00:00:00Z boundary. Per protocol
+   section 5 NO reading -> NO settle-bar-ledger line
+   (settle-bar-ledger.txt byte-identical to HEAD -- git diff
+   empty, 0 bytes, verified this tick).
+
+2. WHAT WAS FROZEN (protocol.txt, written once at freeze stamp
+   2026-10-29T04:23:51Z -- before any W6 quantity exists; no
+   committed file contains any W6 quantity): W6 = the window whose
+   78 fresh processes run in the first measurement session that
+   starts at or after 2026-10-30T00:00:00Z on the ANV host; ONE
+   ledger line -- hi block A of W6 (the frozen L12 single bar
+   candidate) at the settle-bar.txt section-2 reading
+   construction (class at the frozen section-4 threshold,
+   (sum,128,S=16) pooled median, 18-cell pooled-median minimum),
+   COUNTED iff first qualifying reading of its UTC day, FLAGGED
+   construction (C1 (b) / VERIFY / pin / GO) named and consuming
+   no slot; the s57 section-6 route UNCHANGED (custody host-verify
+   3/3 + corpus 16/16 before the GO stamp; the four s51-frozen
+   build pins 4/4 BYTE-IDENTICAL; the 78 runs in the frozen run
+   order; per-run host date -u); the s57 section-3 integrity
+   machinery re-derived at W6 with C1 branch (a) required to
+   qualify.
+
+3. NAMED, NOT HIDDEN (protocol section 4): (a) NO analysis row
+   rides this freeze -- the s57 W5 queue is COMPLETE and any
+   further named profile pair needs the NEW named rank-pair
+   vocabulary, which does not exist (separate future design row,
+   NOT taken); (b) the alternative minimal 9-run bar-only session
+   (c2 3 + hi A 3 + c8 3) was CONSIDERED AND REJECTED (named in
+   the freeze with reasons: no prior window shape, no future
+   window-level row possible, marginal cost of the full window is
+   one sub-minute burst; the bar reading is identical either way);
+   (c) the FOURTH day slot is NOT frozen here (no silent
+   extension); (d) the bar's D1-D5 limitations apply unchanged.
+
+4. DOUBLE-RUNS (real tool output): this slice writes no derived
+   statistic -- its artifacts are the freeze text and this record
+   (deterministic writes). The derivation double-run discipline
+   binds the W6 MEASUREMENT session instead (protocol section 6).
+
+5. GATES (the standing gate set, real runs this tick, byte-
+   compared to the s79 committed pins):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture (17,925 bytes)
+       BYTE-IDENTICAL to the s79 pin (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s79 run-1 pin == the s79 run-2 pin (cmp
+       exit 0 x3, 919 bytes); stderr 0 bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this session touches NO .cljk namespace). Capture .err 879
+       bytes BYTE-IDENTICAL to the s79 pin (cmp exit 0); stdout
+       content 0 bytes == the pin. NO green full suite is
+       claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL:
+       38 assertions passed, 0 failed", capture 3,590 bytes
+       BYTE-IDENTICAL to the s79 pin; ledger eval twice, exit 0,
+       run1 == run2 == the s79 pin (823 bytes) -> VERDICT:
+       PENDING 2/4 (counted day=2026-10-28 session=s31; counted
+       day=2026-10-29 session=s73) unchanged. The frozen
+       evaluator is the ONLY source of the bar verdict; no verdict
+       beyond its output is claimed anywhere.
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files (no POSIX
+       shell execution files, ever).
+
+6. THE BAR (protocol section 5): NO hardware runs at this DESIGN
+   session -> NO reading -> NO settle-bar-ledger line, NO day-slot
+   consumption (settle-bar-ledger.txt byte-identical to HEAD --
+   git diff 0 bytes, verified this tick). The bar stays PENDING
+   2/4 and settles nothing.
+
+7. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel. This freeze schedules a measurement; it
+   replaces no workgroup default and moves nothing.
+
+8. WHAT CHANGED (this commit): this directory gains protocol.txt
+   (the s80 pre-registration freeze), freeze-record-s80.txt (this
+   file) and the s80 gate captures (gate-s80-classify.txt/.err,
+   gate-s80-run1/2.txt/.err, gate-s80-full.out/.err,
+   bar-s80-selftest.txt/.err, bar-s80-eval-run1/2.txt/.err); plus
+   the ADR-0355 dated note (this session's step). The chain commit
+   cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+9. NOT DONE (carry-forward to session 81, named):
+   (a) the W6 measurement half -- the first measurement session
+       that starts at or after 2026-10-30T00:00:00Z (day-slot-
+       gated; the freeze is in place, nothing else waits on
+       design);
+   (b) the fourth counted-day bar measurement -- a NEW
+       pre-registration on a future UTC day (NOT frozen; its own
+       design slice);
+   (c) the NEW named rank-pair vocabulary or selection rule
+       (unfrozen design work; the s63-retired program's only route
+       back);
+   (d) the standing gate set runs with each such tick.
+
+Evidence: docs/evidence/gpu/anv-b3w6daybar-20261030/ (this file,
+protocol.txt and the s80 gate captures) + the ADR-0355 dated
+note. (JUN-55, JUN-59; Linear tracking JUN-499)

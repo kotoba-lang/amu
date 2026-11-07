@@ -1,0 +1,99 @@
+amu-gpu s158 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut
+MEASUREMENT HALF -- STARTED, NOT FINISHED (runtime-budget cutoff
+DURING the host run window, after GO + 3 clean builds + the first
+two clean runs; the s119/s133/s141/s143/s148/s150/s151/s152/s157
+interrupted-tick precedent).
+
+ROW TAKEN THIS TICK (the s157 carry-forward (a) first item: the
+fifteenth cut MEASUREMENT half executed on aiueos-6600hs under the
+frozen anv-b3bisect15prereg-20261031/protocol.txt).
+
+VERIFIED THIS TICK (real tool output):
+- Local custody re-verified fresh before staging (shasum -a 256 +
+  diff): rounds6400 variant c2704aaa... == the s153/s154/s157 pin;
+  one-line diff against the a5e539f0... base is EXACTLY line 81
+  '#define ROUNDS 25' -> '#define ROUNDS 6400' (diff rc=1, one
+  hunk); expected-corpus.sha256 eefba52e... == pin; cases-s157-a.txt
+  24 cell lines block sha256 873025d6... == the s25/s27 pin.
+- host-verify-s158.txt: live ssh capture -- aiueos-6600hs,
+  murakumo-ci (groups include render), 2026-11-01T03:14:32Z.
+- host-stage-s158.txt: workdir ~/anv-b3bisect15-20261101 created;
+  shaders/ copied as EXACTLY the 16 expected-corpus names from the
+  s147 verified corpus (name count 16, no stale run log rode
+  along); host pins c2704aaa.../eefba52e.../54e91d507f... == local;
+  sha256sum -c expected-corpus.sha256 16/16 OK, corpus_rc=0.
+- host-build-s158.txt: GO=2026-11-01T03:15:22Z; 3/3 builds rc=0
+  (c2 -DBATCH=2 -DWORK_MUL=1 -DNDIV=1 @03:15:22Z; bis -DBATCH=3
+  -DWORK_MUL=316 -DNDIV=1239 @03:15:22Z; c8 -DBATCH=8 -DWORK_MUL=1
+  -DNDIV=1 @03:15:23Z), build stderr 0 bytes x3. FIRST-MEASURED
+  BINARY PINS parsed from the build capture, never transcribed:
+  anv-bb-c2  b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48
+  anv-bb-bis 52fb68b66b550f0029c50b8695e13ecdcfcd736831e42cc3bccdb9b6f5bf14a8
+  anv-bb-c8  2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831
+  (the s136 440604ef... precedent; the s147 byte-identity-to-
+  committed-pin rule does NOT apply -- this cut's binaries are NEW).
+- RUN WINDOW LAUNCHED and RUNNING at cutoff: a detached host-side
+  driver (~/anv-b3bisect15-20261101/s158-driver.sh -- host-only,
+  NEVER committed; NO POSIX .sh enters evidence) runs the frozen
+  order c2-r01..03, bis-r01..48, c8-r01..03 as 54 fresh processes
+  (manifest ../cases-s157-a.txt, runs cwd=shaders/, binaries
+  ../anv-bb-<tag>). At cutoff TWO runs COMPLETE AND CLEAN:
+  c2-r01 run_rc=0 host-date=2026-11-01T03:17:36Z stderr_bytes=0
+  samples=115200 verifies=24 cells=24 tail=# done cells=24
+  c2-r02 run_rc=0 host-date=2026-11-01T03:18:52Z stderr_bytes=0
+  samples=115200 verifies=24 cells=24 tail=# done cells=24
+  (samples=115,200 = 18 pipeline-ok cells x 6,400 rounds, exactly
+  the frozen R; observed ~76 s/run -> the 54-process window ETA
+  ~65-70 min from 03:16Z). The window continues on the host under
+  nohup/setsid AFTER this session's cutoff (it survives disconnect;
+  the run logs are host-side only at this cutoff).
+
+NAMED, NOT HIDDEN:
+- The s157 capture-form deviation is NAMED AGAIN at this measuring
+  tick: the 54 stdout logs at the frozen R = 6,400 carry 115,200
+  SAMPLE lines each (s157 projected ~15.5 MB each, ~835 MB plain;
+  ACTUAL byte counts UNMEASURED at this cutoff) -- they will be
+  pulled plain (raw aggregate host==local byte-identity, the s147
+  procedure) and committed gzip -n compressed (.txt.gz) with the
+  raw aggregates recorded; 0-byte stderr logs stay plain.
+- host-runs-s158.txt is INCOMPLETE at this cutoff (2 of 54 per-run
+  lines captured live; the driver's aggregate tail not yet
+  written). It is NOT committed this tick -- the measuring
+  continuation captures it whole.
+- NO fifteenth-cut class/verdict/claim exists: NO unit class, NO
+  C2, NO W1/W2/W3/X1 letter is computed or claimed here (the
+  analysis half is carry-forward (c), its own session(s));
+  every one of those quantities stays UNMEASURED. The ONLY new
+  recorded values this tick are the three first-measured binary
+  digests above and the two completed c2 control-run line captures.
+  MID-ONLY NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY
+  (254,557, 255,208].
+
+BAR: this cut is the INSTRUMENT channel -- NO settle-bar-ledger
+line, settle-bar-ledger.txt byte-identical to HEAD, NO day-slot
+consumed by this row (the frozen protocol section 5; the 2026-10-31
+slot stays consumed at s117). RULE 4 unchanged: NOTHING MOVES; NO
+vendor optimization exists for Intel (or for any vendor). Diff
+touches NO committed .cljk namespace (evidence .txt only). Local
+commit only -- NOT pushed (slice unfinished). Linear 未記録.
+
+NOT DONE (s159 carries the s157 list minus the staging/GO/builds
+and minus the runs completed on the host):
+(a) poll the host window to its 54/54 completion (the driver writes
+    host-runs-s158.txt's 54 per-run lines + the sorted-108 name
+    list + missing= check + the host-side canonical aggregate);
+(b) the pull + raw aggregate host==local byte-identity
+    (host-digests-s158.txt, the s147 procedure incl. the
+    host-side name-existence check) + the gzip -n commit form +
+    the raw-aggregate record + derivation/build census + the
+    completed state update;
+(c) the analysis half ONLY at its own session(s) afterwards
+    (analysis-s158.py run twice byte-identical -> publication,
+    the frozen letters C1/C2/W1/W2/W3/X1, standing gates (a)-(f)
+    with those session captures, record.txt, ADR-0355 dated note,
+    landing tail + the JUN-499 Linear landing comment);
+(d) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; next slot a NEW UTC day + its own
+    freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

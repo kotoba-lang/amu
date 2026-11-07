@@ -1,0 +1,108 @@
+JUN-59 session 74 -- THE S73 CARRY-FORWARD BATCH (verification
+slice; NO instrument runs, NO compiles, NO GO stamp, NO day-slot
+consumption, NO ledger line). This session started 2026-10-29T01:01Z.
+Runtime budget exhausted before the batch completed -- NAMED, NOT
+HIDDEN; STARTED, NOT FINISHED.
+
+1. THE FINDING THIS TICK (environment, verified by real tool
+   output): THE KBB CLASSPATH RESOLUTION BROKE BETWEEN s72's
+   VERIFIED GATE RUNS (2026-10-28T23:36-23:41Z) AND 01:07Z TODAY.
+   At 01:07Z the scoped GPU gate was RED at namespace load
+   ("Could not find namespace: kotoba.hir", scratch/gate-s74-run1
+   first attempt, 877-byte .err): 23 :git/sha dependency repos
+   (kotoba-hir, kotoba-mir, kotoba-gmir, kotoba-object,
+   kotoba-component, kotoba-codegen, kotoba-wasm, kotoba-verifier,
+   abi, provider, process-exec, io-ipld, kotoba-io-len,
+   kotoba-io-byte-buffer, kotoba-io-reader-buffer, kotoba-io-copy,
+   kotoba-io-reader-seq, kotoba-io-buffer-writer, org-nist-sha2,
+   org-ietf-x25519, org-ietf-cbor, then transitively dev-protobuf
+   and kgraph) did not resolve: their GitHub urls answer
+   "Repository not found" for this account over https, ssh AND
+   gh api (verified: gh repo view kotoba-lang/kotoba-hir --
+   "Could not resolve to a Repository"; kotoba-sema and amu
+   resolve fine and are PUBLIC), and ~/.gitlibs held NO mirror and
+   NO materialized libs entry for them at 01:10Z. The mechanism
+   that served those deps to s72's runs at 23:36Z is UNVERIFIED --
+   not observed, not reconstructed; NAMED, not guessed.
+   REPAIR (additive cache repair only; no repo, no worktree, no
+   tracked file, no other bot's files touched): the pinned commits
+   (deps-lock.edn shas) all exist in the west sibling checkouts at
+   /Users/junkawasaki/github/kotoba-lang/<name> (23/23 checked
+   with git cat-file -e <sha>^{commit}); 23 mirrors were
+   materialized into ~/.gitlibs/_repos/https/github.com/kotoba-lang/
+   via git clone --mirror from those checkouts (kbb's own mirror
+   layout; kbb then materializes its own libs worktrees). After
+   the repair `kbb -Spath -M:test` resolves 249 classpath entries
+   with only the standing "2 dep(s) ... Maven" notice (the s72
+   recorded state). NOTE for the fleet: these repos vanishing
+   from GitHub breaks every kbb resolution that cannot fall back
+   to a west checkout.
+
+2. VERIFIED THIS TICK (real tool output, byte-compared to the s72
+   pins in scratch/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed" (scratch/gate-s74-classify.txt
+       17,925 bytes, .err 0 bytes) -- BYTE-IDENTICAL to the s72
+       pin (cmp exit 0).
+   (b) scoped GPU gate: scratch runner scratch/scoped-gpu-gate.cljk
+       (the pinned shape -- ns + the eight accelerator-* requires +
+       the bare (t/run-tests ...) form, NO :end-run-tests override;
+       created/run/deleted, never committed) GREEN 123/12162/0/0
+       run 1 AND run 2 ("Ran 123 tests containing 12162
+       assertions." / "0 failures, 0 errors."), captures
+       scratch/gate-s74-run1.txt and run2.txt BOTH 919 bytes,
+       .err 0 bytes, BYTE-IDENTICAL to each other AND to the s72
+       pin (cmp exit 0 x2).
+
+3. NOT DONE THIS TICK (carry-forward to session 75; until they
+   land the s73 T7 values remain ONE RUN of the validated
+   generator and no push-equivalent claim is made):
+   (a) analysis-s73.py run 2 + byte-identity diff -- STARTED, NOT
+       FINISHED: run 2 was attempted 01:07Z (background) and died
+       at import (scratch/analysis-s73-run2.stderr: "No module
+       named 'numpy'" -- the background shell's python3 is not the
+       numpy 2.5.4 interpreter run 1 used; NAMED, not hidden).
+       NO run-2 output exists. Run 1's publication bytes are
+       preserved and pinned (scratch/pub-s73-run1-pin.txt,
+       sha256 221d559106ff5298a53aaaeb617440b529ebb179c334c68f3a9fdf7393f6da8f,
+       == publication-s73.txt, cmp exit 0; the script writes only
+       at completion, so run 1's bytes were never at risk). The
+       w5-mode determinism claim ("run twice, diff exit 0") is
+       UNVERIFIED. Re-run in the foreground on the numpy 2.5.4
+       interpreter.
+   (b) derivation-census-s<NN>.py (the five-window independent
+       second parser) -- NOT BUILT, NOT STARTED this tick.
+   (c) standing gates NOT run this tick (budget): FULL
+       run-tests.cljk (last verified reading s72: exit 1, RED AT
+       BASE kotoba.form, ADR-0362, outside this diff); settle-bar
+       evaluator --self-test + ledger eval twice; find
+       docs/evidence/gpu -name '*.sh'.
+   (d) THE BAR: NO ledger line appended (the line is appended only
+       alongside the verified gates and the evaluator verdict --
+       those gates did not run, so NO line, NO day-slot
+       consumption; day=2026-10-29 session=s73's qualifying
+       reading remains UNRECORDED in the ledger).
+   (e) PUSH DEFERRED (the s67/s69 deferral pattern: the named
+       gate items must be verified before any push-equivalent
+       claim). This commit lands LOCALLY on the chain branch
+       bot/amu-gpu-chain-20261028-4; the push, the ADR-0355 dated
+       note and the chain-PR landing happen in the carry-forward
+       session after (a)+(c) verify, with the blocker-first check
+       immediately before the push.
+
+4. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel.
+
+5. QUEUE: session 75 runs the s73 carry-forward remainder
+   (3a analysis run 2 + diff, 3c gates, 3d the bar line through
+   the frozen evaluator, 3e push + ADR note + chain landing),
+   then the five-window derivation census (3b), then the three
+   frozen analysis halves (s64 T14 hi-wander, s65 T15
+   quantile-pair level axes, s66 T16 second-pair profile axis).
+
+Evidence: docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (this file,
+record.txt, protocol.txt, analysis-s73.py, publication-s73.txt,
+run logs verbatim) + the s74 gate captures in scratch/ (untracked,
+per the established convention). (JUN-55, JUN-59; Linear tracking
+JUN-499)

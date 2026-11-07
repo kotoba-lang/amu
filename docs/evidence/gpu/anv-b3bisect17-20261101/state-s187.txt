@@ -1,0 +1,100 @@
+amu-gpu s187 (2026-11-01 UTC / 2026-11-02 JST, cron) -- SEVENTEENTH
+CUT MEASUREMENT HALF -- RUN WINDOW COMPLETE (the s186 carry-forward
+(a) completed exactly: the window polled to 54/54 + the full-file
+clean census + host-runs-s185.txt whole pulled host==local + the
+driver's aggregate tail captured + post-window binary re-census 3/3
+== the s185 first-measured pins).
+
+ROW TAKEN THIS TICK (one row: complete the s186 carry-forward (a) --
+poll the seventeenth-cut run window to 54/54, run the full-file
+clean census, capture host-runs-s185.txt whole, the driver's
+aggregate tail, re-census the binaries; the 108-run-log pull (b) is
+the next tick's row).
+
+VERIFIED THIS TICK (real tool output, live ssh captures):
+- The 54-process frozen-order window (c2-r01..03, q1-r01..48,
+  c8-r01..03) ran to completion on aiueos-6600hs
+  (murakumo-ci@100.98.24.37, ~/anv-b3bisect17-20261101) under the
+  detached s185-driver.sh; the driver is GONE at probe time (no
+  'bash s185-driver.sh' process; probe 2026-11-01T18:18:34Z).
+- host-runs-s185.txt pulled host==local this tick: 58 lines = 54
+  per-run census lines + 4 aggregate-tail lines; sha256
+  0cc9a35b9facc656e9512aef454d0589a276957616051714ebf9730f5bea715e
+  BOTH sides (host-side sha256sum and local shasum -a 256 agree,
+  byte-identical). ALL 54 run lines match the clean pattern exactly
+  (grep -c = 54): run_rc=0, stderr_bytes=0, samples=115200 = 18
+  pipeline-ok cells x the frozen R = 6,400 exactly every run,
+  verifies=24, cells=24, tail '# done cells=24'. Arm counts 3/48/3
+  (c2/q1/c8); frozen order held (line 1 c2-r01
+  host-date=2026-11-01T17:27:34Z, line 54 c8-r03
+  host-date=2026-11-01T18:12:45Z).
+- The driver's aggregate tail (host-side, verbatim):
+  "== canonical aggregate sha256 over the sorted exact 108 log
+  names (host-side) ==" / "108 names (printf '%02d' zero-padded),
+  host-side existence check: missing=0" / "== host-side canonical
+  aggregate over the exact 108 names (sorted) ==" /
+  acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513  -
+  (the (b)-tick host==local byte-identity target).
+- host-runs-s185.err 0 bytes; the driver exited clean after the
+  tail.
+- POST-WINDOW BINARY RE-CENSUS 3/3 == the s185 first-measured pins
+  (host-side sha256sum, re-read after the window):
+    anv-bb-c2  b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48  MATCH
+    anv-bb-q1  f22502bdbbafda1089486eb3a4f94b6d89306c86ee50a1892366cec0e0ec208f  MATCH
+    anv-bb-c8  2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831  MATCH
+- Window timing (from the census host-dates + the s185 GO stamp):
+  GO 17:25:48Z, first run done c2-r01 17:27:34Z, last c8-r03
+  18:12:45Z (~47 min window).
+
+NAMED, NOT HIDDEN:
+- The driver-status pgrep output self-matches: the probe's own
+  tailscaled-ssh wrapper and bash -c command lines contain the
+  string 's185-driver' and appear in the pgrep listing; NO listed
+  line is the driver itself ('bash s185-driver.sh' absent) -- the
+  driver had exited (tail complete, .err 0 bytes).
+- The s157 capture-form deviation stands (54 stdout logs at
+  R=6,400, 115,200 SAMPLE lines each; ACTUAL byte counts still
+  UNMEASURED -- the 108-run-log pull is (b), next tick; gzip -n
+  commit form with raw aggregates recorded).
+- This tick pulled ONLY the census log. The 108 run logs are
+  host-side only at this cutoff; the canonical aggregate
+  acad342c... is recorded from the HOST-SIDE computation and has
+  NOT been re-derived locally (that is the (b) byte-identity
+  check).
+- NO seventeenth-cut class/verdict/claim exists -- NO unit class,
+  NO C1, NO C2, NO W1/W2/W3/X1 computed or claimed, every such
+  quantity UNMEASURED (analysis half is (c), its own session(s));
+  MID-ONLY NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY
+  (254,557, 255,045]. RULE 4 unchanged: NOTHING MOVES; NO vendor
+  optimization exists for Intel (or for any vendor); the
+  accelerator-targets workgroup rows stay exactly as ADR-0358 left
+  them (provisional :measured? false rows are NOT optimization
+  evidence).
+- Diff touches NO committed .cljk namespace (evidence .txt only;
+  no scoped-gate re-run needed, the s160/s166 precedent; full suite
+  RED AT BASE kotoba.form ADR-0362 outside this diff -- NO green
+  full suite claimed). Untracked scratch/, deps.edn, .DS_Store NOT
+  staged.
+- BAR: INSTRUMENT channel -- NO settle-bar-ledger line
+  (settle-bar-ledger.txt byte-identical to HEAD), NO day-slot
+  consumption (any further counted-day slot needs its own freeze
+  and is NOT touched).
+
+NOT DONE (s188 carries the s186 list minus (a)):
+(b) pull the 108 run logs + host==local byte-identity against
+    acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+    (host-digests-s185.txt, the s147 procedure incl. the host-side
+    name-existence check) + the gzip -n commit form + the raw-
+    aggregate record + derivation/build census + the q1 header
+    census (batch=3 work_mul=313 ndiv=1229 n=254,679) + the
+    completed state update;
+(c) the analysis half ONLY at its own session(s) afterwards
+    (analysis-s185.py twice byte-identical -> publication, frozen
+    letters C1/C2/W1/W2/W3/X1 under the frozen deep-pooling CI
+    class statistic R=6,400, standing gates (a)-(f), record.txt,
+    the ADR-0355 dated note, landing tail + the JUN-499 landing
+    comment);
+(d) standing, not queued: any further counted-day slot (each needs
+    its own freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

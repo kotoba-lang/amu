@@ -1,0 +1,50 @@
+== analysis-s209 run-twice byte-identity (session 214) ==
+script analysis-s209.py sha256
+4e3a5d3a20685b14093e47c7081c6da55925f1367281d9844d42909606c35ade
+(83,832+ bytes after two run-defect fixes -- see below)
+publication-s209.txt 66,774 bytes sha256
+d3a338f39a9cdb75938da3a412fee7ec299813d38bc46f1f7b9cb773bc2c2ebe
+run1: rc 0, stdout 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,
+stderr 0 bytes same sha256; publication copy publication-s209-run1.txt
+sha256 d3a338f39a9cdb75938da3a412fee7ec299813d38bc46f1f7b9cb773bc2c2ebe
+run2: rc 0, stdout 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,
+stderr 0 bytes same sha256; publication copy publication-s209-run2.txt
+sha256 d3a338f39a9cdb75938da3a412fee7ec299813d38bc46f1f7b9cb773bc2c2ebe
+cmp exit 0 x3 (publication, stdout, stderr byte-identical). The script
+prints nothing to stdout (P writes the publication only) -- the stdout
+pair is the empty-file sha, byte-identical.
+
+NAMED, NOT HIDDEN -- TWO run defects, both fail-closed asserts caught
+before any publication was trusted; both fixed by patch; the draft
+pairs are kept visible:
+(i) draft1 pair (analysis-s209-draft1-run{1,2}.txt/.err, rc 1 both,
+stderr 318 bytes byte-identical): the q3 quarter-grid derivation
+divided before multiplying (3*(122//4) = 255,013) against the assert's
+committed census value 255,014 (knob-search-s203-run1.txt q=3 quarter
+point) -- fixed at both sites (the assert and the publication's
+quarter-grid derivation line) to floor-of-product ((3*122)//4 = 255,014
+== the committed value; q=1 value 254,953 unchanged under both forms,
+re-expressed as (1*122)//4 for form consistency).
+(ii) draft2 pair (analysis-s209-draft2-run{1,2}.txt/.err, rc 1 both,
+stderr 446 bytes byte-identical): the C1 c8 cross-check assert
+appended "%" to the pub197 percent field although NEITHER parse
+produces the sign char (both regexes capture -0.42 without '%') --
+fixed to compare the parsed fields directly (the c2 assert's shape).
+(iii) the FIRST rc=0 run's stdout/stderr were consumed by a
+mis-ordered comparison step before its publication copy was saved
+(publication byte-count 66,774 observed; the file itself NOT kept) --
+NOT claimed as a pair leg; the official run-twice pair was RE-TAKEN
+fresh afterwards (the pair above). Extra corroboration kept out of the
+pair: run2-vs-run3 publication cmp exit 0 (byte-identical) before the
+official pair was taken.
+
+VERDICT parsed from publication-s209.txt (never transcribed):
+"5. VERDICT SUMMARY: C1 (b); C2 (c) at q2 (254,984); W1 (d)."
+"CUT VERDICT: INVALID; NOTHING MOVES." The committed bracket stays
+EXACTLY (254,923, 255,045]; L9 binds at n=254,984 (D3 (v)); the
+control question RE-OPENS as a named three-state record on the
+ROUNDS6400 instrument (16th cut (b), 17th (a), 18th (a), this cut
+(b)); discrepancy cause UNMEASURED (L2 binds).
+(JUN-55, JUN-59; Linear tracking JUN-499)

@@ -1,0 +1,216 @@
+JUN-59 sessions 110-111 -- THE LEDGER --COMPAT COHORT-PREFIX
+SUPERSESSION (the s109 carry-forward (a) = the s109 record section
+6(i) row = the s109 decision section 3(a): the frozen assertion is
+corrected from whole-ledger equality to COHORT-PREFIX and lands as
+a SUPERSESSION under its own freeze.  ONE implementation slice,
+executed across two ticks: session 110 built and froze the
+implementation and its tests and was cut off at runtime-budget
+cutoff before gates (c)(d)(e), the record and the landing (its
+interim record state-s110.txt is committed in this dir unedited);
+session 111 ran the remaining gates, re-verified the s110
+captures and tools byte-for-byte, wrote this record and lands the
+row.  IMPLEMENTATION session: NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO host writes, NO day-slot consumption,
+NO ledger line).
+
+1. ROW AND HONEST STATES: the row is ONE implementation slice (the
+   supersession of the s97 ledger tool's --compat assertion, with
+   its reconcile driver and adoption-manifest binding).  Honest
+   state at landing: IMPLEMENTED -- code + tests exist in this
+   record dir (ledger-prego-v2.py --self-test carries the
+   post-append GREEN / dropped-cohort REFUSED / altered-cohort
+   MISMATCH / reordered REFUSED / malformed REFUSED rows and more).
+   The s109 decision section 3(a) is now IMPLEMENTED, not accepted-
+   design-only.  Section 3(b), the W7 INTERIM, is now UNNEEDED:
+   the supersession lands before the W7 session starts (the first
+   session at/after 2026-10-31T00:00:00Z, the s85 freeze) -- a
+   measurement record is never a retroactive arbiter of a landed
+   implementation.  This is settling-bar validation machinery, not
+   a device measurement; no :measured? flag moves and no vendor
+   optimization exists for any vendor.
+
+2. THE FROZEN ASSERTION (the whole content of the change; the
+   s109 record section 3(a) text, frozen as the contract in
+   freeze-record-s110.txt section 3): --compat asserts
+   COHORT-PREFIX, not whole-ledger equality --
+   (a) the live ledger's day= rows' first N (N = |WIN9| = 9)
+       sessions equal WIN9's session order exactly (the ledger is
+       append-only chronological, so the frozen cohort is by
+       construction exactly the prefix) -- a dropped, renamed or
+       reordered cohort row REFUSES (REFUSED-LEDGER-SHAPE);
+   (b) every cohort row re-derives byte-exact against its want row
+       exactly as the s97 tool did (a difference reports MISMATCH
+       and fails the run);
+   (c) EVERY day= row (cohort or later) must satisfy the frozen
+       line grammar fail-closed (a malformed row anywhere REFUSES,
+       REFUSED-LEDGER-GRAMMAR);
+   (d) rows past the cohort are shape-validated but NOT re-derived
+       (each later session's line is its own record's business;
+       extending the frozen cohort is a separate decision, NOT
+       queued); they are named in the POST-COHORT report row.
+
+3. THE FROZEN BYTES (freeze-record-s110.txt, freeze stamp
+   2026-10-30T03:35:36Z; the s100 supersession convention -- new
+   frozen bytes under a new record dir with their own freeze
+   record; the s97/s99 superseded bytes stay committed at their
+   records, never edited):
+     db1cb000f9b7015104d9dd1ac84448d47b105f7a64934124b2cb9d34de0afe9a
+       ledger-prego-v2.py  (supersedes the s97 frozen
+       anv-b3w6ledgerrego-20261029/ledger-prego.py
+       64a54e4051fcd8e7a4ca1ce95ce99e60b019bdb84f845ea78c21085cc104069b
+       for every future adoption; adoption-manifest-v2.txt slot
+       ledger)
+     fc359fcbf6e199a0ae62bacc8c19483ab6b71ffa2b9db72d2505d8a907e05e8e
+       reconcile-prego-v2.py  (supersedes the s99 frozen
+       anv-b3w6reconcilerego-20261029/reconcile-prego.py
+       d52b130129020f57a1b1df906354937332a45372d025ba8441b5769e9b222229
+       for every future adoption; adoption-manifest-v2.txt slot
+       reconcile)
+   Both digests re-derived at s111 (shasum -a 256) == the freeze
+   record.  WHAT IS NOT CHANGED (byte-preserved from the s97
+   tool): the derivation (load_log/derive/bar_class/line_shape/
+   grammar_ok), the emit path and its name gate (the emit mode
+   activates only under the ledger-s<NN>.py filename; --emit
+   refuses under the pre-build name), the --emit argv surface,
+   every REFUSED token, and the quoted-input surfaces (pin/go/day).
+   The reconcile v2's chain, X rows, --line mode and --self-test
+   fixture battery are byte-preserved from the s99 tool except the
+   four self-identity strings and the LEDGER stage path.
+
+4. IMPLEMENTATION + TESTS (verified by real tool output; every
+   capture run twice byte-identical at s110 -- ALL_S110_PAIRS_IDENTICAL
+   re-checked at s111 (cmp exit 0 x7) -- and every tool re-run at
+   s111 byte-identical to its s110 capture (cmp exit 0 x3), .err 0
+   everywhere the pins are 0):
+   - ledger-prego-v2.py --self-test: TOTAL 42 assertions passed,
+     0 failed (9,363 bytes; the s97 battery + 15 new rows:
+     post-append shape GREEN / pre-append GREEN / dropped cohort
+     REFUSED-LEDGER-SHAPE / altered cohort MISMATCH at s51 /
+     renamed REFUSED / reordered REFUSED / malformed appended
+     REFUSED-LEDGER-GRAMMAR / malformed cohort
+     REFUSED-LEDGER-GRAMMAR / determinism), run1==run2; s111
+     re-run ledger-v2-selftest-s111.txt == run1 (cmp exit 0).
+   - ledger-prego-v2.py --compat over the LIVE ten-row ledger:
+     rc 0 TWICE BYTE-IDENTICAL (3,236 bytes) -- the post-append
+     GREEN --compat, the s106 structural refusal removed: the nine
+     cohort rows re-derive MATCH (want values PARSED from the
+     committed settle-bar-ledger.txt bytes, never transcribed),
+     'POST-COHORT: 1 row(s) shape-validated, not re-derived:
+     s105', 'TOTAL: 9 rows, 0 mismatched | day-src derived 7
+     quoted 2'.  This capture IS the s106-named
+     structurally-unsatisfiable clause now satisfied.
+   - reconcile-prego-v2.py --self-test: '--self-test TOTAL 17
+     assertions passed 0 failed' (711 bytes) twice identical;
+     s111 re-run == run1.
+   - reconcile-prego-v2.py --compat chain over the LIVE
+     post-append ledger: RECONCILE VERDICT: CONSISTENT
+     ('TOTAL: stage rows 7 failed 0 | cross rows 31 mismatched 0';
+     'STAGE ledger-prego-v2.py --compat rc=0 rows=9 -> OK'),
+     3,595 bytes twice byte-identical -- the s99 composition
+     re-run green post-append through the v2 LEDGER stage path.
+   - reconcile-prego-v2.py --line on the committed s73 pair:
+     RECONCILE VERDICT: CONSISTENT (472 bytes) twice identical;
+     negative probe (scratch perturbed median 1131 -> 1132,
+     scratch input, never committed) fires 'X median pub=1131
+     line=1132 -> MISMATCH' -> RECONCILE VERDICT: INCONSISTENT
+     (477 bytes) rc 1.
+   - adoption-manifest-v2.txt (written once under the same
+     freeze): the s102 manifest with exactly the ledger+reconcile
+     slots rebound to the v2 bytes (the s97/s99 digests carried in
+     superseded= chains; all other rows byte-identical to the
+     frozen s102 manifest).
+     adoption-check-prego.py --check adoption-manifest-v2.txt . :
+     VERDICT CONSISTENT (matched 27, mismatched 0) twice
+     byte-identical (6,050 bytes); s111 re-run == run1.  Negative
+     (scratch manifest copy with a perturbed ledger digest, never
+     committed): VERDICT INCONSISTENT (matched 26, mismatched 1),
+     the perturbed row 5 named, twice byte-identical.
+   ADOPTION CONTRACT (supersedes the s102 manifest's ledger and
+   reconcile slots; the s102 manifest stays frozen and unedited):
+   any future measurement session runs
+     python3 docs/evidence/gpu/anv-b3w6adoptionprego-20261029/adoption-check-prego.py \
+       --check docs/evidence/gpu/anv-b3ledgersupersede-20261030/adoption-manifest-v2.txt .
+   from the worktree root BEFORE any adoption copy; VERDICT
+   INCONSISTENT => do not adopt (fail-closed).  The adopted names
+   stay ledger-s<NN>.py / reconcile-s<NN>.py.
+
+5. VERIFIED (real tool output; the standing gate set, byte-
+   compared to the s88 committed pins in
+   anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test 2649/0, 17,925 bytes
+       == pin (cmp exit 0), .err 0 (s110 capture gate-s110-
+       classify.txt, re-cmp'd at s111);
+   (b) scoped GPU gate GREEN 'Ran 123 tests containing 12162
+       assertions. 0 failures, 0 errors.' run 1 AND run 2 == each
+       other == both s88 pins (919 bytes, cmp exit 0 x3), .err 0
+       (s110 captures gate-s110-run1/2.txt, re-cmp'd at s111;
+       scratch runner scratch/scoped-gpu-gate.cljk, the eight
+       GPU-owned test namespaces, created/run/deleted, never
+       committed);
+   (c) FULL run-tests.cljk RUN LIVE exit 1 RED AT BASE kotoba.form
+       ('Could not find namespace: kotoba.form', ADR-0362,
+       outside this diff -- this diff touches NO .cljk
+       namespace), .err 879 bytes == pin, stdout 0 bytes == pin
+       (gate-s111-full.err/.out, run at s111) -- NO green full
+       suite claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, 'TOTAL: 38
+       assertions passed, 0 failed', capture 3,590 bytes == pin
+       (cmp exit 0); the LEDGER EVAL pair twice BYTE-IDENTICAL
+       (907 bytes) == the s106 post-append pins
+       (anv-b3w6ledgerappend-20261030/bar-s106-eval-post-run1/2.txt,
+       cmp exit 0) -> VERDICT: PENDING 3/4 (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73; counted day=2026-10-30 session=s105);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0;
+   (f) settle-bar-ledger.txt byte-identical to HEAD
+       (git diff --exit-code rc=0 -- the emit path never ran).
+
+6. THE BAR: implementation session -> NO hardware runs -> NO
+   reading -> NO settle-bar-ledger line, NO day-slot consumption
+   (the bar stays PENDING 3/4 and settles nothing).  RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+   rows stay exactly as ADR-0358 left them (:measured? true scoped
+   to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor); this is settling-bar validation
+   machinery, not a workgroup-default measurement.
+
+7. NAMED, NOT HIDDEN: (a) this row spans two ticks -- s110 built
+   and froze the implementation and its test battery and was cut
+   off at runtime-budget cutoff before gates (c)(d)(e), the record
+   and the landing (nothing committed or pushed at s110; its
+   state-s110.txt is committed here unedited as the interim
+   record), s111 ran the remaining gates and lands; every capture
+   is named for the tick that ran it (gate-s110-*/bar-* vs
+   gate-s111-*/bar-s111-*); (b) the reconcile --line negative
+   probe's perturbed median and the adoption negative's perturbed
+   ledger digest are SCRATCH inputs, created/run/deleted, never
+   committed, never measurements; (c) the kbb engine's standing
+   '2 dep(s) are not :local/root' warning reaches no capture
+   (.err 0 wherever the pins are 0); (d) this diff touches NO
+   .cljk namespace and no tracked file outside docs/adr/0355 and
+   this record dir -- untracked scratch/ and deps.edn are not this
+   row's and are not committed.
+
+8. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked at s110 tick start (2026-10-30T03:19Z) and again at
+   s111 immediately before this push (recorded in state-s111.txt);
+   chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-20261028-4 --
+   the one this commit pushes to).
+
+9. Carry-forward to s112: (a) the W7 measurement half (the s85
+   freeze; the 2026-10-31 day slot; the W7 record now adopts the
+   v2 chain via the adoption-manifest-v2 contract and re-runs the
+   v2 --compat GREEN post-append in its own record -- the s109
+   interim is unnecessary and must not be cited as governing);
+   (b) any further counted-day slot (its own pre-registration
+   freeze) and a cross-day tail-movement row (not queued).
+   Evidence: docs/evidence/gpu/anv-b3ledgersupersede-20261030/
+   (this record + freeze-record-s110.txt + state-s110.txt +
+   state-s111.txt + ledger-prego-v2.py + reconcile-prego-v2.py +
+   adoption-manifest-v2.txt + the s110 implementation/compat/
+   reconcile/adoption captures + the s111 gate/reproduction
+   captures) + the ADR-0355 dated note.  (JUN-55, JUN-59; Linear
+   tracking JUN-499)
