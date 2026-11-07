@@ -32,17 +32,17 @@ https://kotoba-lang.org/blog/embench-c-parity-20261015/.
   a lone `check FILE.cljk` and `definition-cids FILE.cljk`, through the same
   frontend; compile, run, lock and project routes are `.kotoba` only, and
   `.edn` has no native entry yet.
-- CLJS/CLJ are refused as native input. They may remain only as a local
+- CLJC/CLJS/CLJ are refused as native input. They may remain only as a local
   reference oracle under a project-root `oracle/` holding an `ORACLE.edn`
   (owner decision 2026-11-06, JUN-579; see the local reference oracle rules).
-- CLJK is treated as CLJC (owner decision 2026-11-07, JUN-579; supersedes the
-  2026-11-06 "CLJC is refused" wording): both are the same reader sugar,
-  with `#?(:kotoba …)` selecting the Kotoba branch, and `#?@` is not read.
-  This is the target contract. Native behavior is whatever the code does;
-  the entry points above are the last verified state, and the change to
-  accept `.cljc` natively is implementation work not yet done here. Where
-  the code and this text disagree, the code is the state and the
-  disagreement is reported.
+- CLJK stays as a reference oracle source and is treated as CLJC-equivalent
+  for oracle runs (owner decision 2026-11-07, JUN-579): `#?(:kotoba …)`
+  selects the Kotoba branch, `#?@` is not read, and an oracle is handed the
+  source as `.cljc`. The route stays `.kotoba`: the native entries above are
+  unchanged and are not extended, and native acceptance of `.cljc` is not
+  pursued. This replaces the earlier 2026-11-07 wording that made native
+  `.cljc` acceptance the target. Where the code and this text disagree, the
+  code is the state and the disagreement is reported.
 - Only a compiler built and rebuilt by Amu selfhost qualifies. Historical
   hosted builds and C-loader receipts remain labelled historical evidence;
   they do not qualify the replacement route.
