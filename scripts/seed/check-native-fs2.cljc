@@ -3,8 +3,8 @@
 ;; Amu compiles the source; Kotoba asserts bytes and FS form semantics. Basilisp stages files and observes exits,
 ;; diagnostics, ownership and cleanup. Fault observers affect only their own children, with no hosted runtime
 ;; fallback.
-;; Ported from check-native-fs2.py (Basilisp). Linux only. The two helper observers (check-fs2-observed.py,
-;; check-fs2-errno.py) are still Python and are started with the interpreter that runs this script.
+;; Ported from check-native-fs2.py (Basilisp). Linux only. The helper observers (check-fs2-observed.cljc,
+;; check-fs2-errno.cljc) are started as separate `basilisp run` processes (they fork and ptrace).
 ;; Run: basilisp run scripts/seed/check-native-fs2.cljc -- --compiler C --output OUT
 (ns check-native-fs2
   (:require [basilisp.string :as str]
@@ -155,9 +155,9 @@
       (let [boundary-cases (vec (concat ["close-consumed-eintr" "partial-read" "partial-write"]
                                         (for [window ["directory" "file"] sig ["sigint" "sigterm" "sigalrm" "sigxcpu"]] (str "journal-" window "-" sig))))
             errno-cases ["write-eio" "fsync-eio" "chmod-eperm" "unlink-eacces" "fstat-eio" "entropy-enosys" "rename-enosys" "open-enosys"]]
-        (doseq [[script cases] [["check-fs2-observed.py" boundary-cases] ["check-fs2-errno.py" errno-cases]]
+        (doseq [[script cases] [["check-fs2-observed.cljc" boundary-cases] ["check-fs2-errno.cljc" errno-cases]]
                 case cases]
-          (observe case [sys/executable (.joinpath root (str "scripts/seed/" script)) "--image" image "--output" (.joinpath out case) "--case" case]
+          (observe case ["basilisp" "run" "-p" "scripts/seed" (.joinpath root (str "scripts/seed/" script)) "--" "--image" image "--output" (.joinpath out case) "--case" case]
                    (python/dict os/environ) :timeout 45))
         (u/chk (u/deq (u/pin source) source-pin))
         (let [report (u/pydict "status" "PASS_NATIVE_FS2_CURRENT_MATRIX" "host" (python/list [(platform/system) machine])
