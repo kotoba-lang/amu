@@ -58,8 +58,8 @@ on:
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.cljc'
       - 'scripts/seed/check-definition-cids-native.cljc'
-      - 'scripts/seed/macos_native_image.py'
-      - 'scripts/seed/check-macos-fs35.py'
+      - 'scripts/seed/macos_image.cljc'
+      - 'scripts/seed/check-macos-fs35.cljc'
       - 'scripts/seed/check-macos-import-stub-facts.cljc'
       - 'seed/DEFINITION-CIDS-MANIFEST'
       - 'seed/tests/definition-cid-vectors.json'
@@ -388,7 +388,7 @@ jobs:
       - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 -I scripts/seed/check-macos-fs35.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-fs35.cljc -- \
             --output "$RUNNER_TEMP/mac-fs35"
       - name: Definition CID codec frozen vectors on the Mac fixed point (JUN-586)
         if: steps.gate.outputs.skip != 'true'
