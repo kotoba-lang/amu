@@ -80,7 +80,7 @@ on:
       - 'native-product.json'
       - 'scripts/seed/check-host-default-target.py'
       - 'examples/foundation-starter/MACOS-ARM64.md'
-      - 'scripts/seed/check-macos-core-adoption.py'
+      - 'scripts/seed/check-macos-core-adoption.cljc'
       - 'scripts/seed/collect-macos-crash-summary.py'
       - 'scripts/seed/native_build_queue.cljc'
       - 'seed/FULL-MANIFEST'
@@ -175,7 +175,7 @@ jobs:
       - name: Verify the selected 18-module core adoption on Mac
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-macos-core-adoption.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-core-adoption.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-core"
       - name: Native Darwin bounded I/O and error refusal probe

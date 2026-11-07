@@ -6,7 +6,7 @@ descriptors and the Mac CLI. This command adds the two pin kinds it does not:
 
   core adoption   seed/<adoption receipt> and seed/compiler-core.json (sources,
                   source unity, G1=G2=G3 native image and container), computed by
-                  the Mac fixed point exactly like check-macos-core-adoption.py;
+                  the Mac fixed point exactly like check-macos-core-adoption.cljc;
   native CDCI     seed/cdci/policy.json, the controller pin rows, the 24 case
                   image rows of seed/cdci/kotoba-gate.kotoba and the two role
                   source hashes in seed/79-native-cdci.kotoba.
