@@ -4,7 +4,7 @@
 ;; container, extracts the native `main`, and the Mac packager wraps it in the fs2-cli-stdio-general runtime. This
 ;; only stages bytes, launches the native programs and signs a copy with the system codesign. File access goes
 ;; through FD 3 (the output directory) and file names are basenames, as the Mac runtime requires (KOTOBA-169).
-;; Ported from macos_native_image.py (Basilisp, JUN-974); named macos-image while the Python module is imported.
+;; Ported from macos_native_image.py (Basilisp, JUN-974).
 (ns macos-image
   (:require [gate-util :as u]
             [macos-native-lib :as mac])
