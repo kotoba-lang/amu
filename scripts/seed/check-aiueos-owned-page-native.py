@@ -1,3 +1,5 @@
+# NOTE (JUN-974): retained only because check-aiueos-kernel-tier-maximum.py loads its SOURCE;
+# the maintained version is check-aiueos-owned-page-native.cljc. Delete with that importer.
 #!/usr/bin/env python3
 """Observe the bounded slot constructor and immutable pre-main metadata seal."""
 import argparse,hashlib,json,subprocess,sys

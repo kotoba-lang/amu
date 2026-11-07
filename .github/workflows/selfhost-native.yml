@@ -654,13 +654,19 @@ jobs:
       - name: Native FS2 forms, kernel errors and journal cleanup (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-native-fs2.py --compiler "$RUNNER_TEMP/one/F2.elf" --output "$RUNNER_TEMP/fs2-arm"
+      - name: Install Basilisp (pinned) for the .cljc gates
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Native typed live ABI and user-context admission (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: |
           python3 scripts/seed/check-static-profile-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/static-profile-arm"
-          python3 scripts/seed/check-aiueos-value-call-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
-          python3 scripts/seed/check-aiueos-user-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
-          python3 scripts/seed/check-aiueos-desktop-regions-native.py --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-value-call-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/live-call-arm"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-user-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/user-context-arm"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-aiueos-desktop-regions-native.cljc -- --build "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/desktop-regions-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true'
         with:

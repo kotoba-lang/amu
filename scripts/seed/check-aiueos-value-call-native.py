@@ -1,3 +1,5 @@
+# NOTE (JUN-974): retained only because Python gates still load its SOURCE (check_aiueos_value_fixture.py);
+# the maintained, CI-run version is check-aiueos-value-call-native.cljc. Delete with its last Python importer.
 #!/usr/bin/env python3
 """Observe typed role/range admission; actual guest call execution is separate."""
 import argparse
