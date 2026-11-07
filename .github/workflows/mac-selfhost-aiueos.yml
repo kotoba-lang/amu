@@ -31,7 +31,7 @@ on:
       - 'scripts/seed/check-aiueos-user-plc-native.py'
       - 'scripts/seed/check-aiueos-object-outport.py'
       - 'scripts/seed/check-macos-arena-scope.py'
-      - 'scripts/seed/check-macos-keyword-intern.py'
+      - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check-js-browser.py'
       - 'scripts/seed/check-browser-keyword-intern.py'
       - 'seed/tests/browser-keyword-intern.kotoba'
@@ -195,7 +195,7 @@ jobs:
       - name: Mac runtime implements the keyword graph and intern rows (JUN-707, JUN-710)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-macos-keyword-intern.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-keyword-intern.cljc -- \
             --output "$RUNNER_TEMP/mac-keyword-intern"
       - name: js-browser target, 24 cases identical to wasm32-browser in headless Chrome (ADR 0397, JUN-706)
         if: steps.gate.outputs.skip != 'true'
