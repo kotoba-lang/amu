@@ -62,7 +62,7 @@ jobs:
           job: native-checked-source-source-${{ matrix.runner }}
       - name: Verify adopted compiler source and image pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Stage independent source identity gate plan
         if: steps.gate.outputs.skip != 'true'
         env:

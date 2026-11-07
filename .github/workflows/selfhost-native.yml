@@ -154,7 +154,7 @@ jobs:
           if [[ -n "$SOURCE_CANDIDATE_SHA256" ]]; then
             args+=(--source-candidate-sha256 "$SOURCE_CANDIDATE_SHA256")
           fi
-          python3 scripts/seed/check-native-identities.py "${args[@]}"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc -- "${args[@]}"
       - name: Independent native preflight controls through the shared two-slot plan
         if: steps.gate.outputs.skip != 'true'
         run: >-
@@ -557,7 +557,7 @@ jobs:
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
         if: steps.gate.outputs.skip != 'true'
@@ -658,7 +658,7 @@ jobs:
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Independent arm64 gates (bounded native build queue)
         if: steps.gate.outputs.skip != 'true'
@@ -799,7 +799,7 @@ jobs:
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
@@ -865,7 +865,7 @@ jobs:
       - name: Verify current source/image/receipt bindings before transported native execution
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Unchanged original19 library/export provenance (ARM native producer)
         if: steps.gate.outputs.skip != 'true'
@@ -948,7 +948,7 @@ jobs:
       - name: Verify current source and public image before transported native gates
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Install Basilisp (pinned) for the .cljc gates in the x86 plan
@@ -1082,7 +1082,7 @@ jobs:
       - name: Verify current source and public image before transported native gates
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-native-identities.py
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
           python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Static runtime stdin, wire 41 (x86_64, native)

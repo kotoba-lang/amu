@@ -57,7 +57,7 @@ jobs:
           job: native-definition-cid-codec-${{ matrix.runner }}
       - name: Verify adopted source and compiler pins
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-native-identities.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
       - name: Native payload-v2 encoding, CIDs and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
