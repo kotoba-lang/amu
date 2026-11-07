@@ -179,7 +179,7 @@ the C-level-or-better goal is active and unmet.
 qualification and timing evidence. Native acceptance/refusal controls run with:
 
 ```sh
-python3 scripts/seed/check-sequential-scan.py --selfbuild-output <native-selfbuild-output>
+basilisp run -p scripts/seed scripts/seed/check-sequential-scan.cljc -- --selfbuild-output <native-selfbuild-output>
 ```
 
 ## Proven nonnegative power-of-two quotients (2026-10-13)
@@ -212,7 +212,7 @@ and unmet. This snapshot does not claim a certified official Embench score.
 Previous bootstrap, raw evidence and portable proofs are retained under
 `docs/evidence/positive-quotient-20261013/`. Native controls run with
 `scripts/seed/check-positive-quotient.py` and
-`scripts/seed/check-positive-quotient-proof.py`, each taking
+`scripts/seed/check-positive-quotient-proof.cljc`, each taking
 `--selfbuild-output <native-selfbuild-output>`.
 
 The direct mask source snapshot fuses a mask writer's register copy into its low8-bit extraction.65 sites change in each Pico image; all other37 images are identical. Native four-generation identity, original483 observations and192 generic pairs (368 guests plus16 loader configuration refusals) pass. Fixed4 Joseph Pico timing was about1.767310% shorter, with both pair signs positive; this remains exploratory without a stability claim. Small validated gains have no5% cutoff. Full19 C parity remains unproven; incomplete rounds93/94 produce no total ratio. Evidence: [direct mask fusion](../docs/evidence/mask-direct-source-20261013/README.md).
