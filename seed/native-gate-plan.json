@@ -163,7 +163,7 @@
         "argv": [
           "bash",
           "-c",
-          "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do python3 \"scripts/seed/check-aiueos-$suite-native.py\" --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
+          "for suite in project cpu-project memory-project regions boot-region lock isr fixed-extent owned-page owned-window private-context pci-boot pci-private pci-forgery; do PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run \"scripts/seed/check-aiueos-$suite-native.cljc\" -- --complete \"$RUNNER_TEMP/complete\" --output \"$RUNNER_TEMP/aiueos-projects/$suite\" || exit 1; done"
         ]
       },
       {
