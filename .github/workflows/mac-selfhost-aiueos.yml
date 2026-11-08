@@ -69,6 +69,7 @@ on:
       - 'scripts/seed/test-write-bootstrap-descriptors.py'
       - 'scripts/seed/check-descriptor-writer-ci.py'
       - 'scripts/seed/check-public-macos-product.cljc'
+      - 'scripts/seed/check-quoted-namespace-attrs.sh'
       - 'scripts/seed/build-macos-cli.cljc'
       - 'scripts/seed/macos_cli_product.cljc'
       - 'scripts/seed/check-macos-cli-host-native.py'
@@ -120,6 +121,9 @@ jobs:
         run: >-
           basilisp run -p scripts/seed scripts/seed/check-public-macos-product.cljc --
           --output "$RUNNER_TEMP/public-macos-product"
+      - name: Check quoted namespace attributes with native Amu
+        if: steps.gate.outputs.skip != 'true'
+        run: bash scripts/seed/check-quoted-namespace-attrs.sh "$GITHUB_WORKSPACE/bin/kotoba" "$RUNNER_TEMP/quoted-ns-attrs"
       - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
         run: >-

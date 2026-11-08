@@ -10,6 +10,16 @@
 
 (defn pin-of [d key] (u/pydict-from (for [k pin-keys] [k (u/geti (u/geti d key) k)])))
 
+(defn cli-input-paths [root names pins]
+  (let [manifest-paths (vec (map #(.joinpath root %) names))
+        api (.joinpath root "seed/macos-cli-api.kotoba")
+        cli (.joinpath root "seed/macos-cli.kotoba")]
+    {:declared (vec (concat manifest-paths [api cli]))
+     :assembly (vec (concat manifest-paths [api pins cli]))}))
+
+(defn source-report [root inputs]
+  (u/pydict-from (for [p (:declared inputs)] [(str (.relative_to p root)) (mac/pin p)])))
+
 (defn build [out]
   (u/chk (and (= "Darwin" (platform/system)) (= "arm64" (platform/machine))))
   (let [root u/root
@@ -45,13 +55,12 @@
                       (recur (rest lines) acc))
                     acc))
           _ (u/chk (and (= 18 (count names)) (= 18 (count (set names))) (contains? (set names) "seed/19-decimal.kotoba")))
-          paths (vec (concat (map #(.joinpath root %) names)
-                             [(.joinpath root "seed/macos-cli-api.kotoba") pins (.joinpath root "seed/macos-cli.kotoba")]))
-          cli (native paths "amu-cli" bootstrap "amu-cli-host")
+          inputs (cli-input-paths root names pins)
+          cli (native (:assembly inputs) "amu-cli" bootstrap "amu-cli-host")
           report (u/pydict "schema" "amu.macos-native-cli-build.v1" "status" "BUILT_NATIVE_MACOS_CLI"
                            "compiler" (mac/pin compiler) "packager" (mac/pin bootstrap) "rebuiltPackager" (mac/pin packager)
                            "cli" (mac/pin cli) "unity" (mac/pin (.joinpath out "amu-cli.kotoba"))
-                           "sources" (u/pydict-from (for [p paths :when (.is_relative_to p root)] [(str (.relative_to p root)) (mac/pin p)]))
+                           "sources" (source-report root inputs)
                            "nativeBuild" true "hostedFallback" false "publicEntrySelected" false)]
       (.write_text (.joinpath out "cli-build.json") (u/json-dump report))
       (println (u/geti report "status") (str cli))
