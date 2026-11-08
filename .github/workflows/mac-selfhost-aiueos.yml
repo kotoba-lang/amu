@@ -100,6 +100,22 @@ permissions:
   contents: read
 
 jobs:
+  repin-inventory:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - id: gate
+        uses: ./.github/actions/ci-gate
+        with:
+          job: mac-selfhost-aiueos-repin-inventory
+      - name: Check native repin inventory prototype and mutants
+        if: steps.gate.outputs.skip != 'true'
+        run: bash scripts/seed/check-repin-inventory-native.sh "$GITHUB_WORKSPACE/bin/kotoba" "$RUNNER_TEMP/repin-inventory"
+      - if: success() && steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/ci-save
+        with:
+          key: ${{ steps.gate.outputs.key }}
   mac-root:
     runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-macos-arm64' || 'macos-15' }}  # amu-runner: macos-15
     timeout-minutes: 30
@@ -124,9 +140,6 @@ jobs:
         run: >-
           basilisp run -p scripts/seed scripts/seed/check-public-macos-product.cljc --
           --output "$RUNNER_TEMP/public-macos-product"
-      - name: Check native repin inventory prototype and mutants
-        if: steps.gate.outputs.skip != 'true'
-        run: bash scripts/seed/check-repin-inventory-native.sh "$GITHUB_WORKSPACE/bin/kotoba" "$RUNNER_TEMP/repin-inventory"
       - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
         run: >-
