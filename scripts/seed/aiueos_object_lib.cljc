@@ -165,3 +165,37 @@
 (def dot-source
   (str "(ns fdot (:export [kotoba_aiueos_dot_f32]))\n"
        "(defn kotoba_aiueos_dot_f32 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 (kernel-dot-f32 a an b bn c))\n"))
+
+;; Independent ELF64 relocatable reader shared by the object-route gates.
+(defn unpack-from [fmt b off] (vec (struct/unpack_from fmt b off)))
+
+(defn read-elf
+  "Symbols [name info shndx value size], relocations [offset info addend], .text and section indices of an ET_REL object."
+  [path]
+  (let [blob (.read_bytes path)]
+    (when-not (u/deq (u/bslice blob 0 16) (u/hex->bytes "7f454c46020101000000000000000000"))
+      (mac/fail "not ELF64 little-endian System V"))
+    (let [[etype machine] (unpack-from "<HH" blob 16)
+          shoff (first (unpack-from "<Q" blob 40))
+          [shnum shstrndx] (unpack-from "<HH" blob 60)
+          _ (when (not= [etype machine] [1 62]) (mac/fail "not ET_REL / EM_X86_64"))
+          secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+          sstr (nth secs shstrndx)
+          shstr (u/bslice blob (nth sstr 4) (+ (nth sstr 4) (nth sstr 5)))
+          name-at (fn [table offset] (.decode (u/bslice table offset (.index table (u/bytes-of 0) offset))))
+          by-name (into {} (map-indexed (fn [i s] [(name-at shstr (first s)) i]) secs))
+          _ (when (not= (set (keys by-name)) #{"" ".text" ".data" ".rela.text" ".symtab" ".strtab" ".shstrtab"})
+              (mac/fail (str "unexpected sections " (sort (keys by-name)))))
+          body (fn [name] (let [s (nth secs (get by-name name))]
+                            [(u/bslice blob (nth s 4) (+ (nth s 4) (nth s 5))) s]))
+          [strtab _] (body ".strtab")
+          [symdata symsec] (body ".symtab")
+          symbols (vec (for [off (range 0 (python/len symdata) 24)]
+                         (let [[n info other shndx value size] (unpack-from "<IBBHQQ" symdata off)]
+                           [(name-at strtab n) info shndx value size])))
+          [reladata _] (body ".rela.text")
+          relas (vec (for [off (range 0 (python/len reladata) 24)] (unpack-from "<QQq" reladata off)))
+          [text _] (body ".text")]
+      {:symbols symbols :relas relas :text text :sym-info (nth symsec 7)
+       :data-index (get by-name ".data") :text-index (get by-name ".text")})))
+

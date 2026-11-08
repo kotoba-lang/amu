@@ -57,34 +57,6 @@
 (defn cat [& parts] (reduce operator/add parts))
 (defn unpack [fmt b off] (vec (struct/unpack_from fmt b off)))
 
-(defn read-elf [path]
-  (let [blob (.read_bytes path)]
-    (when-not (u/deq (u/bslice blob 0 16) (u/hex->bytes "7f454c46020101000000000000000000"))
-      (fail "not ELF64 little-endian System V"))
-    (let [[etype machine] (unpack "<HH" blob 16)
-          shoff (first (unpack "<Q" blob 40))
-          [shnum shstrndx] (unpack "<HH" blob 60)
-          _ (when (not= [etype machine] [1 62]) (fail "not ET_REL / EM_X86_64"))
-          secs (vec (for [i (range shnum)] (unpack "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
-          sstr (nth secs shstrndx)
-          shstr (u/bslice blob (nth sstr 4) (+ (nth sstr 4) (nth sstr 5)))
-          name-at (fn [table offset] (.decode (u/bslice table offset (.index table (u/bytes-of 0) offset))))
-          by-name (into {} (map-indexed (fn [i s] [(name-at shstr (first s)) i]) secs))
-          _ (when (not= (set (keys by-name)) #{"" ".text" ".data" ".rela.text" ".symtab" ".strtab" ".shstrtab"})
-              (fail (str "unexpected sections " (sort (keys by-name)))))
-          body (fn [name] (let [s (nth secs (get by-name name))]
-                            [(u/bslice blob (nth s 4) (+ (nth s 4) (nth s 5))) s]))
-          [strtab _] (body ".strtab")
-          [symdata symsec] (body ".symtab")
-          symbols (vec (for [off (range 0 (python/len symdata) 24)]
-                         (let [[n info other shndx value size] (unpack "<IBBHQQ" symdata off)]
-                           [(name-at strtab n) info shndx value size])))
-          [reladata _] (body ".rela.text")
-          relas (vec (for [off (range 0 (python/len reladata) 24)] (unpack "<QQq" reladata off)))
-          [text _] (body ".text")]
-      {:symbols symbols :relas relas :text text :sym-info (nth symsec 7)
-       :data-index (get by-name ".data") :text-index (get by-name ".text")})))
-
 (defn check-two [obj]
   (let [syms (:symbols obj) relas (:relas obj)]
     (when (not= (mapv first syms) ["" "context" "f" "g"]) (fail (str "symbols " (mapv first syms))))
@@ -157,17 +129,17 @@
         _ (when (not= digest one-sha256) (fail (str "one-export object changed: " digest)))
         _ (.__setitem__ report "oneExport" (u/pydict "sha256" digest "bytes" (.-st_size (.stat one))))
         [_ two] (lib/compile-source compiler output "two" two-source)
-        _ (check-two (read-elf two))
+        _ (check-two (lib/read-elf two))
         _ (.__setitem__ report "twoExports" (u/pydict "sha256" (lib/sha-of two) "bytes" (.-st_size (.stat two))))
         [result nine] (lib/compile-source compiler output "nine" nine-source 1)
         _ (when-not (refused? result nine "E7102") (fail "nine exports were not refused with E7102 and no output"))
         _ (.__setitem__ report "nineExports" "refused E7102")]
     (doseq [[name src n] [["six" six-source 6] ["eight" eight-source 8]]]
       (let [[_ obj] (lib/compile-source compiler output name src)
-            size (check-long (read-elf obj) n)]
+            size (check-long (lib/read-elf obj) n)]
         (.__setitem__ report (str name "Params") (u/pydict "sha256" (lib/sha-of obj) "shimBytes" size))))
     (let [[_ mixed] (lib/compile-source compiler output "mixed" mixed-source)]
-      (check-mixed (read-elf mixed))
+      (check-mixed (lib/read-elf mixed))
       (.__setitem__ report "mixedLayout" "six-parameter shim then the short shim"))
     (doseq [[name src code] [["ninep" nine-params-source "E2108"] ["privsix" private-six-source "E7102"]]]
       (let [[result obj] (lib/compile-source compiler output name src 1)]
