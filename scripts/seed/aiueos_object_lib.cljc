@@ -227,3 +227,13 @@
        "  (let [x (kernel-out-u32 3320 (bit-or 2147483648 (bit-and a 252))) y (kernel-out-u32 3324 v)] 1))\n"
        "(defn pcr [a :i64] :i64 (let [x (kernel-out-u32 3320 (bit-or 2147483648 a))] (kernel-in-u32 3324)))\n"))
 (def outport-sha256 "6377fce8f681ff0c760798f8fb41281e247f5b8627000ba5348c24464b1fd0d7")
+
+(defn elf-sections
+  "{section-name [name-offset type flags addr offset size link info align entsize]} of an ELF64 object blob."
+  [blob]
+  (let [shoff (first (unpack-from "<Q" blob 40))
+        [shnum shstr] (unpack-from "<HH" blob 60)
+        secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+        table (nth (nth secs shstr) 4)
+        name-of (fn [o] (.decode (u/bslice blob (+ table o) (.index blob (u/bytes-of 0) (+ table o)))))]
+    (into {} (for [s secs] [(name-of (first s)) s]))))
