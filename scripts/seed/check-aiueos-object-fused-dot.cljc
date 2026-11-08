@@ -25,9 +25,7 @@
 
 ;; the pause object's SHA-256 under slice 5 (amu fd84f7e9, unchanged on main 4ece027c): the new block must leave it
 (def pause-sha256 "c24f9c962e000ead3c1672975f74f941960c169d9c22bfe824a89a3c7a909403")
-(def dot
-  (str "(ns fdot (:export [kotoba_aiueos_dot_f32]))\n"
-       "(defn kotoba_aiueos_dot_f32 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 (kernel-dot-f32 a an b bn c))\n"))
+(def dot lib/dot-source)
 (def ptq1
   (str "(ns fptq1 (:export [kotoba_aiueos_dequant_dot_ptq1_0]))\n"
        "(defn kotoba_aiueos_dequant_dot_ptq1_0 [w :i64 wn :i64 x :i64 xn :i64 c :i64] :i64 (kernel-dequant-dot-ptq1-0 w wn x xn c))\n"))

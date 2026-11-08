@@ -161,3 +161,7 @@
 (def pause-source
   (str "(ns ps (:export [kotoba_aiueos_spin]))\n"
        "(defn kotoba_aiueos_spin [] :i64 (kernel-pause))\n"))
+
+(def dot-source
+  (str "(ns fdot (:export [kotoba_aiueos_dot_f32]))\n"
+       "(defn kotoba_aiueos_dot_f32 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 (kernel-dot-f32 a an b bn c))\n"))
