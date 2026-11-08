@@ -157,3 +157,7 @@
   [args f]
   (f (.resolve (pathlib/Path (or (u/opt args "--compiler") (sys/exit "--compiler is required"))) ** :strict true)
      (.resolve (pathlib/Path (or (u/opt args "--output") (sys/exit "--output is required"))))))
+
+(def pause-source
+  (str "(ns ps (:export [kotoba_aiueos_spin]))\n"
+       "(defn kotoba_aiueos_spin [] :i64 (kernel-pause))\n"))
