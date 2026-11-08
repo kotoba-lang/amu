@@ -45,3 +45,22 @@
   [compiler directory name source]
   (let [[rc out err] (run-source compiler directory "check" name source)]
     [rc (str out err)]))
+
+(defn mutant-compiler
+  "Build a mutant full compiler from FULL-MANIFEST with `path`'s text edited by [[old new] ...] (each `old` must occur
+  exactly once), using `compiler`/`packager`. Returns the mutant compiler Path; fails if it equals the compiler."
+  [compiler packager output label path edits]
+  (let [names (vec (filter #(and (seq %) (not (.startswith % "#"))) (.splitlines (.read_text mac/manifest))))
+        _ (when-not (contains? (set names) path) (mac/fail (str "FULL-MANIFEST no longer lists " path)))
+        text (reduce (fn [text [old new]]
+                       (when (not= 1 (.count text old)) (mac/fail (str "cannot construct the " label " negative control")))
+                       (.replace text old new))
+                     (.read_text (.joinpath u/root path)) edits)
+        mutant (.joinpath (pathlib/Path output) label)
+        _ (.mkdir mutant ** :mode 0700)
+        _ (.write_text (.joinpath mutant "full-unity.kotoba")
+                       (apply str (for [name names] (str (if (= name path) text (.read_text (.joinpath u/root name))) "\n"))))
+        built (build compiler packager mutant "full-unity" (.read_text (.joinpath mutant "full-unity.kotoba")))]
+    (when (u/deq (mac/pin built) (mac/pin compiler))
+      (mac/fail (str "mutant compiler is identical to the compiler under test: " label)))
+    built))
