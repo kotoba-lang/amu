@@ -101,7 +101,7 @@ permissions:
 
 jobs:
   repin-inventory:
-    runs-on: macos-15
+    runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-macos-arm64' || 'macos-15' }}  # amu-runner: macos-15
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
