@@ -237,3 +237,34 @@
         table (nth (nth secs shstr) 4)
         name-of (fn [o] (.decode (u/bslice blob (+ table o) (.index blob (u/bytes-of 0) (+ table o)))))]
     (into {} (for [s secs] [(name-of (first s)) s]))))
+
+;; The one-export object every gate pins (check-aiueos-object-exports).
+(def one-sha256 "4d68de1d09d2404b9df5bfabed223ae8b084962e26acee44f73a519e78122af7")
+(def one-source "(ns one (:export [f]))\n(defn f [x :i64] :i64 (+ x 1))\n")
+
+(defn read-elf-all
+  "Like read-elf, but for objects with any section set: also {:names :secs :size} (ordered section names, headers,
+  file size); no fixed-section-set check."
+  [path]
+  (let [blob (.read_bytes path)]
+    (when (or (not (u/deq (u/bslice blob 0 16) (u/hex->bytes "7f454c46020101000000000000000000")))
+              (not= (unpack-from "<HH" blob 16) [1 62]))
+      (throw (python/ValueError "not an ELF64 x86-64 ET_REL object")))
+    (let [shoff (first (unpack-from "<Q" blob 40))
+          [shnum shstrndx] (unpack-from "<HH" blob 60)
+          secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+          sstr (nth secs shstrndx)
+          shstr (u/bslice blob (nth sstr 4) (+ (nth sstr 4) (nth sstr 5)))
+          name-at (fn [table offset] (.decode (u/bslice table offset (.index table (u/bytes-of 0) offset))))
+          names (mapv #(name-at shstr (first %)) secs)
+          body (fn [i] (u/bslice blob (nth (nth secs i) 4) (+ (nth (nth secs i) 4) (nth (nth secs i) 5))))
+          idx (fn [n] (.index (python/list names) n))
+          strtab (body (idx ".strtab"))
+          symdata (body (idx ".symtab"))
+          symbols (vec (for [off (range 0 (python/len symdata) 24)]
+                         (let [[n info _ shndx value size] (unpack-from "<IBBHQQ" symdata off)]
+                           [(name-at strtab n) info shndx value size])))
+          reladata (body (idx ".rela.text"))
+          relas (vec (for [off (range 0 (python/len reladata) 24)] (unpack-from "<QQq" reladata off)))]
+      {:names names :secs secs :symbols symbols :relas relas :text (body (idx ".text"))
+       :sym-info (nth (nth secs (idx ".symtab")) 7) :size (python/len blob)})))

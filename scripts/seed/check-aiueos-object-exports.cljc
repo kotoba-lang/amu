@@ -25,8 +25,8 @@
             [macos-native-lib :as mac])
   (:import operator struct sys))
 
-(def one-sha256 "4d68de1d09d2404b9df5bfabed223ae8b084962e26acee44f73a519e78122af7")
-(def one-source "(ns one (:export [f]))\n(defn f [x :i64] :i64 (+ x 1))\n")
+(def one-sha256 lib/one-sha256)
+(def one-source lib/one-source)
 (def two-source (str "(ns two (:export [f g]))\n(defn f [x :i64] :i64 (+ x 1))\n"
                      "(defn g [x :i64 y :i64] :i64 (* x y))\n"))
 (def nine-source (str "(ns nine (:export [" (str/join " " (for [i (range 9)] (str "f" i))) "]))\n"
