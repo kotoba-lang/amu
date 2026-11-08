@@ -445,8 +445,37 @@
           (pj-is M S k ":use") (let [w (pj-err M E-PROJ-USE k)] P)
           :else (let [w (pj-err M E-PROJ-CLAUSE k)] P))))
 
-(defn- pj-clauses [M :vector-i64 L :vector-i64 P :string S :string c :i64] :string
-  (if (or (= c 0) (not (pj-ok M))) P (pj-clauses M L (pj-clause M L P S c) S (pj-next M c))))
+;; Track the four declarations independently of their spelling as attributes or
+;; clauses. A negative attr mask denotes a duplicate or an incomplete pair.
+(defn- pj-decl-bit [M :vector-i64 S :string k :i64] :i64
+  (cond (or (pj-is M S k ":kotoba/export") (pj-is M S k ":export")) 1
+        (or (pj-is M S k ":kotoba/schemas") (pj-is M S k ":schemas")) 2
+        (or (pj-is M S k ":kotoba/capabilities") (pj-is M S k ":capabilities")) 4
+        (or (pj-is M S k ":kotoba/params") (pj-is M S k ":params")) 8
+        :else 0))
+
+(defn- pj-attr-mask [M :vector-i64 S :string k :i64 seen :i64] :i64
+  (if (= k 0) seen
+    (let [v (pj-next M k) bit (pj-decl-bit M S k)]
+      (cond (= v 0) -1
+            (and (> bit 0) (not= (bit-and seen bit) 0)) -1
+            :else (pj-attr-mask M S (pj-next M v) (bit-or seen bit))))))
+
+;; phase 0: before optional docstring; 1: after docstring; 2: after
+;; attr-map; 3: after a clause. Only one attr-map is allowed before clauses.
+(defn- pj-clauses [M :vector-i64 L :vector-i64 P :string S :string c :i64 phase :i64 seen :i64] :string
+  (if (or (= c 0) (not (pj-ok M))) P
+    (let [kind (pj-kind M c)
+          map? (= kind ND-MAP)
+          doc? (= kind ND-STR)
+          bit (if map? (pj-attr-mask M S (pj-first M c) 0)
+                (if (= kind ND-LIST) (pj-decl-bit M S (pj-first M c)) 0))]
+      (cond (and doc? (not= phase 0)) (let [w (pj-err M E-PROJ-NSFORM c)] P)
+            (and map? (> phase 1)) (let [w (pj-err M E-PROJ-NSFORM c)] P)
+            (< bit 0) (let [w (pj-err M E-PROJ-NSFORM c)] P)
+            (not= (bit-and seen bit) 0) (let [w (pj-err M E-PROJ-NSFORM c)] P)
+            :else (pj-clauses M L (pj-clause M L P S c) S (pj-next M c)
+                    (if doc? 1 (if map? 2 3)) (bit-or seen bit))))))
 
 ;; parse the header of module L[errmod] (its source S is read into M); expect = the required name ("" for the entry)
 (defn- pj-header [M :vector-i64 L :vector-i64 P :string S :string expect :string] :string
@@ -459,7 +488,7 @@
           (and (> (string-length expect) 0) (not (pj-is M S nmn expect))) (let [w (pj-err M E-PROJ-MISMATCH nmn)] P)
           :else (let [w (-> L (pj-mset cur pj-mf-req0 (pj-l L pj-k-nreq)) (pj-mset cur pj-mf-nreq 0))
                       P1 (if (= (string-length expect) 0) (let [w1 (pj-mset L cur pj-mf-name (pj-n L))] (pj-padd L P (pj-text M S nmn))) P)
-                      P2 (pj-clauses M L P1 S (pj-next M nmn))]
+                      P2 (pj-clauses M L P1 S (pj-next M nmn) 0 0)]
                   (cond (not (pj-ok M)) P2
                         (and (= (pj-mf L cur pj-mf-entry) 0) (= (pj-mf L cur pj-mf-expk) 0) (= (pj-count-pub M S) 0)) (let [w2 (pj-err M E-PROJ-NOTHING nmn)] P2)
                         :else P2)))))
