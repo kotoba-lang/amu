@@ -401,15 +401,23 @@
 (defn- pj-specs [M :vector-i64 L :vector-i64 P :string S :string sp :i64] :string
   (if (or (= sp 0) (not (pj-ok M))) P (pj-specs M L (pj-spec M L P S sp) S (pj-next M sp))))
 
+;; Unwrap only a two-element (quote value) on a recognized ns attribute.
+;; Keep traversal on the outer value: the inner node is not a map sibling.
+(defn- pj-attr-value [M :vector-i64 S :string v :i64] :i64
+  (if (and (> v 0) (pj-head? M S v "quote"))
+    (let [x (pj-next M (pj-first M v))]
+      (if (and (> x 0) (= (pj-next M x) 0)) x v))
+    v))
+
 ;; the attr-map {k v ..} of the ns form
 (defn- pj-attrs [M :vector-i64 L :vector-i64 P :string S :string k :i64] :string
   (let [v (pj-next M k)]
     (cond (or (= k 0) (not (pj-ok M))) P
           (= v 0) (let [w (pj-err M E-PROJ-NSFORM k)] P)
-          (pj-is M S k ":kotoba/export") (pj-attrs M L (pj-declare M L P S v) S (pj-next M v))
-          (pj-is M S k ":kotoba/params") (pj-attrs M L (pj-tpl-params M L P S v k) S (pj-next M v))   ; R6D
-          (pj-is M S k ":kotoba/schemas") (pj-attrs M L (pj-own-schemas M L P S v) S (pj-next M v))   ; R6A
-          (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S v)] (pj-attrs M L P S (pj-next M v)))   ; R5B
+          (pj-is M S k ":kotoba/export") (pj-attrs M L (pj-declare M L P S (pj-attr-value M S v)) S (pj-next M v))
+          (pj-is M S k ":kotoba/params") (pj-attrs M L (pj-tpl-params M L P S (pj-attr-value M S v) k) S (pj-next M v))   ; R6D
+          (pj-is M S k ":kotoba/schemas") (pj-attrs M L (pj-own-schemas M L P S (pj-attr-value M S v)) S (pj-next M v))   ; R6A
+          (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S (pj-attr-value M S v))] (pj-attrs M L P S (pj-next M v)))   ; R5B
           :else (pj-attrs M L P S (pj-next M v)))))
 
 ;; R6A: the module's own schema map v: its inner text (verbatim, re-read in the generated ns form) is string pj-mf-sch
