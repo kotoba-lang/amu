@@ -124,7 +124,7 @@ pins recomputed; see the PR).
   source exit 66 with empty stdout; `--groups` keeps CIDs and adds group/member columns; declaration order is preserved; usage errors exit 2; an encoder mutant is refused by its own validator; closure controls (hand-authored oracle payloads for closure/capture/dependency/nested/two-capture, rename invariance, body and captured-binder sensitivity, five closure refusals, two closure mutants); `check` still works through the
   new entry.
 - macOS arm64 (JUN-586, 2026-10-29, Apple M1 Max, main 6b99bf63, Mac root `amu-full-root.macho` db4bec67,
-  `diagnostic-candidate`): both gates take a Darwin branch (`scripts/seed/macos_native_image.py`): the Mac root compiles
+  `diagnostic-candidate`): both gates take a Darwin branch (`scripts/seed/macos_image.cljc`): the Mac root compiles
   to `aarch64-macos`, `extract-native` takes `main`, the Mac packager wraps it in `fs2-cli-stdio-general`, a copy is
   ad-hoc signed; FD 3 is the file root and file arguments are basenames (KOTOBA-169). On the Mac, main's result is the
   exit code (Linux prints `:result N` under `KEXE_STRUCTURED_REPORT`), so the codec gate compares exit codes there.

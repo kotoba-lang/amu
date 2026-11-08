@@ -123,7 +123,7 @@ There are at most 262144 rows, as on Linux. A wrong context tag, a failed
 mapping or a full table writes `seed: keyword intern failed (Mac runtime)` to
 stderr and exits 70.
 
-`scripts/seed/check-macos-keyword-intern.py` (Mac CI job) runs four programs:
+`scripts/seed/check-macos-keyword-intern.cljc` (Mac CI job) runs four programs:
 
 | Program | What it checks | Exit |
 |---|---|---|
@@ -166,7 +166,7 @@ refusal line is now `seed: keyword table failed (Mac runtime)` (exit 70). It
 is placed at `KG-MSG-START` (4944, the free span before the vector runtime),
 and the layout patches its `adr` (`adr-x1`).
 
-`check-macos-keyword-intern.py` now also runs the Linux oracle:
+`check-macos-keyword-intern.cljc` now also runs the Linux oracle:
 
 | Program | Exit |
 |---|---|
