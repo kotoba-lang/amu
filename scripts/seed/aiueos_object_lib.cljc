@@ -5,7 +5,7 @@
 (ns aiueos-object-lib
   (:require [gate-util :as u]
             [macos-native-lib :as mac])
-  (:import json operator pathlib struct))
+  (:import json operator pathlib struct sys))
 
 (def fuel "1024")
 (def widths-sha256 "a8ac4f073c599331986dbf50e9fd59dccbca14dc6bc89ef053918e47f1991738")
@@ -108,3 +108,52 @@
   (.decode (operator/add (.-stdout result) (.-stderr result)) "utf-8" "replace"))
 
 (defn sha-of [path] (u/sha256-hex (.read_bytes (pathlib/Path path))))
+
+;; Sources shared across gates (a hyphenated gate namespace cannot be required).
+(def xstate-source
+  (str "(ns xs (:export [cr4on xcr0on rc xg]))\n"
+       "(defn cr4on [] :i64 (kernel-cr4-set-bits 263680))\n"
+       "(defn xcr0on [] :i64 (kernel-xcr0-set-bits 7))\n"
+       "(defn rc [] :i64 (kernel-read-cr4))\n"
+       "(defn xg [] :i64 (kernel-xgetbv))\n"))
+(def halt-source
+  (str "(ns hw (:export [kotoba_aiueos_wait]))\n"
+       "(defn kotoba_aiueos_wait [] :i64 (kernel-wait-interrupt))\n"))
+
+;; Steps every gate of the family repeats.
+(defn check-widths-unchanged!
+  "The 512-byte width object keeps its pinned SHA-256; records it in report."
+  [compiler output report]
+  (let [[_ obj] (compile-source compiler output "widths" widths-source)
+        digest (sha-of obj)]
+    (when (not= digest widths-sha256) (mac/fail (str "the 512-byte width object changed: " digest)))
+    (.__setitem__ report "widthsUnchanged" digest)))
+
+(defn check-refusals!
+  "Each [name source] must be refused with `code` and write no object; records \"refused CODE\" in report."
+  [compiler output report pairs code]
+  (doseq [[name src] pairs]
+    (let [[result obj] (compile-source compiler output name src 1)
+          message (message-of result)]
+      (when (or (not (.__contains__ message code)) (.exists obj))
+        (mac/fail (str name " was not refused with " code " and no output: " message)))
+      (.__setitem__ report name (str "refused " code)))))
+
+(defn emit!
+  "Write report.json and print TAG followed by the sorted-key report."
+  [output report tag]
+  (.write_text (.joinpath output "report.json") (u/json-dump report))
+  (println (str tag " " (json/dumps report ** :sort_keys true)))
+  (.flush sys/stdout))
+
+(defn start!
+  "Verify the compiler and create the output directory."
+  [compiler output]
+  (mac/verify-macho compiler)
+  (.mkdir output ** :parents false :mode 0700 :exist_ok false))
+
+(defn cli-main
+  "Parse --compiler/--output (resolved) and call (f compiler output)."
+  [args f]
+  (f (.resolve (pathlib/Path (or (u/opt args "--compiler") (sys/exit "--compiler is required"))) ** :strict true)
+     (.resolve (pathlib/Path (or (u/opt args "--output") (sys/exit "--output is required"))))))
