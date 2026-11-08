@@ -4,7 +4,7 @@
 (ns macos-scope-build
   (:require [gate-util :as u]
             [macos-native-lib :as mac])
-  (:import pathlib re))
+  (:import operator os pathlib re))
 
 (defn build
   "Compile `source` (a string or a Path), extract `symbol`, package with the packager, sign. Returns the .macho Path."
@@ -20,3 +20,22 @@
        (mac/native-run packager output [(str name "-unsigned.macho") (str name ".raw") "fs2-cli-stdio-general" (.decode (.group m 1))])
        (mac/sign (.joinpath output (str name "-unsigned.macho")) (.joinpath output (str name ".macho")))
        (.joinpath output (str name ".macho"))))))
+
+(defn check-source
+  "Run `compiler check name.kotoba` with directory as the FD3 root. Returns [exit-code combined-output-string]."
+  [compiler directory name source]
+  (let [directory (pathlib/Path directory)]
+    (.write_text (.joinpath directory (str name ".kotoba")) source)
+    (let [fd (os/open directory (bit-or os/O_RDONLY os/O_DIRECTORY))
+          saved (atom nil)]
+      (try
+        (try (reset! saved (os/dup 3)) (catch python/OSError _ nil))
+        (os/dup2 fd 3)
+        (let [result (mac/process [compiler "check" (str name ".kotoba")] :cwd directory :pass-fds [3]
+                                  :env (python/dict {"PATH" "/usr/bin:/bin" "LANG" "C"}) :timeout 600)]
+          [(.-returncode result) (.decode (operator/add (.-stdout result) (.-stderr result)) "utf-8" "replace")])
+        (finally
+          (if (nil? @saved)
+            (os/close 3)
+            (do (os/dup2 @saved 3) (os/close @saved)))
+          (os/close fd))))))
