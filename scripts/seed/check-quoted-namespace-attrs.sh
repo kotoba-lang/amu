@@ -27,4 +27,21 @@ run_refusal call ':kotoba/export (identity [main])'
 run_refusal capcall ':kotoba/export [main] :kotoba/capabilities (identity #{})'
 run_refusal schemacall ':kotoba/export [main] :kotoba/schemas (identity {})'
 run_refusal paramscall ':kotoba/export [main] :kotoba/params (identity [elem :i64])' E6023
+
+# Compile and execute the same exported function through both surface forms.
+# A meaning-changing control ensures this comparison is sensitive to behavior.
+for variant in plain quoted changed; do
+  mkdir "$out/$variant-project"
+  attrs=':kotoba/export [main]'
+  value=7
+  if [[ "$variant" == quoted ]]; then attrs=':kotoba/export (quote [main])'; fi
+  if [[ "$variant" == changed ]]; then value=8; fi
+  printf '(ns demo {%s})\n(defn main [] :i64 %s)\n' "$attrs" "$value" > "$out/$variant-project/demo.kotoba"
+  "$compiler" compile "$out/$variant-project/demo.kotoba" --source-path "$out/$variant-project" -o "$out/$variant-program" > "$out/$variant-build.out" 2>&1
+  "$out/$variant-program" > "$out/$variant-result.out"
+done
+[[ "$(<"$out/plain-result.out")" == 7 ]]
+cmp -s "$out/plain-result.out" "$out/quoted-result.out"
+[[ "$(<"$out/changed-result.out")" == 8 ]]
+! cmp -s "$out/plain-result.out" "$out/changed-result.out"
 printf 'PASS_QUOTED_NAMESPACE_ATTRS\n'
