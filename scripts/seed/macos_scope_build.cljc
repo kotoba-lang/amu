@@ -64,3 +64,20 @@
     (when (u/deq (mac/pin built) (mac/pin compiler))
       (mac/fail (str "mutant compiler is identical to the compiler under test: " label)))
     built))
+
+(defn build-run
+  "Write directory/name.kotoba, build it with `build`, run the image; returns its exit code (60 s timeout)."
+  [compiler packager directory name source]
+  (let [directory (pathlib/Path directory)
+        path (.joinpath directory (str name ".kotoba"))]
+    (.write_text path source)
+    (let [image (build compiler packager directory name path)]
+      (.-returncode (mac/process [image] :cwd directory :env (python/dict {"PATH" "/usr/bin:/bin" "LANG" "C"}) :timeout 60)))))
+
+(defn cids
+  "stdout of `compiler definition-cids name.kotoba` (FD3 root = directory); fails on a non-zero exit."
+  [compiler directory name source]
+  (let [[status out err] (run-source compiler directory "definition-cids" name source)]
+    (when (not= status 0)
+      (mac/fail (str "definition-cids " name ": exit " status ": " (pr-str (let [s (str out err)] (subs s (max 0 (- (count s) 300))))))))
+    out))
