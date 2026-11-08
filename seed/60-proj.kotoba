@@ -418,7 +418,7 @@
           (pj-is M S k ":kotoba/params") (pj-attrs M L (pj-tpl-params M L P S (pj-attr-value M S v) k) S (pj-next M v))   ; R6D
           (pj-is M S k ":kotoba/schemas") (pj-attrs M L (pj-own-schemas M L P S (pj-attr-value M S v)) S (pj-next M v))   ; R6A
           (pj-is M S k ":kotoba/capabilities") (let [w (pj-r5b-decl M L S (pj-attr-value M S v))] (pj-attrs M L P S (pj-next M v)))   ; R5B
-          :else (pj-attrs M L P S (pj-next M v)))))
+          :else (let [w (pj-err M E-PROJ-NSFORM k)] P))))
 
 ;; R6A: the module's own schema map v: its inner text (verbatim, re-read in the generated ns form) is string pj-mf-sch
 (defn- pj-own-schemas [M :vector-i64 L :vector-i64 P :string S :string v :i64] :string

@@ -27,6 +27,7 @@ run_refusal call ':kotoba/export (identity [main])'
 run_refusal capcall ':kotoba/export [main] :kotoba/capabilities (identity #{})'
 run_refusal schemacall ':kotoba/export [main] :kotoba/schemas (identity {})'
 run_refusal paramscall ':kotoba/export [main] :kotoba/params (identity [elem :i64])' E6023
+run_refusal unknown ':kotoba/export [main] :author "unrecognized"'
 
 # Compile and execute the same exported function through both surface forms.
 # A meaning-changing control ensures this comparison is sensitive to behavior.
