@@ -81,3 +81,9 @@
     (when (not= status 0)
       (mac/fail (str "definition-cids " name ": exit " status ": " (pr-str (let [s (str out err)] (subs s (max 0 (- (count s) 300))))))))
     out))
+
+(defn cids-report
+  "\"exit N\\n\" + stdout + stderr of `compiler definition-cids name.kotoba` (never fails on a non-zero exit)."
+  [compiler directory name source]
+  (let [[status out err] (run-source compiler directory "definition-cids" name source)]
+    (str "exit " status "\n" out err)))
