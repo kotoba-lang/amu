@@ -284,7 +284,7 @@
                 (if (and (empty? stale) roles)
                   (do (println "PASS_ALL_PINS_CURRENT") 0)
                   (let [core? (boolean (some (fn [[_ why]] (str/includes? why "core source drift")) stale))]
-                    (.write sys/stderr "FAIL_STALE_PINS: run scripts/seed/repin-all-pins.py --merge origin/main\n")
+                    (.write sys/stderr "FAIL_STALE_PINS: run basilisp run -p scripts/seed scripts/seed/repin-all-pins.cljc -- --merge origin/main\n")
                     (if core? exit-core exit-cdci))))
               (do
                 (when merge-ref (merge- root merge-ref))

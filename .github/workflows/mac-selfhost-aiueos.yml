@@ -43,6 +43,7 @@ on:
       - 'scripts/seed/check-macos-arena-scope.cljc'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check-js-browser.cljc'
+      - 'scripts/seed/wasm32_browser_lib.cljc'
       - 'scripts/seed/check-browser-keyword-intern.cljc'
       - 'seed/tests/browser-keyword-intern.kotoba'
       - 'runtime/js-browser-static-run.html'
@@ -73,11 +74,11 @@ on:
       - 'scripts/seed/check-macos-import-stub-facts.cljc'
       - 'seed/DEFINITION-CIDS-MANIFEST'
       - 'seed/tests/definition-cid-vectors.json'
-      - 'scripts/seed/check-macos-cross-linux-candidates.py'
+      - 'scripts/seed/check-macos-cross-linux-candidates.cljc'
       - 'scripts/seed/check-macos-cross-linux-native.py'
-      - 'scripts/seed/write-bootstrap-descriptors.py'
-      - 'scripts/seed/test-write-bootstrap-descriptors.py'
-      - 'scripts/seed/check-descriptor-writer-ci.py'
+      - 'scripts/seed/write-bootstrap-descriptors.cljc'
+      - 'scripts/seed/test-write-bootstrap-descriptors.cljc'
+      - 'scripts/seed/check-descriptor-writer-ci.cljc'
       - 'scripts/seed/check-public-macos-product.cljc'
       - 'scripts/seed/build-macos-cli.cljc'
       - 'scripts/seed/macos_cli_product.cljc'
@@ -445,13 +446,13 @@ jobs:
       - name: Cross-build Linux compiler candidates from Mac fixed point
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-macos-cross-linux-candidates.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-cross-linux-candidates.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-cross"
       - name: Descriptor writer controls on disposable receipt-derived fixture
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-descriptor-writer-ci.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-descriptor-writer-ci.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --cross-build "$RUNNER_TEMP/mac-cross"
       - name: Summarize native crash if the root gate failed
