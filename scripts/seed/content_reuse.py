@@ -21,7 +21,7 @@ sys.dont_write_bytecode = True
 RUN_PATH = "/usr/bin:/bin"
 # Bump when the meaning of a reuse record changes.
 REUSE_VERSION = 1
-SCRIPTS = ("scripts/seed/content_reuse.py", "scripts/seed/selfhost-bootstrap.py", "scripts/seed/check-x86_64-native.py")
+SCRIPTS = ("scripts/seed/content_reuse.py", "scripts/seed/selfhost-bootstrap.cljc", "scripts/seed/check-x86_64-native.py")
 ROOT_IMAGE = "seed/bootstrap/aarch64-linux-static-root.elf"
 MANIFESTS = ("seed/X86_64-LINUX-SELFHOST-MANIFEST", "seed/CORE-STATIC-MANIFEST", "seed/MANIFEST")
 

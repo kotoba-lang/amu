@@ -9,6 +9,7 @@
 ;; Orchestrates processes and hashes only. Ported from selfhost-bootstrap.py (Basilisp, JUN-974); the Python
 ;; docstring has the full tier contract. check-runtime-boundary, check-net-runtime, check-spawn-runtime and
 ;; check-wasm32-browser stay Python and are launched as subprocesses.
+;; Library: content_reuse.cljc (named here so the CI derivation closure covers it).
 ;; Run (arm64 Linux): basilisp run -p scripts/seed scripts/seed/selfhost-bootstrap.cljc -- --output OUT --tier pr
 (ns selfhost-bootstrap
   (:require [basilisp.string :as str]
