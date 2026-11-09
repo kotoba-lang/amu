@@ -118,7 +118,7 @@ jobs:
       - name: Observer and admission negative controls
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/test_content_reuse_trust.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_content_reuse_trust.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_iteration.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test --rootdir scripts/seed scripts/seed/test_native_preflight_projects.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_gate_shard.cljc
