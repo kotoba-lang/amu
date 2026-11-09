@@ -431,7 +431,7 @@ jobs:
         with:
           job: x86-native-qualification
           kind: derive
-          roots: selfhost-bootstrap.py,check-x86_64-native.py,check-aiueos-user-elf-native.py
+          roots: selfhost-bootstrap.py,check-x86_64-native.py,check-aiueos-user-elf-native.cljc
           path: |
             ${{ runner.temp }}/x86
             ${{ runner.temp }}/aiueos-user-elf-x86
@@ -442,7 +442,7 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         env:
@@ -561,7 +561,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"

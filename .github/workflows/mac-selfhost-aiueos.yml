@@ -7,11 +7,11 @@ on:
     paths:
       - '.github/workflows/mac-selfhost-aiueos.yml'
       - '.github/workflows/selfhost-native.yml'
-      - 'scripts/seed/check-aiueos-user-elf-native.py'
-      - 'scripts/seed/check-aiueos-user-macos-native.py'
-      - 'scripts/seed/check-aiueos-user-v3-macos-native.py'
-      - 'scripts/seed/check-aiueos-user-v5-layout-macos-native.py'
-      - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
+      - 'scripts/seed/check-aiueos-user-elf-native.cljc'
+      - 'scripts/seed/check-aiueos-user-macos-native.cljc'
+      - 'scripts/seed/check-aiueos-user-v3-macos-native.cljc'
+      - 'scripts/seed/check-aiueos-user-v5-layout-macos-native.cljc'
+      - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.cljc'
       - 'scripts/seed/check-macos-exec-smoke*.cljc'
       - 'scripts/seed/macos_exec_smoke.cljc'
       - 'scripts/seed/check-aiueos-object-exports.cljc'
@@ -29,11 +29,18 @@ on:
       - 'scripts/seed/aiueos_object_lib.cljc'
       - 'scripts/seed/macos_native_lib.cljc'
       - 'scripts/seed/gate_util.cljc'
+      - 'scripts/seed/macos_user_target.cljc'
+      - 'scripts/seed/macos_scope_build.cljc'
+      - 'scripts/seed/macos_image.cljc'
+      - 'scripts/seed/aiueos_user_elf.cljc'
+      - 'scripts/seed/aiueos_user_v2.cljc'
+      - 'scripts/seed/aiueos_user_v3.cljc'
+      - 'scripts/seed/aiueos_value_fixture.cljc'
       - 'scripts/seed/check-aiueos-object-windows4k.cljc'
       - 'scripts/seed/check-aiueos-object-fence.cljc'
       - 'scripts/seed/check-aiueos-user-plc-native.py'
       - 'scripts/seed/check-aiueos-object-outport.cljc'
-      - 'scripts/seed/check-macos-arena-scope.py'
+      - 'scripts/seed/check-macos-arena-scope.cljc'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check-js-browser.py'
       - 'scripts/seed/check-browser-keyword-intern.py'
@@ -41,22 +48,22 @@ on:
       - 'runtime/js-browser-static-run.html'
       - 'runtime/wasm32-browser-static-host.js'
       - 'seed/81-js-esm.kotoba'
-      - 'scripts/seed/check-document-edn-read.py'
-      - 'scripts/seed/check-keyword-map-record.py'
+      - 'scripts/seed/check-document-edn-read.cljc'
+      - 'scripts/seed/check-keyword-map-record.cljc'
       - 'seed/tests/native-keyword-map-record.kotoba'
-      - 'scripts/seed/check-destructuring.py'
+      - 'scripts/seed/check-destructuring.cljc'
       - 'seed/tests/native-destructuring.kotoba'
-      - 'scripts/seed/check-def-assoc-get.py'
+      - 'scripts/seed/check-def-assoc-get.cljc'
       - 'seed/tests/native-def-assoc-get.kotoba'
-      - 'scripts/seed/check-closed-dispatch.py'
-      - 'scripts/seed/check-pure-forms.py'
+      - 'scripts/seed/check-closed-dispatch.cljc'
+      - 'scripts/seed/check-pure-forms.cljc'
       - 'seed/tests/native-pure-forms.kotoba'
       - 'seed/tests/native-closed-dispatch.kotoba'
-      - 'scripts/seed/check-record-identity-option.py'
+      - 'scripts/seed/check-record-identity-option.cljc'
       - 'seed/tests/native-record-identity-option.kotoba'
-      - 'scripts/seed/check-row-operations.py'
+      - 'scripts/seed/check-row-operations.cljc'
       - 'seed/tests/native-row-operations.kotoba'
-      - 'scripts/seed/check-row-inference.py'
+      - 'scripts/seed/check-row-inference.cljc'
       - 'seed/tests/native-row-inference.kotoba'
       - 'seed/tests/macos-keyword-intern.kotoba'
       - 'scripts/seed/check-definition-cid-native.cljc'
@@ -135,31 +142,31 @@ jobs:
             --phase mac-aiueos-user-root \
             --slot-dir "$RUNNER_TEMP/native-build-slots" \
             --output "$RUNNER_TEMP/mac-root-admission.json" -- \
-            python3 scripts/seed/check-aiueos-user-macos-native.py \
+            basilisp run -p scripts/seed scripts/seed/check-aiueos-user-macos-native.cljc -- \
               --output "$RUNNER_TEMP/mac-root"
       - name: Check bounded user-v3 local-model target
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-user-v3-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-v3-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v3"
       - name: Check candidate user-v5 ELF and slot-v4 boundaries
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-user-v5-layout-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-v5-layout-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v5"
       - name: Check kernel-v3 guest artifact and slot-v4 admission
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-kernel-v3-layout-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-kernel-v3"
       - name: Check the boot packager's layout admission rule and its controls
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-layout-rule-macos-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-layout-rule-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --user-v5-slot "$RUNNER_TEMP/mac-user-v5/user-v5-call.slot" \
             --output "$RUNNER_TEMP/mac-layout-rule"
@@ -193,7 +200,7 @@ jobs:
       - name: Mac runtime implements arena-scope (JUN-546)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-macos-arena-scope.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-arena-scope.cljc -- \
             --output "$RUNNER_TEMP/mac-scope"
       - name: Mac runtime implements the keyword graph and intern rows (JUN-707, JUN-710)
         if: steps.gate.outputs.skip != 'true'
@@ -217,55 +224,55 @@ jobs:
       - name: document-edn-read treats comma, newline, tab, comments and edge whitespace as EDN delimiters (JUN-650)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-document-edn-read.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-document-edn-read.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-document-edn-read"
       - name: keyword map literals are closed records and record fields may be :f64 (JUN-728)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-keyword-map-record.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-keyword-map-record.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-keyword-map-record"
       - name: destructuring is reader sugar with the pure form's Definition CID (JUN-729)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-destructuring.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-destructuring.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-destructuring"
       - name: def vector/map literals, variadic assoc and typed-map get (JUN-734)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-def-assoc-get.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-def-assoc-get.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-def-assoc-get"
       - name: closed multimethods and protocols are static dispatch; reify is refused (JUN-730)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-closed-dispatch.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-closed-dispatch.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-closed-dispatch"
       - name: the pure heads lam, app and ref lower to existing forms (JUN-950)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-pure-forms.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-pure-forms.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-pure-forms"
       - name: keyword map literals have structural identity; nil is an [:option T] field's none (JUN-733)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-record-identity-option.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-record-identity-option.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-record-identity-option"
       - name: row operations -- assoc extends, dissoc / select-keys shrink, merge, update, {} (JUN-733)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-row-operations.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-row-operations.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-row-operations"
       - name: unannotated parameters infer a row; get with a default on a record (JUN-733)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-row-inference.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-row-inference.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-row-inference"
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
