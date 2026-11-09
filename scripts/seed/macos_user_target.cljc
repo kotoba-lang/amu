@@ -83,7 +83,7 @@
         _ (mac/verify-macho compiler)
         _ (mac/verify-macho packager)
         output (.resolve (pathlib/Path (:output args)))
-        _ (.mkdir output ** :parents false :mode 0700 :exist_ok false)
+        _ (.mkdir output ** :parents true :mode 0700 :exist_ok false)
         [sources unity] (mac/stage-unity output)
         _ (when (and (some? descriptor) (not (u/deq unity (u/geti descriptor "fullSource"))))
             (mac/fail "Mac bootstrap source graph changed"))
