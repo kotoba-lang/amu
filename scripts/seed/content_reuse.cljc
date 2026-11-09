@@ -37,11 +37,12 @@
   [r name argv env & {:keys [success timeout] :or {success true timeout 3600}}]
   (let [argv (mapv str argv)
         t (time/monotonic)
-        full-env (python/dict (merge {"PATH" run-path} env))
+        env (u/to-py env)
+        full-env (let [d (u/pydict "PATH" run-path)] (.update d env) d)
         p (subprocess/run (python/list argv) ** :cwd (:out r) :env full-env :capture_output true :timeout timeout)]
     (.write_bytes (pathlib/Path (:out r) "raw" (str name ".stdout")) (.-stdout p))
     (.write_bytes (pathlib/Path (:out r) "raw" (str name ".stderr")) (.-stderr p))
-    (record! r (u/pydict "name" name "argv" (python/list argv) "env" (u/to-py env) "exit" (.-returncode p)
+    (record! r (u/pydict "name" name "argv" (python/list argv) "env" env "exit" (.-returncode p)
                          "seconds" (python/round (- (time/monotonic) t) 1)))
     (when (and success (or (not= (.-returncode p) 0) (pos? (python/len (.-stderr p)))))
       (throw (python/AssertionError (python/tuple [name (.-returncode p) (.decode (.-stderr p) "utf-8" "replace")]))))
@@ -61,7 +62,7 @@
       (throw (python/AssertionError "the producing image must be a file")))
     (u/pydict "version" reuse-version "host" (python/list [(platform/system) (platform/machine)])
               "argv" (python/list (map norm argv))
-              "env" (u/pydict-from (for [[k v] (sort-by first (merge {"PATH" run-path} env))] [k (norm v)]))
+              "env" (u/pydict-from (for [[k v] (python/sorted (.items (let [d (u/pydict "PATH" run-path)] (.update d (u/to-py env)) d)))] [k (norm v)]))
               "inputs" files "outputs" (python/sorted (python/list (map norm outputs))))))
 
 (defn run-cached
