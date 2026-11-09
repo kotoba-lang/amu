@@ -10,7 +10,7 @@
 
 (def run-path "/usr/bin:/bin")
 (def reuse-version 1)   ; bump when the meaning of a reuse record changes
-(def scripts ["scripts/seed/content_reuse.py" "scripts/seed/selfhost-bootstrap.cljc" "scripts/seed/check-x86_64-native.py"])
+(def scripts ["scripts/seed/content_reuse.py" "scripts/seed/selfhost-bootstrap.cljc" "scripts/seed/check-x86_64-native.cljc"])
 (def root-image "seed/bootstrap/aarch64-linux-static-root.elf")
 (def manifests ["seed/X86_64-LINUX-SELFHOST-MANIFEST" "seed/CORE-STATIC-MANIFEST" "seed/MANIFEST"])
 

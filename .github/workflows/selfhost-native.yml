@@ -431,7 +431,7 @@ jobs:
         with:
           job: x86-native-qualification
           kind: derive
-          roots: selfhost-bootstrap.cljc,check-x86_64-native.py,check-aiueos-user-elf-native.cljc
+          roots: selfhost-bootstrap.cljc,check-x86_64-native.cljc,check-aiueos-user-elf-native.cljc
           path: |
             ${{ runner.temp }}/x86
             ${{ runner.temp }}/aiueos-user-elf-x86
@@ -447,7 +447,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
-        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-x86_64-native.cljc -- --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
