@@ -146,3 +146,25 @@
             ["entry-denied" (u/pydict "args" (python/list ["/data/in.txt"]) "files" (u/pydict "/data/in.txt" entry-text))]]})
 
 (defn sha256 [path] (u/sha256-hex (.read_bytes (pathlib/Path path))))
+
+(def page (pathlib/Path u/root "runtime/js-browser-static-run.html"))
+(def host (pathlib/Path u/root "runtime/wasm32-browser-static-host.js"))
+
+(defn run-js
+  "runs: [[name path extra]]; one page, one Worker per run."
+  [browser out runs timeout]
+  (let [page-dir (pathlib/Path out "page")]
+    (.mkdir page-dir ** :parents true :exist_ok true)
+    (shutil/copy page (pathlib/Path page-dir (.-name page)))
+    (shutil/copy host (pathlib/Path page-dir (.-name host)))
+    (let [data (python/list
+                (for [[name path extra] runs]
+                  (let [item (u/pydict "name" name "fuel" fuel)]
+                    (if (= (.-suffix path) ".mjs")
+                      (operator/setitem item "js" (.read_text path))
+                      (operator/setitem item "wasm" (.decode (base64/b64encode (.read_bytes path)))))
+                    (.update item extra)
+                    item)))]
+      (.write_text (pathlib/Path page-dir "runs.js") (str "window.KOTOBA_RUNS = " (json/dumps data) ";\n")))
+    (let [[version text] (run-page browser page-dir (.-name page) "kotoba-js-browser-" timeout)]
+      [(version-info version) (result-lines text)])))

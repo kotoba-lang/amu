@@ -19,8 +19,6 @@
 (def root u/root)
 (def cases-path (pathlib/Path root "seed/static-cases.json"))
 (def float-cases-path (pathlib/Path root "seed/float-cases.json"))
-(def page (pathlib/Path root "runtime/js-browser-static-run.html"))
-(def host (pathlib/Path root "runtime/wasm32-browser-static-host.js"))
 (def forbidden ["globalThis" "window" "self" "document" "fetch" "XMLHttpRequest" "WebSocket" "importScripts"
                 "import(" "eval" "Function" "WebAssembly" "require" "process" "postMessage" "setTimeout"])
 
@@ -61,25 +59,6 @@
     (when-not (u/deq exports (python/list ["export function instantiate(host){\"\";"]))
       (swap! problems conj (str "exports " (python/repr exports))))
     @problems))
-
-(defn run-js
-  "runs: [[name path extra]]; one page, one Worker per run."
-  [browser out runs timeout]
-  (let [page-dir (pathlib/Path out "page")]
-    (.mkdir page-dir ** :parents true :exist_ok true)
-    (shutil/copy page (pathlib/Path page-dir (.-name page)))
-    (shutil/copy host (pathlib/Path page-dir (.-name host)))
-    (let [data (python/list
-                (for [[name path extra] runs]
-                  (let [item (u/pydict "name" name "fuel" w/fuel)]
-                    (if (= (.-suffix path) ".mjs")
-                      (operator/setitem item "js" (.read_text path))
-                      (operator/setitem item "wasm" (.decode (base64/b64encode (.read_bytes path)))))
-                    (.update item extra)
-                    item)))]
-      (.write_text (pathlib/Path page-dir "runs.js") (str "window.KOTOBA_RUNS = " (json/dumps data) ";\n")))
-    (let [[version text] (w/run-page browser page-dir (.-name page) "kotoba-js-browser-" timeout)]
-      [(w/version-info version) (w/result-lines text)])))
 
 (defn fail [msg] (throw (python/ValueError msg)))
 
@@ -128,7 +107,7 @@
                                [(str "wasm:" key) (pathlib/Path work (str stem ".wasm")) extra]]]
                         r))
             t0 (time/time)
-            [version lines] (run-js browser out runs 600)
+            [version lines] (w/run-js browser out runs 600)
             seconds (python/round (- (time/time) t0) 3)
             results (atom [])
             probe-results (atom [])]
