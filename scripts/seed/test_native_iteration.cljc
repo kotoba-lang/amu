@@ -11,7 +11,7 @@
             [gate-util :as u]
             [native-build-queue :as q]
             [native-profile :as profile])
-  (:import json operator os pathlib shutil subprocess sys tempfile time))
+  (:import json operator os pathlib pytest shutil subprocess sys tempfile time))
 
 (def queue (str (.joinpath u/root "scripts/seed/native_build_queue.cljc")))
 (def basilisp (shutil/which "basilisp"))
@@ -114,6 +114,9 @@
 
 (deftest observer-preserves-outputs-exit-and-accounts-children
   ;; These are explicitly harness controls, not compiler artifacts.
+  ;; The /proc child accounting only exists on Linux (as in the Python original).
+  (when-not (.startswith sys/platform "linux")
+    (pytest/skip "Linux /proc observer"))
   (with-root [root]
     (doseq [name ["amu-selfhost.elf" "kotoba-native.elf"]] (shutil/copy2 sys/executable (.joinpath root name)))
     (let [controller (.joinpath root "control.py")]
@@ -145,6 +148,9 @@ raise SystemExit(7)
           (is (>= (u/geti data "controllerCPUSeconds") 0)))))))
 
 (deftest timeout-is-not-success-and-cleans-parent
+  ;; The TIMEOUT profile accounting only exists on Linux (as in the Python original).
+  (when-not (.startswith sys/platform "linux")
+    (pytest/skip "Linux /proc observer"))
   (with-root [root]
     (let [profile-path (.joinpath root "timeout.json")]
       (is (thrown? subprocess/TimeoutExpired
