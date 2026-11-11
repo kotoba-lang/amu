@@ -14,22 +14,25 @@ on:
       - 'scripts/seed/check-aiueos-kernel-v3-layout-macos-native.py'
       - 'scripts/seed/check-macos-exec-smoke*.cljc'
       - 'scripts/seed/macos_exec_smoke.cljc'
-      - 'scripts/seed/check-aiueos-object-exports.py'
-      - 'scripts/seed/check-aiueos-object-externs.py'
-      - 'scripts/seed/check-aiueos-object-records.py'
-      - 'scripts/seed/check-aiueos-object-celladdr.py'
-      - 'scripts/seed/check-aiueos-object-arrays.py'
-      - 'scripts/seed/check-aiueos-object-array-windows.py'
-      - 'scripts/seed/check-aiueos-kernel-tier-maximum.py'
-      - 'scripts/seed/check-aiueos-object-cells.py'
-      - 'scripts/seed/check-aiueos-object-mmio.py'
-      - 'scripts/seed/check-aiueos-object-globals.py'
-      - 'scripts/seed/check-aiueos-object-windows.py'
-      - 'scripts/seed/check-aiueos-object-windows16.py'
-      - 'scripts/seed/check-aiueos-object-windows4k.py'
-      - 'scripts/seed/check-aiueos-object-fence.py'
+      - 'scripts/seed/check-aiueos-object-exports.cljc'
+      - 'scripts/seed/check-aiueos-object-externs.cljc'
+      - 'scripts/seed/check-aiueos-object-records.cljc'
+      - 'scripts/seed/check-aiueos-object-celladdr.cljc'
+      - 'scripts/seed/check-aiueos-object-arrays.cljc'
+      - 'scripts/seed/check-aiueos-object-array-windows.cljc'
+      - 'scripts/seed/check-aiueos-kernel-tier-maximum.cljc'
+      - 'scripts/seed/check-aiueos-object-cells.cljc'
+      - 'scripts/seed/check-aiueos-object-mmio.cljc'
+      - 'scripts/seed/check-aiueos-object-globals.cljc'
+      - 'scripts/seed/check-aiueos-object-windows.cljc'
+      - 'scripts/seed/check-aiueos-object-windows16.cljc'
+      - 'scripts/seed/aiueos_object_lib.cljc'
+      - 'scripts/seed/macos_native_lib.cljc'
+      - 'scripts/seed/gate_util.cljc'
+      - 'scripts/seed/check-aiueos-object-windows4k.cljc'
+      - 'scripts/seed/check-aiueos-object-fence.cljc'
       - 'scripts/seed/check-aiueos-user-plc-native.py'
-      - 'scripts/seed/check-aiueos-object-outport.py'
+      - 'scripts/seed/check-aiueos-object-outport.cljc'
       - 'scripts/seed/check-macos-arena-scope.py'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check-js-browser.py'
@@ -268,31 +271,31 @@ jobs:
       - name: AIUEOS kernel object route emits one or several exports (JUN-556)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-exports.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-exports.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-exports"
       - name: AIUEOS kernel object route u8 / u16 / u64 window accesses (JUN-556 B)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-windows.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-windows.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows"
       - name: AIUEOS kernel object route u8 / u16 / u64 window accesses at the 16 KiB tier (JUN-556 C)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-windows16.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-windows16.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows16"
       - name: AIUEOS kernel object route u8 / u16 / u32 / u64 window accesses at the 4 KiB tier (JUN-708)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-windows4k.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-windows4k.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-windows4k"
       - name: AIUEOS kernel object route emits lfence / sfence / mfence (JUN-708)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-fence.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-fence.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-fence"
       - name: AIUEOS user-plc-v1 -- cap-call against the declared set, PLC ELF layout (KOTOBA-175)
@@ -304,85 +307,85 @@ jobs:
       - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-cpu.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-cpu.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-cpu"
       - name: AIUEOS kernel object route reads and writes listed MSRs and reads the PCI data port, literal-bounded (JUN-600)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-msr.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-msr.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-msr"
       - name: AIUEOS kernel object route writes only listed output ports, literal-bounded per width (JUN-600)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-outport.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-outport.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-outport"
       - name: AIUEOS kernel object route sets up the AVX extended state, bit-bounded (JUN-633 slice 2)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-xstate.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-xstate.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-xstate"
       - name: AIUEOS kernel object route truncates f32 to i64, trapping NaN and out of range (JUN-633 slice 7)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-f2i.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-f2i.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-f2i"
       - name: aarch64 route truncates f32 to i64 with the same traps as x86 (JUN-633, ADR 0398)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-a64-f2i.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-a64-f2i.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-a64-f2i"
       - name: AIUEOS kernel object route emits the fused f32 reductions (JUN-633 slice 6)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-fused-dot.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-fused-dot.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-fused-dot"
       - name: AIUEOS kernel object route emits the spin-wait hint (JUN-633 slice 5)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-pause.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-pause.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-pause"
       - name: AIUEOS kernel object route waits for an interrupt (JUN-633 slice 4)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-halt.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-halt.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-halt"
       - name: AIUEOS kernel object route emits scalar SSE floats (JUN-633 slice 3)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-f32.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-f32.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-f32"
       - name: AIUEOS kernel object route calls declared extern functions (JUN-556 D1)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-externs.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-externs.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-externs"
       - name: AIUEOS kernel object route has 8-byte data cells (JUN-556 D3)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-cells.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-cells.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-cells"
       - name: AIUEOS kernel object route has fixed-address MMIO accesses (JUN-556 D4)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-mmio.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-mmio.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-mmio"
       - name: AIUEOS kernel object route exports data cells as GLOBAL symbols (JUN-556 D3b)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-globals.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-globals.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-globals"
       - name: Mac runtime answers legacy wire-35 text requests beneath FD 3 (JUN-593)
@@ -405,31 +408,31 @@ jobs:
       - name: AIUEOS kernel object route reads and writes fixed-size records (JUN-556 D5)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-records.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-records.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-records"
       - name: AIUEOS kernel object route hands out the address of a data cell (JUN-556 D6)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-celladdr.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-celladdr.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-celladdr"
       - name: AIUEOS kernel object route hands out the address of a .bss / .high_bss array (JUN-556 C)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-arrays.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-arrays.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-arrays"
       - name: AIUEOS kernel object route windows on its own .bss / .high_bss arrays (JUN-553)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-object-array-windows.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-object-array-windows.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-object-array-windows"
       - name: AIUEOS kernel window access above its tier maximum refused at compile time (JUN-483)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-kernel-tier-maximum.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-kernel-tier-maximum.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-kernel-tier-maximum"
       - name: Cross-build Linux compiler candidates from Mac fixed point
