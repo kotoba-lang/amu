@@ -38,12 +38,13 @@ on:
       - 'scripts/seed/aiueos_value_fixture.cljc'
       - 'scripts/seed/check-aiueos-object-windows4k.cljc'
       - 'scripts/seed/check-aiueos-object-fence.cljc'
-      - 'scripts/seed/check-aiueos-user-plc-native.py'
+      - 'scripts/seed/check-aiueos-user-plc-native.cljc'
       - 'scripts/seed/check-aiueos-object-outport.cljc'
       - 'scripts/seed/check-macos-arena-scope.cljc'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
-      - 'scripts/seed/check-js-browser.py'
-      - 'scripts/seed/check-browser-keyword-intern.py'
+      - 'scripts/seed/check-js-browser.cljc'
+      - 'scripts/seed/wasm32_browser_lib.cljc'
+      - 'scripts/seed/check-browser-keyword-intern.cljc'
       - 'seed/tests/browser-keyword-intern.kotoba'
       - 'runtime/js-browser-static-run.html'
       - 'runtime/wasm32-browser-static-host.js'
@@ -73,22 +74,22 @@ on:
       - 'scripts/seed/check-macos-import-stub-facts.cljc'
       - 'seed/DEFINITION-CIDS-MANIFEST'
       - 'seed/tests/definition-cid-vectors.json'
-      - 'scripts/seed/check-macos-cross-linux-candidates.py'
+      - 'scripts/seed/check-macos-cross-linux-candidates.cljc'
       - 'scripts/seed/check-macos-cross-linux-native.py'
-      - 'scripts/seed/write-bootstrap-descriptors.py'
-      - 'scripts/seed/test-write-bootstrap-descriptors.py'
-      - 'scripts/seed/check-descriptor-writer-ci.py'
+      - 'scripts/seed/write-bootstrap-descriptors.cljc'
+      - 'scripts/seed/test-write-bootstrap-descriptors.cljc'
+      - 'scripts/seed/check-descriptor-writer-ci.cljc'
       - 'scripts/seed/check-public-macos-product.cljc'
       - 'scripts/seed/build-macos-cli.cljc'
       - 'scripts/seed/macos_cli_product.cljc'
-      - 'scripts/seed/check-macos-cli-host-native.py'
+      - 'scripts/seed/check-macos-cli-host-native.cljc'
       - 'bin/amu'
       - 'bin/kotoba'
       - 'bin/kotoba-compiler'
       - 'bin/amu-linux-x86_64'
       - 'bin/x86_64-linux/**'
       - 'native-product.json'
-      - 'scripts/seed/check-host-default-target.py'
+      - 'scripts/seed/check-host-default-target.cljc'
       - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.cljc'
       - 'scripts/seed/collect-macos-crash-summary.py'
@@ -108,7 +109,7 @@ permissions:
 jobs:
   mac-root:
     runs-on: ${{ contains(fromJSON('["selfhosted","selfhosted-arm"]'), vars.AMU_RUNNER_PROFILE) && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'amu-macos-arm64' || 'macos-15' }}  # amu-runner: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - id: gate
@@ -123,7 +124,7 @@ jobs:
       - name: Check native CLI host grants, descriptor closure and deadlines
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-macos-cli-host-native.py
+          basilisp run -p scripts/seed scripts/seed/check-macos-cli-host-native.cljc --
           --output "$RUNNER_TEMP/mac-cli-host"
       - name: Rebuild the public Mac CLI and execute ordinary check compile run
         if: steps.gate.outputs.skip != 'true'
@@ -133,7 +134,7 @@ jobs:
       - name: Each public entry names its own host; the Mac root refuses an omitted target (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-host-default-target.py --isa macos
+          basilisp run -p scripts/seed scripts/seed/check-host-default-target.cljc -- --isa macos
           --output "$RUNNER_TEMP/host-default-mac"
       - name: Rebuild Amu root and AIUEOS user target
         if: steps.gate.outputs.skip != 'true'
@@ -210,14 +211,14 @@ jobs:
       - name: js-browser target, 24 cases identical to wasm32-browser in headless Chrome (ADR 0397, JUN-706)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-js-browser.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-js-browser.cljc -- \
             --compiler seed/bootstrap/aarch64-macos/amu-full-root.macho \
             --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
             --output "$RUNNER_TEMP/mac-js-browser"
       - name: Browser keyword interning and negative control (JUN-772)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-browser-keyword-intern.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-browser-keyword-intern.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --browser "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
             --output "$RUNNER_TEMP/mac-browser-keyword-intern"
@@ -308,7 +309,7 @@ jobs:
       - name: AIUEOS user-plc-v1 -- cap-call against the declared set, PLC ELF layout (KOTOBA-175)
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-aiueos-user-plc-native.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-plc-native.cljc -- \
             --compiler "$RUNNER_TEMP/mac-root/F2-signed.macho" \
             --output "$RUNNER_TEMP/mac-user-plc"
       - name: AIUEOS kernel object route reads CPU features -- cpuid, rdtsc, rdrand (JUN-633)
@@ -445,13 +446,13 @@ jobs:
       - name: Cross-build Linux compiler candidates from Mac fixed point
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-macos-cross-linux-candidates.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-macos-cross-linux-candidates.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-cross"
       - name: Descriptor writer controls on disposable receipt-derived fixture
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/check-descriptor-writer-ci.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-descriptor-writer-ci.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --cross-build "$RUNNER_TEMP/mac-cross"
       - name: Summarize native crash if the root gate failed
@@ -551,7 +552,7 @@ jobs:
       - name: The Linux ARM64 root refuses an omitted target with E2 (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-host-default-target.py --isa aarch64
+          basilisp run -p scripts/seed scripts/seed/check-host-default-target.cljc -- --isa aarch64
           --output "$RUNNER_TEMP/host-default-arm"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
@@ -592,7 +593,7 @@ jobs:
       - name: The Linux x86_64 host entry names x86_64-linux; the compiler refuses an omitted target (KOTOBA-174)
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-host-default-target.py --isa x86_64 --reproduce
+          basilisp run -p scripts/seed scripts/seed/check-host-default-target.cljc -- --isa x86_64 --reproduce
           --output "$RUNNER_TEMP/host-default-x86"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
