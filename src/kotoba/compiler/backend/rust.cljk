@@ -2,7 +2,10 @@
   "Fail-closed checked-KIR to Rust source lowering, pure-i64 slice.
 
   The first S5 vertical slice owns one Rust surface: a pure, zero-arity
-  `main() -> i64`. It intentionally rejects effects, parameters, additional
+  `kotoba_main() -> i64` plus a printing `main` wrapper (a bare crate-root
+  `fn main() -> i64` is rejected by rustc E0277, so the value leaves through
+  stdout for the qualification harness to compare). It intentionally
+  rejects effects, parameters, additional
   functions, f64/f32, strings, collections, and every KIR expression outside
   bounded i64 literals, `+ - * quot rem`, comparisons, and `if`. The rejected
   `mod` (floored) is refused on purpose: mapping it to Rust's truncated `%`
@@ -164,8 +167,15 @@
        "// bounds: nodes<=" max-expression-nodes
        " depth<=" max-expression-depth " values=i64-only\n"
        "#![forbid(unsafe_code)]\n"
-       "fn main() -> i64 {\n"
+       "// Redundant parens are deliberate: every nested form is wrapped so\n"
+       "// golden output stays structurally obvious. Silence the lint.\n"
+       "#![allow(unused_parens)]\n"
+       "fn kotoba_main() -> i64 {\n"
        "    " (:expr body) "\n"
+       "}\n"
+       "\n"
+       "fn main() {\n"
+       "    println!(\"{}\", kotoba_main());\n"
        "}\n"))
 
 (defn emit

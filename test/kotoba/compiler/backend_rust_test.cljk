@@ -33,7 +33,10 @@
   (let [source (:source (rust/emit valid-kir))]
     (is (string? source))
     (is (str/includes? source "forbid(unsafe_code)"))
-    (is (str/includes? source "fn main() -> i64"))
+    (is (str/includes? source "allow(unused_parens)"))
+    (is (str/includes? source "kotoba_main"))
+    (is (str/includes? source "-> i64 {"))
+    (is (str/includes? source "println!"))
     (is (str/includes? source "(40i64.wrapping_add("))
     (is (str/includes? source ".wrapping_mul(2i64"))
     (is (str/includes? source "2i64))))"))))
