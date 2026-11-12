@@ -11,7 +11,7 @@ on:
       - "bin/amu-linux-x86_64"
       - "native-product.json"
       - "scripts/seed/check-definition-graph-native.py"
-      - "scripts/seed/check-token-headroom-native.py"
+      - "scripts/seed/check-token-headroom-native.cljc"
       - ".github/workflows/native-definition-graph.yml"
   push:
     branches: [main]
@@ -20,7 +20,7 @@ on:
       - "bin/amu-linux-x86_64"
       - "native-product.json"
       - "scripts/seed/check-definition-graph-native.py"
-      - "scripts/seed/check-token-headroom-native.py"
+      - "scripts/seed/check-token-headroom-native.cljc"
       - ".github/workflows/native-definition-graph.yml"
 permissions:
   contents: read
@@ -119,7 +119,7 @@ jobs:
           --phase native-table-headroom
           --slot-dir "$RUNNER_TEMP/native-build-slots"
           --output "$RUNNER_TEMP/table-headroom-admission.json" --
-          python3 scripts/seed/check-token-headroom-native.py
+          basilisp run -p scripts/seed scripts/seed/check-token-headroom-native.cljc --
           --compiler "$PWD/${{ matrix.compiler }}"
           --output "$RUNNER_TEMP/table-headroom"
           --tables "${{ matrix.table }}"
