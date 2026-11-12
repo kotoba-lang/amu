@@ -1404,7 +1404,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: |
           compiler_sha=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
-          python3 scripts/seed/check-x86-project-effects-native.py --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-x86-project-effects-native.cljc -- --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
       - name: Execute actual shared modules (ARM)
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'arm64')
         run: |
