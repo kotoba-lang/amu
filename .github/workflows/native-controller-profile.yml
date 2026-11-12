@@ -92,7 +92,7 @@ jobs:
           "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
           echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Native isolated candidates then B C C B source comparison
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/compare-source-refinements.py --output "$RUNNER_TEMP/refinements"
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- basilisp run -p scripts/seed scripts/seed/compare-source-refinements.cljc -- --output "$RUNNER_TEMP/refinements"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
