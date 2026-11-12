@@ -564,7 +564,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
@@ -1087,7 +1087,7 @@ jobs:
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Static runtime stdin, wire 41 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"

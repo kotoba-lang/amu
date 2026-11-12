@@ -25,7 +25,7 @@
         link (pathlib/Path out "symlink.ksl")
         _ (.symlink_to link (.-name (first positives)))
         oversized (pathlib/Path out "oversized.ksl")
-        _ (.write_bytes oversized (.encode (apply str (repeat 1048577 "x"))))
+        _ (.write_bytes oversized (.encode (operator/mul "x" 1048577)))
         empty (pathlib/Path out "empty.ksl")
         _ (.write_bytes empty (u/bytes-of))
         binary (pathlib/Path out "binary.ksl")
