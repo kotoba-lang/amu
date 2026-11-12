@@ -134,6 +134,31 @@
     (is (str/includes? source " < "))
     (is (str/includes? source "{1i64} else {0i64}"))))
 
+(deftest f64-from-bits-accepts-i64-pattern
+  ;; The frontend desugars every f64 literal into `(f64-from-bits N)`; the
+  ;; bit pattern 0 (+0.0) stays exact on both hosts (bigger patterns exceed
+  ;; the kbb reader's exact-integer range, so only 0 is hand-written here).
+  (let [artifact (rust/emit
+                   (assoc-in f64-kir [:functions 0 :body]
+                             '(f64-add (f64-from-bits 0) 2.25)))
+        source (:source artifact)]
+    (is (= #{:i64 :f64} (get-in artifact [:limits :value-types])))
+    (is (= artifact (rust/verify-artifact! artifact)))
+    (is (str/includes? source "f64::from_bits(("))
+    (is (str/includes? source "as u64)"))))
+
+(deftest value-types-accumulate-across-mixed-constructs
+  (testing "comparison over f64 reports both types"
+    (let [artifact (rust/emit
+                     (assoc-in valid-kir [:functions 0 :body]
+                               '(f64-lt 1.5 2.5)))]
+      (is (= #{:i64 :f64} (get-in artifact [:limits :value-types])))))
+  (testing "f64 if with an i64 test reports both types"
+    (let [artifact (rust/emit
+                     (assoc-in f64-kir [:functions 0 :body]
+                               '(if (= 1 2) 1.5 2.5)))]
+      (is (= #{:i64 :f64} (get-in artifact [:limits :value-types]))))))
+
 (deftest f64-neg-wraps-its-operand
   (let [source (:source
                 (rust/emit

@@ -85,7 +85,10 @@
 ;; `Double/doubleToLongBits` on the JVM, a DataView round-trip on JS.
 ;; The unsigned decimal always fits a u64 literal, including -0.0.
 (defn- f64-bits-u64 [value]
-  #?(:clj  (Long/toUnsignedString (Double/doubleToLongBits ^double value))
+  ;; Raw bits, not the canonicalizing `doubleToLongBits`: the osaho oracle
+  ;; canonicalizes noncanonical NaN payloads on the JVM while its DataView
+  ;; path preserves them, so raw bits are the only host-agreeing spelling.
+  #?(:clj  (Long/toUnsignedString (Double/doubleToRawLongBits ^double value))
      :cljs (let [buffer (js/ArrayBuffer. 8)
                  view (js/DataView. buffer)]
              (.setFloat64 view 0 value true)
@@ -117,11 +120,15 @@
 (declare expression-shape)
 
 (defn- shape-type [shape form]
-  (let [types (:types shape)]
-    (when-not (= 1 (count types))
+  (let [result (:result shape)]
+    (when-not (contains? #{:i64 :f64} result)
       (reject! "Rust target requires a single value type per expression"
-               {:reason :mixed-types :types types :form form}))
-    (first types)))
+               {:reason :mixed-types :types (:types shape) :form form}))
+    result))
+
+(defn- shape-merge [shapes]
+  {:nodes (inc (reduce + (map :nodes shapes)))
+   :types (reduce into #{} (map :types shapes))})
 
 (defn- shape-binary [form depth expected-type]
   (let [left (expression-shape (second form) (inc depth))
@@ -130,16 +137,14 @@
                    (= expected-type (shape-type right form)))
       (reject! "Rust target requires a single value type per expression"
                {:reason :type-mismatch :expected expected-type :form form}))
-    {:nodes (inc (+ (:nodes left) (:nodes right)))
-     :types #{expected-type}}))
+    (assoc (shape-merge [left right]) :result expected-type)))
 
 (defn- shape-unary [form depth expected-type]
   (let [operand (expression-shape (second form) (inc depth))]
     (when-not (= expected-type (shape-type operand form))
       (reject! "Rust target requires a single value type per expression"
                {:reason :type-mismatch :expected expected-type :form form}))
-    {:nodes (inc (:nodes operand))
-     :types #{expected-type}}))
+    (assoc (shape-merge [operand]) :result expected-type)))
 
 (defn- expression-shape
   ([form] (expression-shape form 0))
@@ -149,8 +154,8 @@
               {:reason :expression-depth :limit max-expression-depth}))
    (let [shaped
          (cond
-           (i64? form) {:nodes 1 :types #{:i64}}
-           (f64? form) {:nodes 1 :types #{:f64}}
+           (i64? form) {:nodes 1 :types #{:i64} :result :i64}
+           (f64? form) {:nodes 1 :types #{:f64} :result :f64}
 
            (and (seq? form)
                 (= 3 (count form))
@@ -160,7 +165,7 @@
            (and (seq? form)
                 (= 3 (count form))
                 (contains? comparison-ops (first form)))
-           (assoc (shape-binary form depth :i64) :types #{:i64})
+           (assoc (shape-binary form depth :i64) :result :i64)
 
            (and (seq? form)
                 (= 3 (count form))
@@ -173,9 +178,23 @@
            (shape-unary form depth :f64)
 
            (and (seq? form)
+                (= 2 (count form))
+                (= 'f64-from-bits (first form)))
+           (let [operand (expression-shape (second form) (inc depth))]
+             (when-not (= :i64 (shape-type operand form))
+               (reject! "Rust f64-from-bits needs an i64 bit pattern"
+                        {:reason :type-mismatch :expected :i64 :form form}))
+             (assoc (shape-merge [operand])
+                    :types (conj (:types operand) :f64)
+                    :result :f64))
+
+           (and (seq? form)
                 (= 3 (count form))
                 (contains? f64-comparison-ops (first form)))
-           (assoc (shape-binary form depth :f64) :types #{:i64})
+           (let [operands (shape-binary form depth :f64)]
+             (assoc operands
+                    :types (conj (:types operands) :i64)
+                    :result :i64))
 
            (and (seq? form)
                 (= 4 (count form))
@@ -190,8 +209,7 @@
              (when-not (= then-type else-type)
                (reject! "Rust if branches must share one value type"
                         {:reason :type-mismatch :form form}))
-             {:nodes (inc (reduce + (map :nodes parts)))
-              :types #{then-type}})
+             (assoc (shape-merge parts) :result then-type))
 
            :else
            (reject! "unsupported checked-KIR expression for the Rust target"
@@ -249,6 +267,15 @@
         (reject! "Rust target requires a single value type per expression"
                  {:reason :type-mismatch :expected :f64 :form form}))
       {:type :f64 :src (str "(-" (:src operand) ")")})
+
+    (and (seq? form) (= 2 (count form))
+         (= 'f64-from-bits (first form)))
+    (let [operand (emit-expr (second form))]
+      (when-not (= :i64 (:type operand))
+        (reject! "Rust f64-from-bits needs an i64 bit pattern"
+                 {:reason :type-mismatch :expected :i64 :form form}))
+      {:type :f64
+       :src (str "f64::from_bits((" (:src operand) ") as u64)")})
 
     (and (seq? form) (= 3 (count form))
          (contains? f64-comparison-ops (first form)))
