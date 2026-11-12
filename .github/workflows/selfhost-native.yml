@@ -477,7 +477,7 @@ jobs:
         with:
           job: x86-complete
           kind: derive
-          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.py
+          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.cljc
           path: |
             ${{ runner.temp }}/complete
             ${{ runner.temp }}/public-product
@@ -491,7 +491,7 @@ jobs:
         run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Public native product and aliases
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -949,7 +949,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
-          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Install Basilisp (pinned) for the .cljc gates in the x86 plan
         if: steps.gate.outputs.skip != 'true'
@@ -1083,7 +1083,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
-          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Static runtime stdin, wire 41 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
