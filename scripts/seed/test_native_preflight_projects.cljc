@@ -15,7 +15,7 @@
             image (-> (P/path (root-file "native-product.json")) .read-text json/loads (get "image") (get "sha256"))]
         (with-redefs [P/run-process (fn [argv] (swap! calls conj (vec argv)) nil)]
           (P/main compiler temporary))
-        (is (= [["python3" (root-file "scripts/seed/check-x86-project-native.py")
+        (is (= [["basilisp" "run" "-p" (root-file "scripts/seed") (root-file "scripts/seed/check-x86-project-native.cljc") "--"
                  "--compiler" compiler "--output" (str (.joinpath temporary "local-native-project"))]
                 ["python3" (root-file "scripts/seed/check-x86-project-fs-native.py")
                  "--compiler" compiler "--compiler-sha256" image
