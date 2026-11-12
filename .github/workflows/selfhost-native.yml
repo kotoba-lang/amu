@@ -1138,7 +1138,7 @@ jobs:
       - name: Locked Wasm project discovery and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-wasm-project-admission.py
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-wasm-project-admission.cljc --
           --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-project-arm"
       - name: Wasm project interface mapping controls
         if: steps.gate.outputs.skip != 'true'
@@ -1181,7 +1181,7 @@ jobs:
       - name: Locked Wasm project discovery and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-wasm-project-admission.py
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-wasm-project-admission.cljc --
           --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-project-x86"
       - name: Wasm project interface mapping controls
         if: steps.gate.outputs.skip != 'true'
