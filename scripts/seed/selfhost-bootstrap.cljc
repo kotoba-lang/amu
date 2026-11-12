@@ -189,13 +189,13 @@
                         (swap! results conj (let [row (u/pydict "name" n)] (.update row observed) row)))))
                   ;; JUN-292: the native TCP/spawn acceptance corpus on the same bootstrap route
                   (let [io-acceptance (python/dict)]
-                    (doseq [[name script] [["net-runtime" "check-net-runtime.py"] ["spawn-runtime" "check-spawn-runtime.cljc"]]]
-                      ;; the Basilisp gates run through the basilisp executable beside this interpreter (the run's PATH is minimal)
-                      (cr/run run name (concat (if (str/ends-with? script ".cljc")
-                                                 [(str (pathlib/Path (.-parent (pathlib/Path sys/executable)) "basilisp")) "run" "-p" (rp "scripts/seed") (rp (str "scripts/seed/" script)) "--"]
-                                                 [sys/executable (rp (str "scripts/seed/" script))])
-                                               ["--compiler" F "--output" (o name) "--target" "aarch64-linux" "--seccomp-if-available"])
-                              (if (str/ends-with? script ".cljc") (pyenv "AMU_ROOT" (str root)) (python/dict)))
+                    (doseq [[name script] [["net-runtime" "check-net-runtime.cljc"] ["spawn-runtime" "check-spawn-runtime.cljc"]]]
+                      ;; the Basilisp gates run through the basilisp executable beside this interpreter (the run's PATH is minimal);
+                      ;; AMU_ROOT because the gate resolves the repository from its cwd, which is the output directory here
+                      (cr/run run name [(str (pathlib/Path (.-parent (pathlib/Path sys/executable)) "basilisp")) "run" "-p" (rp "scripts/seed")
+                                        (rp (str "scripts/seed/" script)) "--" "--compiler" F "--output" (o name)
+                                        "--target" "aarch64-linux" "--seccomp-if-available"]
+                              (pyenv "AMU_ROOT" (str root)))
                       (put! io-acceptance name (read-json (o (str name "/" name ".json")))))
                     ;; hardening, natively
                     (doseq [[name body] [["value" "(defn main [] :i64 42)"]
