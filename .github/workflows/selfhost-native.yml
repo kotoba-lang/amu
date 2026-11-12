@@ -567,7 +567,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-durable-sleep.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
       - name: Wire 35 replace, WRITE and APPEND under injected fsync, rename and write faults (arm64, AWAI-52)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -1090,7 +1090,7 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-durable-sleep.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
       - name: Native private store and STOP/CONT sleep resume (x86_64)
         if: steps.gate.outputs.skip != 'true'
         run: |
