@@ -54,11 +54,11 @@ jobs:
           MODE: ${{ inputs.mode }}
         run: |
           if [ "$MODE" = pass-label ]; then
-            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- basilisp run -p scripts/seed scripts/seed/profile-native-passes.cljc -- --closure full --workload label-x86 --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
           elif [ "$MODE" = proof-current ]; then
-            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- basilisp run -p scripts/seed scripts/seed/profile-native-passes.cljc -- --closure core --workload core --detail proofs --output "$RUNNER_TEMP/localization" --seconds 900
           else
-            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- python3 scripts/seed/profile-native-passes.py --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
+            PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- -- basilisp run -p scripts/seed scripts/seed/profile-native-passes.cljc -- --closure core --workload core --detail passes --output "$RUNNER_TEMP/localization" --seconds 900
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
