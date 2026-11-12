@@ -1,11 +1,20 @@
 (ns kotoba.compiler.backend.rust
   "Fail-closed checked-KIR to Rust source lowering, pure-i64 slice.
 
-  The first S5 vertical slice owns one Rust surface: a pure, zero-arity
-  `kotoba_main() -> i64` plus a printing `main` wrapper (a bare crate-root
-  `fn main() -> i64` is rejected by rustc E0277, so the value leaves through
-  stdout for the qualification harness to compare). It intentionally
-  rejects effects, parameters, additional
+  The S5 slices own one Rust surface: a pure, zero-arity `kotoba_main`
+  plus a printing `main` wrapper (a bare crate-root `fn main() -> i64` is
+  rejected by rustc E0277, so the value leaves through stdout for the
+  qualification harness to compare). Slice 1 is pure-i64; slice 2 adds
+  pure-f64 (`f64-add/sub/mul/div/neg`, `f64-eq/lt/le/gt/ge`, exact
+  `f64::from_bits` literals) with single-type tracking. Division by zero is
+  IEEE `inf`, never a panic; `f64-unordered`, min/max, libm-style
+  transcendentals, conversions, f32, and mixed-type bodies stay refused.
+  Hand-written KIR note: on JS hosts an integral double literal (`1.0`)
+  reads as an i64 -- a JS Number cannot tell `40` from `1.0`, and the
+  reader-facing `integer?` answers true for both. The checked frontend
+  mints exact BigInt/double values, so real KIR never hits this; only
+  hand-written fixtures must use fractional f64 literals (`1.5`).
+  The slice intentionally rejects effects, parameters, additional
   functions, f64/f32, strings, collections, and every KIR expression outside
   bounded i64 literals, `+ - * quot rem`, comparisons, and `if`. The rejected
   `mod` (floored) is refused on purpose: mapping it to Rust's truncated `%`
@@ -31,7 +40,7 @@
   (:require [kotoba.artifact.core :as artifact]
             #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]])))
 
-(def target-name :rust-sir-pure-i64-v1)
+(def target-name :rust-sir-i64-f64-v1)
 (def max-expression-nodes 256)
 (def max-expression-depth 32)
 
@@ -64,6 +73,32 @@
     (neg? value) (str "(-" (str (- value)) "i64)")
     :else (str value "i64")))
 
+;; Same split as `kotoba.kir.value/f64-value?`: the JVM sees a Double,
+;; ClojureScript a number. f32 Floats are not admitted by this slice.
+(defn- f64? [value]
+  #?(:clj  (instance? Double value)
+     :cljs (number? value)
+     :default false))
+
+;; Exact literal spelling through the bit pattern, mirroring osaho's
+;; `kotoba.kir.value/f64-to-i64-bits` without taking that dependency:
+;; `Double/doubleToLongBits` on the JVM, a DataView round-trip on JS.
+;; The unsigned decimal always fits a u64 literal, including -0.0.
+(defn- f64-bits-u64 [value]
+  ;; Raw bits, not the canonicalizing `doubleToLongBits`: the osaho oracle
+  ;; canonicalizes noncanonical NaN payloads on the JVM while its DataView
+  ;; path preserves them, so raw bits are the only host-agreeing spelling.
+  #?(:clj  (Long/toUnsignedString (Double/doubleToRawLongBits ^double value))
+     :cljs (let [buffer (js/ArrayBuffer. 8)
+                 view (js/DataView. buffer)]
+             (.setFloat64 view 0 value true)
+             (str (.getBigUint64 view 0 true)))
+     :default (reject! "f64 literals need a host bit conversion"
+                       {:reason :no-host :value value})))
+
+(defn- emit-f64-literal [value]
+  (str "f64::from_bits(" (f64-bits-u64 value) ")"))
+
 (def ^:private arithmetic-ops
   {'+ "wrapping_add"
    '- "wrapping_sub"
@@ -74,12 +109,42 @@
 (def ^:private comparison-ops
   {'= "==" '< "<" '> ">" '<= "<=" '>= ">="})
 
+(def ^:private f64-arithmetic-ops
+  {'f64-add "+" 'f64-sub "-" 'f64-mul "*" 'f64-div "/"})
+
+(def ^:private f64-neg-op 'f64-neg)
+
+(def ^:private f64-comparison-ops
+  {'f64-eq "==" 'f64-lt "<" 'f64-le "<=" 'f64-gt ">" 'f64-ge ">="})
+
 (declare expression-shape)
 
-(defn- shape-binary [form depth]
+(defn- shape-type [shape form]
+  (let [result (:result shape)]
+    (when-not (contains? #{:i64 :f64} result)
+      (reject! "Rust target requires a single value type per expression"
+               {:reason :mixed-types :types (:types shape) :form form}))
+    result))
+
+(defn- shape-merge [shapes]
+  {:nodes (inc (reduce + (map :nodes shapes)))
+   :types (reduce into #{} (map :types shapes))})
+
+(defn- shape-binary [form depth expected-type]
   (let [left (expression-shape (second form) (inc depth))
         right (expression-shape (nth form 2) (inc depth))]
-    {:nodes (inc (+ (:nodes left) (:nodes right)))}))
+    (when-not (and (= expected-type (shape-type left form))
+                   (= expected-type (shape-type right form)))
+      (reject! "Rust target requires a single value type per expression"
+               {:reason :type-mismatch :expected expected-type :form form}))
+    (assoc (shape-merge [left right]) :result expected-type)))
+
+(defn- shape-unary [form depth expected-type]
+  (let [operand (expression-shape (second form) (inc depth))]
+    (when-not (= expected-type (shape-type operand form))
+      (reject! "Rust target requires a single value type per expression"
+               {:reason :type-mismatch :expected expected-type :form form}))
+    (assoc (shape-merge [operand]) :result expected-type)))
 
 (defn- expression-shape
   ([form] (expression-shape form 0))
@@ -87,59 +152,163 @@
    (when (> depth max-expression-depth)
      (reject! "Rust expression depth exceeds the target profile"
               {:reason :expression-depth :limit max-expression-depth}))
-   (let [nodes (:nodes
-                (cond
-                  (i64? form) {:nodes 1}
+   (let [shaped
+         (cond
+           (i64? form) {:nodes 1 :types #{:i64} :result :i64}
+           (f64? form) {:nodes 1 :types #{:f64} :result :f64}
 
-                  (and (seq? form)
-                       (= 3 (count form))
-                       (contains? arithmetic-ops (first form)))
-                  (shape-binary form depth)
+           (and (seq? form)
+                (= 3 (count form))
+                (contains? arithmetic-ops (first form)))
+           (shape-binary form depth :i64)
 
-                  (and (seq? form)
-                       (= 3 (count form))
-                       (contains? comparison-ops (first form)))
-                  (shape-binary form depth)
+           (and (seq? form)
+                (= 3 (count form))
+                (contains? comparison-ops (first form)))
+           (assoc (shape-binary form depth :i64) :result :i64)
 
-                  (and (seq? form)
-                       (= 4 (count form))
-                       (= 'if (first form)))
-                  (let [parts (map #(expression-shape % (inc depth)) (rest form))
-                        total (inc (reduce + (map :nodes parts)))]
-                    {:nodes total})
+           (and (seq? form)
+                (= 3 (count form))
+                (contains? f64-arithmetic-ops (first form)))
+           (shape-binary form depth :f64)
 
-                  :else
-                  (reject! "unsupported checked-KIR expression for the Rust target"
-                           {:reason :unsupported-expression :form form})))]
-     (when (> nodes max-expression-nodes)
+           (and (seq? form)
+                (= 2 (count form))
+                (= f64-neg-op (first form)))
+           (shape-unary form depth :f64)
+
+           (and (seq? form)
+                (= 2 (count form))
+                (= 'f64-from-bits (first form)))
+           (let [operand (expression-shape (second form) (inc depth))]
+             (when-not (= :i64 (shape-type operand form))
+               (reject! "Rust f64-from-bits needs an i64 bit pattern"
+                        {:reason :type-mismatch :expected :i64 :form form}))
+             (assoc (shape-merge [operand])
+                    :types (conj (:types operand) :f64)
+                    :result :f64))
+
+           (and (seq? form)
+                (= 3 (count form))
+                (contains? f64-comparison-ops (first form)))
+           (let [operands (shape-binary form depth :f64)]
+             (assoc operands
+                    :types (conj (:types operands) :i64)
+                    :result :i64))
+
+           (and (seq? form)
+                (= 4 (count form))
+                (= 'if (first form)))
+           (let [parts (map #(expression-shape % (inc depth)) (rest form))
+                 test-type (shape-type (first parts) form)
+                 then-type (shape-type (second parts) form)
+                 else-type (shape-type (nth parts 2) form)]
+             (when-not (= :i64 test-type)
+               (reject! "Rust if test must be i64 (0 is false)"
+                        {:reason :type-mismatch :expected :i64 :form form}))
+             (when-not (= then-type else-type)
+               (reject! "Rust if branches must share one value type"
+                        {:reason :type-mismatch :form form}))
+             (assoc (shape-merge parts) :result then-type))
+
+           :else
+           (reject! "unsupported checked-KIR expression for the Rust target"
+                    {:reason :unsupported-expression :form form}))]
+     (when (> (:nodes shaped) max-expression-nodes)
        (reject! "Rust expression exceeds the target profile"
                 {:reason :expression-nodes :limit max-expression-nodes}))
-     {:nodes nodes})))
+     shaped)))
 
 (defn- emit-expr [form]
   (cond
-    (i64? form) (emit-literal form)
+    (i64? form) {:type :i64 :src (emit-literal form)}
+    (f64? form) {:type :f64 :src (emit-f64-literal form)}
 
     (and (seq? form) (= 3 (count form))
          (contains? arithmetic-ops (first form)))
-    (str "(" (emit-expr (second form)) "."
-         (get arithmetic-ops (first form))
-         "(" (emit-expr (nth form 2)) "))")
+    (let [left (emit-expr (second form))
+          right (emit-expr (nth form 2))]
+      (when-not (and (= :i64 (:type left)) (= :i64 (:type right)))
+        (reject! "Rust target requires a single value type per expression"
+                 {:reason :type-mismatch :expected :i64 :form form}))
+      {:type :i64
+       :src (str "(" (:src left) "."
+                 (get arithmetic-ops (first form))
+                 "(" (:src right) "))")})
 
     (and (seq? form) (= 3 (count form))
          (contains? comparison-ops (first form)))
-    (str "(if (" (emit-expr (second form)) " "
-         (get comparison-ops (first form)) " "
-         (emit-expr (nth form 2)) ") {1i64} else {0i64})")
+    (let [left (emit-expr (second form))
+          right (emit-expr (nth form 2))]
+      (when-not (and (= :i64 (:type left)) (= :i64 (:type right)))
+        (reject! "Rust target requires a single value type per expression"
+                 {:reason :type-mismatch :expected :i64 :form form}))
+      {:type :i64
+       :src (str "(if (" (:src left) " "
+                    (get comparison-ops (first form)) " "
+                    (:src right) ") {1i64} else {0i64})")})
+
+    (and (seq? form) (= 3 (count form))
+         (contains? f64-arithmetic-ops (first form)))
+    (let [left (emit-expr (second form))
+          right (emit-expr (nth form 2))]
+      (when-not (and (= :f64 (:type left)) (= :f64 (:type right)))
+        (reject! "Rust target requires a single value type per expression"
+                 {:reason :type-mismatch :expected :f64 :form form}))
+      {:type :f64
+       :src (str "(" (:src left) " "
+                 (get f64-arithmetic-ops (first form)) " "
+                 (:src right) ")")})
+
+    (and (seq? form) (= 2 (count form))
+         (= f64-neg-op (first form)))
+    (let [operand (emit-expr (second form))]
+      (when-not (= :f64 (:type operand))
+        (reject! "Rust target requires a single value type per expression"
+                 {:reason :type-mismatch :expected :f64 :form form}))
+      {:type :f64 :src (str "(-" (:src operand) ")")})
+
+    (and (seq? form) (= 2 (count form))
+         (= 'f64-from-bits (first form)))
+    (let [operand (emit-expr (second form))]
+      (when-not (= :i64 (:type operand))
+        (reject! "Rust f64-from-bits needs an i64 bit pattern"
+                 {:reason :type-mismatch :expected :i64 :form form}))
+      {:type :f64
+       :src (str "f64::from_bits((" (:src operand) ") as u64)")})
+
+    (and (seq? form) (= 3 (count form))
+         (contains? f64-comparison-ops (first form)))
+    (let [left (emit-expr (second form))
+          right (emit-expr (nth form 2))]
+      (when-not (and (= :f64 (:type left)) (= :f64 (:type right)))
+        (reject! "Rust target requires a single value type per expression"
+                 {:reason :type-mismatch :expected :f64 :form form}))
+      {:type :i64
+       :src (str "(if (" (:src left) " "
+                    (get f64-comparison-ops (first form)) " "
+                    (:src right) ") {1i64} else {0i64})")})
 
     (and (seq? form) (= 4 (count form)) (= 'if (first form)))
-    (str "(if " (emit-expr (second form)) " != 0 {"
-         (emit-expr (nth form 2)) "} else {"
-         (emit-expr (nth form 3)) "})")
+    (let [test (emit-expr (second form))
+          then (emit-expr (nth form 2))
+          else (emit-expr (nth form 3))]
+      (when-not (= :i64 (:type test))
+        (reject! "Rust if test must be i64 (0 is false)"
+                 {:reason :type-mismatch :expected :i64 :form form}))
+      (when-not (= (:type then) (:type else))
+        (reject! "Rust if branches must share one value type"
+                 {:reason :type-mismatch :form form}))
+      {:type (:type then)
+       :src (str "(if " (:src test) " != 0 {"
+                 (:src then) "} else {"
+                 (:src else) "})")})
 
     :else
     (reject! "unsupported checked-KIR expression for the Rust target"
              {:reason :unsupported-expression :form form})))
+
+(def ^:private result-types #{:i64 :f64})
 
 (defn- admitted-main [kir]
   (let [functions (:functions kir)
@@ -153,24 +322,27 @@
                    (= 'main (:name function))
                    (empty? (:params function))
                    (empty? (or (:param-types function) []))
-                   (= :i64 (:result function))
+                   (contains? result-types (:result function))
                    (empty? (or (:effects kir) #{}))
                    (empty? (or (:effects function) #{})))
-      (reject! "Rust pure-i64 v1 requires one pure zero-arity main returning i64"
+      (reject! "Rust i64/f64 v1 requires one pure zero-arity main returning i64 or f64"
                {:reason :entry-contract}))
-    (expression-shape (:body function))
+    (let [shaped (expression-shape (:body function))]
+      (when-not (= (:result function) (shape-type shaped (:body function)))
+        (reject! "Rust main result must match the body value type"
+                 {:reason :entry-contract :form (:body function)})))
     function))
 
 (defn- emit-crate [body]
-  (str "// Kotoba pure-i64 AOT slice -> Rust (tier-only, KOTOBA-365 S5).\n"
+  (str "// Kotoba i64/f64 AOT slice -> Rust (tier-only, KOTOBA-365 S5).\n"
        "// KIR sha256: " (:kir-sha256 body) "\n"
        "// bounds: nodes<=" max-expression-nodes
-       " depth<=" max-expression-depth " values=i64-only\n"
+       " depth<=" max-expression-depth " values=i64,f64\n"
        "#![forbid(unsafe_code)]\n"
        "// Redundant parens are deliberate: every nested form is wrapped so\n"
        "// golden output stays structurally obvious. Silence the lint.\n"
        "#![allow(unused_parens)]\n"
-       "fn kotoba_main() -> i64 {\n"
+       "fn kotoba_main() -> " (:result-type body) " {\n"
        "    " (:expr body) "\n"
        "}\n"
        "\n"
@@ -182,9 +354,12 @@
   "Lower an already checked KIR module to a Rust source artifact."
   [kir]
   (let [function (admitted-main kir)
-        expr (emit-expr (:body function))
+        shaped (expression-shape (:body function))
+        emitted (emit-expr (:body function))
         kir-sha256 (artifact/sha256 kir)
-        source (emit-crate {:kir-sha256 kir-sha256 :expr expr})]
+        source (emit-crate {:kir-sha256 kir-sha256
+                            :result-type (name (:result function))
+                            :expr (:src emitted)})]
     {:format :rust/v1
      :target target-name
      :source source
@@ -193,7 +368,7 @@
      :kir-sha256 kir-sha256
      :limits {:expression-nodes max-expression-nodes
               :expression-depth max-expression-depth
-              :value-types #{:i64}}}))
+              :value-types (:types shaped)}}))
 
 (defn verify-artifact!
   "Independently re-emit the closed KIR and require byte-for-byte identity."
