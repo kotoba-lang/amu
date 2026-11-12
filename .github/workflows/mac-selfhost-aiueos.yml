@@ -92,7 +92,7 @@ on:
       - 'scripts/seed/check-host-default-target.cljc'
       - 'examples/foundation-starter/MACOS-ARM64.md'
       - 'scripts/seed/check-macos-core-adoption.cljc'
-      - 'scripts/seed/collect-macos-crash-summary.py'
+      - 'scripts/seed/collect-macos-crash-summary.cljc'
       - 'scripts/seed/native_build_queue.cljc'
       - 'seed/FULL-MANIFEST'
       - 'seed/X86_64-LINUX-SELFHOST-MANIFEST'
@@ -458,7 +458,7 @@ jobs:
       - name: Summarize native crash if the root gate failed
         if: steps.gate.outputs.skip != 'true' && (failure())
         run: |
-          python3 scripts/seed/collect-macos-crash-summary.py \
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/collect-macos-crash-summary.cljc -- \
             --process amu-full-root \
             --output "$RUNNER_TEMP/mac-root-crash-summary.json"
       - name: Upload source-bound Mac receipts
