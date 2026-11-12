@@ -20,7 +20,7 @@
 (deftest checked-kir-emits-a-rust-source-artifact
   (let [artifact (rust/emit valid-kir)]
     (is (= :rust/v1 (:format artifact)))
-    (is (= :rust-sir-pure-i64-v1 (:target artifact)))
+    (is (= :rust-sir-i64-f64-v1 (:target artifact)))
     (is (= (:kir-sha256 artifact) (artifact/sha256 valid-kir)))
     (is (= (:source-sha256 artifact) (artifact/sha256 (:source artifact))))
     (is (= #{:i64} (get-in artifact [:limits :value-types])))
@@ -87,10 +87,10 @@
          #"unsupported checked-KIR expression"
          (rust/emit (assoc-in valid-kir [:functions 0 :body]
                                '(mod 7 3))))))
-  (testing "f64 literals are rejected"
+  (testing "f64 literals under i64 ops are rejected"
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo
-         #"unsupported checked-KIR expression"
+         #"single value type"
          (rust/emit (assoc-in valid-kir [:functions 0 :body]
                                '(+ 1.5 2))))))
   (testing "non-main entry is rejected"
@@ -101,6 +101,72 @@
                         (assoc :entry 'other)
                         (assoc :exports ['other])
                         (assoc-in [:functions 0 :name] 'other)))))))
+
+(def f64-kir
+  {:format :kotoba.kir/v3
+   :entry 'main
+   :exports ['main]
+   :signature {:params [] :result :f64}
+   :effects #{}
+   :functions [{:name 'main
+                :params []
+                :result :f64
+                :effects #{}
+                :body '(f64-add 1.5 2.25)}]})
+
+(deftest checked-kir-emits-f64-source-artifact
+  (let [artifact (rust/emit f64-kir)
+        source (:source artifact)]
+    (is (= :rust/v1 (:format artifact)))
+    (is (= :rust-sir-i64-f64-v1 (:target artifact)))
+    (is (= #{:f64} (get-in artifact [:limits :value-types])))
+    (is (= artifact (rust/verify-artifact! artifact)))
+    (is (str/includes? source "-> f64 {"))
+    (is (str/includes? source "f64::from_bits("))
+    (is (str/includes? source " + "))))
+
+(deftest f64-comparison-lowers-to-i64-one-zero
+  ;; Comparisons yield i64 1/0, so the KIR result stays :i64 here.
+  (let [source (:source
+                (rust/emit
+                 (assoc-in valid-kir [:functions 0 :body]
+                           '(f64-lt 1.5 2.5))))]
+    (is (str/includes? source " < "))
+    (is (str/includes? source "{1i64} else {0i64}"))))
+
+(deftest f64-neg-wraps-its-operand
+  (let [source (:source
+                (rust/emit
+                 (assoc-in f64-kir [:functions 0 :body]
+                           '(f64-neg 1.5))))]
+    (is (str/includes? source "(-f64::from_bits("))))
+
+(deftest f64-slice-refusals
+  (testing "mixed i64/f64 operands are rejected"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"single value type"
+         (rust/emit (assoc-in valid-kir [:functions 0 :body]
+                               '(+ 1 2.5))))))
+  (testing "f64 min/max stay refused"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"unsupported checked-KIR"
+         (rust/emit (assoc-in f64-kir [:functions 0 :body]
+                               '(f64-min 1.5 2.5))))))
+  (testing "conversions stay refused"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"unsupported checked-KIR"
+         (rust/emit (assoc-in f64-kir [:functions 0 :body]
+                               '(i64-to-f64-checked 1))))))
+  (testing "result must match the body type"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"must match the body"
+         (rust/emit (-> f64-kir
+                        (assoc-in [:signature :result] :i64)
+                        (assoc-in [:functions 0 :result] :i64)))))))
 
 (deftest verifier-detects-source-substitution
   (let [artifact (rust/emit valid-kir)
