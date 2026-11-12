@@ -1,0 +1,200 @@
+(ns kotoba.compiler.backend.rust
+  "Fail-closed checked-KIR to Rust source lowering, pure-i64 slice.
+
+  The first S5 vertical slice owns one Rust surface: a pure, zero-arity
+  `main() -> i64`. It intentionally rejects effects, parameters, additional
+  functions, f64/f32, strings, collections, and every KIR expression outside
+  bounded i64 literals, `+ - * quot rem`, comparisons, and `if`. The rejected
+  `mod` (floored) is refused on purpose: mapping it to Rust's truncated `%`
+  would silently change negative-operand results, so its lowering waits for
+  the expansion slice with negative-operand vectors.
+
+  This backend is tier-only (KOTOBA-365 S5): it is NOT a `--target`, it is
+  not registered in `target-names`, and it does not participate in
+  `backend-qualification`'s exact inventory or any mandatory gate. Execution
+  qualification is a recorded blocker: rustc is not installed on this host,
+  so no emitted crate has been compiled or run yet.
+
+  Two documented gaps against execution (loud, not silent):
+
+  - Arithmetic uses `wrapping_*`, matching the EVM backend's wraparound. The
+    cljs backend instead checks every `+`/`-`/`*` result and loudly fails.
+    Checked emission for Rust (`checked_*` + trap) is expansion work.
+  - `wrapping_div`/`wrapping_rem` still panic on a zero divisor, and
+    `MIN / -1` yields `MIN`. Kotoba's exact div-zero/MIN-div-NEG1 trap is part
+    of the unregulated semantics gap (JUN-947), so the emitted crate does not
+    claim trap parity there either."
+  {:kotoba/export [emit max-expression-depth max-expression-nodes target-name verify-artifact!]}
+  (:require [kotoba.artifact.core :as artifact]
+            #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]])))
+
+(def target-name :rust-sir-pure-i64-v1)
+(def max-expression-nodes 256)
+(def max-expression-depth 32)
+
+(def ^:private exact-artifact-keys
+  #{:format :target :source :source-sha256 :kir :kir-sha256 :limits})
+
+(defn- reject! [message data]
+  (throw (ex-info message (merge {:phase :rust-lowering :target target-name}
+                                 data))))
+
+;; Same host split as the EVM backend: the JVM sees a long, ClojureScript
+;; sees a BigInt, and cljs bitwise ops coerce to int32, so range is checked
+;; through `kotoba.kir.cljs-i64` there instead of bit-twiddling here.
+(defn- i64? [value]
+  #?(:clj  (and (integer? value)
+                (<= Long/MIN_VALUE value Long/MAX_VALUE))
+     :cljs (and (or (i64/bigint-value? value) (integer? value))
+                (i64/in-i64-range? (i64/->bigint value)))
+     :default false))
+
+;; `i64::MIN` has no literal spelling: `-9223372036854775808i64` does not
+;; parse (the positive half is out of range). Compare textually so neither
+;; host needs an out-of-range literal in this file.
+(defn- min-literal? [value]
+  (= (str value) "-9223372036854775808"))
+
+(defn- emit-literal [value]
+  (cond
+    (min-literal? value) "i64::MIN"
+    (neg? value) (str "(-" (str (- value)) "i64)")
+    :else (str value "i64")))
+
+(def ^:private arithmetic-ops
+  {'+ "wrapping_add"
+   '- "wrapping_sub"
+   '* "wrapping_mul"
+   'quot "wrapping_div"
+   'rem "wrapping_rem"})
+
+(def ^:private comparison-ops
+  {'= "==" '< "<" '> ">" '<= "<=" '>= ">="})
+
+(declare expression-shape)
+
+(defn- shape-binary [form depth]
+  (let [left (expression-shape (second form) (inc depth))
+        right (expression-shape (nth form 2) (inc depth))]
+    {:nodes (inc (+ (:nodes left) (:nodes right)))}))
+
+(defn- expression-shape
+  ([form] (expression-shape form 0))
+  ([form depth]
+   (when (> depth max-expression-depth)
+     (reject! "Rust expression depth exceeds the target profile"
+              {:reason :expression-depth :limit max-expression-depth}))
+   (let [nodes (:nodes
+                (cond
+                  (i64? form) {:nodes 1}
+
+                  (and (seq? form)
+                       (= 3 (count form))
+                       (contains? arithmetic-ops (first form)))
+                  (shape-binary form depth)
+
+                  (and (seq? form)
+                       (= 3 (count form))
+                       (contains? comparison-ops (first form)))
+                  (shape-binary form depth)
+
+                  (and (seq? form)
+                       (= 4 (count form))
+                       (= 'if (first form)))
+                  (let [parts (map #(expression-shape % (inc depth)) (rest form))
+                        total (inc (reduce + (map :nodes parts)))]
+                    {:nodes total})
+
+                  :else
+                  (reject! "unsupported checked-KIR expression for the Rust target"
+                           {:reason :unsupported-expression :form form})))]
+     (when (> nodes max-expression-nodes)
+       (reject! "Rust expression exceeds the target profile"
+                {:reason :expression-nodes :limit max-expression-nodes}))
+     {:nodes nodes})))
+
+(defn- emit-expr [form]
+  (cond
+    (i64? form) (emit-literal form)
+
+    (and (seq? form) (= 3 (count form))
+         (contains? arithmetic-ops (first form)))
+    (str "(" (emit-expr (second form)) "."
+         (get arithmetic-ops (first form))
+         "(" (emit-expr (nth form 2)) "))")
+
+    (and (seq? form) (= 3 (count form))
+         (contains? comparison-ops (first form)))
+    (str "(if (" (emit-expr (second form)) " "
+         (get comparison-ops (first form)) " "
+         (emit-expr (nth form 2)) ") {1i64} else {0i64})")
+
+    (and (seq? form) (= 4 (count form)) (= 'if (first form)))
+    (str "(if " (emit-expr (second form)) " != 0 {"
+         (emit-expr (nth form 2)) "} else {"
+         (emit-expr (nth form 3)) "})")
+
+    :else
+    (reject! "unsupported checked-KIR expression for the Rust target"
+             {:reason :unsupported-expression :form form})))
+
+(defn- admitted-main [kir]
+  (let [functions (:functions kir)
+        function (first functions)]
+    (when-not (contains? #{:kotoba.kir/v3 :kotoba.kir/v4} (:format kir))
+      (reject! "unsupported KIR format for the Rust target"
+               {:reason :kir-format :format (:format kir)}))
+    (when-not (and (= 'main (:entry kir))
+                   (= ['main] (:exports kir))
+                   (= 1 (count functions))
+                   (= 'main (:name function))
+                   (empty? (:params function))
+                   (empty? (or (:param-types function) []))
+                   (= :i64 (:result function))
+                   (empty? (or (:effects kir) #{}))
+                   (empty? (or (:effects function) #{})))
+      (reject! "Rust pure-i64 v1 requires one pure zero-arity main returning i64"
+               {:reason :entry-contract}))
+    (expression-shape (:body function))
+    function))
+
+(defn- emit-crate [body]
+  (str "// Kotoba pure-i64 AOT slice -> Rust (tier-only, KOTOBA-365 S5).\n"
+       "// KIR sha256: " (:kir-sha256 body) "\n"
+       "// bounds: nodes<=" max-expression-nodes
+       " depth<=" max-expression-depth " values=i64-only\n"
+       "#![forbid(unsafe_code)]\n"
+       "fn main() -> i64 {\n"
+       "    " (:expr body) "\n"
+       "}\n"))
+
+(defn emit
+  "Lower an already checked KIR module to a Rust source artifact."
+  [kir]
+  (let [function (admitted-main kir)
+        expr (emit-expr (:body function))
+        kir-sha256 (artifact/sha256 kir)
+        source (emit-crate {:kir-sha256 kir-sha256 :expr expr})]
+    {:format :rust/v1
+     :target target-name
+     :source source
+     :source-sha256 (artifact/sha256 source)
+     :kir kir
+     :kir-sha256 kir-sha256
+     :limits {:expression-nodes max-expression-nodes
+              :expression-depth max-expression-depth
+              :value-types #{:i64}}}))
+
+(defn verify-artifact!
+  "Independently re-emit the closed KIR and require byte-for-byte identity."
+  [candidate]
+  (when-not (= exact-artifact-keys (set (keys candidate)))
+    (reject! "Rust artifact has an invalid key set"
+             {:reason :artifact-keys
+              :expected exact-artifact-keys
+              :actual (set (keys candidate))}))
+  (let [expected (emit (:kir candidate))]
+    (when-not (= expected candidate)
+      (reject! "Rust artifact does not match checked-KIR re-emission"
+               {:reason :artifact-mismatch})))
+  candidate)

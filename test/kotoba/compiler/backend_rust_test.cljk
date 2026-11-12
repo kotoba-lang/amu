@@ -1,0 +1,108 @@
+(ns kotoba.compiler.backend-rust-test
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
+            [kotoba.compiler.backend.rust :as rust]
+            [kotoba.artifact.core :as artifact]
+            #?@(:cljs [[kotoba.kir.cljs-i64 :as i64]])))
+
+(def valid-kir
+  {:format :kotoba.kir/v3
+   :entry 'main
+   :exports ['main]
+   :signature {:params [] :result :i64}
+   :effects #{}
+   :functions [{:name 'main
+                :params []
+                :result :i64
+                :effects #{}
+                :body '(+ 40 (* 1 2))}]})
+
+(deftest checked-kir-emits-a-rust-source-artifact
+  (let [artifact (rust/emit valid-kir)]
+    (is (= :rust/v1 (:format artifact)))
+    (is (= :rust-sir-pure-i64-v1 (:target artifact)))
+    (is (= (:kir-sha256 artifact) (artifact/sha256 valid-kir)))
+    (is (= (:source-sha256 artifact) (artifact/sha256 (:source artifact))))
+    (is (= #{:i64} (get-in artifact [:limits :value-types])))
+    (is (= artifact (rust/verify-artifact! artifact)))))
+
+(deftest golden-source-for-arithmetic
+  ;; NOTE: kbb/SCI `str/includes?` misses needles past ~20 chars on a long
+  ;; haystack, so goldens are split into short pieces (the repo's portable
+  ;; tests already follow this convention implicitly).
+  (let [source (:source (rust/emit valid-kir))]
+    (is (string? source))
+    (is (str/includes? source "forbid(unsafe_code)"))
+    (is (str/includes? source "fn main() -> i64"))
+    (is (str/includes? source "(40i64.wrapping_add("))
+    (is (str/includes? source ".wrapping_mul(2i64"))
+    (is (str/includes? source "2i64))))"))))
+
+(deftest if-and-comparison-lower-with-zero-is-false
+  (let [source (:source
+                (rust/emit
+                 (assoc-in valid-kir [:functions 0 :body]
+                           '(if (= 1 2) 10 20))))]
+    (is (str/includes? source "(if (1i64 == 2i64)"))
+    (is (str/includes? source "{1i64} else {0i64}"))
+    (is (str/includes? source "!= 0 {10i64}"))
+    (is (str/includes? source "else {20i64})"))))
+
+(deftest min-literal-emits-no-unparseable-negation
+  ;; A bare `-9223372036854775808` literal never reaches the emitter exactly:
+  ;; the nbb reader rounds it to a double before this code sees it. Real KIR
+  ;; carries exact values (the checked reader mints BigInts), so build MIN
+  ;; exactly per host here instead.
+  (let [min-value #?(:clj Long/MIN_VALUE
+                     :cljs i64/min-i64
+                     :default 0)
+        source (:source
+                (rust/emit
+                 (assoc-in valid-kir [:functions 0 :body]
+                           (list '+ min-value 1))))]
+    (is (str/includes? source "i64::MIN"))
+    (is (not (str/includes? source "5808i64")))))
+
+(deftest unsupported-kir-fails-closed
+  (testing "effects are rejected at the Rust boundary"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"one pure zero-arity main"
+         (rust/emit (-> valid-kir
+                        (assoc :effects #{[:cap/call 7]})
+                        (assoc-in [:functions 0 :effects] #{[:cap/call 7]}))))))
+  (testing "extra functions are rejected"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"one pure zero-arity main"
+         (rust/emit (update valid-kir :functions conj
+                            {:name 'helper :params [] :result :i64
+                             :effects #{} :body 0})))))
+  (testing "floored mod is refused, not mapped to truncated %"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"unsupported checked-KIR expression"
+         (rust/emit (assoc-in valid-kir [:functions 0 :body]
+                               '(mod 7 3))))))
+  (testing "f64 literals are rejected"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"unsupported checked-KIR expression"
+         (rust/emit (assoc-in valid-kir [:functions 0 :body]
+                               '(+ 1.5 2))))))
+  (testing "non-main entry is rejected"
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"one pure zero-arity main"
+         (rust/emit (-> valid-kir
+                        (assoc :entry 'other)
+                        (assoc :exports ['other])
+                        (assoc-in [:functions 0 :name] 'other)))))))
+
+(deftest verifier-detects-source-substitution
+  (let [artifact (rust/emit valid-kir)
+        tampered (assoc artifact :source "// forged")]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"does not match checked-KIR re-emission"
+         (rust/verify-artifact! tampered)))))
