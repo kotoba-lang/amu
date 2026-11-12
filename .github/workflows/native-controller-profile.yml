@@ -147,7 +147,7 @@ jobs:
           "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
           echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Profile native proof scans (diagnostic only)
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --output "$RUNNER_TEMP/admission.json" -- python3 scripts/seed/profile-proof-scans.py --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/native_build_queue.cljc -- --output "$RUNNER_TEMP/admission.json" -- basilisp run -p scripts/seed scripts/seed/profile-proof-scans.cljc -- --baseline-revision db6b2f085f627b413a9bc6f80f90ab942481e6b2 --output "$RUNNER_TEMP/proof-scans" --seconds 240
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
