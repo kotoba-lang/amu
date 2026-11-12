@@ -477,7 +477,7 @@ jobs:
         with:
           job: x86-complete
           kind: derive
-          roots: selfhost-bootstrap.cljc,check-one-compiler.cljc,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.cljc
+          roots: selfhost-bootstrap.cljc,check-one-compiler.cljc,native_build_queue.cljc,check-complete-x86.cljc,check-public-native-product.cljc
           path: |
             ${{ runner.temp }}/complete
             ${{ runner.temp }}/public-product
@@ -488,7 +488,7 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-complete-x86.cljc -- --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Public native product and aliases
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"

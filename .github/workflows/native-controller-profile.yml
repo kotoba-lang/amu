@@ -183,7 +183,7 @@ jobs:
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/one
       - name: Fresh native x86 fixed point and roles from source-identical derivation
-        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-complete-x86.cljc -- --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Early native controller controls without completing the expensive rebuild
         run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-cdci.cljc -- --stage preflight --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/local-cdci"
       - name: Isolated full controller with external phase observations
