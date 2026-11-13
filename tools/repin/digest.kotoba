@@ -1,0 +1,10 @@
+(ns repin.digest
+  (:require [kotoba.compiler.sha256-bits :as sha])
+  (:export [matches?]))
+
+;; The caller must authenticate the expected digest and retain the verified
+;; bytes for use. This function does not authenticate paths or prevent races.
+(defn matches? [data :bytes expected-size :i64 expected-sha256 :string] :bool
+  (and (>= expected-size 0)
+       (= (bytes-count data) expected-size)
+       (string=? (sha/sha256-hex data) expected-sha256)))

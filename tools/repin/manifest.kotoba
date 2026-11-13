@@ -1,0 +1,56 @@
+(ns repin.manifest
+  (:require [repin.inventory :as inventory])
+  (:export [manifest-cli-paths]))
+
+;; The caller must authenticate the bytes before passing them here. The result
+;; is only a path inventory; it does not verify files, digests, or symlinks.
+(defn- seed-path? [s :string] :bool
+  (let [n (string-length s)]
+    (and (>= n 13)
+         (= (string-substring s 0 5) "seed/")
+         (= (string-substring s (- n 7) n) ".kotoba")
+         (loop [i 5]
+           (if (= i (- n 7)) true
+             (let [c (string-code-point-at s i)]
+               (and (or (and (>= c 97) (<= c 122))
+                        (and (>= c 48) (<= c 57)) (= c 45))
+                    (recur (+ i 1)))))))))
+
+(defn- contains-path? [xs [:list :string] x :string] :bool
+  (loop [i 0]
+    (cond (= i (vector-count xs)) false
+          (= (typed-list-nth [:list :string] xs i) x) true
+          :else (recur (+ i 1)))))
+
+(defn- line-end [src :string pos :i64] :i64
+  (loop [i pos]
+    (cond (= i (string-length src)) i
+          (= (string-code-point-at src i) 10) i
+          :else (recur (+ i 1)))))
+
+(defn- parse-lines [src :string pos :i64 paths [:list :string]] [:list :string]
+  (if (>= pos (string-length src)) (typed-list-new [:list :string])
+    (let [end (line-end src pos)
+          line (string-substring src pos end)]
+      (cond (= end (string-length src)) (typed-list-new [:list :string])
+            (= line "") (parse-lines src (+ end 1) paths)
+            (= (string-code-point-at line 0) 35) (parse-lines src (+ end 1) paths)
+            (not (seed-path? line)) (typed-list-new [:list :string])
+            (contains-path? paths line) (typed-list-new [:list :string])
+            (= line "seed/90-drv.kotoba")
+            (let [all (typed-list-conj [:list :string] paths line)]
+              (if (and (= (vector-count all) 18)
+                       (contains-path? all "seed/19-decimal.kotoba")
+                       (not (contains-path? all "seed/macos-cli-api.kotoba"))
+                       (not (contains-path? all "seed/macos-cli.kotoba"))
+                       (inventory/exact-source-paths? all all))
+                (typed-list-conj [:list :string]
+                  (typed-list-conj [:list :string] all "seed/macos-cli-api.kotoba")
+                  "seed/macos-cli.kotoba")
+                (typed-list-new [:list :string])))
+            (> (vector-count paths) 17) (typed-list-new [:list :string])
+            :else (parse-lines src (+ end 1) (typed-list-conj [:list :string] paths line))))))
+
+(defn manifest-cli-paths [src :string] [:list :string]
+  (if (> (string-length src) 65536) (typed-list-new [:list :string])
+    (parse-lines src 0 (typed-list-new [:list :string]))))
