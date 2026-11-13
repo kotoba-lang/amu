@@ -1,0 +1,64 @@
+amu-gpu s161 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut ANALYSIS
+HALF -- STARTED, NOT FINISHED (the s160 carry-forward (c) first item;
+runtime-budget cutoff after the analysis script write + one repair
+patch, BEFORE any run; the s119/s133/s141/s143/s148/s150/s151/s152/
+s157/s158 interrupted-tick precedent).
+
+ROW TAKEN THIS TICK: analysis-s158.py written (the s148 precedent --
+the write is its own row when the budget ends there).
+
+STATE AT CUTOFF (named, not hidden):
+- analysis-s158.py EXISTS in this directory (pure stdlib, fail-closed
+  want-source regexes, reads the 54 committed run logs THROUGH GZIP
+  -- the s157 capture-form deviation -- and the named committed want
+  sources: s27 controls census, s132/s136/s139/s147 publications,
+  build-census-s158.txt first-measured pins; writes
+  publication-s158.txt). It is NOT in a runnable state at cutoff:
+  KNOWN REMAINING DEFECTS, unfixed (each is a mechanical fix, none
+  reach any evidence value because NOTHING has run; confirmed by the
+  language server this tick):
+  (1) the load-loop call sites still call load_run(...) which calls
+      load(path) without the new (b, wm, dd) knob-check arguments;
+  (2) run_host(tag, r) is REFERENCED (section 2, X1) but NOT defined
+      (needs the host-median helper over the parsed host_ns lists,
+      which load() now collects per cell);
+  (3) two dead scaffold lines remain in section 2 / C1 (the
+      'if False else' placeholders around hn and v_c2);
+  (4) load_run must keep only the (sum,128,S=16) host list and drop
+      the rest; sample_counts_ok / spv_identity_ok are printed but
+      not yet assigned from the integrity list.
+- NOT RUN EVEN ONCE: publication-s158.txt does NOT exist, NO
+  fifteenth-cut quantity and NO letter (C1, C2 (a)/(b)/(c)/(d), W1,
+  W2, W3, X1, every unit class, every m_c/MAD_c/h_c) is computed or
+  claimed -- every such quantity REMAINS UNMEASURED. NO
+  class/verdict/claim exists; the MID-ONLY NARROWING CLAIM stays
+  SUSPENDED (named, not claimed); the committed bracket stays EXACTLY
+  (254,557, 255,208].
+- The frozen-letter mapping decision taken this tick (to be printed
+  in the publication as NAMED, NOT HIDDEN): the protocol's W1 (c)
+  text reads 'C2 (c)/(d) -> NOTHING MOVES' while record.txt maps
+  W1 (d) to the frozen INVALIDATION criterion and the protocol header
+  says W1 (d) also fires on C1 (b); the script reports C2 (d)/C1 (b)
+  as W1 (d) INVALID (record.txt's explicit mapping), which also
+  satisfies 'NOTHING MOVES' -- the bracket outcome is identical under
+  every reading.
+
+This tick ran NO analysis, NO gates, NO hardware, NO builds, NO
+compiles, NO GO stamp, NO day-slot consumption, NO ledger line -- BAR
+NON-INTERFERENCE held. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor). Diff touches NO
+committed .cljk namespace (one evidence .py + this state .txt).
+Local commit only -- NOT pushed (slice unfinished). Linear 未記録.
+
+NOT DONE (s162 carries the unchanged (c) list):
+(a) fix the named defects, run analysis-s158.py twice byte-identical
+    -> publication-s158.txt (the frozen letters are evaluated inside
+    that run) + analysis-s158-identity.txt;
+(b) standing gates (a)-(f) live;
+(c) record.txt + the ADR-0355 dated note;
+(d) blocker-first + landing commit + push + the JUN-499 Linear
+    comment;
+(e) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; next slot a NEW UTC day + its own freeze)
+    and the cross-day tail-movement row.
+(JUN-55, JUN-59; Linear tracking JUN-499)

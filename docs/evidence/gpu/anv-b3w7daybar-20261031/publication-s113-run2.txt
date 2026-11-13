@@ -1,0 +1,73 @@
+JUN-59 session 113 -- THE ANCHOR-CLASS SETTLING BAR'S THIRD
+COUNTED-DAY MEASUREMENT (the W6 window) -- READING
+(produced ONLY by reading-s113.py over the COMMITTED run logs of
+the six fixed evidence directories: the five prior windows of
+publication-s73.txt section 0 (anv-b3commonmode-20261028 = s36,
+anv-b3joint3-20261028 = s38, anv-b3joint4-20261028 = s39,
+anv-b3levelrep-20261028 = s51, anv-b3w5xdayrep-20261029 = W5)
+plus the NEW W6 window measured THIS session in
+anv-b3w6daybar-20261030; protocol.txt was frozen BEFORE any W6
+quantity existed (freeze stamp 2026-10-29T04:23:51Z).)
+
+1. INTEGRITY (computed over each window's committed logs;
+   s80 protocol section 3):
+   s36: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   s38: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   s39: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   s51: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   s73: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   s113: runs 78 vmis 0 counts True knobs True s8 True cmap True
+   named cell (max,128,S=default): ok-map cell 5, raw idx 7
+   (the ok-map cell index is 0-based -- the s80 section-3
+   phrase 'ok-map cell 5'; the 1-based ok-map position is 6)
+   INVALIDATION criterion (protocol section 3): any violation =>
+   FLAGGED (no reading, no day slot).
+
+2. C1 RE-DERIVATION (environment pin, from the s113 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32804 vs committed 32915 (0.34% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE ANCHOR READING (hi block A -- the frozen L12 single bar
+   candidate; the reading unit is one 3-run block pooled over 25
+   rounds per cell, the frozen estimator unit F3 of settle-bar.txt):
+   s113 (NEW): median 1137 min..max 986..1459; class INTERMEDIATE/MIXED
+   in-band vs the bar's frozen refs 1,129/1,132/1,131 (within
+   +/-5% of EACH, settle-bar.txt V1): True
+
+4. PRIOR-WINDOW ANCHOR REPRODUCTION (the frozen priors PARSED
+   from the committed publication-s73.txt bytes, never
+   transcribed; reproduction EXACT required -- the prior rows
+   carry NO class token: the frozen publication-s73 section-3b
+   row shape, and a class-bearing prior row is parsed by
+   reconcile-prego.py --line as a BAR tuple):
+   s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+   s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+   s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+   s51: median 1137 min..max 988..1430 (want 1137 / 988..1430); reproduction EXACT: True
+   s73: median 1131 min..max 998..1442 (want 1131 / 998..1442); reproduction EXACT: True
+   all five prior windows reproduce EXACTLY: True
+   (a False row means the run logs do not reproduce the
+   committed priors; FAIL-CLOSED -- no ledger line derives
+   from this reading.)
+
+5. THE RUN DAY (the ledger line's day; s80 protocol section 1:
+   day = the W6 run's ACTUAL UTC day from run-window.txt):
+   run-window host-dates: 78 parsed, 1 distinct: 2026-10-31
+   ledger line day = 2026-10-31
+
+6. THE BAR READING ROW (D4 shape -- the ledger-line tuple,
+   printed a second time for the reconciler's two-class-row
+   agreement check; both class-bearing rows carry the same
+   values by construction): median 1137 min..max 986..1459, class INTERMEDIATE/MIXED
+
+   NAMED, NOT HIDDEN: this reading machinery pre-build computes
+   NO W6 quantity; the block-min vectors are NOT part of this
+   reading (the T18 analysis half's invalidation machinery, its
+   own session); the verifier twin derivation-census-prego.py is
+   --compat-only (the five committed windows) and has NO w6
+   mode -- the fresh-window 'every published integer
+   cross-checked' duty is a NAMED gap (queued), not machinery
+   that exists; the cross-tool check that exists today is
+   reconcile-prego.py --line against the ledger line after the
+   append.

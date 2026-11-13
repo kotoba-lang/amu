@@ -1,0 +1,64 @@
+JUN-59 session 121 run window (host-side, aiueos-6600hs / aiueos-6600hs-1).
+THE B=3 PER-DISPATCH-WORK THRESHOLD BISECT, EIGHTH CUT (B=3 at
+n=253,906/254,557/255,208 -- lo/mid/hi + eq3/b2m/c2/c8).
+protocol.txt freeze stamp 2026-10-31T03:53:30Z (anv-b3bisect8prereg-
+20261031/, frozen BEFORE the first run of this cut; this run window
+starts after it). GO stamp 2026-10-31T04:59:14Z precedes the builds
+(05:00:16Z) and all runs (host-verify-s121.txt, build-census-s121.txt).
+21 fresh processes (7 arms x 3 runs -- the protocol section 0 arm
+table's 7 rows govern the count). Per-run transcript (host date -u,
+taken immediately BEFORE the run invocation, seconds granular; rc,
+stderr byte count and line counts captured by the driver), verbatim
+from the driver's per-run steps (each run's stdout/stderr preserved
+verbatim in run-<tag>-r<R>.txt / .stderr.txt):
+  c2-r1 rc=0 host-date=2026-10-31T05:00:35Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r2 rc=0 host-date=2026-10-31T05:00:36Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c2-r3 rc=0 host-date=2026-10-31T05:00:36Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r1 rc=0 host-date=2026-10-31T05:00:36Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r2 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  lo-r3 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r1 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r2 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  mid-r3 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r1 rc=0 host-date=2026-10-31T05:00:37Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r2 rc=0 host-date=2026-10-31T05:00:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  eq3-r3 rc=0 host-date=2026-10-31T05:00:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r1 rc=0 host-date=2026-10-31T05:00:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r2 rc=0 host-date=2026-10-31T05:00:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  hi-r3 rc=0 host-date=2026-10-31T05:00:38Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r1 rc=0 host-date=2026-10-31T05:00:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r2 rc=0 host-date=2026-10-31T05:00:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  b2m-r3 rc=0 host-date=2026-10-31T05:00:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r1 rc=0 host-date=2026-10-31T05:00:39Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r2 rc=0 host-date=2026-10-31T05:00:40Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+  c8-r3 rc=0 host-date=2026-10-31T05:00:41Z stderr_bytes=0 samples=450 verifies=24 cells=24 tail='# done cells=24'
+rc=0 21/21 printed AND 21/21 '# done cells=24' (tail column above).
+host-file-mtime cross-check (stat -c '%y' on the host run logs vs the
+per-run host-date stamps):
+  run-c2-r1.txt: host-date 2026-10-31T05:00:35Z mtime 2026-10-31T05:00:36Z delta 1s
+  run-c2-r2.txt: host-date 2026-10-31T05:00:36Z mtime 2026-10-31T05:00:36Z delta 0s
+  run-c2-r3.txt: host-date 2026-10-31T05:00:36Z mtime 2026-10-31T05:00:36Z delta 0s
+  run-lo-r1.txt: host-date 2026-10-31T05:00:36Z mtime 2026-10-31T05:00:37Z delta 1s
+  run-lo-r2.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:37Z delta 0s
+  run-lo-r3.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:37Z delta 0s
+  run-mid-r1.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:37Z delta 0s
+  run-mid-r2.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:37Z delta 0s
+  run-mid-r3.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:37Z delta 0s
+  run-eq3-r1.txt: host-date 2026-10-31T05:00:37Z mtime 2026-10-31T05:00:38Z delta 1s
+  run-eq3-r2.txt: host-date 2026-10-31T05:00:38Z mtime 2026-10-31T05:00:38Z delta 0s
+  run-eq3-r3.txt: host-date 2026-10-31T05:00:38Z mtime 2026-10-31T05:00:38Z delta 0s
+  run-hi-r1.txt: host-date 2026-10-31T05:00:38Z mtime 2026-10-31T05:00:38Z delta 0s
+  run-hi-r2.txt: host-date 2026-10-31T05:00:38Z mtime 2026-10-31T05:00:38Z delta 0s
+  run-hi-r3.txt: host-date 2026-10-31T05:00:38Z mtime 2026-10-31T05:00:39Z delta 1s
+  run-b2m-r1.txt: host-date 2026-10-31T05:00:39Z mtime 2026-10-31T05:00:39Z delta 0s
+  run-b2m-r2.txt: host-date 2026-10-31T05:00:39Z mtime 2026-10-31T05:00:39Z delta 0s
+  run-b2m-r3.txt: host-date 2026-10-31T05:00:39Z mtime 2026-10-31T05:00:39Z delta 0s
+  run-c8-r1.txt: host-date 2026-10-31T05:00:39Z mtime 2026-10-31T05:00:40Z delta 1s
+  run-c8-r2.txt: host-date 2026-10-31T05:00:40Z mtime 2026-10-31T05:00:41Z delta 1s
+  run-c8-r3.txt: host-date 2026-10-31T05:00:41Z mtime 2026-10-31T05:00:42Z delta 1s
+21/21 consistent (worst delta 1s).
+NAMED, NOT HIDDEN: rc and host-date are LIVE-ONLY fields (they exist
+nowhere in the run logs); the driver captured them at run time on the
+host. Every run log was pulled to this directory byte-identical (the
+42-file per-file-digest aggregate sha256 matches host vs local:
+0d147af1a969a54311730517c9d0dbea8bb1968986384991fc632b9b88b60b5a).

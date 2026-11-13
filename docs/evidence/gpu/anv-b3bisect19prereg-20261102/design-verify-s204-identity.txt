@@ -1,0 +1,101 @@
+DESIGN-VERIFY-S204 BYTE-IDENTITY RECORD (sessions 205/206,
+2026-11-02 UTC)
+================================================================
+Scope: the s205 carry-forward's remainder completed at s206 -- the
+s204 design-verify (fail-closed quote + arithmetic re-derivation vs
+the committed bytes the state-s204 draft cites), with the draft1
+pair kept visible, the dev pin-shape fixes named, the D1 (2) q=1
+per-letter correction recorded in state-s205.txt as a superseding
+record and the SUPERSESSION-AWARE want set. QUOTE-ONLY /
+ARITHMETIC-ONLY: NO nineteenth-cut quantity is computed anywhere --
+NO run log, NO class, NO verdict, NO claim. Every 19th-cut
+quantity stays UNMEASURED. RULE 4 unchanged: NOTHING MOVES;
+bracket stays EXACTLY (254,923, 255,045].
+
+RUN PAIR (the OFFICIAL pair; this session, in this directory):
+  run 1: python3 design-verify-s204.py -> rc 0, stdout 25,225 bytes
+         (design-verify-s204-run1.txt), stderr 0 bytes
+         (design-verify-s204-run1.err).
+  run 2: python3 design-verify-s204.py -> rc 0, stdout 25,225 bytes
+         (design-verify-s204-run2.txt), stderr 0 bytes
+         (design-verify-s204-run2.err).
+  BYTE-IDENTITY: cmp run1.txt vs run2.txt -> exit 0;
+                 cmp run1.err vs run2.err -> exit 0.
+  sha256 (both stdout runs, identical):
+    2c881ffb53326f758180227f04ee886a7dcc553715b939a502b308dd1c814de3
+    design-verify-s204-run1.txt / design-verify-s204-run2.txt
+    (25,225 bytes both runs; .err 0 bytes both runs)
+  design-verify-s204.py (the script that produced both runs):
+    7bfa7b6b28a9ba37ae0b528955db4387cf68ab8d19e06094bc9bead8e3221239
+  tail: "DESIGN-VERIFY S204 SUMMARY: 220 ok / 0 failed"
+        "DESIGN-VERIFY S204 COMPLETE (fail-closed: 0 failed)"
+
+NAMED, NOT HIDDEN -- one draft-run pair, fail-closed BEFORE any
+correction and any want-set change (kept visible in this
+directory; the s203 draft1 precedent):
+  draft-1 (design-verify-s204-draft1-run{1,2}.{txt,err}, rc 1
+  both, the pair itself byte-identical -- stdout 24,434 bytes
+  sha256 10b2bfb1bc554bbaff7da7049ed04a73e853e9f5a23fd13fbb6345700c0a2cc4,
+  .err 0 bytes both -- "206 ok / 7 failed" both):
+    (i)  Q-S204-38/39/41/43 -- DEV PIN-SHAPE DEFECT (off-by-one
+         line numbers): the four wants pinned the D1 (2) quote
+         lines at 38/39/41/43; the committed bytes carry them at
+         39/40/42/44 (state-s204.txt is the authority). FIX: line
+         numbers moved to the committed bytes (wants renamed
+         Q-S204-39/40/42/44); want CONTENT unchanged, no want
+         weakened.
+    (ii) A-MINIMAX -- DEV CODE-SHAPE DEFECT: the argmin expression
+         minimized the TOP-piece widths only (255,045-p: 92/61/31
+         -> argmin q=3), contradicting its own want description
+         ("argmin worst-case"). FIX: the expression now minimizes
+         the worst-case remaining width max(255,045-p, p-254,923)
+         per q (92/61/91 -> argmin q=2, the expected value,
+         unchanged).
+    (iii) D-W1-Q1-LETTERS / D-W1-Q3-LETTERS -- "claimed None": the
+         claim regexes read from the same mis-anchored lines as
+         (i) AND the joined-line claims carried multi-space
+         junctions (L39/L40, L31/L32). FIX: re-anchored to the
+         committed lines (m_q1 reads L39+L40, m_q3 reads L42) and
+         the joined-line claims whitespace-normalized before the
+         regex (the s203 normalization-shape precedent; no want
+         weakened). With the fix the q=3 claim parses and MATCHES
+         (91, 31) and the q=1 claim parses and confronts
+         fail-closed -- the genuine D1 (2) q=1 per-letter swap
+         (original (92, 30) vs re-derived (30, 92)) that produced
+         the state-s205.txt superseding record.
+
+WHAT THE OFFICIAL PAIR VERIFIES (220 wants, 0 failed -- tool-
+counted: 14 + 1 + 155 + 33 + 17; the s193 check-set shape):
+14 file pins (size + sha256, incl. F-S205 on state-s205.txt) + 1
+pair byte-identity (knob-search-s203 run1==run2) + 155
+line-pinned quotes + 33 arithmetic re-derivations + 17 derived
+checks FROM COMMITTED BYTES (the four binding sets'
+min/max/spread, the class re-counts, the m-list re-counts, the
+981..1,015 band check over all 64 committed block minima) and
+geometry (the W1 (a)/(b) per-outcome bracket-width geometry
+(D1 (2)) and the SUPERSESSION CHECK: the original state-s204 q=1
+sentence pinned
+VERBATIM as SUPERSEDED (state-s205 L19 == state-s204 L39 and L20
+== L40, byte-exact; SUPERSEDED label pinned) and the CORRECTED
+record (30, 92) == the re-derivation from the committed W1 letter
+shapes (W1 (a) keeps the low piece p-254,923; W1 (b) keeps the top
+piece 255,045-p). The q=3 per-letter sentence MATCHES and is NOT
+superseded (named). The minimax point decision (q=2 floor midpoint
+(307, 1,204) n=254,984) is UNAFFECTED (the worst-case criterion
+never reads the letters).
+
+THREE-STATE: the nineteenth-cut design is ACCEPTED DESIGN, now
+DESIGN-VERIFIED AT THE QUOTE-AND-ARITHMETIC LEVEL ONLY -- NOT
+frozen (no protocol.txt, no freeze stamp), NOT implemented
+compiler code, NOT a measurement. NO nineteenth-cut quantity
+exists -- every 19th-cut quantity UNMEASURED until a FUTURE
+measuring session runs 54 fresh processes under the FROZEN
+protocol (not yet written; NOT queued). The quoted
+18th/15th/13th-cut letters are those cuts' landed MEASURED
+QUANTITIES (the s197-s199 hardware runs on aiueos-6600hs under
+the frozen anv-b3bisect18prereg-20261101/protocol.txt).
+
+NOT DONE (s207 carries exactly this list): protocol.txt FROZEN +
+freeze-record at its own slice; standing, not queued: any further
+counted-day slot (each needs its own freeze) and the cross-day
+tail-movement row. (JUN-55, JUN-59; Linear tracking JUN-499)

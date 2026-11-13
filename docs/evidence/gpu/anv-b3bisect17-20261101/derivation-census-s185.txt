@@ -1,0 +1,62 @@
+== JUN-59 session 188 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, SEVENTEENTH CUT -- THE QUARTER-POINT CUT AT   ==
+== q1 (WM=313, NDIV=1229) n=254,679; ZERO derivation edits at the ==
+== s182 freeze; ONE NEW KNOB TRIPLE q1 (313, 1229), first-built    ==
+== and first-measured at s185)                                    ==
+every value below is COMPUTED here (sha256) or PARSED from committed
+bytes (host-build-s185.txt, the frozen
+anv-b3bisect17prereg-20261101/protocol.txt pin quotes and the s25/
+s27 committed censuses). Nothing is transcribed.
+
+RUN-COUNT SELF-CHECK (frozen arm table): 3+48+3 = 54 -> ok
+
+ZERO-DERIVATION CUSTODY (computed here, local files):
+  instrument gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt sha256:
+    c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8386e84e0
+    == parsed pin (the s179/s182 adopted ROUNDS6400 source pin):
+    c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8386e84e0
+    -> MATCH
+  expected-corpus.sha256 sha256:
+    eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+    == parsed pin (byte-copy of s26's, s27 census):
+    eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+    -> MATCH
+  cases-s185-a.txt whole-file sha256:
+    76715d79ec88492f72b69b418f2870c742376041de93e7ac58848152fb006ec5
+    == the s185 staging pin (state-s185.txt) -> MATCH
+  the 24 cell lines' block sha256 (computed here, non-'#' lines over
+    cases-s185-a.txt):
+    873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+    == s27's cases-s27-a.txt cell-line block sha256 (parsed from
+    derivation-census-s25.txt):
+    873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+    -> MATCH
+  (cell lines byte-equal to sessions 9-27's a-set)
+
+RUN-HEADER CENSUS (the q1 header census; parsed from the 54
+committed run logs by pull-verify-s185.py, run twice byte-identical
+-- capture pull-verify-s185-run1.txt, fields
+n,rounds,warmup,batch,barrier_n,work_mul,ndiv):
+  q1: n=254679 rounds=6400 warmup=3 batch=3 barrier_n=0
+      work_mul=313 ndiv=1229 -- 48/48 logs uniform
+      (run-q1-r01.txt..run-q1-r48.txt)
+  c2: n=1000003 rounds=6400 warmup=3 batch=2 barrier_n=0
+      work_mul=1 ndiv=1 -- 3/3 logs uniform
+  c8: n=1000003 rounds=6400 warmup=3 batch=8 barrier_n=0
+      work_mul=1 ndiv=1 -- 3/3 logs uniform
+  q1 == the frozen knob arithmetic: (1,000,003*313)//1,229 =
+  254,679, gcd(313, 1229) = 1 (re-derived by tool this session) ->
+  MATCH.
+
+BUILD REPLICATION PINS: see build-census-s185.txt (3/3 builds rc 0;
+q1 is a NEW first-measured pin; c2/c8 reproduce the s169
+first-measured digests byte-identically; post-window re-census 3/3
+== pins at s187 and again at the s188 pull session).
+
+RUN-LOG CUSTODY: host==local byte-identity 108/108 at the canonical
+raw aggregate acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+(host-digests-s185.txt; construction pinned by two known-answer
+tests + the negative control), committed as the gzip -n form with
+the 54 raw stdout digests recorded in raw-digests-s185.txt and the
+committed-form re-derivation equal to the raw aggregate.
+(JUN-55, JUN-59; Linear tracking JUN-499)

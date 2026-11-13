@@ -1,0 +1,71 @@
+== JUN-59 session 121 build census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, EIGHTH CUT -- the MEASUREMENT half of the ==
+== s120 pre-registration) ==
+Build window (host timeline): builds ran after the verify GO
+(compile) and before the first run (run-window.txt).
+== host ==
+aiueos-6600hs (aiueos-6600hs-1, tailscale 100.98.24.37), user murakumo-ci
+(groups include render). Workdir ~/anv-b3bisect8-20261031, runs
+cwd=shaders/ (manifest passed as ../cases-s121-a.txt; binaries
+../anv-bb-<tag>).
+== toolchains (from session 2's committed compile-toolchain.txt record of
+== the same host/toolchain; not re-printed this session) ==
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+(glslangValidator NOT used this session -- ZERO derivation; the corpus
+spv are the archived byte-verified artifacts and the instrument is
+session 26's committed source byte-identical.)
+== binary compiles: gcc -O2 -DBATCH=<B> -DWORK_MUL=<M> -DNDIV=<D> ==
+== -o anv-bb-<tag> gpu-subgroup-reduce-anv-ndiv.c -lvulkan (7 arms, ==
+== one binary each) -- live ssh capture, verbatim: ==
+build c2 (-DBATCH=2 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-31T05:00:16Z
+build lo (-DBATCH=3 -DWORK_MUL=1024 -DNDIV=4033) rc=0 @2026-10-31T05:00:16Z
+build mid (-DBATCH=3 -DWORK_MUL=405 -DNDIV=1591) rc=0 @2026-10-31T05:00:16Z
+build eq3 (-DBATCH=3 -DWORK_MUL=810 -DNDIV=3182) rc=0 @2026-10-31T05:00:16Z
+build hi (-DBATCH=3 -DWORK_MUL=1213 -DNDIV=4753) rc=0 @2026-10-31T05:00:16Z
+build b2m (-DBATCH=2 -DWORK_MUL=405 -DNDIV=1591) rc=0 @2026-10-31T05:00:16Z
+build c8 (-DBATCH=8 -DWORK_MUL=1 -DNDIV=1) rc=0 @2026-10-31T05:00:16Z
+build stderr byte counts (host-side wc -c, verbatim):
+0 build-b2m.err
+0 build-c2.err
+0 build-c8.err
+0 build-eq3.err
+0 build-hi.err
+0 build-lo.err
+0 build-mid.err
+0 total
+binary sha256 (host-side sha256sum, verbatim):
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c  anv-bb-lo
+0ce4616c2131389ec15fb0304c187a19ddd4e29edbabd6b620821f0a1bfe8941  anv-bb-mid
+97d38f8f2488665e10894077f16905488ff62dd89088a8f68edea6619a0e71d7  anv-bb-eq3
+123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec  anv-bb-hi
+95fc34fe40b744066bb67febf1c77ac68a6000dee4b077b818193b5c74f0cc39  anv-bb-b2m
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+BUILD REPLICATION PIN (declared in the frozen protocol.txt section 2 in
+advance; prior censuses parsed programmatically --
+derivation-census-s121.txt):
+  BYTE-IDENTICAL: anv-bb-c2 e5ed903e5b9dfd64... == sessions 13-27's c2
+    (e5ed903e..., s27 census pin) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-c8 480925e58d28e7d3... == sessions 13-27's c8
+    (480925e5..., s27 census pin) -- PIN OK
+  BYTE-IDENTICAL: anv-bb-lo a6c31b6c5c566308... == the (1024,4033)
+    triple (a6c31b6c..., s27 census anv-bb-hi pin -- s27's hi IS
+    (1024,4033), its first cross-session rebuild; this lo is the
+    bisect-instrument binary's next cross-session rebuild, run here
+    against the pair's bar-SETTLED four-counted-day class record) --
+    PIN OK
+  BYTE-IDENTICAL: anv-bb-hi 123e8f739a92b51a... == the (1213,4753)
+    triple (123e8f73..., s26 census anv-bb-hi pin -- s26's hi IS
+    (1213,4753)) -- PIN OK
+  4/4 pins BYTE-IDENTICAL.
+  mid/eq3/b2m are NEW knob triples ((3,405,1591), (3,810,3182),
+  (2,405,1591) -- no prior binary exists for them, so no byte-identity
+  pin applies (named, not hidden); their first measured digests are
+  recorded above: mid 0ce4616c..., eq3 97d38f8f..., b2m 95fc34fe...).
+NAMED, NOT HIDDEN: this file is assembled in the session from the live
+ssh capture transcripts quoted verbatim above (the capture is
+session-held). The lo pin wording counts the bar's four counted days
+as instrument runs of the (1024,4033) knob pair through the W-route
+instrument -- those are bar readings, not bisect runs; the byte pin
+here is the triple's BINARY identity, which is what the protocol
+freezes.

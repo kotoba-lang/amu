@@ -1,0 +1,29 @@
+2026-10-31T00:19:02Z
+== session 113 W7 MEASUREMENT state capture ==
+-- session start stamp (cron conversation start; first date -u this tick) --
+2026-10-31T00:02:31Z
+-- slot arithmetic (s85 freeze protocol.txt section 0: W7 = the window whose
+   78 fresh processes run in the first measurement session that starts at or
+   after 00:00:00Z of the first UTC day STRICTLY AFTER the UTC day named on
+   W6's ledger line in settle-bar-ledger.txt; the line is read from the
+   append-only ledger at execution time, never hand-written) --
+W6 ledger line (read live from docs/evidence/gpu/settle-bar-ledger.txt):
+  day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133 min=993 flag=none
+W6 line day            2026-10-30
+strict-next-day        2026-10-31
+slot_open              2026-10-31T00:00:00Z
+session_start          2026-10-31T00:02:31Z
+delta_seconds          151 = 2m31s AFTER the slot
+session qualifies as W7 session? True
+contingency check (protocol section 0): W6's line is PRESENT (contingency (iii)
+  not triggered -- the freeze stands) and UNFLAGGED flag=none (contingency (ii)
+  not triggered -- W6 consumed the 2026-10-30 slot as a COUNTED reading, so
+  W7's line is the bar's FOURTH counted reading if it qualifies).
+-- workdir probe (host murakumo-ci-6600hs / aiueos-6600hs, user murakumo-ci) --
+~/anv-b3w7daybar-20261031 probed at 2026-10-31T00:16:30Z: NO-WORKDIR (did not
+pre-exist this session; no other session staged it).
+-- blocker-first: open kotoba-lang/amu PRs with headRefName startswith hermes/ --
+[]
+(checked at tick start 2026-10-31T00:03Z via gh pr list --json headRefName)
+-- chain PRs (must be exactly ONE) --
+[{"headRefName":"bot/amu-gpu-chain-20261028-4","mergeable":"MERGEABLE","number":1665}]

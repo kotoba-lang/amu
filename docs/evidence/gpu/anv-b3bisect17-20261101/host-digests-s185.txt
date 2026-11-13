@@ -1,0 +1,93 @@
+== host-digests (post-pull byte-identity verification, session 188) ==
+== the 108 logs pulled plain via scp (murakumo-ci@100.98.24.37:    ==
+== ~/anv-b3bisect17-20261101/shaders/run-*, 741M raw, 2m08s). The  ==
+== canonical aggregate is computed over the sorted 108 this-cut    ==
+== log names (run-<tag>-r<NN>.txt and run-<tag>-r<NN>.stderr.txt,  ==
+== NN zero-padded; c2/c8 r01..r03, q1 r01..r48) on both sides,    ==
+== each name verified to exist host-side first (missing=0).        ==
+
+== aggregate construction PINNED THREE INDEPENDENT WAYS before use ==
+1. known-answer test over the 108 COMMITTED s147 logs
+   (anv-b3bisect14-20261031/run-*, plain): the same construction
+   (sha256 over the concatenation of contents in sorted name order)
+   reproduces the committed s147 local aggregate
+   8c8ef86446f8f11280c4ac020d2ff7aa1cb25c76af307777e90178c9e156b69c
+   EXACTLY (computed fresh this session); the sha256sum-line
+   construction does NOT (7c52eb638a995cb5a92db0e17ac95607dc800aa93768fa4c473dea2d54df33af,
+   computed fresh this session == the s158-recorded negative
+   control).
+2. second known-answer test through the COMMITTED s158 form
+   (anv-b3bisect15-20261101/: gz-decompressed stdout + plain 0-byte
+   stderr in sorted name order) reproduces the committed s158
+   aggregate
+   97bd3d33db2f49346a370bfd5269d8fd17da8d223d3915fc32fc7e9025116c8e
+   EXACTLY (computed fresh this session).
+3. the s185 host driver's own command (host-only, NEVER committed):
+   while read -r n; do cat "$n"; done < <names> | sha256sum -- the
+   same construction; its aggregate acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+   (captured verbatim in host-runs-s185.txt) is reproduced FRESH
+   host-side this session (below) and again locally over the pulled
+   tree.
+
+== live captures, verbatim: ==
+== host-side (binary re-census, pull session s188) ==
+b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48  anv-bb-c2
+f22502bdbbafda1089486eb3a4f94b6d89306c86ee50a1892366cec0e0ec208f  anv-bb-q1
+2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831  anv-bb-c8
+(3/3 == the s185 first-measured pins parsed from host-build-s185.txt
+AND == the s187 post-window re-census; q1 is NEW first-measured --
+no committed pin exists to match -- while c2/c8 reproduce the s169
+first-measured digests byte-identically. Observations, not class
+claims.)
+== this-cut name set verification (host re-run, s188) ==
+108 names (printf '%02d' zero-padded), host-side existence check: missing=0
+== host-side canonical aggregate over the exact 108 names (sorted) ==
+acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513  -
+(== the s185 driver-tail capture, re-derived FRESH from the host
+this session after the window completed)
+== host-side run-log raw byte census (wc -c totals, verbatim) ==
+776686013 total   (54 stdout logs)
+0 total           (54 stderr logs)
+== local side (the pulled tree, same 108 sorted names) ==
+local name construction file == host /tmp/s185-names-pull.txt (byte-identical, 108 lines)
+pulled tree name set == expected 108/108 (ls run-* sorted == names file)
+raw stdout bytes 776,686,013 (54 logs); 54 stderr logs 0 bytes (all)
+acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513  -
+host == local -> MATCH (108/108 logs byte-identical)
+
+== gzip -n COMMIT FORM (the s157 capture-form deviation, executed) ==
+54 stdout logs committed as run-<tag>-r<NN>.txt.gz (gzip -n,
+87M evidence dir total incl. stderr + digests); 54 stderr logs stay
+plain 0-byte .stderr.txt; the raw pulled copies are REMOVED from
+the staging tree after the byte-identity check (the committed form
+is the .gz). RAW DIGESTS BEFORE COMPRESSION: raw-digests-s185.txt
+(54 lines, sha256 + name + raw bytes each).
+gzip fidelity re-verified after compression with explicit counts
+(pull-verify-s185.py, run twice byte-identical): raw-digest
+records: 54 / gzip fidelity: checked=54 mismatch=0; the canonical
+aggregate re-derived THROUGH THE COMMITTED FORM (gz-decompressed
+stdout in sorted name order; the 54 plain 0-byte stderr logs
+contribute zero bytes to a concatenation)
+acad342c459832f5584742f4b428ada002113adc359af214bcbdc6ec4ba3c513
+== the raw aggregate -> the committed form preserves the raw byte
+content exactly. Per-arm RUN-HEADER census (the q1 header census:
+batch=3 work_mul=313 ndiv=1229 n=254,679) is in
+derivation-census-s185.txt; its capture is pull-verify-s185-run1.txt.
+
+NAMED, NOT HIDDEN:
+- The staging-cleanup rm glob (run-*.txt) also matched the 54
+  STAGING copies of the 0-byte .stderr.txt logs (they end in .txt);
+  only staging copies were removed. The committed .stderr.txt files
+  in the evidence dir were created earlier from the same 0-byte host
+  files and are re-verified empty by pull-verify-s185.py (name set
+  108/108; each committed stderr read and asserted empty). No
+  evidence byte is affected.
+- No verification-script defect this session: pull-verify-s185.py
+  passed fail-closed on its first run (no draft pair; the run-twice
+  pair is the first capture). The s158/s169 counter/subshell and
+  open-mode defects did NOT recur (explicit counts printed).
+- The s147 /dev/stdin driver-capture defect did NOT recur: the
+  host-side existence check and aggregate ran against the
+  host-side /tmp/s185-names-pull.txt (108 lines), generated
+  host-side with printf '%02d' (the s139 seq -w defect absent).
+(JUN-55, JUN-59; Linear tracking JUN-499)

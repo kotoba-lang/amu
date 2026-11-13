@@ -1,0 +1,150 @@
+JUN-59 -- session 81 protocol (DESIGN FREEZE ONLY):
+THE DOUBLING LADDER (DL) -- THE NEW NAMED RANK-PAIR VOCABULARY
+/ SELECTION RULE (the s63-retired rank-pair program's only route
+back; the s80 carry-forward item (c), named in the s80 freeze
+section 4(a)/7(c) and freeze-record-s80.txt section 9(c)).
+DESIGN slice this tick: name the vocabulary and freeze its
+selection rule. NO statistic of any run log is computed here --
+the four named pairs' levels are UNMEASURED, and no analysis row
+rides this freeze. Written once at freeze stamp
+2026-10-29T04:58:52Z; never rewritten. The chain branch
+bot/amu-gpu-chain-20261028-4, the ONE open chain PR -- commit +
+push only.
+
+0. ROW QUESTION (ONE row: ONE design decision): "any further
+   rank-pair probe requires a NEW named vocabulary/selection rule
+   (none exists yet -- naming one is future design work)" (s63
+   record section 5; repeated as the standing named gap at s80).
+   WHY THIS ROW NOW (named, not silent): of the three s80
+   carry-forward items, the W6 measurement half is day-slot-gated
+   (the first session at/after 2026-10-30T00:00:00Z; this tick
+   runs 2026-10-29T04:5xZ, ~19h before the slot opens) and the
+   fourth counted-day bar measurement is slot-order-dependent (its
+   day slot follows W6's actual run day; freezing it now would
+   freeze a day that can slip), so the vocabulary is the only
+   carry-forward item a design slice can honestly take today.
+
+1. THE VOCABULARY (frozen; ranks of the pooled-75 order statistics
+   x_(1) <= ... <= x_(75), the frozen estimator unit F3 of
+   settle-bar.txt; deviation-center rank x_(38)):
+     DL4  = (x_(34), x_(42))   k=4   span 8
+     DL8  = (x_(30), x_(46))   k=8   span 16
+     DL16 = (x_(22), x_(54))   k=16  span 32
+     DL32 = (x_( 6), x_(70))   k=32  span 64
+   where k is the half-distance from the center rank and the pair
+   is (x_(38-k), x_(38+k)). THE FROZEN SELECTION RULE: k runs over
+   the POWERS OF TWO <= 37 WHOSE k IS UNNAMED in the prior named-k
+   inventory -- powers of two <= 37 are {1,2,4,8,16,32}; k=1
+   (INNER5) and k=2 (INNER4) are already named and computed; the
+   free set is exactly {4,8,16,32} (rankpair-vocab-s81.py checks
+   the equality). Properties, all script-checked (179/0):
+   self-mirror (each pair is its own mirror under r <-> 76-r);
+   midpoint rank 38; spans 8/16/32/64 (two octaves, log2 steps);
+   ranks in 1..75; DISJOINT from all 16 previously named pooled-75
+   rank pairs (the inventory of section 2); spacing repair (each k
+   sits strictly between consecutive named k: 3<4<5, 5<8<10,
+   10<16<19, 29<32<33); the ladder tops out (2*32 = 64 > 37 -- no
+   k=64 exists in the pooled 75), so THIS vocabulary is closed at
+   four pairs.
+
+2. THE PRIOR NAMED INVENTORY (frozen citation list; the
+   disjointness check's other side): symmetric pairs
+   k=0 (38,38) center anchor s58; k=1 (37,39) INNER5 s60/s61;
+   k=2 (36,40) INNER4 s59 (s58 alt-k2, s61 re-read); k=3 (35,41)
+   INNER3 s58; k=5 (33,43) INNER2 s56; k=10 (28,48) INNER s53;
+   k=19 (19,57) IQR s47; k=29 (9,67) OUTER s53; k=33 (5,71)
+   OUTER2 s56; k=35 (3,73) OUTER3 s58; k=36 (2,74) OUTER4 s59;
+   k=37 (1,75) OUTER5/outer5 s60/s61; asymmetric four-rank-
+   vocabulary pairs (1,57)/(19,75) HX s62, (1,19)/(57,75) HS
+   s63. The halving-ladder family (s56-s61) and the four-rank
+   vocabulary (s62-s63) are both COMPLETE AND RETIRED at their
+   named end steps; nothing here re-opens either.
+
+3. THE SELECTION RULE FOR FUTURE ROWS (frozen):
+   (a) a future rank-pair row names its pair(s) ONLY from this
+       vocabulary; a pair outside it needs a NEW vocabulary freeze
+       (no silent extension);
+   (b) the row names its pairs in its OWN protocol freeze BEFORE
+       any statistic of the row exists (the campaign's pre-
+       registration convention, unchanged);
+   (c) estimators, nulls, thresholds and joint rules are NOT
+       frozen here -- each row freezes its own (the vocabulary
+       names rank pairs only);
+   (d) several pairs in one row take the row's own multiplicity
+       convention (the IUT rule the T-family rows used).
+
+4. NAMED, NOT HIDDEN:
+   (a) WHY POWERS OF TWO: the rule is data-independent (it reads
+       only the committed naming history, never any statistic),
+       needs no tie-break (all k integer -- the halving ladder's
+       ROUND-HALF-AWAY-FROM-ZERO tie-break is not re-opened), and
+       each step lands in a genuine gap of the named-k inventory
+       (section 1's spacing repair). ALTERNATIVE CONSIDERED AND
+       REJECTED: a per-row free-k rule (each row names any k at
+       its own freeze) -- rejected because it re-opens ad-hoc
+       ladder selection, the exact failure mode the halving
+       ladder's frozen rules existed to prevent; and an extended
+       six-rank asymmetric vocabulary (the s62/s63 shape) --
+       rejected because the four-rank program already retired over
+       its rank set and asymmetric tail-side pairs conflate tail
+       identity with span (see (b)).
+   (b) NAMED LIMITATION -- TAIL-SIDE ASYMMETRY IS OUT OF SCOPE:
+       every DL pair is self-mirror, so it measures total spread
+       only. Three consecutive named probes (s61/s62/s63) found
+       mirror pair sets NOT mirror-symmetric in level (e.g. HSL
+       583/579/568/554 vs HSR 195/169/196/217), so a symmetric
+       pair absorbs tail identity by construction; probing which
+       tail moves needs a SEPARATE future vocabulary (asymmetric
+       pairs), NOT named here.
+   (c) NARROW-SPAN POWER CAVEAT (pre-registered): the halving
+       ladder's inner cluster (k=1..5, spans 2..10) scattered
+       near its noise floors (the s62/s63 pre-registered narrow-
+       span caveat). DL4 (span 8) sits IN that band -- a (b) at
+       DL4 is uninformative about span structure; the informative
+       steps are DL8/DL16/DL32 (spans 16/32/64).
+   (d) FRESHNESS, BOUNDED: no committed publication computes any
+       of the four pairs (verified this tick: grep -F over
+       docs/evidence/gpu for the pair forms (34,42)/(30,46)/
+       (22,54)/(6,70) and the rank tokens x_(34)/x_(42)/x_(30)/
+       x_(46)/x_(22)/x_(54)/x_(6)/x_(70), excluding this
+       directory: 0 hits). The claim is exactly that grep: it
+       does not certify anything outside the committed evidence
+       tree. A future row over DL pairs is a FRESH pre-registered
+       prediction if frozen before computation.
+   (e) WHY FOUR PAIRS AND NOT THE 26 FREE k's: post-hoc selection
+       risk; four log2 steps answer the span-response shape with
+       the campaign's multiplicity conventions; more pairs at this
+       n (2 windows per contrast, 12 blocks, ONE host) buy
+       multiplicity, not power.
+
+5. WHAT THIS FREEZE DOES NOT DO: computes NO statistic (the DL
+   levels are UNMEASURED -- no measurement exists to report); NO
+   hardware runs, NO builds, NO compiles, NO GO stamp, NO reading,
+   NO settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt byte-identical to HEAD, git diff 0
+   bytes, verified this tick); NO analysis row rides this freeze;
+   Rule 4 unchanged (accelerator-targets defaults stay provisional
+   :measured? false; no vendor optimization exists for Intel).
+
+6. IMPLEMENTATION PATHS (deterministic; the s80 section-6
+   discipline, adapted to a naming slice): rankpair-vocab-s81.py
+   (pure Python, stdlib only, no randomness, no clock) enumerates
+   the family and checks every frozen property of sections 1-3;
+   run twice byte-identical (sha256 9b6b0c3a6d5c0c98... both);
+   --self-test "TOTAL: 179 assertions passed, 0 failed", exit 0.
+   The standing gate set runs at this tick as always (classify
+   --self-test; scoped GPU gate twice via the scratch runner,
+   created/run/deleted, never committed; FULL run-tests.cljk run
+   live; the settle-bar evaluator --self-test and ledger eval
+   twice byte-identical; find docs/evidence/gpu -name '*.sh' ->
+   0 -- no POSIX shell execution files, ever).
+
+7. RULE 4 (frozen): NOTHING MOVES. WHAT THIS FREEZE CARRIES
+   FORWARD (named; each item is its own future row): (a) the W6
+   measurement half at the first session at/after
+   2026-10-30T00:00:00Z (the s80 freeze binds); (b) the fourth
+   counted-day bar measurement (its own future freeze, its day
+   slot after W6's); (c) any DL rank-pair row (this vocabulary is
+   the route back; a row is a NEW pre-registration, NOT taken
+   here); (d) a tail-side/asymmetric vocabulary (named limitation
+   4(b); future design work, not queued as a row).

@@ -1,0 +1,107 @@
+JUN-59 session 75 -- THE S73 CARRY-FORWARD REMAINDER (3a analysis
+run 2 + diff, 3c standing gates, 3d the bar line through the frozen
+evaluator, 3e chain landing). Verification + ledger slice: NO
+instrument runs, NO compiles, NO GO stamp, NO host writes -- the
+W5 measurement itself is s73's, unchanged and not re-measured.
+
+1. 3(a) VERIFIED (real tool output): analysis-s73.py RUN 2 ran to
+   completion in the FOREGROUND on the numpy 2.5.4 interpreter
+   (/usr/local/bin/python3, "interp: 2.5.4"; the s74 background
+   run died at import on a numpy-less interpreter -- named there),
+   4m06.9s wall, rc=0, stdout 0 bytes, stderr 0 bytes (the s74
+   failed capture scratch/analysis-s73-run2.stderr is overwritten
+   with this run's clean capture). The script writes only at
+   completion (single write, analysis-s73.py line 768), so run 1's
+   bytes were never at risk; run 2 rewrote publication-s73.txt at
+   completion (12,585 bytes, same size as run 1). BYTE-IDENTITY
+   DIFF: sha256 221d559106ff5298a53aaaeb617440b529ebb179c334c68f3a9fdf7393f6da8f
+   for BOTH publication-s73.txt and scratch/pub-s73-run1-pin.txt,
+   cmp exit 0. The w5-mode determinism claim ("run twice, diff
+   exit 0") is now VERIFIED and the s73 T7 values are TWO
+   byte-identical runs of the validated generator:
+   T7 = (a) CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES (MAD axis
+   2*L_s36 143 -> 2*L_s73 98, C_obs 22.5, count 0/20,001,
+   p 0.000050; IQR axis 2*L_s36 303 -> 2*L_s73 223, C_obs 40.0,
+   count 3/20,001, p 0.000200).
+
+2. 3(c) STANDING GATES (real runs, this tick):
+   (a) FULL run-tests.cljk (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this session touches NO .cljk namespace). Capture .err
+       879 bytes BYTE-IDENTICAL to the s72 pin (cmp exit 0);
+       stdout content 0 bytes == the s72 pin (the capture file
+       scratch/gate-s75-full.out additionally carries this
+       session's appended "full_rc=1" marker line by construction
+       -- NAMED, the marker is bookkeeping, not suite output).
+       NO green full suite is claimed.
+   (b) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL:
+       38 assertions passed, 0 failed", capture 3,590 bytes
+       BYTE-IDENTICAL to the s72 pin; ledger eval twice over the
+       PRE-line ledger, exit 0, run1 == run2 == the s72 pin
+       (740 bytes) -> VERDICT: PENDING 1/4 (counted day=2026-10-28
+       session=s31 only) at that point.
+   (c) find docs/evidence/gpu -name '*.sh' -> 0 files.
+   (NAMED: gpu_regime_classify.py --self-test and the scoped GPU
+   gate were not re-run this tick -- both verified byte-identical
+   to their pins in s74 at 2026-10-29T01:07Z+; s74's 3(c) named
+   exactly the three gates above as this tick's gate set.)
+
+3. 3(d) THE BAR -- ONE LEDGER LINE APPENDED (the s73 W5 reading,
+   appended to docs/evidence/gpu/settle-bar-ledger.txt only after
+   the section-2 gates verified, as the s73 record 2(d) froze):
+   day=2026-10-29 session=s73 class=INTERMEDIATE/MIXED median=1131
+   min=998 flag=none. Qualifying conditions (settle-bar.txt
+   section 2), all from the committed s73 evidence: (i) C1 fired
+   branch (a) (publication-s73.txt section 2: "C1 branch: (a) both
+   controls replicate"); (ii) VERIFY mismatch 0 everywhere
+   (publication-s73.txt section 1: all five windows "VERIFY
+   mismatch total 0"; s73 runs parsed 78); (iii) the custody GO
+   stamp 2026-10-29T00:34:10Z precedes the builds and ALL 78 runs
+   (s73 record 1a/1b/1c). The reading values are the frozen L12
+   hi block-A candidate computed by the now-double-run-verified
+   generator (publication-s73.txt section 6 D4: median 1131,
+   min..max 998..1442, class INTERMEDIATE/MIXED vs the bar's
+   frozen refs 1,129/1,132/1,131). The line is the first
+   qualifying reading of UTC day 2026-10-29 -> COUNTED under the
+   frozen construction. EVALUATOR VERDICT (the frozen
+   settle-bar-eval.py is the ONLY source of the verdict; run
+   twice, byte-identical, exit 0):
+   counted day=2026-10-28 session=s31 / counted day=2026-10-29
+   session=s73; seven descriptive same-day 2026-10-28 lines;
+   VERDICT: PENDING 2/4. The day=2026-10-29 slot is CONSUMED by
+   s73 (counted). No verdict beyond the evaluator's output is
+   claimed anywhere.
+
+4. 3(e) THIS COMMIT + PUSH to the chain branch
+   bot/amu-gpu-chain-20261028-4 (chain PR #1665), the ADR-0355
+   dated note, and the Linear comment on JUN-499. The s74 commit
+   (push deferred under the s67/s69 deferral pattern) rides along
+   on this push. BLOCKER-FIRST: the kotoba-lang/amu open-PR list
+   was checked immediately before the push (see the commit
+   message for the count).
+
+5. NOT DONE (carry-forward to session 76, named):
+   (a) 3(b) derivation-census-s<NN>.py (the five-window
+       independent second parser) -- NOT BUILT, NOT STARTED;
+       the s73 T7 values remain two runs of ONE validated
+       generator, not yet cross-checked by an independent parser;
+   (b) the three frozen analysis halves (s64 T14 hi-wander,
+       s65 T15 quantile-pair level axes, s66 T16 second-pair
+       profile axis) -- queued behind 3(b).
+
+6. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel. The bar is PENDING 2/4 and
+   settles nothing.
+
+Evidence: docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (this file,
+record-s74-carryforward.txt, record.txt, protocol.txt,
+analysis-s73.py, publication-s73.txt -- run 2 byte-identical to
+run 1) + the s75 captures in scratch/ (untracked, per the
+established convention: analysis-s73-run2.stdout/.stderr,
+gate-s75-full.out/.err, bar-s75-selftest.txt, bar-s75-eval-run1/2.
+txt, bar-s75-postline-run1/2.txt). (JUN-55, JUN-59; Linear
+tracking JUN-499)

@@ -1,0 +1,49 @@
+crosscell-extent-s238-identity.txt -- run-pair identity for session 238
+(crosscell-extent-s238.py; the s237 carry-forward's first standing
+row -- the s216 identity hazard's CAUSE residual -- taken as a
+CONSTRAINT row).
+
+SCRIPT: crosscell-extent-s238.py
+  sha256 d4e78e18c5d4ca105562f71b540df5272a158b5d769d72cc8261914abffe29d4
+
+OFFICIAL PAIR (run TWICE, byte-identical):
+  run1: crosscell-extent-s238-run1.txt  27,113 bytes
+        sha256 eee0472fed00de94b3eb8d4a84eff3962eb2ea868765d327215c35687b29e3e0
+        crosscell-extent-s238-run1.err  0 bytes; rc 0
+  run2: crosscell-extent-s238-run2.txt  27,113 bytes
+        sha256 eee0472fed00de94b3eb8d4a84eff3962eb2ea868765d327215c35687b29e3e0
+        crosscell-extent-s238-run2.err  0 bytes; rc 0
+  cmp run1 run2 (stdout): exit 0
+  cmp run1 run2 (stderr): exit 0
+  tail: '# crosscell-extent s238 (crosscell-extent-s238.py): 68 ok / 0 failed'
+
+DEV ATTEMPTS KEPT VISIBLE (NONE is evidence; every fix touches the
+VERIFIER only -- no committed capture, publication or record byte
+changed, no parsed sample value changed):
+  (i) devrun attempt 1 (rc 1, 0 bytes stdout / 310 bytes stderr):
+      TypeError at the W_in formatting -- the tuple-vs-value
+      bookkeeping bug (w_in_v was the argmax tuple, not the L1
+      value).  NAMED, NOT HIDDEN: the attempt-1 captures were
+      OVERWRITTEN by the rerun under the same devrun filenames
+      before the pair -- the defect text is recorded here
+      verbatim ('TypeError: unsupported format string passed to
+      tuple.__format__', crosscell-extent-s238.py line 544,
+      w_in_v format) and the fix (w_in_p = max(...); w_in_v =
+      w_in_p[0]) touches no parser, no regex, no value.
+  (ii) crosscell-extent-s238-devrun.txt/.err (rc 0, 27,113/0 bytes,
+      '68 ok / 0 failed'): the clean pre-pair confirmation run,
+      BYTE-IDENTICAL to both official pair legs (cmp exit 0).
+
+KNOWN Pyright false-positive family on regex-match accesses and the
+gzip/open union opener (the s199/s209 artifact; runtime unaffected).
+
+GATES:
+  (e) gate-s238-nosh.txt 0 bytes (find docs/evidence/gpu -name '*.sh'
+      -> 0 POSIX shell execution files in the evidence tree)
+  (f) gate-s238-ledger.txt 0 bytes (git diff --exit-code --
+      docs/evidence/gpu/settle-bar-ledger.txt rc 0)
+
+BLOCKER-FIRST (prlist-s238-prepush.json, committed with this slice):
+  33 open kotoba-lang/amu PRs, 0 hermes/ heads (python
+  headRefName startswith filter); chain PRs = exactly ONE (#1665
+  bot/amu-gpu-chain-20261028-4 -- the one this push advances).

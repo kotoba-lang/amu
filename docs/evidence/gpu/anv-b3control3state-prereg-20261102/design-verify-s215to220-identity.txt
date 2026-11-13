@@ -1,0 +1,136 @@
+DESIGN-VERIFY-S215TO-S220 BYTE-IDENTITY RECORD (session 222,
+2026-11-02 JST)
+================================================================
+Scope: the s221 carry-forward's remainder completed at s222 -- the
+control-question pre-registration's DESIGN-VERIFY RUN (the s221
+slice wrote design-verify-s215to220.py but did NOT run it): the
+fail-closed quote + arithmetic re-derivation vs the committed bytes
+the six-file pre-registration draft (state-s215/refs-provenance-
+s216/arms-statistic-s217/letters-s218/invalidation-s219/
+threestate-s220) cites, with every draft pair kept visible and
+every dev defect named before any correction. QUOTE-ONLY /
+ARITHMETIC-ONLY: NO control-question quantity is computed anywhere
+-- NO run, NO letter act, NO class, NO verdict, NO claim. Every
+control-question quantity stays UNMEASURED. RULE 4 unchanged:
+NOTHING MOVES; the committed bracket stays EXACTLY
+(254,923, 255,045].
+
+RUN PAIR (the OFFICIAL pair; this session, in this directory):
+  run 1: python3 design-verify-s215to220.py -> rc 0, stdout 38,099
+         bytes (design-verify-s215to220-run1.txt), stderr 0 bytes
+         (design-verify-s215to220-run1.err).
+  run 2: python3 design-verify-s215to220.py -> rc 0, stdout 38,099
+         bytes (design-verify-s215to220-run2.txt), stderr 0 bytes
+         (design-verify-s215to220-run2.err).
+  BYTE-IDENTITY: cmp run1.txt vs run2.txt -> exit 0;
+                 cmp run1.err vs run2.err -> exit 0.
+  sha256 (both stdout runs, identical):
+    217d06e3c3ce1d64bcb67038f3923817688e0875255ede2bd52cc8f3ce54725a
+    design-verify-s215to220-run1.txt / design-verify-s215to220-run2.txt
+    (38,099 bytes both runs; .err 0 bytes both runs)
+  design-verify-s215to220.py (the script that produced both runs):
+    d39364810780f14926795cc577fcdc8092a479c2b6d973957794277340df5631
+  tail: "DESIGN-VERIFY S215-TO-S220 SUMMARY: 357 ok / 0 failed"
+        "DESIGN-VERIFY S215-TO-S220 COMPLETE (fail-closed: 0 failed)"
+
+NAMED, NOT HIDDEN -- two draft-run pairs, fail-closed BEFORE any
+correction (both kept visible in this directory; the s203/s204
+draft-pair precedent):
+
+  draft-1 (design-verify-s215to220-draft1-run{1,2}.{txt,err}; rc 1
+  both, the pair itself byte-identical -- stdout 35,673 bytes
+  sha256 a4a0bbab0f6a2a16a481d85db04b431d58a80bca07cb6c1ec7dd82f1a2e7bb41
+  both, stderr 589 bytes both (the traceback); one want FAIL plus a
+  hard crash before the summary):
+    (i)  Q-S220-25 -- DEV PIN-SHAPE DEFECT (off-by-one line number):
+         the want pinned 'L109-115 (quote)' at threestate-s220.txt
+         line 25; the committed bytes carry it at line 26 (the
+         committed bytes are the authority). FIX: want moved to
+         line 26 and renamed Q-S220-26; want CONTENT unchanged, no
+         want weakened. (The s204 (i) shape.)
+    (ii) line 581 -- DEV FORMAT DEFECT (hard crash, ValueError
+         "unsupported format character 'b'"): the D-C8-PCT message
+         used the literal "+/-5% band: %s" inside a %-format
+         expression -- Python read "% b" as a conversion spec, so
+         the run died before the summary and every check after
+         D-C8-PCT was UNREACHED (named, not hidden: draft-1 did not
+         verify the checks below it). FIX: "%%" escape; message
+         text unchanged.
+
+  draft-2 (design-verify-s215to220-draft2-run{1,2}.{txt,err}; rc 1
+  both, the pair itself byte-identical -- stdout 38,087 bytes
+  sha256 a0e1f036524e15845982ac4645dba2fc9914ae37986f78839f92f4b98f619c13
+  both, stderr 0 bytes both; one want FAIL):
+    (iii) D-C2-BAND -- DEV CODE-SHAPE DEFECT (parity heuristic):
+          the loop assumed "median on odd line, flag on even line".
+          That held for pub169 (median 607 / flag 608) and pub209
+          (median 657 / flag 658) but was INVERTED in the committed
+          bytes for pub185 (median 624 / flag 625) and pub197
+          (median 630 / flag 631), so the loop parsed flag lines as
+          medians and vice versa (rows read ('pub185', 30, None,
+          False) and ('pub197', None, None, False)). FIX: each
+          reading's median line and flag line pinned EXPLICITLY in
+          the want table against the committed bytes; the parity
+          heuristic deleted. Want CONTENT unchanged (the four
+          readings' m values and floor-band flags vs 31..32 at
+          B=2). Fail-closed STRENGTHENED to the named intent: a
+          None median now fails the row want for ANY want_flag (the
+          s221 fix's stated "fail-closed preserved" semantics now
+          actually holds for want_flag "False" too).
+
+WHAT THE OFFICIAL PAIR VERIFIES (357 wants, 0 failed -- tool-
+counted from the run output: 30 + 294 + 13 + 18 + 2):
+30 file pins (size + sha256 over every file the six draft files
+cite, incl. the six draft files themselves) + 294 line-pinned quote
+wants ((file, line, substring) vs the committed bytes, incl. the
+six draft files' mutual citations and the s220 D-claims) + 13
+arithmetic re-derivations (the 16-sequence space, the alphabet, the
+arm table 4*(3+3)=24, the act outcome space 16+1=17, the c8 +/-5%
+band and per-reading percentages, the c2 floor-band membership) +
+18 DERIVED re-computations FROM COMMITTED BYTES (the four C1 letters
+re-extracted from the four publications ['b','a','a','b'], the c8
+median/percentage parse vs re-derivation, the c2 median/flag rows
+vs the band, the four VERIFY lines, the block/identity distributions
+over all 16 sequences, the B=3 set, the record b a a b -> B=3 I=2,
+I=2 iff B>=2, the s218/s219/s220 D-claims parsed vs re-derived,
+the frozen-name core text pr19 L109-115 == publication-s209 L663-
+671, the ROUNDS6400 source pin re-hash, the a5e539f0 ndiv copy
+pin, the run count 54) + 2 copy-chain checks (C-AB64P-PIN /
+C-AB64P-RERUN). Every want is quote-level or arithmetic-level:
+NO control-question quantity is computed.
+
+THREE-STATE: the control-question pre-registration is ACCEPTED
+DESIGN, now DESIGN-VERIFIED AT THE QUOTE-AND-ARITHMETIC LEVEL
+ONLY -- the pre-registration content is still IN DRAFT (NOT
+frozen: no protocol.txt, no freeze stamp exists for the control
+question at this cutoff), NOT implemented compiler code, NOT a
+measurement. NO control-question quantity exists -- every
+control-question quantity stays UNMEASURED until a FUTURE session
+runs the RESOLUTION measurement act under the FROZEN protocol
+(not yet written; NOT queued). The quoted letters/values are the
+named sessions' landed MEASURED QUANTITIES on aiueos-6600hs under
+each session's own instrument and frozen protocol.
+
+RULE 4 unchanged: NOTHING MOVES -- the committed bracket stays
+EXACTLY (254,923, 255,045]; L9 binds at n=254,984 (C2 (c), D3
+(v)); the MID-ONLY NARROWING CLAIM stays SUSPENDED. NO vendor
+optimization exists for any vendor (Intel included); workgroup
+rows stay as ADR-0358 left them (:measured? false rows remain
+provisional -- NOT optimization evidence).
+
+GATES this tick: (e) find docs/evidence/gpu -name '*.sh' -> 0
+(exit code captured at commit time); (f) settle-bar-ledger.txt ==
+HEAD (git diff --exit-code rc 0). Gates (a)-(d) NOT run this tick
+(not a landing slice -- the s209/s212/s215-s220 precedent). The
+full test suite is RED AT BASE kotoba.form (ADR-0362) OUTSIDE this
+diff per the standing captures -- NOT re-run this tick -- NO green
+full suite claimed. Diff touches NO committed .cljk namespace (one
+evidence .py + .txt/.json logs only).
+
+NOT DONE (s223 carries exactly this list): the protocol FREEZE
+(protocol.txt carrying the s220 2(e) terminology gloss) + freeze-
+record at its own slice; then the landing half; then the control
+question's RESOLUTION measurement act under that frozen protocol
+(NOT queued -- its own act); standing, not queued: any further
+counted-day slot (each needs its own freeze) and the cross-day
+tail-movement row. (JUN-55, JUN-59; Linear tracking JUN-499)

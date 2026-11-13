@@ -1,0 +1,227 @@
+== DESIGN-VERIFY S204 (session 205) ==
+== fail-closed quote + arithmetic re-derivation vs committed bytes ==
+== QUOTE-ONLY / ARITHMETIC-ONLY: NO 19th-cut quantity is computed ==
+
+ok   F-KS203  knob-search-s203-run1.txt size 14169 sha256 39de9bc274154b7cdd1f891454d548adfef931a034b7a5f7651fd328c63083a2
+ok   F-PUB197  publication-s197.txt size 62811 sha256 f3d7465ad60a7de2be20d4edfcbb4743f73849d7b0a93e7ff6f2eccbd1ff5e53
+ok   F-PUB158  publication-s158.txt size 56588 sha256 45538ad757bfa28821de2728000581897aaef8cc75f32ed656914509f400cd25
+ok   F-PUB139  publication-s139.txt size 33345 sha256 b6eb79cb397ae6b9ee6f502fee3b3e70c7d9cbbbe1e3b21c00ae126a3ac3092c
+ok   F-PUB147  publication-s147.txt size 29876 sha256 d41df35aff0a0ff674549a9f4390752be27f28f71cce90dfdf54bb1b08d407aa
+ok   F-PUB185  publication-s185.txt size 59777 sha256 c62c01e17a045933782cc3fb8c67e452ae0f35a513ad1f396a9dea08834d6d34
+ok   F-PUB169  publication-s169.txt size 56352 sha256 c9aab750fd20120b3abe8db6e9cac554b6c8ea0fbb1b37d9169d1539e4ff7687
+ok   F-SPEC  confrontation-spec.txt size 9660 sha256 c0eff7fb0a5997658c94c7be36f776229d29aabe99f4f96be6ebb48c821d5ec7
+ok   F-PR18  anv-b3bisect18prereg-20261101/protocol.txt size 24242 sha256 97364eb10f233d342aff2a9d7d5310cfe879479e29e0b2dc42df2998c236bb77
+ok   F-S179  state-s179.txt size 19949 sha256 a165e8c38649c8d2585674c5c60aa99e340191071c01e5011e0441f8389c7a69
+ok   F-S193  state-s193.txt size 29283 sha256 222916e21abe224b7b2046bea0e669118ba6653c3b24aaf81fbd25b5b3ac2784
+ok   F-S203  state-s203.txt size 6801 sha256 35656eac8f6add1bd34edcff8d2a0d45170a96a76964a356a5f69de0045dde49
+ok   F-S204  state-s204.txt size 32324 sha256 0619aef27022f9a406dfc3047b25595b6da0ef9347906380ed9531126261a5f3
+ok   F-S205  state-s205.txt size 7173 sha256 99fc8aff7383c71adbc686329f6a27629221202ab746b79e72d2041ff2410d81
+ok   F-KS203-PAIR  knob-search-s203-run1.txt == knob-search-s203-run2.txt byte-identity
+ok   Q-KS-12  knob-search-s203-run1.txt:12 contains '(254923, 255045] n-units, width 122'
+ok   Q-KS-17  knob-search-s203-run1.txt:17 contains 'fm n=254801: pairs 31; smallest (345, 1354); in-box same-ratio doubles 7'
+ok   Q-KS-21  knob-search-s203-run1.txt:21 contains 'q3 n=254923: pairs 34; smallest (246, 965); in-box same-ratio doubles 10'
+ok   Q-KS-24  knob-search-s203-run1.txt:24 contains "lo n=254923 (the NEW lower endpoint; the 18th cut's cut point): pairs 34; smallest (246, 965); in-box same-ratio doubles 10"
+ok   Q-KS-25a  knob-search-s203-run1.txt:25 contains 'hi n=255045 (the NEW upper endpoint; bis (3, 316, 1,239)): pairs 33; smallest (316, 1239); in-box same-ratio doubles 8'
+ok   Q-KS-25b  knob-search-s203-run1.txt:25 contains 'the 8 in-box same-ratio doubles are FRESH'
+ok   Q-KS-28  knob-search-s203-run1.txt:28 contains 'C1: c2 pooled median m 31, deep-pooling class FLOOR (committed floor band 31..32 at B=2): True'
+ok   Q-KS-29  knob-search-s203-run1.txt:29 contains 'C1: c8 pooled median m 32778 within +/-5% of committed 32915 (session 4 pooled median): True (-0.42%)'
+ok   Q-KS-30  knob-search-s203-run1.txt:30 contains 'C1: control arms free of VERIFY mismatches (frozen INVALIDATION criterion): True'
+ok   Q-KS-32  knob-search-s203-run1.txt:32 contains "the current control state (the 17th cut's C1 (a)) REPLICATES at back-to-back cuts -- no supersession needed"
+ok   Q-KS-33  knob-search-s203-run1.txt:33 contains 'C2: q3 (BATCH=3,WORK_MUL=246,NDIV=965) at n=254923 -- knob arithmetic (1,000,003*246)//965 = 254923'
+ok   Q-KS-34  knob-search-s203-run1.txt:34 contains 'C2 block classes (re-count COMPUTED here): 16x INTERMEDIATE/MIXED; pooled-48 class INTERMEDIATE/MIXED'
+ok   Q-KS-35  knob-search-s203-run1.txt:35 contains 'C2 block binding min(m-h): 995.1326..998.0538 (16 values), pooled-48 997.7700'
+ok   Q-KS-36  knob-search-s203-run1.txt:36 contains 'C2 (sum,128,S=16) m: blocks 1131..1132 (16 values, min..max), pooled-48 1132'
+ok   Q-KS-37  knob-search-s203-run1.txt:37 contains 'C2 VERDICT: (a) STABLE-INTERMEDIATE: all 16 blocks AND the pooled-48 arm class INTERMEDIATE/MIXED -- PASSES the 16-block class-stability requirement at q3 under the deep-pooling statistic'
+ok   Q-KS-38  knob-search-s203-run1.txt:38 contains 'WHY any class occurs is UNMEASURED (L2 binds)'
+ok   Q-KS-39  knob-search-s203-run1.txt:39 contains 'W1 letters (parsed): C1 (control replication): (a); C2 (q3 class stability): (a); W1 (b).'
+ok   Q-KS-40  knob-search-s203-run1.txt:40 contains 'W1 (b) text PARSED: (b) C2 (a) -> THE BRACKET NARROWS TO (254,923, 255,045]'
+ok   Q-KS-41  knob-search-s203-run1.txt:41 contains 'the lower endpoint moved 254,557 -> 254,923'
+ok   Q-KS-42  knob-search-s203-run1.txt:42 contains 'the top clip 255,045-254,923 = 122; the low clip 254,923-254,557 = 366'
+ok   Q-KS-43  knob-search-s203-run1.txt:43 contains 'W3: NAMED CROSS-BINARY HAZARD quote PARSED (the q3 binary is NEW first-measured ROUNDS6400 variant'
+ok   Q-KS-44  knob-search-s203-run1.txt:44 contains 'the s192 enumeration gives 10 in-box same-ratio doubles of n=254,923 and NONE is measured this cut'
+ok   Q-KS-45  knob-search-s203-run1.txt:45 contains 'q3 per-run host_ns median min..max 309798..503223.5 (spread 193425.5 = 62.4% of min; k=48)'
+ok   Q-KS-46  knob-search-s203-run1.txt:46 contains 'VERDICT SUMMARY (parsed): C1 (a); C2 (a) at q3 (254923); W1 (b). CUT VERDICT: THE BRACKET NARROWS TO (254,923, 255,045]'
+ok   Q-KS-49  knob-search-s203-run1.txt:49 contains "PRIMARY (publication-s139.txt): lo n=254,557 dual-class rows [(1156, 'INTERMEDIATE/MIXED', '121'), (1143, 'CAPTURED', '125')]; lo tenth-cut pooled-12 median 1141, 18-cell 998..1452, class INTERMEDIATE/MIXED"
+ok   Q-KS-50  knob-search-s203-run1.txt:50 contains "mid n=254,882 dual-class rows [(1129, 'INTERMEDIATE/MIXED', '125'), (1133, 'INTERMEDIATE/MIXED', '132'), (1148, 'CAPTURED', '136')]; mid pooled-48 median 1140, 18-cell 1001..1442, class CAPTURED"
+ok   Q-KS-51a  knob-search-s203-run1.txt:51 contains 'PRIMARY (publication-s147.txt): 14th cut mid content -- 16x IN-BAND-UNDECIDED + pooled-48 IN-BAND-UNDECIDED'
+ok   Q-KS-51b  knob-search-s203-run1.txt:51 contains '(c) TOLERANCE-UNRESOLVED: any in-band minimum or mixed classes -- FAILS'
+ok   Q-KS-52  knob-search-s203-run1.txt:52 contains 'the disputed record is UNCONTESTED between the sources'
+ok   Q-KS-55  knob-search-s203-run1.txt:55 contains 'measured wander band (spec, parsed): block-unit 981..1015; per-run unit 974..1023'
+ok   Q-KS-56  knob-search-s203-run1.txt:56 contains 'spec section 1 (i) bis content pin PARSED: bis (3,316,1239) n=255,045 at binary 440604ef... -- 7x CAPTURED + 9x INTERMEDIATE/MIXED blocks, pooled-48 CAPTURED 1,148'
+ok   Q-KS-57  knob-search-s203-run1.txt:57 contains "arm-(b) re-read hazard quote 'More blocks of the same mixed shape do not confront anything; they re-read it' PARSED"
+ok   Q-KS-58a  knob-search-s203-run1.txt:58 contains "16/16 of the 18th cut's q3 block binding min(m-h) values land inside the block-unit wander band 981..1015"
+ok   Q-KS-58b  knob-search-s203-run1.txt:58 contains '0/16 >= the frozen 1,000-tick threshold'
+ok   Q-KS-61  knob-search-s203-run1.txt:61 contains 'floor midpoint re-derivation: (254923+255045)//2 = 254984'
+ok   Q-KS-62  knob-search-s203-run1.txt:62 contains 'quarter q=1 n=254953: pairs 31; smallest (296, 1161); in-box same-ratio doubles 8'
+ok   Q-KS-63  knob-search-s203-run1.txt:63 contains 'n=254953 is VIRGIN after the eighteenth cut'
+ok   Q-KS-64  knob-search-s203-run1.txt:64 contains 'floor midpoint (q=2) n=254984: pairs 29; smallest (307, 1204); in-box same-ratio doubles 6'
+ok   Q-KS-65  knob-search-s203-run1.txt:65 contains 'n=254984 is VIRGIN after the eighteenth cut -- RE-DERIVED here: 0 occurrences in every parsed publication source (including publication-s197.txt) AND in both knob-search captures'
+ok   Q-KS-66  knob-search-s203-run1.txt:66 contains 'quarter q=3 n=255014: pairs 25; smallest (674, 2643); in-box same-ratio doubles 4'
+ok   Q-KS-67  knob-search-s203-run1.txt:67 contains 'n=255014 is VIRGIN after the eighteenth cut'
+ok   Q-KS-68  knob-search-s203-run1.txt:68 contains "'publication-s185.txt': 0, 'publication-s197.txt': 26}"
+ok   Q-KS-69  knob-search-s203-run1.txt:69 contains "NAMED, NOT HIDDEN: what binds at 254,923 for a future same-shape re-run is a DESIGN QUESTION (the frozen 'mixed at q3' second-edge shape did NOT fire on (a) content)"
+ok   Q-KS-70a  knob-search-s203-run1.txt:70 contains 'upper endpoint hi n=255045 (the NEW upper endpoint; bis (3, 316, 1,239))'
+ok   Q-KS-70b  knob-search-s203-run1.txt:70 contains "{'publication-s139.txt': 10, 'publication-s147.txt': 5, 'publication-s158.txt': 16, 'publication-s169.txt': 8, 'publication-s185.txt': 10, 'publication-s197.txt': 13}"
+ok   Q-KS-71a  knob-search-s203-run1.txt:71 contains "the 13th cut's content stands at this point (publication-s139.txt VERDICT SUMMARY 'C1 (a); C2 (c) at bis (255,045); C3 (c) at mid; W1 (c)'"
+ok   Q-KS-71b  knob-search-s203-run1.txt:71 contains "AND the 15th cut's re-measure at its NEW binary 52fb68b6... (publication-s158.txt: 16x CAPTURED blocks, pooled-48 class CAPTURED, pooled binding 1009.6912, (b) STABLE-CAPTURED"
+ok   Q-KS-71c  knob-search-s203-run1.txt:71 contains "publication-s139.txt carries NO 'C2 (b)' at all"
+ok   Q-KS-72  knob-search-s203-run1.txt:72 contains 'interior committed point mid (248, 973) n=254882 is NOT on the new quarter grid'
+ok   Q-KS-78  knob-search-s203-run1.txt:78 contains 'CENSUS COMPLETE: every asserted want parsed and matched; 0 mismatches.'
+ok   Q-197-33  publication-s197.txt:33 contains 'c2 b791b71a... q3 c7ba9c86... c8 2f25d678...'
+ok   Q-197-85  publication-s197.txt:85 contains 'cut does not measure 254,679; that content stands as committed'
+ok   Q-197-130  publication-s197.txt:130 contains 'anv-bb-q3 c7ba9c864a356de95fff67ce7a997c30af99cd7b7626da4894b8c0077c65d76b'
+ok   Q-197-637  publication-s197.txt:637 contains "the current control state (the 17th cut's C1 (a)) REPLICATES"
+ok   Q-197-638  publication-s197.txt:638 contains 'at back-to-back cuts -- no supersession needed (the 17th'
+ok   Q-197-642  publication-s197.txt:642 contains '(BATCH=3,WORK_MUL=246,NDIV=965) at n=254,923 (knob pair (246,'
+ok   Q-197-643  publication-s197.txt:643 contains '965), the Q=3 QUARTER POINT of the bracket (254,557, 255,045];'
+ok   Q-197-647  publication-s197.txt:647 contains 'pooled-48 class: INTERMEDIATE/MIXED'
+ok   Q-197-648  publication-s197.txt:648 contains 'block binding min(m-h): 997.1063 / 997.0801 / 996.0801'
+ok   Q-197-649  publication-s197.txt:649 contains 'pooled-48 binding min(m-h): 997.7700'
+ok   Q-197-650  publication-s197.txt:650 contains '(sum,128,S=16) m: blocks 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1131'
+ok   Q-197-651  publication-s197.txt:651 contains '(a) STABLE-INTERMEDIATE: all 16 blocks AND the pooled-48 arm'
+ok   Q-197-673  publication-s197.txt:673 contains '("THE B=3 CLASS FLIP LIES ABOVE n=254,923"); the MID-ONLY'
+ok   Q-197-688  publication-s197.txt:688 contains 'n-units: the top clip 255,045-254,923 = 122; the low clip'
+ok   Q-197-730  publication-s197.txt:730 contains 'block binding min(m-h) min..max 999.0012..1002.9224'
+ok   Q-197-753  publication-s197.txt:753 contains 'block binding min(m-h) min..max 1005.8172..1008.7909'
+ok   Q-197-764  publication-s197.txt:764 contains 's192 enumeration gives 10 in-box same-ratio doubles'
+ok   Q-197-772  publication-s197.txt:772 contains 'q3: per-run host_ns median min..max 309798..503223.5 (spread 193425.5 = 62.4% of min; k=48)'
+ok   Q-197-790  publication-s197.txt:790 contains '5. VERDICT SUMMARY: C1 (a); C2 (a) at q3 (254,923); W1 (b).'
+ok   Q-197-791  publication-s197.txt:791 contains 'CUT VERDICT: THE BRACKET NARROWS TO (254,923, 255,045]'
+ok   Q-197-792  publication-s197.txt:792 contains '("THE B=3 CLASS FLIP LIES ABOVE n=254,923"); the MID-ONLY'
+ok   Q-158-135  publication-s158.txt:135 contains 'anv-bb-bis 52fb68b66b550f0029c50b8695e13ecdcfcd736831e42cc3bccdb9b6f5bf14a8'
+ok   Q-158-647  publication-s158.txt:647 contains 'pooled-48 binding min(m-h): 1009.6912'
+ok   Q-158-649  publication-s158.txt:649 contains '(b) STABLE-CAPTURED: all 16 blocks AND the pooled-48 arm'
+ok   Q-158-703  publication-s158.txt:703 contains "this cut's bis block min(m-h): 1006.8172 / 1005.8172 / 1006.7909 / 1005.8435"
+ok   Q-158-712  publication-s158.txt:712 contains 'n=254557: 1156 INTERMEDIATE/MIXED (session 121)'
+ok   Q-158-713  publication-s158.txt:713 contains 'n=254557: 1143 CAPTURED (session 125)'
+ok   Q-158-714  publication-s158.txt:714 contains 'n=254882: 1129 INTERMEDIATE/MIXED (session 125)'
+ok   Q-158-715  publication-s158.txt:715 contains 'n=254882: 1133 INTERMEDIATE/MIXED (session 132)'
+ok   Q-158-716  publication-s158.txt:716 contains 'n=254882: 1148 CAPTURED (session 136)'
+ok   Q-158-717  publication-s158.txt:717 contains 'lo pooled-12 1141 INTERMEDIATE/MIXED; mid pooled-48 1140 CAPTURED'
+ok   Q-158-718  publication-s158.txt:718 contains 'the named cross-window disagreement at cabff942...: s132'
+ok   Q-158-719  publication-s158.txt:719 contains 'pooled-24 1133 INTERMEDIATE/MIXED vs s136'
+ok   Q-158-720  publication-s158.txt:720 contains 'pooled-24 1148 CAPTURED vs s139'
+ok   Q-158-721  publication-s158.txt:721 contains 'pooled-48 1140 CAPTURED vs s147'
+ok   Q-158-742  publication-s158.txt:742 contains '5. VERDICT SUMMARY: C1 (a); C2 (b) at bis (255,045); W1 (a).'
+ok   Q-139-86  publication-s139.txt:86 contains 'pooled-12 median 1141 18-cell 998..1452 INTERMEDIATE/MIXED'
+ok   Q-139-270  publication-s139.txt:270 contains '1140   18-cell   1001..1442     CAPTURED'
+ok   Q-139-380  publication-s139.txt:380 contains '1156  INTERMEDIATE/MIXED   session 121 (the eighth cut)'
+ok   Q-139-381  publication-s139.txt:381 contains '1143  CAPTURED             session 125 (the ninth cut, lo)'
+ok   Q-139-382  publication-s139.txt:382 contains '1129  INTERMEDIATE/MIXED   session 125 (the ninth cut, mid)'
+ok   Q-139-391  publication-s139.txt:391 contains '1133  INTERMEDIATE/MIXED   session 132 (the eleventh cut'
+ok   Q-139-393  publication-s139.txt:393 contains '1148  CAPTURED             session 136 (the twelfth cut'
+ok   Q-139-421  publication-s139.txt:421 contains '5. VERDICT SUMMARY: C1 (a); C2 (c) at bis (255,045); C3 (c) at mid; W1 (c).'
+ok   Q-147-284  publication-s147.txt:284 contains '1148   18-cell   1005..1428     frozen-rule CAPTURED             tolerance IN-BAND-UNDECIDED'
+ok   Q-147-310a  publication-s147.txt:310 contains '(sum,128,S=16): blocks 1144 / 1170 / 1138'
+ok   Q-147-310b  publication-s147.txt:310 contains 'pooled-48 1148'
+ok   Q-147-311  publication-s147.txt:311 contains '(c) TOLERANCE-UNRESOLVED: any in-band minimum or mixed'
+ok   Q-147-363a  publication-s147.txt:363 contains 'block 18-cell minima: 992 / 1006 / 996 / 1000 / 1002 / 993 / 1002 / 991'
+ok   Q-147-363b  publication-s147.txt:363 contains 'pooled-48 min 1005'
+ok   Q-185-81  publication-s185.txt:81 contains 'cut does not measure 254,801; that content stands as committed'
+ok   Q-185-642  publication-s185.txt:642 contains 'block binding min(m-h): 1001.9486 / 1000.9749 / 1000.0012'
+ok   Q-185-643  publication-s185.txt:643 contains 'pooled-48 binding min(m-h): 1001.7437'
+ok   Q-169-615  publication-s169.txt:615 contains '(BATCH=3,WORK_MUL=345,NDIV=1354) at n=254,801 (knob pair (345,'
+ok   Q-169-621  publication-s169.txt:621 contains 'block binding min(m-h): 1004.8961 / 1006.7909 / 1005.8172'
+ok   Q-SP-39  confrontation-spec.txt:39 contains '(18-cell 1,001..1,442). bis (3,316,1239) n=255,045 at binary'
+ok   Q-SP-40  confrontation-spec.txt:40 contains '440604ef... -- 7x CAPTURED + 9x INTERMEDIATE/MIXED blocks, block'
+ok   Q-SP-59  confrontation-spec.txt:59 contains '981..1,015 (census); per-run unit (descriptive, s139 W2): 974..1,023.'
+ok   Q-SP-100  confrontation-spec.txt:100 contains 'at this granularity or finer. More blocks of the same mixed shape do'
+ok   Q-SP-101  confrontation-spec.txt:101 contains 'not confront anything; they re-read it.'
+ok   Q-SP-116  confrontation-spec.txt:116 contains '(block-unit 981..1,015; per-run unit 974..1,023 -- descriptive'
+ok   Q-SP-123  confrontation-spec.txt:123 contains 'A statistic chosen after the runs are read is never a confrontation.'
+ok   Q-SP-128  confrontation-spec.txt:128 contains 'do with them. The MID-ONLY NARROWING CLAIM stays SUSPENDED until a'
+ok   Q-SP-129  confrontation-spec.txt:129 contains 'claim passes (a)-(c) at mid and confronts (d); a claim that rests on'
+ok   Q-PR18-55  anv-b3bisect18prereg-20261101/protocol.txt:55 contains 'this cut does not measure 254,679; that content stands'
+ok   Q-PR18-98  anv-b3bisect18prereg-20261101/protocol.txt:98 contains '(the ROUNDS6400 instrument variant; the measuring session'
+ok   Q-PR18-150  anv-b3bisect18prereg-20261101/protocol.txt:150 contains 'c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8'
+ok   Q-PR18-151  anv-b3bisect18prereg-20261101/protocol.txt:151 contains '386e84e0 (adopted UNCHANGED from the s166 freeze; re-'
+ok   Q-PR18-157  anv-b3bisect18prereg-20261101/protocol.txt:157 contains '|x - m_c|; CI half-width h_c = 3.6420 * MAD_c / sqrt(N)'
+ok   Q-PR18-165  anv-b3bisect18prereg-20261101/protocol.txt:165 contains 'changes): CAPTURED iff all 18 pipeline-ok cells m_c - h_c'
+ok   Q-PR18-166  anv-b3bisect18prereg-20261101/protocol.txt:166 contains '>= 1,000; FLOOR iff all 18 m_c + h_c <= 100;'
+ok   Q-PR18-167  anv-b3bisect18prereg-20261101/protocol.txt:167 contains 'INTERMEDIATE/MIXED iff (some m_c + h_c < 1,000) AND (some'
+ok   Q-PR18-168  anv-b3bisect18prereg-20261101/protocol.txt:168 contains 'm_c - h_c > 100); IN-BAND-UNDECIDED otherwise.'
+ok   Q-PR18-169  anv-b3bisect18prereg-20261101/protocol.txt:169 contains 'THE CONSTANT R = 6,400 is ADOPTED UNCHANGED, NOT re-derived at'
+ok   Q-PR18-240  anv-b3bisect18prereg-20261101/protocol.txt:240 contains '(d) INVALID -- the frozen INVALIDATION criterion (the standing'
+ok   Q-PR18-241  anv-b3bisect18prereg-20261101/protocol.txt:241 contains 'cut protocol): > 0 VERIFY mismatches in any run makes that'
+ok   Q-PR18-279  anv-b3bisect18prereg-20261101/protocol.txt:279 contains '(16 blocks of 3 runs + pooled-48) UNDER THE PRE-REGISTERED DEEP-'
+ok   Q-PR18-280  anv-b3bisect18prereg-20261101/protocol.txt:280 contains 'POOLING CI CLASS STATISTIC (R = 6,400), AT ITS NEW FIRST-MEASURED'
+ok   Q-PR18-404  anv-b3bisect18prereg-20261101/protocol.txt:404 contains '(block = 3 runs x 6,400 rounds per cell, frozen estimator unit --'
+ok   Q-S179-132  state-s179.txt:132 contains "is named: if this cut's own content at 254,679 comes"
+ok   Q-S179-133  state-s179.txt:133 contains 'out mixed (C2 (c)), it is NOT rescued by later'
+ok   Q-S179-136  state-s179.txt:136 contains "must confront this cut's content first -- named here,"
+ok   Q-S179-138  state-s179.txt:138 contains 'would re-read, not confront.'
+ok   Q-S193-44  state-s193.txt:44 contains 'first). NAMED: a SHAPE-CHANGE confrontation at'
+ok   Q-S193-48  state-s193.txt:48 contains 'row with its own pre-registration -- NOT this cut;'
+ok   Q-S203-46  state-s203.txt:46 contains '0/16 >= 1,000 (range + pooled entirely below 1,000) while all'
+ok   Q-S203-53  state-s203.txt:53 contains 'THREE VIRGIN (0 occurrences in every parsed publication source'
+ok   Q-S204-39  state-s204.txt:39 contains 'derived this session): at q=1 the W1 (a) outcome leaves'
+ok   Q-S204-40  state-s204.txt:40 contains 'width 92 of 122 and W1 (b) leaves 30 (worst case 92);'
+ok   Q-S204-42  state-s204.txt:42 contains '61); at q=3 W1 (a) leaves 91 and W1 (b) leaves 31'
+ok   Q-S204-44  state-s204.txt:44 contains 'worst-case remaining bracket width (61 < 91 < 92) and'
+ok   Q-S204-97  state-s204.txt:97 contains 'does not measure 254,923 and NO letter of this cut'
+ok   Q-S204-200  state-s204.txt:200 contains 'this cut does not measure 254,923; that content stands'
+ok   Q-S204-391  state-s204.txt:391 contains '(a) C2 (b) -> the bracket narrows to (254,923, 254,984]'
+ok   Q-S204-401  state-s204.txt:401 contains '(b) C2 (a) -> the bracket narrows to (254,984, 255,045]'
+ok   Q-S204-418  state-s204.txt:418 contains 'c2  (B=2, WM=1, NDIV=1)       control, k=3'
+ok   Q-S204-419  state-s204.txt:419 contains 'q2  (B=3, WM=307, NDIV=1204)  n=254,984 (knob'
+ok   Q-S204-422  state-s204.txt:422 contains 'c8  (B=8, WM=1, NDIV=1)       control, k=3'
+ok   Q-S204-493  state-s204.txt:493 contains 'gcd(307,1204) = gcd(674,2643) = 1; clip widths q=1 92/30,'
+ok   Q-S205-16  state-s205.txt:16 contains 'ORIGINAL, pinned here VERBATIM as SUPERSEDED content -- byte-exact'
+ok   Q-S205-19  state-s205.txt:19 contains 'derived this session): at q=1 the W1 (a) outcome leaves'
+ok   Q-S205-20  state-s205.txt:20 contains 'width 92 of 122 and W1 (b) leaves 30 (worst case 92);'
+ok   Q-S205-31  state-s205.txt:31 contains 'CORRECTED: at q=1 the W1 (a) outcome leaves width 30 of 122 and'
+ok   Q-S205-32  state-s205.txt:32 contains 'W1 (b) leaves 92 (worst case 92).'
+ok   Q-S205-42  state-s205.txt:42 contains "STANDS: the nineteenth cut's point remains the q=2 floor midpoint"
+ok   A-WIDTH  bracket width 255045-254923 -> 122 (expected 122)
+ok   A-QG1  quarter grid q=1: 254923 + 122//4 -> 254953 (expected 254953)
+ok   A-QG2  quarter grid q=2: 254923 + (2*122)//4 -> 254984 (expected 254984)
+ok   A-QG3  quarter grid q=3: 254923 + (3*122)//4 -> 255014 (expected 255014)
+ok   A-FMID  floor midpoint (254923+255045)//2 -> 254984 (expected 254984)
+ok   A-FMID-EQ  254923+(2*122)//4 == (254923+255045)//2 -> True (expected True)
+ok   A-KNOB-Q1  knob arithmetic (1,000,003*296)//1161 -> 254953 (expected 254953)
+ok   A-KNOB-Q2  knob arithmetic (1,000,003*307)//1204 -> 254984 (expected 254984)
+ok   A-KNOB-Q3  knob arithmetic (1,000,003*674)//2643 -> 255014 (expected 255014)
+ok   A-KNOB-HI  knob arithmetic (1,000,003*316)//1239 -> 255045 (expected 255045)
+ok   A-GCD-Q1  gcd(296, 1161) -> 1 (expected 1)
+ok   A-GCD-Q2  gcd(307, 1204) -> 1 (expected 1)
+ok   A-GCD-Q3  gcd(674, 2643) -> 1 (expected 1)
+ok   A-GCD-HI  gcd(316, 1239) -> 1 (expected 1)
+ok   A-CLIP-Q1-TOP  q=1 top piece 255045-254953 -> 92 (expected 92)
+ok   A-CLIP-Q1-LOW  q=1 low piece 254953-254923 -> 30 (expected 30)
+ok   A-CLIP-Q2-LOW  q=2 low piece 254984-254923 -> 61 (expected 61)
+ok   A-CLIP-Q2-TOP  q=2 top piece 255045-254984 -> 61 (expected 61)
+ok   A-CLIP-Q3-TOP  q=3 top piece 255045-255014 -> 31 (expected 31)
+ok   A-CLIP-Q3-LOW  q=3 low piece 255014-254923 -> 91 (expected 91)
+ok   A-WORST-Q1  worst-case remaining width at q=1 max(92,30) -> 92 (expected 92)
+ok   A-WORST-Q2  worst-case remaining width at q=2 max(61,61) -> 61 (expected 61)
+ok   A-WORST-Q3  worst-case remaining width at q=3 max(31,91) -> 91 (expected 91)
+ok   A-MINIMAX  argmin worst-case over q=1/q=2/q=3 -> q=2 (expected q=2)
+ok   A-ARM-TABLE  arm table self-check 3+48+3 -> 54 (expected 54)
+ok   A-OLDWIDTH  old bracket width 255045-254557 -> 488 (expected 488)
+ok   A-FM16  16th-cut floor midpoint (254557+255045)//2 -> 254801 (expected 254801)
+ok   A-IMPL  F > 254,984 > 254,882 (both inequalities) -> True (expected True)
+ok   A-BAND-WIDTH  wander band width 1015-981 -> 34 (expected 34)
+ok   A-LO-SPREAD  lo (18th cut) binding spread 998.0538-995.1326 -> 2.9212 (expected 2.9212)
+ok   A-BIS-SPREAD  bis (15th cut) binding spread 1008.7909-1005.8172 -> 2.9737 (expected 2.9737)
+ok   A-FM-SPREAD  fm (16th cut) binding spread 1006.7909-997.0538 -> 9.7371 (expected 9.7371)
+ok   A-Q1-SPREAD  q1 (17th cut) binding spread 1002.9224-999.0012 -> 3.9212 (expected 3.9212)
+ok   D-LO-BIND  pub197:648 16 values min 995.1326 max 998.0538 spread 2.9212 (want 995.1326/998.0538/2.9212)
+ok   D-LO-UNDER-1000  pub197:648 16/16 min(m-h) < 1,000: True
+ok   D-LO-POOLED  pub197:649 pooled-48 binding 997.7700 (want 997.7700)
+ok   D-LO-CLASSES  pub197:647 classes re-counted: 16 total, 16 INTERMEDIATE/MIXED, pooled-48 INTERMEDIATE/MIXED (want 16/16/INTERMEDIATE/MIXED)
+ok   D-LO-M  pub197:650 block m min 1131 max 1132 pooled 1132 (want 1131/1132/1132)
+ok   D-BIS-BIND  pub158:703 16 values min 1005.8172 max 1008.7909 spread 2.9737 (want 1005.8172/1008.7909/2.9737)
+ok   D-BIS-OVER-1000  pub158:703 16/16 min(m-h) > 1,000: True
+ok   D-BIS-POOLED  pub158:703 pooled-48 binding 1009.6912 (want 1009.6912)
+ok   D-Q1-BIND  pub185:642 min 999.0012 max 1002.9224 spread 3.9212 (want 999.0012/1002.9224/3.9212)
+ok   D-Q1-STRADDLE  pub185:642 range STRADDLES 1,000: True
+ok   D-Q1-POOLED  pub185:643 pooled-48 binding 1001.7437 (want 1001.7437)
+ok   D-FM-BIND  pub169:621 min 997.0538 max 1006.7909 spread 9.7371 (want 997.0538/1006.7909/9.7371)
+ok   D-BAND-4SETS  all 64 committed block minima in 981..1,015 (D4 (2) claim): True
+ok   D-W1-Q1-LETTERS  state-s205 D1 (2) q=1 SUPERSESSION: original claim (92, 30) pinned verbatim as SUPERSEDED (L19==s204 L39 True, L20==s204 L40 True, label True); corrected (30, 92) vs re-derived (30, 92)
+ok   D-W1-Q2-LETTERS  state-s204 D1 (2) q=2 per-letter remaining widths claimed (61, 61) vs re-derived (61, 61)
+ok   D-W1-Q3-LETTERS  state-s204 D1 (2) q=3 per-letter remaining widths claimed (91, 31) vs re-derived (91, 31)
+ok   D-W1-GEOM  re-derived W1 (a)/(b) widths at q=1 (30, 92) / q=2 (61, 61) / q=3 (91, 31) (W1 (a) = p-254,923 keeps the low piece; W1 (b) = 255,045-p keeps the top piece)
+
+DESIGN-VERIFY S204 SUMMARY: 220 ok / 0 failed
+DESIGN-VERIFY S204 COMPLETE (fail-closed: 0 failed)

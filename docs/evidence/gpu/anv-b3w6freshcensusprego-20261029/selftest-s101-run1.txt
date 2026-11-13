@@ -1,0 +1,57 @@
+JUN-59 session 101 -- fresh-census-prego.py --self-test
+(MOCK fixtures only; every MOCK value is a FIXTURE, never a
+measurement; this battery reads NO committed window).
+
+digit_runs comma numbers                         got: [(0, 1), (2, 5), (6, 7), (8, 11), (12, want: [(0, 1), (2, 5), (6, 7), (8, 11), (12, ok
+digit_runs date                                  got: [(0, 4), (5, 7), (8, 10)]              want: [(0, 4), (5, 7), (8, 10)]              ok
+digit_runs none                                  got: []                                     want: []                                     ok
+digit_runs mixed                                 got: [(1, 5), (20, 24)]                     want: [(1, 5), (20, 24)]                     ok
+median odd dual                                  got: 3                                      want: 3                                      ok
+median even dual (int-truncating)                got: 2                                      want: 2                                      ok
+median even dual 2                               got: 2                                      want: 2                                      ok
+minmax dual                                      got: (2, 9)                                 want: (2, 9)                                 ok
+class FLOOR boundary                             got: 'FLOOR'                                want: 'FLOOR'                                ok
+class mixed below                                got: 'INTERMEDIATE/MIXED'                   want: 'INTERMEDIATE/MIXED'                   ok
+class CAPTURED boundary                          got: 'CAPTURED'                             want: 'CAPTURED'                             ok
+class mixed above                                got: 'INTERMEDIATE/MIXED'                   want: 'INTERMEDIATE/MIXED'                   ok
+c8 committed parse                               got: 32915                                  want: 32915                                  ok
+floor band parse                                 got: '31..32'                               want: '31..32'                               ok
+refs parse                                       got: (1129, 1132, 1131)                     want: (1129, 1132, 1131)                     ok
+priors parse                                     got: [('s36', (1142, 991, 1438)), ('s73', ( want: [('s36', (1142, 991, 1438)), ('s73', ( ok
+stamp parse                                      got: '2026-10-29T04:23:51Z'                 want: '2026-10-29T04:23:51Z'                 ok
+run_days single                                  got: ['2026-10-29', '2026-10-29']           want: ['2026-10-29', '2026-10-29']           ok
+mock sec1 rows parsed                            got: 1                                      want: 1                                      ok
+mock sec1 tag                                    got: 's36'                                  want: 's36'                                  ok
+mock sec1 flags                                  got: 'counts True knobs True s8 True cmap T want: 'counts True knobs True s8 True cmap T ok
+mock named key                                   got: '(max,128,S=default)'                  want: '(max,128,S=default)'                  ok
+mock ok i                                        got: '5'                                    want: '5'                                    ok
+mock ok j                                        got: '7'                                    want: '7'                                    ok
+mock note relation values                        got: ('5', '6')                             want: ('5', '6')                             ok
+mock sec2 tag                                    got: 's999'                                 want: 's999'                                 ok
+mock c2 class                                    got: 'FLOOR'                                want: 'FLOOR'                                ok
+mock band                                        got: '31..32'                               want: '31..32'                               ok
+mock c8 key                                      got: '(sum,128,S=16)'                       want: '(sum,128,S=16)'                       ok
+mock c8 median                                   got: '32709'                                want: '32709'                                ok
+mock c8 committed                                got: '32915'                                want: '32915'                                ok
+mock delta                                       got: '0.63'                                 want: '0.63'                                 ok
+mock tol c1                                      got: '5'                                    want: '5'                                    ok
+mock branch (b)                                  got: 'b'                                    want: 'b'                                    ok
+mock fresh tag                                   got: 's999'                                 want: 's999'                                 ok
+mock fresh anchor                                got: ('1131', '998', '1442', 'FLOOR')       want: ('1131', '998', '1442', 'FLOOR')       ok
+mock refs                                        got: '1,129/1,132/1,131'                    want: '1,129/1,132/1,131'                    ok
+mock tol band                                    got: '5'                                    want: '5'                                    ok
+mock in-band False                               got: 'False'                                want: 'False'                                ok
+mock prior row                                   got: {'tag': 's36', 'med': '1142', 'lo': '9 want: {'tag': 's36', 'med': '1142', 'lo': '9 ok
+mock all prior False                             got: 'False'                                want: 'False'                                ok
+mock day census                                  got: ('78', '2', ['2026-10-29', '2026-10-30 want: ('78', '2', ['2026-10-29', '2026-10-30 ok
+mock ledger day NOT SINGLE-DAY                   got: 'NOT SINGLE-DAY (2026-10-29,2026-10-30 want: 'NOT SINGLE-DAY (2026-10-29,2026-10-30 ok
+mock bar row                                     got: ('1131', '998', '1442', 'FLOOR')       want: ('1131', '998', '1442', 'FLOOR')       ok
+mock coverage complete (trailing note excluded)  got: []                                     want: []                                     ok
+rogue digit detected                             got: [(3, '9')]                             want: [(3, '9')]                             ok
+claim mismatch detector                          got: False                                  want: False                                  ok
+unparsed body line raises                        got: 'ParseError'                           want: 'ParseError'                           ok
+ok-map note relation want                        got: '5/6'                                  want: '5/6'                                  ok
+ok-map note relation mismatch detector           got: False                                  want: False                                  ok
+sec6/sec3 relation want                          got: True                                   want: True                                   ok
+
+TOTAL: 51 assertions passed 0 failed

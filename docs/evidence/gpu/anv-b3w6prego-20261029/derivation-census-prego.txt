@@ -1,0 +1,43 @@
+JUN-59 session 90 -- W6 READING PRE-BUILD derivation census
+(derivation-census-prego.py, the INDEPENDENT second parser for
+reading-prego.py's --compat validation; s80 protocol section 6
+implementation paths, pre-built under the pre-name). NO W6
+quantity exists or is computed here.
+
+Independence contract: NO re module (split()-based k=v run-log
+parsing, find/split publication parsing -- reading-prego.py
+parsed with re.compile regexes); the pooled-median and
+min/max estimators are computed on the numpy np.partition kth
+paths (reading-prego.py is pure stdlib statistics.median/min/max
+and imports NO numpy at all), CROSS-CHECKED IN-LOOP against
+pure-Python sorted() explicit order statistics. NO RNG, no
+clock.
+
+A. TWO-WAY ROWS (want = find/split-parsed from the committed
+   publication-s73.txt bytes; got = recomputed here from the 390
+   committed run logs):
+sec1 s36 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s38 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s39 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s51 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s73 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec2 c2 class                want: FLOOR                                      got: FLOOR                                      EXACT
+sec2 c8 pooled median        want: 32709                                      got: 32709                                      EXACT
+sec2 C1 branch               want: (a) both controls replicate                got: (a) both controls replicate                EXACT
+sec3b s36 anchor             want: 1142 991..1438                             got: 1142 991..1438                             EXACT
+sec3b s38 anchor             want: 1132 992..1443                             got: 1132 992..1443                             EXACT
+sec3b s39 anchor             want: 1146 986..1432                             got: 1146 986..1432                             EXACT
+sec3b s51 anchor             want: 1137 988..1430                             got: 1137 988..1430                             EXACT
+sec3b s73 anchor (fresh)     want: 1131 998..1442 INTERMEDIATE/MIXED          got: 1131 998..1442 INTERMEDIATE/MIXED          EXACT
+sec6-D4 s73 bar reading      want: 1131 998..1442 INTERMEDIATE/MIXED          got: 1131 998..1442 INTERMEDIATE/MIXED          EXACT
+
+   TOTAL: 14 rows, 0 mismatched
+
+B. IN-LOOP DUAL-COMPUTATION CROSS-CHECK (np.partition kth path
+   vs pure-Python sorted() explicit order statistics):
+   pooled-median + min/max dual computations: 124 comparisons,
+   0 mismatched
+
+C. HYGIENE: evidence .sh count below is checked by the standing
+   gate set (find docs/evidence/gpu -name '*.sh' -> 0); this
+   census writes NO run logs, NO ledger line.

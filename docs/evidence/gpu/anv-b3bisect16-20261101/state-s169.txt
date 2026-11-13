@@ -1,0 +1,128 @@
+amu-gpu s169 (2026-11-01 JST, cron) -- JUN-59 sixteenth cut
+MEASUREMENT HALF -- STARTED, NOT FINISHED (runtime-budget cutoff
+DURING the host run window, after GO + 3 clean builds + the first
+three clean control runs; the s119/s133/s141/s143/s148/s150/s151/
+s152/s157/s158/s161/s164 interrupted-tick precedent).
+
+ROW TAKEN THIS TICK (the s168 carry-forward (a) first item: the
+sixteenth cut MEASUREMENT half executed on aiueos-6600hs under the
+frozen anv-b3bisect16prereg-20261101/protocol.txt, freeze stamp
+2026-11-01T08:05:17Z -- "its own session under the frozen protocol",
+taking the row as the protocol's own act).
+
+VERIFIED THIS TICK (real tool output):
+- Local custody re-verified fresh before staging (shasum -a 256 +
+  diff + python): rounds6400 variant c2704aaa... == the
+  s153/s154/s157/s158 pin (both committed copies byte-identical);
+  one-line diff against the a5e539f0... base
+  (anv-b3bisect14-20261031/gpu-subgroup-reduce-anv-ndiv.c.txt) is
+  EXACTLY line 81 '#define ROUNDS 25' -> '#define ROUNDS 6400'
+  (diff rc=1, one hunk, beside '#define WARMUP 3' line 80);
+  expected-corpus.sha256 eefba52e... == pin; knob arithmetic
+  re-derived (python): (1,000,003*345)//1354 = 254,801 == n,
+  gcd(345,1354) = 1; 24 cell lines block sha256 873025d6... == the
+  s25/s27 pin.
+- Local evidence dir anv-b3bisect16-20261101/ STAGED: cases-
+  s169-a.txt written (new header + the 24 cell lines BYTE-COPY of
+  cases-s157-a.txt's cell block, cell-block pin 873025d6... re-
+  verified in the NEW file; cases-s169-a.txt sha256
+  abd09ab174fa97e95201cf0296b7ab6a4613534964e97e857513886c84074981);
+  expected-corpus.sha256 and the rounds6400 variant byte-copies
+  committed beside it (eefba52e... / c2704aaa...).
+- host-verify-s169.txt: live ssh capture -- aiueos-6600hs,
+  murakumo-ci (groups include render), 2026-11-01T09:29:14Z.
+- host-stage-s169.txt: workdir ~/anv-b3bisect16-20261101 created;
+  shaders/ copied as EXACTLY the 16 expected-corpus names from the
+  s158 verified corpus ~/anv-b3bisect15-20261101/shaders/ (name
+  count 16, no stale run log rode along); host pins
+  c2704aaa.../eefba52e.../abd09ab1... == local; sha256sum -c
+  expected-corpus.sha256 16/16 OK, corpus_rc=0.
+- host-build-s169.txt: GO=2026-11-01T09:31:52Z; 3/3 builds rc=0
+  (c2 -DBATCH=2 -DWORK_MUL=1 -DNDIV=1; fm -DBATCH=3 -DWORK_MUL=345
+  -DNDIV=1354 -- the ONE NEW KNOB TRIPLE, s166 NAMED L8
+  combination-risk class, never measured at any binary before this
+  cut; c8 -DBATCH=8 -DWORK_MUL=1 -DNDIV=1) all @09:31:52Z, build
+  stderr 0 bytes x3. FIRST-MEASURED BINARY PINS parsed from the
+  build capture, never transcribed (the s136 precedent; the frozen
+  protocol arm (b) -- this cut's binaries are NEW):
+    anv-bb-c2  b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48
+    anv-bb-fm  8c568de523418f0042b30023eb01d6a083c9e1819f0c1dfa7f7edde15479c1a8
+    anv-bb-c8  2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831
+  CROSS-CUT FACT (observed in this capture, NOT a claim beyond the
+  bytes): the c2 and c8 digests are BYTE-IDENTICAL to the s158
+  first-measured pins (same knob args, same source bytes); fm is
+  new (its knob args are new-to-history).
+- RUN WINDOW LAUNCHED and RUNNING at cutoff: a detached host-side
+  driver (~/anv-b3bisect16-20261101/s169-driver.sh -- host-only,
+  NEVER committed; NO POSIX .sh enters evidence) runs the frozen
+  order c2-r01..03, fm-r01..48, c8-r01..03 as 54 fresh processes
+  (manifest ../cases-s169-a.txt, runs cwd=shaders/, binaries
+  ../anv-bb-<tag>). At cutoff THREE control runs COMPLETE AND
+  CLEAN:
+  c2-r01 run_rc=0 host-date=2026-11-01T09:33:39Z stderr_bytes=0
+  samples=115200 verifies=24 cells=24 tail=# done cells=24
+  c2-r02 run_rc=0 host-date=2026-11-01T09:34:56Z stderr_bytes=0
+  samples=115200 verifies=24 cells=24 tail=# done cells=24
+  c2-r03 run_rc=0 host-date=2026-11-01T09:36:10Z stderr_bytes=0
+  samples=115200 verifies=24 cells=24 tail=# done cells=24
+  (samples=115,200 = 18 pipeline-ok cells x 6,400 rounds, exactly
+  the frozen R). The driver was LIVE at the last poll (ps: bash
+  s169-driver.sh PID 2529163; ../anv-bb-fm running). The window
+  continues on the host under nohup/setsid AFTER this session's
+  cutoff (it survives disconnect; the run logs are host-side only
+  at this cutoff). The exact completion count beyond the three
+  captured lines is UNVERIFIED at cutoff -- the measuring
+  continuation polls and captures host-runs-s169.txt whole.
+
+NAMED, NOT HIDDEN:
+- The s157 capture-form deviation is NAMED AGAIN at this measuring
+  tick: the 54 stdout logs at the frozen R = 6,400 carry 115,200
+  SAMPLE lines each (s158 ACTUAL: ~15.5 MB each plain, ~741M raw
+  total for 108 logs) -- they will be pulled plain (raw aggregate
+  host==local byte-identity, the s147 procedure) and committed
+  gzip -n compressed (.txt.gz) with the raw aggregates recorded;
+  0-byte stderr logs stay plain. THAT PULL IS NOT DONE THIS TICK.
+- host-runs-s169.txt is INCOMPLETE at this cutoff (3 of 54 per-run
+  lines captured live; the driver's aggregate tail not yet
+  written). It is NOT committed this tick -- the measuring
+  continuation captures it whole.
+- NO sixteenth-cut class/verdict/claim exists: NO unit class, NO
+  C2, NO W1/W2/W3/X1 letter is computed or claimed here (the
+  analysis half is its own session(s) after the pull); every one
+  of those quantities stays UNMEASURED. The ONLY new recorded
+  values this tick are the three first-measured binary digests
+  above, the GO stamp, and the three completed c2 control-run line
+  captures. MID-ONLY NARROWING CLAIM stays SUSPENDED; bracket
+  stays EXACTLY (254,557, 255,045].
+
+BAR: this cut is the INSTRUMENT channel -- NO settle-bar-ledger
+line, settle-bar-ledger.txt byte-identical to HEAD, NO day-slot
+consumed by this row (the frozen protocol section 5; the 2026-10-31
+slot stays consumed at s117; the 2026-11-01 UTC settle-bar slot
+needs its own freeze and is NOT touched by this row). RULE 4
+unchanged: NOTHING MOVES; NO vendor optimization exists for Intel
+(or for any vendor). Diff touches NO committed .cljk namespace
+(evidence .txt only; find docs/evidence/gpu -name '*.sh' -> 0).
+Local commit only -- NOT pushed (slice unfinished). Linear 未記録.
+
+NOT DONE (s170 carries):
+(a) poll the host window to its 54/54 completion (the driver
+    writes host-runs-s169.txt's 54 per-run lines + the sorted-108
+    name list + missing= check + the host-side canonical
+    aggregate); post-window binary re-census (3/3 == the s169
+    first-measured pins);
+(b) the pull + raw aggregate host==local byte-identity
+    (host-digests-s169.txt, the s147 procedure incl. the
+    host-side name-existence check) + the gzip -n commit form +
+    the raw-aggregate record + derivation/build census + the
+    completed state update;
+(c) the analysis half ONLY at its own session(s) afterwards
+    (analysis-s169.py run twice byte-identical -> publication,
+    the frozen letters C1/C2/W1/W2/W3/X1, standing gates (a)-(f)
+    with those session captures, record.txt, ADR-0355 dated note,
+    landing tail + the JUN-499 Linear landing comment);
+(d) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; the 2026-11-01 UTC slot needs its own
+    freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

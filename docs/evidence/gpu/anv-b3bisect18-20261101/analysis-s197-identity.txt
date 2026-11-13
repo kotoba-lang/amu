@@ -1,0 +1,37 @@
+== analysis-s197 run-twice byte-identity (session 200) ==
+script analysis-s197.py sha256
+ed47823db8a2f9b91a0945745e6fb3e9270b4535a8b86644b4e187bf2bfc87e0
+(79,258 bytes after the one named fix below).
+
+NAMED, NOT HIDDEN -- ONE verification-script defect, caught fail-closed
+BEFORE any number existed: the FIRST run aborted at the pin-parse
+assertion "AssertionError: pin set []" (analysis-s197-draft-fail.err,
+362 bytes, kept committed) -- the script's pin regex
+"anv-bb-(c2|q3|c8)  ([0-9a-f]{64})" had the sha256sum line form
+REVERSED (name-first) against the committed host-build-s197.txt form
+"<digest>  <basename>\n" (digest FIRST, two spaces, line-anchored).
+No publication was written by the draft (the assert aborted first).
+FIXED once: re.finditer(r"^([0-9a-f]{64})  anv-bb-(c2|q3|c8)$",
+hb197, re.M) -- the exact sha256sum output-line form pinned at s199;
+the narrative FIRST-MEASURED paragraph (wrapped digests) does NOT
+match it. The run-twice pair below is the FIRST PASSING capture; the
+failed draft is kept as analysis-s197-draft-fail.txt/.err.
+
+run1: rc 0, stdout 0 bytes, stderr 0 bytes;
+  publication-s197.txt written 62,811 bytes, copied to
+  publication-s197-run1.txt sha256
+  f3d7465ad60a7de2be20d4edfcbb4743f73849d7b0a93e7ff6f2eccbd1ff5e53
+run2: rc 0, stdout 0 bytes, stderr 0 bytes;
+  publication-s197.txt written 62,811 bytes, copied to
+  publication-s197-run2.txt sha256
+  f3d7465ad60a7de2be20d4edfcbb4743f73849d7b0a93e7ff6f2eccbd1ff5e53
+cmp publication-s197-run1.txt publication-s197-run2.txt exit 0
+(byte-identical); cmp analysis-s197-run1.txt analysis-s197-run2.txt
+exit 0 (both 0 bytes).
+
+Letters parsed from publication-s197.txt (never transcribed): C1 (a);
+C2 (a) at q3 (254,923); W1 (b). CUT VERDICT: THE BRACKET NARROWS TO
+(254,923, 255,045]; the MID-ONLY NARROWING CLAIM's location statement
+is CONFIRMED BY IMPLICATION (named, not claimed -- by implication
+only).
+(JUN-55, JUN-59; Linear tracking JUN-499)

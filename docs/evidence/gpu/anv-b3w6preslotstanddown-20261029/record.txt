@@ -1,0 +1,139 @@
+JUN-59 session 104 PRE-SLOT STAND-DOWN (NO ROW TAKEN -- the s103
+pre-registration's "say so rather than pad" tick; NO design slice,
+NO implementation slice, NO measurement, NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO network
+connections beyond the read-only GitHub PR queries, NO day-slot
+consumption, NO ledger line).
+
+1. ROW: NONE -- NAMED STAND-DOWN, NOT SKIPPED SILENTLY.  The only
+   queued row is the W6 measurement half (the s80 freeze): "the
+   first measurement session that starts at or after
+   2026-10-30T00:00:00Z adopts the seven tools manifest-checked and
+   owns their record".  This session STARTED 2026-10-29T22:31:38Z --
+   1h28m22s (5,302 s) BEFORE the slot opens (state-s104.txt slot
+   arithmetic: "session qualifies as W6 session? False").  The s80
+   freeze defines W6 BY SESSION START, so this session is NOT the W6
+   session and taking the measurement half here would break the
+   pre-registration: a window run in this session is an UNREGISTERED
+   window whose ledger line would still consume the 2026-10-30 day
+   slot under the frozen evaluator's first-qualifying-reading rule --
+   exactly the outcome the freeze exists to prevent.  The s103
+   record pre-registered this tick's behavior: "With s102+s103 no
+   honest pre-slot preparation row remains; a pre-slot tick should
+   say so rather than pad."  THIS RECORD IS THE SAYING-SO.  It is
+   NOT a preparation row -- nothing is bound, nothing is rehearsed,
+   no future record may build on it (the s94 section-6 analogy: a
+   pre-flight computes no statistics; this record computes no row at
+   all).
+
+2. VERIFIED (real tool output, state-s104.txt, run this tick):
+   -- session start 2026-10-29T22:31:38Z; slot open
+      2026-10-30T00:00:00Z; delta 5,302 s BEFORE the slot; the
+      session-start-at-or-after test returns False;
+   -- BLOCKER-FIRST: open kotoba-lang/amu PRs with headRefName
+      startswith hermes/ = [] (ZERO blocker PRs);
+   -- chain PRs = exactly ONE: #1665 bot/amu-gpu-chain-20261028-4,
+      MERGEABLE (the one open chain PR this commit pushes to);
+   -- git status --porcelain: only the pre-existing untracked
+      deps.edn + scratch/ plus this tick's own evidence dir; git
+      diff --stat EMPTY (nothing modified in the tree);
+   -- settle-bar-ledger.txt == HEAD (git diff --exit-code rc=0 --
+      the emit path never ran this tick);
+   -- find docs/evidence/gpu -name '*.sh' -> 0 files.
+
+3. STANDING GATE SET (the s94 section-8(g) duty -- runs with each
+   tick; every capture byte-compared to the s88 committed pins in
+   docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, capture 17,925
+       bytes == the s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s88 pins (919 bytes, cmp exit 0 x3); .err
+       0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO .cljk namespace).  Capture .err 879
+       bytes == the s88 pin (cmp exit 0); stdout 0 bytes == the pin.
+       NO green full suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, capture
+       3,590 bytes == the s88 pin (cmp exit 0); ledger eval twice,
+       exit 0, run 1 == run 2 == the s88 pin (823 bytes) ->
+       VERDICT: PENDING 2/4 unchanged (counted day=2026-10-28
+       session=s31; counted day=2026-10-29 session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (verified).
+
+4. THE BAR: NO row -> NO hardware runs -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption.  The bar stays
+   PENDING 2/4.  The third counted-day slot OPENS at
+   2026-10-30T00:00:00Z and is consumed only by the W6 session's
+   qualifying reading.
+
+5. UNMEASURED (named): every W6 quantity (the W6 anchor reading,
+   W6 integrity/C1, the W6 run day); every W7 quantity; the T18 and
+   T20 contrasts.  RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358 left
+   them (:measured? true scoped to each row's one named measured
+   device for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false); NO vendor optimization exists
+   for Intel (or for any vendor).  This record is gate-state
+   verification -- it is not a measurement of any device.
+
+6. NAMED, NOT HIDDEN:
+   (a) This is a STAND-DOWN record, not a row.  The s103
+       declaration binds: with s102+s103 every W6 record surface
+       and composition is bound to committed bytes or byte-pinned
+       expectations and NO honest pre-slot preparation row remains;
+       inventing one here would be the padding s103 forbids.
+   (b) ONE stand-down record suffices: any further tick that also
+       starts before 2026-10-30T00:00:00Z stands down WITHOUT a
+       second commit (report-only); a chain of stand-down commits
+       would be padding.  The first tick whose START is at or after
+       the slot is W6's session.
+   (c) The scoped runner was scratch (created/run/deleted, never
+       committed).  The kbb engine prints its standing "2 dep(s)
+       are not :local/root" warning on the console; it reaches no
+       capture (.err files are 0 bytes wherever the pins are 0).
+   (d) The read-only GitHub PR queries are this tick's only network
+       calls (blocker-first + chain-PR state); no host was touched.
+
+7. WHAT CHANGED (this commit):
+   docs/evidence/gpu/anv-b3w6preslotstanddown-20261029/ gains this
+   record and the s104 captures (state-s104.txt;
+   gate-s104-classify.txt/.err; gate-s104-run1/2.txt/.err;
+   gate-s104-full.out/.err; bar-s104-selftest.txt/.err;
+   bar-s104-eval-run1/2.txt/.err); plus the ADR-0355 dated note.
+   NO run logs (no hardware this tick), NO .sh files, NO ledger
+   line.  The chain commit cites JUN-55/JUN-59 (Linear tracking
+   JUN-499).
+
+8. CARRY-FORWARD (named): the W6 measurement half, to be taken by
+   the FIRST session starting at or after 2026-10-30T00:00:00Z (the
+   s80 freeze; that session adopts the seven tools manifest-checked
+   -- adoption-check-prego.py --check adoption-manifest.txt . FIRST,
+   fail-closed -- and owns the W6 record in
+   anv-b3w6daybar-20261030/): the s57 route on the ANV host
+   (host-verify 3/3 + corpus 16/16 + GO stamp + the four pinned
+   compiles + build census 4/4 BYTE-IDENTICAL + the 78 frozen-order
+   runs + run-window.txt), then the s90 reading pair
+   (reading-s<NN>.py -> publication-s<NN>.txt twice byte-identical;
+   fresh-census-s<NN>.py --w6 BEFORE the pair reconciliation), then
+   the s103-rehearsed custody wiring (custody-s<NN>.py --check ->
+   decide_ledger_inputs -> ledger-s<NN>.py --emit), the ledger
+   append ONLY after the standing gate set verifies (s80 section
+   5), and reconcile-s<NN>.py --line after the append.  W6's
+   ledger line is the gate for the T18 analysis half (s92 pre-build
+   + s84 freeze bind), the T20 analysis half (s93 pre-build + s88
+   freeze bind) and the W7 measurement half (s85 freeze; behind
+   W6's ledger line); then any further counted-day slot (its own
+   freeze) and a cross-day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6preslotstanddown-20261029/
+(this file + the s104 captures). (JUN-55, JUN-59; Linear tracking
+JUN-499)

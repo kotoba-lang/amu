@@ -1,0 +1,68 @@
+amu-gpu s162 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut ANALYSIS
+HALF -- RUN COMPLETE (the s161 carry-forward (a) completed exactly:
+the named defects fixed, analysis-s158.py run twice byte-identical ->
+publication-s158.txt + analysis-s158-identity.txt; the frozen letters
+are evaluated in that run).
+
+ROW TAKEN THIS TICK: the analysis-s158.py repair + double run.
+
+FINDING (verified by real tool output, this directory): THE FIFTEENTH
+CUT ANALYSIS RAN TWICE BYTE-IDENTICAL (cmp exit 0, sha256
+45538ad757bfa28821de2728000581897aaef8cc75f32ed656914509f400cd25 both
+runs, run1 rc 0 stderr 0 bytes, run2 rc 0 stderr 0 bytes) AND THE
+FROZEN LETTERS ARE: VERDICT SUMMARY: C1 (a); C2 (b) at bis (255,045);
+W1 (a). All 16 bis block classes AND the pooled-48 class CAPTURED
+under THE PRE-REGISTERED DEEP-POOLING CI CLASS STATISTIC (R = 6,400;
+h_c = 3.6420 * MAD_c / sqrt(N), frozen 1,000-tick threshold) at the
+NEW first-measured binary (the ROUNDS6400 instrument variant, bis pin
+52fb68b6...), C1 (a) both controls satisfy their criteria (c2 FLOOR in
+the committed floor band 31..32; c8 within +/-5% of the committed
+32,915; control arms free of VERIFY mismatches). W1 (a): THE BRACKET
+NARROWS TO (254,557, 255,045] ("THE B=3 CLASS FLIP LIES AT OR BELOW
+n=255,045") -- the upper endpoint moved 255,208 -> 255,045 on this
+cut's content; the lower endpoint carried unchanged on lo's content.
+The MID-ONLY NARROWING CLAIM stays SUSPENDED (named, not claimed).
+The 14th cut's TOLERANCE-UNRESOLVED mid content stands as committed
+content under this outcome (arm (a)); NO letter of this cut touched
+lo or mid. Integrity: all per-log checks pass in 54/54 runs (115,200
+SAMPLE lines = 18 ok cells x 6,400 rounds every run, 24 CELL / 24
+VERIFY / tail '# done cells=24' every run, VERIFY mismatch total 0).
+BAR NON-INTERFERENCE held: these runs are BISECT CONTENT -- NO
+settle-bar-ledger line, NO day-slot consumed, NO Rule 4 row movement,
+NO :measured? flag change.
+
+DEFECTS FIXED THIS TICK (mechanical; the s161 named four + TWO NEW
+defects found at run time, named here, not hidden):
+- s161 (1): load_run now calls load(path, b, wm, dd) so the SAMPLE
+  knob asserts actually run;
+- s161 (2): run_host(tag, r) defined (median of the kept
+  (sum,128,S=16) host_ns list, data index 4);
+- s161 (3): the dead 'if False else' scaffold removed (the counts
+  guard in the load loop, the hn placeholder in section 2, the two
+  v_c2 placeholders in C1);
+- s161 (4): load_run keeps only the (sum,128,S=16) host list (asserts
+  exactly one such cell) and returns it; sample_counts_ok and
+  spv_identity_ok now assigned from the integrity list;
+- NEW (run-time, unnamed by s161): the per_dispatch_ns slice was
+  f[8][15:] but 'per_dispatch_ns=' is 16 chars (verified
+  programmatically) -> f[8][16:]; without this the script died on the
+  first SAMPLE line;
+- NEW (run-time, unnamed by s161): the pin-set assert compared
+  sorted(PINS) (alphabetical) to the unsorted arm order ["c2","bis",
+  "c8"] and always fired -> set(PINS) == {"c2","bis","c8"}.
+
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists for
+Intel (or for any vendor). This diff touches NO committed .cljk
+namespace (evidence .py/.txt only); no gate re-run needed for this
+diff (standing gate (b) last green at s155 with its pins).
+
+NOT DONE (s163 carries the s158 list minus (a)):
+(b) standing gates (a)-(f) live;
+(c) record.txt + the ADR-0355 dated note;
+(d) blocker-first + landing push of the accumulated local commits +
+    the JUN-499 Linear comment (this tick commits locally; push/PR
+    step pending the blocker-first check);
+(e) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; next slot a NEW UTC day + its own freeze)
+    and the cross-day tail-movement row.
+(JUN-55, JUN-59; Linear tracking JUN-499)

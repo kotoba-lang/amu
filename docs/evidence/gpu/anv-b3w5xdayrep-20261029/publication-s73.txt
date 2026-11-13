@@ -1,0 +1,195 @@
+JUN-59 session 73 -- THE FIFTH-WINDOW CROSS-UTC-DAY NAMED-CELL
+ROBUST-SCALE LEVEL REPLICATION PROBE (publication)
+(at the NEW fifth window W5, does the tw arm's
+(max,128,S=default) cell's robust-scale LEVEL continue the
+post-shift regime of s38/s39/s51 rather than return to the s36
+pre-shift regime, on BOTH robust-scale level axes -- the
+s48-frozen exact-median MAD and the s47-frozen exclusive-hinge
+IQR? ONE named cell, ONE named window pair (s36 vs s73), ONE
+named direction (L_W5 < L_s36), TWO named axes under a
+pre-registered intersection-union joint rule; the primary
+per-axis statistic C = L_s36 - L_W5 vs a two-window
+run-repartition resampling null over the named cell's 72 tw
+committed runs of the two windows.)
+Produced ONLY by analysis-s73.py over the COMMITTED run logs of
+five fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window, anv-b3levelrep-20261028
+= the s51 window, anv-b3w5xdayrep-20261029 = the NEW W5 window
+measured THIS session); protocol.txt was
+frozen BEFORE the first W5 run and before any statistic of
+this probe was computed (freeze stamp 2026-10-28T16:15:35Z).
+MEASUREMENT session -- the W5 window ran on aiueos-6600hs
+Intel BMG G31 ANV (78 fresh processes; the s36/s38/s39/s51
+windows were MEASURED in sessions 36/38/39/51).
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s73 window's logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs; block
+   order A..L; the four PRIOR windows reproduce the
+   published/quote-only vectors of publication-s39.txt section 3
+   and publication-s51.txt section 3 EXACTLY (mismatch => (c)); the
+   W5 vectors are NEW measurement:
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   s51 X (hi): 988 986 1000 986 989 983 995 983 994 991 984 985
+   s51 Y (tw): 980 975 991 979 986 986 992 991 988 993 995 996
+   s51 reproduction EXACT: True
+   s73 X (hi): 998 978 985 983 982 980 981 982 974 988 977 988
+   s73 Y (tw): 992 984 982 985 993 972 979 990 978 982 987 987
+   all four prior windows reproduce EXACTLY (8/8): True
+
+3b. ANCHOR ROWS (hi block A -- the frozen L12 single bar candidate:
+    its (sum,128,S=16) pooled median and 18-cell min..max; the
+    four PRIOR windows reproduce the quote-only/published anchor
+    priors of publication-s36/38/39/51 EXACTLY (mismatch => (c));
+    the W5 row is NEW measurement -- the session's bar candidate,
+    section 4 D4):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    s51: median 1137 min..max 988..1430 (want 1137 / 988..1430); reproduction EXACT: True
+    s73 (NEW): median 1131 min..max 998..1442; class INTERMEDIATE/MIXED
+    all four prior windows reproduce EXACTLY: True
+
+4. T7 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   the NAMED cell (max,128,S=default) of the tw arm, the NAMED window
+   pair s36 (pre-shift) vs s73 (NEW this session), the NAMED
+   direction L_W5 < L_s36, on the two NAMED level axes (MAD =
+   e_(38) about x_(38); IQR = x_(57) - x_(19); L = median of 12
+   block D values; 2*C = 2*L_s36 - 2*L_W5 in half-tick integer
+   units). 20000 trials, seed 20261029, probe order primary MAD
+   then primary IQR; per trial one shuffle of list(range(72))
+   split into two pseudo-windows of 36 and 12 blocks of 3;
+   p = (1 + count(C* >= C_obs)) / (1 + 20000), one-sided in the
+   pre-registered direction; joint T7 = the pre-registered
+   INTERSECTION-UNION rule (both axes must read (a); NO
+   multiplicity correction applied or needed):
+   MAD axis: 2*L_s36 = 143 (71.5), 2*L_s73 = 98 (49.0); C_obs = 22.5; count 0 / 20001; p = 0.000050; p <= 0.05: True; axis letter (a) REPLICATED-CONTINUED
+   IQR axis: 2*L_s36 = 303 (151.5), 2*L_s73 = 223 (111.5); C_obs = 40.0; count 3 / 20001; p = 0.000200; p <= 0.05: True; axis letter (a) REPLICATED-CONTINUED
+   T7 = (a) CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES
+   NAMED, NOT HIDDEN: the multiplicity claim is NARROW -- ONE
+   named cell, ONE named window pair, ONE named direction, TWO
+   named axes under a pre-registered IUT, tested on NEW data
+   (the W5 runs did not exist at freeze time); it carries NO
+   within-family multiplicity of its own, BUT the cell/direction
+   choice was made by looking at s40-51's UNCORRECTED-family
+   results, the discovery family STAYS uncorrected and this
+   replication does NOT retro-correct it; s38/s39/s51 are NOT in
+   the primary contrast and appear ONLY in section 6 D1; (a)
+   would NOT name a mechanism (thermal/scheduling/memory/driver
+   state all UNMEASURED) and NOT say whether the level shift is
+   physical or estimator structure; the window pair spans the
+   UTC-day boundary (n=2 windows, 12 blocks each -- LOW POWER; a
+   single (a) can also reflect any s36-specific or W5-specific
+   state); (b) does NOT overturn s49's discovery (b) -- it says
+   the pre-registered directional contrast did not replicate at
+   THIS window pair (sub-cases named above); the estimator is the
+   named cell's within-block robust scale level ONLY; 20,000
+   trials (NOT the s35-frozen 100,000 -- cost, same named
+   deviation as sessions 40-51; p resolution 1/20,001 ~= 5e-5);
+   L2 observational ONLY; NO causal mechanism; direction
+   UNMEASURED; threshold-artifact-vs-representation STAYS
+   UNRESOLVED under any letter.
+
+5. REPLICATION FRAMING (frozen): the row answer is the section-4
+   joint T7; the two axes are the two named robust scales (NEITHER
+   dominates -- a shift of one need not move the other) and the
+   IUT rule demands both; the per-axis letters and sub-cases are
+   in section 4.
+
+6. DESCRIPTIVE (not the row question; NO letter):
+   D1 the NAMED cell's five-window level vectors on both axes
+      ((max,128,S=default), tw arm; L = median of the 12 block D values,
+      half-tick exact; prior windows reproduce the quote-only
+      s49/s50/s51 D1 priors EXACTLY -- a reproduction check on the
+      prior windows, descriptive) and the W5-vs-post-shift-band
+      consistency (L_W5 inside the closed interval spanned by
+      {L_s38, L_s39, L_s51}):
+      MAD: 2*L s36/s38/s39/s51/s73 = 143/111/113/118/98 (L 71.5/55.5/56.5/59.0/49.0); prior
+      reproduction vs quote-only priors {'s36': 143, 's38': 111, 's39': 113, 's51': 118} EXACT: True; L_W5 inside the s38/s39/s51 band interval: False
+      IQR: 2*L s36/s38/s39/s51/s73 = 303/241/235/240/223 (L 151.5/120.5/117.5/120.0/111.5); prior
+      reproduction vs quote-only priors {'s36': 303, 's38': 241, 's39': 235, 's51': 240} EXACT: True; L_W5 inside the s38/s39/s51 band interval: False
+   D2 the 18-cell scoreboard at s73 on both axes (L_W5 per ok
+      cell) and the full W5-vs-s36 per-cell contrast table
+      (C = L_s36 - L_W5 per cell per axis; 36 descriptive
+      contrasts, UNCORRECTED for multiplicity, no letter):
+      tw cell (sum,128,S=16): MAD 2*L 59/49 C 5.0; IQR 2*L 151/112 C 19.5
+      tw cell (sum,128,S=32): MAD 2*L 121/94 C 13.5; IQR 2*L 264/198 C 33.0
+      tw cell (sum,128,S=default): MAD 2*L 113/96 C 8.5; IQR 2*L 235/212 C 11.5
+      tw cell (max,128,S=16): MAD 2*L 55/48 C 3.5; IQR 2*L 146/123 C 11.5
+      tw cell (max,128,S=32): MAD 2*L 110/92 C 9.0; IQR 2*L 232/207 C 12.5
+      tw cell (max,128,S=default): MAD 2*L 143/98 C 22.5; IQR 2*L 303/223 C 40.0
+      tw cell (min,128,S=16): MAD 2*L 60/48 C 6.0; IQR 2*L 145/115 C 15.0
+      tw cell (min,128,S=32): MAD 2*L 124/100 C 12.0; IQR 2*L 272/231 C 20.5
+      tw cell (min,128,S=default): MAD 2*L 113/107 C 3.0; IQR 2*L 248/217 C 15.5
+      tw cell (sum,256,S=16): MAD 2*L 74/61 C 6.5; IQR 2*L 304/232 C 36.0
+      tw cell (sum,256,S=32): MAD 2*L 135/141 C -3.0; IQR 2*L 276/293 C -8.5
+      tw cell (sum,256,S=default): MAD 2*L 124/125 C -0.5; IQR 2*L 257/268 C -5.5
+      tw cell (max,256,S=16): MAD 2*L 70/59 C 5.5; IQR 2*L 307/268 C 19.5
+      tw cell (max,256,S=32): MAD 2*L 130/136 C -3.0; IQR 2*L 265/301 C -18.0
+      tw cell (max,256,S=default): MAD 2*L 121/136 C -7.5; IQR 2*L 263/290 C -13.5
+      tw cell (min,256,S=16): MAD 2*L 73/61 C 6.0; IQR 2*L 263/235 C 14.0
+      tw cell (min,256,S=32): MAD 2*L 133/134 C -0.5; IQR 2*L 274/284 C -5.0
+      tw cell (min,256,S=default): MAD 2*L 140/141 C -0.5; IQR 2*L 298/292 C 3.0
+   D3 the FIVE-WINDOW cross-window max-T repartition probes (the
+      s49/s50 machinery extended by s51's D3 to
+      s36/s38/s39/s51/W5: per-cell S_c = max_w L_{w,c} -
+      min_w L_{w,c} over the five windows, M = max_c 2*S_c
+      family-wise over the 18 cells; null = the 180 runs of one
+      arm repartitioned into 5 pseudo-windows of 36 then 12
+      blocks of 3; 20,000 trials per probe in the
+      frozen RNG order) -- DESCRRIPTIVE ONLY, NO letter (the four
+      probes are UNCORRECTED across axes/arms; this session's
+      LETTER source is the section-4 named-cell IUT alone):
+      MAD-hi: M_obs = 15.0 (max cell(s) (max,128,S=default), (min,256,S=16)); count 1111 / 20001; p = 0.055597
+      MAD-tw: M_obs = 22.5 (max cell(s) (max,128,S=default)); count 1 / 20001; p = 0.000100
+      IQR-hi: M_obs = 48.0 (max cell(s) (sum,256,S=16)); count 550 / 20001; p = 0.027549
+      IQR-tw: M_obs = 46.5 (max cell(s) (sum,256,S=16)); count 2817 / 20001; p = 0.140893
+      orientation quote-only priors (NOT recomputed): s49 MAD-level
+      max-T hi 10.0 p 0.473426 / tw 16.0 p 0.008600 (the discovery (b)); s50
+      IQR-level max-T hi 35.5 p 0.083896 / tw 34.0 p 0.611969; s51 five-window-precursor
+      MAD-level hi 13.0 p 0.142243 / tw 16.0 p 0.018399; IQR-level hi 35.5 p 0.182891 / tw 34.0 p 0.614169
+   D4 the W5 anchor reading (hi block A -- the frozen L12 single
+      bar candidate; the ledger line of section 3b/5): median 1131 min..max 998..1442, class INTERMEDIATE/MIXED vs the bar's frozen refs 1,129/1,132/1,131 (descriptive; the
+      line's day = the W5 run's ACTUAL UTC day from run-window.txt;
+      W5's line is the first qualifying reading of its UTC day and
+      is COUNTED under the frozen construction unless another
+      session's qualifying reading precedes it that same day --
+      the frozen evaluator (settle-bar-eval.py) is ALWAYS the only
+      source of the bar verdict; NEVER hand-write a verdict).
+
+7. VERDICT SUMMARY:
+   T7 = (a) CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES
+   MAD: C_obs = 22.5 (2*L_s36 143 -> 2*L_s73 98); count 0/20001; p 0.000050; letter (a) REPLICATED-CONTINUED
+   IQR: C_obs = 40.0 (2*L_s36 303 -> 2*L_s73 223); count 3/20001; p 0.000200; letter (a) REPLICATED-CONTINUED
+   evaluable inputs: prior vector reproduction EXACT (True); prior
+   anchor rows EXACT (True); W5 C1 ((a)); per-window integrity rows in section 1
+   MEASUREMENT session: the W5 window ran on the ANV host this
+   session (78 fresh processes, byte-pinned builds 4/4).
+   THE BAR: ONE ledger line (hi block A of W5 -- the frozen L12
+   single candidate), day = the W5 run's actual UTC day; the
+   frozen evaluator is the only source of the bar letter.
+   Rule 4 binds: nothing moves; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

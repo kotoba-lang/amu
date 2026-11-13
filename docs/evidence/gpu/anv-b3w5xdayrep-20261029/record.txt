@@ -1,0 +1,85 @@
+JUN-59 session 73 record -- THE W5 MEASUREMENT SESSION (the first
+measurement session starting at/after 2026-10-29T00:00:00Z; this
+session started 2026-10-29T00:16Z). MEASUREMENT slice -- NEW
+HARDWARE: the W5 window ran on aiueos-6600hs Intel BMG G31 ANV at
+2026-10-29T00:34:51Z..00:35:34Z (78 fresh processes; c2 3 + hi 36
++ tw 36 + c8 3; byte-pinned builds 4/4). W5 is DEFINED as this
+session's window (s57 protocol section 0: the window whose 78
+fresh processes run in the first measurement session at or after
+2026-10-29T00:00:00Z -- window tag s73). UTC day 2026-10-29.
+
+STATUS AT TICK CLOSE (runtime budget exhausted mid-session --
+NAMED, NOT HIDDEN; STARTED, NOT FINISHED):
+
+1. DONE AND VERIFIED (real tool output, this session):
+   (a) PRE-GO CUSTODY (host-verify-s73.txt): local custody inputs
+       match the s67 record (instrument a5e539f0..., census
+       eefba52e..., cases-s51-a.txt c568e32e...); fresh manifest
+       cases-s73-a.txt cell lines digest 873025d650afae23...
+       reproduces the chain prefix, diff EMPTY vs s51 and s36
+       cell lines; host workdir ~/anv-b3w5xdayrep-20261029 staged
+       this session (probed NO-WORKDIR at 00:29:44Z; corpus
+       cp -a from s51's verified workdir 00:33:43Z, scp of
+       instrument/manifest/census 00:33:56Z); local-vs-host 3/3
+       MATCH; corpus sha256sum -c 16/16 OK (corpus_rc=0).
+       GO stamp 2026-10-29T00:34:10Z precedes the builds and ALL
+       runs.
+   (b) BUILDS (build-census-s73.txt): 4/4 rc=0, stderr 0 bytes,
+       digests BYTE-IDENTICAL to the four frozen s51 build pins
+       (c2 e5ed903e..., c8 480925e5..., hi a6c31b6c...,
+       tw bb901eb5...) -- pins 4/4.
+   (c) RUNS (run-window.txt + 78 run-*.txt / 78 .stderr.txt,
+       verbatim): 78/78 runs rc=0, stderr_bytes=0, samples=450,
+       verifies=24, cells=24, tail='# done cells=24'; frozen
+       section-6 run order verbatim; host dates taken immediately
+       before each invocation.
+   (d) ANALYSIS RUN 1: analysis-s73.py (byte-copy of the s69
+       pre-build analysis-prego.py, digest 862b9cc3..., adopted
+       under the frozen filename) ran w5 mode to completion
+       (6m33s, rc=0, stderr 0 bytes) and wrote
+       publication-s73.txt (12,585 bytes). Its computed values:
+       T7 = (a) CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES -- MAD
+       axis 2*L_s36 143 (71.5) -> 2*L_s73 98 (49.0), C_obs 22.5,
+       count 0/20,001, p 0.000050; IQR axis 2*L_s36 303 (151.5)
+       -> 2*L_s73 223 (111.5), C_obs 40.0, count 3/20,001,
+       p 0.000200; both axes (a) REPLICATED-CONTINUED. C1 (a)
+       (c2 FLOOR; c8 32,709 vs 32,915, 0.63%); prior block-min
+       vectors 8/8 EXACT; prior anchor rows EXACT; W5 anchor
+       (hi block A, the frozen L12 bar candidate): median 1131,
+       min..max 998..1442, class INTERMEDIATE/MIXED.
+
+2. NOT DONE THIS SESSION (carry-forward to the next session;
+   until they land, the T7 values above are ONE RUN of the
+   validated generator -- the protocol's "run twice, diff exit 0"
+   determinism claim is UNVERIFIED for the w5 mode, and the
+   independent derivation-census second parser does not exist):
+   (a) analysis-s73.py run 2 + byte-identity diff (run 1's
+       publication bytes are in the worktree);
+   (b) derivation-census-s<NN>.py (the five-window independent
+       second parser) -- NOT BUILT (the s71 census is the
+       four-window compat twin only) -- and its double-run;
+   (c) the standing gates: gpu_regime_classify.py --self-test,
+       the scoped GPU gate twice, FULL run-tests.cljk, the
+       settle-bar evaluator --self-test + ledger eval twice,
+       find docs/evidence/gpu -name '*.sh';
+   (d) THE BAR: no ledger line appended yet (the bar candidate is
+       computed: hi block A median 1131 min 998 class
+       INTERMEDIATE/MIXED; the line belongs to day=2026-10-29
+       session=s73 and would be the day's first qualifying
+       reading, COUNTED 2/4 -- but it is appended only alongside
+       the verified gates and the evaluator verdict, NEVER by
+       hand);
+   (e) commit + push to the chain branch, the ADR-0355 dated
+       note, and the Linear comment -- the chain/Linear landing
+       happens in the carry-forward session (blocker-first check
+       before push).
+
+3. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets
+   defaults remain provisional (:measured? false); NO vendor
+   optimization exists for Intel.
+
+Evidence: docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (protocol.txt
++ freeze-record-s57.txt (s57), this record, host-verify-s73.txt,
+build-census-s73.txt, cases-s73-a.txt, run-window.txt, the 78+78
+run logs, analysis-s73.py, publication-s73.txt (run 1)). (JUN-55,
+JUN-59; Linear tracking JUN-499 -- Linear 未記録 this session)

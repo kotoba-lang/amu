@@ -1,0 +1,39 @@
+== host-digests (post-pull byte-identity verification, session 147) ==
+== the 108 logs pulled via scp; the canonical aggregate is computed ==
+== over the sorted 108 this-cut log names (run-<tag>-r<NN>.txt and   ==
+== run-<tag>-r<NN>.stderr.txt, NN zero-padded; c2/c8 r01..r03,      ==
+== mid r01..r48) on both sides, each name verified to exist         ==
+== host-side first (missing=0). ==
+
+NAMED, NOT HIDDEN -- one driver-capture defect, reaching no
+evidence value:
+1. the first host-aggregate attempt piped the local name list into
+   the remote command over ssh stdin and redirected the existence
+   loop from /dev/stdin, which the remote shell refused ('/bin/bash:
+   line 1: /dev/stdin: Permission denied'): the existence check ran
+   vacuous and the aggregate hashed the sorted NAME LIST TEXT
+   (c5e78f4e0f0f067c8e047f19b24fb8f6d7421dbe887a2b43126f599b01de7328),
+   NOT the logs. That value is INVALID and is NEVER used as
+   evidence. The check and aggregate were re-run against a host-side
+   copy of the name list (~/anv-b3bisect14-20261031/s147-names.txt);
+   every value below is from that re-run. The name list itself was
+   generated correctly at the first attempt (printf '%02d'
+   zero-padded, 108 names -- the s139 seq -w defect did not recur).
+2. unlike s139 (whose copied shaders/ carried 48 stale run-hi-* logs
+   of an earlier cut in its raw aggregate), this cut's shaders/ was
+   copied as exactly the 16 expected-corpus names; every name in
+   every aggregate below is this cut's.
+
+== live captures, verbatim: ==
+== host-side (re-run binary digest census, post-run-window) ==
+e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489  anv-bb-c2
+cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589  anv-bb-mid
+480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807  anv-bb-c8
+== this-cut name set verification ==
+108 names (printf %02d zero-padded), host-side existence check: missing=0
+== host-side canonical aggregate over the exact 108 names (sorted) ==
+8c8ef86446f8f11280c4ac020d2ff7aa1cb25c76af307777e90178c9e156b69c  -
+== local side (the pulled tree, same 108 sorted names) ==
+108 (ls run-* | wc -l)
+8c8ef86446f8f11280c4ac020d2ff7aa1cb25c76af307777e90178c9e156b69c  -
+host == local -> MATCH (108/108 logs byte-identical)

@@ -1,0 +1,98 @@
+JUN-59 session 77 -- the T14 derivation census
+(derivation-census-s77.py, the INDEPENDENT second parser for
+publication-s77.txt; the s64-frozen protocol.txt section 6
+implementation paths). Two-way rows: published =
+publication-s77.txt parsed find/split from the committed bytes,
+census = recomputed here from the 390 committed run logs of the
+five fixed directories; NO in-memory state of analysis-s77.py is
+consulted. Split-based parsing, no re module; observed block
+estimators are pure-Python sorted() order statistics over the
+explicitly pooled 75 (sorted(pooled75)[37], the exact 38th
+order statistic) cross-checked in-loop against the np.partition
+kth=37 path; the resampling's estimators use the np.partition
+kth=37 path, NOT np.median (analysis-s77.py used np.median);
+the repartition resampling and the RNG call order are
+re-implemented: ONE random.Random(2026102814), 20000 trials, one
+fresh-list rng.shuffle of list(range(36)) per trial; the primary
+W*, the D1 per-cell marginals and the D2 max-T from the SAME
+per-trial repartition.
+
+row 01: sec1 s36 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 02: sec1 s38 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 03: sec1 s39 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 04: sec1 s51 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 05: sec1 s73 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 06: sec1 named cell position: published [ok-map cell 10 (raw idx 14 == (sum,256,S=32)): True] | census [ok-map cell 10 (raw idx 14 == (sum,256,S=32)): True] | match True
+row 07: sec2 c2 class: published [FLOOR] | census [FLOOR] | match True
+row 08: sec2 c8 pooled median: published [32709] | census [32709] | match True
+row 09: sec2 C1 branch: published [(a) both controls replicate] | census [(a) both controls replicate] | match True
+row 10: sec3 s36 X (hi): published [991 989 981 998 993 985 984 997 994 994 980 982] | census [991 989 981 998 993 985 984 997 994 994 980 982] | match True
+row 11: sec3 s36 Y (tw): published [988 985 994 993 994 995 992 984 987 984 993 981] | census [988 985 994 993 994 995 992 984 987 984 993 981] | match True
+row 12: sec3 s36 reproduction EXACT: published [True] | census [True] | match True
+row 13: sec3 s38 X (hi): published [992 988 984 1007 985 984 986 983 992 991 982 997] | census [992 988 984 1007 985 984 986 983 992 991 982 997] | match True
+row 14: sec3 s38 Y (tw): published [988 987 980 980 991 994 991 994 988 991 1001 992] | census [988 987 980 980 991 994 991 994 988 991 1001 992] | match True
+row 15: sec3 s38 reproduction EXACT: published [True] | census [True] | match True
+row 16: sec3 s39 X (hi): published [986 991 984 985 989 989 986 990 995 986 987 981] | census [986 991 984 985 989 989 986 990 995 986 987 981] | match True
+row 17: sec3 s39 Y (tw): published [988 989 987 990 990 988 991 983 985 988 983 986] | census [988 989 987 990 990 988 991 983 985 988 983 986] | match True
+row 18: sec3 s39 reproduction EXACT: published [True] | census [True] | match True
+row 19: sec3 s51 X (hi): published [988 986 1000 986 989 983 995 983 994 991 984 985] | census [988 986 1000 986 989 983 995 983 994 991 984 985] | match True
+row 20: sec3 s51 Y (tw): published [980 975 991 979 986 986 992 991 988 993 995 996] | census [980 975 991 979 986 986 992 991 988 993 995 996] | match True
+row 21: sec3 s51 reproduction EXACT: published [True] | census [True] | match True
+row 22: sec3 s73 X (hi): published [998 978 985 983 982 980 981 982 974 988 977 988] | census [998 978 985 983 982 980 981 982 974 988 977 988] | match True
+row 23: sec3 s73 Y (tw): published [992 984 982 985 993 972 979 990 978 982 987 987] | census [992 984 982 985 993 972 979 990 978 982 987 987] | match True
+row 24: sec3 prior vector reproduction (8/8): published [True] | census [True] | match True
+row 25: sec3b s36 anchor: published [1142 991..1438 True] | census [1142 991..1438 True] | match True
+row 26: sec3b s38 anchor: published [1132 992..1443 True] | census [1132 992..1443 True] | match True
+row 27: sec3b s39 anchor: published [1146 986..1432 True] | census [1146 986..1432 True] | match True
+row 28: sec3b s51 anchor: published [1137 988..1430 True] | census [1137 988..1430 True] | match True
+row 29: sec3b prior anchor reproduction: published [True] | census [True] | match True
+row 30: sec4 T14 V vector: published [1102 1090 1120 1093 1092 1143 1117 1109 1131 1094 1162 1115] | census [1102 1090 1120 1093 1092 1143 1117 1109 1131 1094 1162 1115] | match True
+row 31: sec4 T14 W_obs: published [72] | census [72] | match True
+row 32: sec4 T14 count/p: published [3019 / 20001; p = 0.150992] | census [3019 / 20001; p = 0.150992] | match True
+row 33: sec4 T14 null median: published [61.0] | census [61.0] | match True
+row 34: sec4 T14 letter: published [(b) NOT-REPLICATED [ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT]] | census [(b) NOT-REPLICATED [ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT]] | match True
+row 35: sec5 D1 (sum,128,S=16): published [21 7872 20001 0.393630] | census [21 7872 20001 0.393630] | match True
+row 36: sec5 D1 (sum,128,S=32): published [44 5613 20001 0.280686] | census [44 5613 20001 0.280686] | match True
+row 37: sec5 D1 (sum,128,S=default): published [43 8506 20001 0.425329] | census [43 8506 20001 0.425329] | match True
+row 38: sec5 D1 (max,128,S=16): published [24 3524 20001 0.176241] | census [24 3524 20001 0.176241] | match True
+row 39: sec5 D1 (max,128,S=32): published [40 2689 20001 0.134493] | census [40 2689 20001 0.134493] | match True
+row 40: sec5 D1 (max,128,S=default): published [33 11807 20001 0.590370] | census [33 11807 20001 0.590370] | match True
+row 41: sec5 D1 (min,128,S=16): published [20 4998 20001 0.249938] | census [20 4998 20001 0.249938] | match True
+row 42: sec5 D1 (min,128,S=32): published [37 4577 20001 0.228889] | census [37 4577 20001 0.228889] | match True
+row 43: sec5 D1 (min,128,S=default): published [28 16988 20001 0.849408] | census [28 16988 20001 0.849408] | match True
+row 44: sec5 D1 (sum,256,S=16): published [27 11571 20001 0.578571] | census [27 11571 20001 0.578571] | match True
+row 45: sec5 D1 (sum,256,S=32): published [72 3019 20001 0.150992] | census [72 3019 20001 0.150992] | match True
+row 46: sec5 D1 (sum,256,S=default): published [72 2365 20001 0.118294] | census [72 2365 20001 0.118294] | match True
+row 47: sec5 D1 (max,256,S=16): published [27 14606 20001 0.730313] | census [27 14606 20001 0.730313] | match True
+row 48: sec5 D1 (max,256,S=32): published [82 2288 20001 0.114444] | census [82 2288 20001 0.114444] | match True
+row 49: sec5 D1 (max,256,S=default): published [44 15579 20001 0.778961] | census [44 15579 20001 0.778961] | match True
+row 50: sec5 D1 (min,256,S=16): published [27 9325 20001 0.466277] | census [27 9325 20001 0.466277] | match True
+row 51: sec5 D1 (min,256,S=32): published [46 14816 20001 0.740813] | census [46 14816 20001 0.740813] | match True
+row 52: sec5 D1 (min,256,S=default): published [60 4266 20001 0.213339] | census [60 4266 20001 0.213339] | match True
+row 53: sec6 D2 max-T: published [82 (max,256,S=32) 3097 0.154892] | census [82 (max,256,S=32) 3097 0.154892] | match True
+row 54: sec7 D3 W: published [72 1090..1162] | census [72 1090..1162] | match True
+row 55: sec7 D3 marginal p: published [0.150992] | census [0.150992] | match True
+row 56: sec8 verdict T14: published [(b) NOT-REPLICATED [ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT]] | census [(b) NOT-REPLICATED [ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT]] | match True
+row 57: sec8 verdict summary: published [72 3019 0.150992 61.0] | census [72 3019 0.150992 61.0] | match True
+
+TOTAL: 57 rows, 0 mismatched
+
+SECTION B -- observed-estimator cross-check (the in-loop dual
+computation of every observed block pooled median):
+block-median cross-check: 216 comparisons
+block-median cross-check mismatches (pure-Python sorted()[37] vs np.partition kth=37): want [0] got [0] | match True
+
+TOTAL: 1 checks, 0 mismatched
+
+SECTION C -- evidence hygiene:
+evidence .sh count: want [0] got [0] | match True
+W5 run-window run count (host-date lines): want [78] got [78] | match True
+W5 run-window UTC day: want [2026-10-29] got [2026-10-29] | match True
+ledger reading-line count (this row writes NO line -- protocol section 5): want [9] got [9] | match True
+ledger session=s77 line count: want [0] got [0] | match True
+
+TOTAL: 5 checks, 0 mismatched
+
+DETERMINISM: this generator run twice yields byte-identical
+output (double-run status named in the s77 record; RNG seeded,
+no set iteration).

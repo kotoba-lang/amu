@@ -1,0 +1,99 @@
+prepool-shape-s235 identity (prepool-shape-s235.py -> the s235
+official pair).  This file is the honesty ledger for the s235 slice:
+what is evidence, what is not, and every mark left along the way.
+
+THE OFFICIAL PAIR (the evidence):
+  prepool-shape-s235-run1.txt 615,483 bytes sha256
+  ffa57bbcfa57f78a41357fa9960d0a29f6b120e050f42ff9277b9a0fe5b242fa
+  / .err 0 bytes sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  prepool-shape-s235-run2.txt 615,483 bytes sha256
+  ffa57bbcfa57f78a41357fa9960d0a29f6b120e050f42ff9277b9a0fe5b242fa
+  / .err 0 bytes sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  run1 == run2 BYTE-IDENTICAL (cmp exit 0 on stdout pair and stderr
+  pair); both rc 0; tail:
+  '# prepool-shape s235 (prepool-shape-s235.py): 7549 ok / 0 failed'
+  prepool-shape-s235.py sha256
+  b13a5fba20c3a704908d1175cc098c44ef0af8c4cdf05c75529794cee1d0534d
+
+NAMED, NOT HIDDEN -- every non-official run and every pre-run fix,
+kept visible.  NONE of them is evidence; every fix touches the
+VERIFIER or the REPORT only -- no committed capture, publication or
+record byte changed, no parsed reading value changed.
+
+(0) PRE-RUN COMPLETION (the slice was STARTED in the prior tick: the
+    script existed unrun with two unfinished marks; this tick
+    completed it BEFORE any run of it existed):
+    (0.a) a dead placeholder pin line printed 'bytes=' empty around a
+    never-evaluated, forward-declared read_bytes (the prior tick's
+    unfinished mark) -- completed to a real decompressed-bytes pin,
+    read_bytes hoisted above its use.
+    (0.b) the s234-report share-row cross-check anchor '^    ' did
+    not match the committed row FORM (the rows carry 5 leading
+    spaces) -- found by a scratch probe run against the committed
+    s234 report bytes BEFORE any run (probe output in the tick
+    transcript; not committed), fixed to '^\s+'.  Without it every
+    's234 report share row present' check would have been a false
+    FAIL.
+    (0.c) REPORT WORDING ONLY (criterion untouched): a pre-run probe
+    of the knob-set universe showed it admits 15 windows at arms
+    other than the record's c2 reading arm -- the census/answer
+    paragraphs now name the family split and scope the answer to
+    family c2 (the residual's windows proper); other arms are
+    SUPPLEMENTARY rows.
+
+(i) prepool-shape-s235-devrun.txt/.err (rc 1; 575,479 / 521 bytes;
+    180 FAIL rows; crashed before the summary tail): FOUR defect
+    families, all VERIFIER-side:
+    (i.a) the s231 (ii.a) precedent shape: the reading-cell pool was
+    cumulative across a window's runs but compared to `rounds`
+    INSIDE the per-run loop -- 134 false FAILs (25/50/75 and
+    6400/12800/19200 against rounds).  Fixed: per-file counts, one
+    pooled extension per window.
+    (i.b) group_pools was extended INSIDE the per-run loop with the
+    cumulative pool -- every run's samples counted 1x..kx; the nine
+    reference pools were 38,400, not 19,200.  That pollution is
+    exactly why 'N=3R=19,200 pooled', 're-derived shares == s234
+    report row' (all nine) and the W_in/W_out/group-pooled binds
+    failed against the committed s234 report.  Fixed: extend once
+    per window after the run loop; after the fix all nine re-derive
+    and bind EXACTLY to the committed s234 rows (the cross-checks did
+    their job).
+    (i.c) BYTES-FORCED DEFINITIONAL CORRECTION (named in the
+    docstring before any classification number existed -- devrun
+    crashed BEFORE printing a single classification row): 8 windows
+    / 24 runs (the f1b2/f3b2/f8b2/f8vc/f8 kernel-variant arms) carry
+    the (sum,128,16) key ONLY under spv variants
+    subgroup-reduce-w128-sum.emitted.iter1/iter3/iter8.spv -- the
+    exact reading cell does not exist in their committed cell maps.
+    These runs are NAMED in the census and EXCLUDED from the shape
+    scope (their samples never enter any pool); a map with NO
+    (sum,128,16) key at all remains a CHECK failure, and
+    exact/variant status must be uniform within a window (a check).
+    (i.d) ZeroDivisionError in shares() on the excluded windows'
+    empty pools (the crash that ended devrun) -- structurally
+    impossible after (i.c): group_pools carries only non-empty pools.
+
+(ii) prepool-shape-s235-devrun2.txt/.err (rc 0, '7549 ok / 0
+    failed', stderr 0 bytes): the clean pre-pair confirmation run,
+    kept visible (the s234 devrun3 precedent shape).  BYTE-IDENTICAL
+    to both official pair legs (sha256 ffa57bbc...).
+
+dev capture sha256:
+  devrun  451181685c06b0b1f3015543f8af89a449931fc9a6a90320b3235fdb63ae9dfb / err 0f04eff6b98a312d270529191c05cd714f8f846611277928eaefd75e0b0b5e13
+  devrun2 ffa57bbcfa57f78a41357fa9960d0a29f6b120e050f42ff9277b9a0fe5b242fa / err e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+Pyright: clean after the fixes (every patch linted ok; none of the
+known s199/s209 regex-match false positives is present in this
+file's final form).
+
+Gates (e)/(f) LIVE with s235 captures: gate-s235-nosh.txt 0 bytes
+(find docs/evidence/gpu -name '*.sh' -> 0, rc 0);
+gate-s235-ledger.txt 0 bytes (git diff --exit-code --
+docs/evidence/gpu/settle-bar-ledger.txt rc 0).
+
+BLOCKER-FIRST immediately before the push
+(prlist-s235-prepush.json, committed with this slice): 33 open
+kotoba-lang/amu PRs, 0 hermes/ heads (python headRefName startswith
+filter); chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4 -- the one this push advances;
+MERGEABLE, no origin/main merge needed).
