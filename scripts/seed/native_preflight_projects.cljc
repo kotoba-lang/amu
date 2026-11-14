@@ -29,7 +29,7 @@
   (let [compiler  (str compiler)
         temporary (path temporary)
         project   (str (.joinpath temporary "local-native-project"))]
-    (run-process [python (root-file "scripts/seed/check-x86-project-native.py")
+    (run-process ["basilisp" "run" "-p" (root-file "scripts/seed") (root-file "scripts/seed/check-x86-project-native.cljc") "--"
                   "--compiler" compiler
                   "--output" project])
     (let [image (-> (path (root-file "native-product.json")) .read-text json/loads (get "image") (get "sha256"))]
