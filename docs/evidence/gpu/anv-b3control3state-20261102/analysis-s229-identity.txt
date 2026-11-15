@@ -1,0 +1,74 @@
+== analysis-s229 run-twice byte-identity (session 229) ==
+script analysis-s229.py sha256
+8893edfbe33792267f296d4e15b5332d2087748f840e33361778f73f1e43a580
+(31,551 bytes)
+publication-s229.txt 11,026 bytes sha256
+040ee2f60b601d9fb77d3ed044856d93549fa4bb0d10d12a8564ec6c9d3eb96d
+run1: rc 0, stdout 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,
+stderr 0 bytes same sha256; publication copy publication-s229-run1.txt
+sha256 040ee2f60b601d9fb77d3ed044856d93549fa4bb0d10d12a8564ec6c9d3eb96d
+run2: rc 0, stdout 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,
+stderr 0 bytes same sha256; publication copy publication-s229-run2.txt
+sha256 040ee2f60b601d9fb77d3ed044856d93549fa4bb0d10d12a8564ec6c9d3eb96d
+cmp exit 0 x3 (publication, stdout, stderr byte-identical). The script
+prints nothing to stdout (P writes the publication only) -- the stdout
+pair is the empty-file sha, byte-identical.
+
+NAMED, NOT HIDDEN -- ONE publication-wording defect and ONE malformed
+cross-check attempt, both visible:
+(i) the dev run (analysis-s229-devrun.txt/.err, rc 0, both 0 bytes --
+a SINGLE run, NOT a pair leg, the s209 (iii) precedent shape; its
+publication copy kept visible as publication-s229-draft1-devrun.txt,
+11,010 bytes sha256
+b9705b7b9e8da8810d257a0690760e3bc6e325b4d6bb08079b86a3b09846dd6a):
+the derivation-agreement row mis-printed its two booleans
+concatenated ("gives False == True agreement with the frozen band-only
+boolean" -- the record-derivation boolean value and the agreement
+value run together); FIXED by patch before the official pair (the row
+now reads "gives <record-derivation bool>; agreement with the frozen
+band-only boolean: <agreement bool>"); publication CONTENT rows (the
+per-reading pooled medians, the letters, the integrity census, the
+sequence/B_act/I_act rows and the verdict) are UNCHANGED by the fix
+(wording only); the official run-twice pair was taken FRESH after the
+fix (the pair above).
+(ii) the FIRST independent-median cross-check attempt ran as a
+malformed shell pipeline (unquoted `wc -l` word-splitting broke the
+awk -v n= argument; the printed "independent_median=28" was the
+sorted MINIMUM and the whole sorted list leaked to stdout) -- NOT
+claimed, recorded only to keep the failed attempt visible; the
+corrected cross-check is the claim (below).
+
+INDEPENDENT CROSS-CHECK (scratch, NOT part of the official pair; the
+script lives outside the evidence tree and is NOT committed):
+scratch/indep-median-s229.py recomputed all 8 pooled medians + MADs
+at cell idx=1 (sum,128,S=16) by a different code path (explicit sort,
+middle-two convention = statistics.median's even-N convention) from
+the 24 committed gzip logs: rd1 c2 N=19,200 mid=30,30 median=30.0
+mad=0.0; rd2 c2 same; rd3 c2 same; rd4 c2 mid=30,30 median=30.0
+mad=0.0; rd1 c8 mid=32872,32872 median=32872.0 mad=203.0; rd2 c8
+32862.0/192.0; rd3 c8 32795.0/195.0; rd4 c8 32867.0/221.0 -- EXACTLY
+the publication's section 2 rows (rd4 c2 min=29 max=34; all other c2
+runs min=28; c8 runs min 31,588..31,845, max 53,254..54,903).
+
+VERDICT parsed from publication-s229.txt (never transcribed):
+"L1..L4 = (b) / (b) / (b) / (b)"; "sequence identical to the record:
+False"; "B_act ... : 1"; "act block shape: (b,b,b,b)"; "I_act ...
+1"; "the record's block reading: (b) | (a,a) | (b) (B_record = 3)";
+"s220 2(d) row: B_act = 1 in {1, 2, 4} -- differs from the record at
+count level."; "ACT VERDICT: VALID" (NAMED: the frozen protocol fixes
+the INVALID verdict literal only (s219 2(c)); VALID is this
+analysis's report label, not a frozen literal). Per-reading pooled
+medians (MEASURED, computed from the s225 hardware runs on
+aiueos-6600hs): c2 m 30 / 30 / 30 / 30 (mad 0, h 0.0000); c8 m
+32872 / 32862 / 32795 / 32867 (h 5.3356 / 5.0465 / 5.1254 / 5.8087),
+all four c8 in band (-0.13% / -0.16% / -0.36% / -0.15%); integrity
+24/24 clean; VERIFY mismatches 0. The act confronts the row
+question: the present instrument reads ONE state-BLOCK of the (b)
+state-IDENTITY at four consecutive readings (the s218 ALL-FOUR-(b)
+shape); the committed "current control state" (a) does NOT reproduce;
+prong B confronts only ACROSS the full record (the s218 2(b)
+constancy/identity separation); the frozen name's structure does NOT
+reproduce at act scale (B_act = 1 vs B_record = 3).
+(JUN-55, JUN-59; Linear tracking JUN-499)

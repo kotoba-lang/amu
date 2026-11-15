@@ -1,0 +1,427 @@
+run-temporal-s241.py -- THE S216 CAUSE RESIDUAL'S RUN-LEVEL AND
+WITHIN-RUN TEMPORAL CONSTRAINT ON THE GPU_TICKS CHANNEL (amu-gpu
+s241; the s240 carry-forward's FIRST STANDING ROW -- the CAUSE of
+the sample-shape difference -- TAKEN AS ITS ROW under the s238
+precedent, as a CONSTRAINT row on the first instrument channel).
+
+THE FROZEN DECOMPOSITION CRITERION (fixed in the script BEFORE
+  any number):
+  UNIT: a RUN (6,400 reading-cell samples in round order) or a
+  BLOCK (K equal consecutive round blocks).
+  REFERENCES: R_a / R_b = pooled share vectors of the committed
+  (a) / (b) windows over the union support; re-derived and bound
+  to the committed s234 report rows before any temporal number.
+  CLASS: nearest reference by L1 of share vectors (percent over
+  the union support); tie -> UNDECIDED; NEAR-NEITHER flag
+  (report-only) iff min(D_a,D_b) > W_in (bound to the committed
+  s234 row).
+  CUTS: run-level + the frozen family K=8,16,32,64 (blocks of
+  800/400/200/100 rounds), every cut reported whatever it shows.
+  TRANSITION ROW: block-class sequence per run per K; T =
+  adjacent pairs differing (UNDECIDED differs from either
+  neighbour; two UNDECIDED neighbours do not count); CLASS-
+  UNIFORM iff T=0 and no UNDECIDED block.
+  CONSTRAINT SHAPE: class-uniform at every cut with every run's
+  class == its window's letter -> temporal locus AT RUN
+  GRANULARITY OR COARSER and the sub-run-switching variant of
+  EITHER cause candidate contradicted at 100-round granularity;
+  any other outcome reported with its counts.  CONSTRAINT row
+  only: the dichotomy (execution-time state vs instrument/
+  timestamp-quantization state) NOT DECIDED, CAUSE UNMEASURED.
+  PATTERN-LEVEL ONLY (s218 2(e)): NO p-value, NO test statistic,
+  NO probability claim.
+UNIVERSE: the s234 nine-window universe exactly -- 27 committed
+  c2 run logs at the reading cell (sum,128,S=16); pre-deep-
+  pooling windows, kernel-variant arms and supplementary arms
+  are OUTSIDE this scope.
+
+  ok    S241.A1 s27 census parse == pins (c2 31, band 31..32, c8 32915)
+
+1. THE RUN-LOG CENSUS (every sample RE-PARSED from committed
+   run-log bytes in ROUND ORDER; m = pooled sample median
+   gpu_ticks, MAD = sample median |x - m| -- the frozen s217/s218
+   statistic; the rows below are the s234 forms, re-derived):
+  ok    S241.A2 header identity across all 27 runs
+  ok    S241.A3 cell-map identity across all 27 runs
+  ok    S241.Bact-rd1-r01 run integrity clean + round order exact
+  ok    S241.Bact-rd1-r02 run integrity clean + round order exact
+  ok    S241.Bact-rd1-r03 run integrity clean + round order exact
+  ok    S241.Bact-rd2-r01 run integrity clean + round order exact
+  ok    S241.Bact-rd2-r02 run integrity clean + round order exact
+  ok    S241.Bact-rd2-r03 run integrity clean + round order exact
+  ok    S241.Bact-rd3-r01 run integrity clean + round order exact
+  ok    S241.Bact-rd3-r02 run integrity clean + round order exact
+  ok    S241.Bact-rd3-r03 run integrity clean + round order exact
+  ok    S241.Bact-rd4-r01 run integrity clean + round order exact
+  ok    S241.Bact-rd4-r02 run integrity clean + round order exact
+  ok    S241.Bact-rd4-r03 run integrity clean + round order exact
+  ok    S241.Bs158-r01 run integrity clean + round order exact
+  ok    S241.Bs158-r02 run integrity clean + round order exact
+  ok    S241.Bs158-r03 run integrity clean + round order exact
+  ok    S241.Bs169-r01 run integrity clean + round order exact
+  ok    S241.Bs169-r02 run integrity clean + round order exact
+  ok    S241.Bs169-r03 run integrity clean + round order exact
+  ok    S241.Bs185-r01 run integrity clean + round order exact
+  ok    S241.Bs185-r02 run integrity clean + round order exact
+  ok    S241.Bs185-r03 run integrity clean + round order exact
+  ok    S241.Bs197-r01 run integrity clean + round order exact
+  ok    S241.Bs197-r02 run integrity clean + round order exact
+  ok    S241.Bs197-r03 run integrity clean + round order exact
+  ok    S241.Bs209-r01 run integrity clean + round order exact
+  ok    S241.Bs209-r02 run integrity clean + round order exact
+  ok    S241.Bs209-r03 run integrity clean + round order exact
+   s158     sess=158 N=19200 m=31 mad=0  top3 31:51.4219%  32:43.6719%  33:3.8333%
+      run01 N=6400 m=31  top3 31:49.9688%  32:43.4688%  33:5.4062%
+      run02 N=6400 m=31  top3 31:53.6562%  32:41.9219%  33:3.8906%
+      run03 N=6400 m=31  top3 31:50.6406%  32:45.6250%  33:2.2031%
+   s169     sess=169 N=19200 m=30 mad=0  top3 30:65.5312%  29:28.5208%  31:4.7865%
+      run01 N=6400 m=30  top3 30:67.2656%  29:27.9844%  31:4.2188%
+      run02 N=6400 m=30  top3 30:64.2812%  29:28.4219%  31:5.5000%
+      run03 N=6400 m=30  top3 30:65.0469%  29:29.1562%  31:4.6406%
+   s185     sess=185 N=19200 m=31 mad=0  top3 31:51.1094%  32:41.3542%  33:5.5104%
+      run01 N=6400 m=31  top3 31:50.0938%  32:42.6562%  33:5.8906%
+      run02 N=6400 m=31  top3 31:52.2656%  32:39.4219%  33:5.7500%
+      run03 N=6400 m=31  top3 31:50.9688%  32:41.9844%  33:4.8906%
+   s197     sess=197 N=19200 m=31 mad=0  top3 31:54.5104%  32:43.2917%  33:1.5885%
+      run01 N=6400 m=31  top3 31:53.7031%  32:44.5156%  33:1.0781%
+      run02 N=6400 m=31  top3 31:54.8125%  32:42.9844%  33:1.5156%
+      run03 N=6400 m=31  top3 31:55.0156%  32:42.3750%  33:2.1719%
+   s209     sess=209 N=19200 m=30 mad=0  top3 30:68.0052%  29:25.3698%  31:5.5365%
+      run01 N=6400 m=30  top3 30:68.3750%  29:26.6719%  31:3.1719%
+      run02 N=6400 m=30  top3 30:67.5000%  29:24.8594%  31:6.8750%
+      run03 N=6400 m=30  top3 30:68.1406%  29:24.5781%  31:6.5625%
+   act-rd1  sess=229 N=19200 m=30 mad=0  top3 30:65.8490%  29:26.6771%  31:5.8802%
+      run01 N=6400 m=30  top3 30:63.5469%  29:28.1094%  31:6.1094%
+      run02 N=6400 m=30  top3 30:64.9531%  29:26.4844%  31:6.7031%
+      run03 N=6400 m=30  top3 30:69.0469%  29:25.4375%  31:4.8281%
+   act-rd2  sess=229 N=19200 m=30 mad=0  top3 30:66.6823%  29:27.1823%  31:5.5833%
+      run01 N=6400 m=30  top3 30:66.3750%  29:28.1406%  31:4.6562%
+      run02 N=6400 m=30  top3 30:66.5156%  29:27.6094%  31:5.5000%
+      run03 N=6400 m=30  top3 30:67.1562%  29:25.7969%  31:6.5938%
+   act-rd3  sess=229 N=19200 m=30 mad=0  top3 30:63.2396%  29:27.7708%  31:6.9479%
+      run01 N=6400 m=30  top3 30:63.0000%  29:25.5938%  31:8.9531%
+      run02 N=6400 m=30  top3 30:60.1250%  29:30.9531%  31:7.0156%
+      run03 N=6400 m=30  top3 30:66.5938%  29:26.7656%  31:4.8750%
+   act-rd4  sess=229 N=19200 m=30 mad=0  top3 30:61.2135%  29:28.4896%  31:8.1615%
+      run01 N=6400 m=30  top3 30:66.0312%  29:23.8594%  31:8.6406%
+      run02 N=6400 m=30  top3 30:58.6875%  29:31.7969%  31:7.2969%
+      run03 N=6400 m=30  top3 30:58.9219%  29:29.8125%  31:8.5469%
+
+2. BINDS TO THE COMMITTED S234 REPORT ROWS (identity-shape-
+   s234-run1.txt; every re-derived row must appear there BYTE-
+   FORMATTED -- any disagreement fails the run; the bind runs
+   BEFORE any temporal number is reported):
+  ok    S241.C0 committed identity-shape-s234-run1.txt present and carries its own tail
+  ok    S241.Es158 census row == committed s234 row
+  ok    S241.Fs158-r01 per-run row == committed s234 row
+  ok    S241.Fs158-r02 per-run row == committed s234 row
+  ok    S241.Fs158-r03 per-run row == committed s234 row
+  ok    S241.Es169 census row == committed s234 row
+  ok    S241.Fs169-r01 per-run row == committed s234 row
+  ok    S241.Fs169-r02 per-run row == committed s234 row
+  ok    S241.Fs169-r03 per-run row == committed s234 row
+  ok    S241.Es185 census row == committed s234 row
+  ok    S241.Fs185-r01 per-run row == committed s234 row
+  ok    S241.Fs185-r02 per-run row == committed s234 row
+  ok    S241.Fs185-r03 per-run row == committed s234 row
+  ok    S241.Es197 census row == committed s234 row
+  ok    S241.Fs197-r01 per-run row == committed s234 row
+  ok    S241.Fs197-r02 per-run row == committed s234 row
+  ok    S241.Fs197-r03 per-run row == committed s234 row
+  ok    S241.Es209 census row == committed s234 row
+  ok    S241.Fs209-r01 per-run row == committed s234 row
+  ok    S241.Fs209-r02 per-run row == committed s234 row
+  ok    S241.Fs209-r03 per-run row == committed s234 row
+  ok    S241.Eact-rd1 census row == committed s234 row
+  ok    S241.Fact-rd1-r01 per-run row == committed s234 row
+  ok    S241.Fact-rd1-r02 per-run row == committed s234 row
+  ok    S241.Fact-rd1-r03 per-run row == committed s234 row
+  ok    S241.Eact-rd2 census row == committed s234 row
+  ok    S241.Fact-rd2-r01 per-run row == committed s234 row
+  ok    S241.Fact-rd2-r02 per-run row == committed s234 row
+  ok    S241.Fact-rd2-r03 per-run row == committed s234 row
+  ok    S241.Eact-rd3 census row == committed s234 row
+  ok    S241.Fact-rd3-r01 per-run row == committed s234 row
+  ok    S241.Fact-rd3-r02 per-run row == committed s234 row
+  ok    S241.Fact-rd3-r03 per-run row == committed s234 row
+  ok    S241.Eact-rd4 census row == committed s234 row
+  ok    S241.Fact-rd4-r01 per-run row == committed s234 row
+  ok    S241.Fact-rd4-r02 per-run row == committed s234 row
+  ok    S241.Fact-rd4-r03 per-run row == committed s234 row
+  ok    S241.G0 union-support row == committed s234 row
+  ok    S241.Gs158 share row == committed s234 row
+  ok    S241.Gs169 share row == committed s234 row
+  ok    S241.Gs185 share row == committed s234 row
+  ok    S241.Gs197 share row == committed s234 row
+  ok    S241.Gs209 share row == committed s234 row
+  ok    S241.Gact-rd1 share row == committed s234 row
+  ok    S241.Gact-rd2 share row == committed s234 row
+  ok    S241.Gact-rd3 share row == committed s234 row
+  ok    S241.Gact-rd4 share row == committed s234 row
+  ok    S241.G10 letter-groups header row == committed s234 row
+  ok    S241.G11a letter-group (a) row == committed s234 row
+  ok    S241.G12a pooled group (a) row == committed s234 row
+  ok    S241.G11b letter-group (b) row == committed s234 row
+  ok    S241.G12b pooled group (b) row == committed s234 row
+  ok    S241.H1 pair census counts (within-a 3, within-b 15, between 18)
+  ok    S241.Is158-s185 pair row == committed s234 row
+  ok    S241.Is158-s197 pair row == committed s234 row
+  ok    S241.Is185-s197 pair row == committed s234 row
+  ok    S241.Is169-s209 pair row == committed s234 row
+  ok    S241.Is169-act-rd1 pair row == committed s234 row
+  ok    S241.Is169-act-rd2 pair row == committed s234 row
+  ok    S241.Is169-act-rd3 pair row == committed s234 row
+  ok    S241.Is169-act-rd4 pair row == committed s234 row
+  ok    S241.Is209-act-rd1 pair row == committed s234 row
+  ok    S241.Is209-act-rd2 pair row == committed s234 row
+  ok    S241.Is209-act-rd3 pair row == committed s234 row
+  ok    S241.Is209-act-rd4 pair row == committed s234 row
+  ok    S241.Iact-rd1-act-rd2 pair row == committed s234 row
+  ok    S241.Iact-rd1-act-rd3 pair row == committed s234 row
+  ok    S241.Iact-rd1-act-rd4 pair row == committed s234 row
+  ok    S241.Iact-rd2-act-rd3 pair row == committed s234 row
+  ok    S241.Iact-rd2-act-rd4 pair row == committed s234 row
+  ok    S241.Iact-rd3-act-rd4 pair row == committed s234 row
+  ok    S241.Is158-s169 pair row == committed s234 row
+  ok    S241.Is158-s209 pair row == committed s234 row
+  ok    S241.Is158-act-rd1 pair row == committed s234 row
+  ok    S241.Is158-act-rd2 pair row == committed s234 row
+  ok    S241.Is158-act-rd3 pair row == committed s234 row
+  ok    S241.Is158-act-rd4 pair row == committed s234 row
+  ok    S241.Is169-s185 pair row == committed s234 row
+  ok    S241.Is169-s197 pair row == committed s234 row
+  ok    S241.Is185-s209 pair row == committed s234 row
+  ok    S241.Is185-act-rd1 pair row == committed s234 row
+  ok    S241.Is185-act-rd2 pair row == committed s234 row
+  ok    S241.Is185-act-rd3 pair row == committed s234 row
+  ok    S241.Is185-act-rd4 pair row == committed s234 row
+  ok    S241.Is197-s209 pair row == committed s234 row
+  ok    S241.Is197-act-rd1 pair row == committed s234 row
+  ok    S241.Is197-act-rd2 pair row == committed s234 row
+  ok    S241.Is197-act-rd3 pair row == committed s234 row
+  ok    S241.Is197-act-rd4 pair row == committed s234 row
+  ok    S241.J1 W_in row == committed s234 row
+  ok    S241.J2 W_out row == committed s234 row
+  ok    S241.J3 verdict row == committed s234 row
+
+3. THE RUN-LEVEL CLASSIFICATION (frozen nearest-reference rule;
+   R_a / R_b and W_in bound to the committed s234 rows above;
+   D_a/D_b in pct points over the union support; NEAR-NEITHER
+   (report-only) iff min(D_a,D_b) > W_in 13.6458):
+   R_a (bound) = 30:0.3212  31:52.3472  32:42.7726  33:3.6441  34:0.8889  35:0.0087  36:0.0069  39:0.0035  40:0.0017  41:0.0017  42:0.0017  43:0.0017
+   R_b (bound) = 28:0.0052  29:27.3351  30:65.0868  31:6.1493  32:1.4054  33:0.0078  34:0.0035  35:0.0017  39:0.0009  41:0.0017  43:0.0009  44:0.0009  48:0.0009
+     s158     run01 N=6400 m=31  D_a=5.0174 D_b=184.3038 class=a near-neither=False
+     s158     run02 N=6400 m=31  D_a=3.3437 D_b=184.0208 class=a near-neither=False
+     s158     run03 N=6400 m=31  D_a=6.3299 D_b=184.1146 class=a near-neither=False
+     s158     runs ['a', 'a', 'a'] window letter (a) all-agree=True
+     s169     run01 N=6400 m=30  D_a=189.9410 D_b=5.7604 class=b near-neither=False
+     s169     run02 N=6400 m=30  D_a=184.7951 D_b=2.9306 class=b near-neither=False
+     s169     run03 N=6400 m=30  D_a=187.7639 D_b=3.6580 class=b near-neither=False
+     s169     runs ['b', 'b', 'b'] window letter (b) all-agree=True
+     s185     run01 N=6400 m=31  D_a=5.0104 D_b=184.4583 class=a near-neither=False
+     s185     run02 N=6400 m=31  D_a=6.9028 D_b=184.2118 class=a near-neither=False
+     s185     run03 N=6400 m=31  D_a=4.4167 D_b=184.2708 class=a near-neither=False
+     s185     runs ['a', 'a', 'a'] window letter (a) all-agree=True
+     s197     run01 N=6400 m=31  D_a=6.2813 D_b=184.2691 class=a near-neither=False
+     s197     run02 N=6400 m=31  D_a=5.3681 D_b=184.3021 class=a near-neither=False
+     s197     run03 N=6400 m=31  D_a=5.5243 D_b=184.0556 class=a near-neither=False
+     s197     runs ['a', 'a', 'a'] window letter (a) all-agree=True
+     s209     run01 N=6400 m=30  D_a=189.5417 D_b=7.3073 class=b near-neither=False
+     s209     run02 N=6400 m=30  D_a=184.1215 D_b=6.3420 class=b near-neither=False
+     s209     run03 N=6400 m=30  D_a=184.7951 D_b=6.9583 class=b near-neither=False
+     s209     runs ['b', 'b', 'b'] window letter (b) all-agree=True
+     act-rd1  run01 N=6400 m=30  D_a=182.6701 D_b=3.2066 class=b near-neither=False
+     act-rd1  run02 N=6400 m=30  D_a=182.3090 D_b=2.0017 class=b near-neither=False
+     act-rd1  run03 N=6400 m=30  D_a=188.3264 D_b=7.9201 class=b near-neither=False
+     act-rd1  runs ['b', 'b', 'b'] window letter (b) all-agree=True
+     act-rd2  run01 N=6400 m=30  D_a=188.3889 D_b=4.2344 class=b near-neither=False
+     act-rd2  run02 N=6400 m=30  D_a=187.6076 D_b=3.4062 class=b near-neither=False
+     act-rd2  run03 N=6400 m=30  D_a=185.2951 D_b=5.0642 class=b near-neither=False
+     act-rd2  runs ['b', 'b', 'b'] window letter (b) all-agree=True
+     act-rd3  run01 N=6400 m=30  D_a=176.5451 D_b=7.7031 class=b near-neither=False
+     act-rd3  run02 N=6400 m=30  D_a=181.5451 D_b=9.9531 class=b near-neither=False
+     act-rd3  run03 N=6400 m=30  D_a=186.0764 D_b=3.7274 class=b near-neither=False
+     act-rd3  runs ['b', 'b', 'b'] window letter (b) all-agree=True
+     act-rd4  run01 N=6400 m=30  D_a=179.1389 D_b=6.9757 class=b near-neither=False
+     act-rd4  run02 N=6400 m=30  D_a=180.3264 D_b=12.8455 class=b near-neither=False
+     act-rd4  run03 N=6400 m=30  D_a=176.8264 D_b=12.3767 class=b near-neither=False
+     act-rd4  runs ['b', 'b', 'b'] window letter (b) all-agree=True
+   run-level summary: class a 9 / b 18 / UNDECIDED 0; NEAR-NEITHER flags 0 of 27 (report-only)
+   windows whose 3 runs all carry their window letter: 9 of 9
+
+4. THE WITHIN-RUN BLOCK DECOMPOSITION (the frozen family; each
+   row: the block-class sequence in round order, T = adjacent
+   differing pairs, CLASS-UNIFORM iff T=0 and no UNDECIDED;
+   block N = R/K; NEAR-NEITHER block counts report-only):
+   K=8 (blocks of 800 rounds):
+     s158     run01 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s158     run02 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s158     run03 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s169     run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s169     run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s169     run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s185     run01 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s185     run02 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s185     run03 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s197     run01 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s197     run02 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s197     run03 aaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s209     run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s209     run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s209     run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     act-rd1  run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd1  run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd1  run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     act-rd2  run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd2  run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd2  run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd3  run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     act-rd3  run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd3  run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd4  run01 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd4  run02 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=3
+     act-rd4  run03 bbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=3
+   K=8 summary: class-uniform runs 27/27; runs carrying >=1 transition or UNDECIDED 0/27; total transitions 0; UNDECIDED blocks 0 of 216; NEAR-NEITHER blocks 11 of 216 (report-only)
+   K=16 (blocks of 400 rounds):
+     s158     run01 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s158     run02 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s158     run03 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s169     run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s169     run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s169     run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     s185     run01 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     s185     run02 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     s185     run03 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s197     run01 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     s197     run02 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s197     run03 aaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s209     run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s209     run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     s209     run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     act-rd1  run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd1  run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     act-rd1  run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=5
+     act-rd2  run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd2  run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd2  run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     act-rd3  run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     act-rd3  run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=6
+     act-rd3  run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd4  run01 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd4  run02 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=9
+     act-rd4  run03 bbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=7
+   K=16 summary: class-uniform runs 27/27; runs carrying >=1 transition or UNDECIDED 0/27; total transitions 0; UNDECIDED blocks 0 of 432; NEAR-NEITHER blocks 46 of 432 (report-only)
+   K=32 (blocks of 200 rounds):
+     s158     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     s158     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     s158     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=3
+     s169     run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=5
+     s169     run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=1
+     s169     run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=6
+     s185     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=6
+     s185     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=9
+     s185     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     s197     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=6
+     s197     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=3
+     s197     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=8
+     s209     run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=3
+     s209     run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=6
+     s209     run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     act-rd1  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=5
+     act-rd1  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     act-rd1  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=11
+     act-rd2  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=0
+     act-rd2  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=2
+     act-rd2  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     act-rd3  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=7
+     act-rd3  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=11
+     act-rd3  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=4
+     act-rd4  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=8
+     act-rd4  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=16
+     act-rd4  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=14
+   K=32 summary: class-uniform runs 27/27; runs carrying >=1 transition or UNDECIDED 0/27; total transitions 0; UNDECIDED blocks 0 of 864; NEAR-NEITHER blocks 156 of 864 (report-only)
+   K=64 (blocks of 100 rounds):
+     s158     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=19
+     s158     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=18
+     s158     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=18
+     s169     run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=20
+     s169     run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=15
+     s169     run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=25
+     s185     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=24
+     s185     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=28
+     s185     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=24
+     s197     run01 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=24
+     s197     run02 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=18
+     s197     run03 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  T=0 uniform=True undecided-blocks=0 near-neither-blocks=22
+     s209     run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=15
+     s209     run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=24
+     s209     run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=16
+     act-rd1  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=13
+     act-rd1  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=16
+     act-rd1  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=24
+     act-rd2  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=11
+     act-rd2  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=14
+     act-rd2  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=20
+     act-rd3  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=28
+     act-rd3  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=33
+     act-rd3  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=14
+     act-rd4  run01 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=34
+     act-rd4  run02 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=33
+     act-rd4  run03 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  T=0 uniform=True undecided-blocks=0 near-neither-blocks=36
+   K=64 summary: class-uniform runs 27/27; runs carrying >=1 transition or UNDECIDED 0/27; total transitions 0; UNDECIDED blocks 0 of 1728; NEAR-NEITHER blocks 586 of 1728 (report-only)
+
+5. THE TIMESCALE CONSTRAINT (CONSTRAINT rows only -- the s238
+   shape; the dichotomy NOT DECIDED and the CAUSE stays
+   UNMEASURED):
+   THE TWO SHAPES DO NOT ALTERNATE WITHIN ANY RUN'S 6,400-
+   ROUND STREAM at any cut of the frozen family (100-round
+   granularity included): all 27 runs are class-uniform at
+   every K in {8,16,32,64} and every run carries its window's
+   letter class.  The (a)/(b) difference's temporal locus is
+   AT RUN GRANULARITY OR COARSER in this universe -- the state
+   persists across a whole run (6,400 rounds) wherever it is
+   present, and the sub-run-switching variant of EITHER cause
+   candidate is CONTRADICTED at 100-round granularity.
+   What the row does NOT do: it does not decide the dichotomy
+   (a genuine execution-time state vs an instrument/timestamp-
+   quantization state).  Both candidates survive in their run-
+   persistent variants (an execution-time state whose episodes
+   span whole runs and a recording state whose episodes span
+   whole runs are EQUALLY LIVE here); a cause-resolution act
+   still needs new hardware runs, each with its own freeze.
+   The underlying-instrument-state COUNT stays outside (s220
+   1(b)).  PATTERN-LEVEL ONLY (s218 2(e)): NO p-value, NO test
+   statistic, NO probability claim; at block N=100..800 the
+   classification carries NO noise model (the s235 honesty
+   shape) and the NEAR-NEITHER counts are reported as-is.
+
+6. NAMED, NOT HIDDEN -- SCOPE:
+   - The 27 committed c2 run logs of the s234 nine-window
+     universe at the reading cell (sum,128,S=16) ONLY; pre-deep-
+     pooling windows carry no committed raw run logs (outside);
+     the s237 kernel-variant arms (iter1/iter3/iter8/itervc8
+     spvs) and the s235 supplementary arms (anv-tsstage bb-b2/
+     tt-b2) are OUTSIDE this universe.
+   - gpu_ticks ONLY: the host_ns channel's committed-bytes
+     confrontation is complete (s239/s240) and is not re-opened
+     here.
+   - The defective dev attempts, if any, are named in run-
+     temporal-s241-identity.txt; none of them is evidence.
+
+7. THREE-STATE / RULE 4 / BAR: every sample is a named run's
+   landed MEASURED QUANTITY on aiueos-6600hs (Intel BMG G31)
+   RE-PARSED from committed bytes -- this tick measures NOTHING
+   new on hardware (no runs, no builds, no GO stamp); the share,
+   distance and sequence arithmetic is DERIVED.  NO vendor
+   optimization exists for Intel (or for any vendor) and none
+   follows from this constraint; the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   false rows remain provisional -- NOT optimization evidence).
+   RULE 4 unchanged: NOTHING MOVES; the committed bracket stays
+   EXACTLY (254,923, 255,045]; L9 binds at n=254,984 (C2 (c),
+   D3 (v)); the MID-ONLY NARROWING CLAIM stays SUSPENDED.  BAR
+   NON-INTERFERENCE: NO settle-bar-ledger line, NO day-slot
+   consumption; the bar's SETTLED INTERMEDIATE/MIXED verdict
+   unmoved.
+
+# run-temporal s241 (run-temporal-s241.py): 122 ok / 0 failed

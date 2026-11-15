@@ -1,0 +1,92 @@
+amu-gpu s171 (2026-11-01 JST, cron) -- JUN-59 sixteenth cut
+MEASUREMENT HALF -- PULL COMPLETE (the s170 carry-forward (b)
+completed exactly: the 108 run logs pulled + host==local
+byte-identity vs f8c08e16... + gzip -n commit form + raw-aggregate
+record + derivation/build census + this state update).
+
+ROW TAKEN THIS TICK (one row: the sixteenth-cut run-log pull and
+its custody chain; the analysis half (c) is its own session(s)).
+
+VERIFIED THIS TICK (real tool output):
+- The 108 run logs (54 stdout + 54 stderr) pulled plain via scp
+  from murakumo-ci@100.98.24.37:~/anv-b3bisect16-20261101/shaders/
+  run-* (741M raw, 2m14s).
+- Name-existence check host-side: 108 names (printf '%02d'
+  zero-padded), missing=0. Local name construction file
+  byte-identical to the host-side one (cmp exit 0); pulled tree
+  name set == expected 108/108.
+- HOST == LOCAL BYTE-IDENTITY: the canonical aggregate over the
+  sorted exact 108 log names re-derived FRESH host-side AND locally
+  over the pulled tree, both
+  f8c08e16dabd4c1d6256bf8779c616d0f2067126e568bdf1155bf0239f32e52c
+  == the s170 driver-tail capture -> MATCH (108/108 logs).
+- Aggregate construction pinned THREE independent ways
+  (host-digests-s169.txt): s147 plain KAT reproduces 8c8ef864...
+  EXACTLY; the sha256sum-line negative control reproduces
+  7c52eb63... (and does NOT equal any aggregate); the s158
+  committed-form KAT reproduces 97bd3d33... EXACTLY -- all three
+  computed fresh this session.
+- Raw byte census (both sides): 54 stdout logs 776,748,956 bytes
+  total; 54 stderr logs 0 bytes (all).
+- gzip -n COMMIT FORM executed (the s157 capture-form deviation):
+  54 stdout logs committed as run-<tag>-r<NN>.txt.gz, 54 stderr
+  logs stay plain 0-byte .stderr.txt, raw copies removed after the
+  byte-identity check. Raw digests recorded BEFORE compression in
+  raw-digests-s169.txt (54 lines: sha256 + name + bytes=N).
+- gzip fidelity with explicit counts: raw-digest records: 54;
+  checked=54 mismatch=0 (gunzip -c outputs SHA-256-equal to the
+  recorded raw digests AND byte counts). The canonical aggregate
+  re-derived THROUGH THE COMMITTED FORM ==
+  f8c08e16dabd4c1d6256bf8779c616d0f2067126e568bdf1155bf0239f32e52c
+  -> the committed form preserves the raw byte content exactly.
+- build-census-s169.txt + derivation-census-s169.txt written: every
+  value computed fresh or parsed from committed bytes (instrument
+  c2704aaa... == pin; one-line diff vs the a5e539f0... base EXACTLY
+  line 81, diff rc=1 one hunk; expected-corpus eefba52e... == pin;
+  cases-s169-a.txt abd09ab1... == host pin; 24 cell lines block
+  sha256 873025d6... == s25/s27 pin; (1,000,003*345)//1354 =
+  254,801 == n, gcd 1; 3+48+3 = 54).
+- Binary re-census host-side 3/3 == the s169 first-measured pins
+  (b791b71a... / 8c568de5... / 2f25d678...), == the s170 post-window
+  census -- every one of the 54 runs is linked to these binaries.
+
+NAMED, NOT HIDDEN:
+- The s157 capture-form deviation is now EXECUTED (gzip -n commit
+  form + raw-digest record), closing its standing named item for
+  this cut; raw plain copies do NOT exist in the tree.
+- Two local script defects, reaching no evidence value: (1) the
+  first fidelity loop ran its counters in a pipe subshell and could
+  not have printed counts (zero MISMATCH lines printed; re-run with
+  explicit counts checked=54 mismatch=0, that output is the
+  evidence); (2) the first KAT-2 pass opened the stripped raw name
+  instead of the .gz (FileNotFoundError rc 1, computed nothing;
+  corrected pass produced the recorded value).
+- NO sixteenth-cut class/verdict/claim exists -- NO unit class, NO
+  C2, NO W1/W2/W3/X1 computed or claimed, every such quantity
+  UNMEASURED (the analysis half is (c), its own session(s)); the
+  ONLY new recorded values this tick are custody artifacts
+  (digests, byte counts, identity results); MID-ONLY NARROWING
+  CLAIM stays SUSPENDED; bracket stays EXACTLY (254,557, 255,045].
+- RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists
+  for Intel (or for any vendor).
+- Diff touches NO committed .cljk namespace (evidence .txt/.gz
+  only; no scoped-gate re-run needed, the s160/s166 precedent; full
+  suite RED AT BASE kotoba.form ADR-0362 outside this diff -- NO
+  green full suite claimed).
+- BAR: instrument channel -- NO settle-bar-ledger line, NO day-slot
+  consumed by this row (protocol section 5).
+- find docs/evidence/gpu -name '*.sh' -> 0 re-verified (the driver
+  and the pull helper commands are host-side / scratch only, NEVER
+  committed).
+
+NOT DONE (s172 carries):
+(c) the analysis half ONLY at its own session(s) (analysis-s169.py
+    twice byte-identical -> publication, frozen letters
+    C1/C2/W1/W2/W3/X1, standing gates (a)-(f), record.txt,
+    ADR-0355 dated note, landing tail + the JUN-499 Linear
+    landing comment);
+(d) standing, not queued: any further counted-day slot (the
+    2026-11-01 UTC slot needs its own freeze) and the cross-day
+    tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

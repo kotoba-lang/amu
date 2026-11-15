@@ -1,0 +1,89 @@
+2026-11-03 (session 245) -- THE PRE-M2-DAY STAND-DOWN.
+NO row taken: the s244 carry-forward's only queued row (the
+cause-resolution act's MEASUREMENT half, act measurement session
+m2 of 3) is day-gated to 2026-11-04 UTC or later -- the s244
+carry-forward's own queue row, quoted verbatim from the committed
+chain history (git show 677e84770): "QUEUED for s245: act session
+m2 (2026-11-04 UTC or later)".
+
+TIMING (python3 datetime arithmetic, UTC):
+  session_start  2026-11-03T01:29:40Z
+  m2_slot_open   2026-11-04T00:00:00Z
+  delta          81019 s = 22 h 30 m 19 s
+  session qualifies as m2 session? False
+(the slot = 2026-11-04T00:00:00Z per the s244 queue row; the s242
+frozen run plan section 5 requires the 3 fresh sessions spread
+over >=2 distinct days and the m1 queue recorded m2 for
+2026-11-04 UTC or later.)
+
+This tick's duties and their results (the standing gate set,
+byte-compared to the s88 pins in anv-b3w6tailrep-20261030/ and
+the s117 post-append pins in anv-b3w7ledgerappend-20261031/):
+- (a) classify --self-test 2649/0, 17,925 bytes == pin
+      (cmp exit 0), .err 0.
+- (b) scoped GPU gate GREEN 123 tests / 12162 assertions /
+      0 failures / 0 errors, run 1 AND run 2 == each other ==
+      both s88 pins (919 bytes, cmp exit 0 x5), .err 0 x2
+      (scratch runner scratch/scoped-gpu-gate.cljk, created/
+      run/deleted this tick, never committed).
+- (c) FULL run-tests.cljk RUN LIVE exit 1 RED AT BASE
+      kotoba.form (ADR-0362, outside this diff -- this tick
+      touches NO .cljk namespace), .err 879 bytes == pin,
+      stdout 0 bytes == pin. NO green full suite claimed.
+- (d) evaluator --self-test 38/0 3,590 bytes == the s88 pin
+      (cmp exit 0); ledger eval twice byte-identical (1,006
+      bytes) == the s117 post-append pins (cmp exit 0 x2)
+      -> VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged).
+- (e) find docs/evidence/gpu -name '*.sh' -> 0.
+- (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+      --exit-code rc=0 -- no emit, no ledger line, no
+      day-slot consumption).
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(prlist-s245-prepush.json immediately before this push; the
+tick-start check agreed); chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4).
+
+THE BAR: stand-down session -> NO hardware runs -> NO reading
+-> NO settle-bar-ledger line, NO day-slot consumption; the bar
+stays SETTLED INTERMEDIATE/MIXED and its verdict is unmoved.
+RULE 4 unchanged: NOTHING MOVES; NO vendor optimization exists
+for any vendor.
+
+ONE stand-down record suffices for the act's pre-m2 period: any
+further tick that also starts before 2026-11-04T00:00:00Z
+stands down WITHOUT a second commit and WITHOUT a report
+(respond [SILENT]) unless the state changes (a hermes/ blocker
+PR appears, the chain PR merges or conflicts, the gate state
+moves); the first tick whose START is at or after
+2026-11-04T00:00:00Z is act session m2.
+
+Landing: commit + push to the ONE chain PR (#1665,
+bot/amu-gpu-chain-20261028-4); Linear landing comment posted to
+JUN-499 (if the connector is unavailable, the tick report says
+'Linear 未記録').
+
+Carry-forward (the s244 list, re-queued): (a) the act's
+measurement half CONTINUES: act session m2 (the s242 frozen
+protocol; the FIRST session starting at or after
+2026-11-04T00:00:00Z; each 3 runs r01..r03 rounds=6400 warmup=3
+with its own capture custody; the binary pin 2c216ef2...
+re-verified at each later session start -- if unavailable a
+rebuild gets NEW first-measured pins recorded by that session
+and the build change is NAMED, L3 live) -- QUEUED for the first
+tick starting at/after 2026-11-04T00:00:00Z, then act session
+m3 on its later UTC day (its day row is that session's
+carry-forward, as m1 recorded m2's); (b) standing, not queued
+until the measurement half lands: the act's ANALYSIS half (rules
+R1-R5 of protocol.txt section 6 executed fail-closed twice
+byte-identical over the act's committed run logs; rules frozen
+at s242; every act quantity UNMEASURED until then); (c)
+standing, not queued (carried unchanged from s244): the s216
+identity hazard's residual -- the CAUSE of the (a)/(b)
+sample-shape difference stays UNMEASURED and UNDECIDED until
+the act's measurement + analysis halves land; the
+underlying-instrument-state COUNT stays outside (s220 1(b)); at
+N=75 the s235/s237 classifications carry NO noise model and
+near-neither prevalence needs higher-N readings -- new hardware
+runs, each with its own freeze; any further counted-day slot
+(each needs its own freeze) and the cross-day tail-movement row.

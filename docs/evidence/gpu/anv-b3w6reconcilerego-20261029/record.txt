@@ -1,0 +1,203 @@
+JUN-59 session 99 W6 ADOPTION-CHAIN RECONCILIATION PRE-BUILD (the
+W6 measurement row's CROSS-TOOL RECONCILIATION preparation half --
+the s90/s95/s96/s97/s98 pre-build precedent applied to the one W6
+surface that is still session-owned prose at every prior window: the
+consistency check BETWEEN the adopted tools; NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO network
+connections, NO day-slot consumption, NO ledger line).  Row: the s98
+carry-forward's item (a) (the W6 measurement half), taken at the
+residual the s98 record itself named and left live ("the W6 session
+cross-checks this checker's verify-mismatch-total row against the
+ledger emitter's own criterion-(2) derivation (session-owned named
+residual -- two parsers over the same run logs)").  The measurement
+half REMAINS day-slot-gated (STARTED, NOT FINISHED): W6 runs in the
+first measurement session starting at or after 2026-10-30T00:00:00Z;
+this tick runs 2026-10-29T15:4xZ-16:2xZ, ~7.6h before the slot opens.
+
+1. FINDING (verified by real tool output): the five adopted W6 tools
+   were each validated against their OWN pins (s90/s95/s96/s97/s98)
+   but had never been checked against EACH OTHER -- and at the W6
+   window the session publishes TWO artifacts from the same fresh
+   logs (publication-s<NN>.txt from the reading pair; the
+   settle-bar-ledger.txt line from the emitter), so two independent
+   parsers disagreeing would put two different numbers in the bar's
+   own record, live, under slot pressure.  reconcile-prego.py (pure
+   stdlib + subprocess of the five adopted tools; NO RNG, no clock;
+   writes only its own stdout -- the census twin's report goes to a
+   caller-supplied scratch path; submits NOTHING to any GPU) closes
+   that gap as machinery:
+   (a) --compat (default) RUNS THE CHAIN over the THREE common
+       committed 78-run windows every other pre-build validates
+       against (s36 anv-b3commonmode-20261028 / s51 anv-b3levelrep-
+       20261028 / W5 anv-b3w5xdayrep-20261029, tagged s73 by the
+       reading/ledger/custody tools; s38/s39 committed no
+       run-window.txt and are NAMED out of chain scope): it runs
+       reading-prego.py, derivation-census-prego.py,
+       run-window-prego.py --compat, custody-check-prego.py --check
+       and ledger-prego.py --compat exactly as their committed
+       captures run them, parses their real stdout (every value
+       PARSED, never transcribed), and cross-checks the overlapping
+       derived quantities per window -- X1 anchor-median and X2
+       anchor-min (reading sec3b vs the ledger line -- the two
+       published artifacts' shared quantities), X3-X5 census-median/
+       min/max (the s90 reading/census independence pair, cross-
+       compared for the first time), X6 verify-residual (THE S98-
+       NAMED RESIDUAL, mechanized at the numeric level: reading sec1
+       vmis == custody verify-mismatch-total, and the emitter's
+       criterion-(2) token fires only when the total is > 0), X7
+       run-census (reading sec1 runs == custody run-count == the
+       run-window frozen-order count == the run-window.txt per-run
+       host-date count, 78 four ways), X8 flag-join (the s98
+       decide_ledger_inputs join end-to-end: clean custody inputs +
+       clean C1 imply the emitted line's flag=none; the FLAGGED
+       shapes stay owned by the s97/s98 self-test batteries -- named
+       scope), X9 day-derivation (the ledger line's day == the single
+       distinct host-date date-part of the window's run-window.txt
+       per-run rows), X10 class (s73 only -- NAMED LIMIT: reading
+       --compat publishes no class for the prior windows), X11
+       c1-boolean (the reading pair's C1 construction branch (a)
+       clean, consistent with the emitter's per-window criterion-(1)
+       clean: c1-b is FIRST in the frozen precedence, so a fired C1
+       must show as c1-b; NAMED LIMIT: the sec2 rows are one
+       window's C1 machinery read at every window).
+   (b) --line <publication> <ledger-file> <session-tag> reconciles
+       ONE published reading against ONE ledger line (median/min/
+       class; day NOT compared -- the reading publishes no day; the
+       day is the emitter's derivation) -- the W6-fresh-side pair.
+   (c) --self-test: fixture suite (synthetic row strings; MOCK
+       FIXTURES, never measurements; reads NO committed window and
+       runs NO adopted tool).
+   ADOPTION CONTRACT: the W6 session re-runs --compat and --self-test
+   in its own record (the committed-window chain is the byte-level
+   proof the parsers agree before any fresh data) and runs --line
+   publication-s<NN>.txt ../../settle-bar-ledger.txt s<NN> on its
+   fresh pair after the append.  The execution path (ssh, staging,
+   GO, record prose) stays session-owned exactly as at s51/s73.
+
+2. VALIDATION (real tool output):
+   (a) --compat run 1 AND run 2 BYTE-IDENTICAL (3,591 bytes, sha256
+       41b6b67de78ec6f112616d78cd3db0ab0c50fae3dd7b0b11a58a932000584aa4
+       both, cmp exit 0, stderr 0 bytes both): STAGE rows 7 failed 0
+       (all five tools rc=0 -- reading rows=13, census rows=13,
+       run-window total=(243, 0), custody --check s36/s51/s73 rc=0
+       flag=none pin=ok go=ok each, ledger rows=9) | CROSS rows 31
+       mismatched 0 (30 MATCH + the s36/s51 X10 named skips), VERDICT
+       CONSISTENT.  The shared quantities agree at every window:
+       median/min 1142/991 (s36), 1137/988 (s51), 1131/998 (s73);
+       census median/min/max EQUAL to reading at all three (the
+       independent parsers' first cross-comparison); vmis 0==0 and
+       run census 78 four ways at all three; day 2026-10-28/28/29
+       derived == emitted; class INTERMEDIATE/MIXED reading==ledger
+       at s73.
+   (b) --line on the COMMITTED pair (publication-s73.txt vs the s73
+       line of settle-bar-ledger.txt): rc 0, both publication rows
+       agree (1131 998..1442 INTERMEDIATE/MIXED) and MATCH the line
+       (median 1131 min 998 class INTERMEDIATE/MIXED), run twice
+       BYTE-IDENTICAL (469 bytes, sha256
+       423295f873a25b1cb3c45a0d3089faeb70e4084e05c2991e3e54d82923cb7107
+       both, stderr 0 bytes).
+   (c) --line NEGATIVE probe (reconcile-line-negative.txt; the ledger
+       line is a MOCK FIXTURE -- median perturbed 1131 -> 1132 in a
+       scratch file, never a measurement): rc 1, the median row
+       reports MISMATCH (pub=1131 line=1132) and VERDICT
+       INCONSISTENT -- the detector fires.
+   (d) --self-test TOTAL 17 assertions passed 0 failed, run twice
+       BYTE-IDENTICAL (708 bytes, sha256
+       7c3d99155e4cb64855af7c98a7387fae9a65fda09519ec910cc613525eed67de
+       both, stderr 0 bytes).
+
+3. DEFECTS FOUND BY FIRST EXECUTION, FIXED AND NAMED (the first
+   --compat execution is DESCRIBED here and not kept as a capture --
+   corrected at source before capture, the s96 precedent): (a)
+   ENGINE WRONG: the xrow comparison conflated EQUALITY with JOIN
+   semantics -- X6/X7/X8/X9/X11 are consistency rows (numeric
+   agreement / an implication / a derivation match), not all-equal
+   rows, and the first execution reported 15 MISMATCH on fully
+   consistent data (values shown equal in the row text); fixed with
+   explicit per-row predicates (equality where the values are the
+   same quantity; the named join/implication otherwise), the X6
+   predicate simplified to "the two vmis totals agree numerically
+   AND a verify-mismatch token cannot fire at total 0" and the X8
+   else-branch to "flagged inputs cannot join to flag=none".  (b)
+   SOURCE HYGIENE: a placeholder total expression and two fixture
+   assertions testing Python set semantics rather than reconciler
+   behavior were replaced (the classless-prior-row parse case).
+
+4. GATES (the standing gate set, real runs this tick, byte-compared
+   to the s88 committed pins in docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed 0 failed; capture == pin (17,925 bytes);
+       .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+       created, run, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin ==
+       the s88 run-2 pin (919 bytes, cmp exit 0 x4); .err 0 bytes
+       both; the "kbb: 2 dep(s) ..." classpath sub-invocation notice
+       is terminal output, not part of the capture (established
+       convention).
+   (c) FULL run-tests.cljk RUN LIVE (worktree root): exit 1, RED AT
+       BASE kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO .cljk
+       namespace).  .err == the s88 pin (879 bytes); stdout 0 bytes
+       == the pin.  NO green full suite is claimed.
+   (d) settle-bar evaluator (frozen): --self-test exit 0, capture
+       == pin (3,590 bytes); ledger eval twice, exit 0, run 1 ==
+       run 2 == the s88 pin (823 bytes) -> VERDICT: PENDING 2/4
+       unchanged (counted day=2026-10-28 session=s31; counted
+       day=2026-10-29 session=s73).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files.
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff empty).
+
+5. THE BAR: preparation session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption.  The bar stays
+   PENDING 2/4.  Nothing this UTC day can advance the bar (2026-10-29
+   is CONSUMED by s73 -- settle-bar.txt section 2).
+
+6. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z); every W6 live
+   field; every T18/T20/W7 quantity (all gate behind W6's ledger
+   line).  RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them; NO vendor
+   optimization exists for Intel (or for any vendor); this machinery
+   is cross-tool record reconciliation, not a device measurement.
+
+7. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (the one open chain PR is the
+   chain PR this commit pushes to).
+
+8. ADOPTION CONTRACT (amended): the W6 session adopts the five tools
+   per the s90/s91/s95/s98/s97 contracts AND reconciles them with
+   THIS file (reconcile-s<NN>.py): --compat + --self-test re-run in
+   its own record, and --line publication-s<NN>.py's publication
+   ../../settle-bar-ledger.txt s<NN> run on the fresh pair after the
+   append (before it, on the emitted line).  W7 the same.
+
+9. WHY THIS ROW (named): of the s98 carry-forward items (a)-(d) all
+   gate behind the W6 measurement half (the slot opens
+   2026-10-30T00:00:00Z; this tick runs ~7.6h before it), (e) is
+   contingency-only and (f) is explicitly NOT queued -- and of (a)'s
+   machinery every tool has a pre-build but the tools' MUTUAL
+   consistency (the s98-named session-owned residual and the two
+   published artifacts' shared quantities) had no code path: at every
+   prior window the reading-vs-ledger cross-check happened in session
+   prose, if at all.  Binding it to the three common committed
+   windows' bytes (31 cross rows, 0 mismatched) BEFORE any W6
+   quantity exists is the s90/s95 argument applied to the last live
+   surface between the tools.  Carry-forward to s100: the W6
+   measurement half (the s80 freeze; the W6 session adopts s90's
+   reading pair, s91's custody baseline, s95's run-window driver,
+   s98's checker, s97's emitter and this reconciler) -- the gate for
+   the T18 analysis half (s92 pre-build + s84 freeze bind), the T20
+   analysis half (s93 pre-build + s88 freeze bind), the W7
+   measurement half (s85 freeze; behind W6's ledger line) --, then
+   any further counted-day slot (its own freeze) and a cross-day
+   tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6reconcilerego-20261029/
+(reconcile-prego.py + reconcile-compat-run1/2.txt/.err +
+reconcile-selftest-run1/2.txt/.err + reconcile-line-s73-run1/2.txt/.err
++ reconcile-line-negative.txt/.err + record.txt + the s99 gate
+captures) + the ADR-0355 dated note.  (JUN-55, JUN-59; Linear
+tracking JUN-499)

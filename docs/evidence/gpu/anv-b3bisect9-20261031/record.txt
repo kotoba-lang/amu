@@ -1,0 +1,86 @@
+== JUN-59 session 125 record -- THE NINTH CUT MEASUREMENT HALF ==
+== (the s123 carry-forward (a); 21 fresh processes under the     ==
+== frozen anv-b3bisect9prereg-20261031/protocol.txt) ==
+
+0. THE MEASUREMENT HALF (real tool output, captures in this
+   directory): 21 fresh processes (7 arms x 3 runs, the frozen
+   section-0 arm table c2/lo/mid/eq3/hi/b2m/c8) on the measurement
+   host aiueos-6600hs (aiueos-6600hs-1, live ssh capture), run
+   window 2026-10-31T06:53:38Z..06:53:44Z, GO stamp
+   2026-10-31T06:53:37Z before the build loop and all runs (NAMED:
+   GO shares its second-granular stamp with the first two build
+   stamps; ordering rests on the driver transcript, all run stamps
+   strictly later -- host-verify-s125.txt). ZERO derivation:
+   instrument = session 26's committed NDIV-derived source
+   byte-identical (a5e539f0...); a-set = archived spv 16-digest
+   corpus (corpus_rc=0). Builds 7/7 rc=0 stderr 0 bytes; BUILD
+   PINS 4/4 BYTE-IDENTICAL (c2 e5ed903e..., c8 480925e5..., lo
+   (3,405,1591) 0ce4616c... == s121's anv-bb-mid, hi (3,1213,4753)
+   123e8f73...; mid/eq3/b2m new triples, first digests
+   cabff942.../d06582b4.../f2c1bd60..., no pin applies -- named).
+   Runs: rc=0 21/21, stderr 0 bytes 21/21, 450 SAMPLE + 24 VERIFY
+   + 24 CELL each, tail '# done cells=24' 21/21; VERIFY mismatch
+   total 0 (frozen INVALIDATION criterion did not fire); 42 logs
+   pulled byte-identical (aggregate de26a4b1... host==local).
+
+1. THE FINDING (publication-s125.txt, produced ONLY by
+   analysis-s125.py over the 21 committed run logs + named
+   committed want sources, run twice byte-identical, sha256
+   fa97e824...): C1 (a)=True (c2 FLOOR 31; c8 32,976 vs committed
+   32,915 +0.19%); C2 (b) FIRED -- lo (3,405,1591) at n=254,557
+   classifies CAPTURED here (1,143; 18-cell 1,005..1,457) against
+   the eighth cut's committed class INTERMEDIATE/MIXED at the SAME
+   pair and grid (session 121 mid: 1,156; 986..1,459) -- a
+   pre-named named-content disagreement (the 1,000-tick boundary
+   min moved 986 -> 1,005 at overlapping medians), hi replicates
+   (1,142 CAPTURED within +/-5% of the committed 1,166); C3 (a)=True
+   (eq3 1,128 vs mid 1,129 class-identical; scoreboard s24 (b) /
+   s25 (a) / s26 (b) / s27 (a) / s121 (a) / s125 (a)); W1 (d)
+   FLAGGED: C2 fired (b), NO bracket narrowing is claimed -- the
+   measured classes stand as content (mid at n=254,882
+   INTERMEDIATE/MIXED 1,129, 18-cell 982..1,452; b2m FLOOR 31
+   extends 'B=2 never captures' to n=254,882 at total work
+   0.5097625). WHY is UNMEASURED; NO causal mechanism is claimed
+   (L2 binds; L5 no interpolation). Arm table (pooled medians):
+   c2 31 FLOOR / lo 1,143 CAPTURED / mid 1,129 INTERMEDIATE/MIXED
+   / eq3 1,128 INTERMEDIATE/MIXED / hi 1,142 CAPTURED / b2m 31
+   FLOOR / c8 32,976 CAPTURED. BAR NON-INTERFERENCE held: no
+   ledger append, no day-slot consumption, no bar/Rule-4/:measured?
+   movement.
+
+2. GATES (the standing set, run THIS tick, cmp to the s88 pins in
+   anv-b3w6tailrep-20261030/ and the s117 post-append pin):
+   (a) classify --self-test 2649/0 17,925 bytes == s88 pin (cmp
+   exit 0), .err 0; (b) scoped GPU gate GREEN 'Ran 123 tests
+   containing 12162 assertions. 0 failures, 0 errors.' run 1 AND
+   run 2 == each other == both s88 pins (919 bytes, cmp exit 0 x3),
+   .err 0 (scratch runner scratch/scoped-gpu-gate.cljk created/run
+   twice/deleted, never committed); (c) FULL run-tests.cljk LIVE
+   exit 1 RED AT BASE kotoba.form ('Could not find namespace:
+   kotoba.form', ADR-0362, outside this diff -- this diff touches
+   NO committed .cljk namespace), stdout 0 bytes == pin, .err 879
+   bytes == pin -- NO green full suite claimed; (d) evaluator
+   --self-test 38/0 3,590 bytes == pin + ledger eval pair twice
+   byte-identical (1,006 bytes) == the s117 post-append pin ->
+   VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged); (e) find
+   docs/evidence/gpu -name '*.sh' -> 0; (f) settle-bar-ledger.txt
+   == HEAD (git diff --exit-code rc 0).
+
+3. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them; NO vendor
+   optimization exists for Intel (or for any vendor); this is
+   bisect measurement machinery on ONE host (aiueos-6600hs), not a
+   workgroup-default measurement; no workgroup-default row is
+   replaced by these numbers.
+
+4. NAMED, NOT HIDDEN: the derivation census generator's first run
+   failed on my own regex defect (one-space vs sha256sum's
+   two-space separator in the lo-pin pattern; analysis-s125.py's
+   first pair of runs failed on my parse1 single-group assumption
+   for the lo committed row) -- both fixed at source (scratch
+   generator / the analysis), re-run clean; no capture of the
+   measurement half was touched (the 21 run logs and their custody
+   chain predate both defects); the kbb engine's standing '2 dep(s)
+   are not :local/root' warning reaches no capture (.err 0 wherever
+   the pins are 0); untracked scratch/ and deps.edn are not this
+   row's and are not committed.

@@ -1,0 +1,351 @@
+crosscell-extent-s238.py -- THE S216 IDENTITY HAZARD'S CAUSE
+RESIDUAL'S CROSS-CELL EXTENT (amu-gpu s238; the s237 carry-
+forward's first standing row -- the CAUSE of the sample-shape
+difference (execution-time state vs instrument/timestamp-
+quantization state) -- taken as a CONSTRAINT row: the cause
+question's named input, NOT its resolution).
+
+THE EXTENT CRITERION (the s234 criterion applied per cell,
+unchanged; supplementary REPORT at every cell but the reading
+cell): s_w,c = per-sample share vector of window w over the union
+support of observed gpu_ticks at cell c; W_in(c) = max L1 over
+same-letter window pairs, W_out(c) = min L1 over opposite-letter
+window pairs; the cell SEPARATES iff W_out(c) > W_in(c).
+  EXTENT ROWS: CELL-LOCAL (separation confined to the reading
+cell -> a whole-stream cause ruled out as the locus) vs WHOLE-
+STREAM (separation at every pipeline-ok cell -> any cell-/kernel-
+local cause ruled out as the locus; the dichotomy itself stays
+UNDECIDED -- both surviving candidates are whole-stream states).
+  SHAPE-VS-SHIFT: D = L1 between the groups' pooled shares;
+D_shift = L1 between (a)'s pooled shares and (b)'s pooled shares
+translated +1 tick; a pure additive-shift account predicts
+D_shift at within-group order (<= W_in).
+  PATTERN-LEVEL ONLY (s218 2(e)): NO p-value, NO test statistic,
+NO probability claim.
+UNIVERSE: the nine deep-pooling-era own readings with COMMITTED
+raw run logs (the s234 universe unchanged: cuts s158/s169/s185/
+s197/s209 + the act's four readings; 27 run logs).  OUTSIDE
+(named, not hidden): the s237 kernel-variant arms and the s235
+supplementary arms.
+
+  ok    S238.A1 s27 census parse == pins (c2 31, band 31..32, c8 32915)
+
+1. THE RUN-LOG CENSUS (every sample RE-PARSED from committed
+   run-log bytes; m = pooled sample median gpu_ticks over k=3
+   runs x R rounds at the cell; MAD = sample median |x - m| --
+   the frozen s217/s218 statistic):
+  ok    S238.A2 header identity across all 27 runs
+  ok    S238.A3 cell-map identity across all 27 runs
+  ok    S238.Bact-rd1-r01 run integrity clean
+  ok    S238.Bact-rd1-r02 run integrity clean
+  ok    S238.Bact-rd1-r03 run integrity clean
+  ok    S238.Bact-rd2-r01 run integrity clean
+  ok    S238.Bact-rd2-r02 run integrity clean
+  ok    S238.Bact-rd2-r03 run integrity clean
+  ok    S238.Bact-rd3-r01 run integrity clean
+  ok    S238.Bact-rd3-r02 run integrity clean
+  ok    S238.Bact-rd3-r03 run integrity clean
+  ok    S238.Bact-rd4-r01 run integrity clean
+  ok    S238.Bact-rd4-r02 run integrity clean
+  ok    S238.Bact-rd4-r03 run integrity clean
+  ok    S238.Bs158-r01 run integrity clean
+  ok    S238.Bs158-r02 run integrity clean
+  ok    S238.Bs158-r03 run integrity clean
+  ok    S238.Bs169-r01 run integrity clean
+  ok    S238.Bs169-r02 run integrity clean
+  ok    S238.Bs169-r03 run integrity clean
+  ok    S238.Bs185-r01 run integrity clean
+  ok    S238.Bs185-r02 run integrity clean
+  ok    S238.Bs185-r03 run integrity clean
+  ok    S238.Bs197-r01 run integrity clean
+  ok    S238.Bs197-r02 run integrity clean
+  ok    S238.Bs197-r03 run integrity clean
+  ok    S238.Bs209-r01 run integrity clean
+  ok    S238.Bs209-r02 run integrity clean
+  ok    S238.Bs209-r03 run integrity clean
+  ok    S238.A4 ok/fail cell sets uniform (18 ok incl. reading cell, 6 FAIL forced=8)
+
+   the header block (8 lines, identical across all 27 runs --
+   the RECORDED instrument/timestamp metadata, byte-compared):
+     # instrument=anv-subgroupsize-batch v2-batch64 (JUN-59 subgroup 16-vs-32 floor-lifting rerun, 2026-10-27)
+     # device_name=Intel(R) Graphics (BMG G31) vendor=8086 device=e223 api=1.4.318
+     # maxComputeWorkGroupSize=1024,1024,1024
+     # subgroupSize=32 subgroupStages=00003fff subgroupOps=000006ff
+     # subgroupSizeControl: feature=1 computeFullSubgroups=1 min=16 max=32 requiredStages=000000e0
+     # timestampPeriod=52.083 timestampComputeAndGraphics=1
+     # n=1000003 rounds=6400 warmup=3 batch=2 barrier_n=0 work_mul=1 ndiv=1 seed=20261027 metric=gpu_ns (vkCmdWriteTimestamp BATCH-dispatch bracket; per_dispatch_ns=gpu_ns/batch) +host_ns (CLOCK_MONOTONIC submit->completion)
+     # done cells=24
+
+   the 6 pipeline-FAIL cells (no samples in any window; named
+   and EXCLUDED from the extent table below):
+     idx= 0 spv=subgroup-reduce-w128-sum.emitted.spv op=sum wg=128 forced=8 pipeline=FAIL
+     idx= 4 spv=subgroup-reduce-w128-max.emitted.spv op=max wg=128 forced=8 pipeline=FAIL
+     idx= 8 spv=subgroup-reduce-w128-min.emitted.spv op=min wg=128 forced=8 pipeline=FAIL
+     idx=12 spv=subgroup-reduce-w256-sum.emitted.spv op=sum wg=256 forced=8 pipeline=FAIL
+     idx=16 spv=subgroup-reduce-w256-max.emitted.spv op=max wg=256 forced=8 pipeline=FAIL
+     idx=20 spv=subgroup-reduce-w256-min.emitted.spv op=min wg=256 forced=8 pipeline=FAIL
+
+2. READING-CELL BINDS (every s234 row below is RE-DERIVED here
+   from the run logs and must EQUAL the committed report bytes
+   identity-shape-s234-run1.txt -- fail-closed; this binds the
+   cross-cell machinery to the committed record):
+   s234 report pin: 14830 bytes sha256 2b00a0a63b30df16def000f3e08e74ecde6cd3563b601ab1dde9a2f5ac254fd8
+  ok    S238.C1 s234 union-support row present exactly once
+  ok    S238.C2 re-derived reading-cell union support == s234 row
+  ok    S238.C3 s234 per-window census rows present 9/9
+  ok    S238.C4 s234 per-window share rows present 9/9
+  ok    S238.C5.s158 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.s158 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.s169 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.s169 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.s185 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.s185 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.s197 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.s197 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.s209 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.s209 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.act-rd1 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.act-rd1 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.act-rd2 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.act-rd2 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.act-rd3 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.act-rd3 re-derived reading-cell share row == s234 share row
+  ok    S238.C5.act-rd4 re-derived N/m/mad/top3 == s234 census row
+  ok    S238.C6.act-rd4 re-derived reading-cell share row == s234 share row
+  ok    S238.C7.a s234 group row present exactly once
+  ok    S238.C8.a re-derived letter group == s234 group row
+  ok    S238.C7.b s234 group row present exactly once
+  ok    S238.C8.b re-derived letter group == s234 group row
+  ok    S238.C9 s234 pooled rows present 2/2
+  ok    S238.C10.a re-derived pooled reading-cell share row == s234 pooled row
+  ok    S238.C10.b re-derived pooled reading-cell share row == s234 pooled row
+  ok    S238.C11 s234 pair-census row present exactly once
+  ok    S238.C12 re-derived pair counts == s234 pair census row
+  ok    S238.C13 s234 W_in/W_out rows present 2/2
+  ok    S238.C14 re-derived W_in (value + pair) == s234 W_in row
+  ok    S238.C15 re-derived W_out (value + pair) == s234 W_out row
+  ok    S238.C16 s234 SHAPES SEPARATE verdict row present
+  ok    S238.C17 re-derived verdict arithmetic == s234 verdict row
+  ok    S238.C18 reading-cell letters re-derived (m vs band) == the committed s234 group split
+
+3. THE CROSS-CELL EXTENT (REPORT ONLY -- the s234 rule applied
+   per cell as a supplementary reading; PATTERN-LEVEL; the only
+   binding rows are section 2's):
+   idx  (op,wg,forced)       m_a  m_b   D_groups  W_in     W_out    SEP   D_shift1  top1_a  top1_b
+     1  (sum,128,16)          31   30   184.2153  13.6458  178.6875   YES   79.5226   52.35   65.09
+     2  (sum,128,32)          31   30   184.1250  11.7396  178.7083   YES   79.1319   52.50   65.41
+     3  (sum,128,default)     31   30   183.9531  13.7604  179.0938   YES   78.1771   52.89   65.41
+     5  (max,128,16)          31   30   183.8559  10.9167  178.9688   YES   79.2483   52.31   65.04
+     6  (max,128,32)          31   30   184.0451  13.2396  178.5312   YES   79.4253   52.31   65.26
+     7  (max,128,default)     31   30   183.9913  13.1146  178.8125   YES   79.1545   52.42   65.02
+     9  (min,128,16)          31   30   183.8056  13.2813  178.7188   YES   79.7066   52.05   65.06
+    10  (min,128,32)          31   30   184.2378  13.4375  179.0625   YES   79.5208   52.36   65.26
+    11  (min,128,default)     31   30   183.9062  11.2396  179.7396   YES   79.1250   52.39   65.26
+    13  (sum,256,16)          31   30   184.1042  12.8646  178.6146   YES   78.7812   52.66   65.35
+    14  (sum,256,32)          31   30   184.0833  13.1250  179.0417   YES   78.4618   52.81   65.17
+    15  (sum,256,default)     31   30   184.3542  12.1563  179.2708   YES   79.0938   52.64   65.35
+    17  (max,256,16)          31   30   184.1198  11.5833  179.2083   YES   79.0486   52.54   65.29
+    18  (max,256,32)          31   30   183.7604  11.8125  179.1562   YES   79.0295   52.37   65.18
+    19  (max,256,default)     31   30   184.0868  12.2396  179.0938   YES   79.6493   52.22   64.98
+    21  (min,256,16)          31   30   183.9566  11.1979  178.8125   YES   79.7205   52.12   65.08
+    22  (min,256,32)          31   30   184.2066  10.6875  179.8958   YES   79.7535   52.23   65.14
+    23  (min,256,default)     31   30   184.3090  10.9688  179.8958   YES   78.8941   52.70   65.15
+
+   per-cell group pooled share rows (the extent's own shapes):
+   idx= 1 (sum,128,16)         (a) pooled: 30:0.3212  31:52.3472  32:42.7726  33:3.6441  34:0.8889  35:0.0087  36:0.0069  39:0.0035  40:0.0017  41:0.0017  42:0.0017  43:0.0017
+   idx= 1 (sum,128,16)         (b) pooled: 28:0.0052  29:27.3351  30:65.0868  31:6.1493  32:1.4054  33:0.0078  34:0.0035  35:0.0017  39:0.0009  41:0.0017  43:0.0009  44:0.0009  48:0.0009
+   idx= 2 (sum,128,32)         (a) pooled: 30:0.3663  31:52.4983  32:42.4705  33:3.7378  34:0.9097  35:0.0035  36:0.0052  37:0.0017  39:0.0017  41:0.0017  43:0.0017  45:0.0017
+   idx= 2 (sum,128,32)         (b) pooled: 28:0.0017  29:27.0095  30:65.4149  31:6.1771  32:1.3811  33:0.0061  34:0.0061  38:0.0009  40:0.0009  43:0.0009  49:0.0009
+   idx= 3 (sum,128,default)    (a) pooled: 30:0.3542  31:52.8872  32:42.2622  33:3.6250  34:0.8507  35:0.0035  36:0.0052  37:0.0017  39:0.0017  40:0.0052  41:0.0035
+   idx= 3 (sum,128,default)    (b) pooled: 28:0.0035  29:26.9106  30:65.4123  31:6.2786  32:1.3759  33:0.0061  34:0.0043  35:0.0043  38:0.0017  41:0.0009  44:0.0009  45:0.0009
+   idx= 5 (max,128,16)         (a) pooled: 30:0.3472  31:52.3056  32:42.7240  33:3.6788  34:0.9253  35:0.0035  36:0.0035  37:0.0017  40:0.0035  41:0.0035  42:0.0017  43:0.0017
+   idx= 5 (max,128,16)         (b) pooled: 28:0.0017  29:27.2309  30:65.0399  31:6.3264  32:1.3845  33:0.0043  34:0.0026  35:0.0017  36:0.0026  38:0.0009  39:0.0009  41:0.0009  43:0.0017  44:0.0009
+   idx= 6 (max,128,32)         (a) pooled: 30:0.3507  31:52.3125  32:42.7969  33:3.6458  34:0.8681  35:0.0139  36:0.0017  39:0.0035  41:0.0052  43:0.0017
+   idx= 6 (max,128,32)         (b) pooled: 28:0.0035  29:27.1059  30:65.2604  31:6.1719  32:1.4358  33:0.0104  34:0.0052  36:0.0009  37:0.0009  38:0.0009  39:0.0009  41:0.0009  43:0.0009  44:0.0017
+   idx= 7 (max,128,default)    (a) pooled: 30:0.3681  31:52.4201  32:42.6806  33:3.6094  34:0.9028  35:0.0017  36:0.0035  37:0.0035  40:0.0035  41:0.0017  42:0.0017  43:0.0017  44:0.0017
+   idx= 7 (max,128,default)    (b) pooled: 28:0.0026  29:27.3325  30:65.0234  31:6.2535  32:1.3724  33:0.0026  34:0.0043  35:0.0043  38:0.0017  40:0.0009  44:0.0009  48:0.0009
+   idx= 9 (min,128,16)         (a) pooled: 30:0.3663  31:52.0521  32:43.1580  33:3.5382  34:0.8681  35:0.0069  36:0.0035  40:0.0035  42:0.0017  43:0.0017
+   idx= 9 (min,128,16)         (b) pooled: 28:0.0035  29:27.1997  30:65.0642  31:6.3472  32:1.3672  33:0.0043  34:0.0061  35:0.0043  38:0.0009  40:0.0009  43:0.0009  49:0.0009
+   idx=10 (min,128,32)         (a) pooled: 30:0.3750  31:52.3594  32:42.6493  33:3.6753  34:0.9167  35:0.0069  36:0.0035  37:0.0035  39:0.0017  40:0.0017  41:0.0035  43:0.0035
+   idx=10 (min,128,32)         (b) pooled: 28:0.0043  29:27.2318  30:65.2552  31:6.1267  32:1.3681  33:0.0043  34:0.0026  35:0.0009  36:0.0009  38:0.0009  39:0.0009  41:0.0009  43:0.0009  44:0.0009  47:0.0009
+   idx=11 (min,128,default)    (a) pooled: 30:0.3733  31:52.3889  32:42.6458  33:3.6424  34:0.9358  35:0.0017  36:0.0035  37:0.0017  39:0.0017  40:0.0017  42:0.0017  45:0.0017
+   idx=11 (min,128,default)    (b) pooled: 28:0.0017  29:27.0642  30:65.2561  31:6.2812  32:1.3811  33:0.0069  34:0.0026  35:0.0026  38:0.0009  41:0.0009  43:0.0009  48:0.0009
+   idx=13 (sum,256,16)         (a) pooled: 30:0.3333  31:52.6597  32:42.4323  33:3.6319  34:0.9184  35:0.0087  36:0.0035  37:0.0017  39:0.0035  41:0.0052  43:0.0017
+   idx=13 (sum,256,16)         (b) pooled: 28:0.0009  29:27.0339  30:65.3464  31:6.1649  32:1.4358  33:0.0095  34:0.0009  35:0.0026  38:0.0017  40:0.0009  43:0.0009  47:0.0009  219:0.0009
+   idx=14 (sum,256,32)         (a) pooled: 30:0.3559  31:52.8125  32:42.2639  33:3.6667  34:0.8785  35:0.0052  36:0.0052  37:0.0017  40:0.0069  41:0.0017  43:0.0017
+   idx=14 (sum,256,32)         (b) pooled: 28:0.0026  29:27.2196  30:65.1719  31:6.1875  32:1.4028  33:0.0069  34:0.0009  35:0.0017  37:0.0009  38:0.0009  39:0.0009  43:0.0017  44:0.0017
+   idx=15 (sum,256,default)    (a) pooled: 30:0.3681  31:52.6354  32:42.6076  33:3.4427  34:0.9340  35:0.0035  37:0.0017  40:0.0017  41:0.0017  43:0.0035
+   idx=15 (sum,256,default)    (b) pooled: 28:0.0009  29:27.1962  30:65.3472  31:6.1450  32:1.2986  33:0.0017  34:0.0052  35:0.0017  37:0.0009  40:0.0009  43:0.0009  48:0.0009
+   idx=17 (max,256,16)         (a) pooled: 30:0.3177  31:52.5399  32:42.5556  33:3.6632  34:0.9097  35:0.0017  36:0.0052  39:0.0017  40:0.0017  42:0.0017  43:0.0017
+   idx=17 (max,256,16)         (b) pooled: 28:0.0026  29:27.0859  30:65.2873  31:6.1875  32:1.4167  33:0.0095  34:0.0052  35:0.0017  38:0.0009  40:0.0009  43:0.0009  44:0.0009
+   idx=18 (max,256,32)         (a) pooled: 30:0.3941  31:52.3663  32:42.6771  33:3.6424  34:0.9010  35:0.0122  39:0.0017  40:0.0035  41:0.0017
+   idx=18 (max,256,32)         (b) pooled: 28:0.0009  29:27.0903  30:65.1797  31:6.2804  32:1.4349  33:0.0052  34:0.0026  35:0.0026  38:0.0017  43:0.0009  44:0.0009
+   idx=19 (max,256,default)    (a) pooled: 30:0.3542  31:52.2205  32:42.9028  33:3.5868  34:0.9132  35:0.0035  36:0.0035  37:0.0052  39:0.0017  41:0.0052  42:0.0017  43:0.0017
+   idx=19 (max,256,default)    (b) pooled: 28:0.0017  29:27.4141  30:64.9792  31:6.2274  32:1.3550  33:0.0104  34:0.0052  35:0.0017  38:0.0017  41:0.0009  43:0.0017  48:0.0009
+   idx=21 (min,256,16)         (a) pooled: 30:0.3785  31:52.1198  32:42.9861  33:3.6510  34:0.8472  35:0.0069  36:0.0035  40:0.0017  41:0.0017  42:0.0017  43:0.0017
+   idx=21 (min,256,16)         (b) pooled: 28:0.0017  29:27.2717  30:65.0816  31:6.2205  32:1.4123  33:0.0043  34:0.0017  35:0.0017  36:0.0009  38:0.0009  40:0.0009  43:0.0009  48:0.0009
+   idx=22 (min,256,32)         (a) pooled: 30:0.3385  31:52.2309  32:43.0382  33:3.5174  34:0.8559  35:0.0035  36:0.0017  37:0.0017  38:0.0017  39:0.0035  40:0.0069
+   idx=22 (min,256,32)         (b) pooled: 28:0.0017  29:27.2986  30:65.1380  31:6.1354  32:1.4036  33:0.0069  34:0.0078  35:0.0026  38:0.0026  43:0.0009  44:0.0009  332:0.0009
+   idx=23 (min,256,default)    (a) pooled: 30:0.2847  31:52.7049  32:42.5087  33:3.6267  34:0.8559  35:0.0017  36:0.0052  37:0.0017  39:0.0035  41:0.0035  42:0.0017  43:0.0017
+   idx=23 (min,256,default)    (b) pooled: 28:0.0026  29:27.2839  30:65.1467  31:6.1493  32:1.3984  33:0.0069  34:0.0035  35:0.0043  38:0.0009  40:0.0009  41:0.0009  44:0.0009  47:0.0009
+
+   per-window pooled medians at every cell (gpu_ticks):
+   cell     s158     s169     s185     s197     s209  act-rd1  act-rd2  act-rd3  act-rd4
+      1     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      2     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      3     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      5     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      6     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      7     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+      9     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     10     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     11     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     13     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     14     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     15     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     17     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     18     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     19     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     21     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     22     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+     23     31.0     30.0     31.0     31.0     30.0     30.0     30.0     30.0     30.0
+
+   SHAPE-VS-SHIFT rows (REPORT; the pure additive-shift account
+   predicts D_shift1 <= W_in at each cell):
+   idx= 1 D_groups=184.2153 D_shift1=79.5226 W_in=13.6458 -> pure additive-shift account REFUTED at this cell
+   idx= 2 D_groups=184.1250 D_shift1=79.1319 W_in=11.7396 -> pure additive-shift account REFUTED at this cell
+   idx= 3 D_groups=183.9531 D_shift1=78.1771 W_in=13.7604 -> pure additive-shift account REFUTED at this cell
+   idx= 5 D_groups=183.8559 D_shift1=79.2483 W_in=10.9167 -> pure additive-shift account REFUTED at this cell
+   idx= 6 D_groups=184.0451 D_shift1=79.4253 W_in=13.2396 -> pure additive-shift account REFUTED at this cell
+   idx= 7 D_groups=183.9913 D_shift1=79.1545 W_in=13.1146 -> pure additive-shift account REFUTED at this cell
+   idx= 9 D_groups=183.8056 D_shift1=79.7066 W_in=13.2813 -> pure additive-shift account REFUTED at this cell
+   idx=10 D_groups=184.2378 D_shift1=79.5208 W_in=13.4375 -> pure additive-shift account REFUTED at this cell
+   idx=11 D_groups=183.9062 D_shift1=79.1250 W_in=11.2396 -> pure additive-shift account REFUTED at this cell
+   idx=13 D_groups=184.1042 D_shift1=78.7812 W_in=12.8646 -> pure additive-shift account REFUTED at this cell
+   idx=14 D_groups=184.0833 D_shift1=78.4618 W_in=13.1250 -> pure additive-shift account REFUTED at this cell
+   idx=15 D_groups=184.3542 D_shift1=79.0938 W_in=12.1563 -> pure additive-shift account REFUTED at this cell
+   idx=17 D_groups=184.1198 D_shift1=79.0486 W_in=11.5833 -> pure additive-shift account REFUTED at this cell
+   idx=18 D_groups=183.7604 D_shift1=79.0295 W_in=11.8125 -> pure additive-shift account REFUTED at this cell
+   idx=19 D_groups=184.0868 D_shift1=79.6493 W_in=12.2396 -> pure additive-shift account REFUTED at this cell
+   idx=21 D_groups=183.9566 D_shift1=79.7205 W_in=11.1979 -> pure additive-shift account REFUTED at this cell
+   idx=22 D_groups=184.2066 D_shift1=79.7535 W_in=10.6875 -> pure additive-shift account REFUTED at this cell
+   idx=23 D_groups=184.3090 D_shift1=78.8941 W_in=10.9688 -> pure additive-shift account REFUTED at this cell
+
+4. THE host_ns CHANNEL (REPORT ONLY -- a different instrument
+   channel, CLOCK_MONOTONIC submit->completion; NO criterion
+   applied here -- descriptive rows only):
+   idx  (op,wg,forced)      host_m_a  host_m_b   D_groups_host
+     1  (sum,128,16)          678155.0  678255.5    70.9392
+     2  (sum,128,32)          666093.0  666461.2    70.8837
+     3  (sum,128,default)     666152.0  666293.5    70.8785
+     5  (max,128,16)          678015.0  677914.5    71.3385
+     6  (max,128,32)          666152.0  666428.0    71.0417
+     7  (max,128,default)     666042.0  666579.0    70.4045
+     9  (min,128,16)          678055.0  677835.0    71.5642
+    10  (min,128,32)          666012.0  666503.5    70.3507
+    11  (min,128,default)     666122.0  666273.2    70.8090
+    13  (sum,256,16)          537853.0  538108.5    62.4705
+    14  (sum,256,32)          533720.5  533801.2    62.5503
+    15  (sum,256,default)     533605.5  533836.0    62.5608
+    17  (max,256,16)          537793.0  538073.5    62.4392
+    18  (max,256,32)          533725.0  533808.5    63.1458
+    19  (max,256,default)     533775.0  533840.5    62.2448
+    21  (min,256,16)          537863.0  538063.5    62.6354
+    22  (min,256,32)          533705.0  533841.0    63.2222
+    23  (min,256,default)     533650.5  533805.5    62.2153
+
+   per-window pooled host_ns medians at every cell:
+   cell     s158     s169     s185     s197     s209  act-rd1  act-rd2  act-rd3  act-rd4
+      1 677037.5 678555.0 678785.0 678155.0 677614.0 678485.0 679337.0 678026.0 675951.0
+      2 664980.0 666593.5 666713.0 666093.0 665982.0 666723.0 667545.0 666329.0 664600.0
+      3 664960.0 666383.0 666643.0 666152.0 665781.0 666643.5 667385.0 666204.0 664319.0
+      5 676616.5 678235.0 678665.0 678015.0 677383.0 678094.0 678876.0 677735.0 675521.0
+      6 665010.0 666492.0 666793.0 666152.0 665942.0 666773.0 667455.0 666364.0 664390.0
+      7 665080.0 666663.0 666613.0 666042.0 666117.5 666893.5 667585.0 666495.0 664570.0
+      9 676702.0 678125.0 678695.0 678055.0 677343.0 678285.0 678997.0 677545.0 675560.0
+     10 664980.0 666593.0 666633.0 666012.0 666022.0 666864.0 667585.5 666414.0 664530.0
+     11 664970.0 666422.5 666643.0 666122.0 665841.0 666557.5 667295.0 666124.0 664229.0
+     13 537292.0 538173.0 538184.0 537853.0 538044.0 538293.0 538875.5 537954.0 536942.0
+     14 533004.0 533826.0 533866.0 533720.5 533775.0 534145.0 534567.0 533776.5 532724.0
+     15 532954.0 533826.0 533885.5 533605.5 533845.0 534156.0 534547.0 533827.0 532884.0
+     17 537242.0 538134.0 537944.0 537793.0 538013.0 538244.0 538739.5 537894.0 536771.5
+     18 533004.0 533815.5 533875.0 533725.0 533765.0 534116.0 534487.0 533801.5 532845.0
+     19 532974.0 533865.0 533866.0 533775.0 533800.5 534196.0 534567.0 533816.0 532864.0
+     21 537232.0 538154.0 538074.0 537863.0 537973.0 538184.0 538725.0 537804.5 536851.5
+     22 532874.0 533856.0 533835.0 533705.0 533826.0 534076.0 534527.0 533826.0 532824.0
+     23 532943.0 533755.0 533905.5 533650.5 533855.0 534136.0 534507.0 533756.0 532724.0
+
+5. THE EXTENT VERDICT (the row's answer; PATTERN-LEVEL):
+   SEPARATE at 18 of 18 pipeline-ok cells under the s234 rule
+   (W_out > W_in at every separating cell; the reading cell idx=1 is one of them).
+   EXTENT ROW: WHOLE-STREAM -- the (a)/(b) sample-shape
+   difference is NOT confined to the reading cell; it acts on
+   every recorded cell of the c2 dispatch stream (2 workgroup
+   sizes x 3 ops x 3 non-failed forced widths, 18/18 cells).
+   A cell-/kernel-LOCAL cause is ruled out as the locus.
+   SHAPE, NOT JUST SHIFT: the pure additive-shift account is
+   REFUTED at 18 of 18 cells
+   (D_shift1 > W_in there); the (b) shape is sharper than the
+   (a) shape at the reading cell (top1 65.0868% vs 52.3472%).
+   CAUSE DICHOTOMY: NOT DECIDED -- both surviving candidates are
+   whole-stream states (an execution-time state of the whole
+   dispatch stream vs an instrument/timestamp-quantization state
+   of the whole recording).  The RECORDED instrument/timestamp
+   metadata is byte-identical across all 27 runs of both letter
+   groups (section 1: 8 header lines, timestampPeriod=52.083
+   included) -- so the dichotomy's instrument side, if true, is
+   an UNRECORDED state; an unrecorded execution-time state is
+   equally live.  The CAUSE of the sample-shape difference stays
+   UNMEASURED (this row constrains its LOCUS only); the
+   underlying-instrument-state COUNT stays outside (s220 1(b)).
+
+6. THREE-STATE / RULE 4 / BAR (unchanged): every sample value
+   above is a named run's landed MEASURED QUANTITY on
+   aiueos-6600hs (Intel BMG G31) under the named instrument,
+   RE-PARSED from committed run-log bytes -- this slice measures
+   NOTHING new on hardware (no runs, no builds, NO GO stamp); the
+   share/distance arithmetic is DERIVED; the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   false rows remain provisional -- NOT optimization evidence);
+   NO vendor optimization exists for Intel (or for any vendor)
+   and none follows from this constraint.  RULE 4 unchanged:
+   NOTHING MOVES; the committed bracket stays EXACTLY (254,923,
+   255,045]; L9 binds at n=254,984 (C2 (c), D3 (v)); the MID-ONLY
+   NARROWING CLAIM stays SUSPENDED.  BAR NON-INTERFERENCE: NO
+   settle-bar-ledger line, NO day-slot consumption; the bar's
+   SETTLED INTERMEDIATE/MIXED verdict unmoved.
+
+7. NAMED, NOT HIDDEN:
+   (a) the s234 report's own prose counts 'the 24 committed run
+   logs'/'across all 24 runs' while its checks enumerate 27 runs
+   (9 windows x k=3; 27 'run integrity clean' rows in the
+   committed bytes) -- a prose-count artifact named here, no
+   value affected; this row's census says 27.
+   (b) the per-cell rule application is SUPPLEMENTARY REPORT --
+   the s234 criterion was frozen for the reading cell; only the
+   reading-cell rows (section 2) bind.
+   (c) the host_ns channel carries NO criterion here (its sample
+   shape confrontation needs its own frozen criterion).
+   (d) OUTSIDE this universe (named, not hidden): the s237 kernel-
+   variant arms (iter1/iter3/iter8/itervc8 spvs) and the s235
+   supplementary arms (anv-tsstage bb-b2/tt-b2) -- no extent row
+   covers them here.
+
+8. NOT DONE (s239 carries exactly this list): the s216 identity
+   hazard's remaining residuals (standing, not queued): the CAUSE
+   of the sample-shape difference stays UNMEASURED and UNDECIDED
+   (this row CONSTRAINED its locus to whole-stream states; a
+   cause-resolution act needs new hardware runs, each with its own
+   freeze -- standing, not queued); the underlying-instrument-
+   state COUNT stays outside (s220 1(b)); at N=75 the s235/s237
+   classifications carry NO noise model and near-neither
+   prevalence needs higher-N readings -- new hardware runs, each
+   with its own freeze (standing, not queued); standing, not
+   queued: any further counted-day slot (each needs its own
+   freeze) and the cross-day tail-movement row.  QUEUED for
+   s239: the host_ns channel's per-sample shape confrontation at
+   the reading cell under its own criterion frozen before the
+   numbers (this row reports the host channel descriptively
+   only).  (JUN-55, JUN-59; Linear tracking JUN-499)
+
+# crosscell-extent s238 (crosscell-extent-s238.py): 68 ok / 0 failed

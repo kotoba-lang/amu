@@ -1,0 +1,155 @@
+JUN-59 session 105 record (W6 MEASUREMENT session -- the s80 freeze's
+named W6 session: the FIRST measurement session starting at or after
+2026-10-30T00:00:00Z; session start 2026-10-30T00:01:23Z, 1m23s after
+the slot). ROW: the settle-bar's THIRD counted-day measurement (the
+W6 window, anv-b3w6daybar-20261030). STARTED, NOT FINISHED (named):
+the measurement and its entire derivation chain are COMPLETE and
+verified; the settle-bar-ledger.txt APPEND is NOT made -- the s80
+section-5 rule "ONLY after the standing gate set verifies" is frozen,
+and the runtime budget ended after gate set items (a)/(d)/(e) with
+(b) the scoped GPU gate and (c) the FULL run-tests.cljk run not yet
+run this tick. The emitted line (below) is byte-pinned and awaits
+those two gates, the append, the post-append evaluator pair and the
+reconcile --line (the s104 carry-forward's tail, moved to s106).
+
+1. THE MEASUREMENT (real, this session, aiueos-6600hs / aiueos-
+   6600hs-1, user murakumo-ci): the s57 route UNCHANGED. Custody
+   first: host workdir probed NO-WORKDIR (2026-10-30T00:16:41Z),
+   staged (mkdir + cp -a corpus from ~/anv-b3levelrep-20261028/
+   shaders at 00:16:57Z, scp instrument/manifest/census at
+   00:16:58Z; NAMED: the cp -a source held s51's 156 stale run-log
+   copies alongside the 16-file corpus -- removed from the staged
+   workdir before verification so the staged corpus is the 16-file
+   corpus exactly, the W5 shape; host-verify-s105.txt names it),
+   local-vs-host sha256 MATCH 3/3 (instrument a5e539f0... / manifest
+   47c7ead3... / census eefba52e...), corpus sha256sum -c 16/16 OK
+   corpus_rc=0, local corpus half 8 OK + 8 OK; GO stamp
+   2026-10-30T00:19:52Z precedes the builds and ALL runs. Four
+   pinned compiles (build-census-s105.txt): 4/4 rc=0, stderr total
+   0 bytes, digests 4/4 BYTE-IDENTICAL to the s51-frozen build pins
+   (c2 e5ed903e... hi a6c31b6c... tw bb901eb5... c8 480925e5...).
+   THE 78 RUNS in the frozen order (c2 r1-3, then k=1..12 hi block k
+   (r 3k-2..3k) immediately followed by tw block k, then c8 r1-3),
+   per-run host date -u immediately BEFORE invocation: 78/78 rc=0,
+   stderr_bytes=0, samples=450, verifies=24, cells=24, window span
+   2026-10-30T00:20:33Z .. 00:20:51Z (~18 s wall); run-window.txt
+   built by run-window-s105.py --rebuild (81 lines table+trailer,
+   live fields live-fields.txt sha256 df0f5b71...) under a session-
+   written prose header. Run logs verbatim in run-<tag>.txt /
+   .stderr.txt (78 + 78, .stderr total 0 bytes).
+
+2. THE READING (reading-s105.py w6 mode over the six windows' run
+   logs, run twice BYTE-IDENTICAL, stderr 0, publication-s105.txt
+   sha256 28794171...): s105 (NEW): median 1133 min..max 993..1449;
+   class INTERMEDIATE/MIXED; in-band vs the bar's frozen refs
+   1,129/1,132/1,131 (within +/-5% of EACH): True. Section-3
+   integrity: all six windows runs 78 vmis 0 counts/knobs/s8/cmap
+   True; named cell ok-map cell 5 (0-based), raw idx 7. C1 re-
+   derivation at the W6 window: c2 FLOOR (committed floor band
+   31..32), c8 (sum,128,S=16) pooled median 32821 vs committed
+   32,915 (0.29% delta, +/-5% required) -> C1 branch (a) both
+   controls replicate (NOT (b); the reading qualifies). Section 5:
+   run-window host-dates 78 parsed, 1 distinct day 2026-10-30.
+
+3. THE CROSS-CHECK (fresh-census-s105.py --w6 publication-s105.txt
+   anv-b3w6daybar-20261030, run twice BYTE-IDENTICAL, stderr 0,
+   fresh-census-s105.txt): VERDICT: CONSISTENT -- 66 claim rows 0
+   mismatched (every published integer of sections 1-6 re-derived
+   from the six windows' run logs + committed want sources), 125
+   body digit runs 0 UNCLAIMED (digit-span coverage), 530 dual
+   computations 0 mismatched (np.partition kth vs pure-Python
+   sorted() order statistics). This is the s101-named fresh-window
+   duty discharged on the real W6 window (derivation-census-
+   s105.py, the s90 census twin, is --compat-only with NO w6 mode --
+   named at s100; adopted here byte-equal to the manifest pin).
+
+4. THE WIRING (the s103-rehearsed custody->ledger composition, first
+   execution on the real fresh window): custody-s105.py --check
+   anv-b3w6daybar-20261030 s105 cases-s105-a.txt -- every check row
+   OK (match-lines 3/3, local-eq-host 3/3, chain digests instrument/
+   corpus/cells, corpus 16/16, GO present and ordering le/lt/le,
+   build lines/knobs/rc/stderr, 4 pins BYTE-IDENTICAL + the 4/4
+   verdict line, run-count 78, verify-lines 1872, verify-mismatch
+   total 0) -> flag=none, ledger-pin=ok, ledger-go=ok (run twice
+   BYTE-IDENTICAL). The pin/go tokens fed VERBATIM into
+   ledger-s105.py --emit anv-b3w6daybar-20261030 ok ok -> the line,
+   twice BYTE-IDENTICAL, the emit path never appends (settle-bar-
+   ledger.txt == HEAD, git diff empty, verified at commit):
+     day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133 min=993 flag=none
+
+5. GATES (the standing gate set -- PARTIAL at budget cutoff, named
+   not hidden): (a) gpu_regime_classify.py --self-test exit 0
+   2649/0, capture 17,925 bytes BYTE-IDENTICAL to the s88 pin
+   (anv-b3w6tailrep-20261030/gate-s88-classify.txt, cmp exit 0),
+   .err 0 bytes; (d) settle-bar evaluator --self-test 38/0 (3,590
+   bytes == s88 pin) + ledger eval twice BYTE-IDENTICAL == s88 pin
+   (823 bytes) -> VERDICT: PENDING 2/4 unchanged (counted
+   day=2026-10-28 session=s31; counted day=2026-10-29 session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files. NOT RUN AT
+   CUTOFF: (b) the scoped GPU gate twice via the scratch runner and
+   (c) the FULL run-tests.cljk live run (expected RED AT BASE
+   kotoba.form at s88's pin). Per s80 section 5 the ledger line is
+   NEVER appended before the gates: NO APPEND THIS TICK.
+
+6. THE BAR: NO append -> NO day-slot consumption this tick -> the
+   bar stays PENDING 2/4 (the evaluator is the only verdict source;
+   the emitted line above consumes nothing until appended). The
+   2026-10-30 day slot is held open for the W6 line by construction
+   (no other qualifying reading of that day exists in the ledger).
+
+7. ADOPTION (adoption-check-prego.py --check over the manifest:
+   VERDICT: CONSISTENT matched 25 mismatched 0, twice BYTE-
+   IDENTICAL, stderr 0 -- fail-closed gate passed BEFORE any
+   copy): the seven tools adopted byte-equal to the manifest pins
+   in this directory: reading-s105.py (acec9f15...), derivation-
+   census-s105.py (b5a447b6...), run-window-s105.py (b999a4b2...),
+   custody-s105.py (f2a1dc2b...), ledger-s105.py (64a54e40...),
+   reconcile-s105.py (d52b1301...), fresh-census-s105.py
+   (0d9ffc37...); each digest verified against the manifest after
+   copy. Manifest cases-s105-a.txt: fresh session-105 header + the
+   24 cell lines BYTE-COPY of cases-s51-a.txt (cell digest
+   873025d650afae23... == the frozen chain value, verified
+   programmatically before upload).
+
+8. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor). This is the anchor-class settling bar's
+   measurement machinery on the ANV host, not a workgroup-default
+   measurement; the reading's class is the bar's own frozen
+   threshold class, not a vendor row.
+
+9. NAMED, NOT HIDDEN: (a) reading-prego-fixed.py's frozen w6 output
+   ends with the pre-build-voiced note "this reading machinery
+   pre-build computes NO W6 quantity" -- the adoption manifest
+   byte-pins that tool, the note text is its frozen prose, and the
+   section-1..6 rows above it ARE the W6 quantities; not edited
+   (editing would break the manifest pin); (b) derivation-census-
+   s105.py is adopted but has NO w6 mode (s100 named) -- the fresh-
+   window cross-check duty is fresh-census-s105.py's (s101); (c)
+   the host workdir ~/anv-b3w6daybar-20261030 keeps its run logs on
+   the host (staging + runs named in host-verify-s105.txt); (d) the
+   two gates (b)/(c) and the whole append tail are QUEUED, not
+   dropped.
+
+10. NOT DONE (carry-forward to session 106, named):
+   (a) gate set (b) scoped GPU gate twice + (c) FULL run-tests.cljk
+       live (the standing set's missing halves);
+   (b) THEN the ledger append of the byte-pinned line (s80 section
+       5), the post-append evaluator pair (expected PENDING 3/4 --
+       the evaluator is the only verdict source) and reconcile-
+       s105.py --line on the pair (the s99 tool);
+   (c) the T18 analysis half, the T20 analysis half, the W7
+       measurement half -- all gated behind (b)'s append;
+   (d) any further counted-day slot (its own freeze) and a cross-
+       day tail-movement row (not queued).
+
+Evidence: docs/evidence/gpu/anv-b3w6daybar-20261030/ (this record,
+protocol.txt + freeze-record-s80.txt, the adopted seven tools,
+cases-s105-a.txt, host-verify-s105.txt, build-census-s105.txt,
+run-window.txt + the 156 run logs + live-fields.txt,
+publication-s105.txt, fresh-census-s105.txt, the s105 gate/wiring
+captures + state-s105.txt) + the ADR-0355 dated note. (JUN-55,
+JUN-59; Linear tracking JUN-499)

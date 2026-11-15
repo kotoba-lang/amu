@@ -1,0 +1,45 @@
+identity-shape-s234-identity.txt -- s234 script/pair identity + the
+named dev attempts (NAMED, NOT HIDDEN; none of them is evidence)
+
+script: identity-shape-s234.py sha256 12f3718caa879dca8a1d51f2e66061a8310fb2a64033a9253ebc160fe8e1887e
+official pair: identity-shape-s234-run1.txt == run2.txt, 14,830 bytes,
+  sha256 2b00a0a63b30df16def000f3e08e74ecde6cd3563b601ab1dde9a2f5ac254fd8 both, cmp exit 0
+  (stdout pair); .err 0 bytes both, cmp exit 0 (stderr pair); both
+  rc 0; tail '# identity-shape s234 (identity-shape-s234.py):
+  76 ok / 0 failed'.
+
+NAMED, NOT HIDDEN -- FOUR dev attempts kept visible, none evidence,
+all touching the VERIFIER only (no committed byte changed, no parsed
+reading value changed):
+(i) scratch/explore-shape-s234.py (UNTRACKED worktree scratch, NOT
+    committed, NOT staged): the pre-script exploration of the same
+    histograms that motivated the criterion; NOT claimed as evidence
+    and NOT cited as a measurement.
+(ii) identity-shape-s234-devrun1.txt/.err (rc 1, '70 ok / 5
+    failed'): RE_LETTER was anchored '^L' and could not match the
+    committed letter rows' leading indentation -- 5 false FAILs
+    ('ABSENT'); the rows are at publication-s229.txt L74/L86/L98/L110.
+    Verifier regex only.
+(iii) identity-shape-s234-devrun2.txt/.err (rc 1, '70 ok / 5
+    failed'): TWO verifier defects -- (iii.a) the per-reading letter
+    check compared the derived letter to ml.group(1) (the letter row
+    NUMBER) instead of ml.group(2) (the letter); (iii.b) the
+    aggregate row 'L1..L4 = (b) / (b) / (b) / (b)' entered the
+    letter-row census through its 'L4 = (' substring.  Fixed: the row
+    regex pins the committed row FORM (with its s218 1(c) tail) and
+    the aggregate is parsed, shape-checked against the four row
+    letters, EXCLUDED from the census and REPORTED (check
+    S234.C229.3b; the s233 (ii.a) precedent).
+(iv) identity-shape-s234-devrun3.txt/.err (rc 0, '76 ok / 0
+    failed'): the clean pre-pair confirmation run, kept visible; the
+    official pair is run1/run2 above.
+
+dev capture sha256:
+  devrun1 ba134525682d633c71bb546c3c4f85e45511f9664ccb487362bda846cbe013eb / err e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  devrun2 00b2a99ec216d86505ac94c81078cf4ebf9a2f1260d988d99a03d0683b23bb91 / err e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  devrun3 2b00a0a63b30df16def000f3e08e74ecde6cd3563b601ab1dde9a2f5ac254fd8 / err e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+KNOWN ARTIFACT: Pyright reports reportOptionalMemberAccess false
+positives on the regex-match accesses after explicit None guards (the
+s199/s209 artifact); runtime unaffected (both pair legs exit 0 and
+agree byte-identically).

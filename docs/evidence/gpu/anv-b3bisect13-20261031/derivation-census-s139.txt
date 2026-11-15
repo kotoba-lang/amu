@@ -1,0 +1,61 @@
+== JUN-59 session 139 derivation census (THE B=3 PER-DISPATCH-WORK ==
+== THRESHOLD BISECT, THIRTEENTH CUT -- THE 16-BLOCK STABILITY      ==
+== CONFRONTATION CUT; ZERO derivation edits at the s137 freeze;    ==
+== ZERO NEW KNOB TRIPLES (4/4 pinned OLD binaries, section 2 of     ==
+== the frozen protocol -- the measuring session rebuilds them all)  ==)
+every value below is COMPUTED here (sha256) or PARSED from committed
+bytes (protocol.txt section 2 of
+anv-b3bisect13prereg-20261031/, committed at s138; the same pins
+knob-search-s137-run1.txt parsed and self-checked at the freeze).
+Nothing is transcribed.
+
+ZERO-DERIVATION CUSTODY (computed here, local files):
+  instrument gpu-subgroup-reduce-anv-ndiv.c.txt sha256: a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556
+  == parsed pin (s26 committed NDIV-derived source, protocol.txt
+     section 1): a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 -> MATCH
+  expected-corpus.sha256 sha256: eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4
+  == parsed pin (byte-copy of s27's, protocol.txt section 1): eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 -> MATCH
+  cases-s139-a.txt sha256: 13f0eaa7913f9bb2d94227665e6cecca585a069d0eeb96ac5605cf758ca21535 (s139 header + 24 cell lines)
+  the 24 cell lines' block sha256 (computed here, grep -v '^#' over
+  cases-s139-a.txt): 873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200
+  s27's cases-s27-a.txt cell-line block sha256 (parsed, as recorded
+  in anv-b3bisect12-20261031/derivation-census-s136.txt and
+  anv-b3bisect7-20261027/derivation-census-s27.txt):
+                                    873025d650afae2329ab2c05c2048931a5263976b9bfb585d3665b7018c32200 -> MATCH
+  s132's / s136's recorded cell-line block sha256: the same value
+  (their censuses record 873025d6... == s27) -> MATCH
+  (cell lines byte-equal to sessions 9-27's a-set; the byte-copy
+   check is this measuring session's derivation-census duty --
+   discharged)
+
+HOST-SIDE DIGESTS (verbatim in host-stage-s139.txt /
+host-digests-s139.txt):
+  host instrument sha256 a5e539f0ad1c5d732cda1eaa1cd2abb1aa4d1a66795c09c4ecb35ed2c3520556 == local -> MATCH
+  host expected-corpus.sha256 sha256 eefba52e7be052d66eb7baae700b3f7583db7306f1a7d6b5a2201b862ac595a4 == local -> MATCH
+  manifest cases-s139-a.txt host==local sha256 13f0eaa7913f9bb2d94227665e6cecca585a069d0eeb96ac5605cf758ca21535 -> MATCH
+  corpus: 16/16 sha256sum -c OK on host (shaders/ byte-copy from
+  ~/anv-b3bisect12-20261031's verified corpus), corpus_rc=0
+  (NAMED, NOT HIDDEN: that shaders/ copy also carried 48 stale
+   run-hi-* logs of an earlier cut -- see host-digests-s139.txt;
+   not this cut's, never read, never aggregated)
+
+BUILD REPLICATION PINS (parsed from committed bytes,
+protocol.txt section 2; compared to the s139 build census):
+  anv-bb-c2 built e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+    pin (s27 census anv-bb-c2, parsed): e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489 -> BYTE-IDENTICAL (PIN OK)
+  anv-bb-mid built cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589
+    pin (s125 census anv-bb-mid, the pair's first measured digest,
+    parsed): cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589 -> BYTE-IDENTICAL (PIN OK)
+    cross-check (protocol.txt section 2 records the 4-way
+    s125/s129/s132/s136 MATCH at this digest) -> MATCH; this s139
+    rebuild is the FIFTH byte-identical build -- all five committed
+    mid readings (s125/s129/s132/s136/s139) occurred at
+    byte-identical binaries.
+  anv-bb-bis built 440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440
+    pin (the s136 first measured digest, DECLARED the pin by
+    protocol.txt section 2 at the s137 freeze, parsed):
+    440604efbb892559358b76c140bfe8b03386e12d1ee2c25acf121befafeb6440 -> BYTE-IDENTICAL (PIN OK)
+  anv-bb-c8 built 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+    pin (s27 census anv-bb-c8, parsed): 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807 -> BYTE-IDENTICAL (PIN OK)
+  4/4 pinned OLD binaries BYTE-IDENTICAL; ZERO NEW KNOB TRIPLES
+  (the frozen protocol's section 0 shape: "ZERO NEW KNOB TRIPLES").

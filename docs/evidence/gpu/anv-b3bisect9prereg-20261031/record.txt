@@ -1,0 +1,158 @@
+JUN-59 session 123 record (the NINTH CUT PRE-REGISTRATION session --
+the s122 carry-forward (a), "any ninth cut ONLY through a NEW
+pre-registered cut session (its own freeze)": the knob search + the
+write-once protocol.txt + freeze-record, the standing gate set, the
+record/ADR note/commit). ROW: land the ninth cut's design half. NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO day-slot
+consumption, NO ledger line. One finding (section 5).
+
+1. GATES (the standing set, real runs this tick, byte-compared to
+   the s88 committed pins in anv-b3w6tailrep-20261030/ and the s117
+   post-append eval pin):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture 17,925 bytes == s88
+       pin (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk
+       (accelerator-targets / -variants / -test / -pipeline /
+       -subgroup-reduce / -simdgroup-reduce / -spirv /
+       -spirv-compile-test), same engine and classpath; created,
+       run twice, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin
+       == the s88 run-2 pin (cmp exit 0 x3, 919 bytes), stderr 0
+       bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO committed .cljk namespace). Capture .err
+       879 bytes == s88 pin (cmp exit 0); stdout 0 bytes == pin. NO
+       green full suite is claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == s88
+       pin; ledger eval twice, exit 0, run 1 == run 2 == the s117
+       post-append pin (anv-b3w7ledgerappend-20261031/bar-s117-eval-
+       post-run1.txt, 1,006 bytes, cmp exit 0) -> VERDICT: SETTLED
+       INTERMEDIATE/MIXED (the committed landing, unchanged).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 entries.
+   (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-ledger.txt
+       rc 0 (== HEAD; the emit path never ran).
+
+2. THE KNOB SEARCH (the s123 slice): knob-search-s123.py
+   (committed-intent derivation, pure stdlib, no
+   clock/RNG/network/hardware) ran TWICE BYTE-IDENTICAL (run1 ==
+   run2, 5,014 bytes, rc 0, .err 0 both; grep
+   'NOT PARSED|MISMATCH|FAIL' -> 0). The search SELF-VALIDATES
+   against TWO committed censuses -- session 27's (253,255: 35
+   pairs / smallest (214,845) / 9 in-box doubles, MATCH x3) and
+   session 119's committed eighth-cut run (254,557: 31 pairs /
+   smallest (405,1591) / 7 in-box doubles, MATCH x3; upper anchor
+   255,208: 18 pairs / smallest (1213,4753), MATCH x2). Cut point
+   254,882 = (254,557+255,208)//2 (bracket midpoint 254,882.5 --
+   NOT an integer this cut; the floor is taken and named): 35
+   in-box knob pairs hit it, smallest (248,973), 10 with in-box
+   same-ratio doubles, the eq3 double (496,1946) verified in-box,
+   gcd(254,882, 1,000,003) = 1. Build pins PARSED from committed
+   censuses: c2 e5ed903e..., c8 480925e5..., lo (405,1591) triple
+   0ce4616c... (session 121's build census anv-bb-mid line -- the
+   pair's first measured digest), hi (1213,4753) triple 123e8f73...
+   (s26 census). Every committed-byte citation parses (zero NOT
+   PARSED): the s27 trio "1,166 / 1,166 / 1,156 CAPTURED", the s24
+   C3 (b) quote "1,000 vs 994 at n=255,208", the s27 committed
+   controls line, the s27 b2m-class want line, the s121 W1 bracket
+   "(254,557, 255,208]", the s121 lo-pair reading (class
+   INTERMEDIATE/MIXED, pooled median 1,156, 18-cell 986..1,459),
+   the s121 hi-pair reading (1,160 CAPTURED), the s121 b2m reading
+   (FLOOR 32), the four counted ledger rows and the frozen
+   evaluator pin VERDICT: SETTLED INTERMEDIATE/MIXED.
+
+3. THE FREEZE: protocol.txt written ONCE (freeze stamp
+   2026-10-31T05:42:23Z; no run log of this cut exists at freeze) +
+   freeze-record-s123.txt -- the NINTH CUT pre-registration in the
+   s27 protocol shape: the row question at n=254,882 (the floor
+   midpoint of the re-opened bracket (254,557, 255,208], the eighth
+   cut's W1 (b) verdict); the arm table c2/lo/mid/eq3/hi/b2m/c8
+   (mid (3,248,973), eq3 (3,496,1946), b2m (2,248,973), lo = the
+   eighth cut's committed mid pair (405,1591), hi = (1213,4753));
+   build pins as PARSED (c2 e5ed903e..., c8 480925e5..., (405,1591)
+   0ce4616c..., (1213,4753) 123e8f73...); frozen thresholds
+   (identical to sessions 2-27); letters C1/C2/C3/W1/W2/W3/X1; the
+   BAR NON-INTERFERENCE clause; frozen limitations L1/L2/L3/L4/L5/
+   L8; the analysis route shape.
+
+4. DOUBLE-RUNS: knob-search-s123.py run 1 == run 2 byte-identical
+   (5,014 bytes); scoped gate run 1 == run 2 == both s88 pins;
+   evaluator self-test == s88 pin; evaluator ledger pair run 1 ==
+   run 2 == the s117 post-append pin. All gate captures compare
+   byte-equal to committed pins (cmp exit 0 everywhere named).
+
+5. FINDING -- THE NINTH CUT IS PRE-REGISTERED (design half
+   FROZEN): the eighth cut's committed W1 (b) verdict
+   (INTERMEDIATE/MIXED at n=254,557 ((405,1591), s121 pooled
+   median 1,156) -- publication-s121.txt, landed s122) brackets
+   the B=3 class flip in (254,557, 255,208] n-units (the next
+   committed CAPTURED point is n=255,208 ((1213,4753): s24 mid
+   1,166 / s25 hi 1,166 / s26 hi 1,156, parsed from committed
+   bytes), and the ninth cut measures the bracket's EXACT floor
+   midpoint n=254,882 (bracket midpoint 254,882.5 -- NOT an
+   integer, the floor is taken and named; 35 in-box knob pairs hit
+   it, smallest (248,973), the eq3 in-box double (496,1946)
+   verified, gcd(254,882, 1,000,003) = 1; 254,557's smallest
+   in-box pair IS the eighth cut's committed pair (405,1591);
+   255,208's smallest IS (1213,4753)). The pre-registration is
+   ACCEPTED DESIGN ONLY (protocol.txt + freeze-record-s123.txt +
+   the ADR-0355 dated note) -- not implemented compiler code, not
+   a measurement; the measurement half (21 fresh processes under
+   this frozen protocol) is a FUTURE session and every ninth-cut
+   quantity is UNMEASURED. WHAT IT PRE-REGISTERS (frozen scope):
+   the cut grid point, the arms, the letters and the bar
+   non-interference -- nothing about the outcome; no bracket is
+   narrowed until the measuring session runs W1.
+
+6. NAMED, NOT HIDDEN: (a) the bracket midpoint is NOT an integer
+   this cut (254,882.5) -- the floor is taken and named in
+   protocol section 0 (the eighth cut's midpoint was exact
+   254,557.0); (b) the ninth cut's mid/eq3/b2m triples
+   (3,248,973)/(3,496,1946)/(2,248,973) are NEW knob triples (the
+   session-21 L8 combination risk class), while lo (3,405,1591)
+   now HAS a prior binary (session 121's anv-bb-mid digest
+   0ce4616c..., where the triple was the mid arm) and is pinned to
+   it; session 121's (810,3182)/(2,405,1591) digests (97d38f8f.../
+   95fc34fe...) are named as context and are NOT pins for this
+   cut's eq3/b2m (different triples); (c) the scoped-gate scratch
+   runner was created, run twice, deleted this tick (never
+   committed; scratch/ untracked); (d) the kbb engine's standing
+   "2 dep(s) are not :local/root" warning reaches no capture
+   (.err 0 bytes wherever the pins are 0); (e) untracked scratch/
+   and deps.edn are not this row's and are not committed.
+
+7. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor). This is bisect pre-registration machinery on
+   the ANV host, not a workgroup-default measurement.
+
+8. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before the commit+push (capture
+   prlist-s123-prepush.json); chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4 -- the one this commit pushes to).
+
+9. THE BAR STATE (evaluator output only): SETTLED
+   INTERMEDIATE/MIXED (the s117 landing, unchanged this tick; no
+   ledger line, no day-slot consumption). Carry-forward to s124:
+   (a) the ninth cut's MEASUREMENT half (21 fresh processes under
+   the frozen protocol.txt -- its own session, NOT queued here);
+   (b) any further counted-day slot (its own pre-registration
+   freeze) and the cross-day tail-movement row (not queued). NO
+   queued row remains: s124 takes a row only if one is queued or
+   frozen to run, else stands down.
+
+Evidence: docs/evidence/gpu/anv-b3bisect9prereg-20261031/ (this
+record + protocol.txt + freeze-record-s123.txt + knob-search-
+s123.py + its two byte-identical runs + the s123 gate captures +
+state-s123.txt) + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)

@@ -1,0 +1,18 @@
+== pull-verify-s225 run-twice byte-identity (session 228) ==
+script pull-verify-s225.py sha256
+5071bb8c114a75c56de5289049ded9bc68910a2c90bfc59c21e1f3f1e7eeb850
+run1: rc 0, stdout 1,206 bytes sha256
+42bc41901ab569baaafed9352abd50a0368a33ae9a1c203bb46d0b620c5126fa,
+stderr 0 bytes
+run2: rc 0, stdout 1,206 bytes sha256
+42bc41901ab569baaafed9352abd50a0368a33ae9a1c203bb46d0b620c5126fa,
+stderr 0 bytes
+cmp exit 0 (byte-identical, both .txt and .err). The first run
+passed fail-closed -- no draft pair exists; the run-twice pair is
+the first capture.
+NAMED, NOT HIDDEN: a Pyright LSP diagnostic appeared on
+pull-verify-s225.py line 84 after its write (h.update(chunk) over
+gzip.open binary reads, bytes|str vs ReadableBuffer type-inference
+false positive; the s199/s209 artifact) -- runtime unaffected: both
+recorded runs rc 0 with stderr 0 bytes.
+(JUN-55, JUN-59; Linear tracking JUN-499)

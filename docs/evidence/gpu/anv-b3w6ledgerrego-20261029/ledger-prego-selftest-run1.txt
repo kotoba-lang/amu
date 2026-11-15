@@ -1,0 +1,28 @@
+check clean-window-line: got 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' want 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' -> ok
+check clean-window-grammar: got True want True -> ok
+check clean-window-determinism: got 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' want 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' -> ok
+check grammar-rejects-bad-shape: got False want False -> ok
+check grammar-rejects-unknown-flag: got False want False -> ok
+check c2-not-floor-c1-b: got 'flag=c1-b' want 'flag=c1-b' -> ok
+check c8-out-of-band-c1-b: got 'flag=c1-b' want 'flag=c1-b' -> ok
+check precedence-c1-over-verify: got 'flag=c1-b' want 'flag=c1-b' -> ok
+check verify-only: got 'flag=verify-mismatch' want 'flag=verify-mismatch' -> ok
+check precedence-verify-over-pin: got 'flag=verify-mismatch' want 'flag=verify-mismatch' -> ok
+check pin-only: got 'flag=pin-missing' want 'flag=pin-missing' -> ok
+check precedence-pin-over-go: got 'flag=pin-missing' want 'flag=pin-missing' -> ok
+check go-only: got 'flag=custody-go' want 'flag=custody-go' -> ok
+check all-four-fired: got 'flag=c1-b' want 'flag=c1-b' -> ok
+check pin-undecided-refuses: got 'REFUSED-INPUT-UNDECIDED' want 'REFUSED-INPUT-UNDECIDED' -> ok
+check go-undecided-refuses: got 'REFUSED-INPUT-UNDECIDED' want 'REFUSED-INPUT-UNDECIDED' -> ok
+check missing-anchor-run-refuses: got 'REFUSED-NO-READING' want 'REFUSED-NO-READING' -> ok
+check missing-c8-run-refuses: got 'REFUSED-NO-READING' want 'REFUSED-NO-READING' -> ok
+check two-day-window-refuses: got 'REFUSED-NOT-SINGLE-DAY' want 'REFUSED-NOT-SINGLE-DAY' -> ok
+check no-run-window-no-day-refuses: got 'REFUSED-NO-DAY' want 'REFUSED-NO-DAY' -> ok
+check no-run-window-quoted-day: got 'day=2026-10-28' want 'day=2026-10-28' -> ok
+check bad-quoted-day-refuses: got 'REFUSED-NO-DAY' want 'REFUSED-NO-DAY' -> ok
+check cell-map-drift-refuses: got 'REFUSED-CELL-MAP' want 'REFUSED-CELL-MAP' -> ok
+check short-sample-census-refuses: got 'REFUSED-SAMPLE-COUNT' want 'REFUSED-SAMPLE-COUNT' -> ok
+check no-ok-sum128-refuses: got 'REFUSED-NO-SUM128' want 'REFUSED-NO-SUM128' -> ok
+check extra-arm-shape-still-derives: got ['class=INTERMEDIATE/MIXED', 'median=907', 'min=907', 'flag=none'] want ['class=INTERMEDIATE/MIXED', 'median=907', 'min=907', 'flag=none'] -> ok
+check extra-arm-determinism: got 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' want 'day=2026-10-30 session=s99 class=INTERMEDIATE/MIXED median=907 min=907 flag=none' -> ok
+TOTAL: 27 assertions passed, 0 failed

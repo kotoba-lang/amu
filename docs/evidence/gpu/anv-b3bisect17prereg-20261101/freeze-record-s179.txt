@@ -1,0 +1,138 @@
+JUN-59 session 182 -- THE SEVENTEENTH CUT PRE-REGISTRATION FREEZE
+(the s179 design decisions D1-D5; the cut-point census landed at
+s178, the fail-closed design-verify at s181; this file completes
+the s181 carry-forward ("protocol.txt FROZEN + freeze-record at
+its own slice")). Named freeze-record-s179.txt per the s143/s152
+naming precedent (design artifacts carry the DECISION session's
+number; this file is written at s182 and the freeze stamp below is
+s182's protocol.txt write time, honestly: NO run log of this cut
+exists at freeze -- run-log count in this directory at freeze 0;
+the only run captures are the s178 census pair and the s181
+design-verify pair, which are quote/arithmetic verification of
+committed bytes, not measurement).
+NAMED, NOT HIDDEN: s176 through s182 ran NO hardware, NO builds,
+NO compiles, NO gates, NO GO stamp, NO day-slot consumption, NO
+ledger line -- every one of these ticks is pre-registration DESIGN
+content only (s176 row decision, s177 parse-target pins, s178
+census twice byte-identical, s179 design draft, s180 verify-target
+pins, s181 design-verify twice byte-identical, this freeze).
+
+1. WHAT IS FROZEN: docs/evidence/gpu/anv-b3bisect17prereg-20261101/
+   protocol.txt (the SEVENTEENTH CUT pre-registration -- THE
+   QUARTER-POINT CUT AT q1 (B=3, WM=313, NDIV=1229) n=254,679;
+   q=2/floor-midpoint 254,801 NOT re-cut; mid NOT re-measured;
+   freeze stamp 2026-11-01T16:20:57Z; written before any run log
+   of this cut exists -- at freeze this directory held only the
+   s176-s181 state captures, knob-search-s177.py + its two
+   byte-identical run captures (+ .err, + the named draft-1 pair,
+   + identity), design-verify-s179.py + its two byte-identical
+   run captures (+ .err, + identity), and prlist-s181-prepush.json
+   -- enumerated by tool at freeze, no unexpected entries).
+   protocol.txt pin: 19,974 bytes, sha256
+   ad8ace961cf6eca9f1e68752b9fba89861806a8161fbaec5448c7654a74cf6fb
+   (shasum tool output at freeze). The frozen content, in the
+   confrontation spec's four arms:
+
+   (a) CONTENT CONFRONTATION: FIRST the 16th cut's content at fm
+       (345, 1354) n=254,801 (C2 (c) CLASS-UNRESOLVED; block
+       classes 10x CAPTURED + 3x INTERMEDIATE/MIXED + 3x IN-BAND-
+       UNDECIDED; block binding min(m-h) 997.0538..1006.7909 (16
+       values), pooled-48 1,002.7437; block m 1,145..1,134, pooled-
+       48 1,138; pooled-48 class CAPTURED; its letters C1 (b); C2
+       (c); W1 (d); "CUT VERDICT: INVALID; NOTHING MOVES") with the
+       frozen SUPERSESSION STATEMENT (NO letter of this cut
+       supersedes the 16th cut's point content; this cut's point is
+       VIRGIN -- vacuous-at-point, this cut's content would be the
+       FIRST content at it; the ONLY supersession this cut can
+       perform is on the control reading); then the C1 (b)
+       discrepancy CONFRONTED AT ARM (a) AND NAMED AS A LIMITATION
+       (this cut's C1 (a) supersedes the 16th's C1 (b) as the
+       CURRENT CONTROL STATE if c2 lands FLOOR in band 31..32; on
+       replication nothing is superseded, W1 (d) fires, the floor
+       band 31..32-vs-30 question escalates to a named open control
+       question; cause UNMEASURED, L2; NAMED at s176: NOT binary-
+       driven).
+   (b) BLOCK-GRANULARITY FLOOR: 16 disjoint blocks of 3 runs +
+       pooled-48 at NEW first-measured binaries (the ROUNDS6400
+       variant, source pin c2704aaa... ADOPTED UNCHANGED -- re-
+       hashed at freeze, MATCH; build digests recorded by the
+       measuring session, never transcribed); single-class across
+       ALL blocks AND the pooled arm passes. THE ARM-(b) RE-READ
+       HAZARD NAMED ON BOTH EDGES: (i) binds literally at 254,801
+       (the 16th cut's 10/3/3 IS the mixed shape -- why D1 does not
+       re-cut it); (ii) at the virgin point no committed content to
+       re-read, but a mixed outcome at 254,679 is NOT rescued by
+       later same-shape blocks -- C2 (c) binds L9 at 254,679 and a
+       same-shape re-run re-reads, not confronts.
+   (c) STATISTIC CONFRONTATION, option (i) -- THE DEEP-POOLING CI
+       CLASS STATISTIC: h_c = 3.6420 * MAD_c / sqrt(N) (3.6420 =
+       1.96 * 1.2533 * 1.4826, frozen formula), N = 3R = 19,200
+       per block / 48R = 307,200 per pooled-48; unit classes at the
+       FROZEN 1,000-tick threshold (CAPTURED iff all m_c - h_c >=
+       1,000; FLOOR iff all m_c + h_c <= 100; I/M iff some m_c +
+       h_c < 1,000 and some m_c - h_c > 100; IN-BAND-UNDECIDED
+       otherwise); R = 6,400 ADOPTED UNCHANGED, NOT re-derived (the
+       s166 freeze's derivation: R=3,200 h_max 2.6949 fails,
+       R=6,400 1.9056 passes, binding idx 22 MAD 72.5, s147-mid
+       cross-check R* = 6,400). OPTION (ii) (the tolerance rule)
+       CONSIDERED AND NOT CHOSEN (D4): cross-cut comparability;
+       (ii) would pre-register a deadlock (every committed block-
+       unit minimum inside the remaining bracket sits in the band
+       981..1,015 -> IN-BAND-UNDECIDED at every point); (i)'s
+       binding spread is narrower (2.9737 bis / 9.7371 fm vs band
+       width 34 -- descriptive arithmetic). C2: (a) STABLE-
+       INTERMEDIATE / (b) STABLE-CAPTURED / (c) CLASS-UNRESOLVED
+       (FAILS, L9 binds at 254,679) / (d) INVALID (the frozen
+       INVALIDATION criterion: > 0 VERIFY mismatches in any run ->
+       DEFECTIVE / arm INVALID). NAMED: the statistic is chosen
+       BEFORE any run ("A statistic chosen after the runs are read
+       is never a confrontation."); the arm-(c) hazard is NOT
+       eliminated -- mixed content at 254,679 is fully possible and
+       lands as W1 (c) NOTHING MOVES.
+   (d) CLAIM-FORM CONFRONTATION: the disputed record (5 dual-class
+       rows: lo 1,156 I/M s121 / 1,143 C s125; mid 1,129 I/M s125 /
+       1,133 I/M s132 / 1,148 C s136; + lo pooled-12 1,141 I/M s129
+       / mid pooled-48 1,140 C s139 + s147 pooled-48 1,148
+       TOLERANCE-UNRESOLVED + the cabff942... cross-window
+       disagreement s132 1,133 I/M vs s136 1,148 C vs s139 1,140 C
+       vs s147 1,148) with NO letter touching lo/mid + the MID-ONLY
+       NARROWING CLAIM's implication tracking (W1 (a) REFUTES it BY
+       IMPLICATION, F <= 254,679 < 254,882; W1 (b)/(c)/(d) leave it
+       SUSPENDED) + ROW QUESTION + C2/W1/W2/W3/X1 shapes + ARM
+       TABLE c2/q1/c8 = 54 processes (3+48+3 self-check ok) + ONE
+       NEW KNOB TRIPLE q1 (313, 1229) (L8 APPLIES; 8 in-box same-
+       ratio doubles enumerated, NONE measured, no twin arm) + the
+       L1-L10 limitation set + the D2 named limitation.
+
+2. WHAT IS NOT FROZEN / NOT DONE (s183 carries exactly this list):
+   (a) the post-freeze landing of the seventeenth-cut pre-
+       registration at its own slice (the standing gates (a)-(f)
+       with the running session's captures; record.txt for the
+       sessions 176-182 + the ADR-0355 dated note; the landing
+       tail: blocker-first re-check + JUN-499 landing comment --
+       this tick's s182 commit pushes the freeze slice itself per
+       the chain rule and carries its own short JUN-499 comment;
+       the LANDING comment is (a)'s);
+   (b) standing, not queued: the seventeenth cut MEASUREMENT half
+       (54 fresh processes under this frozen protocol -- NOT
+       queued; every seventeenth-cut quantity -- every unit class,
+       C2, W1, W2, W3, X1 -- is UNMEASURED until then and no claim
+       is made now), any further counted-day slot (each needs its
+       own freeze) and the cross-day tail-movement row (not
+       queued).
+
+3. BAR NON-INTERFERENCE held at s176 through s182: no hardware, no
+   builds, no compiles, no GO stamp, no day-slot consumption, no
+   ledger line (git diff --exit-code -- docs/evidence/gpu/settle-
+   bar-ledger.txt rc 0 re-verified at this freeze). RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+   rows stay exactly as ADR-0358 left them; this freeze asserts NO
+   :measured? movement and makes no workgroup-default claim (the
+   workgroup defaults remain provisional design assumptions,
+   :measured? false -- NOT optimization evidence). NO vendor
+   optimization exists for Intel (or for any vendor); this is
+   bisect measurement-machinery DESIGN on ONE host's instrument
+   question, not a workgroup-default measurement. The pre-
+   registration is ACCEPTED DESIGN ONLY (now FROZEN as pre-
+   registration content; not implemented compiler code, not a
+   measurement).

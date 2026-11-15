@@ -1,0 +1,165 @@
+JUN-59 session 96 PRE-GO CUSTODY CHECKER PRE-BUILD (the W6
+measurement row's CUSTODY-PATH IMPLEMENTATION preparation half -- the
+s69/s90/s95 pre-build precedent applied to the s80 protocol section-2
+CUSTODY surface and the settle-bar.txt section-2 FLAGGED criteria's
+custody/build half; NO hardware runs, NO builds, NO compiles, NO GO
+stamp, NO host writes, NO network connections, NO day-slot
+consumption, NO ledger line).  Row: the s95 carry-forward's item (a)
+(the W6 measurement half, the s80 freeze), taken to its last
+un-machinery'd preparation surface -- the host-verify + build-census
+records and the FLAGGED custody/build criteria had NO checking
+machinery anywhere in the tree (every prior window's custody records
+were written live and never machine-checked).  The measurement half
+itself REMAINS day-slot-gated (STARTED, NOT FINISHED): W6 runs in the
+first measurement session at or after 2026-10-30T00:00:00Z; this tick
+runs 2026-10-29T13:4xZ-14:0xZ, ~10.0h before the slot opens.
+
+0. NAMED, NOT HIDDEN (draft provenance): the custody-prego.py source
+   draft was written by this session's earlier interrupted segment at
+   2026-10-29T13:39Z (never run, never committed); this tick RAN it
+   for the first time, found and fixed the three defects named in
+   section 3, and every number below is this tick's real tool output.
+
+1. FINDING (verified by real tool output): custody-prego.py (pure
+   stdlib, NO RNG, no clock; reads record TEXT and emits text --
+   submits NOTHING to any GPU, opens NO network connection) now
+   implements the W6/W7 pre-GO custody check over the eight named
+   surfaces of the frozen route: (i) custody inputs (host-verify
+   MATCH lines: 3/3 present, local == host, local re-derived from the
+   committed artifact bytes, instrument/corpus-census digests on the
+   frozen chain values a5e539f0.../eefba52e...); (ii) the manifest
+   cell-line chain (24 non-comment cell lines, digest
+   873025d650afae23...); (iii) the corpus census (16/16 OK, both
+   committed shapes parsed -- s36's per-file ': OK' lines and the
+   s51/W5 '16/16 OK' summary -- corpus_rc=0, custody summary line);
+   (iv) GO stamp present, NOT after the builds, before all runs,
+   builds before the first run; (v) the four pinned compiles (4 build
+   lines at the frozen knob sets c2 2/1/1, hi 3/1024/4033, tw
+   3/2048/8066, c8 8/1/1, all rc=0, build stderr total 0); (vi) the
+   build pins (four binary digests == the s51-frozen pins
+   BYTE-IDENTICAL, the census's own 4/4 verdict line); (vii) the run
+   window (78 per-run transcript lines); (viii) VERIFY (24 lines per
+   run, 1872 over the window, mismatch total).  THE FLAG DECISION
+   (named, partial by construction): the checker derives the frozen
+   FLAGGED criteria (2) VERIFY mismatch > 0, (3) build pin not
+   byte-identical, (4) custody GO missing/after the builds
+   fail-closed, in the frozen precedence order; (1) C1 is the s90
+   reading pair's surface and is NOT computed here (named scope cut);
+   any OTHER failing custody row refuses to bless the record with the
+   checker-level token REFUSED-RECORD-INCONSISTENT (conservative --
+   can only lead to a FLAGGED ledger line, never a qualifying one).
+
+2. VALIDATION (--compat over the THREE committed 78-run windows --
+   s36 anv-b3commonmode-20261028 / s51 anv-b3levelrep-20261028 / W5
+   anv-b3w5xdayrep-20261029; s38/s39 committed no run-window.txt):
+   TOTAL 81 rows (27 x 3) 0 mismatched, flags none none none (every
+   window's custody record re-derived clean from committed bytes);
+   run twice BYTE-IDENTICAL (7,716 bytes both,
+   sha256 54bd8175e67e8d191507e92521e74496791ef0f9ef6c0e6c8be3058982bc4e2e
+   both, cmp exit 0, stderr 0 bytes).  --self-test (MOCK window
+   records are FIXTURES, never measurements; reads NO committed
+   window): TOTAL 42 assertions passed 0 failed, run twice
+   BYTE-IDENTICAL (2,404 bytes both,
+   sha256 1f757c19418251a51e29bdcf27abb5e71c73df94ff65b415ceb31543b0b2ad0f
+   both, cmp exit 0, stderr 0 bytes) -- clean window, determinism,
+   every surface's mismatch path, the two corpus shapes, GO
+   ordering edges (GO == earliest build second is le/NOT flagged --
+   second granularity, named), and the frozen precedence order
+   (verify-mismatch > build-pin-not-byte-identical >
+   custody-go-missing > custody-go-after-builds >
+   REFUSED-RECORD-INCONSISTENT).  LIVE-ONLY FIELDS NAMED, NOT
+   HIDDEN: the host= half of every MATCH line, the GO stamp, the
+   build timestamps and the per-run host dates are captured live and
+   exist in no run log; at --compat time they are QUOTED from the
+   committed records as INPUT; every other value is re-derived from
+   committed bytes (verify counts from the run-log line census).
+
+3. DEFECTS FOUND BY FIRST EXECUTION, FIXED (named, not hidden --
+   the section-0 draft had never run): (a) ENGINE WRONG: the
+   check_window chain parameter (the declared chain constants) was
+   computed and documented but never used -- the three
+   digest-chain rows compared against the module-level frozen
+   constants, so an internally consistent MOCK record could never
+   pass; the rows now compare against chain["instrument"] /
+   chain["corpus_census"] / chain["cells"] (the --compat path still
+   passes the frozen values by default -- zero behavior change on
+   real windows); (b) FIXTURE WRONG: the clean-case row-count
+   assertion said 28 where the engine emits 27 (the eight named
+   surfaces' 26 checks + the flag row -- recounted at the source);
+   (c) ENGINE WRONG: load_window assumed every window dir committed
+   all three artifact bytes; the W5 dir committed NO instrument
+   source and NO expected-corpus.sha256 (its host-verify record
+   attests byte-copy == s36's/s51's) -- FileNotFoundError at first
+   compat run.  Fixed fail-closed and NAMED: the two chain-invariant
+   artifacts resolve from the window dir first and fall back to the
+   named canonical committed copy (anv-b3levelrep-20261028) with an
+   artifact-provenance line printed per fallback (2 at W5, 0 at
+   s36/s51 -- visible in custody-prego-compat-run1.txt); the
+   manifest is window-specific (fresh header per window) and is
+   NEVER resolved from a fallback -- its absence stays a hard error.
+
+4. GATES (real runs this tick, byte-compared to the s88 committed
+   pins in docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed 0 failed; capture 17,925 bytes == pin
+       (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+       created, run, deleted this tick, never committed): GREEN run
+       1 AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 pins
+       (919 bytes, cmp exit 0 x4); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO .cljk namespace). Capture .err 879 bytes
+       == the s88 pin (cmp exit 0); stdout 0 bytes == the pin. NO
+       green full suite is claimed;
+   (d) settle-bar evaluator (frozen): --self-test exit 0, TOTAL 38
+       assertions passed 0 failed, capture 3,590 bytes == pin (cmp
+       exit 0); ledger eval twice, exit 0, run 1 == run 2 == the
+       s88 pin (823 bytes) -> VERDICT: PENDING 2/4 unchanged
+       (counted day=2026-10-28 session=s31; counted day=2026-10-29
+       session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff 0
+       bytes -- verified this tick).
+
+5. THE BAR: preparation session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 2/4. Nothing this UTC day can advance the bar
+   (2026-10-29 is CONSUMED by s73 -- settle-bar.txt section 2).
+
+6. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z); every W6
+   custody fact this checker will read (the W6 host-verify /
+   build-census / run-window records do not exist); every T18/T20/W7
+   quantity (all gate behind W6's ledger line); NO vendor
+   optimization exists for Intel (or for any vendor).  RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+   rows stay exactly as ADR-0358 left them; this checker is record-
+   checking machinery, not a device measurement.
+
+7. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (chain PR #1665 is the one
+   open chain PR).
+
+8. ADOPTION CONTRACT (named): the frozen route names no checker
+   filename; the W6 session adopts this file as its custody checker
+   under whatever name it records (the s90/s95 precedent:
+   custody-s<NN>.py), re-runs --compat in its own record, and runs
+   the checker over its own fresh host-verify/build-census/run-window
+   records BEFORE the ledger line; the W7 session does the same
+   (the frozen pins, knob sets, chain digests and 78-run shape are
+   the s57 route's, UNCHANGED at W6/W7 per s80/s85 section 2).  The
+   execution path (ssh, staging, GO, the record prose) stays
+   session-owned exactly as at s51/s73.
+
+9. CARRY-FORWARD to session 97: the W6 measurement half (the s80
+   freeze; the W6 session adopts s90's reading pair, s91's custody
+   baseline, s95's run-window driver and this checker) -- the gate
+   for the T18 analysis half (s92 pre-build + s84 freeze bind), the
+   T20 analysis half (s93 pre-build + s88 freeze bind) and the W7
+   measurement half (s85 freeze; behind W6's ledger line) --, then
+   any further counted-day slot (its own freeze) and a cross-day
+   tail-movement row (not queued).

@@ -1,0 +1,60 @@
+== session 109 decision evidence -- frozen tool source excerpts (read-only captures) ==
+-- ledger-prego.py lines 105-130 (ROOT/LEDGER/name-gate/WIN9) --
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", "..", "..", ".."))
+GPU = os.path.join(ROOT, "docs", "evidence", "gpu")
+LEDGER = os.path.join(GPU, "settle-bar-ledger.txt")
+
+_name = os.path.basename(__file__)
+_m = re.match(r"ledger-s(\d+)\.py$", _name)
+MODE = "w6" if _m else "compat"
+
+WIN9 = [("s31", "anv-b3xday-20261028"),
+        ("s32", "anv-b3x1rec-20261028"),
+        ("s33", "anv-b3repr-20261028"),
+        ("s34", "anv-b3minwander-20261028"),
+        ("s36", "anv-b3commonmode-20261028"),
+        ("s38", "anv-b3joint3-20261028"),
+        ("s39", "anv-b3joint4-20261028"),
+        ("s51", "anv-b3levelrep-20261028"),
+        ("s73", "anv-b3w5xdayrep-20261029")]
+W6_DIR = "anv-b3w6daybar-20261030"
+
+COMMITTED_C8 = 32915            # settle-bar/protocol C1 construction
+BAR_REFS = (1129, 1132, 1131)   # settle-bar.txt D3 frozen refs (quoted)
+CELLKEY_SUM128 = ("sum", 128, "16")
+CLASS_VOCAB = ("FLOOR", "CAPTURED", "INTERMEDIATE/MIXED")
+-- ledger-prego.py lines 325-355 (the --compat whole-ledger shape assertion) --
+# --compat: the nine committed ledger lines, re-derived
+# ------------------------------------------------------------------
+def compat():
+    out = []
+    P = out.append
+    P("JUN-59 session 97 -- ledger-prego --compat (the nine committed")
+    P("bar-executing windows; want values PARSED from the committed")
+    P("settle-bar-ledger.txt bytes, never transcribed; MOCK bytes appear")
+    P("nowhere in this mode).  QUOTED INPUTS (named, not hidden):")
+    P("pin=ok go=ok for all nine windows (the custody/build surface is")
+    P("the s96 checker's; the committed records attest B1 qualifying and")
+    P("the committed lines carry flag=none); day quoted from the")
+    P("committed ledger line for s38 s39 (committed no run-window.txt);")
+    P("day derived from run-window.txt host-date= fields for the other")
+    P("seven.  Everything else is re-derived from committed run-log")
+    P("bytes.")
+    want_lines = {}
+    order = []
+    for raw in open(LEDGER):
+        line = raw.strip()
+        if line.startswith("day="):
+            f = dict(t.split("=", 1) for t in line.split())
+            want_lines[f["session"]] = line
+            order.append(f["session"])
+    if order != [w for w, _d in WIN9]:
+        print("REFUSED-LEDGER-SHAPE: committed ledger sessions %r != "
+              "the frozen nine %r" % (order, [w for w, _d in WIN9]))
+        return 2
+    mismatched = 0
+    quoted_day = 0
+    for win, dirname in WIN9:

@@ -1,0 +1,53 @@
+JUN-59 session 110 -- reconcile-prego-v2 --compat: the W6
+ADOPTION-CHAIN CROSS-TOOL RECONCILIATION over the THREE
+common committed 78-run windows (s36/s51/W5=s73).  Every
+value below is PARSED from the five adopted tools' real
+stdout runs (their bytes are the committed pins), never
+transcribed; this program computes NO statistic of any run
+log and NO W6 quantity exists (the W6 run logs do not
+exist).  MOCK appears nowhere in this mode.
+STAGE reading-prego.py --compat rc=0 rows=13                   -> OK
+STAGE derivation-census-prego.py rc=0 rows=13                  -> OK
+STAGE run-window-prego.py --compat rc=0 total=(243, 0)         -> OK
+STAGE custody-check-prego --check s36 rc=0 flag=none pin=ok go=ok -> OK
+STAGE custody-check-prego --check s51 rc=0 flag=none pin=ok go=ok -> OK
+STAGE custody-check-prego --check s73 rc=0 flag=none pin=ok go=ok -> OK
+STAGE ledger-prego-v2.py --compat rc=0 rows=9                  -> OK
+
+CROSS-CHECKS (the row this file exists for):
+X1 s36 anchor-median    reading=1142 ledger=1142 -> MATCH
+X2 s36 anchor-min       reading=991 ledger=991 -> MATCH
+X3 s36 census-median    reading=1142 census=1142 -> MATCH
+X4 s36 census-min       reading=991 census=991 -> MATCH
+X5 s36 census-max       reading=1438 census=1438 -> MATCH
+X6 s36 verify-residual  reading-vmis=0 custody-vmis=0 ledger-flag=none -> MATCH
+X7 s36 run-census       reading-runs=78 custody-runs=78 runwindow-runs=78 hostdates=78 -> MATCH
+X8 s36 flag-join        custody-flag=none pin=ok go=ok ledger-line-flag=none -> MATCH
+X9 s36 day-derivation   ledger-day=2026-10-28 hostdates=2026-10-28 -> MATCH
+X10 s36 class           SKIPPED (reading --compat publishes no class for prior windows -- NAMED LIMIT)
+X11 s36 c1-boolean       reading-c1=(a) both controls replicate c2-class=FLOOR c8-median=32709 ledger-flag=none -> MATCH
+X1 s51 anchor-median    reading=1137 ledger=1137 -> MATCH
+X2 s51 anchor-min       reading=988 ledger=988 -> MATCH
+X3 s51 census-median    reading=1137 census=1137 -> MATCH
+X4 s51 census-min       reading=988 census=988 -> MATCH
+X5 s51 census-max       reading=1430 census=1430 -> MATCH
+X6 s51 verify-residual  reading-vmis=0 custody-vmis=0 ledger-flag=none -> MATCH
+X7 s51 run-census       reading-runs=78 custody-runs=78 runwindow-runs=78 hostdates=78 -> MATCH
+X8 s51 flag-join        custody-flag=none pin=ok go=ok ledger-line-flag=none -> MATCH
+X9 s51 day-derivation   ledger-day=2026-10-28 hostdates=2026-10-28 -> MATCH
+X10 s51 class           SKIPPED (reading --compat publishes no class for prior windows -- NAMED LIMIT)
+X11 s51 c1-boolean       reading-c1=(a) both controls replicate c2-class=FLOOR c8-median=32709 ledger-flag=none -> MATCH
+X1 s73 anchor-median    reading=1131 ledger=1131 -> MATCH
+X2 s73 anchor-min       reading=998 ledger=998 -> MATCH
+X3 s73 census-median    reading=1131 census=1131 -> MATCH
+X4 s73 census-min       reading=998 census=998 -> MATCH
+X5 s73 census-max       reading=1442 census=1442 -> MATCH
+X6 s73 verify-residual  reading-vmis=0 custody-vmis=0 ledger-flag=none -> MATCH
+X7 s73 run-census       reading-runs=78 custody-runs=78 runwindow-runs=78 hostdates=78 -> MATCH
+X8 s73 flag-join        custody-flag=none pin=ok go=ok ledger-line-flag=none -> MATCH
+X9 s73 day-derivation   ledger-day=2026-10-29 hostdates=2026-10-29 -> MATCH
+X10 s73 class            reading=INTERMEDIATE/MIXED ledger=INTERMEDIATE/MIXED -> MATCH
+X11 s73 c1-boolean       reading-c1=(a) both controls replicate c2-class=FLOOR c8-median=32709 ledger-flag=none -> MATCH
+
+TOTAL: stage rows 7 failed 0 | cross rows 31 mismatched 0
+RECONCILE VERDICT: CONSISTENT
