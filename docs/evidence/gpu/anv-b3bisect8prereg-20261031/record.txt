@@ -1,0 +1,142 @@
+JUN-59 session 120 record (the EIGHTH CUT PRE-REGISTRATION session
+-- completing the interrupted s118 slice and the s119 carry-forward
+(a)-(d): the knob-search (d1) fix at source, the write-once
+protocol.txt + freeze-record, the standing gate set, the record/ADR
+note/commit). ROW: land the bisect re-open's design half. NO
+hardware runs, NO builds, NO compiles, NO GO stamp, NO day-slot
+consumption, NO ledger line. One finding (section 5).
+
+1. GATES (the standing set, real runs this tick, byte-compared to
+   the s88 committed pins in anv-b3w6tailrep-20261030/ and the s117
+   post-append eval pin):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture 17,925 bytes == s88
+       pin (cmp exit 0); .err 0 bytes.
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk
+       (accelerator-targets / -variants / -test / -pipeline /
+       -subgroup-reduce / -simdgroup-reduce / -spirv /
+       -spirv-compile-test), same engine and classpath; created,
+       run twice, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 run-1 pin
+       == the s88 run-2 pin (cmp exit 0 x3, 919 bytes), stderr 0
+       bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff -- this
+       session touches NO committed .cljk namespace). Capture .err
+       879 bytes == s88 pin (cmp exit 0); stdout 0 bytes == pin. NO
+       green full suite is claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == s88
+       pin; ledger eval twice, exit 0, run 1 == run 2 == the s117
+       post-append pin (anv-b3w7ledgerappend-20261031/bar-s117-eval-
+       post-run1.txt, 1,006 bytes, cmp exit 0) -> VERDICT: SETTLED
+       INTERMEDIATE/MIXED (the committed landing, unchanged).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 entries.
+   (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-ledger.txt
+       rc 0 (== HEAD; the emit path never ran).
+
+2. THE (d1) FIX AT SOURCE (the s119 carry-forward (a)): the two
+   committed-byte citation regexes of knob-search-s119.py that
+   printed NOT PARSED are fixed in place (the s27 protocol section-3
+   class gains commas -- [\d,\s/]; the s24 C3 (b) pattern now spans
+   " vs <n> at n=<n>" -- "([\d,]+ vs [\d,]+ at n=[\d,]+)"), the
+   script re-run TWICE BYTE-IDENTICAL (3,463 bytes, rc 0, .err 0
+   both; grep 'NOT PARSED' -> 0): the s27 protocol section-3
+   citation parses "1,166 / 1,166 / 1,156 CAPTURED" and the s24 C3
+   (b) citation parses "1,000 vs 994 at n=255,208" -- every
+   committed-byte citation line now prints a parsed value. The
+   search self-validation (s27 census 253,255: 35 pairs / smallest
+   (214,845) / 9 in-box doubles) still prints MATCH x3.
+
+3. THE FREEZE (the s119 carry-forward (b)): protocol.txt written
+   ONCE (freeze stamp 2026-10-31T03:53:30Z; no run log of this cut
+   exists at freeze) + freeze-record-s120.txt -- the EIGHTH CUT
+   pre-registration in the s27 protocol shape: the row question at
+   n=254,557 (the exact floor midpoint of the re-opened bracket
+   (253,906, 255,208]); the direction derivation from the settle-bar
+   V3 settled class; the arm table c2/lo/mid/eq3/hi/b2m/c8 (mid
+   (3,405,1591), eq3 (3,810,3182), b2m (2,405,1591), lo = the
+   bar-SETTLED (1024,4033) anchor, hi = (1213,4753)); build pins as
+   PARSED (c2 e5ed903e..., c8 480925e5..., (1024,4033) a6c31b6c...,
+   (1213,4753) 123e8f73...); frozen thresholds (identical to
+   sessions 2-27); letters C1/C2/C3/W1/W2/W3/X1; the BAR
+   NON-INTERFERENCE clause; frozen limitations L1/L2/L3/L4/L5/L8;
+   the analysis route shape.
+
+4. DOUBLE-RUNS: knob-search-s119.py run 1 == run 2 byte-identical
+   (3,463 bytes); scoped gate run 1 == run 2 == both s88 pins;
+   evaluator self-test == s88 pin; evaluator ledger pair run 1 ==
+   run 2 == the s117 post-append pin. All gate captures compare
+   byte-equal to committed pins (cmp exit 0 everywhere named).
+
+5. FINDING -- THE EIGHTH CUT IS PRE-REGISTERED (the V3-named
+   bisect re-open's design half is now FROZEN): the settle bar's
+   SETTLED INTERMEDIATE/MIXED class at the (1024,4033) anchor
+   (n=253,906, B=3) re-opens the B=3 flip bracket toward the next
+   committed CAPTURED point -- the (1213,4753) pair at n=255,208
+   (three committed readings, all CAPTURED: s24 mid 1,166 / s25 hi
+   1,166 / s26 hi 1,156, parsed from committed bytes) -- so the
+   flip from INTERMEDIATE/MIXED to CAPTURED is bracketed in
+   (253,906, 255,208] n-units and the eighth cut measures its exact
+   floor midpoint n=254,557 (bracket midpoint 254,557.0, an
+   integer; 31 in-box knob pairs hit it, smallest (405,1591), the
+   eq3 in-box double (810,3182) verified, gcd(254,557, 1,000,003) =
+   1; 255,208's smallest in-box pair IS the committed measurement
+   pair (1213,4753)). The pre-registration is ACCEPTED DESIGN ONLY
+   (protocol.txt + freeze-record-s120.txt + the ADR-0355 dated
+   note) -- not implemented compiler code, not a measurement; the
+   measurement half (21 fresh processes under this frozen protocol)
+   is a FUTURE session and every eighth-cut quantity is UNMEASURED.
+   WHAT IT PRE-REGISTERS (frozen scope): the cut grid point, the
+   arms, the letters and the bar non-interference -- nothing about
+   the outcome; no bracket is narrowed until the measuring session
+   runs W1.
+
+6. NAMED, NOT HIDDEN: (a) the s118/s119 ticks were interrupted
+   (STARTED, NOT FINISHED, nothing committed); this tick completes
+   their slice with named provenance (the s92/s100/s101 precedent)
+   -- knob-search-s119.py was the s119 draft's file, fixed at source
+   under its own name, not renamed; (b) the s118 Linear comment's
+   "single quote reading" phrasing stands corrected (the (d2)
+   correction: three committed readings at n=255,208, all CAPTURED;
+   the direction derivation unaffected -- named in freeze-record
+   section 3); (c) the scoped-gate scratch runner was created, run
+   twice, deleted this tick (never committed; scratch/ untracked);
+   (d) the kbb engine's standing "2 dep(s) are not :local/root"
+   warning reaches no capture (.err 0 bytes wherever the pins are
+   0); (e) untracked scratch/ and deps.edn are not this row's and
+   are not committed.
+
+7. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor). This is bisect pre-registration machinery on
+   the ANV host, not a workgroup-default measurement.
+
+8. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before the commit+push (capture
+   prlist-s120-prepush.json); chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4 -- the one this commit pushes to).
+
+9. THE BAR STATE (evaluator output only): SETTLED
+   INTERMEDIATE/MIXED (the s117 landing, unchanged this tick; no
+   ledger line, no day-slot consumption). Carry-forward to s121:
+   (a) the eighth cut's MEASUREMENT half (21 fresh processes under
+   the frozen protocol.txt -- its own session, NOT queued here);
+   (b) any further counted-day slot (its own pre-registration
+   freeze) and the cross-day tail-movement row (not queued). NO
+   queued row remains: s121 takes a row only if one is queued or
+   frozen to run, else stands down.
+
+Evidence: docs/evidence/gpu/anv-b3bisect8prereg-20261031/ (this
+record + protocol.txt + freeze-record-s120.txt + knob-search-
+s119.py + its two byte-identical runs + the s120 gate captures +
+state-s120.txt) + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)

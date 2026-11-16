@@ -1,0 +1,198 @@
+JUN-59 session 108 -- THE T20 ANALYSIS HALF (the s88-frozen
+TAIL-SIDE ASYMMETRY REPLICATION AT W6, computed at last: the s93
+pre-build adopted as analysis-s108.py and run over the COMMITTED
+windows; ANALYSIS session -- NO hardware runs, NO builds, NO
+compiles, NO GO stamp, NO host writes, NO day-slot consumption, NO
+ledger line). Row: the s107 carry-forward's item (a), taken now
+that W6's run logs are committed (s105) and the T18 analysis half
+is complete (s107) -- the same adoption/run/record shape as s107.
+
+1. ROW AND HONEST STATES: the T20 machinery was IMPLEMENTED at s93
+   (code + fixture tests, 184 assertions, validated against
+   committed publication bytes); the row itself was ACCEPTED DESIGN
+   ONLY (the s88 freeze, protocol.txt freeze stamp
+   2026-10-29T08:16:54Z -- written before any W6 quantity
+   existed); THIS session computes the row's quantities for the one
+   frozen window (W6) over committed run logs -- deterministic
+   (the exact-enumeration null carries NO RNG stream) -- and the
+   T20 row's ANALYSIS half is now COMPLETE with its verdict
+   recorded in publication-s108.txt. This is frozen statistical
+   machinery applied to measurements taken at
+   s36/s38/s39/s51/s73/s105; this session takes NO new measurement
+   and moves NO compiler state.
+
+2. ADOPTION (byte-level binding, the s100/s107 precedent):
+   analysis-s108.py is a byte-identical copy of the s93 pre-build
+   analysis-t20-prego.py (53,387 bytes, sha256
+   f6c81ef15fd441efba9acbda7e0e178aadf9e3a220c697286b947329330ee076
+   BOTH -- == the s93 record's pinned hash; cmp exit 0). The
+   filename IS the mode switch (full mode unreachable under the
+   pre-build name). Input binding: the five prior windows of
+   publication-s82.txt section 0 (s36 anv-b3commonmode-20261028 /
+   s38 anv-b3joint3-20261028 / s39 anv-b3joint4-20261028 / s51
+   anv-b3levelrep-20261028 / s73 anv-b3w5xdayrep-20261029) plus
+   anv-b3w6daybar-20261030 = the s80-frozen W6 window (window tag
+   s105, parsed from run-window.txt's "session 105"; 78 committed
+   run logs), measured by the W6 measurement half at s105 on
+   aiueos-6600hs.
+
+3. FINDING (verified by real tool output -- publication-s108.txt,
+   10,354 bytes, sha256
+   2e5938ccab97440897380774d7305097607d19c1457341be1a7624b38b532402,
+   produced ONLY by analysis-s108.py, run twice BYTE-IDENTICAL
+   (cmp exit 0; run stdout/stderr 0 bytes both runs)): the s88 row
+   question -- does the tail-side (left) half-pair dominate the
+   right half-pair at the named cell of the tw arm at W6, in the
+   pre-registered direction C_obs > 0? -- answers NO as a joint:
+   **JOINT T20 = (b) NOT-REPLICATED** (named failing: k=16 (b)
+   NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-SIGNIFICANT]; IUT over
+   the two informative families k=16/k=32, k=4/8 excluded per the
+   s86 section-4(c) caveat, NO multiplicity correction). Per
+   family (12 blocks of 3, per-block pooled-75 EXACT-INTEGER
+   HL_k/HR_k, 2*L = 6th+7th order statistics of the 12 block
+   values, C_obs = 2*L({HL_k}) - 2*L({HR_k}); the null:
+   WITHIN-BLOCK SIDE-EXCHANGEABILITY -- all 2^12 = 4,096
+   whole-block side-swap assignments enumerated EXACTLY, one bit
+   per block swapping HL/HR for ALL FOUR families together through
+   ONE shared mask, NO RNG, p = count(C* >= C_obs)/4,096
+   ONE-SIDED, identity assignment included so p >= 1/4,096):
+   - k=4 TS-L4 (x_(34),x_(38))/TS-R4 (x_(38),x_(42)): 2*L_HL 20
+     vs 2*L_HR 20 (C_obs 0); count 2240/4,096; p 0.5468750000;
+     letter (b) NOT-REPLICATED [DIRECTION-REVERSED]
+     [UNINFORMATIVE-BY-S86-CAVEAT] -- never enters the joint;
+   - k=8 TS-L8 (x_(30),x_(38))/TS-R8 (x_(38),x_(46)): 2*L_HL 46
+     vs 2*L_HR 45 (C_obs 1); count 1632/4,096; p 0.3984375000;
+     letter (b) NOT-REPLICATED [DIRECTION-CONSISTENT-NOT-
+     SIGNIFICANT] [UNINFORMATIVE-BY-S86-CAVEAT] -- never enters
+     the joint;
+   - k=16 TS-L16 (x_(22),x_(38))/TS-R16 (x_(38),x_(54)): 2*L_HL
+     102 vs 2*L_HR 87 (C_obs 15); count 544/4,096; p
+     0.1328125000; letter (b) NOT-REPLICATED [DIRECTION-
+     CONSISTENT-NOT-SIGNIFICANT] (the pre-registered direction
+     C_obs > 0 holds but not significant) -- the named failing of
+     the joint;
+   - k=32 TS-L32 (x_(6),x_(38))/TS-R32 (x_(38),x_(70)): 2*L_HL
+     460 vs 2*L_HR 195 (C_obs 265); count 8/4,096; p
+     0.0019531250; letter (a) ASYMMETRY-LEFT-GREATER-REPLICATED
+     -- the one family carrying the asymmetry replication (at the
+     ladder's widest step; the IUT joint still answers (b) because
+     k=16 does not replicate -- NAMED, NOT HIDDEN: the k=32
+     letter stands on its own in publication-s108.txt and the
+     joint's (b) does not erase it).
+   Invalidation CLEAN (section 6 machinery): six windows 78 runs /
+   VERIFY mismatch 0 / counts/knobs/S=8 fail-closed/cell map all
+   ok at every window; named cell present as ok-map cell 5 (raw
+   idx 7 == (max,128,S=default)); C1 at W6 branch (a) both
+   controls replicate (c2 class FLOOR, pooled medians 31..32
+   within the committed floor band 31..32; c8 (sum,128,S=16)
+   pooled median 32821 vs committed 32915 = 0.29% delta, +/-5%
+   required); prior-window reproduction + parser validity pins ALL
+   EXACT (block-min vectors 10/10 over five windows, anchors 4/4,
+   pins 14/14 five-window 2*L vectors + 14/14 W5 block value
+   vectors -- the want values recomputed from the committed
+   publication bytes, never transcribed); the s86 decomposition
+   identity HL_k + HR_k = D_DLk EXACT at all 288 checks (4 families
+   x 6 windows x 12 blocks). D-family (descriptive only, NO
+   letter): D1 six-window 2*L vectors + R-L level difference
+   vectors published (s36/s38/s39/s51/W5/s105); D2 the 12 s105
+   block values per pair published for a future census; D3
+   s105-vs-post-shift-band under the s83/s89 CORRECTED
+   CLOSED-INTERVAL [MIN,MAX] convention (NOT min..median): TS-L4
+   OUTSIDE-BELOW (20 vs 21..30), TS-R4 INSIDE (20 vs 16..22),
+   TS-L8 OUTSIDE-BELOW (46 vs 47..52), TS-R8 INSIDE (45 vs
+   32..49), TS-L16 OUTSIDE-BELOW (102 vs 103..115), TS-R16 INSIDE
+   (87 vs 82..100), TS-L32 OUTSIDE-ABOVE (460 vs 342..397), TS-R32
+   INSIDE (195 vs 183..204) -- all four LEFT levels sit outside
+   their post-shift bands while all four RIGHT levels sit inside
+   (descriptive, never a test); D4 sum-of-levels vs 2*L(D_k)
+   non-additivity print ("levels do NOT add" at every k/window).
+
+4. VERIFIED (the standing gate set this tick, byte-compared to the
+   s88 committed pins in docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed"; capture 17,925 bytes == the
+       s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned test namespaces of
+       run-tests.cljk, same engine and classpath; created, run,
+       deleted this tick, never committed): GREEN run 1 AND run 2
+       -- "Ran 123 tests containing 12162 assertions. 0 failures,
+       0 errors."; run 1 == run 2 == both s88 pins (919 bytes,
+       cmp exit 0 x3); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)" run-tests.cljk,
+       worktree root): exit 1, RED AT BASE kotoba.form ("Could not
+       find namespace: kotoba.form", ADR-0362, outside this diff --
+       this diff touches NO .cljk namespace). Capture .err 879
+       bytes == the s88 pin (cmp exit 0); stdout 0 bytes == the
+       pin. NO green full suite is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, TOTAL 38
+       assertions passed, 0 failed, capture 3,590 bytes == the s88
+       pin (cmp exit 0); the LEDGER EVAL pair twice BYTE-IDENTICAL
+       (907 bytes, cmp exit 0) and == the s106 post-append pins
+       (anv-b3w6ledgerappend-20261030/bar-s106-eval-post-run1/2.txt,
+       cmp exit 0 x2) -> VERDICT: PENDING 3/4 (counted day=2026-
+       10-28 session=s31; counted day=2026-10-29 session=s73;
+       counted day=2026-10-30 session=s105). NAMED, NOT HIDDEN:
+       the eval capture necessarily DIFFERS from the PRE-APPEND s88
+       pin (823 bytes) -- diff = exactly the s106 append (the
+       counted s105 line + VERDICT PENDING 2/4 -> 3/4, nothing
+       else); post-append, the eval pin IS the s106 post-append
+       pair and that is what gate (d) binds to here;
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+       --exit-code rc=0 -- the emit path never ran this tick).
+
+5. THE BAR: ANALYSIS session -> NO hardware runs -> NO reading ->
+   NO settle-bar-ledger line, NO day-slot consumption. The bar
+   stays PENDING 3/4 and settles nothing; no day slot is touched
+   by this row.
+
+6. UNMEASURED (named) / RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358
+   left them (:measured? true scoped to each row's one named
+   measured device for :nvidia/:apple/:intel/:amd; :arm and
+   :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor). The T20
+   letters and p values are DERIVED inferential quantities under
+   the frozen exact-enumeration null from previously committed
+   measurements -- they are not new device measurements, and this
+   row is not a workgroup-default measurement.
+
+7. WHAT CHANGED (this commit): docs/evidence/gpu/anv-b3w6tailrep-
+   20261030/ gains analysis-s108.py, publication-s108.txt, this
+   record (record.txt -- the analysis session owns record.txt in
+   the freeze directory, the s65 convention), state-s108.txt and
+   the s108 gate/bar captures (gate-s108-classify.txt/.err,
+   gate-s108-run1/2.txt/.err, gate-s108-full.out/.err,
+   bar-s108-selftest.txt/.err, bar-s108-eval-run1/2.txt/.err);
+   plus the ADR-0355 dated note. NO run logs (no hardware this
+   tick), NO .sh files. The chain commit cites JUN-55/JUN-59
+   (Linear tracking JUN-499).
+
+8. NOT DONE (carry-forward to session 109, named):
+   (a) the --compat post-append design decision (PROPOSED only at
+       s106 -- nothing accepted, nothing implemented; a frozen-tool
+       change needs its own freeze);
+   (b) the W7 measurement half (the s85 freeze; the 2026-10-31 day
+       slot; the W7 record faces the same --compat refusal until
+       (a) resolves);
+   (c) any further counted-day slot (its own pre-registration
+       freeze) and a cross-day tail-movement row (not queued);
+   (d) the standing gate set runs with each such tick.
+   With T18 (s107) and T20 (s108) both computed, the s84- and
+   s88-frozen analysis rows are COMPLETE: no unblocked analysis
+   row remains in the carry-forward.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+(checked at tick start and again immediately before this push; the
+one open chain PR is the chain PR this commit pushes to).
+NAMED, NOT HIDDEN: the kbb engine's standing "2 dep(s) are not
+:local/root" warning reaches no capture (.err 0 bytes wherever the
+pins are 0).
+
+Evidence: docs/evidence/gpu/anv-b3w6tailrep-20261030/ (this file +
+analysis-s108.py + publication-s108.txt + state-s108.txt + the
+s108 gate/bar captures). (JUN-55, JUN-59; Linear tracking JUN-499)

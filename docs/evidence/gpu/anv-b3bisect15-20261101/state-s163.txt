@@ -1,0 +1,72 @@
+amu-gpu s163 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut
+LANDING (the s162 carry-forward (b)+(c) completed exactly:
+standing gates (a)-(f) run live with s163 captures, record.txt
+written, the ADR-0355 dated note appended; the landing tail --
+blocker-first + push + JUN-499 Linear comment -- follows in
+this same tick).
+
+ROW TAKEN THIS TICK: the fifteenth cut landing session, the
+s149/s155/s156 completing-session precedent.
+
+FINDING (verified by real tool output, this directory): THE
+FIFTEENTH CUT LANDING IS COMPLETE -- all six standing gates
+run fresh from the worktree root and byte-compared to their
+pins:
+(a) gpu_regime_classify.py --self-test: rc 0, 17,925 bytes ==
+    the s88 pin (cmp exit 0), .err 0 == pin (gate-s163-
+    classify.txt/.err) -- VERIFIED.
+(b) scoped GPU gate (scratch/scoped-gpu-gate.cljk, the eight
+    GPU namespaces of run-tests.cljk, same engine and
+    classpath): GREEN 'Ran 123 tests containing 12162
+    assertions. 0 failures, 0 errors.' run 1 == run 2 == both
+    s88 pins (gate-s163-run1.txt == gate-s163-run2.txt ==
+    gate-s88-run1.txt == gate-s88-run2.txt, 919 bytes, cmp
+    exit 0 x4), rc 0 both, .err 0 bytes both (scratch runner
+    created/run twice/DELETED this session, never committed --
+    final state deleted) -- VERIFIED.
+(c) FULL run-tests.cljk: exit 1 RED AT BASE kotoba.form ('Could
+    not find namespace: kotoba.form', ADR-0362, outside this
+    diff -- this diff touches NO committed .cljk namespace),
+    gate-s163-full.out 0 bytes == pin, gate-s163-full.err 879
+    bytes == pin (cmp exit 0 x2) -- NO green full suite
+    claimed.
+(d) settle-bar evaluator (../anv-b3settlebar-20261027/
+    settle-bar-eval.py, frozen): --self-test rc 0, 3,590
+    bytes == the s88 pin (cmp exit 0), TOTAL 38 assertions
+    passed, 0 failed; ledger eval pair twice BYTE-IDENTICAL
+    (bar-s163-eval-run1.txt == bar-s163-eval-run2.txt, 1,006
+    bytes, cmp exit 0) == the s117 post-append pin (cmp exit
+    0) -> VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged) --
+    VERIFIED.
+(e) find docs/evidence/gpu -name '*.sh' -> 0 lines
+    (gate-s163-nosh captures 0 bytes) -- VERIFIED.
+(f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+    ledger.txt rc 0 (gate-s163-ledger-head captures 0 bytes --
+    no append this row) -- VERIFIED.
+
+record.txt written (this directory, the fifteenth cut's
+measurement + analysis + landing record) and the ADR-0355
+dated note appended (docs/adr/0355-gpu-vendor-target-
+dispatch.md, sessions 157-163 entry). The committed cut
+outcome stands as recorded at s162: C1 (a); C2 (b) at bis
+(255,045); W1 (a) -- THE BRACKET NARROWS TO (254,557,
+255,045]; the MID-ONLY NARROWING CLAIM stays SUSPENDED; the
+14th cut's TOLERANCE-UNRESOLVED mid content stands (arm (a)).
+
+NOTHING ELSE MOVED: BAR NON-INTERFERENCE held (this tick ran
+NO hardware, NO builds, NO compiles, NO GO stamp, NO day-slot
+consumption, NO ledger line); RULE 4 unchanged: NOTHING MOVES
+-- workgroup rows stay as ADR-0358 left them; NO vendor
+optimization exists for Intel (or for any vendor). Diff
+touches NO committed .cljk namespace (evidence .txt/.out/.err
++ record.txt + the ADR-0355 note + this state file).
+
+NOT DONE (s164 carries the s158 list minus (b)(c)):
+(d) standing, not queued: a sixteenth cut ONLY through its own
+    pre-registered cut session (its own freeze; the
+    confrontation spec's four arms apply), any further
+    counted-day slot (2026-10-31 slot consumed at s117; next
+    slot a NEW UTC day + its own freeze) and the cross-day
+    tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

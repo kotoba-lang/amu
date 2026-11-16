@@ -1,0 +1,48 @@
+2026-10-31T02:35:46Z
+== session 117 W7 LEDGER-LANDING state capture ==
+This session executed the s116 record carry-forward (a) COMPLETE:
+THE APPEND TAIL (the s105/s106 split). The bar's fourth counted-day
+landing is made and the bar SETTLES.
+
+DUTIES DONE THIS TICK (all verified by real tool output; capture
+bytes named in record.txt sections 1-5):
+(1) standing gates (a)-(f) all == the s88/s106 pins (record.txt
+    section 1); full suite RED AT BASE kotoba.form (ADR-0362,
+    outside this diff) -- NO green full suite claimed; scoped
+    scratch runner created/run twice/deleted.
+(2) the byte-pinned s113 line (sha256 c6698b6bebed9fae...) appended
+    VERBATIM; git diff exactly ONE insertion (append-s117-diff.txt).
+(3) post-append evaluator pair twice BYTE-IDENTICAL (1,006 bytes):
+    VERDICT: SETTLED INTERMEDIATE/MIXED (counted s31/s73/s105/s113,
+    four distinct UTC days). NAMED: the s116 carry-forward's
+    "expected PENDING 4/4" does not realize -- the frozen check
+    order prints PENDING only below four counted (record.txt
+    section 3).
+(4) reconcile-s113.py --line twice BYTE-IDENTICAL (472 bytes):
+    RECONCILE VERDICT: CONSISTENT (median/min/class MATCH);
+    --self-test twice == the s111 v2 pin (17/0).
+(5) adoption-check-prego.py --check adoption-manifest-v2.txt .
+    VERDICT CONSISTENT (27/0) twice byte-identical (6,050 bytes)
+    BEFORE any copy; then the v2 --compat GREEN post-append re-run:
+    ledger-prego-v2.py --compat twice byte-identical (POST-COHORT:
+    2 row(s): s105 s113; TOTAL 9 rows 0 mismatched) +
+    reconcile-s113.py --compat twice byte-identical (RECONCILE
+    VERDICT: CONSISTENT, 7/7 stages OK, cross rows 31 mismatched 0).
+(6) record.txt + the ADR-0355 dated note + this commit (blocker-
+    first re-checked before the push) + the Linear comment on
+    JUN-499.
+
+NEXT TICK (s118): NO queued row remains (record.txt section 11).
+The V3-named bisect re-open needs its own pre-registration freeze
+(NOT queued); any further counted-day slot needs its own freeze;
+the cross-day tail-movement row is not queued. s118 takes a row
+only if one is queued or frozen, else stands down.
+
+BLOCKER-FIRST: tick-start check 2026-10-31T02:23:47Z
+(prlist-s117-start.json) and pre-push check 2026-10-31T02:35:46Z
+(prlist-s117-prepush.json): 0 open kotoba-lang/amu PRs with a
+hermes/ head both times; chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4). NAMED: my own first --line capture
+redirect used a wrong path depth (bash failed before the tool ran;
+no capture existed or was overwritten) -- record.txt section 7.
+Untracked scratch/ and deps.edn are not this row's, not committed.

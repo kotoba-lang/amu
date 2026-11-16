@@ -1,0 +1,164 @@
+JUN-59 session 79 -- THE SECOND-PAIR PROFILE AXIS (the s56
+halving-rule pairs OUTER2 (5,71) / INNER2 (33,43)) AT THE W5
+WINDOW (publication)
+(at the NEW fifth window W5 -- the campaign's first window on a
+UTC day other than 2026-10-28 -- does the tw arm's
+(max,128,S=default) cell's outer-weighted compression profile
+at the SECOND named rank-pair set continue across the UTC-day
+boundary? ONE named cell, ONE named window pair (s36 vs W5),
+ONE named direction (P2_obs > 0 -- the OUTER2 spread level
+drops MORE from s36 to W5 than the INNER2 spread level), ONE
+named statistic (the difference-in-differences 2*P2_obs =
+2*C_out2 - 2*C_in2).
+Produced ONLY by analysis-s79.py over the COMMITTED run logs of
+five fixed evidence directories (anv-b3commonmode-20261028 =
+the s36 window, anv-b3joint3-20261028 = the s38 window,
+anv-b3joint4-20261028 = the s39 window, anv-b3levelrep-20261028
+= the s51 window, anv-b3w5xdayrep-20261029 = the W5 window,
+measured by s73); protocol.txt was frozen BEFORE any fifth-
+window run exists and before ANY statistic of this probe was
+computed (freeze stamp 2026-10-28T20:38:43Z). ANALYSIS session
+-- NO hardware runs this session; the W5 quantities were
+MEASURED on aiueos-6600hs Intel BMG G31 ANV in session 73.
+
+1. INTEGRITY (computed over each window's committed logs;
+   protocol section 3):
+   s36: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s38: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s39: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s51: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   s73: runs parsed 78; VERIFY mismatch total 0; counts ok True; knobs ok True; S=8 fail-closed True; cell map ok True
+   named cell present as ok-map cell 5 (raw idx 7 == (max,128,S=default)): True
+   INVALIDATION criterion (protocol section 3): any violation =>
+   letter (c).
+
+2. C1 RE-DERIVATION (environment pin, from the s73 W5 window's
+   logs):
+   c2 class: FLOOR (FLOOR required; committed floor band 31..32)
+   c8 (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63% delta; +/-5% required)
+   C1 branch: (a) both controls replicate
+
+3. THE BLOCK-MIN VECTORS (re-derived from the committed logs;
+   the four PRIOR windows reproduce the published vectors of
+   publication-s39.txt section 3 and publication-s51.txt section
+   3 EXACTLY (mismatch => (c)); no vector enters the T16
+   statistic -- the row question is section 4):
+   s36 X (hi): 991 989 981 998 993 985 984 997 994 994 980 982
+   s36 Y (tw): 988 985 994 993 994 995 992 984 987 984 993 981
+   s36 reproduction EXACT: True
+   s38 X (hi): 992 988 984 1007 985 984 986 983 992 991 982 997
+   s38 Y (tw): 988 987 980 980 991 994 991 994 988 991 1001 992
+   s38 reproduction EXACT: True
+   s39 X (hi): 986 991 984 985 989 989 986 990 995 986 987 981
+   s39 Y (tw): 988 989 987 990 990 988 991 983 985 988 983 986
+   s39 reproduction EXACT: True
+   s51 X (hi): 988 986 1000 986 989 983 995 983 994 991 984 985
+   s51 Y (tw): 980 975 991 979 986 986 992 991 988 993 995 996
+   s51 reproduction EXACT: True
+   s73 X (hi): 998 978 985 983 982 980 981 982 974 988 977 988
+   s73 Y (tw): 992 984 982 985 993 972 979 990 978 982 987 987
+   all four prior windows reproduce EXACTLY (8/8): True
+
+3b. ANCHOR REPRODUCTION ROWS (hi block A's (sum,128,S=16) pooled
+    median and 18-cell min..max at the four PRIOR windows vs the
+    quote-only/published anchor priors, EXACTLY (mismatch =>
+    (c)); this row computes NO anchor at W5 -- the W5 anchor is
+    the anv-b3w5xdayrep-20261029 row's D4):
+    s36: median 1142 min..max 991..1438 (want 1142 / 991..1438); reproduction EXACT: True
+    s38: median 1132 min..max 992..1443 (want 1132 / 992..1443); reproduction EXACT: True
+    s39: median 1146 min..max 986..1432 (want 1146 / 986..1432); reproduction EXACT: True
+    s51: median 1137 min..max 988..1430 (want 1137 / 988..1430); reproduction EXACT: True
+    all four prior windows reproduce EXACTLY: True
+
+4. T16 THE ROW QUESTION (frozen letters, protocol sections 0/2):
+   the NAMED cell (max,128,S=default) of the tw arm; block = 3 consecutive tw runs
+   (runs 1..36 -> 12 blocks of 3); per-block D over the block's
+   pooled 75 gpu_ticks samples -- OUTER2 D = x_(71) - x_(5),
+   INNER2 D = x_(43) - x_(33) (both exact INTEGER); per-axis
+   L_w = median of the 12 block D values (2*L = 6th + 7th order
+   statistics, INTEGER half-tick); 2*C_out2 = 2*Lout2_s36 -
+   2*Lout2_W5; 2*C_in2 = 2*Lin2_s36 - 2*Lin2_W5; the PRIMARY
+   STATISTIC 2*P2_obs = 2*C_out2 - 2*C_in2 (the pre-registered
+   direction is P2_obs > 0). The two-window run-exchangeability
+   null (protocol section 0/2): the 72 tw runs (36 of s36 + 36
+   of W5) exchangeable; ONE probe, 20000 trials, seed 2026102816 (ONE
+   random.Random; per trial ONE rng.shuffle of a fresh
+   list(range(72)), split into pseudo-windows A then B of 36 in
+   draw order and 12 pseudo-blocks of 3 in draw order; BOTH
+   axes evaluated on the SAME shuffles); p = (1 + count
+   (P2* >= P2_obs)) / (1 + 20,000), ONE-SIDED:
+   OUTER2 (5,71): 2*L_s36 = 713 (356.5); 2*L_s73 = 715 (357.5); 2*C_out2 = -2 (-1.0)
+   INNER2 (33,43): 2*L_s36 = 63 (31.5); 2*L_s73 = 54 (27.0); 2*C_in2 = 9 (4.5)
+   2*P2_obs = 2*C_out2 - 2*C_in2 = -11 (P2_obs = -5.5); count 11211 / 20001; p = 0.560572; test letter (b) NOT-DIFFERENT [OPPOSITE-DIRECTION]
+   T16 = (b) NOT-SECONDPAIR-PROFILE-W5-OUTER-WEIGHTED-CONSISTENT [OPPOSITE-DIRECTION]
+   NAMED, NOT HIDDEN (frozen): the multiplicity claim is NARROW
+   -- ONE named cell, ONE named window pair, ONE named
+   direction, ONE named statistic (NO multiplicity correction
+   applied or needed), tested on NEW data (the W5 runs did not
+   exist at freeze time). The axes/cell/direction choice was
+   made from PUBLISHED s55 T5 (a) and the published s56
+   second-pair priors ALONE (QUOTE-ONLY); the earlier
+   exploration families STAY uncorrected and this row does NOT
+   retro-correct them. THE T6 PRIOR NAMED, NOT HIDDEN: T6's
+   published joint letter is (b) NOT-SECONDPAIR-PROFILE-OUTER-
+   WEIGHTED-CONSISTENT (QUOTE-ONLY: only the (s36,s38) contrast
+   cleared 0.05 -- 2*P2_obs 98/53/94, p 0.021849/0.193840/
+   0.055847 at s38/s39/s51) -- so this row is a SINGLE-CONTRAST
+   read of a profile axis whose three-contrast IUT failed on the
+   2026-10-28 windows; a T16 (a) is a single named test's letter
+   and NOT a repair of T6's (b), and a T16 (b) is CONSISTENT
+   WITH the s56-era power loss at this pair set AND EQUALLY
+   CONSISTENT WITH genuine non-replication of the outer-weighted
+   profile at the second pair set -- NEITHER reading names a
+   mechanism (thermal/scheduling/memory/driver state all
+   UNMEASURED) and NOT physical-vs-estimator-structure. THE
+   COMPOSITION STRUCTURE NAMED, NOT HIDDEN: P2 is a
+   DIFFERENCE-IN-DIFFERENCES, so a near-zero P2 can arise while
+   BOTH axis levels still move together -- the per-axis
+   directional contrasts 2*C_out2 and 2*C_in2 and the per-axis
+   levels are named and printed (section 5 D1, descriptive
+   only, NO letter) and visible under any T16 letter. THE
+   NOVELTY OF THIS ROW (named): the campaign's first
+   pre-registered read of the second-pair profile axis at a
+   window on another UTC day (the W5 second-pair levels were
+   never published or computed anywhere at freeze time). STILL
+   LOW POWER (n=2 windows, 12 blocks each, ONE host, ONE named
+   cell; a single (a) can also reflect any s36-specific or
+   W5-specific state); 20,000 trials (p resolution 1/20,001 ~=
+   5e-5); L2 observational ONLY; NO causal mechanism;
+   threshold-artifact-vs-representation STAYS UNRESOLVED under
+   any letter.
+
+5. SECONDARY NAMED DESCRIPTIVE CONTENT (protocol section 4;
+   NONE of it is the row question; NO letter under this freeze):
+   D1 the NAMED cell's five-window second-pair level vectors on
+   BOTH axes (2*L half-tick INTEGER; the 12 block D values at W5
+   printed for the census), the per-axis directional contrasts
+   at (s36, W5) and the W5-vs-post-shift-band consistency
+   (L_W5 vs the closed interval spanned by {L_s38, L_s39, L_s51})
+   per axis -- descriptive only:
+      OUTER2 (5,71): 2*L s36/s38/s39/s51/s73 = 713/606/659/612/715 (L 356.5/303.0/329.5/306.0/357.5)
+      OUTER2 (5,71) W5 block D values: 385 314 331 456 547 463 307 317 349 366 374 319
+      OUTER2 (5,71) W5-vs-post-shift-band: 2*L_W5 = 715 vs band 2*L 606..612 (closed interval spanned by {s38,s39,s51}): OUTSIDE-ABOVE
+      OUTER2 (5,71) prior-window reproduction vs quote-only s56 D1 priors 2*L 713/606/659/612: EXACT True
+      OUTER2 (5,71) directional contrast at (s36, W5): 2*L 713 -> 715; 2*C_out2 = -2 (-1.0)
+      INNER2 (33,43): 2*L s36/s38/s39/s51/s73 = 63/54/62/56/54 (L 31.5/27.0/31.0/28.0/27.0)
+      INNER2 (33,43) W5 block D values: 24 22 23 28 47 29 30 23 38 27 21 27
+      INNER2 (33,43) W5-vs-post-shift-band: 2*L_W5 = 54 vs band 2*L 54..56 (closed interval spanned by {s38,s39,s51}): INSIDE
+      INNER2 (33,43) prior-window reproduction vs quote-only s56 D1 priors 2*L 63/54/62/56: EXACT True
+      INNER2 (33,43) directional contrast at (s36, W5): 2*L 63 -> 54; 2*C_in2 = 9 (4.5)
+
+6. VERDICT SUMMARY:
+   T16 = (b) NOT-SECONDPAIR-PROFILE-W5-OUTER-WEIGHTED-CONSISTENT [OPPOSITE-DIRECTION]
+   OUTER2 (5,71): 2*L_s36 713 -> 2*L_s73 715 (2*C_out2 -2)
+   INNER2 (33,43): 2*L_s36 63 -> 2*L_s73 54 (2*C_in2 9)
+   2*P2_obs = -11 (P2_obs = -5.5); count 11211/20001; p 0.560572; test letter (b) NOT-DIFFERENT [OPPOSITE-DIRECTION]
+   evaluable inputs: prior vector reproduction EXACT (True); prior
+   anchor rows EXACT (True); s73 C1 ((a)); named cell identity
+   (max,128,S=default) (True); per-window integrity rows in section 1.
+   ANALYSIS session: NO hardware runs -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption (protocol
+   section 5; settle-bar-ledger.txt byte-identical to HEAD).
+   Rule 4 binds: NOTHING MOVES; accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel.

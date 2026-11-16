@@ -1,0 +1,101 @@
+ANALYSIS-S169 BYTE-IDENTITY RECORD (session 173, 2026-11-01)
+============================================================
+Scope: the s172 carry-forward (c) FIRST COMPONENT -- run
+analysis-s169.py twice byte-identical -> publication-s169.txt
+(the sixteenth cut's ANALYSIS half over the 54 committed run logs
+of the s169/s170/s171 measurement half; the logs are parsed
+THROUGH GZIP -- the committed gzip -n form).
+
+RUN PAIR (this session, in this directory):
+  run 1: python3 analysis-s169.py  -> rc 0, stdout 0 bytes
+         (analysis-s169-run1.txt), stderr 0 bytes
+         (analysis-s169-run1.err); publication-s169.txt written.
+  run 2: python3 analysis-s169.py  -> rc 0, stdout 0 bytes
+         (analysis-s169-run2.txt), stderr 0 bytes
+         (analysis-s169-run2.err); publication-s169.txt rewritten.
+  BYTE-IDENTITY: cmp run-1 copy vs run-2 output -> exit 0.
+  sha256 (both runs, identical):
+    c9aab750fd20120b3abe8db6e9cac554b6c8ea0fbb1b37d9169d1539e4ff7687
+    publication-s169.txt (56,352 bytes both runs)
+  analysis-s169.py (the script that produced both runs):
+    525f55a87294479314e78e654edc66659d4b1e40ff0c965bbebd56fb0e3da987
+
+NAMED, NOT HIDDEN -- two draft-run defects, BOTH fail-closed at a
+want-source assert BEFORE any evidence value was computed (the
+scripts aborted; no publication was written by either draft; the
+draft captures are kept visible in this directory):
+  draft-1 (analysis-s169-draft1-run1.{txt,err}, rc 1):
+    the S147_TOL_VERDICT want (line 230) passed a regex with NO
+    capture group to parse1() (which requires group(1)) ->
+    IndexError. The want literal itself MATCHES the committed
+    publication-s147.txt bytes exactly (verified this session);
+    the only fix is wrapping the pattern in one capture group.
+  draft-2 (analysis-s169-draft2-run1.{txt,err}, rc 1):
+    the pub158 bracket-state regex (line 304) was COMMA-FREE
+    ("\((\d+), (\d+)\]") while the committed publication-s158.txt
+    bytes spell "(254,557, 255,045]" -- the SAME defect family as
+    knob-search-s164 draft-1 (s165 named it). Fix: comma-tolerant
+    digit classes + comma-strip at int() conversion. The parsed
+    bracket cross-checks against the knob-search-s164-run1.txt
+    comma-free parse (254557, 255045] -> MATCH (the publication's
+    section-2 line records the MATCH True).
+  Both fixes are REGEX-SHAPE only; neither weakens a want and
+  neither changes any computed quantity (neither draft computed
+  any). Every want source was additionally spot-verified against
+  committed bytes this session before the successful runs (the
+  s27 controls line, pub147 frozen-rule/tolerance rows + minima +
+  verdict + VERDICT SUMMARY + W2 trajectory + X1 rows, pub139 W2
+  table rows (2 at n=254557, 3 at n=254882) + the pooled-window
+  quote "(lo pooled-12 1141 INTERMEDIATE/MIXED; hi pooled-24 1150
+  CAPTURED -- quote-only)", pub158 verdict/classes/bindings/pins/
+  bracket-state/W2/X1 lines, ks164 bracket + floor-midpoint +
+  in-box census + virgin quote + dual-class + tolerance-verdict
+  lines, build-census-s169.txt pin lines, and the CELL/SAMPLE/
+  VERIFY/header format of a committed run log).
+
+FROZEN LETTERS (computed by the two byte-identical runs ONLY;
+these are the sixteenth cut's measured quantities under the frozen
+anv-b3bisect16prereg-20261101/protocol.txt):
+  C1 (control replication): (b) -- c2 (sum,128,S=16) pooled
+    median m 30 vs the committed floor band 31..32 -> False;
+    c8 pooled median m 32,820 within +/-5% of committed 32,915
+    -> True (-0.29%); control arms free of VERIFY mismatches ->
+    True. VERDICT branch (b): replication discrepancy; W1 (d)
+    fires on it; cause UNMEASURED.
+  C2 (fm class stability at 16-block granularity, deep-pooling CI
+    class statistic, R=6,400): (c) CLASS-UNRESOLVED at fm
+    (345,1,354) n=254,801 -- block classes 10x CAPTURED +
+    3x INTERMEDIATE/MIXED + 3x IN-BAND-UNDECIDED, pooled-48 class
+    CAPTURED; block binding min(m-h) 997.0538..1006.7909, pooled
+    1,002.7437.
+  W1 (cut verdict): (d) INVALID (fired by C1 (b); the frozen
+    INVALIDATION reading) -> CUT VERDICT: INVALID; NOTHING MOVES.
+    The committed bracket stays EXACTLY (254,557, 255,045].
+  W2 (descriptive): fm per-run 18-cell mins, 34/48 runs at min
+    >= 1,000, 48/48 in the 981..1,015 band.
+  W3 (descriptive): every comparison cross-binary AND cross-point
+    (the point is VIRGIN); the NAMED CROSS-BINARY HAZARD (this
+    cut's binaries are NEW first-measured digests) and the
+    protocol-prose-vs-committed-bytes binding deviation (the prose
+    "1,006.8..1,008.8" matches NO committed byte; the parsed
+    publication-s158.txt bytes 1005.8172..1008.7909 govern) are
+    both named in the publication's W3 section.
+  X1 (descriptive): fm host_ns per-run median spread 62.9% of
+    min (k=48) -- named, not a C criterion.
+  MID-ONLY NARROWING CLAIM: W1 (a) did NOT fire -> the claim
+    stays SUSPENDED (named, not claimed).
+  BAR NON-INTERFERENCE: these runs are BISECT CONTENT, NOT bar
+    readings -- NO settle-bar-ledger.txt append, NO UTC-day slot
+    consumption, NO movement of the bar's SETTLED
+    INTERMEDIATE/MIXED verdict, NO Rule-4 workgroup row movement,
+    NO :measured? flag change (accelerator-targets rows stay
+    exactly as ADR-0358 left them).
+
+NOT DONE (s174 carries exactly this list): the rest of (c) --
+standing gates (a)-(f) with s174 captures, record.txt + the
+ADR-0355 dated note, and the landing tail (blocker-first + push
+of the s172+s173 commits + the JUN-499 Linear landing comment);
+(d) standing, not queued: any further counted-day slot (the
+2026-11-01 UTC slot needs its own freeze) and the cross-day
+tail-movement row. RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor).

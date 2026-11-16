@@ -1,0 +1,81 @@
+amu-gpu s201 (2026-11-02 UTC, cron) -- EIGHTEENTH CUT
+MEASUREMENT + ANALYSIS LANDING: STANDING GATES (a)-(f) +
+record.txt for sessions 196-200 + the ADR-0355 dated note
+(bracket (254,923, 255,045]) + the landing tail + the JUN-499
+landing comment (the s200 carry-forward (c') completed exactly;
+the s190 measurement-landing precedent).
+
+FINDING (verified by real tool output, docs/evidence/gpu/
+anv-b3bisect18-20261101/): THE EIGHTEENTH CUT IS NOW FULLY
+RECORDED AND LANDED -- CUT VERDICT: THE BRACKET NARROWS TO
+(254,923, 255,045] ("THE B=3 CLASS FLIP LIES ABOVE n=254,923",
+the FIRST bracket narrowing in the series; the s200 analysis-half
+letters C1 (a); C2 (a) at q3 (254,923); W1 (b), computed from the
+s197-s199 hardware runs on aiueos-6600hs under the frozen
+anv-b3bisect18prereg-20261101/protocol.txt). Standing gates
+(a)-(f) run LIVE at s201, every capture byte-compared to its pin
+(cmp exit 0): (a) gpu_regime_classify.py --self-test rc 0 17,925
+bytes == the s88 pin; (b) scoped GPU gate GREEN 'Ran 123 tests
+containing 12162 assertions. 0 failures, 0 errors.' run 1 == run 2
+== both s88 pins (919 bytes, cmp exit 0 x5), scratch runner
+scratch/scoped-gpu-gate.cljk created/run twice/DELETED ("No such
+file or directory" tool-checked), never committed; (c) FULL
+run-tests.cljk exit 1 RED AT BASE kotoba.form ('Could not find
+namespace: kotoba.form', ADR-0362, outside this diff -- touches
+NO committed .cljk namespace) .out 0 bytes == pin, .err 879 bytes
+== pin -- NO green full suite claimed; (d) settle-bar --self-test
+3,590 bytes == the s88 pin + the LEDGER EVAL pair twice BYTE-
+IDENTICAL (1,006 bytes) == the s117 post-append pin -> VERDICT:
+SETTLED INTERMEDIATE/MIXED (unchanged); (e) find docs/evidence/gpu
+-name '*.sh' -> 0; (f) settle-bar-ledger.txt == HEAD (git diff
+--exit-code rc 0). The record's byte-level claims checked LIVE
+this tick (the s183 landing precedent -- no record-verify script
+run): analysis-s197.py re-hashed MATCH (79,258 bytes sha256
+ed47823d...), publication-s197.txt re-hashed MATCH (62,811 bytes
+sha256 f3d7465a...), publication run1 == run2 == publication
+(cmp exit 0 x2), analysis run1 == run2 (cmp exit 0), the s201
+pull-verify-s197.py re-run rc 0 stdout BYTE-IDENTICAL to the
+committed pull-verify-s197-run1.txt (cmp exit 0), raw-digests-
+s197.txt 54 data rows + 13-line header (67 lines), cases-
+s197-a.txt whole-file pin 2674279706a6dc1e... MATCH, host-build-
+s197.txt binary-pin block re-read (q3 c7ba9c86... NEW; c2/c8
+== s169 byte-identically), host-runs-s197.txt 59 lines 6,949 bytes
+sha256 1d5189fc..., knob arithmetic re-derived by tool
+((1,000,003*246)//965 = 254,923, gcd(246,965) = 1; width 488 ->
+122; top clip 122 / low clip 366; F > 254,923 > 254,882 True).
+
+STATE (three-state discipline): the eighteenth-cut letters are
+MEASURED QUANTITIES from the s197-s199 hardware runs on aiueos-
+6600hs under the frozen protocol -- NOT workgroup-default
+measurements, NOT implemented compiler code; the pre-registration
+itself remains ACCEPTED DESIGN ONLY. NAMED, NOT HIDDEN: the gate
+(d) LEDGER EVAL first attempt was invoked without its required
+ledger argument (rc 2, usage line 53 bytes) -- kept as
+bar-s201-eval-argfail.txt, the gate captures are the correct
+re-runs, no evidence byte affected. RULE 4: NOTHING MOVES in the
+accelerator-targets workgroup rows -- exactly as ADR-0358 left
+them; NO :measured? flag change; NO vendor optimization exists for
+Intel (or for any vendor); the bracket narrowing is BISECT-RECORD
+content per the frozen pre-registration, not a workgroup row. BAR
+NON-INTERFERENCE held: NO settle-bar-ledger line (settle-bar-
+ledger.txt byte-identical to HEAD, git diff --exit-code rc 0), NO
+day-slot consumption (protocol section 5). This diff touches NO
+committed .cljk namespace (evidence .txt/.py/.json + the ADR .md
+only; the s160/s166 precedent: no scoped-gate re-run needed; the
+gates ran live at s201 anyway; full suite stands RED AT BASE
+kotoba.form ADR-0362 outside this diff per the standing captures
+-- NO green full suite claimed). Untracked scratch/, deps.edn,
+.DS_Store, docs/evidence/gpu/anv-b3bisect18-20261101/__pycache__
+NOT staged. Linear comment on JUN-499.
+
+Commit + push to the chain branch bot/amu-gpu-chain-20261028-4
+(the ONE open chain PR #1665) after the blocker-first check.
+
+NOT DONE (s202 carries exactly this list): standing, not queued:
+any further counted-day slot (each needs its own freeze) and the
+cross-day tail-movement row; any nineteenth cut ONLY through a NEW
+pre-registered cut session confronting this cut's content (NOT
+queued) -- NO queued row remains; s202 takes a row only per the
+recorded carry-forward precedent, else stands down.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

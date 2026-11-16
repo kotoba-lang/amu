@@ -1,0 +1,65 @@
+amu-gpu s174 (2026-11-01 JST, cron) -- JUN-59 sixteenth cut
+LANDING (the s173 carry-forward, first row): standing gates
+(a)-(f) run LIVE with s174 captures.
+
+ROW COMPLETED THIS TICK (the s173 carry-forward first component,
+exactly): the standing gate set (a)-(f), run fresh from the
+worktree root at this tick, byte-compared to the s88 pins in
+../anv-b3w6tailrep-20261030/ and the s117 post-append eval pin in
+../anv-b3w7ledgerappend-20261031/:
+(a) gpu_regime_classify.py --self-test: rc 0, 17,925 bytes == s88
+    pin (cmp exit 0), .err 0 bytes (gate-s174-classify.txt/.err)
+    -- VERIFIED.
+(b) scoped GPU gate (scratch/scoped-gpu-gate.cljk, the eight GPU
+    namespaces of run-tests.cljk, same engine and classpath):
+    GREEN 'Ran 123 tests containing 12162 assertions. 0 failures,
+    0 errors.' run 1 == run 2 == both s88 pins (gate-s174-run1.txt
+    == gate-s174-run2.txt == 919 bytes, cmp exit 0; run1 ==
+    s88-run1 == s88-run2, run2 == s88-run2, all cmp exit 0), rc 0
+    both, .err 0 bytes both (scratch runner created/run twice/
+    DELETED this session, never committed -- final state deleted,
+    ls confirms absent) -- VERIFIED.
+(c) FULL run-tests.cljk: exit 1 RED AT BASE kotoba.form ('Could
+    not find namespace: kotoba.form', ADR-0362, outside this diff
+    -- this diff touches NO committed .cljk namespace),
+    gate-s174-full.out 0 bytes == pin, gate-s174-full.err 879
+    bytes == pin (cmp exit 0 x2) -- NO green full suite claimed.
+(d) settle-bar evaluator (../anv-b3settlebar-20261027/settle-bar-
+    eval.py, frozen): --self-test rc 0, 3,590 bytes == the s88 pin
+    (cmp exit 0); ledger eval pair twice BYTE-IDENTICAL
+    (bar-s174-eval-run1.txt == bar-s174-eval-run2.txt, 1,006 bytes,
+    cmp exit 0) == the s117 post-append pins (cmp exit 0 x2) ->
+    VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged) -- VERIFIED.
+(e) find docs/evidence/gpu -name '*.sh' -> 0 lines
+    (gate-s174-nosh captures 0 bytes) -- VERIFIED.
+(f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+    ledger.txt rc 0 (gate-s174-ledger-head captures 0 bytes --
+    no append this row) -- VERIFIED.
+Capture .err files are all 0 bytes.
+
+NOTHING ELSE MOVED: the sixteenth-cut letters stand exactly as
+s173 computed them (C1 (b) CONTROL REPLICATION DISCREPANCY; C2
+(c) CLASS-UNRESOLVED at fm (345,1,354) n=254,801; W1 (d) INVALID
+-> CUT VERDICT: INVALID; NOTHING MOVES). NO new sixteenth-cut
+quantity is computed or claimed this tick; the committed bracket
+stays EXACTLY (254,557, 255,045]; the MID-ONLY NARROWING CLAIM
+stays SUSPENDED. This tick ran NO hardware, NO builds, NO
+compiles, NO GO stamp, NO day-slot consumption, NO ledger line --
+BAR NON-INTERFERENCE held (the gate runs touch nothing the ledger
+reads). RULE 4 unchanged: NOTHING MOVES; NO vendor optimization
+exists for Intel (or for any vendor); the accelerator-targets
+workgroup rows stay exactly as ADR-0358 left them (:measured?
+false for the unmeasured rows). Three-state: the sixteenth-cut
+letters are MEASURED QUANTITIES from the s169-s171 hardware runs
+under the frozen protocol; this tick's gates are verification,
+not measurement. Diff touches NO committed .cljk namespace
+(evidence .txt/.out/.err only). Full suite RED AT BASE kotoba.form
+ADR-0362 outside this diff -- NO green full suite claimed.
+
+NOT DONE (s175 carries exactly this list): the REST of the s173
+carry-forward -- record.txt + the ADR-0355 dated note (sessions
+169-174), and the landing tail beyond this push; (d) standing,
+not queued: any further counted-day slot (the 2026-11-01 UTC
+slot needs its own freeze) and the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

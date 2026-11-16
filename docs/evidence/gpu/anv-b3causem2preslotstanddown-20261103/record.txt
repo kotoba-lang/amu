@@ -1,0 +1,185 @@
+JUN-59 session 245 -- THE PRE-M2-DAY STAND-DOWN (NO row taken:
+the s244 carry-forward's only queued row, the cause-resolution
+act's MEASUREMENT half at act measurement session m2 of 3, is
+day-gated to 2026-11-04 UTC or later, and this session starts
+22 h 30 m 19 s before that slot opens -- the s104/s112 pre-slot
+precedent applied at the act's m2 boundary; NO design slice, NO
+implementation slice, NO measurement, NO hardware runs, NO
+builds, NO compiles, NO GO stamp, NO host writes, NO day-slot
+consumption, NO ledger line).
+
+1. FINDING (verified by real tool output): the act's measurement
+   session m2 is the ONLY queued row and this session cannot
+   take it. The s244 carry-forward (committed chain history,
+   git show 677e84770) records its queue row verbatim:
+   "QUEUED for s245: act session m2 (2026-11-04 UTC or later)".
+   The s242 frozen run plan section 5
+   (anv-b3causeprereg-20261103/protocol.txt, freeze stamp
+   2026-11-02T23:47:35Z) requires the act's 3 fresh sessions
+   spread over at least 2 distinct days (at least 1 session per
+   day, session order and day recorded); m1 landed on UTC day
+   2026-11-03 and the m1 queue (s244) recorded "sessions m2 and
+   m3 on later UTC days" with m2 gated to 2026-11-04 UTC or
+   later. This session started 2026-11-03T01:29:40Z -- 81,019 s
+   (22 h 30 m 19 s) BEFORE the slot opens (state-s245.txt;
+   slot_open minus session_start computed by python3 datetime,
+   the same arithmetic in the state file). Running m2's runs in
+   this session would land them on UTC day 2026-11-03, directly
+   against the committed queue row and the s244 m1 record's day
+   spread -- the exact outcome the pre-registration exists to
+   prevent. Carry-forward (b) is explicitly NOT queued until the
+   measurement half lands (the act's ANALYSIS half executes
+   rules R1-R5 over the act's committed run logs; only m1's logs
+   exist), and carry-forward (c) is explicitly NOT queued (the
+   s216 identity-hazard residual stays UNDECIDED until the act's
+   measurement + analysis halves land; its higher-N readings and
+   any further counted-day slot need their own freezes). Every
+   composition of the m2 record is already bound to committed
+   bytes: the frozen protocol (s242), the instrument source and
+   its committed-bytes verification (s243, 149-check
+   impl-verify-s243.py twice byte-identical), and the m1
+   route/custody precedent (s244: stage/build/run/custody/
+   pull-verify on aiueos-6600hs, 89-check pull-verify twice
+   byte-identical) -- the m2 session's own steps (binary pin
+   re-verification at session start, staging, its own capture
+   custody) belong to the m2 session's record by the s244 queue
+   text itself ("with its own capture custody", "the binary pin
+   ... re-verified at each later session start"). Per the
+   s103/s112 closing rule, a tick running before the slot opens
+   has NO remaining honest preparation row and should say so
+   rather than pad.
+
+2. VERIFIED (real tool output, all runs this tick, byte-compared
+   to the s88 committed pins in anv-b3w6tailrep-20261030/ and
+   the s117 post-append pins in anv-b3w7ledgerappend-20261031/):
+   (a) gpu_regime_classify.py --self-test (scripts/): exit 0,
+       "TOTAL: 2649 assertions passed, 0 failed"; capture 17,925
+       bytes == the s88 pin (cmp exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-
+       gate.cljk -- the eight GPU-owned accelerator-* test
+       namespaces of run-tests.cljk, same engine and classpath;
+       created, run twice, DELETED ("No such file or directory"
+       tool-checked), never committed): GREEN run 1 AND run
+       2 -- "Ran 123 tests containing 12162 assertions. 0
+       failures, 0 errors."; run 1 == run 2 == both s88 pins
+       (919 bytes, cmp exit 0 x5); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci
+       --classpath "src:test:$(kbb -Spath -M:test)"
+       run-tests.cljk, worktree root): exit 1, RED AT BASE
+       kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO
+       .cljk namespace; the scoped runner is deleted and never
+       committed). Capture .err 879 bytes == the s88 pin (cmp
+       exit 0); stdout 0 bytes == the pin. NO green full suite
+       is claimed;
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/settle-
+       bar-eval.py, frozen): --self-test exit 0, "TOTAL: 38
+       assertions passed, 0 failed", capture 3,590 bytes == the
+       s88 pin (cmp exit 0); ledger eval twice, exit 0, run 1
+       == run 2 == the s117 post-append pins (1,006 bytes, cmp
+       exit 0 x2) -> VERDICT: SETTLED INTERMEDIATE/MIXED
+       (unchanged; the ledger sha256 3bb682e4... equals the
+       s241/s242/s243/s244-recorded value, tail row
+       day=2026-10-31 session=s113 UNMOVED);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files
+       (gate-s245-nosh.txt 0 bytes);
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff
+       --exit-code rc=0 -- the emit path never ran).
+
+3. THE BAR: stand-down session -> NO hardware runs -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption. The
+   bar's SETTLED INTERMEDIATE/MIXED verdict is unmoved and
+   settles nothing new.
+
+4. UNMEASURED (named): the act's m2 and m3 windows themselves
+   (every act quantity stays UNMEASURED until the act's
+   measurement AND analysis halves land -- no fresh letter, no
+   R_a/R_b distance, no P_Z1, no P_Z2, no O1..O5 branch outcome
+   is computed anywhere in this diff); the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+   provisional, :measured? false; :measured? false rows remain
+   provisional design assumptions -- NOT optimization evidence).
+   RULE 4 unchanged: NOTHING MOVES. NO vendor optimization
+   exists for Intel (or for any vendor). This is gate-state
+   verification at stand-down, not a device measurement.
+
+5. NAMED, NOT HIDDEN:
+   (a) this record is a STAND-DOWN, not a preparation row --
+       nothing is bound, nothing is rehearsed, no future record
+       may build on it;
+   (b) ONE stand-down record suffices for the act's pre-m2
+       period (the s104/s112 rule, extended to this boundary):
+       any further tick that also starts before
+       2026-11-04T00:00:00Z stands down WITHOUT a second commit
+       and WITHOUT a report (respond [SILENT]) unless the state
+       changes (a hermes/ blocker PR appears, the chain PR
+       merges or conflicts, the gate state moves); the first
+       tick whose START is at or after 2026-11-04T00:00:00Z is
+       act session m2;
+   (c) the kbb engine's standing "2 dep(s) are not :local/root"
+       warning reaches no capture (.err 0 bytes wherever the
+       pins are 0);
+   (d) untracked scratch/, deps.edn, the .DS_Store family and
+       gate-s230-nosh.err in the worktree are not this row's and
+       are not committed;
+   (e) the standing docs-WIDE drift: a docs-wide find returns
+       ONE POSIX .sh file, docs/evidence/spirv-to-wgsl-20261028/
+       run-mac-native.sh, committed at the chain base by PR
+       #1644 (JUN-377) OUTSIDE docs/evidence/gpu and OUTSIDE
+       this diff, NOT staged, NOT touched; this slice adds NO
+       POSIX .sh anywhere (gate (e) scoped to docs/evidence/gpu:
+       0 files).
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   (prlist-s245-prepush.json taken immediately before this push;
+   the tick-start check agreed -- 0 hermes/ heads at both
+   checks); chain PRs = exactly ONE (#1665
+   bot/amu-gpu-chain-20261028-4 -- the one this commit pushes
+   to).
+
+7. NOT DONE (carry-forward -- the s244 list, re-queued):
+   (a) the act's measurement half CONTINUES: act session m2 (the
+       s242 frozen protocol; the FIRST session starting at or
+       after 2026-11-04T00:00:00Z; 3 runs r01..r03 rounds=6400
+       warmup=3 with its own capture custody; the binary pin
+       2c216ef2... re-verified at each later session start -- if
+       unavailable a rebuild gets NEW first-measured pins
+       recorded by that session and the build change is NAMED,
+       L3 live) -- QUEUED for the first tick starting at/after
+       2026-11-04T00:00:00Z, then act session m3 on its later
+       UTC day (its day row is that session's carry-forward, as
+       m1 recorded m2's);
+   (b) standing, not queued until the measurement half lands:
+       the act's ANALYSIS half (rules R1-R5 of protocol.txt
+       section 6 executed fail-closed twice byte-identical over
+       the act's committed run logs; rules frozen at s242, script
+       bytes come with the analysis slice; every act quantity
+       UNMEASURED until then);
+   (c) standing, not queued (carried unchanged from s244): the
+       s216 identity hazard's residual -- the CAUSE of the
+       (a)/(b) sample-shape difference stays UNMEASURED and
+       UNDECIDED until the act's measurement + analysis halves
+       land; the underlying-instrument-state COUNT stays outside
+       (s220 1(b)); at N=75 the s235/s237 classifications carry
+       NO noise model and near-neither prevalence needs higher-N
+       readings -- new hardware runs, each with its own freeze;
+       any further counted-day slot (each needs its own freeze)
+       and the cross-day tail-movement row.
+
+WHAT CHANGED (this commit): docs/evidence/gpu/
+anv-b3causem2preslotstanddown-20261103/ gains this record
+(record.txt) + state-s245.txt + the s245 gate captures
+(gate-s245-classify.txt/.err, gate-s245-run1/2.txt/.err,
+gate-s245-full.out/.err, bar-s245-selftest.txt/.err,
+bar-s245-eval-run1/2.txt/.err, gate-s245-nosh.txt/.err,
+gate-s245-ledger.txt, prlist-s245-prepush.json); plus the
+ADR-0355 dated note (this session's step). NO run logs (no
+hardware this tick), NO .sh files, NO statistics of any kind.
+The chain commit cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+Evidence: docs/evidence/gpu/anv-b3causem2preslotstanddown-20261103/
+(this file, state-s245.txt, the s245 gate captures,
+prlist-s245-prepush.json). (JUN-55, JUN-59; Linear tracking
+JUN-499)

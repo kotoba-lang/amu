@@ -1,0 +1,847 @@
+JUN-59 session 209 analysis -- THE B=3 PER-DISPATCH-WORK THRESHOLD
+BISECT, NINETEENTH CUT -- THE FLOOR-MIDPOINT CUT AT q2 (307,1204)
+n=254,984 (the q=2 floor midpoint of the width-122 bracket (254,923,
+255,045]; q=1 254,953 is NOT cut and q=3 255,014 is NOT cut -- both
+dominated on the worst-case clip criterion (92 and 91 vs 61); lo
+254,923 is NOT re-cut (the 18th cut's C2 (a) content + the general
+re-read logic bind there, D3 (iv)); hi 255,045 is NOT re-measured
+(the 13th/15th cut content; the per-point rule)).
+ONE NEW KNOB TRIPLE (q2 (3,307,1204) -- new-to-history, L8
+APPLIES).
+publication -- the ANALYSIS half over the 54 committed run logs of
+the s209/s210/s211/s212 measurement half (this directory -- the
+committed gzip -n form run-<tag>-r<NN>.txt.gz; this script READS
+THROUGH GZIP, the s157 capture-form deviation), under the frozen
+anv-b3bisect19prereg-20261102/protocol.txt (freeze stamp
+2026-11-02T04:07:06Z BEFORE any run log of this cut existed).
+Produced ONLY by analysis-s209.py over the 54 committed run logs in
+this directory and the NAMED COMMITTED WANT SOURCES parsed below
+(the s27 controls census; the publication-s197.txt 18th-cut
+content -- the arm-(a) FIRST content + the D2 control-state
+confrontation + the W3 lo content; the knob-search-s203-run1.txt
+section-2/3/4/5 quotes (the s203 census); the publication-s139.txt
+W2 row table + pooled-window quotes (arm (d)); the
+publication-s147.txt mid TOLERANCE-UNRESOLVED record (arm (d)); the
+publication-s158.txt 15th-cut landed outcome + bis content at
+52fb68b6... (W3); the publication-s169.txt / publication-s185.txt
+prior-window W2/X1 rows (quote-only); the host-build-s209.txt
+first-measured binary pins; all parsed from committed bytes, never
+transcribed). Arms = binary compile-time (BATCH, WORK_MUL, NDIV);
+n = (1,000,003*WORK_MUL)/NDIV (integer floor). The row question
+(protocol): AT FIXED B=3, IS THE CLASS AT (307, 1204) n=254,984
+SINGLE-CLASS STABLE AT 16-BLOCK GRANULARITY (16 blocks of 3 runs +
+pooled-48) UNDER THE PRE-REGISTERED DEEP-POOLING CI CLASS STATISTIC
+(R = 6,400), AT ITS NEW FIRST-MEASURED BINARY (THE ROUNDS6400
+INSTRUMENT VARIANT; this window's build pins parsed below: c2 b791b71a... q2 af9999e1... c8 2f25d678...)?
+Classification statistic (protocol arm (c), frozen BEFORE runs): per
+unit per cell m_c = pooled sample median gpu_ticks, MAD_c = sample
+median |x - m_c|, CI half-width h_c = 3.6420 * MAD_c / sqrt(N)
+(N = 3R = 19,200 per block/control cell, 48R = 307,200 per
+pooled-48 cell; the constant 1.96 * 1.2533 * 1.4826 = 3.6419595 -> frozen 3.6420, |diff| = 0.0000405 <= 0.00005: True); unit classes at
+the FROZEN 1,000-tick threshold -- CAPTURED iff all 18 pipeline-ok
+cells m_c - h_c >= 1,000; FLOOR iff all 18 m_c + h_c <= 100;
+INTERMEDIATE/MIXED iff (some m_c + h_c < 1,000) AND (some
+m_c - h_c > 100); IN-BAND-UNDECIDED otherwise. The min-over-18
+threshold-ride statistic is GONE (s152 D2) -- no class is computed
+from it. BAR NON-INTERFERENCE: the cut's runs are BISECT CONTENT and
+NOT bar readings -- no ledger append, no day-slot consumption, no
+bar verdict movement, no Rule 4 row or :measured? flag movement. WHY
+any class occurs is UNMEASURED (L2 binds); NO causal mechanism is
+claimed. 1 tick = timestampPeriod = 52.083 ns.
+
+0. NAMED COMMITTED WANT SOURCES (parsed here from committed bytes;
+   every value below is a QUOTE-ONLY comparison value and never this
+   session's measurement):
+   committed controls (s27 census): committed controls: c2 31 (floor band 31..32); c8 32,915 (session 4 pooled median)
+   ARM (a) CONTENT CONFRONTED FIRST (protocol arm (a), the D2
+   mandate): the EIGHTEENTH CUT's content at q3 (246, 965)
+   n=254,923, quoted from committed bytes (knob-search-s203-run1.txt
+   section 2 == the publication-s197.txt parse; both parsed here and
+   cross-checked against each other):
+     VERDICT SUMMARY (parsed): C1 (a); C2 (a) at q3 (254923); W1 (b). CUT VERDICT: THE BRACKET NARROWS TO (254,923, 255,045] ("THE B=3 CLASS FLIP LIES ABOVE n=254,923").
+     C1: c2 pooled median m 31, deep-pooling class FLOOR (committed floor band 31..32 at B=2): True
+     C1: c8 pooled median m 32778 within +/-5% of committed 32915 (session 4 pooled median): True (-0.42%)
+     C1: control arms free of VERIFY mismatches (frozen INVALIDATION criterion): True
+     C1 VERDICT: branch (a) both controls satisfy their criteria -- W1 is evaluated against the row question.
+     the current control state (the 17th cut's C1 (a)) REPLICATES at back-to-back cuts -- no supersession needed (the 17th cut's C1 (a) stands confirmed; named).
+     C2 block classes (re-count COMPUTED here): 16x INTERMEDIATE/MIXED; pooled-48 class INTERMEDIATE/MIXED
+     C2 block binding min(m-h): 995.1326..998.0538 (16 values), pooled-48 997.7700
+     C2 (sum,128,S=16) m: blocks 1131..1132 (16 values, min..max), pooled-48 1132
+     C2 VERDICT: (a) STABLE-INTERMEDIATE: all 16 blocks AND the pooled-48 arm class INTERMEDIATE/MIXED -- PASSES the 16-block class-stability requirement at q3 under the deep-pooling statistic (quote PARSED).
+     NAMED, NOT HIDDEN: WHY any class occurs is UNMEASURED (L2 binds); NO causal mechanism is claimed (quote PARSED).
+     W1 letters (parsed): C1 (control replication): (a); C2 (q3 class stability): (a); W1 (b).
+     W1 (b) text PARSED: (b) C2 (a) -> THE BRACKET NARROWS TO (254,923, 255,045]; the MID-ONLY NARROWING CLAIM's location statement CONFIRMED BY IMPLICATION (F > 254,923 > 254,882 -- by implication only, no mid content measured).
+     W1 bracket movement PARSED: the lower endpoint moved 254,557 -> 254,923 on this cut's content; the upper endpoint carried unchanged on hi's content (255,045); NAMED: lo AND mid leave the bracket.
+     D1 note (verbatim quote PARSED): the top clip 255,045-254,923 = 122; the low clip 254,923-254,557 = 366 -- arithmetic re-derived here: 122 / 366 (the clips are not equal widths).
+     W3: NAMED CROSS-BINARY HAZARD quote PARSED (the q3 binary is NEW first-measured ROUNDS6400 variant; any class comparison with the committed windows may be BINARY-driven, cause UNMEASURED, L2 binds).
+     W3: L8 APPLIES quote PARSED: q3 (246, 965) is a NEW knob pair of the session-21 L8 combination risk class; the s192 enumeration gives 10 in-box same-ratio doubles of n=254,923 and NONE is measured this cut.
+     X1 (descriptive, NOT a C criterion): q3 per-run host_ns median min..max 309798..503223.5 (spread 193425.5 = 62.4% of min; k=48) (quote PARSED).
+     CROSS-CHECK knob-search-s203-run1.txt section 2 ==
+     publication-s197.txt parse:
+       letters ('a', 'a', 'b') == ('a', 'a', 'b'): True
+       C1 branch a == a: True
+       D2 quote identical: True
+       class recount (16, 'INTERMEDIATE/MIXED') == pub197 class list (16 classes, pooled-48 INTERMEDIATE/MIXED): True
+       pooled-48 binding min(m-h) 997.7700; pooled-48 (sum,128,S=16) m 1132
+       binding range 995.1326..998.0538 == 995.1326..998.0538: True
+       m range 1131..1132 == 1131..1132: True
+     THE D2 CONTROL-STATE CONFRONTATION (protocol arm (a); the
+     current control state is the 17th cut's C1 (a), replicated by
+     the 18th cut at back-to-back cuts -- this cut's C1 letter
+     confronts it below; the historical discrepancy cause is
+     UNMEASURED, L2 binds):
+       C1 (a) at the 18th cut: c2 pooled median m 31, deep-pooling class FLOOR (committed floor band 31..32 at B=2): True
+       the current control state (the 17th cut's C1 (a)) REPLICATES at back-to-back cuts -- no supersession needed (the 17th cut's C1 (a) stands confirmed; named).
+     FROZEN SUPERSESSION STATEMENT (protocol, carried here
+     verbatim): NO letter of this cut supersedes the 18th cut's
+     point content at 254,923 or its C2 (a)/W1 (b)/CUT VERDICT: this
+     cut does not measure 254,923; that content stands as committed
+     content under ALL outcomes of this cut (the s166 'no letter
+     supersedes' precedent). NAMED, per D1 (iii): NO L9 clause binds
+     at 254,923 from the 18th cut's freeze (the frozen 'mixed at q3'
+     second-edge shape did NOT fire on C2 (a) content and the
+     L9-at-254,923 conditional did NOT fire either); what binds at
+     254,923 is the general arm-(b) re-read logic (D3 (iv)) and this
+     cut's arm-(a) statement. NO letter of this cut supersedes the
+     out-of-bracket committed content (254,557 / 254,679 / 254,801 /
+     254,882) or the hi content at 255,045 (the 13th cut's C2 (c) +
+     the 15th cut's C2 (b) re-measure). The L9 clauses at 254,679
+     (17th cut) and 254,801 (16th cut) stand. THIS CUT's POINT is
+     vacuous-at-point (VIRGIN; ks203 section 5 quote below) -- no
+     committed reading exists at n=254,984 to supersede; this cut's
+     own content, if it runs, is the FIRST content at the point. The
+     ONLY supersession this cut can perform is on the control
+     reading: the C1 confrontation below.
+   this cut's point's committed content at (307, 1204) n=254,984,
+   quoted from committed knob-search-s203-run1.txt bytes:
+     floor midpoint re-derivation: (254923+255045)//2 = 254984 (RE-DERIVED here; == the q=2 candidate: True)
+     floor midpoint (q=2) n=254984: pairs 29; smallest (307, 1204); in-box same-ratio doubles 6; committed-source occurrences {'publication-s139.txt': 0, 'publication-s147.txt': 0, 'publication-s158.txt': 0, 'publication-s169.txt': 0, 'publication-s185.txt': 0, 'publication-s197.txt': 0}; enumeration-source occurrences {'knob-search-s177-run1.txt': 0, 'knob-search-s192-run1.txt': 0}
+     content confrontation: n=254984 is VIRGIN after the eighteenth cut -- RE-DERIVED here: 0 occurrences in every parsed publication source (including publication-s197.txt) AND in both knob-search captures.
+     STATED, NOT SILENT: the point is VIRGIN -- this cut's own
+     48-run content, if it runs, is the FIRST content at the point
+     (vacuous-at-point; arm (a) 'supersedes which committed reading'
+     is answered: NONE AT THE POINT (stated), and at 254,923 NONE
+     (the statement above)).
+   ARM (d) CLAIM-FORM CONFRONTATION CONTENT (protocol arm (d); the
+   disputed record, quoted from committed knob-search-s203-run1.txt
+   section 3 PRIMARY lines == the publication-s139/147.txt parses --
+   both parsed here and cross-checked against each other):
+     PRIMARY (publication-s139.txt): lo n=254,557 dual-class rows [(1156, 'INTERMEDIATE/MIXED', '121'), (1143, 'CAPTURED', '125')]; lo tenth-cut pooled-12 median 1141, 18-cell 998..1452, class INTERMEDIATE/MIXED
+     PRIMARY (publication-s139.txt): mid n=254,882 dual-class rows [(1129, 'INTERMEDIATE/MIXED', '125'), (1133, 'INTERMEDIATE/MIXED', '132'), (1148, 'CAPTURED', '136')]; mid pooled-48 median 1140, 18-cell 1001..1442, class CAPTURED
+     PRIMARY (publication-s147.txt): 14th cut mid content -- 16x IN-BAND-UNDECIDED + pooled-48 IN-BAND-UNDECIDED; block 18-cell minima 992 / 1006 / 996 / 1000 / 1002 / 993 / 1002 / 991 / 1006 / 996 / 997 / 996 / 1002 / 999 / 995 / 991; pooled-48 min 1005, pooled-48 median 1148; verdict (parsed): (c) TOLERANCE-UNRESOLVED: any in-band minimum or mixed classes -- FAILS; L9 binds at mid at 16 blocks under the tolerance rule too.
+     W3 CROSS-CHECK: the 18th cut's W3 reading of the disputed record (5 row quotes + lo pooled-12 + mid pooled-48 + s147 pooled-48) MATCHES the primary-source parse at every value -- the disputed record is UNCONTESTED between the sources.
+   the letters' treatment, frozen here: NO letter of this cut
+   touches the disputed record or any out-of-bracket content; the
+   record stands as committed content outside the bracket under ALL
+   outcomes; its cause is UNMEASURED (L2 binds).
+   the hi endpoint's committed content (the W3 bracketing content
+   above; NO letter of this cut supersedes it), quoted from
+   committed bytes:
+     spec section 1 (i) bis content pin PARSED: bis (3,316,1239) n=255,045 at binary 440604ef... -- 7x CAPTURED + 9x INTERMEDIATE/MIXED blocks, pooled-48 CAPTURED 1,148 (18-cell 1,006..1,449) -- the 13th cut's content at the NEW bracket's upper endpoint (the spec is ACCEPTED DESIGN ONLY).
+   15th cut (sessions 157-163) landed outcome (parsed from
+   committed publication-s158.txt bytes):
+     VERDICT SUMMARY: C1 (a); C2 (b) at bis
+     (255,045); W1 (a).
+     Bracket state: NARROWED -- (254557, 255045] (the old width-488 bracket; the 18th cut's
+     W1 (b) narrowed it to (254,923, 255,045] -- the bracket this
+     cut starts from: committed bracket (publication-s197.txt, parsed): (254923, 255045] n-units, width 122)
+   this cut's first-measured binary pins (parsed from committed
+   host-build-s209.txt bytes; NEW binaries -- NO committed pin to
+   match, the s136 precedent; c2/c8 reproduce the s169 (= s185 =
+   s197) digests byte-identically on the same source+knob bytes -- a
+   capture observation, not a claim; q2 is new-to-history):
+     anv-bb-c2 b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48
+     anv-bb-q2 af9999e1c15eb735e64e0315eb56c81d767826c5acbfc9e27b87ee56a6e641f6
+     anv-bb-c8 2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831
+
+1. INTEGRITY (computed over the 54 logs, READ THROUGH GZIP -- the
+   committed form is run-<tag>-r<NN>.txt.gz gzip -n, the s157
+   capture-form deviation; the raw logs are NOT kept, named):
+   device (parsed from the logs): device_name=Intel(R) Graphics (BMG G31) vendor=8086 device=e223 api=1.4.318
+   timestampPeriod=52.083 timestampComputeAndGraphics=1
+   runs parsed: 54 (c2 x3, q2 x48, c8 x3 -- the frozen ARM TABLE's
+   3 rows govern the count; run-count self-check 3+48+3 = 54 -> True); cell map
+   identical across runs: True
+   all per-log integrity checks pass (cell/verify counts, tail,
+   header knob fields, n=, per-cell sample counts): True
+   headers byte-identical across all runs outside the # n= knob line: True
+   header batch=/work_mul=/ndiv= == run's (B,WM,NDIV), rounds=6400, warmup=3, barrier_n=0 and n == (1,000,003*WM)//NDIV: True
+   knob arithmetic (record): (1,000,003*307)//1204 = 254984 == the header n=254984: True; gcd(307, 1204) = 1
+   quarter-grid derivation (record): width 122, q=2 floor
+   midpoint (254923+255045)//2 = 254984 == Q2_N; q=1 = 254953 (NOT cut), q=3 = 255014 (NOT cut); mid n=254882 sits
+   below the bracket's lower endpoint (outside; the disputed
+   record, arm (d)).
+   every CELL spv= name is an archived .emitted.spv (no .iter -- the corpus is byte-identical this session): True
+   CELL lines: 24 per run in 54/54 runs: True
+   VERIFY lines: 24 per run in 54/54 runs: True
+   tail '# done cells=24' in 54/54 runs: True
+   SAMPLE lines: 115,200 per run (18 ok cells x 6,400 rounds) in 54/54 runs: True
+   VERIFY mismatch total over all runs: 0 (per-arm: c2=0, q2=0, c8=0) -- bit-exact correctness re-check inside every run; frozen INVALIDATION criterion (protocol): >0 in any run makes that run DEFECTIVE and the arm INVALID (its letters not evaluable)
+   forcing reality (pipeline-ok cell-runs where probe_size==forced and probe_nsub==wg/forced): 972/972
+   S=8 cells fail-closed (pipeline=FAIL, forced=8): 324 cell-runs (6 per run x 54 runs = 324 expected -- fail-closed, never read as data)
+
+2. PER-RUN DESCRIPTIVE (W2/L10: per-run quantities are DESCRIPTIVE
+   ONLY and never classify; each run: (sum,128,S=16) per-cell median
+   gpu_ticks over its 6,400 rounds, then min..max over the 18
+   pipeline-ok cells of the per-cell medians, then the per-run
+   host_ns median at (sum,128,S=16)):
+
+   c2 (B=2, WM=1, NDIV=1, n=1000003, k=3):
+     r01  (sum,128,16)      30   18-cell     30..30       host_ns 676541
+     r02  (sum,128,16)      30   18-cell     30..30       host_ns 676551
+     r03  (sum,128,16)      30   18-cell     30..30       host_ns 681410.5
+
+   q2 (B=3, WM=307, NDIV=1204, n=254984, k=48):
+     r01  (sum,128,16)    1140   18-cell   1002..1448     host_ns 309447
+     r02  (sum,128,16)    1138   18-cell   1000..1447     host_ns 308936
+     r03  (sum,128,16)    1139   18-cell   1001..1448     host_ns 309016
+     r04  (sum,128,16)    1138   18-cell   1000..1449     host_ns 308956
+     r05  (sum,128,16)    1138   18-cell   1002..1448     host_ns 308996
+     r06  (sum,128,16)    1138   18-cell   1000..1449     host_ns 309127
+     r07  (sum,128,16)    1139   18-cell   1001..1448     host_ns 309347
+     r08  (sum,128,16)    1138   18-cell   1001..1449     host_ns 309137
+     r09  (sum,128,16)    1137   18-cell   1001..1449     host_ns 309026
+     r10  (sum,128,16)    1138   18-cell   1001..1448     host_ns 309007
+     r11  (sum,128,16)    1139   18-cell    999..1450     host_ns 308961.5
+     r12  (sum,128,16)    1134   18-cell   1000..1444     host_ns 307719
+     r13  (sum,128,16)    1137   18-cell    999..1445     host_ns 308144
+     r14  (sum,128,16)    1138   18-cell   1000..1449     host_ns 308966
+     r15  (sum,128,16)    1139   18-cell   1001..1447     host_ns 309187
+     r16  (sum,128,16)    1139   18-cell   1000..1448     host_ns 308926.5
+     r17  (sum,128,16)    1139   18-cell   1001..1448     host_ns 309156
+     r18  (sum,128,16)    1137   18-cell   1002..1448     host_ns 309136
+     r19  (sum,128,16)    1138   18-cell   1001..1449     host_ns 309056.5
+     r20  (sum,128,16)    1139   18-cell    999..1449     host_ns 309247
+     r21  (sum,128,16)    1134   18-cell   1001..1445     host_ns 307593.5
+     r22  (sum,128,16)    1133   18-cell    998..1444     host_ns 307613
+     r23  (sum,128,16)    1133   18-cell    998..1443     host_ns 307153
+     r24  (sum,128,16)  1135.5   18-cell    999..1447     host_ns 308154.5
+     r25  (sum,128,16)    1134   18-cell    999..1445     host_ns 307573
+     r26  (sum,128,16)    1133   18-cell    997..1443     host_ns 306963
+     r27  (sum,128,16)    1132   18-cell    997..1442     host_ns 307062
+     r28  (sum,128,16)    1133   18-cell    997..1445     host_ns 307243
+     r29  (sum,128,16)    1133   18-cell 1000.5..1443     host_ns 307113
+     r30  (sum,128,16)    1134   18-cell    998..1445     host_ns 307598.5
+     r31  (sum,128,16)    1138   18-cell   1001..1449     host_ns 309238
+     r32  (sum,128,16)    1137   18-cell   1000..1448     host_ns 309087
+     r33  (sum,128,16)    1138   18-cell   1001..1449     host_ns 309318
+     r34  (sum,128,16)    1140   18-cell   1001..1447     host_ns 309117
+     r35  (sum,128,16)    1138   18-cell 1000.5..1450     host_ns 309238
+     r36  (sum,128,16)    1139   18-cell   1001..1448     host_ns 309192.5
+     r37  (sum,128,16)    1135   18-cell    999..1445     host_ns 308065
+     r38  (sum,128,16)    1132   18-cell    997..1444     host_ns 306993
+     r39  (sum,128,16)    1133   18-cell    998..1443     host_ns 307163.5
+     r40  (sum,128,16)    1131   18-cell    997..1443     host_ns 307313.5
+     r41  (sum,128,16)    1132   18-cell    999..1443     host_ns 307328.5
+     r42  (sum,128,16)    1132   18-cell    996..1441     host_ns 307103
+     r43  (sum,128,16)    1134   18-cell    998..1442     host_ns 307113
+     r44  (sum,128,16)    1133   18-cell    998..1442     host_ns 307193
+     r45  (sum,128,16)    1132   18-cell    997..1443     host_ns 307514
+     r46  (sum,128,16)    1133   18-cell    997..1444     host_ns 307208.5
+     r47  (sum,128,16)    1133   18-cell    998..1442     host_ns 307073
+     r48  (sum,128,16)    1133   18-cell    999..1443     host_ns 307003
+
+   c8 (B=8, WM=1, NDIV=1, n=1000003, k=3):
+     r01  (sum,128,16)   32533   18-cell  25142..32533    host_ns 2364352
+     r02  (sum,128,16)   32560   18-cell 25153.5..32560    host_ns 2365162.5
+     r03  (sum,128,16)   32582   18-cell  25167..32582    host_ns 2357483
+
+
+3. UNIT CLASSIFICATION UNDER THE PRE-REGISTERED DEEP-POOLING CI
+   CLASS STATISTIC (R = 6,400; the frozen 3-run method applied to
+   the pre-registered classification units: block j (j=1..16) = runs
+   r(3j-2), r(3j-1), r(3j); pooled-48 pools all 48 runs x R rounds
+   per cell -- a NAMED EXTENSION of the frozen 3-run method,
+   reported alongside -- never instead of -- the sixteen block
+   classes; controls have k=3: one unit each). Per unit per cell:
+   m_c = pooled sample median gpu_ticks, MAD_c = sample median
+   |x - m_c|, h_c = 3.6420 * MAD_c / sqrt(N). Unit class at the
+   FROZEN 1,000-tick threshold (all-cells quantifiers): CAPTURED iff
+   all 18 m_c - h_c >= 1,000; FLOOR iff all 18 m_c + h_c <= 100;
+   INTERMEDIATE/MIXED iff (some m_c + h_c < 1,000) AND (some
+   m_c - h_c > 100); IN-BAND-UNDECIDED otherwise. Medians are exact
+   pooled medians -- half-integers can occur at even sample counts.
+
+   c2 (B=2, WM=1, NDIV=1, n=1000003):
+     block1 (k=3 control) runs 01,02,03 N=19200 class FLOOR
+       binding: min(m-h)=30.0000@1  max(m+h)=30.0000@23  max(m-h)=30.0000@23  min(m+h)=30.0000@1
+       idx= 1 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 2 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 3 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 5 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 6 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 7 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx= 9 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=10 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=11 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=13 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=14 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=15 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=17 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=18 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=19 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=21 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=22 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+       idx=23 m=       30 mad=      0 h=   0.0000 m-h=    30.0000 m+h=    30.0000
+
+   q2 (B=3, WM=307, NDIV=1204, n=254984):
+     block1 runs 01,02,03 N=19200 class CAPTURED
+       binding: min(m-h)=1000.8961@17  max(m+h)=1448.2353@11  max(m-h)=1445.7909@10  min(m+h)=1003.1039@17
+       idx= 1 m=     1139 mad=     27 h=   0.7097 m-h=  1138.2903 m+h=  1139.7097
+       idx= 2 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 3 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 5 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 6 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 7 m=     1447 mad=     47 h=   1.2353 m-h=  1445.7647 m+h=  1448.2353
+       idx= 9 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx=10 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=11 m=     1447 mad=     47 h=   1.2353 m-h=  1445.7647 m+h=  1448.2353
+       idx=13 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=14 m=     1114 mad=     70 h=   1.8399 m-h=  1112.1601 m+h=  1115.8399
+       idx=15 m=     1111 mad=     69 h=   1.8136 m-h=  1109.1864 m+h=  1112.8136
+       idx=17 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=18 m=     1109 mad=     68 h=   1.7873 m-h=  1107.2127 m+h=  1110.7873
+       idx=19 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=21 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=22 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=23 m=     1112 mad=     69 h=   1.8136 m-h=  1110.1864 m+h=  1113.8136
+     block2 runs 04,05,06 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.9224@21  max(m+h)=1449.2091@6  max(m-h)=1446.7909@6  min(m+h)=1002.0776@21
+       idx= 1 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx= 2 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 3 m=     1448 mad=     46 h=   1.2091 m-h=  1446.7909 m+h=  1449.2091
+       idx= 5 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 6 m=     1448 mad=     46 h=   1.2091 m-h=  1446.7909 m+h=  1449.2091
+       idx= 7 m=     1446 mad=     47 h=   1.2353 m-h=  1444.7647 m+h=  1447.2353
+       idx= 9 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx=10 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=11 m=     1447 mad=     45 h=   1.1828 m-h=  1445.8172 m+h=  1448.1828
+       idx=13 m=     1002 mad=     43 h=   1.1302 m-h=  1000.8698 m+h=  1003.1302
+       idx=14 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=15 m=     1111 mad=     69 h=   1.8136 m-h=  1109.1864 m+h=  1112.8136
+       idx=17 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=18 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=19 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=21 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=22 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=23 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+     block3 runs 07,08,09 N=19200 class CAPTURED
+       binding: min(m-h)=1000.8961@13  max(m+h)=1450.1828@3  max(m-h)=1447.8172@3  min(m+h)=1003.1039@13
+       idx= 1 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx= 2 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 3 m=     1449 mad=     45 h=   1.1828 m-h=  1447.8172 m+h=  1450.1828
+       idx= 5 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx= 6 m=     1448 mad=     46 h=   1.2091 m-h=  1446.7909 m+h=  1449.2091
+       idx= 7 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 9 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx=10 m=     1447 mad=     47 h=   1.2353 m-h=  1445.7647 m+h=  1448.2353
+       idx=11 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=13 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=14 m=     1112 mad=     71 h=   1.8662 m-h=  1110.1338 m+h=  1113.8662
+       idx=15 m=     1112 mad=     69 h=   1.8136 m-h=  1110.1864 m+h=  1113.8136
+       idx=17 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=18 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=19 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=21 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=22 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=23 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+     block4 runs 10,11,12 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.8961@13  max(m+h)=1447.2353@11  max(m-h)=1444.8172@3  min(m+h)=1002.0776@21
+       idx= 1 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 2 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 3 m=     1446 mad=     45 h=   1.1828 m-h=  1444.8172 m+h=  1447.1828
+       idx= 5 m=     1136 mad=     27 h=   0.7097 m-h=  1135.2903 m+h=  1136.7097
+       idx= 6 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 7 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 9 m=     1136 mad=     27 h=   0.7097 m-h=  1135.2903 m+h=  1136.7097
+       idx=10 m=     1444 mad=     46 h=   1.2091 m-h=  1442.7909 m+h=  1445.2091
+       idx=11 m=     1446 mad=     47 h=   1.2353 m-h=  1444.7647 m+h=  1447.2353
+       idx=13 m=     1001 mad=     42 h=   1.1039 m-h=   999.8961 m+h=  1002.1039
+       idx=14 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=15 m=   1109.5 mad=   68.5 h=   1.8004 m-h=  1107.6996 m+h=  1111.3004
+       idx=17 m=     1001 mad=     42 h=   1.1039 m-h=   999.8961 m+h=  1002.1039
+       idx=18 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=19 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=21 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=22 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=23 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+     block5 runs 13,14,15 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=998.9224@13  max(m+h)=1448.2091@3  max(m-h)=1445.7909@3  min(m+h)=1001.0776@13
+       idx= 1 m=     1138 mad=     28 h=   0.7359 m-h=  1137.2641 m+h=  1138.7359
+       idx= 2 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 3 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 5 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 6 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 7 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 9 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx=10 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx=11 m=     1445 mad=     47 h=   1.2353 m-h=  1443.7647 m+h=  1446.2353
+       idx=13 m=     1000 mad=     41 h=   1.0776 m-h=   998.9224 m+h=  1001.0776
+       idx=14 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+       idx=15 m=     1112 mad=     71 h=   1.8662 m-h=  1110.1338 m+h=  1113.8662
+       idx=17 m=     1001 mad=     42 h=   1.1039 m-h=   999.8961 m+h=  1002.1039
+       idx=18 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=19 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=21 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=22 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=23 m=     1113 mad=     70 h=   1.8399 m-h=  1111.1601 m+h=  1114.8399
+     block6 runs 16,17,18 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.9224@17  max(m+h)=1449.1828@3  max(m-h)=1446.8172@3  min(m+h)=1002.0776@17
+       idx= 1 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx= 2 m=     1447 mad=     47 h=   1.2353 m-h=  1445.7647 m+h=  1448.2353
+       idx= 3 m=     1448 mad=     45 h=   1.1828 m-h=  1446.8172 m+h=  1449.1828
+       idx= 5 m=     1138 mad=     28 h=   0.7359 m-h=  1137.2641 m+h=  1138.7359
+       idx= 6 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 7 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 9 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx=10 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=11 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=13 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=14 m=     1111 mad=     69 h=   1.8136 m-h=  1109.1864 m+h=  1112.8136
+       idx=15 m=     1114 mad=     70 h=   1.8399 m-h=  1112.1601 m+h=  1115.8399
+       idx=17 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=18 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=19 m=     1109 mad=     68 h=   1.7873 m-h=  1107.2127 m+h=  1110.7873
+       idx=21 m=     1004 mad=     44 h=   1.1565 m-h=  1002.8435 m+h=  1005.1565
+       idx=22 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=23 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+     block7 runs 19,20,21 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.9224@17  max(m+h)=1448.2091@6  max(m-h)=1445.8172@10  min(m+h)=1002.0776@17
+       idx= 1 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 2 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 3 m=     1447 mad=     45 h=   1.1828 m-h=  1445.8172 m+h=  1448.1828
+       idx= 5 m=     1136 mad=     27 h=   0.7097 m-h=  1135.2903 m+h=  1136.7097
+       idx= 6 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 7 m=     1446 mad=     47 h=   1.2353 m-h=  1444.7647 m+h=  1447.2353
+       idx= 9 m=     1137 mad=     28 h=   0.7359 m-h=  1136.2641 m+h=  1137.7359
+       idx=10 m=     1447 mad=     45 h=   1.1828 m-h=  1445.8172 m+h=  1448.1828
+       idx=11 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx=13 m=     1002 mad=     43 h=   1.1302 m-h=  1000.8698 m+h=  1003.1302
+       idx=14 m=     1112 mad=     69 h=   1.8136 m-h=  1110.1864 m+h=  1113.8136
+       idx=15 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+       idx=17 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=18 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=19 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=21 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=22 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=23 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+     block8 runs 22,23,24 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=997.9486@17  max(m+h)=1445.2091@2  max(m-h)=1442.8172@3  min(m+h)=1000.0514@17
+       idx= 1 m=     1134 mad=     27 h=   0.7097 m-h=  1133.2903 m+h=  1134.7097
+       idx= 2 m=     1444 mad=     46 h=   1.2091 m-h=  1442.7909 m+h=  1445.2091
+       idx= 3 m=     1444 mad=     45 h=   1.1828 m-h=  1442.8172 m+h=  1445.1828
+       idx= 5 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx= 6 m=     1443 mad=     46 h=   1.2091 m-h=  1441.7909 m+h=  1444.2091
+       idx= 7 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 9 m=     1134 mad=     27 h=   0.7097 m-h=  1133.2903 m+h=  1134.7097
+       idx=10 m=     1443 mad=     46 h=   1.2091 m-h=  1441.7909 m+h=  1444.2091
+       idx=11 m=     1443 mad=     46 h=   1.2091 m-h=  1441.7909 m+h=  1444.2091
+       idx=13 m=     1000 mad=     42 h=   1.1039 m-h=   998.8961 m+h=  1001.1039
+       idx=14 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=15 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=17 m=      999 mad=     40 h=   1.0514 m-h=   997.9486 m+h=  1000.0514
+       idx=18 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=19 m=     1107 mad=     69 h=   1.8136 m-h=  1105.1864 m+h=  1108.8136
+       idx=21 m=     1000 mad=     41 h=   1.0776 m-h=   998.9224 m+h=  1001.0776
+       idx=22 m=     1108 mad=     70 h=   1.8399 m-h=  1106.1601 m+h=  1109.8399
+       idx=23 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+     block9 runs 25,26,27 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=997.9224@13  max(m+h)=1444.1828@3  max(m-h)=1441.8172@3  min(m+h)=1000.0514@21
+       idx= 1 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx= 2 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 3 m=     1443 mad=     45 h=   1.1828 m-h=  1441.8172 m+h=  1444.1828
+       idx= 5 m=     1131 mad=     26 h=   0.6834 m-h=  1130.3166 m+h=  1131.6834
+       idx= 6 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 7 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 9 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx=10 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx=11 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx=13 m=      999 mad=     41 h=   1.0776 m-h=   997.9224 m+h=  1000.0776
+       idx=14 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=15 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=17 m=      999 mad=     41 h=   1.0776 m-h=   997.9224 m+h=  1000.0776
+       idx=18 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=19 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=21 m=      999 mad=     40 h=   1.0514 m-h=   997.9486 m+h=  1000.0514
+       idx=22 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=23 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+     block10 runs 28,29,30 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=997.9224@17  max(m+h)=1445.2091@3  max(m-h)=1442.7909@3  min(m+h)=1000.0776@17
+       idx= 1 m=     1133 mad=     26 h=   0.6834 m-h=  1132.3166 m+h=  1133.6834
+       idx= 2 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 3 m=     1444 mad=     46 h=   1.2091 m-h=  1442.7909 m+h=  1445.2091
+       idx= 5 m=     1132 mad=     26 h=   0.6834 m-h=  1131.3166 m+h=  1132.6834
+       idx= 6 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 7 m=     1440 mad=     46 h=   1.2091 m-h=  1438.7909 m+h=  1441.2091
+       idx= 9 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx=10 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx=11 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx=13 m=     1000 mad=     42 h=   1.1039 m-h=   998.8961 m+h=  1001.1039
+       idx=14 m=     1109 mad=     71 h=   1.8662 m-h=  1107.1338 m+h=  1110.8662
+       idx=15 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=17 m=      999 mad=     41 h=   1.0776 m-h=   997.9224 m+h=  1000.0776
+       idx=18 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=19 m=     1107 mad=     68 h=   1.7873 m-h=  1105.2127 m+h=  1108.7873
+       idx=21 m=     1000 mad=     41 h=   1.0776 m-h=   998.9224 m+h=  1001.0776
+       idx=22 m=     1108 mad=     70 h=   1.8399 m-h=  1106.1601 m+h=  1109.8399
+       idx=23 m=     1107 mad=     69 h=   1.8136 m-h=  1105.1864 m+h=  1108.8136
+     block11 runs 31,32,33 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.9224@17  max(m+h)=1450.1828@6  max(m-h)=1447.8172@6  min(m+h)=1002.0776@17
+       idx= 1 m=     1138 mad=     27 h=   0.7097 m-h=  1137.2903 m+h=  1138.7097
+       idx= 2 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 3 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx= 5 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 6 m=     1449 mad=     45 h=   1.1828 m-h=  1447.8172 m+h=  1450.1828
+       idx= 7 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 9 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx=10 m=     1448 mad=     47 h=   1.2353 m-h=  1446.7647 m+h=  1449.2353
+       idx=11 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=13 m=     1003 mad=     44 h=   1.1565 m-h=  1001.8435 m+h=  1004.1565
+       idx=14 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=15 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=17 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=18 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=19 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+       idx=21 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=22 m=     1109 mad=     68 h=   1.7873 m-h=  1107.2127 m+h=  1110.7873
+       idx=23 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+     block12 runs 34,35,36 N=19200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.9224@13  max(m+h)=1449.2091@6  max(m-h)=1446.7909@6  min(m+h)=1002.0776@13
+       idx= 1 m=     1139 mad=     28 h=   0.7359 m-h=  1138.2641 m+h=  1139.7359
+       idx= 2 m=     1446 mad=     46 h=   1.2091 m-h=  1444.7909 m+h=  1447.2091
+       idx= 3 m=     1448 mad=     46 h=   1.2091 m-h=  1446.7909 m+h=  1449.2091
+       idx= 5 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx= 6 m=     1448 mad=     46 h=   1.2091 m-h=  1446.7909 m+h=  1449.2091
+       idx= 7 m=     1447 mad=     47 h=   1.2353 m-h=  1445.7647 m+h=  1448.2353
+       idx= 9 m=     1137 mad=     27 h=   0.7097 m-h=  1136.2903 m+h=  1137.7097
+       idx=10 m=     1447 mad=     45 h=   1.1828 m-h=  1445.8172 m+h=  1448.1828
+       idx=11 m=     1447 mad=     46 h=   1.2091 m-h=  1445.7909 m+h=  1448.2091
+       idx=13 m=     1001 mad=     41 h=   1.0776 m-h=   999.9224 m+h=  1002.0776
+       idx=14 m=     1111 mad=     69 h=   1.8136 m-h=  1109.1864 m+h=  1112.8136
+       idx=15 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=17 m=     1003 mad=     43 h=   1.1302 m-h=  1001.8698 m+h=  1004.1302
+       idx=18 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=19 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=21 m=     1002 mad=     42 h=   1.1039 m-h=  1000.8961 m+h=  1003.1039
+       idx=22 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=23 m=     1114 mad=     71 h=   1.8662 m-h=  1112.1338 m+h=  1115.8662
+     block13 runs 37,38,39 N=19200 class INTERMEDIATE/MIXED
+       binding: min(m-h)=996.9749@17  max(m+h)=1444.2091@11  max(m-h)=1441.8435@3  min(m+h)=999.0251@17
+       idx= 1 m=     1133 mad=     26 h=   0.6834 m-h=  1132.3166 m+h=  1133.6834
+       idx= 2 m=     1443 mad=     45 h=   1.1828 m-h=  1441.8172 m+h=  1444.1828
+       idx= 3 m=     1443 mad=     44 h=   1.1565 m-h=  1441.8435 m+h=  1444.1565
+       idx= 5 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx= 6 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 7 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 9 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx=10 m=     1443 mad=     46 h=   1.2091 m-h=  1441.7909 m+h=  1444.2091
+       idx=11 m=     1443 mad=     46 h=   1.2091 m-h=  1441.7909 m+h=  1444.2091
+       idx=13 m=     1000 mad=     42 h=   1.1039 m-h=   998.8961 m+h=  1001.1039
+       idx=14 m=     1110 mad=     69 h=   1.8136 m-h=  1108.1864 m+h=  1111.8136
+       idx=15 m=     1107 mad=     68 h=   1.7873 m-h=  1105.2127 m+h=  1108.7873
+       idx=17 m=      998 mad=     39 h=   1.0251 m-h=   996.9749 m+h=   999.0251
+       idx=18 m=     1106 mad=     68 h=   1.7873 m-h=  1104.2127 m+h=  1107.7873
+       idx=19 m=     1109 mad=     69 h=   1.8136 m-h=  1107.1864 m+h=  1110.8136
+       idx=21 m=      999 mad=     40 h=   1.0514 m-h=   997.9486 m+h=  1000.0514
+       idx=22 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=23 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+     block14 runs 40,41,42 N=19200 class INTERMEDIATE/MIXED
+       binding: min(m-h)=995.9749@21  max(m+h)=1443.1828@11  max(m-h)=1440.8172@11  min(m+h)=998.0251@21
+       idx= 1 m=     1132 mad=     26 h=   0.6834 m-h=  1131.3166 m+h=  1132.6834
+       idx= 2 m=     1441 mad=   45.5 h=   1.1959 m-h=  1439.8041 m+h=  1442.1959
+       idx= 3 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 5 m=     1132 mad=     27 h=   0.7097 m-h=  1131.2903 m+h=  1132.7097
+       idx= 6 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 7 m=     1440 mad=     46 h=   1.2091 m-h=  1438.7909 m+h=  1441.2091
+       idx= 9 m=     1131 mad=     26 h=   0.6834 m-h=  1130.3166 m+h=  1131.6834
+       idx=10 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx=11 m=     1442 mad=     45 h=   1.1828 m-h=  1440.8172 m+h=  1443.1828
+       idx=13 m=      998 mad=     41 h=   1.0776 m-h=   996.9224 m+h=   999.0776
+       idx=14 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=15 m=     1110 mad=     70 h=   1.8399 m-h=  1108.1601 m+h=  1111.8399
+       idx=17 m=      999 mad=     41 h=   1.0776 m-h=   997.9224 m+h=  1000.0776
+       idx=18 m=   1105.5 mad=   69.5 h=   1.8267 m-h=  1103.6733 m+h=  1107.3267
+       idx=19 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=21 m=      997 mad=     39 h=   1.0251 m-h=   995.9749 m+h=   998.0251
+       idx=22 m=     1106 mad=     69 h=   1.8136 m-h=  1104.1864 m+h=  1107.8136
+       idx=23 m=     1107 mad=     69 h=   1.8136 m-h=  1105.1864 m+h=  1108.8136
+     block15 runs 43,44,45 N=19200 class INTERMEDIATE/MIXED
+       binding: min(m-h)=996.9486@13  max(m+h)=1443.2091@6  max(m-h)=1440.8172@3  min(m+h)=999.0514@13
+       idx= 1 m=     1133 mad=     26 h=   0.6834 m-h=  1132.3166 m+h=  1133.6834
+       idx= 2 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 3 m=     1442 mad=     45 h=   1.1828 m-h=  1440.8172 m+h=  1443.1828
+       idx= 5 m=     1132 mad=     26 h=   0.6834 m-h=  1131.3166 m+h=  1132.6834
+       idx= 6 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 7 m=     1439 mad=     46 h=   1.2091 m-h=  1437.7909 m+h=  1440.2091
+       idx= 9 m=     1132 mad=     27 h=   0.7097 m-h=  1131.2903 m+h=  1132.7097
+       idx=10 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx=11 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx=13 m=      998 mad=     40 h=   1.0514 m-h=   996.9486 m+h=   999.0514
+       idx=14 m=     1112 mad=     70 h=   1.8399 m-h=  1110.1601 m+h=  1113.8399
+       idx=15 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=17 m=      999 mad=     41 h=   1.0776 m-h=   997.9224 m+h=  1000.0776
+       idx=18 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=19 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+       idx=21 m=      999 mad=     40 h=   1.0514 m-h=   997.9486 m+h=  1000.0514
+       idx=22 m=     1106 mad=     69 h=   1.8136 m-h=  1104.1864 m+h=  1107.8136
+       idx=23 m=     1108 mad=     69 h=   1.8136 m-h=  1106.1864 m+h=  1109.8136
+     block16 runs 46,47,48 N=19200 class INTERMEDIATE/MIXED
+       binding: min(m-h)=996.9749@17  max(m+h)=1443.2091@3  max(m-h)=1440.8172@10  min(m+h)=999.0251@17
+       idx= 1 m=     1133 mad=     27 h=   0.7097 m-h=  1132.2903 m+h=  1133.7097
+       idx= 2 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 3 m=     1442 mad=     46 h=   1.2091 m-h=  1440.7909 m+h=  1443.2091
+       idx= 5 m=     1131 mad=     26 h=   0.6834 m-h=  1130.3166 m+h=  1131.6834
+       idx= 6 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx= 7 m=     1440 mad=     46 h=   1.2091 m-h=  1438.7909 m+h=  1441.2091
+       idx= 9 m=     1132 mad=     27 h=   0.7097 m-h=  1131.2903 m+h=  1132.7097
+       idx=10 m=     1442 mad=     45 h=   1.1828 m-h=  1440.8172 m+h=  1443.1828
+       idx=11 m=     1441 mad=     46 h=   1.2091 m-h=  1439.7909 m+h=  1442.2091
+       idx=13 m=      999 mad=     40 h=   1.0514 m-h=   997.9486 m+h=  1000.0514
+       idx=14 m=     1111 mad=     70 h=   1.8399 m-h=  1109.1601 m+h=  1112.8399
+       idx=15 m=     1106 mad=     68 h=   1.7873 m-h=  1104.2127 m+h=  1107.7873
+       idx=17 m=      998 mad=     39 h=   1.0251 m-h=   996.9749 m+h=   999.0251
+       idx=18 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=19 m=     1109 mad=     70 h=   1.8399 m-h=  1107.1601 m+h=  1110.8399
+       idx=21 m=     1000 mad=     41 h=   1.0776 m-h=   998.9224 m+h=  1001.0776
+       idx=22 m=     1106 mad=     69 h=   1.8136 m-h=  1104.1864 m+h=  1107.8136
+       idx=23 m=     1106 mad=     68 h=   1.7873 m-h=  1104.2127 m+h=  1107.7873
+     pooled-48 runs 01..48 N=307200 class IN-BAND-UNDECIDED
+       binding: min(m-h)=999.7306@17  max(m+h)=1445.3023@10  max(m-h)=1444.7043@3  min(m+h)=1000.2694@17
+       idx= 1 m=     1136 mad=     27 h=   0.1774 m-h=  1135.8226 m+h=  1136.1774
+       idx= 2 m=     1445 mad=     46 h=   0.3023 m-h=  1444.6977 m+h=  1445.3023
+       idx= 3 m=     1445 mad=     45 h=   0.2957 m-h=  1444.7043 m+h=  1445.2957
+       idx= 5 m=     1135 mad=     27 h=   0.1774 m-h=  1134.8226 m+h=  1135.1774
+       idx= 6 m=     1445 mad=     46 h=   0.3023 m-h=  1444.6977 m+h=  1445.3023
+       idx= 7 m=     1444 mad=     46 h=   0.3023 m-h=  1443.6977 m+h=  1444.3023
+       idx= 9 m=     1135 mad=     27 h=   0.1774 m-h=  1134.8226 m+h=  1135.1774
+       idx=10 m=     1445 mad=     46 h=   0.3023 m-h=  1444.6977 m+h=  1445.3023
+       idx=11 m=     1444 mad=     46 h=   0.3023 m-h=  1443.6977 m+h=  1444.3023
+       idx=13 m=     1001 mad=     42 h=   0.2760 m-h=  1000.7240 m+h=  1001.2760
+       idx=14 m=     1111 mad=     70 h=   0.4600 m-h=  1110.5400 m+h=  1111.4600
+       idx=15 m=     1110 mad=     69 h=   0.4534 m-h=  1109.5466 m+h=  1110.4534
+       idx=17 m=     1000 mad=     41 h=   0.2694 m-h=   999.7306 m+h=  1000.2694
+       idx=18 m=     1109 mad=     69 h=   0.4534 m-h=  1108.5466 m+h=  1109.4534
+       idx=19 m=     1109 mad=     69 h=   0.4534 m-h=  1108.5466 m+h=  1109.4534
+       idx=21 m=     1001 mad=     42 h=   0.2760 m-h=  1000.7240 m+h=  1001.2760
+       idx=22 m=     1108 mad=     69 h=   0.4534 m-h=  1107.5466 m+h=  1108.4534
+       idx=23 m=     1110 mad=     70 h=   0.4600 m-h=  1109.5400 m+h=  1110.4600
+
+   c8 (B=8, WM=1, NDIV=1, n=1000003):
+     block1 (k=3 control) runs 01,02,03 N=19200 class CAPTURED
+       binding: min(m-h)=25153.9141@14  max(m+h)=32563.2054@1  max(m-h)=32554.7946@1  min(m+h)=25164.0728@18
+       idx= 1 m=    32559 mad=    160 h=   4.2054 m-h= 32554.7946 m+h= 32563.2054
+       idx= 2 m=    31947 mad=    168 h=   4.4157 m-h= 31942.5843 m+h= 31951.4157
+       idx= 3 m=    31944 mad=    169 h=   4.4420 m-h= 31939.5580 m+h= 31948.4420
+       idx= 5 m=    32552 mad=    160 h=   4.2054 m-h= 32547.7946 m+h= 32556.2054
+       idx= 6 m=    31942 mad=    169 h=   4.4420 m-h= 31937.5580 m+h= 31946.4420
+       idx= 7 m=    31945 mad=    169 h=   4.4420 m-h= 31940.5580 m+h= 31949.4420
+       idx= 9 m=    32550 mad=    160 h=   4.2054 m-h= 32545.7946 m+h= 32554.2054
+       idx=10 m=    31950 mad=    168 h=   4.4157 m-h= 31945.5843 m+h= 31954.4157
+       idx=11 m=    31943 mad=    167 h=   4.3894 m-h= 31938.6106 m+h= 31947.3894
+       idx=13 m=    25349 mad=    127 h=   3.3381 m-h= 25345.6619 m+h= 25352.3381
+       idx=14 m=    25159 mad=  193.5 h=   5.0859 m-h= 25153.9141 m+h= 25164.0859
+       idx=15 m=    25161 mad=    195 h=   5.1254 m-h= 25155.8746 m+h= 25166.1254
+       idx=17 m=    25346 mad=  127.5 h=   3.3512 m-h= 25342.6488 m+h= 25349.3512
+       idx=18 m=    25159 mad=    193 h=   5.0728 m-h= 25153.9272 m+h= 25164.0728
+       idx=19 m=    25163 mad=    194 h=   5.0991 m-h= 25157.9009 m+h= 25168.0991
+       idx=21 m=    25346 mad=    125 h=   3.2855 m-h= 25342.7145 m+h= 25349.2855
+       idx=22 m=    25162 mad=    192 h=   5.0465 m-h= 25156.9535 m+h= 25167.0465
+       idx=23 m=    25163 mad=    194 h=   5.0991 m-h= 25157.9009 m+h= 25168.0991
+
+4. PRE-REGISTERED LETTERS (the frozen letters of the protocol):
+
+   C1 ARCHIVED CONTROL REPLICATION (prerequisite; W1 (d) also fires
+   on C1 (b); unchanged from the standing cut protocol + the D2
+   control-state confrontation/limitation, arm (a)): controls have
+   k=3: one deep-pooling unit each (N = 3R = 19,200 per cell):
+     c2 (sum,128,S=16) pooled median m 30, deep-pooling
+     class FLOOR (committed floor band 31..32 at B=2): False
+     c8 (sum,128,S=16) pooled median m 32559 within +/-5% of committed 32915 (session 4 pooled median): True (-1.08%)
+     control arms free of VERIFY mismatches (frozen INVALIDATION criterion): True
+     VERDICT: branch (b) replication discrepancy (W1 (d) INVALID
+     fires); cause UNMEASURED.
+     D2 CONTROL-STATE CONFRONTATION (arm (a), the frozen rule):
+     NOTHING is superseded in the prior cuts' favour and the
+     control question RE-OPENS as a named open control question
+     carried forward: a three-state control record on the
+     ROUNDS6400 instrument (the 16th cut's (b), the 17th cut's
+     (a), the 18th cut's (a), this cut's (b)); W1 (d) fires, CUT
+     VERDICT INVALID; the discrepancy cause stays UNMEASURED (L2
+     binds). NAMED LIMITATION (the D2 shape): this cut cannot
+     resolve the historical discrepancy cause by design.
+
+   C2 Q2 CLASS STABILITY AT 16-BLOCK GRANULARITY -- q2
+   (BATCH=3,WORK_MUL=307,NDIV=1204) at n=254,984 (knob pair (307,
+   1204), the Q=2 FLOOR-MIDPOINT of the bracket (254,923, 255,045];
+   the point is VIRGIN -- this cut's content is the FIRST content at
+   it) (16 blocks of 3 runs + pooled-48) under THE PRE-REGISTERED
+   DEEP-POOLING CI CLASS STATISTIC (R = 6,400; protocol arm (c)): (c)
+     block classes: ['CAPTURED', 'IN-BAND-UNDECIDED', 'CAPTURED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED']; pooled-48 class: IN-BAND-UNDECIDED
+     block binding min(m-h): 1000.8961 / 999.9224 / 1000.8961 / 999.8961 / 998.9224 / 999.9224 / 999.9224 / 997.9486 / 997.9224 / 997.9224 / 999.9224 / 999.9224 / 996.9749 / 995.9749 / 996.9486 / 996.9749
+     pooled-48 binding min(m-h): 999.7306
+     (sum,128,S=16) m: blocks 1139 / 1138 / 1138 / 1137 / 1138 / 1138 / 1137 / 1134 / 1133 / 1133 / 1138 / 1139 / 1133 / 1132 / 1133 / 1133 ; pooled-48 1136
+     (c) CLASS-UNRESOLVED: mixed block classes, or any
+     IN-BAND-UNDECIDED unit, or the pooled arm differs -- FAILS;
+     L9 binds at n=254,984 under the deep-pooling statistic (the
+     D3 (v) clause); any future narrowing claim at n=254,984
+     must confront this cut's content first (named here, not
+     specified here). NAMED (the arm-(b) re-read hazard's second-
+     edge shape, D3 (v), verbatim): if this cut's own content at
+     254,984 comes out mixed (C2 (c)), it is NOT rescued by later
+     more-blocks-of-the-same-shape runs; C2 (c) binds L9 at
+     254,984 and a same-shape re-run there would re-read, not
+     confront.
+     NAMED, NOT HIDDEN: WHY any class occurs is UNMEASURED (L2
+     binds); NO causal mechanism is claimed.
+
+   W1 CUT VERDICT (the floor-midpoint bisection at q2 (307,1204)
+   n=254,984; both stable-class outcomes narrow by bisection at the
+   interior point -- the D1 symmetric-narrowing criterion holds at
+   q=2 in its STRONGEST form, EQUAL clips 61/61):
+     C1 (control replication): (b)
+     C2 (q2 class stability): (c)
+     W1 (d)
+     NAMED, NOT HIDDEN (label reading): the protocol's W1 (c) text
+     reads "C2 (c)/(d) -> NOTHING MOVES" while record.txt maps W1
+     (d) to the frozen INVALIDATION criterion and the protocol
+     header says W1 (d) also fires on C1 (b); this script reports
+     C2 (d)/C1 (b) as W1 (d) INVALID (record.txt's explicit
+     mapping), which also satisfies "NOTHING MOVES" -- the bracket
+     outcome is identical under every reading.
+     (d) INVALID (C1 (b) or the frozen INVALIDATION criterion
+     leaves W1 unevaluable).
+     Under (c)/(d) the committed bracket stays EXACTLY
+     (254,923, 255,045].
+     NAMED, NOT HIDDEN (the protocol's frozen D1 note, verbatim):
+     "Both (a)/(b) narrow with EQUAL clips 61/61 (tool-derived at
+     the s203/s204 arithmetic) -- the s166 D1 symmetric-narrowing
+     criterion in its STRONGEST form (the 18th cut's W1 D1 clip
+     note \"the clips are not equal widths\" (122/366) does NOT
+     recur). The full clip geometry over the s203 census's three
+     candidates, with the q=1 per-letter assignment as CORRECTED at
+     s205 (the original sentence pinned verbatim as SUPERSEDED in
+     state-s205.txt; the clip pairs, the worst cases, the equal
+     clips at q=2 and the point choice are UNAFFECTED): q=1
+     n=254,953 W1 (a) leaves 30 / W1 (b) leaves 92 (worst case 92);
+     q=2 n=254,984 61/61 (worst case 61 -- the chosen point, the
+     minimax clip choice); q=3 n=255,014 W1 (a) leaves 91 / W1 (b)
+     leaves 31 (worst case 91). Under ALL outcomes no claim at hi/lo
+     and no boundary between grid points is ever claimed (L5)."
+     clip arithmetic re-derived here: q=1 30/92, q=2 61/61, q=3 91/31
+     Under ALL outcomes: NO claim at hi, NO claim at lo; no boundary
+     between grid points is ever claimed (L5). Under ALL outcomes
+     the MID-ONLY claim's realization-at-mid form is untouched (no
+     mid content this cut; the spec L128-129 rule binds).
+
+   W2 (pre-registered, descriptive) per-run 18-cell min trajectory
+   across the 48 q2 runs in frozen order (per-run per-cell median
+   gpu_ticks over the run's 6,400 rounds, min over the 18
+   pipeline-ok cells; per-run quantities are DESCRIPTIVE ONLY and
+   never classify (L10)), the boundary-crossing count (runs with
+   18-cell min >= 1,000) AND the in-band count (runs with 18-cell
+   min in 981..1,015):
+     q2 per-run 18-cell min: 1002 1000 1001 1000 1002 1000 1001 1001 1001 1001 999 1000 999 1000 1001 1000 1001 1002 1001 999 1001 998 998 999 999 997 997 997 1000.5 998 1001 1000 1001 1001 1000.5 1001 999 997 998 997 999 996 998 998 997 997 998 999
+     q2: runs with 18-cell min >= 1,000 (COMPUTED here, descriptive): 25/48
+     q2: runs with 18-cell min in 981..1,015 (COMPUTED here, descriptive): 48/48
+     (prior windows' computed counts at both thresholds, computed
+     from their parsed trajectories, quote-only):
+       s147 mid (k=48): 13/48 at min >= 1,000, 48/48 in 981..1,015
+       s158 bis (k=48): 48/48 at min >= 1,000, 48/48 in 981..1,015
+       s169 fm (k=48): 34/48 at min >= 1,000, 48/48 in 981..1,015
+       s185 q1 (k=48): 44/48 at min >= 1,000, 48/48 in 981..1,015
+       s197 q3 (k=48): 1/48 at min >= 1,000, 48/48 in 981..1,015
+     CROSS-CHECK publication-s197.txt's published q3 counts 1/48 and 48/48 == the trajectory recompute: True
+   NO point is placed or moved on the committed row by W2 itself
+   (descriptive letter); bracket movement rides W1 only.
+
+   W3 (pre-registered, descriptive) CROSS-BINARY / CROSS-POINT
+   confrontation -- the point n=254,984 is VIRGIN (arm (a): NO
+   same-point committed window exists -- there is nothing at the
+   point for this window to disagree with); this window's q2
+   classes at the NEW first-measured binary (the ROUNDS6400
+   variant; q2 pin af9999e1...) are reported against the
+   bracketing committed content (parsed, quote-only):
+     this cut's q2 block classes: ['CAPTURED', 'IN-BAND-UNDECIDED', 'CAPTURED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'IN-BAND-UNDECIDED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED']; pooled-48 IN-BAND-UNDECIDED
+     this cut's q2 block min(m-h): 1000.8961 / 999.9224 / 1000.8961 / 999.8961 / 998.9224 / 999.9224 / 999.9224 / 997.9486 / 997.9224 / 997.9224 / 999.9224 / 999.9224 / 996.9749 / 995.9749 / 996.9486 / 996.9749 ; pooled-48 999.7306
+     below: the 18th cut's lo content at 254,923 (parsed from
+     publication-s197.txt; quote-only -- NO letter of this cut
+     supersedes it; it stands as committed content under ALL
+     outcomes of this cut):
+       16x block classes ['INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED', 'INTERMEDIATE/MIXED']; pooled-48 INTERMEDIATE/MIXED
+       block binding min(m-h): 997.1063 / 997.0801 / 996.0801 / 997.0801 / 997.0801 / 998.0538 / 997.0801 / 996.1063 / 996.1063 / 997.0801 / 995.1326 / 997.0801 / 997.0538 / 997.0538 / 997.0801 / 996.1063 ; pooled-48 997.7700
+       block binding min(m-h) min..max 995.1326..998.0538
+       (sum,128,S=16) m: blocks 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1131 / 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1132 / 1132 ; pooled-48 1132
+       its letters: C1 (a); C2 (a) at q3 (254,923); W1 (b); CUT VERDICT: THE BRACKET NARROWS TO (254,923, 255,045] ("THE B=3 CLASS FLIP LIES ABOVE n=254,923"); the MID-ONLY NARROWING CLAIM's location statement is CONFIRMED BY IMPLICATION (named, not claimed -- by implication only).
+       its binary (host-build-s197.txt, parsed): c7ba9c864a356de95fff67ce7a997c30af99cd7b7626da4894b8c0077c65d76b
+     above: the 15th cut's bis re-measure at binary 52fb68b6... (parsed from publication-s158.txt;
+     quote-only -- NO letter of this cut supersedes it):
+       16x block classes ['CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED', 'CAPTURED']; pooled-48 CAPTURED
+       block binding min(m-h): 1006.8172 / 1005.8172 / 1006.7909 / 1005.8435 / 1006.8172 / 1006.8172 / 1007.7647 / 1008.7909 / 1008.7647 / 1006.8172 / 1008.7909 / 1007.3041 / 1008.7647 / 1007.7909 / 1008.7121 / 1008.6858 ; pooled-48 1009.6912
+       block binding min(m-h) min..max 1005.8172..1008.7909
+       its letters: C1 (a); C2 (b) at bis (255,045); W1 (a).
+     the 13th cut's bis content at binary 440604ef... (parsed from
+     committed knob-search-s203-run1.txt bytes; quote-only):
+       spec section 1 (i) bis content pin PARSED: bis (3,316,1239) n=255,045 at binary 440604ef... -- 7x CAPTURED + 9x INTERMEDIATE/MIXED blocks, pooled-48 CAPTURED 1,148 (18-cell 1,006..1,449) -- the 13th cut's content at the NEW bracket's upper endpoint (the spec is ACCEPTED DESIGN ONLY).
+     NAMED CROSS-BINARY HAZARD: this cut's binaries are NEW (the
+     ROUNDS6400 variant, first-measured digests -- NO committed pin
+     to match; c2/c8 reproduce the s169 (= s185 = s197) digests
+     byte-identically -- a capture observation, not a class claim);
+     the bracketing content's binding values straddle the frozen
+     1,000-tick threshold ACROSS BINARIES (lo binding 995.1326..998.0538 entirely below 1,000; hi 1005.8172..1008.7909 entirely
+     above 1,000 -- straddle COMPUTED here: True) -- any
+     class comparison, including the flip-location reading of the
+     current bracket, may be BINARY-driven, cause UNMEASURED (L2
+     binds). Every comparison here is cross-binary AND cross-point
+     (the point is VIRGIN).
+     L8 APPLIES (named): q2 (307, 1204) is a NEW knob pair of the
+     session-21 L8 combination risk class (WORK_MUL != 1 and
+     NDIV != 1), never measured at any binary before this cut; the
+     s203 enumeration gives 6 in-box same-ratio doubles
+     of n=254,984 and NONE is measured this cut (no same-ratio
+     twin arm) -- nothing is assumed about representation beyond
+     this cut's own measurements.
+
+   X1 (descriptive, host_ns at (sum,128,S=16); NOT a C criterion
+   (L3); per-run host_ns spread is reported):
+     c2: per-run host_ns median min..max 676541..681410.5 (spread 4869.5 = 0.7% of min; k=3)
+     q2: per-run host_ns median min..max 306963..309447 (spread 2484 = 0.8% of min; k=48)
+     c8: per-run host_ns median min..max 2357483..2365162.5 (spread 7679.5 = 0.3% of min; k=3)
+     prior windows' X1 content (parsed, quote-only):
+       s147 c2: per-run host_ns median min..max 679186..680369 (spread 1183 = 0.2% of min; k=3)
+       s147 c8: per-run host_ns median min..max 2387313..2446232 (spread 58919 = 2.5% of min; k=3)
+       s147 mid: per-run host_ns median min..max 305680..312643 (spread 6963 = 2.3% of min; k=48)
+       s158 bis: per-run host_ns median min..max 309096..503971.5 (spread 194875.5 = 63.0% of min; k=48)
+       s158 c2: per-run host_ns median min..max 676766.5..677443 (spread 676.5 = 0.1% of min; k=3)
+       s158 c8: per-run host_ns median min..max 2453963..2888505 (spread 434542 = 17.7% of min; k=3)
+       s169 c2: per-run host_ns median min..max 678505..678605 (spread 100 = 0.0% of min; k=3)
+       s169 c8: per-run host_ns median min..max 2451086.5..2458905 (spread 7818.5 = 0.3% of min; k=3)
+       s169 fm: per-run host_ns median min..max 309698..504646.5 (spread 194948.5 = 62.9% of min; k=48)
+       s185 c2: per-run host_ns median min..max 678625.5..679021.5 (spread 396 = 0.1% of min; k=3)
+       s185 c8: per-run host_ns median min..max 2416170.5..2460266 (spread 44095.5 = 1.8% of min; k=3)
+       s185 q1: per-run host_ns median min..max 308666..310679 (spread 2013 = 0.7% of min; k=48)
+       s197 c2: per-run host_ns median min..max 677042..679016.5 (spread 1974.5 = 0.3% of min; k=3)
+       s197 c8: per-run host_ns median min..max 2435327..2449954.5 (spread 14627.5 = 0.6% of min; k=3)
+       s197 q3: per-run host_ns median min..max 309798..503223.5 (spread 193425.5 = 62.4% of min; k=48)
+     host_ns is the HOST-side proxy (L3), not a C criterion; any
+     excursion is NAMED, NOT HIDDEN and its cause is UNMEASURED.
+
+5. VERDICT SUMMARY: C1 (b); C2 (c) at q2 (254,984); W1 (d).
+   CUT VERDICT: INVALID; NOTHING MOVES.
+   The committed bracket stays EXACTLY (254,923, 255,045].
+   Under ALL outcomes: NO claim at hi, NO claim at lo; no boundary
+   between grid points is ever claimed (L5). WHY any class occurs is
+   UNMEASURED and NO causal mechanism is claimed (L2 binds). The
+   18th cut's lo content at 254,923, the out-of-bracket committed
+   content (254,557 / 254,679 / 254,801 / 254,882) and the hi
+   content at 255,045 (the 13th cut's C2 (c) + the 15th cut's C2 (b)
+   re-measure) stand as committed content under ALL outcomes (arm
+   (a)); NO letter of this cut supersedes them or touches
+   lo/hi/out-of-bracket points. The L9 clauses at 254,679 (17th
+   cut) and 254,801 (16th cut) stand; NAMED, per D1 (iii) NO L9
+   clause binds at 254,923 from the 18th cut's freeze.
+   BAR NON-INTERFERENCE (frozen protocol): these runs are BISECT
+   CONTENT and NOT bar readings -- NO settle-bar-ledger.txt append,
+   NO UTC-day slot consumption, NO movement of the bar's SETTLED
+   INTERMEDIATE/MIXED verdict (the s117 committed landing), NO Rule
+   4 workgroup row movement, NO :measured? flag change (the
+   accelerator-targets rows stay exactly as ADR-0358 left them).

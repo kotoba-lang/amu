@@ -1,0 +1,94 @@
+JUN-59 -- THE TENTH CUT PRE-REGISTRATION, THE LANDING (session 128
+-- completing the interrupted s126/s127 slice with named provenance
+the s92/s100/s101/s120/s122 precedent: s126 designed and froze the
+tenth cut (knob-search-s126.py twice byte-identical + protocol.txt +
+freeze-record-s126.txt, gates (a)(d)(e)(f) + (b) run 1) and was cut
+by its budget mid gate (b) run 2; s127 re-verified the s126 captures
+byte-wise and re-launched gates (b) run 2 and (c) but was cut by its
+runtime budget before verifying them; NOTHING was committed or
+pushed at either cutoff. This tick completes exactly the
+state-s127.txt NOT DONE list).
+
+DONE this tick (real tool output, this directory):
+- s126/s127 CAPTURE RE-VERIFICATION, byte-compares (cmp exit 0
+  each): gate-s126-classify.txt == s88 pin gate-s88-classify.txt
+  (17,925 bytes); gate-s126-run1.txt == s88 pins gate-s88-run1.txt
+  AND gate-s88-run2.txt (919 bytes); bar-s126-selftest.txt == s88
+  pin bar-s88-selftest.txt (3,590 bytes); bar-s126-eval-run1.txt ==
+  bar-s126-eval-run2.txt == the s117 post-append pin
+  bar-s117-eval-post-run1.txt (1,006 bytes) -> VERDICT: SETTLED
+  INTERMEDIATE/MIXED (unchanged). knob-search-s126-run1.txt ==
+  knob-search-s126-run2.txt (5,625 bytes, cmp exit 0), grep 'NOT
+  PARSED|MISMATCH|FAIL' -> 0.
+- GATE (c) COMPLETION (the s127 re-launch finished on disk and is
+  verified here): gate-s127-full.out 0 bytes == s88 pin
+  gate-s88-full.out (cmp exit 0), gate-s127-full.err 879 bytes ==
+  s88 pin gate-s88-full.err (cmp exit 0) -- FULL run-tests.cljk
+  exit 1 RED AT BASE kotoba.form ('Could not find namespace:
+  kotoba.form', ADR-0362, outside this diff -- this diff touches NO
+  committed .cljk namespace) -- NO green full suite claimed.
+- GATE (b) RUN 2 RE-RUN (the s127 background relaunch left only a
+  50-byte stub -- preserved per the w7-attempt1 precedent as
+  gate-s127-run2-attempt1-interrupted.txt/.err, renamed in place,
+  no content changed): fresh run this tick (kbb --backend sci
+  --classpath "src:test:$(kbb -Spath -M:test)"
+  scratch/scoped-gpu-gate.cljk, proc 87548) -> gate-s128-run2.txt
+  919 bytes, .err 0 bytes, BYTE-IDENTICAL to BOTH s88 run pins
+  (cmp exit 0 x2), tail 'Ran 123 tests containing 12162
+  assertions. 0 failures, 0 errors.' -- scoped GPU gate GREEN run 1
+  == run 2 == both pins.
+- The scoped-gate scratch runner scratch/scoped-gpu-gate.cljk was
+  DELETED after gate (b) run 2 completed (final state: deleted;
+  never committed; scratch/ untracked and not this row's).
+- Gates (e)(f) LIVE: find docs/evidence/gpu -name '*.sh' -> 0;
+  settle-bar-ledger.txt == HEAD (git diff --exit-code rc 0 -- no
+  append this cut).
+
+NAMED CORRECTION (repeated from state-s126.txt/state-s127.txt per
+their instruction, so no committed prose carries the void claim
+uncorrected): freeze-record-s126.txt section 3(e) says the
+scoped-gate scratch runner was "created, run twice, deleted this
+tick" -- that claim is VOID as originally written (s126's run 2
+never completed). The runner's FINAL state is deleted (this tick),
+after gate (b) run 2 completed green and pinned. The freeze-record
+is write-once and is not rewritten; this correction rides in the
+record/commit.
+
+BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+immediately before this push (2026-10-31T08:56:55Z,
+prlist-s128-prepush.json; 13 open PRs total); chain PRs = exactly
+ONE (#1665 bot/amu-gpu-chain-20261028-4 -- the one this commit
+pushes to).
+
+STATE: the tenth cut is ACCEPTED DESIGN ONLY (protocol.txt +
+freeze-record-s126.txt + the ADR-0355 dated note) -- not
+implemented compiler code, not a measurement; every tenth-cut
+quantity (every block class, the pooled-12 classes, the dispersion,
+host_ns) is UNMEASURED until a FUTURE measurement-half session runs
+42 fresh processes under the frozen protocol (NOT queued). RULE 4
+unchanged: NOTHING MOVES -- the accelerator-targets workgroup rows
+stay exactly as ADR-0358 left them (:measured? true scoped to each
+row's one named measured device for :nvidia/:apple/:intel/:amd;
+:arm and :unknown remain provisional, :measured? false); NO vendor
+optimization exists for Intel (or for any vendor); this is bisect
+pre-registration machinery on the ANV host, not a workgroup-default
+measurement. BAR NON-INTERFERENCE held (no ledger append, no
+day-slot consumption, no bar/Rule-4/:measured? movement).
+
+Carry-forward to s129: (a) the tenth cut's MEASUREMENT half (42
+fresh processes under the frozen anv-b3bisect10prereg-20261031/
+protocol.txt -- its own session, NOT queued); (b) any further
+counted-day slot (the 2026-10-31 slot is consumed at s117; the
+next slot is a NEW UTC day and its own pre-registration freeze) and
+the cross-day tail-movement row (not queued) -- NO queued row
+remains; s129 takes a row only if one is queued or frozen to run,
+else stands down.
+
+Evidence: docs/evidence/gpu/anv-b3bisect10prereg-20261031/ (this
+record.txt + protocol.txt + freeze-record-s126.txt +
+knob-search-s126.py + its two byte-identical runs + the s126 gate
+captures + gate-s127-full.out/.err + gate-s127-run2-attempt1-
+interrupted.txt/.err + gate-s128-run2.txt/.err + the bar captures +
+state-s126.txt + state-s127.txt + state-s128.txt +
+prlist-s128-prepush.json) + the ADR-0355 dated note.
+(JUN-55, JUN-59; Linear tracking JUN-499)

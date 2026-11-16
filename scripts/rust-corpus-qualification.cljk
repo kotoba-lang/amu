@@ -1,0 +1,109 @@
+#!/usr/bin/env kbb
+(ns rust-corpus-qualification
+  "S5 Rust backend: pilot-corpus admission funnel plus execution check.
+
+  Reads every case in `resources/kotoba/lang-conformance/pilot-manifest.edn`
+  and drives it through sema/analyze -> osaho kir/lower -> rust/emit ->
+  rustc -O -> run, comparing stdout to the manifest's expected value.
+  Anything the slice cannot handle must fail CLOSED at analyze/lower/emit
+  with a reason; a compile/run/mismatch failure is a real defect.
+
+  This is the non-required S5 tier (KOTOBA-365): local-only, never CI. It
+  needs `kbb` and `rustc` on PATH plus the forest checkouts below on the
+  classpath. Refusals are the measured signal, not failures: exit 0 means
+  no compile/run/mismatch failures. Exit 1 means at least one hard failure.
+
+  Run from the amu checkout:
+
+    kbb --backend sci --classpath \"src:test:../artifact/src:../osaho/src:../kotoba-sema/src:../bytes/src:../kotoba-lang/src:../kotoba-hir/src:../org-nist-sha2/src:../org-ietf-cbor/src:../io/src:../edn/src:../test/src:../coll/src:../text/src:../io-multiformats/src:../kotoba-verifier/src:../kotoba-wasm/src:../kotoba-component/src:../kotoba-gmir/src:../kotoba-native/src:../kotoba-codegen/src:../kotoba-mir/src:../security/src:../abi/src:../kotoba-core-contracts/src:../io-ipld/src:../kotoba-script/src:../kotoba-object/src\" scripts/rust-corpus-qualification.cljk
+
+  Measured 2026-11-12 (rustc 1.99.1): 63 cases, match 3 / emit-refused 58 /
+  analyze-refused 2, zero compile/run/mismatch failures."
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            [kotoba.sema]
+            [kotoba.kir]
+            [kotoba.compiler.backend.rust :as rust]
+            #?@(:cljs [["node:child_process" :as child]
+                       ["node:fs" :as fs]
+                       ["node:os" :as os]
+                       ["node:path" :as path]])))
+
+(def root (.resolve path (.dirname path *file*) ".."))
+(def corpus (.join path root "resources" "kotoba" "lang-conformance"))
+(def workdir (.mkdtempSync fs (.join path (.tmpdir os) "rustq-corpus-")))
+
+(defn run-cmd [cmd args]
+  (let [r (.spawnSync child cmd (clj->js args)
+                      #js {:encoding "utf8" :timeout 90000})]
+    {:status (or (.-status r) 99)
+     :stdout (or (.-stdout r) "")
+     :stderr (or (.-stderr r) "")
+     :error (.-error r)}))
+
+(defn read-src [id entry]
+  (try (.readFileSync fs (.join path corpus entry) "utf8")
+       (catch js/Error e {:id id :stage :read :reason (.-message e)})))
+
+(defn analyze-src [id src]
+  (try (kotoba.sema/analyze src)
+       (catch js/Error e {:id id :stage :analyze :reason (.-message e)})))
+
+(defn lower-hir [id hir]
+  (try (kotoba.kir/lower hir)
+       (catch js/Error e {:id id :stage :lower :reason (.-message e)})))
+
+(defn emit-kir [id kir]
+  (try (rust/emit kir)
+       (catch js/Error e {:id id :stage :emit :reason (.-message e)})))
+
+(defn compile-rs [id source]
+  (let [base (.join path workdir (name id))]
+    (.writeFileSync fs (str base ".rs") source)
+    (let [c (run-cmd "rustc" ["-O" "-o" base (str base ".rs")])]
+      (if (zero? (:status c))
+        {:id id :bin base}
+        {:id id :stage :compile :reason (subs (:stderr c) 0 200)}))))
+
+(defn run-bin [id bin expected]
+  (let [r (run-cmd bin [])]
+    (if (zero? (:status r))
+      (let [actual (str/trim (:stdout r))]
+        (if (= actual (str expected))
+          {:id id :stage :match}
+          {:id id :stage :mismatch :expected (str expected) :actual actual}))
+      {:id id :stage :run :reason (str "exit " (:status r))})))
+
+(defn one-case [{:keys [id entry function args expect]}]
+  (if (or (not= "main" function) (not= [] args))
+    {:id id :stage :skip :reason "non-main entry or args are out of slice"}
+    (let [src (read-src id entry)]
+      (if (:stage src)
+        src
+        (let [hir (analyze-src id src)]
+          (if (:stage hir)
+            hir
+            (let [kir (lower-hir id hir)]
+              (if (:stage kir)
+                kir
+                (let [art (emit-kir id kir)]
+                  (if (:stage art)
+                    art
+                    (let [bin (compile-rs id (:source art))]
+                      (if (:stage bin)
+                        bin
+                        (run-bin id (:bin bin) (:kotoba expect))))))))))))))
+
+(def manifest (edn/read-string (.readFileSync fs (.join path corpus "pilot-manifest.edn") "utf8")))
+(def cases (:cases manifest))
+(println "cases:" (count cases) "workdir:" workdir)
+(def results (mapv one-case cases))
+(doseq [r results]
+  (println (:id r) (:stage r) (or (:reason r) (:expected r) "") (or (:actual r) "")))
+(def by-stage (frequencies (map :stage results)))
+(println "SUMMARY:" (pr-str by-stage))
+(let [hard (+ (get by-stage :compile 0)
+              (get by-stage :run 0)
+              (get by-stage :mismatch 0))]
+  (when (pos? hard)
+    (.exit js/process 1)))

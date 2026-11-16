@@ -1,0 +1,53 @@
+kernel-shape-s237-identity.txt -- run-pair identity for session 237
+(kernel-shape-s237.py; the s236 carry-forward's QUEUED row (iii)).
+
+SCRIPT: kernel-shape-s237.py
+  sha256 415697b89ea21b2892dc58e98d41a6a86b59df9320d5615b838c3ea627fb060f
+
+OFFICIAL PAIR (run TWICE, byte-identical):
+  run1: kernel-shape-s237-run1.txt  189,841 bytes
+        sha256 5beb590b8b10b5bf1dea1c2ad9f5a077dd5ca17f3a635aa174955cca9c7ba6ed
+        kernel-shape-s237-run1.err  0 bytes; rc 0
+  run2: kernel-shape-s237-run2.txt  189,841 bytes
+        sha256 5beb590b8b10b5bf1dea1c2ad9f5a077dd5ca17f3a635aa174955cca9c7ba6ed
+        kernel-shape-s237-run2.err  0 bytes; rc 0
+  cmp run1 run2 (stdout): exit 0
+  cmp run1 run2 (stderr): exit 0
+  tail: '# kernel-shape s237 (kernel-shape-s237.py): 7718 ok / 0 failed'
+
+DEV ATTEMPTS KEPT VISIBLE (NONE is evidence; every fix touches the
+VERIFIER/REPORT only -- no committed capture, publication or record
+byte changed, no parsed sample value changed):
+  (i) kernel-shape-s237-devrun.txt/.err (rc 1, 174,475/591 bytes):
+      ref_letter[label] was never assigned (group_a/group_b came out
+      empty -> 2 FAILs + ZeroDivisionError at the group share
+      derivation).  Verifier bookkeeping only.
+  (ii) kernel-shape-s237-devrun2.txt/.err (rc 1, 187,251/0 bytes):
+      4 FAILs: the B4 pooled-row regexes wrapped re.escape(tag) in
+      extra parens while tag already carries them ("(a)") -> no
+      match against the committed s234 single-line and s235
+      two-line pooled rows.  Regex fix only.
+  (iii) kernel-shape-s237-devrun3.txt/.err (rc 0, 187,467/0 bytes,
+      '7718 ok / 0 failed'): clean, but NOT a pair leg -- the
+      cross-dir byte-identity REPORT rows (section 5) and the
+      answer naming (section 7/8) were added afterwards (the s234
+      devrun2 / s235 devrun2 precedent shape: REPORT-side
+      refinement after a clean run; the criterion, forms T1, checks
+      and universe untouched).
+  (iv) kernel-shape-s237-devrun4.txt/.err (rc 0, 189,841/0 bytes,
+      '7718 ok / 0 failed'): the clean pre-pair confirmation run,
+      BYTE-IDENTICAL to both official pair legs (cmp exit 0).
+
+KNOWN Pyright false-positive family on regex-match accesses and the
+gzip/open union opener (the s199/s209 artifact; runtime unaffected).
+
+GATES:
+  (e) gate-s237-nosh.txt 0 bytes (find docs/evidence/gpu -name '*.sh'
+      -> 0 POSIX shell execution files in the evidence tree)
+  (f) gate-s237-ledger.txt 0 bytes (git diff --exit-code --
+      docs/evidence/gpu/settle-bar-ledger.txt rc 0)
+
+BLOCKER-FIRST (prlist-s237-prepush.json, committed with this slice):
+  32 open kotoba-lang/amu PRs, 0 hermes/ heads (python
+  headRefName startswith filter); chain PRs = exactly ONE (#1665
+  bot/amu-gpu-chain-20261028-4 -- the one this push advances).

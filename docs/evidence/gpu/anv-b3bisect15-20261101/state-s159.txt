@@ -1,0 +1,68 @@
+amu-gpu s159 (2026-11-01 JST, cron) -- JUN-59 fifteenth cut
+MEASUREMENT HALF -- RUN WINDOW COMPLETE (the s158 carry-forward
+(a) completed exactly: the window polled to 54/54 + the driver's
+aggregate tail captured).
+
+ROW TAKEN THIS TICK (one row: poll the fifteenth-cut run window to
+54/54 and capture the driver's aggregate tail; the pull (b) is the
+next tick's row).
+
+VERIFIED THIS TICK (real tool output):
+- The 54-process frozen-order window (c2-r01..03, bis-r01..48,
+  c8-r01..03) ran to completion on aiueos-6600hs
+  (murakumo-ci@100.98.24.37 -- the alias 'aiueos-6600hs' does not
+  resolve in this session's ssh config; named, same host as the
+  s158 host-verify capture) under the detached s158-driver.sh.
+- host-runs-s158.txt pulled host==local this tick: 58 lines =
+  54 per-run census lines + 4 aggregate-tail lines. ALL 54 run
+  lines match the clean pattern exactly (grep -c = 54):
+  run_rc=0 host-date=... stderr_bytes=0 samples=115200 verifies=24
+  cells=24 tail=# done cells=24. Frozen order held (c2 bookends,
+  48 bis, c8 bookends; last line c8-r03 host-date=
+  2026-11-01T04:10:08Z). samples=115,200 = 18 pipeline-ok cells x
+  6,400 rounds = the frozen R exactly, every run.
+- The driver's aggregate tail (host-side, verbatim):
+  "== canonical aggregate sha256 over the sorted exact 108 log
+  names (host-side) ==" / "108 names (printf '%02d' zero-padded),
+  host-side existence check: missing=0" / "== host-side canonical
+  aggregate over the exact 108 names (sorted) ==" /
+  97bd3d33db2f49346a370bfd5269d8fd17da8d223d3915fc32fc7e9025116c8e  -
+  (the (b)-tick host==local byte-identity target).
+- host-runs-s158.err 0 bytes; driver exited clean (0 procs at
+  2026-11-01T04:11:56Z).
+- Window timing (from the census host-dates): GO 03:15:22Z, first
+  run done 03:17:36Z, last 04:10:08Z (~55 min window).
+
+NAMED, NOT HIDDEN:
+- The s157 capture-form deviation still stands (54 stdout logs at
+  R=6,400, ~115,200 SAMPLE lines each; ACTUAL byte counts still
+  UNMEASURED -- the pull is (b), next tick; gzip -n commit form
+  with raw aggregates recorded).
+- This tick pulled ONLY the 5,157-byte census log. The 108 run
+  logs are host-side only at this cutoff; the canonical aggregate
+  97bd3d33... is recorded from the host-side computation and has
+  NOT yet been re-derived locally (that is the (b) byte-identity
+  check).
+- NO fifteenth-cut class/verdict/claim exists -- NO unit class,
+  NO C2, NO W1/W2/W3/X1 computed or claimed, every such quantity
+  UNMEASURED (analysis half is (c), its own session(s)); MID-ONLY
+  NARROWING CLAIM stays SUSPENDED; bracket stays EXACTLY
+  (254,557, 255,208]. RULE 4 unchanged: NOTHING MOVES; NO vendor
+  optimization exists for Intel (or for any vendor).
+- Diff touches NO committed .cljk namespace (evidence .txt only);
+  no gate re-run needed for this diff (standing gate (b) last
+  green at s155 with its pins).
+- BAR: instrument channel -- NO settle-bar-ledger line, NO
+  day-slot consumed by this row (protocol section 5).
+
+NOT DONE (s160 carries the s158 list minus (a)):
+(b) pull the 108 run logs + host==local byte-identity against
+    97bd3d33... (host-digests-s158.txt) + the gzip -n commit form
+    + derivation/build census + state update;
+(c) the analysis half at its own session(s) (analysis-s158.py
+    twice byte-identical -> publication, frozen letters, standing
+    gates (a)-(f), record.txt, ADR-0355 note, landing tail +
+    JUN-499 Linear comment);
+(d) standing, not queued: any further counted-day slot (2026-10-31
+    slot consumed at s117; next slot a NEW UTC day + its own
+    freeze) and the cross-day tail-movement row.

@@ -1,0 +1,86 @@
+amu-gpu s226 (2026-11-02 UTC / 2026-11-02 JST, cron) -- THE
+MEASURING CONTINUATION, the s225 carry-forward's first standing
+row: STARTED, NOT FINISHED at this cutoff (the runtime budget cut
+the tick mid-wait; the s205/s213/s221 interrupted-tick precedent).
+The s225 measurement window was monitored read-only this tick
+(no host-side write, no run touched, driver serialization
+respected); the window was STILL OPEN AND RUNNING at the cutoff.
+
+FINDING (verified by real tool output -- live ssh progress
+captures this tick, host aiueos-6600hs via murakumo-ci@,
+host alias murakumo-ci-6600hs): at the last live poll
+(2026-11-02T13:56:53Z, the host-runs-s225.txt run-line tail)
+14 OF 24 RUNS WERE COMPLETE AND CLEAN under the frozen
+anv-b3control3state-prereg-20261102/protocol.txt (freeze stamp
+2026-11-02T10:48:32Z) -- every completed run line carried
+run_rc=0, stderr_bytes=0, samples=115200 (= 18 pipeline-ok
+cells x the frozen R = 6,400 EXACTLY), verifies=24, cells=24,
+tail '# done cells=24'; the observed run-line times span
+13:20:30Z (rd1-c2-r01) .. 13:56:53Z (rd3-c2-r02) in frozen
+order (reading 1..4, each c2-r01..03 then c8-r01..03); the
+driver (host-only driver-s225.sh, pid 2706131) was alive
+throughout the poll sequence and continued serializing runs
+(c2 runs ~85s, c8 runs ~4.5min; at the cutoff rd3-c2-r03 was
+next in flight). host-runs-s225.txt was at 14 run lines at the
+cutoff and is still INCOMPLETE (the driver's canonical
+aggregate tail and DRIVER DONE are not yet written).
+
+NOT DONE (the s225 NOT DONE list unchanged; s227 carries
+exactly this list): the measuring continuation's completion --
+capture host-runs-s225.txt WHOLE (24 per-run lines + the
+host-side canonical aggregate tail over the exact 48 names) at
+window completion (estimated ~2026-11-02T14:30Z; the host
+retains all 48 run logs and the driver tail -- nothing is
+lost), then the 48-run-log pull + gzip -n commit form +
+raw-digests + fail-closed pull-verify run twice byte-identical
+(the s187/s188/s199/s212 precedent rows); then the analysis
+half (the four per-reading c2/c8 pooled medians under the
+frozen deep-pooling CI class statistic (R = 6,400), the letters
+L1..L4 under the frozen alphabet, B_act, the act verdict with
+the frozen invalidation criteria, run-twice byte-identical),
+publication and landing; standing, not queued: any further
+counted-day slot (each needs its own freeze) and the cross-day
+tail-movement row; if needed: the full enumeration of every
+committed session 5..20 c2/c8 reading (s216 NAMED (a)); a
+post-hoc record-verify over the committed captures (standing).
+
+NAMED, NOT HIDDEN: (i) the tick's wait loop was cut by the
+runtime budget with the window incomplete -- NO partial
+host-runs capture is committed (the s225 precedent: the
+incomplete capture is not evidence; the whole capture rides
+s227); (ii) the first connectivity probe as junkawasaki@ was
+refused by tailnet policy ('tailnet policy does not permit you
+to SSH as user "junkawasaki"') and produced no host-side
+effect; every host access this tick used murakumo-ci@ and was
+read-only (wc -l / tail / pgrep / cat of host-side files);
+(iii) NO resolution-act class/verdict/claim exists: NO reading
+letter, NO sequence, NO B_act, NO act verdict computed or
+claimed -- every resolution-act quantity REMAINS UNMEASURED at
+this cutoff (the analysis half follows the pull); the only
+values recorded this tick are the observed run-line progress
+counts and timestamps.
+
+BAR: INSTRUMENT channel -- NO settle-bar-ledger line
+(settle-bar-ledger.txt byte-identical to HEAD, gate (f) rc 0),
+NO day-slot consumption (protocol section 10). RULE 4
+unchanged: NOTHING MOVES -- the accelerator-targets workgroup
+rows stay exactly as ADR-0358 left them (:measured? true scoped
+to each row's one named measured device for
+:nvidia/:apple/:intel/:amd; :arm and :unknown remain
+provisional; :measured? false rows remain provisional -- NOT
+optimization evidence); NO vendor optimization exists for Intel
+(or for any vendor). MID-ONLY NARROWING CLAIM stays SUSPENDED;
+bracket stays EXACTLY (254,923, 255,045]; L9 binds at n=254,984
+(C2 (c), D3 (v)). Diff touches NO committed .cljk namespace
+(evidence .txt only; the s160/s166 precedent: no scoped-gate
+re-run needed; full suite stands RED AT BASE kotoba.form
+ADR-0362 outside this diff per the standing captures -- NOT
+re-run this tick -- NO green full suite claimed). Untracked
+scratch/, deps.edn, .DS_Store NOT staged. Standing gates:
+(e) find docs/evidence/gpu -name '*.sh' -> 0 lines (LIVE this
+tick, gate-s226-nosh.txt 0 bytes); (f) settle-bar-ledger.txt ==
+HEAD (git diff --exit-code HEAD rc 0, LIVE this tick,
+gate-s226-ledger.txt 0 bytes). Gates (a)-(d) NOT run this tick
+(not a landing slice -- the s197/s209/s225 precedent).
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

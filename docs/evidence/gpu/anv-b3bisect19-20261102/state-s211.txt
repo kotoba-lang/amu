@@ -1,0 +1,108 @@
+amu-gpu s211 (2026-11-02 UTC / 2026-11-02 JST, cron) -- NINETEENTH
+CUT MEASUREMENT HALF: THE MEASURING CONTINUATION'S REMAINING
+WINDOW-CLOSURE COMPONENTS, the s210 carry-forward (a) completed
+exactly (the s187/s198 precedent row's remaining components: the
+FULL-FILE CLEAN CENSUS of all 54 run lines + the POST-WINDOW BINARY
+RE-CENSUS 3/3 vs the s209 first-measured pins).
+
+ROW TAKEN THIS TICK (one row: complete the s210 carry-forward (a) --
+the full-file clean census of every run line in the committed
+host-runs-s209.txt and the post-window binary re-census 3/3; the
+108-run-log pull (b) is the next tick's row).
+
+FINDING (verified by real tool output,
+docs/evidence/gpu/anv-b3bisect19-20261102/census-s211.txt): THE
+NINETEENTH-CUT RUN WINDOW'S 54 RUNS ARE ALL CLEAN BY FULL-FILE
+CENSUS AND THE THREE INSTRUMENT BINARIES ARE BYTE-UNCHANGED ACROSS
+THE WINDOW -- the fail-closed census (census-s211.py, rc 0, 'CENSUS
+S211 COMPLETE (fail-closed: 0 mismatches)') parsed the COMMITTED
+host-runs-s209.txt completely: sha256 f86c574e5fdff593bad7b03db462e
+a095de8baa77317832ba114bae4b5489e79 == the s210 pin (committed bytes
+unchanged since the pull); 59 lines = 54 per-run census lines + the
+4-line driver aggregate tail VERBATIM (incl. the aggregate digest
+line '805a308b8a7fe379a5440d66e223198ebc7b6a9cae656d07944a3f855ccbc
+91e  -') + 'DRIVER DONE'; ALL 54/54 run lines match the clean pattern
+EXACTLY (run_rc=0, stderr_bytes=0, samples=115200 = 18 pipeline-ok
+cells x the frozen R = 6,400 EXACTLY every run, verifies=24,
+cells=24, tail '# done cells=24'); arm counts 3/48/3 (c2/q2/c8); the
+frozen order held EXACTLY (c2-r01..03, q2-r01..048, c8-r01..03);
+host-dates monotonic non-decreasing, span 2026-11-02T04:57:35Z
+(c2-r01) .. 05:41:35Z (c8-r03) == the s210-recorded window (GO
+2026-11-02T04:55:20Z parsed fresh from host-build-s209.txt, before
+the build loop). POST-WINDOW BINARY RE-CENSUS 3/3 == the s209
+first-measured pins, both sides parsed from files by tool, never
+transcribed (the s136 precedent; pins parsed from
+host-build-s209.txt, re-census from live host-side sha256sum):
+anv-bb-c2 b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959
+e734c48 MATCH; anv-bb-q2 af9999e1c15eb735e64e0315eb56c81d767826c5ac
+bfc9e27b87ee56a6e641f6 MATCH; anv-bb-c8 2f25d678d6958b6fbbe0125492e
+ab1b0e8fb67412d1cb379d7c6401c35617831 MATCH ('RE-CENSUS 3/3 MATCH',
+compare_rc=0) -- the binaries the 54 runs measured are the binaries
+the build capture pinned (observation at the byte level, not a class
+claim). Driver exit clean: ps-level '[d]river-s209.sh' check rc 1
+(no driver process line) after the 'DRIVER DONE' marker.
+
+NAMED, NOT HIDDEN: (i) the first construction of census-s211.txt ran
+its section-[4] driver-exit probe WITHOUT the host workdir cd (its
+ls/wc lines were vacuous 'No such file' output); it was discarded
+before commit (never staged) and the committed capture is the second
+construction, with sections [1]-[3] as deterministic re-runs and
+[4] as the corrected probe -- named inside the capture header too;
+(ii) the pgrep -f driver-s209 listing self-matches the probe's own
+wrapper command lines (the s185/s187/s198 named artifact: two lines,
+'... tailscaled' and '... bash', neither the driver) -- the ps-level
+bracket-trick grep is the exit claim; (iii) host-side
+driver-s209.log is 0 bytes (the driver wrote its census output to
+host-runs-s209.txt; nothing was lost -- 'DRIVER DONE' is the last
+line of that file); (iv) the 108 run logs are present host-side
+(shaders/ carries exactly 108 run-* names) and remain HOST-SIDE ONLY
+-- ACTUAL byte counts and content UNMEASURED locally (the pull is
+(b)); the host-side canonical aggregate 805a308b... remains
+host-side-only computation, NOT re-derived locally (that is the (b)
+byte-identity target). NO nineteenth-cut class/verdict/claim exists:
+NO unit class, NO C1, NO C2, NO W1/W2/W3/X1 computed or claimed --
+every nineteenth-cut quantity REMAINS UNMEASURED (the analysis half
+is its own session(s) after the pull); the ONLY values recorded here
+are census facts and the three re-census digests (all quote/census,
+no statistic). MID-ONLY NARROWING CLAIM stays SUSPENDED; bracket
+stays EXACTLY (254,923, 255,045].
+
+BAR: INSTRUMENT channel -- NO settle-bar-ledger line
+(settle-bar-ledger.txt byte-identical to HEAD, git diff --exit-code
+HEAD rc 0 LIVE this tick), NO day-slot consumption (protocol section
+5; any further counted-day slot needs its own freeze and is NOT
+touched by this row). RULE 4 unchanged: NOTHING MOVES -- the
+accelerator-targets workgroup rows stay exactly as ADR-0358 left
+them (:measured? true scoped to each row's one named measured device
+for :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional;
+:measured? false rows remain provisional -- NOT optimization
+evidence); NO vendor optimization exists for Intel (or for any
+vendor). Diff touches NO committed .cljk namespace (evidence .txt
+only; the s160/s166 precedent: no scoped-gate re-run needed; full
+suite stands RED AT BASE kotoba.form ADR-0362 outside this diff per
+the standing captures -- NOT re-run this tick -- NO green full suite
+claimed). Standing gates this tick: (e) find docs/evidence/gpu
+-name '*.sh' -> 0 (LIVE); (f) settle-bar-ledger.txt == HEAD (LIVE).
+Gates (a)-(d) NOT run this tick (not a landing slice -- the s197
+precedent). Untracked scratch/, deps.edn, .DS_Store NOT staged (the
+census script lives in the session scratch dir, NOT committed).
+
+BLOCKER-FIRST immediately before this push (prlist-s211-prepush.json):
+21 open kotoba-lang/amu PRs, 0 hermes/ heads (python headRefName
+startswith filter, 0 blockers); chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4, OPEN/MERGEABLE -- the one this push
+advances).
+
+NOT DONE (s212 carries exactly this list): the measuring
+continuation's (b) -- the 108-run-log pull + host==local
+byte-identity against 805a308b8a7fe379a5440d66e223198ebc7b6a9cae656d
+07944a3f855ccbc91e (the s147 procedure, host-digests-s209.txt) + the
+gzip -n commit form + raw-digests-s209.txt + fail-closed pull-verify
+run twice byte-identical (the s188/s199 precedent row); then the
+analysis half (the 16-block + pooled-48 classes under the frozen
+deep-pooling CI class statistic (R = 6,400), C1/C2/W1/W2/W3/X1,
+run-twice byte-identical), publication and landing; standing, not
+queued: any further counted-day slot (each needs its own freeze) and
+the cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

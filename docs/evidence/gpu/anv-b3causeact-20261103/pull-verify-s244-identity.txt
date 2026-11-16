@@ -1,0 +1,53 @@
+pull-verify-s244-identity.txt -- JUN-59 s244, act measurement session m1
+custody verifier identity + named defects (NONE is evidence; every fix
+below is VERIFIER-only -- no committed run-log byte changed, no parsed
+value changed, no host artifact re-run).
+
+Script bytes (this slice): pull-verify-s244.py sha256
+232c396e9480a87078a0edd69b3249c481821076ff13d7d06609c20a2d447590.
+Official pair stdout (both legs): pull-verify-s244-run1.txt sha256
+7ee82703e63cbfcdbb161492ccc8b81e50157058584213fe0fbbc171f8e6d315
+(2,646 bytes); run1 == run2 (cmp exit 0), stderr pair 0 bytes
+(cmp exit 0), devrun2 == run1 (cmp exit 0).  Tail:
+'# pull-verify s244 (pull-verify-s244.py): 89 ok / 0 failed'.
+
+NAMED, NOT HIDDEN -- ONE defective dev attempt kept visible (pull-
+verify-s244-devrun.txt/.err, rc 1, 31 ok then TypeError at S8;
+NONE is evidence): the S8 SAMPLE re-render call passed the regex's
+6 capture groups to a 4-parameter renderer ('render_sample() takes
+4 positional arguments but 6 were given') -- VERIFIER-side arg-count
+defect only; fixed to pass (round, idx, gpu_ticks, host_ns); no run
+byte and no parsed value affected; no run was taken against pre-fix
+bytes in the sense of hardware -- the verifier never mutates its
+inputs.  devrun2 (rc 0, 89 ok / 0 failed) is the clean pre-pair
+confirmation run and is byte-identical to both official legs.
+
+The 89 checks (fail-closed over the committed bytes of
+docs/evidence/gpu/anv-b3causeact-20261103/ and the committed c2
+reference run-rd1-c2-r01.txt.gz of anv-b3control3state-20261102):
+S0 reference partitions (24 CELL / 24 VERIFY); S1 name set 6/6 +
+4 capture files; S2 gzip fidelity 3/3 (decompressed bytes re-derive
+the recorded raw digests); S3 stderr 0 bytes 3/3; S4 canonical
+aggregate re-derived THROUGH the committed form ==
+bb57b2ffc563e8cdfb367e77cace6ef89e31d1a2c93499a2f7e10974e6df0c46;
+S5 per-run structure 3x(134,456 lines / tail '# done cells=24' /
+24 CELL / 115,200 SAMPLE / 19,200 PROBE / 24 VERIFY); S6 header
+lines 1-7 BYTE-EQUAL to the committed c2 reference (the frozen
+protocol section 1c ARM-K metadata row; includes the knob line
+bound to the frozen act knob bytes n=1000003 rounds=6400 warmup=3
+batch=2 barrier_n=0 work_mul=1 ndiv=1 seed=20261027); S7 the 24
+CELL + 24 VERIFY rows BYTE-EQUAL to the committed reference (the
+frozen section-4 byte-preserved rows); S8 all 345,600 SAMPLE rows
+re-rendered byte-equal at f32(1000/19.2); S9 all 57,600 PROBE rows
+match exactly one frozen section-4 form, re-render byte-equal, and
+each channel's round set is exactly 0..6399 (6,400 each of zwts /
+zwbar / isohost); S10 the O5 invalidation census (18 VERIFY ok rows
+mismatch=0, 6 pipeline-FAIL rows named, per run); S11 first-measured
+binary pin 2c216ef2af510641568aaaa2bf2fadbc332ad2769c290fa020c6294
+aa50cf4e6 present in the host-build capture verbatim block, raw-
+digests rows bound.
+
+CUSTODY + STRUCTURE ONLY: the verifier computes no letter, no share,
+no classification -- the ANALYSIS half's frozen rules R1-R5 execute
+in a later slice over these committed bytes.
+(JUN-55, JUN-59; Linear tracking JUN-499)

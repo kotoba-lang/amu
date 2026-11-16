@@ -1,0 +1,79 @@
+JUN-59 session 110 -- THE LEDGER --COMPAT COHORT-PREFIX
+SUPERSESSION FREEZE (the s109 record section 6(i) row = section
+3(a) of the s109 decision, IMPLEMENTED; an implementation slice --
+NO hardware runs, NO builds, NO compiles, NO GO stamp, NO host
+writes, NO day-slot consumption, NO ledger line).
+
+Freeze stamp: 2026-10-30T03:35:36Z (the digest command run over
+the tool bytes; this file written immediately after, before the
+adoption-manifest binding and the record's remaining captures --
+the tool bytes are frozen from this stamp and are never edited).
+
+1. THE FROZEN BYTES (sha256 over the bytes at the freeze stamp;
+   written once and never rewritten -- the s100 supersession
+   convention: new frozen bytes under a new record dir with their
+   own freeze record):
+     db1cb000f9b7015104d9dd1ac84448d47b105f7a64934124b2cb9d34de0afe9a
+       docs/evidence/gpu/anv-b3ledgersupersede-20261030/ledger-prego-v2.py
+     fc359fcbf6e199a0ae62bacc8c19483ab6b71ffa2b9db72d2505d8a907e05e8e
+       docs/evidence/gpu/anv-b3ledgersupersede-20261030/reconcile-prego-v2.py
+
+2. WHAT IS SUPERSEDED (the superseded bytes are NEVER edited; they
+   stay committed at their records):
+   - ledger-prego-v2.py supersedes the s97 frozen
+     anv-b3w6ledgerrego-20261029/ledger-prego.py
+     (64a54e4051fcd8e7a4ca1ce95ce99e60b019bdb84f845ea78c21085cc104069b)
+     for every future adoption (adoption-manifest-v2.txt slot
+     ledger).
+   - reconcile-prego-v2.py supersedes the s99 frozen
+     anv-b3w6reconcilerego-20261029/reconcile-prego.py
+     (d52b130129020f57a1b1df906354937332a45372d025ba8441b5769e9b222229)
+     for every future adoption (adoption-manifest-v2.txt slot
+     reconcile).
+
+3. THE FROZEN ASSERTION (the whole content of the change; the
+   s109 record section 3(a) text, frozen here as the contract):
+   --compat asserts COHORT-PREFIX, not whole-ledger equality:
+   (a) the live ledger's day= rows' first N (N = |WIN9| = 9)
+       sessions equal WIN9's session order exactly (the ledger is
+       append-only chronological, so the frozen cohort is by
+       construction exactly the prefix) -- a dropped, renamed or
+       reordered cohort row REFUSES (REFUSED-LEDGER-SHAPE);
+   (b) every cohort row re-derives byte-exact against its want row
+       exactly as the s97 tool did (a difference reports MISMATCH
+       and fails the run);
+   (c) EVERY day= row (cohort or later) must satisfy the frozen
+       line grammar fail-closed (a malformed row anywhere REFUSES,
+       REFUSED-LEDGER-GRAMMAR);
+   (d) rows past the cohort are shape-validated but NOT re-derived
+       (each later session's line is its own record's business;
+       extending the frozen cohort is a separate decision, NOT
+       queued); they are named in the POST-COHORT report row.
+
+4. WHAT IS NOT CHANGED (byte-preserved from the s97 tool): the
+   derivation (load_log/derive/bar_class/line_shape/grammar_ok),
+   the emit path and its name gate (the emit mode activates only
+   under the ledger-s<NN>.py filename; --emit refuses under the
+   pre-build name), the --emit argv surface, every REFUSED token,
+   and the quoted-input surfaces (pin/go/day).  The reconcile
+   v2's chain, X rows, --line mode and --self-test fixture
+   battery are byte-preserved from the s99 tool except the four
+   self-identity strings and the LEDGER stage path.
+
+5. HONEST STATES: the supersession is IMPLEMENTED (code + tests
+   exist in this record dir: ledger-prego-v2.py --self-test carries
+   the post-append GREEN / dropped REFUSED / altered MISMATCH /
+   reordered REFUSED / malformed REFUSED rows and more) -- the
+   s109 decision's section 3(a) is now implemented, not design
+   only.  It is settling-bar validation machinery, not a device
+   measurement; no :measured? flag moves and no vendor optimization
+   exists for any vendor.
+
+6. ADOPTION CONTRACT (supersedes the s102 manifest's ledger and
+   reconcile slots; the s102 manifest stays frozen and unedited):
+   any future measurement session runs
+     python3 docs/evidence/gpu/anv-b3w6adoptionprego-20261029/adoption-check-prego.py \
+       --check docs/evidence/gpu/anv-b3ledgersupersede-20261030/adoption-manifest-v2.txt .
+   from the worktree root BEFORE any adoption copy; VERDICT
+   INCONSISTENT => do not adopt (fail-closed).  The adopted names
+   stay ledger-s<NN>.py / reconcile-s<NN>.py.
