@@ -184,13 +184,14 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
   other purpose (JUN-290) was withdrawn by owner decision 2026-11-17 (see
   `com-junkawasaki/root/AGENTS.md`, CDCI section); the native-closure and no-silent-fallback conditions
   above still apply to those tools.
-- Basilisp outside the oracle role (owner decision 2026-11-19, JUN-974): Basilisp may run `.cljc` scripts as
-  hosted CI tooling in any job, including the check, gate-support and diagnostic scripts of the native
-  workflows (the JUN-974 Python to Basilisp migration). Such a script may orchestrate or inspect, but it
-  must not replace a native check: artifacts and gate verdicts are still produced and verified by Kotoba /
-  Amu native tools. Basilisp is not part of the native compile, build, packaging or runtime closure, and a
-  native result must not silently fall back to it. Making a Basilisp job a required check stays a separate
-  owner decision. This entry does not change the rules for any other language.
+- Hosted CI tooling (owner decision 2026-11-19, JUN-974; canonical text: the language-by-context table in
+  `com-junkawasaki/root/AGENTS.md`): Basilisp, the JVM family and every other `.cljc`-capable tool (nbb, JVM,
+  Babashka, Clojure, GraalVM, jank and others), C, Python and Fennel may run as hosted CI tooling in any job,
+  including the check, gate-support and diagnostic scripts of the native workflows. Such a script may orchestrate
+  or inspect but must not replace a native check: artifacts and gate verdicts are still produced and verified by
+  Kotoba / Amu native tools. These tools are not part of the native compile, build, packaging or runtime closure,
+  and a native result must not silently fall back to them. Hosted-tooling jobs are not required checks; making one
+  required is a separate owner decision. New Rust, shell or raw JS tooling in the selfhost scope is still not added.
 - Policy and plan: ADR `adr-2611071200-cljk-oracle-cljc-standard` (com-junkawasaki/root `90-docs/adr/`), tracked in
   Linear JUN-579 and JUN-967 to JUN-973. cljk sources follow standard cljc; cljc itself is not customised. Moving
   the `:kotoba/*` namespace attribute-map keys to a quoted spelling (JUN-967 to JUN-969) is a plan, not yet
