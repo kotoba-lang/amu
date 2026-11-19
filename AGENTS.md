@@ -137,8 +137,9 @@ actual guest receipts; full scheduling and shared Browser remain separate.
   roles are Amu selfhost and Kotoba native; legacy fleet/authoring labels
   are not extra gates. Privileged role sources, images and inputs are
   pinned; changed source needs matching newly built artifacts and proof.
-- GitHub Actions/Python can stage bytes, launch test processes and transport
-  artifacts. They do not replace the native controller's ordered verdict
+- GitHub Actions and hosted tooling (Python, Basilisp, the JVM family, C, Fennel; see the hosted CI tooling
+  bullet in the oracle section) can stage bytes, launch test processes, transport
+  artifacts and run check, gate-support and diagnostic scripts. They do not replace the native controller's ordered verdict
   or turn source admission, cached historical receipts or pending execution
   into a successful native gate. Keep artifact qualification, terminal CI
   status and live service deployment distinct.
@@ -159,10 +160,11 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
 
 - Record the exact command, tool versions, inputs and outputs as data
   (evidence, with the date); keep downloads minimal and say what was fetched.
-- It never appears in CI, a gate script, a workflow, a build, packaging or a
-  runtime path, and is never a fallback or a required comparison route. The
-  CDCI ban on JVM/nbb is unchanged; a native result must not silently fall
-  back to it.
+- On a developer machine it is one-off. In CI it may appear only as a separate, named oracle job or as
+  hosted tooling (see the CI exception and hosted-tooling bullets below). It never enters a build, packaging
+  or runtime path, and is never a fallback or a required comparison route. The earlier CDCI ban on JVM/nbb
+  was withdrawn (owner decisions 2026-11-07, 2026-11-17); a native result must not silently fall back to
+  these tools.
 - A reference value is evidence of the reference's behavior. It is not proof
   that a native implementation is correct, and a mismatch is reported, not
   forced to agree.
@@ -170,14 +172,15 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
   2026-11-06; Hy replaced by Basilisp 2026-11-07): reference implementations and prototypes in those
   languages. The same rules apply
   to every use, including a Workflow subagent running one on a developer machine: one-off,
-  dated evidence, never in CI, gates, builds or runtime paths.
+  dated evidence. CI use follows the CI exception and hosted-tooling bullets below; builds and runtime
+  paths never use them.
 - Every language that supports `.cljc` is also an oracle language (owner decision 2026-11-07), for
   example Clojure, ClojureScript, ClojureCLR, Babashka, Squint, Cherry, ClojureDart, jank, Clojerl, Lokke
   and Phel. The unverified candidate table is `docs/oracle-cljc-dialects-20261107.md` in
   kotoba-lang/kotoba-lang; confirm the tool version, feature key and `.cljc` handling at first use and
   record it.
-- CI exception (owner decision 2026-11-07; relaxes the "never in CI" and CDCI JVM/nbb wording above for
-  oracle use only): JVM, nbb, Babashka and every other `.cljc` language above may run in CI as oracle jobs. Keep each in its own job, named
+- CI exception (owner decision 2026-11-07; relaxes the earlier "never in CI" wording for
+  oracle use): JVM, nbb, Babashka and every other `.cljc` language above may run in CI as oracle jobs. Keep each in its own job, named
   and reported as an oracle. Native build, gates, packaging and runtime must not depend on it, and a
   native result must not silently fall back to it. Making an oracle job a required check is a separate
   owner decision; until then it is not required. The ban on JVM, nbb, Babashka and GraalVM in CI for any
@@ -208,8 +211,8 @@ pure-f64 slices, checked KIR only, fail-closed) is a separate
 target-qualification tier, not a compiler target: it adds no `--target`, is
 not registered in `target-names` or `backend-qualification`, and NEVER enters
 the compiler, build, mandatory gates, CI, workflows, packaging, or any
-fallback or required route. It does not relax the JVM/nbb CI ban or the
-native-only build closure above. Verification runs on a developer machine
+fallback or required route. It does not relax the
+native-only build closure above (the earlier JVM/nbb CI ban is withdrawn; see the oracle section). Verification runs on a developer machine
 only, gated on a locally installed rustc; measured 2026-11-12 (rustc 1.99.1,
 kbb suite green, pilot corpus funnel match 3 / emit-refused 58 /
 analyze-refused 2, rustc execution 7/7 warning-clean). Keep evidence,
