@@ -7,13 +7,13 @@ mkdir "$out"
 mkdir -p "$out/mutant/repin"
 
 run_case() {
-  local name="$1" source="$2" paths="$3" expected="$4" actual=0
+  local name="$1" source="$2" paths="$3" expected="$4" actual status=0
   "$compiler" compile "$source" --source-path "$paths" --source-path src -o "$out/$name" > "$out/$name.build.log" 2>&1
-  # The fixtures report their verdict through the process exit status, so a
-  # nonzero status is an expected result here and must not trip `set -e`.
-  "$out/$name" > "$out/$name.run.log" 2>&1 || actual=$?
-  if [[ "$actual" != "$expected" ]]; then
-    printf '%s: expected exit status %s, got %s\n' "$name" "$expected" "$actual" >&2
+  # The pinned CLI's native fixtures print the verdict and exit successfully.
+  "$out/$name" > "$out/$name.run.log" 2> "$out/$name.stderr.log" || status=$?
+  actual=$(<"$out/$name.run.log")
+  if [[ "$status" != 0 || "$actual" != "$expected" ]]; then
+    printf '%s: expected verdict %s, got %s (process status %s)\n' "$name" "$expected" "$actual" "$status" >&2
     return 1
   fi
 }
