@@ -181,7 +181,16 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
   and reported as an oracle. Native build, gates, packaging and runtime must not depend on it, and a
   native result must not silently fall back to it. Making an oracle job a required check is a separate
   owner decision; until then it is not required. The ban on JVM, nbb, Babashka and GraalVM in CI for any
-  other purpose (JUN-290) is unchanged.
+  other purpose (JUN-290) was withdrawn by owner decision 2026-11-17 (see
+  `com-junkawasaki/root/AGENTS.md`, CDCI section); the native-closure and no-silent-fallback conditions
+  above still apply to those tools.
+- Basilisp outside the oracle role (owner decision 2026-11-19, JUN-974): Basilisp may run `.cljc` scripts as
+  hosted CI tooling in any job, including the check, gate-support and diagnostic scripts of the native
+  workflows (the JUN-974 Python to Basilisp migration). Such a script may orchestrate or inspect, but it
+  must not replace a native check: artifacts and gate verdicts are still produced and verified by Kotoba /
+  Amu native tools. Basilisp is not part of the native compile, build, packaging or runtime closure, and a
+  native result must not silently fall back to it. Making a Basilisp job a required check stays a separate
+  owner decision. This entry does not change the rules for any other language.
 - Policy and plan: ADR `adr-2611071200-cljk-oracle-cljc-standard` (com-junkawasaki/root `90-docs/adr/`), tracked in
   Linear JUN-579 and JUN-967 to JUN-973. cljk sources follow standard cljc; cljc itself is not customised. Moving
   the `:kotoba/*` namespace attribute-map keys to a quoted spelling (JUN-967 to JUN-969) is a plan, not yet
