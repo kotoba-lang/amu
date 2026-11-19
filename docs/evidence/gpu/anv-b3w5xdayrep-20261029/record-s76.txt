@@ -1,0 +1,68 @@
+JUN-59 session 76 -- THE FIVE-WINDOW DERIVATION CENSUS (the s73
+carry-forward's named 3(b); verification slice -- NO instrument
+runs, NO compiles, NO GO stamp, NO host writes, NO ledger line, NO
+day-slot consumption; the W5 measurement itself is s73's, unchanged).
+
+1. BUILT + VERIFIED (real tool output): derivation-census-s73.py --
+   the INDEPENDENT second parser for publication-s73.txt, per
+   protocol.txt section 0's frozen implementation paths: split-based
+   parsing (no re module); observed block estimators pure-Python
+   sorted() order statistics over the explicitly pooled 75,
+   cross-checked in-loop against the np.partition kth paths; the
+   resampling's estimators via the np.partition kth paths, NOT a
+   sort (analysis-s73.py used np.sort -- a different computational
+   path); resampling level medians via np.partition kth=(5,6); the
+   repartition resampling and the RNG call order re-implemented
+   (ONE random.Random(20261029), frozen probe order primary MAD /
+   primary IQR / D MAD-hi / D MAD-tw / D IQR-hi / D IQR-tw, 20,000
+   trials, one fresh-list rng.shuffle per trial).
+
+2. DOUBLE-RUN BYTE-IDENTICAL (real tool output): run 1 (foreground,
+   /usr/local/bin/python3, numpy 2.5.4) 3m17.9s -> scratch/
+   census-s73-run1-pin.txt; run 2 5m26.0s -> derivation-census-s73.txt
+   (the committed census); cmp exit 0, sha256 9ee77c153386447590591a
+   52da69ec19f7d26b815526eddacb47eef3e568b1ae for BOTH. Both runs:
+   "TOTAL: 57 rows, 0 mismatched | B: 0 | C: 0", exit 0. A
+   CENSUS_SMOKE=1 plumbing run (TRIALS=20) mismatched exactly the
+   six RNG count/p rows and nothing else (named: smoke output is
+   never the committed census).
+
+3. WHAT THIS RESOLVES: record-s75.txt 5(a) -- the s73 T7 values are
+   no longer two runs of ONE validated generator alone. The
+   independent parser re-derived from the 390 committed run logs,
+   and matched the published bytes on EVERY row: five-window
+   integrity (78 runs each, VERIFY mismatch 0), C1 (c2 FLOOR, c8
+   32709), the 8/8 prior block-min vector reproduction, the anchor
+   rows (s73 1131 / 998..1442, class INTERMEDIATE/MIXED), T7 per
+   axis (MAD 2*L 143 -> 98, C_obs 22.5, count 0/20001, p 0.000050;
+   IQR 303 -> 223, C_obs 40.0, count 3/20001, p 0.000200 -- the
+   RESAMPLING counts/p reproduced exactly through the np.partition
+   path + re-implemented RNG stream), T7 = (a)
+   CROSS-DAY-REPLICATED-ON-BOTH-LEVEL-AXES, D1/D2/D3/D4. Section B:
+   observed-estimator cross-checks (pure-Python sorted() vs
+   np.partition) 0 mismatched. Section C: evidence hygiene 0
+   mismatched (no .sh, 78 run-window host-dates all 2026-10-29,
+   ledger s73 line == the derived D4 reading).
+
+4. GATES: NOT RE-RAUN this tick (NAMED: the run-time budget closed
+   before the standing gate set; this diff touches NO .cljk
+   namespace -- .py/.txt evidence only -- so the suite gate binds on
+   namespaces touched = none). Last verified full-suite reading
+   remains s72/s75: exit 1 RED AT BASE kotoba.form (ADR-0362,
+   outside this diff); last settle-bar/selftest/.sh pins s75. The
+   gate set is carried to session 77.
+
+5. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel. The bar is PENDING 2/4 and settles nothing;
+   no new ledger line this tick.
+
+Carry-forward to session 77: (a) the standing gate set (named
+above); (b) the three frozen analysis halves (s64 T14 hi-wander,
+s65 T15 quantile-pair level axes, s66 T16 second-pair profile
+axis).
+
+Evidence: docs/evidence/gpu/anv-b3w5xdayrep-20261029/ (this file,
+derivation-census-s73.py, derivation-census-s73.txt -- run 2
+byte-identical to run 1) + scratch/census-s73-run1-pin.txt
+(untracked). (JUN-55, JUN-59; Linear tracking JUN-499)

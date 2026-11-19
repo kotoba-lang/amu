@@ -191,6 +191,22 @@ CIDs, outputs) when porting a construct or checking cljk/edn-sugar vs pure
   `.cljc` with the `:lpy` feature key and does not read the `.cljk` extension. Record versions,
   inputs and outputs with the date.
 
+## S5 Rust target-qualification tier (non-required, local-only, KOTOBA-365)
+
+SIR-to-Rust emission (`src/kotoba/compiler/backend/rust.cljk`, pure-i64 then
+pure-f64 slices, checked KIR only, fail-closed) is a separate
+target-qualification tier, not a compiler target: it adds no `--target`, is
+not registered in `target-names` or `backend-qualification`, and NEVER enters
+the compiler, build, mandatory gates, CI, workflows, packaging, or any
+fallback or required route. It does not relax the JVM/nbb CI ban or the
+native-only build closure above. Verification runs on a developer machine
+only, gated on a locally installed rustc; measured 2026-11-12 (rustc 1.99.1,
+kbb suite green, pilot corpus funnel match 3 / emit-refused 58 /
+analyze-refused 2, rustc execution 7/7 warning-clean). Keep evidence,
+coverage and blockers in Linear KOTOBA-365, never in CI. Creating a required
+tier out of this slice is a separate owner decision; updating
+`com-junkawasaki/root/AGENTS.md` for it is proposed in KOTOBA-365, not done here.
+
 ## Shared agent rule
 
 These rules apply to every agent. Migrate and qualify whole components,

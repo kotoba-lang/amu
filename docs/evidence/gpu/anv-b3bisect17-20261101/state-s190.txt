@@ -1,0 +1,88 @@
+amu-gpu s190 (2026-11-02 JST, cron) -- SEVENTEENTH CUT LANDING:
+STANDING GATES (a)-(f) + record.txt + THE ADR-0355 DATED NOTE
+(the s189 carry-forward (c) REST completed: gates run live with
+s190 captures all == pins, the landing record for sessions
+185-190 written, the ADR-0355 dated note appended).
+
+ROW TAKEN THIS TICK (one row: the s189 carry-forward (c) REST --
+the landing slice).
+
+VERIFIED THIS TICK (real tool output,
+docs/evidence/gpu/anv-b3bisect17-20261101/):
+- STANDING GATES (a)-(f) run LIVE with s190 captures, every
+  capture byte-compared to its pin (cmp exit 0):
+  (a) gpu_regime_classify.py --self-test rc 0, 17,925 bytes ==
+      the s88 pin, .err 0 bytes.
+  (b) scoped GPU gate (scratch/scoped-gpu-gate.cljk -- the eight
+      GPU-owned test namespaces of run-tests.cljk, same engine
+      and classpath; created, run twice, DELETED, never
+      committed): GREEN 'Ran 123 tests containing 12162
+      assertions. 0 failures, 0 errors.' run 1 == run 2 == both
+      s88 pins (919 bytes, cmp exit 0 x3), rc 0 both, .err 0
+      bytes both.
+  (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form
+      ('Could not find namespace: kotoba.form', ADR-0362,
+      outside this diff -- touches NO committed .cljk
+      namespace), .out 0 bytes == pin, .err 879 bytes == pin --
+      NO green full suite claimed.
+  (d) settle-bar evaluator --self-test rc 0, 3,590 bytes == the
+      s88 pin + the LEDGER EVAL pair twice BYTE-IDENTICAL
+      (1,006 bytes) == the s117 post-append pin -> VERDICT:
+      SETTLED INTERMEDIATE/MIXED (unchanged).
+  (e) find docs/evidence/gpu -name '*.sh' -> 0 lines.
+  (f) git diff --exit-code -- docs/evidence/gpu/settle-bar-
+      ledger.txt rc 0 (no append this row).
+- The record's byte-level claims checked LIVE this tick (the
+  s183 precedent -- no record-verify script; a post-hoc
+  record-verify remains standing, not queued):
+  analysis-s185.py sha256 d2e856b4... MATCH, publication-s185.txt
+  59,777 bytes sha256 c62c01e1... MATCH (both re-hashed this
+  tick), the analysis run1/run2 stdout pair byte-identical (0
+  bytes each), instrument c2704aaa... + expected-corpus eefba52e
+  ... re-hashed MATCH; pull-verify-s185.py RE-RUN this tick rc 0
+  with stdout BYTE-IDENTICAL to the committed
+  pull-verify-s185-run1.txt (cmp exit 0): name set 108/108, raw
+  rows 54/54, gzip fidelity 54/54, aggregate MATCH (acad342c...
+  through the committed form), headers 54/54; knob arithmetic
+  re-derived ((1,000,003*313)//1,229 = 254,679, gcd 1, 3+48+3 =
+  54, quarter grid 254,679, bracket width 488).
+- record.txt written (13,252 bytes, sessions 185-190: the
+  measurement half s185-s188, the analysis half s189, this
+  landing s190) + the ADR-0355 dated note (sessions 185-189)
+  appended.
+
+NAMED, NOT HIDDEN: the kbb classpath resolution at this tick
+printed the standing 2 Maven-jar skip notice (closure-compiler-
+unshaded, org.clojure/tools.reader -- kbb never resolves Maven;
+the s183 record section 4 named state); the gates ran clean after
+it. No draft pairs this tick -- every gate and re-verify passed
+fail-closed on its first run. The scratch scoped-gpu-gate.cljk
+runner was created, run twice and DELETED (final state deleted,
+tool-checked). Three-state: the seventeenth-cut letters are
+MEASURED QUANTITIES from the s185-s188 hardware runs on
+aiueos-6600hs under the frozen anv-b3bisect17prereg-20261101/
+protocol.txt -- NOT workgroup-default measurements; CUT VERDICT:
+NOTHING MOVES; the committed bracket stays EXACTLY (254,557,
+255,045]; the MID-ONLY NARROWING CLAIM stays SUSPENDED (named,
+not claimed). RULE 4 unchanged: NOTHING MOVES; NO vendor
+optimization exists for Intel (or for any vendor); the
+accelerator-targets workgroup rows stay exactly as ADR-0358 left
+them (:measured? true scoped to each row's one named measured
+device for :nvidia/:apple/:intel/:amd; :arm and :unknown remain
+provisional, :measured? false rows remain provisional -- NOT
+optimization evidence). BAR NON-INTERFERENCE held: NO settle-bar-
+ledger line (git diff --exit-code rc 0), NO day-slot consumption.
+Diff touches NO committed .cljk namespace (evidence .txt/.py/.gz/
+.json + the ADR .md only; the s160/s166 precedent: no scoped-
+gate re-run needed; gates (a)-(f) ran live at s190). Untracked
+scratch/, deps.edn, .DS_Store NOT staged.
+
+NOT DONE (s191 carries exactly this list):
+(d) standing, not queued: any further counted-day slot (each
+    needs its own freeze) and the cross-day tail-movement row;
+    any eighteenth cut ONLY through a NEW pre-registered cut
+    session confronting this cut's content (NOT queued) -- NO
+    queued row remains; s191 takes a row only per the recorded
+    carry-forward precedent, else stands down.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

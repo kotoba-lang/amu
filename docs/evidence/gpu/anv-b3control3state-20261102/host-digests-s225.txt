@@ -1,0 +1,127 @@
+== host-digests (post-pull byte-identity verification, session 228) ==
+== the 48 logs pulled plain via scp (murakumo-ci@100.98.24.37:    ==
+== ~/anv-b3control3state-20261102/shaders/run-rd*, 333M raw,     ==
+== 42s). The canonical aggregate is computed over the sorted 48  ==
+== this-act log names (run-rd<1..4>-<c2|c8>-r<NN>.txt and        ==
+== run-rd<1..4>-<c2|c8>-r<NN>.stderr.txt, NN zero-padded; 4       ==
+== readings x (c2 r01..r03 + c8 r01..r03)) on both sides, each   ==
+== name verified to exist host-side first (missing=0).           ==
+
+== aggregate construction PINNED THREE INDEPENDENT WAYS at s199, ==
+== RE-DERIVED FRESH THIS SESSION before use:                     ==
+1. known-answer test over the 108 COMMITTED s147 logs
+   (anv-b3bisect14-20261031/run-*, plain): the same construction
+   (sha256 over the concatenation of contents in sorted name order)
+   reproduces the committed s147 local aggregate
+   8c8ef86446f8f11280c4ac020d2ff7aa1cb25c76af307777e90178c9e156b69c
+   EXACTLY (computed fresh this session); the sha256sum-line
+   construction does NOT
+   (7c52eb638a995cb5a92db0e17ac95607dc800aa93768fa4c473dea2d54df33af,
+   computed fresh this session == the s158-recorded negative
+   control, the two-space "<digest>  <basename>\n" sha256sum
+   output-line form, one line per name in sorted name order).
+2. second known-answer test through the COMMITTED s158 form
+   (anv-b3bisect15-20261101/: gz-decompressed stdout + plain 0-byte
+   stderr in sorted name order) reproduces the committed s158
+   aggregate
+   97bd3d33db2f49346a370bfd5269d8fd17da8d223d3915fc32fc7e9025116c8e
+   EXACTLY (computed fresh this session).
+3. the s225 host driver's own command (host-only, NEVER committed):
+   while read -r n; do cat "$n"; done < <names> | sha256sum -- the
+   same construction; its aggregate
+   31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f0
+   (captured verbatim in host-runs-s225.txt) is reproduced FRESH
+   host-side this session (below) and again locally over the pulled
+   tree.
+
+== live captures, verbatim: ==
+== host-side (s228, read-only murakumo-ci@) ==
+== name construction ==
+48
+ba5a06be81dcdacafae09c68e3a46659934260630cf0c19e4a7595671b69ee21  /tmp/s228-names-pull.txt
+48 names (printf %02d zero-padded), host-side existence check: missing=0
+== host-side run-log raw byte census (wc -c totals) ==
+333188873
+0
+== host-side canonical aggregate over the exact 48 names (sorted) ==
+31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f0  -
+== custody binary re-census (parent workdir) ==
+b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48  anv-bb-c2
+2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831  anv-bb-c8
+(2/2 == the s225 first-measured pins parsed from host-build-s225.txt
+AND == the s209/s169/s185/s197 first-measured digests byte-
+identically. Observations, not class claims.)
+== this-act name set verification (host, s228) ==
+48 names (printf %02d zero-padded), host-side existence check: missing=0
+host /tmp/s228-names-pull.txt sha256
+ba5a06be81dcdacafae09c68e3a46659934260630cf0c19e4a7595671b69ee21
+== host-side canonical aggregate over the exact 48 names (sorted) ==
+31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f0  -
+(== the s225 driver-tail capture in host-runs-s225.txt, re-derived
+FRESH from the host this session)
+== host-side run-log raw byte census (wc -c totals, verbatim) ==
+333188873 total   (24 stdout logs)
+0 total           (24 stderr logs)
+== local side (the pulled tree, same 48 sorted names) ==
+ba5a06be81dcdacafae09c68e3a46659934260630cf0c19e4a7595671b69ee21  names-local.txt
+local names construction file == host /tmp/s228-names-pull.txt (byte-identical, 48 lines, sha256 ba5a06be...)
+NAME SET MATCH (ls sorted == names construction)
+pulled tree name set == expected 48/48 (ls run-rd* sorted == names file)
+raw stdout bytes 333,188,873 (24 logs); 24 stderr logs 0 bytes (all)
+31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f0  -
+host == local -> MATCH (48/48 logs byte-identical)
+
+== gzip -n COMMIT FORM (the s157 capture-form deviation, executed) ==
+24 stdout logs committed as run-rd<rd>-<arm>-r<NN>.txt.gz (gzip -n,
+36,172 KiB = 36M evidence dir total incl. stderr + digests +
+pull-verify captures, du -sk tool output); 24 stderr logs stay
+plain 0-byte .stderr.txt; the raw pulled copies are REMOVED from
+the staging tree after the byte-identity check (the committed form
+is the .gz; staging dir removed after the pull-verify pair). RAW
+DIGESTS BEFORE COMPRESSION: raw-digests-s225.txt (24 lines,
+sha256 + name + raw bytes each).
+gzip fidelity re-verified after compression with explicit counts
+(pull-verify-s225.py, run twice byte-identical): raw-digest
+records: 24 / gzip fidelity: checked=24 mismatch=0; the canonical
+aggregate re-derived THROUGH THE COMMITTED FORM (gz-decompressed
+stdout in sorted name order; the 24 plain 0-byte stderr logs
+contribute zero bytes to a concatenation)
+31c0feaeef55a01a3e965fead1508babcf7e26a9aff95d369f189f9f7e2c49f0
+== the raw aggregate -> the committed form preserves the raw byte
+content exactly. Per-arm RUN-HEADER census (c2 batch=2 work_mul=1
+ndiv=1 n=1,000,003 12/12; c8 batch=8 work_mul=1 ndiv=1
+n=1,000,003 12/12; parsed from the committed logs) is in
+pull-verify-s225-run1.txt.
+
+NAMED, NOT HIDDEN:
+- The first negative-control computation attempt this session ran
+  from inside anv-b3bisect14-20261031/ while its name list carried
+  parent-relative paths (anv-b3bisect14-20261031/run-*) -- every
+  open failed 'No such file or directory' and the two printed
+  digests (97f07732..., 72c76818...) are digests of garbage line
+  sets -- NOT claimed as anything; the corrected parent-dir run is
+  the negative-control claim (7c52eb63... == the s158-recorded
+  value EXACTLY).
+- Two exploratory alternative negative-control forms were computed
+  and are NOT the recorded control: path-form lines over 108
+  (7d06ad3d220e41d840cc6d0db7e95d4d18b8c87bd05958db4e477637eb0e3388)
+  and basename lines over the 54 stdout only
+  (285633994af0b89a3c0a0241e14f41913a86556d57d7c8d4c8c67756b13addb5);
+  recorded only to keep the exploration visible.
+- The pull used one remote glob (run-rd*) whose host-side expansion
+  was first checked to be exactly the 48 names (ls run-rd* | wc -l
+  = 48, and ls sorted sha256 == the names construction file
+  ba5a06be...).
+- The staging tree (session scratch, never staged to git) held the
+  24 raw stdout copies (gzip -n consumed them in place, the .gz
+  moved to the evidence dir) and the 24 stderr copies; the whole
+  staging dir is removed after the pull-verify pair passed. No
+  evidence byte is affected.
+- No verification-script defect known at write time: pull-verify-
+  s225.py outcome is reported in pull-verify-s225-identity.txt.
+
+NO resolution-act quantity exists -- NO reading letter, NO
+sequence, NO B_act, NO act verdict computed or claimed; every
+resolution-act quantity REMAINS UNMEASURED (the analysis half is
+its own session(s) after this pull).
+(JUN-55, JUN-59; Linear tracking JUN-499)

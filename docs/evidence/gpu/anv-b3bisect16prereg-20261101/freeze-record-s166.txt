@@ -1,0 +1,155 @@
+JUN-59 session 166 -- THE SIXTEENTH CUT PRE-REGISTRATION FREEZE
+(the s166 design decisions D1-D5 in state-s166.txt; the cut-point
+reconnaissance census landed at s165 (knob-search-s164.py, run twice
+byte-identical); this file records the freeze that completes the s165
+carry-forward (b)). Named freeze-record-s166.txt per the state-s152
+NAMING rule (design artifacts carry the DECISION session's number --
+this tick both decides and freezes, so the decision session IS s166;
+the freeze stamp below is this tick's protocol.txt write time,
+honestly: NO run log of this cut exists at freeze -- run-log count in
+this directory at freeze 0). NAMED, NOT HIDDEN: s164 ran NO hardware,
+NO builds, NO compiles, NO gates (STARTED-NOT-FINISHED tick); s165 ran
+the quote-only knob census twice byte-identical (no hardware, no
+builds); s166 ran the freeze verification twice byte-identical (no
+hardware, no builds, no compiles) and the freeze -- all ticks are
+pre-registration DESIGN content only.
+
+1. WHAT IS FROZEN: docs/evidence/gpu/anv-b3bisect16prereg-20261101/
+   protocol.txt (the SIXTEENTH CUT pre-registration -- THE
+   CLEAN-BISECTION CUT AT THE FLOOR MIDPOINT (345,1354) n=254,801;
+   mid NOT re-measured; freeze stamp 2026-11-01T08:05:17Z; written
+   before any run log of this cut exists -- at freeze this directory
+   held only the s164/s165 state captures, knob-search-s164.py + its
+   run captures (2 committed runs + the named draft-1 defect pair),
+   and freeze-verify-s166.py + its two byte-identical run captures).
+   protocol.txt pin: 17,002 bytes, sha256
+   a2da5d622e0ac0a0f4422d3c76704ad5ffd1911e82d5f14226fa6b17a8345c93.
+   The frozen content, in the confrontation spec's four arms:
+
+   (a) CONTENT CONFRONTATION: FIRST the 14th cut's TOLERANCE-
+       UNRESOLVED mid content (C2 (c) at mid (248,973) n=254,882 at
+       cabff942...; all 16 block minima 992..991 and the pooled-48
+       min 1,005 IN-BAND-UNDECIDED under the tolerance rule) with
+       the frozen statement that NO letter of this cut supersedes
+       it; THEN the cut's point's committed content at n=254,801:
+       NONE -- the point is VIRGIN (STATED, not silent; knob-search
+       census: "committed content at n=254801: NONE"), so no letter
+       can supersede any committed reading AT the point (vacuous-at-
+       point) and this cut's own content would be the first.
+   (b) BLOCK-GRANULARITY FLOOR: 16 disjoint blocks of 3 runs +
+       pooled-48 alongside at this cut's NEW first-measured binary
+       (the ROUNDS6400 variant; build digests recorded by the
+       measuring session, never transcribed); single-class across
+       ALL blocks AND the pooled arm passes.
+   (c) STATISTIC CONFRONTATION, option (i) -- THE DEEP-POOLING CI
+       CLASS STATISTIC ADOPTED UNCHANGED (s166 D2/D3: NOT re-
+       derived): h_c = 3.6420 * MAD_c / sqrt(N), N = 3R = 19,200
+       per block / 48R = 307,200 per pooled-48; unit classes at the
+       FROZEN 1,000-tick threshold (CAPTURED iff all m_c - h_c >=
+       1,000; FLOOR iff all m_c + h_c <= 100; I/M iff some
+       m_c + h_c < 1,000 and some m_c - h_c > 100; IN-BAND-
+       UNDECIDED otherwise); R = 6,400 ADOPTED from the s153
+       pre-registered derivation (quoted committed evidence
+       re-verified at s166: R=3,200 h_max 2.6949 FAILS; R=6,400
+       h_max 1.9056 PASSES; binding idx 22, MAD 72.5; s147 cross-
+       check R* = 6,400 -- adoption rationale: the rule's committed
+       inputs are unchanged since s153 and n=254,801 has ZERO
+       committed round-level samples, so re-derivation is redundant
+       and no new input exists; NAMED: the point's own MADs at the
+       new binaries are UNMEASURED). Instrument variant
+       gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt at source pin
+       c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8
+       386e84e0 (re-derived at s166 by freeze-verify-s166.py
+       section 6). C2: (a) STABLE-INTERMEDIATE / (b) STABLE-
+       CAPTURED / (c) CLASS-UNRESOLVED (FAILS; L9 binds at
+       254,801) / (d) INVALID (the frozen INVALIDATION criterion:
+       > 0 VERIFY mismatches in any run -> DEFECTIVE / arm INVALID).
+   (d) CLAIM-FORM CONFRONTATION: the dual-class content (lo 254,557:
+       1,156 I/M s121 / 1,143 CAPTURED s125 / 1,141 I/M s129;
+       mid 254,882: 1,129 I/M s125 / 1,133 I/M s132 / 1,148
+       CAPTURED s136) + pooled quotes (lo 1,141 I/M / mid 1,140 C
+       s139 / mid 1,148 s147) + the cross-window disagreement at
+       cabff942... (s132 1,133 I/M / s136 1,148 C / s139 1,140 C /
+       s147 1,148 C, FOURTH window TOLERANCE-UNRESOLVED); NO letter
+       touches lo/mid; the disputed record stands as committed
+       content under ALL outcomes (cause UNMEASURED, L2). CLAIM-FORM
+       PART: the MID-ONLY NARROWING CLAIM ("THE B=3 CLASS FLIP LIES
+       ABOVE n=254,882", SUSPENDED) is REFUTED BY IMPLICATION under
+       W1 (a) (F <= 254,801 < 254,882 -- first status movement since
+       suspension, by implication only, no mid letter exists) and
+       stays SUSPENDED under W1 (b)/(c)/(d).
+
+   W1 (cut verdict): (a) C2 (b) -> bracket narrows to (254,557,
+   254,801] ("THE B=3 CLASS FLIP LIES AT OR BELOW n=254,801") +
+   claim REFUTED BY IMPLICATION; (b) C2 (a) -> bracket narrows to
+   (254,801, 255,045] ("...ABOVE n=254,801"); claim stays
+   SUSPENDED; (c) -> NOTHING MOVES, bracket stays EXACTLY (254,557,
+   255,045], claim SUSPENDED; (d) INVALID. Both stable-class
+   outcomes narrow by bisection (the D1 symmetric-narrowing
+   criterion); NAMED: both carry lo (254,557) -- dual-class on the
+   record -- as lower anchor (the anchor the 15th cut's W1 (a)
+   already accepted). ARM TABLE: c2 k=3 / fm (B=3, WM=345,
+   NDIV=1354) n=254,801 k=48 / c8 k=3 = 54 fresh processes
+   (self-check 3+48+3 = 54; knob arithmetic
+   (1,000,003*345)//1354 = 254,801, gcd 1, smallest of 31 in-box
+   pairs, 7 in-box same-ratio doubles NONE measured), ONE NEW KNOB
+   TRIPLE (the s131 ZERO-NEW-KNOB-TRIPLES precedent does NOT hold --
+   NAMED; L8 APPLIES), frozen run order c2-r01..03, fm-r01..48,
+   c8-r01..03, frozen block partition block j = runs r(3j-2..3j)
+   j=1..16 + pooled-48.
+
+2. FREEZE VERIFICATION (real tool output, this directory):
+   freeze-verify-s166.py (pure stdlib; no clock/RNG/network/
+   hardware) run TWICE byte-identical (freeze-verify-s166-run1.txt
+   == run2.txt cmp exit 0; sha256
+   b34fd9d04cd51e8c7aaa3686504f22c28bc6f9dda3af71f5080868e2fb6185c3
+   both; rc 0 both; .err 0 bytes both; 1,938-byte stdout; 25/25
+   "ok:" wants): the committed bracket re-derived from
+   publication-s158.txt bytes; the floor midpoint arithmetic
+   ((254,557+255,045)//2 = 254,801, exact 254,801.0); the fm knob
+   arithmetic + in-box enumeration RE-DERIVED INDEPENDENTLY of
+   knob-search's captures (31 pairs / smallest (345,1,354) / 7
+   in-box doubles; s27 anchor (253,255: 35/(214,845)/9) MATCH;
+   mid 254,882: 35/(248,973)/10 MATCH); knob-search run1 == run2
+   == the committed pin 49892344...; the 15th cut's landed outcome
+   (16x CAPTURED + pooled-48 CAPTURED at bis, W1 (a), bracket
+   NARROWED) parsed; the adopted R quotes and the instrument
+   variant source pin re-derived; the 14th cut's mid content parsed
+   fail-closed (knob (248,973), 16 minima == want, pooled min
+   1,005, verdict line verbatim). NAMED, NOT HIDDEN: the failure-
+   token grep 'NOT PARSED|MISMATCH|Traceback' -> 0; the 'FAIL'
+   token appears once, INSIDE the quoted s153 ladder text
+   "R=3,200 h_max 2.6949 > 2.0 FAILS" in an ok: label (a quote of
+   committed content, not a failure).
+
+3. WHAT IS NOT FROZEN / NOT DONE (s167 carries exactly this list):
+   (c) standing gates (a)-(f) with the running session's captures
+       (scoped GPU gate twice byte-identical vs pins, FULL
+       run-tests.cljk -- RED AT BASE kotoba.form ADR-0362 outside
+       this diff, NO green full suite claimed, classify --self-test,
+       bar evaluator self-test + ledger eval pair, find docs/
+       evidence/gpu -name '*.sh' -> 0, settle-bar-ledger.txt ==
+       HEAD);
+   (d) record.txt + the ADR-0355 dated note;
+   (e) standing, not queued: the sixteenth cut MEASUREMENT half (54
+       fresh processes under this frozen protocol on aiueos-6600hs
+       -- NOT queued; every sixteenth-cut quantity -- every unit
+       class, C2, W1, W2, W3, X1 -- is UNMEASURED until then and no
+       claim is made now), any further counted-day slot (the
+       2026-11-01 UTC slot needs its own freeze; the bar verdict is
+       over the FIRST four counted readings, s117 record section
+       11) and the cross-day tail-movement row (not queued).
+
+4. BAR NON-INTERFERENCE held at s164, s165 AND s166: no hardware,
+   no builds, no compiles, no GO stamp, no day-slot consumption, no
+   ledger line. RULE 4 unchanged: NOTHING MOVES -- workgroup rows
+   stay as ADR-0358 left them (:measured? true scoped to each row's
+   one named measured device for :nvidia/:apple/:intel/:amd;
+   :arm/:unknown provisional :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor); this is bisect
+   measurement-machinery DESIGN on ONE host's instrument question,
+   not a workgroup-default measurement. The pre-registration is
+   ACCEPTED DESIGN ONLY (not implemented compiler code, not a
+   measurement).
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

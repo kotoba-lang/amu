@@ -1,0 +1,74 @@
+== enumerate-s233 run-twice byte-identity (session 233) ==
+script enumerate-s233.py sha256
+096c411f627157341e10cdad581d7096ba5ab8fc6b3de1398c731ddbc7f3b8f7
+(37,786 bytes)
+run1: rc 0, stdout 86,293 bytes sha256
+bc22687b1c8e54d829e52a48cf83c5e5e6896a3a07c11cd43913152dca30147b,
+stderr 0 bytes sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+run2: rc 0, stdout 86,293 bytes sha256
+bc22687b1c8e54d829e52a48cf83c5e5e6896a3a07c11cd43913152dca30147b
+(same), stderr 0 bytes same sha256 (same).
+cmp exit 0 x2 (report pair and stderr pair byte-identical).  Report
+tail: '# enumerate s233 (enumerate-s233.py): 574 ok / 0 failed'.  The
+report is stdout (the s231/s232 shape) -- the run1/run2 .txt legs ARE
+the enumeration record.
+
+NAMED, NOT HIDDEN -- TWO defective development attempts, kept visible
+in this directory (NOT pair legs; the s229 (i) / s231 (i) / s232
+precedent shape):
+
+(i) enumerate-s233-devrun.txt / .err (46,309 / 0 bytes, sha256
+3d52db9b8a1d93cc51b80e47258e1e5aa7593160ecb4b1eac90ea3db96068ae7 /
+e3b0c442...): the run completed rc 1 with '518 ok / 7 failed' BUT the
+check labels were invisible -- the check() accumulator filled a report
+list that nothing printed (a latent shape inherited from
+enumerate-s232.py, where it went unnoticed because all 62 checks
+passed).  The reporting fix is one line (print each label as it is
+recorded) -- reporting only, NO parser, NO regex, NO value touched.
+The 7 then-invisible failures are identified in (ii).
+
+(ii) enumerate-s233-devrun2.txt / .err (79,089 / 0 bytes, sha256
+433eff7082da6f1064ab2d5dd114377ed991c5f79b33f697d393a0595b5d49dc /
+e3b0c442...): the labels-visible diagnostic run, rc 1, '518 ok / 7
+failed'.  The 7 failures were TWO VERIFIER-EXPECTATION defects against
+committed forms the s232-era definitions had not covered -- every fix
+touches the VERIFIER only, no committed publication byte changed and
+no parsed reading value changed:
+
+  (ii.a) CLASSED absence probes (S107.3/S108.3): the 'c2 value
+  NOT-CARRIED' probe treated the AGGREGATE line 'c2 pooled medians
+  min..max 31..32 (within band 31..32: True)' (a min..max over a
+  window's pooled medians -- NOT a reading at the named cell) as a
+  value line.  Fixed: the aggregate form is parsed, self-consistency
+  checked, excluded from the reading-absence probe and REPORTED as an
+  aggregate.  The c2 READING remains NOT-CARRIED for s107/s108.
+
+  (ii.b) C1LINE absence probe (S129.4/S132.4/S136.4/S139.4/S147.4):
+  the probe regex RE_ANY_C2_M ('c2 (sum,128,S=16) pooled median') did
+  not match its own check label ('zero deep-pooling m forms') -- it
+  matched the family's OWN one-line C1 form, an unconditional false
+  failure.  Fixed: the probe is the deep-pooling 'm' shape
+  ('pooled median m <N>'), exactly what the label says.
+
+  PLUS (found by the same fix pass, named here even though it was NOT
+  one of the 7 failures): the s232-era CLASSED definition called every
+  c8 value line 'own'; the committed bytes contradict that for 20 of
+  27 CLASSED sessions -- their C1 RE-DERIVATION block sources ANOTHER
+  session's window (header 'at sN' / 'from the sN ...' or preamble
+  'session-N run logs' / 'measured in session N'): s35@34 (preamble:
+  'the 84 committed session-34 run logs ... every input quantity was
+  measured in session 34'), s37@36, s40..s50@39, s77/s78/s79/s82/s87
+  @73, s107/s108@105.  Each carries its anchor window's measured c8
+  value (byte-equal cross-checked in pass 2) and is now classified and
+  reported as an ANCHOR RE-DERIVATION -- NOT a session reading -- so
+  the c8 reading census does not double-count one window's measurement
+  as many sessions' readings.
+
+THREE-STATE (the script's own report says the same): the publications'
+c2/c8 readings are the named sessions' landed MEASURED QUANTITIES
+re-parsed from committed bytes -- NOT measurements of this tick; the
+band/pct/multiset arithmetic is DERIVED; the s216 identity hazard
+stays UNDECIDED and unqueued; NO vendor optimization exists for Intel
+(or for any vendor); the accelerator-targets workgroup rows stay as
+ADR-0358 left them.

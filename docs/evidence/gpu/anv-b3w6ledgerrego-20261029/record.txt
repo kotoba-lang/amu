@@ -1,0 +1,135 @@
+JUN-59 session 97 W6 LEDGER-LINE PRE-BUILD (the W6 measurement row's
+LEDGER-PATH IMPLEMENTATION preparation half -- the s69/s90/s95/s96
+pre-build precedent applied to the settle-bar-ledger.txt line surface of
+the s80 protocol sections 1/5; NO hardware runs, NO builds, NO compiles,
+NO GO stamp, NO host writes, NO network connections, NO day-slot
+consumption, NO ledger line).  Row: the s96 carry-forward's item (a)
+(the W6 measurement half), taken to its last un-machinery'd preparation
+surface -- THE LEDGER LINE ITSELF (byte construction + the FLAGGED
+join) had NO machinery anywhere in the tree (every prior line was
+hand-composed live by its session; s96 named criterion (1) C1 a scope
+cut at its flag decision).  The measurement half REMAINS day-slot-gated
+(STARTED, NOT FINISHED): W6 runs in the first measurement session at or
+after 2026-10-30T00:00:00Z; this tick runs 2026-10-29T14:4xZ-15:0xZ,
+~9h before the slot opens.
+
+1. FINDING (verified by real tool output): ledger-prego.py (pure
+   stdlib, NO RNG, no clock; emits text -- appends NOTHING, submits
+   NOTHING to any GPU) derives the one s80 section-5 ledger line of a
+   window -- day (run-window.txt host-date= fields, single distinct
+   day; two-day windows refuse) / session / class (frozen section-4
+   threshold on hi block A's 18 pipeline-ok cells) / median (hi block
+   A's (sum,128,S=16) pooled median over the pooled 75, F3) / min (the
+   18 per-cell pooled medians' minimum) / flag -- and joins the frozen
+   FLAGGED criteria in frozen precedence: (1) C1 (b) -> c1-b,
+   (2) VERIFY mismatch > 0 -> verify-mismatch, (3) build pin not
+   byte-identical -> pin-missing, (4) custody GO missing/after builds
+   -> custody-go.  Criterion (1) is RE-DERIVED here from the run logs
+   (the frozen c2 FLOOR + c8 +/-5% of 32,915 construction) closing
+   s96's named scope cut at the join; (2) is re-derived from the run
+   logs' VERIFY totals; (3)/(4) are the s96 custody checker's surface,
+   consumed as EXPLICIT INPUTS (--pin/--go ok|flagged) -- an undecided
+   input REFUSES fail-closed (REFUSED-INPUT-UNDECIDED: this machinery
+   can never emit a qualifying line whose custody half was undecided).
+   Token spellings c1-b/verify-mismatch/pin-missing follow the frozen
+   evaluator's committed fixture vocabulary; custody-go is NAMED (no
+   fixture exists; any non-none token is FLAGGED identically).  The
+   s80 line-format grammar is checked at every emission (six k=v
+   tokens, exact key order, int median/min, class/flag vocabulary) --
+   grammar conformance only; THIS FILE COMPUTES NO BAR VERDICT
+   (settle-bar-eval.py is the only verdict source).
+
+2. VALIDATION (--compat over the NINE committed bar-executing windows
+   -- five window SHAPES: 9/9/12/42/78 runs; want values PARSED from
+   the committed settle-bar-ledger.txt bytes, never transcribed):
+   TOTAL 9 rows 0 mismatched -- every committed line re-derived
+   BYTE-EXACT from its window's committed run-log bytes (s31
+   anv-b3xday-20261028 1142/985, s32 anv-b3x1rec-20261028 1128/982,
+   s33 anv-b3repr-20261028 1124/987, s34 anv-b3minwander-20261028
+   1145/993, s36 anv-b3commonmode-20261028 1142/991, s38
+   anv-b3joint3-20261028 1132/992, s39 anv-b3joint4-20261028
+   1146/986, s51 anv-b3levelrep-20261028 1137/988, s73
+   anv-b3w5xdayrep-20261029 1131/998, all class=INTERMEDIATE/MIXED
+   flag=none) -- run twice BYTE-IDENTICAL (3,038 bytes,
+   sha256 818ac303a1127935104319f25f2225a47e110ea69c8df8db2fbcabb643a1fcbd
+   both, cmp exit 0, stderr 0 bytes).  NAMED, NOT HIDDEN: the day is
+   DERIVED from the committed run-window.txt host-date= fields at 7
+   windows (9/9/12/42/78/78/78 fields, 1 distinct day each) and
+   QUOTED from the committed ledger line for s38/s39 (committed no
+   run-window.txt -- live-only at capture); pin=ok go=ok are QUOTED
+   inputs for all nine (the committed records attest B1 qualifying and
+   the committed lines carry flag=none; re-checking custody records is
+   the s96 checker's surface, run alongside at W6).  --self-test (MOCK
+   in-memory windows are FIXTURES, never measurements; opens NO
+   committed window, touches NO filesystem): TOTAL 27 assertions
+   passed 0 failed -- clean line byte shape, every FLAGGED criterion
+   alone, the frozen precedence order at every overlap (c1-b >
+   verify-mismatch > pin-missing > custody-go), all-four-fired,
+   determinism, the fail-closed refusals (undecided pin/go, missing
+   anchor/c8 run, two-day window, missing/unparseable quoted day,
+   cell-map drift, short sample census, no ok (sum,128,S=16) cell),
+   the extra-arm shape (12-run window), grammar conformance positive
+   and negative -- run twice BYTE-IDENTICAL (2,656 bytes,
+   sha256 4d1394cf56a6d98a03c0d25c6f0f93ccd0a84736fcb5cabb27ff6b17fb49a697
+   both, cmp exit 0, stderr 0 bytes).
+
+3. GATES (real runs this tick, byte-compared to the s88 committed pins
+   in docs/evidence/gpu/anv-b3w6tailrep-20261030/):
+   (a) gpu_regime_classify.py --self-test: exit 0, TOTAL 2649
+       assertions passed 0 failed; capture == pin (17,925 bytes, cmp
+       exit 0); .err 0 bytes;
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk,
+       created, run, deleted this tick, never committed): GREEN run 1
+       AND run 2 -- "Ran 123 tests containing 12162 assertions.
+       0 failures, 0 errors."; run 1 == run 2 == the s88 pin (919
+       bytes, cmp exit 0 x3); .err 0 bytes both runs;
+   (c) FULL run-tests.cljk RUN LIVE (worktree root): exit 1, RED AT
+       BASE kotoba.form ("Could not find namespace: kotoba.form",
+       ADR-0362, outside this diff -- this session touches NO .cljk
+       namespace). Capture .err == the s88 pin (879 bytes, cmp exit
+       0). NO green full suite is claimed;
+   (d) settle-bar evaluator (frozen): --self-test exit 0, TOTAL 38
+       assertions passed 0 failed, capture == pin (3,590 bytes, cmp
+       exit 0); ledger eval twice, exit 0, run 1 == run 2 == the s88
+       pin (823 bytes) -> VERDICT: PENDING 2/4 unchanged (counted
+       day=2026-10-28 session=s31; counted day=2026-10-29 session=s73);
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files;
+   (f) settle-bar-ledger.txt byte-identical to HEAD (git diff empty --
+       verified this tick).
+
+4. THE BAR: preparation session -> NO hardware runs -> NO reading -> NO
+   settle-bar-ledger line, NO day-slot consumption.  The bar stays
+   PENDING 2/4.  Nothing this UTC day can advance the bar (2026-10-29
+   is CONSUMED by s73 -- settle-bar.txt section 2).
+
+5. UNMEASURED (named): the W6 window itself (day-slot-gated to the
+   2026-10-30 UTC slot, opening 2026-10-30T00:00:00Z); the W6 line's
+   live host-date/pin/go inputs (the W6 records do not exist); every
+   T18/T20/W7 quantity (all gate behind W6's ledger line); NO vendor
+   optimization exists for Intel (or for any vendor).  RULE 4
+   unchanged: NOTHING MOVES -- the accelerator-targets workgroup rows
+   stay exactly as ADR-0358 left them; this machinery is ledger-text
+   construction, not a device measurement.
+
+6. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head,
+   checked immediately before this push (chain PR #1665 is the one
+   open chain PR).
+
+7. ADOPTION CONTRACT (named): the frozen route names no ledger-writer
+   filename; the W6 session adopts this file as ledger-s<NN>.py (the
+   name-gated --emit path: emits the ONE line, never appends -- the
+   append to the tracked ledger is the session's act AFTER the standing
+   gate set verifies, s80 section 5), re-runs --compat in its own
+   record, and wires the custody checker's flag decision (criteria
+   3/4) plus the reading pair's C1 row (criterion 1, cross-checked by
+   this file's own re-derivation) into the line; the W7 session does
+   the same.
+
+8. CARRY-FORWARD to session 98: the W6 measurement half (the s80
+   freeze; the W6 session adopts s90's reading pair, s91's custody
+   baseline, s95's run-window driver, s96's custody checker and this
+   ledger-line emitter) -- the gate for the T18 analysis half (s92
+   pre-build + s84 freeze bind), the T20 analysis half (s93 pre-build
+   + s88 freeze bind) and the W7 measurement half (s85 freeze; behind
+   W6's ledger line) --, then any further counted-day slot (its own
+   freeze) and a cross-day tail-movement row (not queued).

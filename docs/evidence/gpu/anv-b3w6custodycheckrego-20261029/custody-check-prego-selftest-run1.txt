@@ -1,0 +1,70 @@
+JUN-59 custody-prego --self-test (MOCK FIXTURES, NEVER MEASUREMENTS; this mode reads NO committed window)
+ok 1: clean: flag is none
+ok 2: clean: every row OK
+ok 3: clean: row count 27 (the eight named surfaces' 26 checks + flag)
+ok 4: determinism: rows byte-equal across calls
+ok 5: determinism: flag stable
+ok 6: host= flip: match-local-eq-host MISMATCH
+ok 7: host= flip: flag REFUSED-RECORD-INCONSISTENT
+ok 8: dropped MATCH line: match-lines-3 MISMATCH
+ok 9: dropped MATCH line: flag REFUSED-RECORD-INCONSISTENT
+ok 10: bad local= digest: match-local-eq-artifact MISMATCH
+ok 11: 23 cell lines: manifest-cell-count MISMATCH
+ok 12: 23 cell lines: manifest-cells-digest-chain MISMATCH
+ok 13: tampered cell line: cells digest MISMATCH (count still 24)
+ok 14: 15/16 corpus: corpus-ok-16 MISMATCH
+ok 15: s36 per-file shape: corpus-ok-16 OK
+ok 16: corpus_rc=1: corpus-rc MISMATCH
+ok 17: summary line absent: custody-summary-line MISMATCH
+ok 18: GO absent: go-stamp MISMATCH
+ok 19: GO absent: flag custody-go-missing (frozen criterion 4)
+ok 20: GO after builds: go-not-after-builds gt
+ok 21: GO after builds: flag custody-go-after-builds (frozen criterion 4)
+ok 22: GO == earliest build second: le (second granularity, named)
+ok 23: GO == earliest build second: NOT flagged
+ok 24: first run before builds: builds-before-first-run gt
+ok 25: first run before builds: flag REFUSED-RECORD-INCONSISTENT (not a frozen criterion)
+ok 26: GO after first run: go-before-all-runs ge
+ok 27: 3 build lines: build-lines MISMATCH
+ok 28: wrong hi knobs: build-knobs MISMATCH
+ok 29: tw rc=1: build-rc MISMATCH
+ok 30: build stderr total 1: build-stderr-total MISMATCH
+ok 31: c2 digest off pin: pin-c2 MISMATCH
+ok 32: c2 digest off pin: flag build-pin-not-byte-identical (frozen criterion 3)
+ok 33: hi digest line absent: pin-hi MISMATCH
+ok 34: pins line 3/4: pins-verdict-line MISMATCH
+ok 35: pins line absent: pins-verdict-line MISMATCH
+ok 36: 77 runs: run-count MISMATCH
+ok 37: 1848 VERIFY lines: verify-lines MISMATCH
+ok 38: verify mismatch 3: verify-mismatch-total MISMATCH
+ok 39: verify mismatch 3: flag verify-mismatch (frozen criterion 2)
+ok 40: verify + pin both bad: verify-mismatch wins (frozen order)
+ok 41: pin + GO both bad: build-pin-not-byte-identical wins (frozen order)
+ok 42: GO + record-shape both bad: custody-go-missing wins (frozen criteria before checker-level refusal)
+ok 43: map clean: flag none pin ok go ok
+ok 44: map clean: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 45: map verify-mismatch: flag verify-mismatch pin ok go ok
+ok 46: map verify-mismatch: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 47: map pin c2 bad: flag build-pin-not-byte-identical pin flagged go ok
+ok 48: map pin c2 bad: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 49: map GO missing: flag custody-go-missing pin ok go flagged
+ok 50: map GO missing: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 51: map GO after builds: flag custody-go-after-builds pin ok go flagged
+ok 52: map GO after builds: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 53: map masked verify+pin: flag verify-mismatch pin flagged go ok
+ok 54: map masked verify+pin: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 55: map run-count 77: flag REFUSED-RECORD-INCONSISTENT pin UNDECIDED go UNDECIDED
+ok 56: map run-count 77: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 57: map census 3/4: flag REFUSED-RECORD-INCONSISTENT pin UNDECIDED go UNDECIDED
+ok 58: map census 3/4: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 59: map 3 builds (c8 digest absent: criterion (3) fires): flag build-pin-not-byte-identical pin flagged go ok
+ok 60: map 3 builds (c8 digest absent: criterion (3) fires): UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 61: map build-knobs 3/4 clean pins: flag REFUSED-RECORD-INCONSISTENT pin UNDECIDED go UNDECIDED
+ok 62: map build-knobs 3/4 clean pins: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 63: map verify + run-count 77: flag verify-mismatch pin ok go ok
+ok 64: map verify + run-count 77: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 65: map GO missing + run-count 77: flag custody-go-missing pin ok go flagged
+ok 66: map GO missing + run-count 77: UNDECIDED iff checker flag is REFUSED-RECORD-INCONSISTENT
+ok 67: map REFUSED note names the failing rows and the fail-closed consequence
+ok 68: map masked-flag note reports every criteria row unmasked
+TOTAL 68 assertions passed 0 failed

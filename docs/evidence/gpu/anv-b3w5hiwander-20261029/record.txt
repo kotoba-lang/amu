@@ -1,0 +1,175 @@
+JUN-59 session 77 record (ONE-TICK LAND, ANALYSIS slice):
+THE T14 HI-WANDER ANALYSIS HALF (the s64-frozen pre-registered
+row taken to its ANALYSIS half -- the first session with the
+committed W5 logs; protocol.txt of THIS directory is the
+contract; chain branch bot/amu-gpu-chain-20261028-4, chain PR
+#1665, the ONE open chain PR -- commit + push only).
+
+1. WHAT THIS SESSION IS: the ANALYSIS half of the s64-frozen T14
+   row (the s57 carry-forward queue's second named candidate --
+   the only route from one uncorrected (b) to a letter that
+   survives multiplicity). NO hardware runs, NO builds, NO
+   compiles, NO GO stamp, NO day-slot consumption: the analysis
+   parses COMMITTED logs only, and per protocol section 5 NO
+   reading -> NO settle-bar-ledger line (settle-bar-ledger.txt
+   byte-identical to HEAD -- git diff empty, verified this tick).
+
+2. T14 THE ROW ANSWER (real tool output; publication-s77.txt run
+   twice byte-identical):
+   T14 = (b) NOT-REPLICATED [ABOVE-NULL-MEDIAN-NOT-SIGNIFICANT]
+   The NAMED cell (sum,256,S=32) (ok-map cell 10, raw idx 14) at
+   the NAMED (window, arm) (s73 W5, hi): the 12 block pooled
+   medians V = 1102 1090 1120 1093 1092 1143 1117 1109 1131 1094
+   1162 1115 (the exact 38th order statistic of each block's 75;
+   INTEGER); W_obs = max V - min V = 72 ticks. The frozen
+   within-window run-repartition null (ONE random.Random(2026102814),
+   20,000 trials, one fresh-list rng.shuffle of list(range(36))
+   per trial; the D1/D2 statistics share the SAME repartition):
+   count 3019 / 20,001; p = 0.150992 (ONE-SIDED upper); the null
+   median of the 20,000 W* values = 61.0. W_obs (72) is ABOVE the
+   null median (61.0) but NOT significant at the pre-registered
+   0.05 -- the s38-hi s45 (b) wander-excess does NOT replicate on
+   this pre-registered single-cell test at W5. INTERPRETATION
+   LIMITS (frozen, unchanged): a (b) is NOT evidence of no
+   per-cell structure; n=12 blocks, ONE window, ONE host, ONE
+   cell; the wander is a tail-to-tail RANGE statistic, NOT a
+   scale estimate; NO causal mechanism is named (a) or (b);
+   threshold-artifact-vs-representation STAYS UNRESOLVED.
+
+3. THE D-FAMILY (protocol section 4 -- descriptive only, NO
+   letter under this freeze): D1 the 18-cell wander scoreboard at
+   (s73, hi) (named cell W 72, marginal count 3019, p 0.150992;
+   the largest W is (max,256,S=32) W 82, p 0.114444; full table in
+   publication-s77.txt section 5); D2 the s45-letter-construction
+   max-T at (s73, hi): M_obs = 82 (max cell(s) (max,256,S=32)),
+   count 3097 / 20,001, p = 0.154892 -- DESCRIPTIVE ONLY, it NEVER
+   carries a letter under this freeze (protocol section 0); D3 the
+   named cell beside its QUOTE-ONLY s45 priors (NOT recomputed):
+   W s73 hi 72 (V 1090..1162) vs s38 hi 84 (1082..1166) / s36 hi
+   43 (1108..1151) / s39 hi 38 (1105..1143); marginal p 0.150992
+   vs 0.035348 / 0.764662 / 0.995500.
+
+4. INTEGRITY / EVALUABILITY (protocol section 3 -- all satisfied,
+   no invalidation, the letter is evaluable): five windows x 78
+   runs parsed (390 committed logs); VERIFY mismatch total 0 in
+   every window; 450 SAMPLE + 24 VERIFY per run; every SAMPLE's
+   knobs == its arm table (c2 2/1/1, hi 3/1024/4033, tw
+   3/2048/8066, c8 8/1/1); S=8 fail-closed cells ok in every run;
+   the cell map is identical across all 390 logs and the named
+   cell is present as ok-map cell 10 (raw idx 14 == (sum,256,S=32));
+   the eight block-min vectors of the four PRIOR windows reproduce
+   the published vectors EXACTLY (8/8); the anchor reproduction
+   rows reproduce the quote-only/published anchor priors EXACTLY
+   at the four PRIOR windows (4/4; this row computes NO anchor at
+   W5 -- the W5 anchor is the xdayrep row's D4); C1 re-derived at
+   the W5 window: c2 FLOOR (all 18 pooled medians <= 100), c8
+   (sum,128,S=16) pooled median 32709 vs committed 32915 (0.63%
+   delta, +/-5% required) -> C1 branch (a) both controls
+   replicate.
+
+5. DOUBLE-RUNS (real tool output; /usr/local/bin/python3, numpy
+   2.5.4):
+   (a) analysis-s77.py: run 1 (5.5s) -> publication-s77.txt
+       (9,491 bytes), pinned to scratch/pub-s77-run1-pin.txt;
+       run 2 (5.2s) rewrote it at completion; cmp exit 0; sha256
+       f49d51f0c9a966a989b0f7d4eb37de49c3e0e0055244ec4f2b279fa61c
+       af590c for BOTH; stdout/stderr 0 bytes both runs. The
+       protocol-section-6 "publication-s<NN>.txt run twice, diff
+       exit 0" claim is VERIFIED.
+   (b) derivation-census-s77.py -- the INDEPENDENT second parser
+       for publication-s77.txt (protocol section 6 implementation
+       paths: split-based parsing, no re module; observed block
+       pooled medians pure-Python sorted()[37], cross-checked
+       in-loop against the np.partition kth=37 path; the
+       resampling's estimators via the np.partition kth=37 path,
+       NOT np.median -- analysis-s77.py used np.median; the
+       repartition resampling and the RNG call order
+       re-implemented: ONE random.Random(2026102814), 20,000
+       trials, one fresh-list rng.shuffle per trial): run 1 (5.2s)
+       -> derivation-census-s77.txt (9,041 bytes); run 2 rewrote
+       it; BOTH runs "TOTAL: 57 rows, 0 mismatched | B: 0 | C: 0",
+       exit 0; cmp exit 0; sha256
+       5fa5633aeddf9bdb9e6b8ee6328ae6bb8edc6bcea39c90f502c73d2e40
+       5d5cf7 for BOTH. Every published integer, count, p and
+       letter of publication-s77.txt cross-checks against the
+       independent parser's re-derivation from the 390 committed
+       logs (57 rows), INCLUDING the RNG rows (primary count 3019
+       p 0.150992; the 18 D1 marginal rows; D2 3097 p 0.154892;
+       null median 61.0; BOTH T14 letter rows). Section B: 216
+       observed block-median cross-checks, 0 mismatched. Section
+       C: evidence .sh count 0; W5 run-window 78 host-dates all
+       2026-10-29; ledger reading-line count 9; ledger session=s77
+       line count 0 (this row writes NO line -- protocol section
+       5). A CENSUS_SMOKE=1 plumbing run (TRIALS=20) mismatched
+       exactly 22 rows, all of them RNG count/p rows (sec4/sec5/
+       sec6/sec7/sec8), and nothing else (smoke output is never
+       the committed census).
+
+6. GATES (the standing gate set carried from s76 + protocol
+   section 6 route; real runs this tick):
+   (a) gpu_regime_classify.py --self-test: exit 0, "TOTAL: 2649
+       assertions passed, 0 failed", capture BYTE-IDENTICAL to
+       the s74 pin (cmp exit 0).
+   (b) scoped GPU gate (scratch runner scratch/scoped-gpu-gate.cljk
+       -- the eight GPU-owned test namespaces of run-tests.cljk,
+       same engine and classpath; created, run, deleted this tick,
+       never committed): GREEN run 1 AND run 2 -- "Ran 123 tests
+       containing 12162 assertions. 0 failures, 0 errors."; run 1
+       == run 2 == the s74 pin (cmp exit 0 both, 919 bytes);
+       stderr 0 bytes both runs.
+   (c) FULL run-tests.cljk RUN LIVE (kbb --backend sci --classpath
+       "src:test:$(kbb -Spath -M:test)" run-tests.cljk, worktree
+       root): exit 1, RED AT BASE kotoba.form ("Could not find
+       namespace: kotoba.form", ADR-0362, outside this diff --
+       this session touches NO .cljk namespace). Capture .err 879
+       bytes BYTE-IDENTICAL to the s64 pin in this directory (cmp
+       exit 0); stdout content 0 bytes == the pin. NO green full
+       suite is claimed.
+   (d) settle-bar evaluator (anv-b3settlebar-20261027/
+       settle-bar-eval.py, frozen): --self-test exit 0, "TOTAL:
+       38 assertions passed, 0 failed", capture 3,590 bytes
+       BYTE-IDENTICAL to the s75 pin; ledger eval twice, exit 0,
+       run1 == run2 == the s75 post-line pin (823 bytes) ->
+       VERDICT: PENDING 2/4 (counted day=2026-10-28 session=s31;
+       counted day=2026-10-29 session=s73) unchanged. The frozen
+       evaluator is the ONLY source of the bar verdict; no verdict
+       beyond its output is claimed anywhere.
+   (e) find docs/evidence/gpu -name '*.sh' -> 0 files (no POSIX
+       shell execution files, ever).
+
+7. THE BAR (protocol section 5): NO hardware runs at this ANALYSIS
+   session -> NO reading -> NO settle-bar-ledger line, NO day-slot
+   consumption (settle-bar-ledger.txt byte-identical to HEAD --
+   git diff empty, verified this tick). The bar stays PENDING 2/4
+   and settles nothing.
+
+8. RULE 4 unchanged: NOTHING MOVES -- accelerator-targets defaults
+   remain provisional (:measured? false); NO vendor optimization
+   exists for Intel. This row's letter is about per-cell wander of
+   committed ANV-host measurements; it replaces no workgroup
+   default and moves nothing.
+
+9. WHAT CHANGED (this commit): this directory gains
+   analysis-s77.py, publication-s77.txt, derivation-census-s77.py,
+   derivation-census-s77.txt, record.txt (this file) and the s77
+   gate captures (gate-s77-run1/2.txt/.err, gate-s77-full.out/.err,
+   bar-s77-selftest.txt, bar-s77-eval-run1/2.txt); plus the
+   ADR-0355 dated note (this session's step). The chain commit
+   cites JUN-55/JUN-59 (Linear tracking JUN-499).
+
+10. NOT DONE (carry-forward to session 78, named):
+   (a) the s65 T15 quantile-pair level axes ANALYSIS half
+       (anv-b3w5qpairevel-20261029/protocol.txt -- its own
+       analysis-s<NN>.py + derivation census + gates);
+   (b) the s66 T16 second-pair profile axis ANALYSIS half
+       (anv-b3w5pair2profile-20261029/protocol.txt);
+   (c) the standing gate set runs with each such tick.
+
+Evidence: docs/evidence/gpu/anv-b3w5hiwander-20261029/ (this
+file, protocol.txt, freeze-record-s64.txt, analysis-s77.py,
+publication-s77.txt -- run 2 byte-identical to run 1,
+derivation-census-s77.py, derivation-census-s77.txt -- run 2
+byte-identical to run 1, and the s77 gate captures) + the s77
+pins in scratch/ (untracked: pub-s77-run1-pin.txt,
+census-s77-run1-pin.txt, census-s77-smoke.txt, the run
+stdout/stderr captures). (JUN-55, JUN-59; Linear tracking JUN-499)

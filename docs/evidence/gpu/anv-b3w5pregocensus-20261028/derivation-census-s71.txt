@@ -1,0 +1,88 @@
+JUN-59 session 71 derivation census -- INDEPENDENT second-parser
+TWIN for the s69 W5 analysis pre-build's s51-compat validation
+(the 44 rows of anv-b3w5prego-20261028/compat-s51-validation.txt;
+three-way rows: published = publication-s51.txt parsed
+find/split, prego = the report's got column, census =
+recomputed here from the committed run logs; split-based
+parsing, no re module, no numpy; pure-Python sorted() order
+statistics from ONE shared sort per pooled 75 (MAD =
+sorted(|x - sorted(pooled75)[37]|)[37]; IQR =
+sorted(pooled75)[56] - sorted(pooled75)[18]); independent
+pure-Python shuffle loop re-implementing the frozen RNG
+contract random.Random(20261028) consumed in the frozen probe
+order primary MAD / primary IQR / D MAD-hi / D MAD-tw /
+D IQR-hi / D IQR-tw, 20000 trials per probe, one fresh-list
+rng.shuffle per trial). Four prior windows only -- NO W5
+quantity is computed anywhere in this script.
+
+row 01: sec1 s36 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | prego [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 02: sec1 s38 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | prego [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 03: sec1 s39 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | prego [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 04: sec1 s51 integrity: published [runs 78 vmis 0 counts True knobs True s8 True cmap True] | prego [runs 78 vmis 0 counts True knobs True s8 True cmap True] | census [runs 78 vmis 0 counts True knobs True s8 True cmap True] | match True
+row 05: sec2 c2 class: published [FLOOR] | prego [FLOOR] | census [FLOOR] | match True
+row 06: sec2 c8 pooled median: published [32890] | prego [32890] | census [32890] | match True
+row 07: sec3 s36 X (hi): published [991 989 981 998 993 985 984 997 994 994 980 982] | prego [991 989 981 998 993 985 984 997 994 994 980 982] | census [991 989 981 998 993 985 984 997 994 994 980 982] | match True
+row 08: sec3 s36 Y (tw): published [988 985 994 993 994 995 992 984 987 984 993 981] | prego [988 985 994 993 994 995 992 984 987 984 993 981] | census [988 985 994 993 994 995 992 984 987 984 993 981] | match True
+row 09: sec3 s38 X (hi): published [992 988 984 1007 985 984 986 983 992 991 982 997] | prego [992 988 984 1007 985 984 986 983 992 991 982 997] | census [992 988 984 1007 985 984 986 983 992 991 982 997] | match True
+row 10: sec3 s38 Y (tw): published [988 987 980 980 991 994 991 994 988 991 1001 992] | prego [988 987 980 980 991 994 991 994 988 991 1001 992] | census [988 987 980 980 991 994 991 994 988 991 1001 992] | match True
+row 11: sec3 s39 X (hi): published [986 991 984 985 989 989 986 990 995 986 987 981] | prego [986 991 984 985 989 989 986 990 995 986 987 981] | census [986 991 984 985 989 989 986 990 995 986 987 981] | match True
+row 12: sec3 s39 Y (tw): published [988 989 987 990 990 988 991 983 985 988 983 986] | prego [988 989 987 990 990 988 991 983 985 988 983 986] | census [988 989 987 990 990 988 991 983 985 988 983 986] | match True
+row 13: sec3 s51 X (hi): published [988 986 1000 986 989 983 995 983 994 991 984 985] | prego [988 986 1000 986 989 983 995 983 994 991 984 985] | census [988 986 1000 986 989 983 995 983 994 991 984 985] | match True
+row 14: sec3 s51 Y (tw): published [980 975 991 979 986 986 992 991 988 993 995 996] | prego [980 975 991 979 986 986 992 991 988 993 995 996] | census [980 975 991 979 986 986 992 991 988 993 995 996] | match True
+row 15: sec3 prior vector reproduction: published [True] | prego [True] | census [True] | match True
+row 16: sec3b s36 anchor: published [1142 991..1438] | prego [1142 991..1438] | census [1142 991..1438] | match True
+row 17: sec3b s38 anchor: published [1132 992..1443] | prego [1132 992..1443] | census [1132 992..1443] | match True
+row 18: sec3b s39 anchor: published [1146 986..1432] | prego [1146 986..1432] | census [1146 986..1432] | match True
+row 19: sec3b s51 anchor (fresh): published [1137 988..1430 INTERMEDIATE/MIXED] | prego [1137 988..1430 INTERMEDIATE/MIXED] | census [1137 988..1430 INTERMEDIATE/MIXED] | match True
+row 20: sec4 T1 MAD: published [143 118 C 12.5 count 99 p 0.005000] | prego [143 118 C 12.5 count 99 p 0.005000] | census [143 118 C 12.5 count 99 p 0.005000] | match True
+row 21: sec4 T1 IQR: published [303 240 C 31.5 count 9 p 0.000500] | prego [303 240 C 31.5 count 9 p 0.000500] | census [303 240 C 31.5 count 9 p 0.000500] | match True
+row 22: sec4 T1 joint: published [(a) REPLICATED-ON-BOTH-LEVEL-AXES] | prego [(a) REPLICATED-ON-BOTH-LEVEL-AXES] | census [(a) REPLICATED-ON-BOTH-LEVEL-AXES] | match True
+row 23: sec6 D2 (sum,128,S=16): published [MAD 59/58 C 0.5 IQR 151/130 C 10.5] | prego [MAD 59/58 C 0.5 IQR 151/130 C 10.5] | census [MAD 59/58 C 0.5 IQR 151/130 C 10.5] | match True
+row 24: sec6 D2 (sum,128,S=32): published [MAD 121/114 C 3.5 IQR 264/253 C 5.5] | prego [MAD 121/114 C 3.5 IQR 264/253 C 5.5] | census [MAD 121/114 C 3.5 IQR 264/253 C 5.5] | match True
+row 25: sec6 D2 (sum,128,S=default): published [MAD 113/117 C -2.0 IQR 235/240 C -2.5] | prego [MAD 113/117 C -2.0 IQR 235/240 C -2.5] | census [MAD 113/117 C -2.0 IQR 235/240 C -2.5] | match True
+row 26: sec6 D2 (max,128,S=16): published [MAD 55/60 C -2.5 IQR 146/147 C -0.5] | prego [MAD 55/60 C -2.5 IQR 146/147 C -0.5] | census [MAD 55/60 C -2.5 IQR 146/147 C -0.5] | match True
+row 27: sec6 D2 (max,128,S=32): published [MAD 110/121 C -5.5 IQR 232/255 C -11.5] | prego [MAD 110/121 C -5.5 IQR 232/255 C -11.5] | census [MAD 110/121 C -5.5 IQR 232/255 C -11.5] | match True
+row 28: sec6 D2 (max,128,S=default): published [MAD 143/118 C 12.5 IQR 303/240 C 31.5] | prego [MAD 143/118 C 12.5 IQR 303/240 C 31.5] | census [MAD 143/118 C 12.5 IQR 303/240 C 31.5] | match True
+row 29: sec6 D2 (min,128,S=16): published [MAD 60/60 C 0.0 IQR 145/158 C -6.5] | prego [MAD 60/60 C 0.0 IQR 145/158 C -6.5] | census [MAD 60/60 C 0.0 IQR 145/158 C -6.5] | match True
+row 30: sec6 D2 (min,128,S=32): published [MAD 124/120 C 2.0 IQR 272/259 C 6.5] | prego [MAD 124/120 C 2.0 IQR 272/259 C 6.5] | census [MAD 124/120 C 2.0 IQR 272/259 C 6.5] | match True
+row 31: sec6 D2 (min,128,S=default): published [MAD 113/123 C -5.0 IQR 248/248 C 0.0] | prego [MAD 113/123 C -5.0 IQR 248/248 C 0.0] | census [MAD 113/123 C -5.0 IQR 248/248 C 0.0] | match True
+row 32: sec6 D2 (sum,256,S=16): published [MAD 74/74 C 0.0 IQR 304/308 C -2.0] | prego [MAD 74/74 C 0.0 IQR 304/308 C -2.0] | census [MAD 74/74 C 0.0 IQR 304/308 C -2.0] | match True
+row 33: sec6 D2 (sum,256,S=32): published [MAD 135/128 C 3.5 IQR 276/264 C 6.0] | prego [MAD 135/128 C 3.5 IQR 276/264 C 6.0] | census [MAD 135/128 C 3.5 IQR 276/264 C 6.0] | match True
+row 34: sec6 D2 (sum,256,S=default): published [MAD 124/130 C -3.0 IQR 257/261 C -2.0] | prego [MAD 124/130 C -3.0 IQR 257/261 C -2.0] | census [MAD 124/130 C -3.0 IQR 257/261 C -2.0] | match True
+row 35: sec6 D2 (max,256,S=16): published [MAD 70/65 C 2.5 IQR 307/261 C 23.0] | prego [MAD 70/65 C 2.5 IQR 307/261 C 23.0] | census [MAD 70/65 C 2.5 IQR 307/261 C 23.0] | match True
+row 36: sec6 D2 (max,256,S=32): published [MAD 130/128 C 1.0 IQR 265/264 C 0.5] | prego [MAD 130/128 C 1.0 IQR 265/264 C 0.5] | census [MAD 130/128 C 1.0 IQR 265/264 C 0.5] | match True
+row 37: sec6 D2 (max,256,S=default): published [MAD 121/133 C -6.0 IQR 263/267 C -2.0] | prego [MAD 121/133 C -6.0 IQR 263/267 C -2.0] | census [MAD 121/133 C -6.0 IQR 263/267 C -2.0] | match True
+row 38: sec6 D2 (min,256,S=16): published [MAD 73/70 C 1.5 IQR 263/297 C -17.0] | prego [MAD 73/70 C 1.5 IQR 263/297 C -17.0] | census [MAD 73/70 C 1.5 IQR 263/297 C -17.0] | match True
+row 39: sec6 D2 (min,256,S=32): published [MAD 133/138 C -2.5 IQR 274/282 C -4.0] | prego [MAD 133/138 C -2.5 IQR 274/282 C -4.0] | census [MAD 133/138 C -2.5 IQR 274/282 C -4.0] | match True
+row 40: sec6 D2 (min,256,S=default): published [MAD 140/132 C 4.0 IQR 298/277 C 10.5] | prego [MAD 140/132 C 4.0 IQR 298/277 C 10.5] | census [MAD 140/132 C 4.0 IQR 298/277 C 10.5] | match True
+row 41: sec6 D3 MAD-hi: published [M_obs 13.0 cells (min,256,S=16) count 2844 p 0.142243] | prego [M_obs 13.0 cells (min,256,S=16) count 2844 p 0.142243] | census [M_obs 13.0 cells (min,256,S=16) count 2844 p 0.142243] | match True
+row 42: sec6 D3 MAD-tw: published [M_obs 16.0 cells (max,128,S=default) count 367 p 0.018399] | prego [M_obs 16.0 cells (max,128,S=default) count 367 p 0.018399] | census [M_obs 16.0 cells (max,128,S=default) count 367 p 0.018399] | match True
+row 43: sec6 D3 IQR-hi: published [M_obs 35.5 cells (min,256,S=16) count 3657 p 0.182891] | prego [M_obs 35.5 cells (min,256,S=16) count 3657 p 0.182891] | census [M_obs 35.5 cells (min,256,S=16) count 3657 p 0.182891] | match True
+row 44: sec6 D3 IQR-tw: published [M_obs 34.0 cells (max,128,S=default) count 12283 p 0.614169] | prego [M_obs 34.0 cells (max,128,S=default) count 12283 p 0.614169] | census [M_obs 34.0 cells (max,128,S=default) count 12283 p 0.614169] | match True
+
+TOTAL: 44 rows, 0 mismatched
+
+SECTION B -- published D1 content NOT covered by the prego
+report's rows (NAMED, NOT HIDDEN: the prego's D1 regex is
+single-line while publication-s51.txt's D1 text wraps across
+two lines, so that loop matched 0 rows and the 44-row report
+contains no D1 row; the D1 level vectors and the
+pair-interval flag are re-derived here against the published
+text -- the published flag uses the CLOSED INTERVAL SPANNED BY
+{L_s38, L_s39}, whose endpoints exclude L_s51):
+sec6 D1 MAD: published [143/111/113/118 repro True inpair False] | prego [(no prego row)] | census [143/111/113/118 repro True inpair False] | match True
+sec6 D1 IQR: published [303/241/235/240 repro True inpair True] | prego [(no prego row)] | census [303/241/235/240 repro True inpair True] | match True
+
+TOTAL: 2 rows, 0 mismatched
+
+SECTION C -- evidence hygiene:
+evidence .sh count: want [0] got [0] | match True
+ledger reading-line count: want [8] got [8] | match True
+ledger has no s71 line: want [False] got [False] | match True
+prego report TOTAL line: want [TOTAL: 44 rows, 0 failed] got [TOTAL: 44 rows, 0 failed] | match True
+
+TOTAL: 4 checks, 0 mismatched
+
+DETERMINISM: this generator run twice yields byte-identical
+output (double-run status named in the s71 record; RNG seeded,
+no set iteration).

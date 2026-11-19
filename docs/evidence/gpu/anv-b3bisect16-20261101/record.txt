@@ -1,0 +1,237 @@
+2026-11-01 (sessions 169-175, JUN-59 -- THE SIXTEENTH CUT
+MEASUREMENT + ANALYSIS + LANDING: the MEASUREMENT half at
+s169-s171, the ANALYSIS half at s172-s173, the landing gates at
+s174, and this record at s175 -- the s168 carry-forward (a) and
+the s173 landing tail)
+== THE CLEAN-BISECTION CUT AT THE FLOOR MIDPOINT (345, 1,354)
+n=254,801, MEASURED UNDER THE FROZEN PROTOCOL -- CUT VERDICT:
+INVALID; NOTHING MOVES ==
+
+ROW: (s169) the measurement half LAUNCHED on aiueos-6600hs under
+the frozen anv-b3bisect16prereg-20261101/protocol.txt (freeze
+stamp 2026-11-01T08:05:17Z) and cut off at a runtime-budget
+cutoff mid-window after GO + 3 clean builds + 3 clean control
+runs (STARTED, NOT FINISHED -- state-s169.txt); (s170) the run
+window polled to 54/54 completion + the driver aggregate tail +
+the post-window binary re-census; (s171) the 108-log pull with
+host==local byte-identity, the gzip -n commit form and the
+derivation/build census; (s172) analysis-s169.py authored +
+lint-clean, STARTED, NOT FINISHED at a cutoff before any run;
+(s173) analysis-s169.py run TWICE BYTE-IDENTICAL ->
+publication-s169.txt + the frozen letters; (s174) the standing
+gates (a)-(f) run LIVE with s174 captures, all == pins; (s175,
+this record) record-verify-s175.py run TWICE BYTE-IDENTICAL over
+the committed captures of sessions 169-174, the ADR-0355 dated
+note and the landing tail.
+
+1. THE MEASUREMENT HALF (sessions 169-171, real tool output, this
+   directory): custody re-verified fresh before staging (instrument
+   gpu-subgroup-reduce-anv-ndiv-rounds6400.c.txt sha256
+   c2704aaa... == the s153 variant pin, one-line diff vs the
+   a5e539f0... base EXACTLY line 81 '#define ROUNDS 25' ->
+   '#define ROUNDS 6400'; expected-corpus.sha256 eefba52e... ==
+   pin; cases-s169-a.txt abd09ab1... == host pin; the 24 cell
+   lines' block sha256 873025d6... == the s25/s27 pin; knob
+   arithmetic (1,000,003*345)//1354 = 254,801 == n, gcd(345,1,354
+   spelled 1354) = 1; run-count self-check 3+48+3 = 54). GO
+   2026-11-01T09:31:52Z; 3/3 builds rc=0 stderr 0 bytes x3; the
+   FIRST-MEASURED BINARY PINS (parsed from the build capture,
+   never transcribed; this cut's binaries are NEW):
+     anv-bb-c2  b791b71a73671f2ed0882d1376d13294ece40b64320db828c94985959e734c48
+     anv-bb-fm  8c568de523418f0042b30023eb01d6a083c9e1819f0c1dfa7f7edde15479c1a8
+     anv-bb-c8  2f25d678d6958b6fbbe0125492eab1b0e8fb67412d1cb379d7c6401c35617831
+   (fm is the ONE NEW KNOB TRIPLE (B=3, WM=345, NDIV=1,354), the
+   s166 NAMED L8 combination-risk class; the post-window re-census
+   is BYTE-IDENTICAL 3/3 at s170 and again at s171). The frozen-
+   order 54-process window (c2-r01..03, fm-r01..48, c8-r01..03)
+   ran to COMPLETION 09:33:39Z..10:28:42Z, ALL 54 runs clean
+   (run_rc=0, stderr 0 bytes, samples 115,200 = 18 pipeline-ok
+   cells x frozen R = 6,400 every run, verifies 24, tail
+   '# done cells=24'); the driver's host-side aggregate tail: 108
+   names (printf '%02d'), existence check missing=0, canonical
+   aggregate sha256 over the sorted exact 108 log names
+   f8c08e16dabd4c1d6256bf8779c616d0f2067126e568bdf1155bf0239f32e52c.
+   THE PULL (s171): the 108 logs pulled plain (741M raw, 2m14s),
+   host==local byte-identity closed 108/108 at f8c08e16...
+   (re-derived FRESH host-side AND locally; raw byte census 54
+   stdout logs 776,748,956 bytes / 54 stderr logs 0 bytes); the
+   aggregate construction pinned THREE independent ways before use
+   (the s147 plain known-answer test reproduces 8c8ef864...
+   EXACTLY, the sha256sum-line negative control reproduces
+   7c52eb63... and equals no aggregate, the s158 committed-form
+   known-answer test reproduces 97bd3d33... EXACTLY -- all
+   computed fresh); the gzip -n COMMIT FORM executed (54 stdout
+   logs committed as run-<tag>-r<NN>.txt.gz + 54 plain 0-byte
+   .stderr.txt, raw copies removed after the identity check; the
+   54 pre-compression digests recorded in raw-digests-s169.txt;
+   gzip fidelity explicit counts checked=54 mismatch=0; the
+   canonical aggregate re-derived THROUGH THE COMMITTED FORM ==
+   f8c08e16... -- the committed form preserves the raw byte
+   content exactly).
+
+2. THE ANALYSIS HALF (sessions 172-173, real tool output, this
+   directory): analysis-s169.py (sha256 525f55a8...) authored and
+   lint-clean at s172 (STARTED, NOT FINISHED at the cutoff --
+   every sixteenth-cut quantity UNMEASURED at that point); at s173
+   run TWICE BYTE-IDENTICAL (rc 0 both, stdout/stderr 0 bytes all
+   four captures; publication-s169.txt 56,352 bytes sha256
+   c9aab750fd20120b3abe8db6e9cac554b6c8ea0fbb1b37d9169d1539e4ff
+   7687 both runs; analysis-s169-identity.txt). THE FROZEN LETTERS
+   (computed by those two runs ONLY, from the 54 committed run
+   logs parsed THROUGH GZIP + the NAMED COMMITTED WANT SOURCES):
+   C1 (b) CONTROL REPLICATION DISCREPANCY -- c2 (sum,128,S=16)
+   pooled median m 30 vs the committed floor band 31..32 ->
+   False; c8 pooled median m 32,820 within +/-5% of committed
+   32,915 -> True (-0.29%); control arms VERIFY-mismatch-free ->
+   True; cause UNMEASURED; W1 (d) fires on it.
+   C2 (c) CLASS-UNRESOLVED at fm (345, 1,354) n=254,801 -- 16
+   blocks: 10x CAPTURED + 3x INTERMEDIATE/MIXED + 3x
+   IN-BAND-UNDECIDED, pooled-48 class CAPTURED; block binding
+   min(m-h) 997.0538..1006.7909, pooled 1,002.7437 (L9 binds at
+   254,801 under the deep-pooling statistic; WHY any class occurs
+   is UNMEASURED, L2 binds).
+   W1 (d) INVALID (fired by C1 (b); the frozen INVALIDATION
+   reading) -> CUT VERDICT: INVALID; NOTHING MOVES. The committed
+   bracket stays EXACTLY (254,557, 255,045]; the MID-ONLY
+   NARROWING CLAIM stays SUSPENDED (W1 (a) did not fire; named,
+   not claimed).
+   W2 (descriptive): fm per-run 18-cell mins -- 34/48 runs at
+   per-run min >= 1,000, 48/48 in the 981..1,015 band.
+   W3 (descriptive): every comparison cross-binary AND cross-point
+   (the point is VIRGIN; this cut's binaries are NEW first-
+   measured digests -- NAMED CROSS-BINARY HAZARD, cause
+   UNMEASURED); the protocol's frozen W3 prose "binding min(m-h)
+   1,006.8..1,008.8" matches NO committed byte (the parsed
+   publication-s158.txt bytes 1005.8172..1008.7909 govern; the
+   deviation is named in the publication's W3 section and reaches
+   no class and no letter).
+   X1 (descriptive): fm host_ns per-run median spread 62.9% of
+   min (k=48) -- named, not a C criterion. Integrity: VERIFY
+   mismatch total over all runs 0.
+
+3. STANDING GATES (a)-(f) run LIVE at s174 (captures gate-s174-*,
+   bar-s174-* in this directory), every capture byte-compared to
+   its pin:
+   (a) gpu_regime_classify.py --self-test rc 0, 17,925 bytes ==
+       the s88 pin (cmp exit 0), .err 0 bytes.
+   (b) scoped GPU gate (scratch/scoped-gpu-gate.cljk -- the eight
+       GPU-owned test namespaces of run-tests.cljk, same engine
+       and classpath; created, run twice, DELETED, never
+       committed): GREEN 'Ran 123 tests containing 12162
+       assertions. 0 failures, 0 errors.' run 1 == run 2 == both
+       s88 pins (919 bytes, cmp exit 0 x3), rc 0 both, .err 0
+       both.
+   (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form ('Could
+       not find namespace: kotoba.form', ADR-0362, outside this
+       diff -- touches NO committed .cljk namespace), .out 0
+       bytes == pin, .err 879 bytes == pin -- NO green full
+       suite claimed.
+   (d) settle-bar evaluator --self-test 3,590 bytes == the s88
+       pin + the LEDGER EVAL pair twice BYTE-IDENTICAL (1,006
+       bytes) == the s117 post-append pin -> VERDICT: SETTLED
+       INTERMEDIATE/MIXED (unchanged).
+   (e) find docs/evidence/gpu -name '*.sh' -> 0.
+   (f) settle-bar-ledger.txt == HEAD (no append this row).
+
+4. THIS RECORD AND ITS VERIFICATION (session 175, real tool
+   output, this directory): record-verify-s175.py (pure stdlib;
+   no clock/RNG/network/hardware/subprocess) run TWICE
+   BYTE-IDENTICAL (record-verify-s175-run1.txt == run2.txt cmp
+   exit 0; sha256
+   600474cbef370a16f5d49eb31499d89cf0ab3499c1039146ab9f76a28a1d
+   ca74 both; 4,846 bytes; rc 0 both; .err 0 bytes both; SUMMARY
+   81 ok / 0 failed): every byte-level claim this record quotes
+   from the s169-s174 captures is re-derived fail-closed from the
+   committed bytes -- publication-s169.txt pin + the frozen
+   letters (VERDICT SUMMARY, C1 branch quotes, C2 class list
+   10/3/3 re-counted, bindings, W1 (d), W2 34/48 + 48/48, W3
+   prose-vs-bytes deviation, X1 62.9%, VERIFY 0); the analysis
+   byte-identity pins + the two named draft defects' own .err
+   bytes; the run-log custody chain (aggregate f8c08e16..., the
+   host==local MATCH quote, raw census, the three construction
+   pins incl. the negative control, gzip fidelity, 54 raw-digest
+   rows with TWO spot-checks decompressing the committed .gz form
+   back to its raw digest + byte count); the derivation/build
+   census pins (instrument/corpus/manifest re-hashed locally, the
+   24-cell block re-derived == 873025d6... AND byte-equal to the
+   s157 a-set cell block, the three binary pins + 3/3 rc 0, the
+   knob arithmetic re-derived); the s174 gate captures byte-
+   compared to the s88/s117 pins including the RED AT BASE
+   kotoba.form full-suite capture; the bracket parsed
+   comma-tolerant from publication-s158.txt with the cut-point
+   arithmetic re-derived (254,801); the ADR-0355 dated note
+   marker (sessions 169-174); the find docs/evidence/gpu -name
+   '*.sh' -> 0 re-walk; and the pre-push blocker-first capture
+   (prlist-s175-prepush.json, 2026-11-01T13:07:00Z) parsed: 0
+   open kotoba-lang/amu PRs with a hermes/ head (15 open total),
+   chain PRs exactly ONE (bot/amu-gpu-chain-20261028-4). The
+   ADR-0355 dated note (sessions 169-174) is appended at this
+   landing.
+
+5. NAMED, NOT HIDDEN:
+   - record-verify-s175's first run pair (record-verify-s175-
+     draft1-run{1,2}.txt/.err, each pair byte-identical to each
+     other, rc 1, kept visible) carried ONE character-class
+     defect: the block-classes token regex "'([A-Z/]+)'" omitted
+     hyphens, so the three 'IN-BAND-UNDECIDED' tokens did not
+     match and the 10/3/3 want failed FAIL-CLOSED (the only
+     failing want; 80 ok / 1 failed). The hyphen-tolerant class
+     "'([A-Z/-]+)'" is the only delta; the defect reached no
+     evidence value and weakened no want.
+   - The analysis draft runs (analysis-s169-draft{1,2}-run1.*,
+     s173) failed fail-closed at want-source asserts BEFORE any
+     evidence value (draft-1: a regex with NO capture group
+     passed to parse1() -> IndexError; draft-2: the comma-free
+     pub158 bracket regex -- the s165 defect family); both fixes
+     are regex-shape only (analysis-s169-identity.txt records
+     them).
+   - The s171 custody pass's two local script defects (a
+     counter-less fidelity loop re-run with explicit counts
+     checked=54 mismatch=0; a KAT-2 first pass opening the raw
+     name instead of the .gz, FileNotFoundError, computed
+     nothing) are recorded in host-digests-s169.txt.
+   - The s157 capture-form deviation (logs committed gzip -n,
+     not plain) was NAMED at s169 and CLOSED at s171 for this
+     cut (the gzip -n commit form + raw-digests record).
+   - The s165 spelling note stands: "(345, 1354)" and "(345,
+     1,354)" are the SAME pair (WM=345, NDIV=1,354).
+   - The full run-tests.cljk is RED AT BASE kotoba.form
+     (ADR-0362) OUTSIDE this diff -- this diff touches NO
+     committed .cljk namespace (evidence .txt/.py/.gz/.json +
+     the ADR .md only; the s160/s166 precedent: no scoped-gate
+     re-run needed for such a diff; gates (a)-(f) ran live at
+     s174 and their committed captures are re-verified byte-level
+     at s175); NO green full suite claimed.
+   - Untracked scratch/ and deps.edn are not this row's and are
+     NOT staged or committed.
+
+6. THREE-STATE / RULE 4 / BAR: the sixteenth-cut letters are
+   MEASURED QUANTITIES derived from the s169-s171 hardware runs
+   on aiueos-6600hs under the frozen protocol -- NOT implemented
+   compiler code, NOT workgroup-default measurements. CUT VERDICT:
+   INVALID; NOTHING MOVES; the committed bracket stays EXACTLY
+   (254,557, 255,045]; the MID-ONLY NARROWING CLAIM stays
+   SUSPENDED. Sessions 169-174 ran hardware ONCE (the measurement
+   window on aiueos-6600hs, the INSTRUMENT channel); NO
+   settle-bar-ledger line, NO day-slot consumption (the
+   2026-11-01 UTC slot needs its own freeze and was NOT touched),
+   the bar's SETTLED INTERMEDIATE/MIXED verdict unmoved -- BAR
+   NON-INTERFERENCE held. RULE 4 unchanged: NOTHING MOVES -- the
+   accelerator-targets workgroup rows stay exactly as ADR-0358
+   left them (:measured? true scoped to each row's one named
+   measured device for :nvidia/:apple/:intel/:amd; :arm and
+   :unknown remain provisional, :measured? false); NO vendor
+   optimization exists for Intel (or for any vendor); this is
+   bisect measurement machinery ONE-host instrument content, not
+   a workgroup-default measurement.
+
+7. Carry-forward s176: (d) standing, not queued: any further
+   counted-day slot (the 2026-11-01 UTC slot needs its own
+   freeze; the bar verdict is over the FIRST four counted
+   readings -- s117 record section 11) and the cross-day
+   tail-movement row (not queued); any seventeenth cut ONLY
+   through a NEW pre-registered cut session confronting this
+   cut's content (NOT queued) -- NO queued row remains; s176
+   takes a row only per the recorded carry-forward precedent,
+   else stands down.
+(JUN-55, JUN-59; Linear tracking JUN-499)

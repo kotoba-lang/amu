@@ -1,0 +1,245 @@
+amu-gpu s217 (2026-11-02 UTC, cron) -- THE OPEN CONTROL QUESTION
+PRE-REGISTRATION, THIRD SLICE: THE RESOLUTION ACT'S ARMS AND
+STATISTIC (the s216 carry-forward's FIRST remaining design
+decision) -- the s202/s215/s216 shape: ONE finished design slice,
+quote-only from committed bytes at the exact lines (every line
+extracted by tool this tick, never transcribed) plus the design
+decision itself and labelled DERIVED arithmetic on quoted values.
+
+ROW (decided, recorded here; ONE row per tick): the resolution
+act's arms and statistic, taken as ONE finished design slice.
+WHY THIS ROW (named): the s216 carry-forward lists exactly four
+remaining design decisions -- "(the resolution act's arms and
+statistic; the letters; the invalidation criteria; the
+'three-state' semantics)" -- and the chain precedent (s215,
+s216) takes the FIRST listed item at each slice. The two other
+standing rows stay standing: (a) any further counted-day slot --
+each needs its OWN freeze (this row choice does NOT consume or
+forfeit any slot); (b) the cross-day tail-movement row (not
+queued).
+
+1. THE ARMS (DESIGN DECISION, this slice; ACCEPTED DESIGN ONLY --
+IN DRAFT, NOT frozen)
+
+The resolution act runs EXACTLY the two committed control arms
+and NOTHING else. Arm shapes quoted verbatim from the frozen
+19th-cut protocol (anv-b3bisect19prereg-20261102/protocol.txt,
+extracted by tool this tick):
+  L359: "  c2  (B=2, WM=1, NDIV=1)       control, k=3"
+  L364: "  c8  (B=8, WM=1, NDIV=1)       control, k=3"
+
+(a) c2 arm: (sum, W=128, S=16, B=2, WM=1, NDIV=1), k=3 fresh
+    processes per reading (the committed "control, k=3" shape;
+    the C1 reading cell is (sum,128,S=16) per every committed
+    C1 line -- the s215 record).
+(b) c8 arm: (sum, W=128, S=16, B=8, WM=1, NDIV=1), k=3 fresh
+    processes per reading.
+(c) INSTRUMENT: the ROUNDS6400 variant, ADOPTED UNCHANGED --
+    protocol.txt L181-188 (quote): "(i) INSTRUMENT VARIANT:
+    '#define ROUNDS 25' -> '#define ROUNDS R', R = 6,400 (one
+    line of the committed a5e539f0... copy: line 81, beside
+    '#define WARMUP 3' line 80). The variant source gpu-
+    subgroup-reduce-anv-ndiv-rounds6400.c.txt is frozen at
+    SHA-256 source pin c2704aaad6bfeeae1f4f9cfa916d0160efb0392
+    6892237554c7dffc8386e84e0 (ADOPTED UNCHANGED from the s166
+    freeze...)".
+(d) NO q arm, NO knob triple: both arms are WM=1, NDIV=1, so
+    the s131 ZERO-NEW-KNOB-TRIPLES precedent HOLDS at this act
+    and L8 (the WM != 1 and NDIV != 1 combination-risk class,
+    protocol.txt L365-371 quote) DOES NOT APPLY here. NAMED
+    CONTRAST: the precedent did NOT hold at the 19th cut's q2
+    arm (307, 1204) where L8 applied; the resolution act
+    measures control state only, and a knob triple would add
+    the L8 combination risk with no bearing on the question.
+(e) READINGS: FOUR consecutive readings; one reading = the two
+    arms back to back (c2-r01..03, c8-r01..03 -- the committed
+    controls-bookend run order (protocol.txt L371-372 "Frozen
+    run order: c2-r01..03, q2-r01..048, c8-r01..03 (controls
+    bookend...)" degenerated to the controls alone, the same
+    degeneration shape the 19th protocol named for its single
+    q arm). Act process count: 4 x (3+3) = 24 fresh processes
+    (run-count self-check 4*(3+3) = 24 -> ok; DERIVED, tool
+    this tick). RATIONALE (design): the committed record is
+    exactly four cuts long with c2 pooled medians 30/31/31/30
+    (the s215 record, re-extracted at exact lines this tick);
+    a four-reading act produces a four-letter c2 sequence
+    directly comparable one-for-one at the same k=3-per-arm,
+    same-statistic granularity to the record's (b)/(a)/(a)/(b)
+    -- a constant sequence confronts the single-state prong and
+    a non-constant sequence confronts the more-than-one-state
+    prong at the record's own granularity. NAMED: whether four
+    readings is the FINAL count is revisable until the protocol
+    freeze (the design-verify + freeze slices are later,
+    NOT queued); what each reading's letter MEANS is the
+    LETTERS decision, NOT made this tick.
+
+2. THE STATISTIC (DESIGN DECISION, this slice): ADOPTED
+UNCHANGED -- the pre-registered deep-pooling CI class statistic
+(R = 6,400), NOT re-derived. Per unit per cell (protocol.txt
+L191-198, quote): "m_c = pooled sample median gpu_ticks over
+the unit's samples for cell c; MAD_c = sample median |x - m_c|;
+CI half-width h_c = 3.6420 * MAD_c / sqrt(N) (95% normal-
+approximation CI for the population median: 1.96 * 1.2533 *
+1.4826 = 3.6420, frozen formula). Units: a block of 3 runs x R
+rounds per cell (N = 3R = 19,200) or the pooled-48 arm of 48
+runs x R rounds (N = 48R = 307,200)."
+
+Applied at this act (design):
+(a) Each arm's per-reading quantity at its cell (sum, W=128,
+    S=16): the pooled sample median m over the arm's k=3 runs
+    x R rounds (N = 3R = 19,200 samples per cell; DERIVED
+    3*6,400 = 19,200 == the committed N, tool this tick) and
+    the CI half-width h under the frozen formula. The DERIVED
+    formula constant is reproduced by tool this tick:
+    1.96 * 1.2533 * 1.4826 = 3.642 (4-dp rounding of the
+    frozen 3.6420).
+(b) Confrontation thresholds UNCHANGED from the standing cut
+    protocol's C1 (protocol.txt L380-383, quote): "C1 (control
+    replication, UNCHANGED thresholds from the standing cut
+    protocol: c2 FLOOR in the committed floor band 31..32 at
+    B=2; c8 within +/-5% of the committed 32,915; C1 (b) ->
+    W1 (d) INVALID; + the D2 control-state confrontation/
+    limitation, arm (a))". NAMED: the W1 (d) INVALID mapping
+    and the D2 confrontation are part of the frozen CUT
+    protocol's letters; at THIS act their analogues (the
+    letters and the invalidation criteria) are SEPARATE design
+    decisions, NOT made this tick -- only the two thresholds
+    (floor band 31..32 at B=2; +/-5% of 32,915) are adopted
+    here, as the reading confrontation rulers.
+(c) R = 6,400 ADOPTED UNCHANGED (protocol.txt L205ff, quote):
+    "THE CONSTANT R = 6,400 is ADOPTED UNCHANGED, NOT re-
+    derived... R = the smallest ladder value {25,50,100,200,
+    400,800,1600,3200,6400} with max over the 18 pipeline-ok
+    cells of 3.6420 * MAD_c / sqrt(3R) <= 2.0 ticks... R=3,200
+    h_max 2.6949 > 2.0 FAILS; R=6,400 h_max 1.9056 <= 2.0
+    PASSES". The s204 D4 adoption rationale applies with equal
+    force at this act (design reading): the four-cut record's
+    letters were computed under exactly this statistic and
+    constant, so adopting them UNCHANGED is what makes a
+    resolution-act reading CONFRONT the record rather than
+    re-read it under a new ruler (the s204 cross-cut
+    comparability rationale, protocol.txt L215-218).
+
+3. THE FOUR-CUT RECORD RE-EXTRACTED FRESH (quote-only at exact
+lines this tick -- the letters are the 16th-19th cuts' landed
+MEASURED QUANTITIES, NOT measurements of this tick; every line
+extracted by tool at this cutoff, never transcribed):
+  publication-s169.txt L607-612: "c2 (sum,128,S=16) pooled
+   median m 30, deep-pooling / class FLOOR (committed floor
+   band 31..32 at B=2): False / c8 ... m 32820 within +/-5% of
+   committed 32915 (session 4 pooled median): True (-0.29%) /
+   control arms free of VERIFY mismatches (frozen INVALIDATION
+   criterion): True / VERDICT: branch (b) replication
+   discrepancy (W1 (d) INVALID / fires); cause UNMEASURED."
+  publication-s185.txt L624-629: "... m 31 ... : True ...
+   m 32775 ... True (-0.43%) ... VERDICT: branch (a) both
+   controls satisfy their criteria -- W1 is evaluated against
+   the row question."
+  publication-s197.txt L630-635: "... m 31 ... : True ...
+   m 32778 ... True (-0.42%) ... VERDICT: branch (a) ..."
+  publication-s209.txt L657-662: "... m 30 ... : False ...
+   m 32559 ... True (-1.08%) ... VERDICT: branch (b) ..."
+Record c2 pooled medians: 30 / 31 / 31 / 30 (the s215 record's
+(b)/(a)/(a)/(b); re-extracted fresh here).
+
+4. NAMED, NOT HIDDEN:
+(a) THE C2 AXIS IS A 1-TICK AXIS AT THE INSTRUMENT FLOOR. The
+    record's c2 pooled medians span 30..31 = 1 tick (DERIVED
+    tool this tick: max-min of {30,31,31,30} = 1). At the
+    committed timestampPeriod 52.083 ns/tick (publication-
+    s4.txt L51-53 quote: "...(ticks and ns at timestampPeriod
+    52.083 ns)"), 1 tick = 52.083 ns and the committed floor
+    "31 ticks = 1,614.6 ns" re-derives as 31 * 52.083 =
+    1,614.573 ns (DERIVED, tool this tick; the committed record
+    itself reads "31 ticks (1614.57 ns)", publication-s4.txt
+    L112-116). The 16th and 19th cuts' m 30 sits BELOW every
+    floor observation {31, 32} in the provenance chain parsed
+    at s216 (refs-provenance-s216.txt section 3 (ii)); whether
+    m 30 is a NEW control state or a tolerance/defect reading
+    stays UNDECIDED (s216 (ii)) and is the resolution act's
+    own business. NAMED HAZARD (design reading): at 1-tick
+    separation the statistic's CI machinery (h = 3.6420 *
+    MAD/sqrt(N)) is NOT the ruler of the c2 band confrontation
+    -- the band check is on the pooled median m itself against
+    31..32 -- so the act's c2 axis is a median-level, not a
+    CI-level, confrontation; this asymmetry is carried, NOT
+    resolved here (the letters/invalidation decisions confront
+    it).
+(b) THE C8 BAND IS LOOSE RELATIVE TO ITS OWN PROVENANCE
+    SPREAD: all four cuts' c8 deviations are negative and of
+    order -0.3%..-1.1% (quoted above), and the reference's own
+    within-session cross-S spread is -2.09%/-2.18% (s216
+    section 1, DERIVED on quoted values). The act retains the
+    +/-5% band UNCHANGED anyway -- widening or narrowing it
+    would break confrontation with the record (design
+    rationale); no band is changed by this slice.
+(c) MULTIPRONG CAVEAT: a fresh four-reading sequence reads the
+    instrument's PRESENT behavior; whether it can retro-
+    resolve the historical 16th-19th cut record is a LETTERS
+    question, NOT decided this tick.
+(d) The deep-pooling UNIT CLASSES quote (protocol.txt L199-204,
+    the frozen 1,000-tick threshold: CAPTURED/FLOOR/INTERMEDIATE-
+    MIXED/IN-BAND-UNDECIDED) is carried as the C1 class
+    machinery ("deep-pooling class FLOOR" on every C1 line);
+    the act does not change it. The class FLOOR criterion
+    ("all 18 m_c + h_c <= 100") is evaluated over the
+    instrument's 18 pipeline-ok cells (the committed run lines
+    read "samples=115200 = 18 pipeline-ok cells x frozen R =
+    6,400" at every run); the C1 lines report the class at the
+    arm's block-unit level.
+
+5. STATE (three-state discipline): NO control-question quantity
+exists -- no protocol, NOTHING frozen, NO measurement taken
+this tick (no hardware, no builds, no runs, no GO stamp); the
+content above is QUOTE-ONLY from committed bytes (extracted by
+tool at this cutoff, exact lines pinned) + the design decision
+itself + labelled DERIVED arithmetic on quoted values (1 tick
+= 52.083 ns scale, 31 * 52.083 = 1,614.573 ns, 3R = 19,200,
+1.96*1.2533*1.4826 = 3.642, 4*(3+3) = 24, median span 1 tick)
+-- NOT a measurement and NOT a class/verdict/claim of any cut
+or of the control question; the quoted letters are the
+16th-19th cuts' landed MEASURED QUANTITIES (their hardware
+runs on aiueos-6600hs under each cut's own frozen protocol).
+This arms-and-statistic decision is ACCEPTED DESIGN ONLY --
+pre-registration content IN DRAFT; the control question's
+pre-registration is NOT frozen and no protocol.txt for it
+exists at this cutoff. RULE 4 unchanged: NOTHING MOVES -- the
+committed bracket stays EXACTLY (254,923, 255,045]; L9 binds
+at n=254,984 (C2 (c), D3 (v)) -- any future narrowing claim
+at 254,984 must confront the 19th cut's content first; the
+MID-ONLY NARROWING CLAIM stays SUSPENDED; NO vendor
+optimization exists for Intel (or for any vendor); the
+accelerator-targets workgroup rows stay as ADR-0358 left them
+(:measured? false rows remain provisional -- NOT optimization
+evidence). BAR NON-INTERFERENCE held: NO settle-bar-ledger
+line, NO day-slot consumption, NO hardware, NO builds this
+tick; the bar's SETTLED INTERMEDIATE/MIXED verdict unmoved.
+Standing gates this tick, LIVE at this cutoff: (e) find
+docs/evidence/gpu -name '*.sh' -> 0 lines; (f) git diff
+--exit-code HEAD -- docs/evidence/gpu/settle-bar-ledger.txt
+rc 0 (no append this row). Gates (a)-(d) NOT run this tick
+(not a landing slice -- the s209/s212/s215/s216 precedent).
+This diff touches NO committed .cljk namespace (this .txt
+only; the s160/s166 precedent; the full suite stands RED AT
+BASE kotoba.form (ADR-0362) outside this diff per the standing
+captures -- NOT re-run this tick -- NO green full suite
+claimed). Untracked scratch/, deps.edn and .DS_Store files
+are not this row's, NOT staged. BLOCKER-FIRST immediately
+before this push (prlist-s217-prepush.json, committed with
+this slice): 0 hermes/ heads among open kotoba-lang/amu PRs
+(python headRefName startswith filter); chain PRs = exactly
+ONE (#1665 bot/amu-gpu-chain-20261028-4 -- the one this push
+advances).
+
+NOT DONE (s218 carries exactly this list): the control-
+question pre-registration's own continuation at its own
+slice(s) -- the REMAINING design decisions (the letters; the
+invalidation criteria; the "three-state" semantics) + design-
+verify + protocol freeze + landing; then the control
+question's RESOLUTION measurement act under that frozen
+protocol (NOT queued -- its own act); standing, not queued:
+any further counted-day slot (each needs its own freeze) and
+the cross-day tail-movement row. If a future slice needs it:
+the full enumeration of every committed session 5..20 c2/c8
+reading (s216 NAMED (a)).
+(JUN-55, JUN-59; Linear tracking JUN-499)

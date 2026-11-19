@@ -1,0 +1,210 @@
+JUN-59 -- session 84 protocol (T18 FREEZE, written once at
+freeze stamp 2026-10-29T06:14:31Z BEFORE any statistic of this
+row exists AND before any W6 quantity exists; never rewritten):
+THE DL LADDER CROSS-DAY LEVEL REPLICATION AT W6 (INFERENTIAL)
+-- the s82 descriptive row's named future inferential row (the
+s83 record section-9(c) carry-forward: "an INFERENTIAL DL row
+(its own pre-registration; the s82 vectors are its quote-only
+priors; its freeze must name its convention)"), over the
+s81-frozen DOUBLING LADDER vocabulary
+(docs/evidence/gpu/anv-b3dladder-20261029/vocabulary.txt,
+selection rule section 3: pairs named ONLY from the vocabulary;
+each row freezes its own estimators/nulls/thresholds/joint
+rule). Written before ANY W6 quantity exists: the pre-freeze
+freshness greps over docs/evidence/gpu at the freeze stamp were
+"2026102918" 0 hits, "2*L_W6" 0 hits, "T18 =" 0 hits (bare
+"T18"/"T18:" grep hits are UTC-hour timestamps in run logs,
+named not hidden). DESIGN session: NO hardware runs, NO builds,
+NO compiles, NO GO stamp; per section 8 NO reading -> NO
+settle-bar-ledger line, NO day-slot consumption. The chain
+branch bot/amu-gpu-chain-20261028-4, the ONE open chain PR --
+commit + push only.
+
+0. ROW QUESTION (ONE row: ONE design decision -- the PRE-
+   REGISTRATION half of the inferential DL row; its ANALYSIS
+   half is day-slot-gated behind the W6 measurement half and is
+   STARTED, NOT FINISHED): does the cross-day NARROWING of the
+   DL ladder pair-spread levels relative to the s36 pre-shift
+   anchor (the movement the s82 quote-only priors show at every
+   post-s36 window on the informative steps) CONTINUE at the
+   fresh W6 window -- on the informative steps DL8/DL16/DL32
+   jointly (IUT) and on each pair separately? WHY THIS ROW NOW
+   (named): the s83 carry-forward names it; the W6 measurement
+   half (9(a)) is day-slot-gated (the first session at/after
+   2026-10-30T00:00:00Z; this tick runs 2026-10-29T06:1xZ,
+   ~17.7h before the slot opens) and the fourth counted-day bar
+   measurement (9(b)) is slot-order-dependent -- freezing this
+   row BEFORE any W6 quantity exists is strictly stronger than
+   freezing it later (the s65 precedent: the freeze guards
+   letter-shopping precisely because no target-window quantity
+   exists yet).
+
+1. THE CONSTRUCTION (frozen; the s82 section-1 construction and
+   the s78/T15 two-window machinery reused verbatim): named
+   cell (max,128,S=default) (the ok-map cell 5, raw idx 7 --
+   the T14/T15/T16/T17 named cell, held fixed); arm tw (runs
+   1..36 -> 12 blocks of 3 consecutive runs); per block D over
+   the block's pooled 75 gpu_ticks samples (25 per run x 3
+   runs; the frozen estimator unit F3 of settle-bar.txt), D =
+   x_(b) - x_(a) with (a,b) the pair's ranks of the pooled-75
+   order statistics x_(1) <= ... <= x_(75), EXACT INTEGER:
+     DL4  = (x_(34), x_(42))  D = x_(42)-x_(34)  span 8
+     DL8  = (x_(30), x_(46))  D = x_(46)-x_(30)  span 16
+     DL16 = (x_(22), x_(54))  D = x_(54)-x_(22)  span 32
+     DL32 = (x_( 6), x_(70))  D = x_(70)-x_( 6)  span 64
+   the WHOLE closed vocabulary (four pairs -- no selection
+   among pairs, no silent extension); per window L_w = median
+   of the 12 block D values (2*L = 6th+7th order statistics,
+   INTEGER half-tick). Per-pair directional contrast
+   2*C_obs = 2*L_s36 - 2*L_W6 at the NAMED window pair
+   (s36, W6) -- the T15 window-pair shape with W6 substituted
+   for W5.
+
+2. INPUTS (frozen): the COMMITTED tw-arm run logs of the W6
+   window in docs/evidence/gpu/anv-b3w6daybar-20261030/
+   (produced by the W6 measurement half under the s80 protocol
+   section-2 route; they do NOT exist at freeze time) plus the
+   five fixed prior directories of publication-s82.txt section
+   0 -- anv-b3commonmode-20261028 (s36), anv-b3joint3-20261028
+   (s38), anv-b3joint4-20261028 (s39), anv-b3levelrep-20261028
+   (s51), anv-b3w5xdayrep-20261029 (W5). NO other run enters.
+
+3. PRE-REGISTERED DIRECTIONS (frozen; fixed by the s82 QUOTE-
+   ONLY priors -- the publication-s82.txt five-window 2*L
+   vectors -- and by NOTHING else; NOT by any W6 statistic):
+   per pair C_obs > 0 ("narrower at W6 than the s36 anchor").
+   Prior support named per pair (s36 value vs the four post-s36
+   windows s38/s39/s51/W5):
+     DL8  97 vs 84/99/79/83  -- 3 of 4 below (s39's 99
+          marginally above; the T15 demanding-inner-axis
+          precedent, named);
+     DL16 238 vs 187/201/188/178 -- 4 of 4 below (the uniform
+          axis, the T15-outer precedent);
+     DL32 655 vs 537/572/564/658 -- 3 of 4 below with the W5
+          exception NAMED (658: the W5 window returned to s36
+          level) -- DL32 is the DEMANDING axis and its W5
+          contradiction is named, not hidden; its per-pair
+          letter reads under any joint letter;
+     DL4  46 vs 47/48/38/40 -- 2 of 4 below AND pre-registered
+          by the s81 vocabulary section 4(c) as UNINFORMATIVE
+          (span 8 sits in the narrow-span noise band; a (b) at
+          DL4 is uninformative about span structure) -- DL4's
+          per-pair letter is computed and published but NEVER
+          affects the joint.
+   NAMED, NOT HIDDEN: the direction set is exactly the
+   continuation hypothesis and nothing else; no reverse-
+   direction or two-sided claim exists in this row.
+
+4. NULL / RESAMPLING (frozen; the s78 two-window run-
+   exchangeability machinery verbatim): the 72 tw runs of s36
+   and W6 (36+36) are exchangeable under the null; per trial
+   ONE rng.shuffle of a fresh list(range(72)), split into
+   pseudo-windows A then B of 36 in draw order, each into 12
+   blocks of 3 in draw order; 2*L* per pseudo-window = 6th+7th
+   order statistics of the 12 block D values; 2*C* = 2*L*_A -
+   2*L*_B; p = (1 + count(C* >= C_obs)) / (1 + 20,000),
+   ONE-SIDED in the pre-registered direction. 20,000 trials per
+   probe; ONE random.Random(2026102918) (distinct from T7's
+   20261029, T14's 2026102814, T15's 2026102815, T16's
+   2026102816), consumed in the frozen probe order DL4 then DL8
+   then DL16 then DL32 (the ladder order).
+
+5. LETTERS (frozen): per pair (a) LEVEL-NARROWING-REPLICATED-
+   CONTINUED (C_obs > 0 AND p <= 0.05) / (b) NOT-REPLICATED
+   (named sub-cases: DIRECTION-REVERSED (C_obs <= 0) /
+   DIRECTION-CONSISTENT-NOT-SIGNIFICANT) / (c) NOT EVALUABLE
+   (section-6 invalidation). JOINT T18 = the pre-registered
+   INTERSECTION-UNION rule over the three INFORMATIVE steps
+   DL8/DL16/DL32 (the exclusion of DL4 from the joint is the
+   s81 vocabulary's own pre-registered section-4(c) caveat,
+   frozen BEFORE any DL statistic existed; the row's own
+   multiplicity convention per s81 selection rule 3(d)): all
+   three (a) = DL-LADDER-CROSS-DAY-NARROWING-REPLICATED-ON-
+   INFORMATIVE-STEPS; otherwise (b) NOT-REPLICATED (named
+   failing pairs + sub-cases); NO multiplicity correction (the
+   IUT convention). DL4's published letter carries the standing
+   tag UNINFORMATIVE-BY-S81-CAVEAT and never enters the joint.
+
+6. INVALIDATION MACHINERY (frozen; the s78 section-3 set plus
+   W6): W6 runs parsed 78; VERIFY mismatch total 0; 450 SAMPLE
+   + 24 VERIFY per run; knobs == arm tables; S=8 fail-closed;
+   cell map identical across W6's logs and the named cell
+   present as ok-map cell 5; the five PRIOR windows' block-min
+   vectors reproduce their published vectors EXACTLY
+   (publication-s39.txt/s51.txt section 3 + publication-s82.txt
+   section 3); the four prior anchor rows reproduce EXACTLY
+   (this row computes NO anchor at W6); C1 at W6 (c2 FLOOR
+   within the committed floor band 31..32; c8 pooled median
+   within +/-5% of committed 32915) with C1 branch (a)
+   required; PARSER VALIDITY PINS (the row's honesty anchor):
+   the analysis parser reproduces the published
+   publication-s78.txt INNER (28,48) / OUTER (9,67) five-window
+   2*L vectors AND the published publication-s82.txt DL
+   five-window 2*L vectors (46/47/48/38/40, 97/84/99/79/83,
+   238/187/201/188/178, 655/537/572/564/658) EXACTLY -- the
+   priors are QUOTE-ONLY content, recomputed only as validity.
+   Any violation -> (c) NOT EVALUABLE (there is no letter to
+   shop).
+
+7. D-FAMILY (descriptive only, NO letter): D1 the six-window 2*L
+   vectors (s36/s38/s39/s51/W5/W6) per pair (the s82
+   five-window vectors are quote-only priors, reproduced as
+   section-6 validity); D2 the 12 W6 block D values per pair
+   (for a future census); D3 the W6-vs-post-shift-band
+   placement per pair -- CONVENTION NAMED HERE EXPLICITLY (the
+   s83 record section-4 requirement): the post-shift band is
+   the CLOSED INTERVAL [MIN, MAX] of the three 2*L values
+   {2*L_s38, 2*L_s39, 2*L_s51} -- MIN..MAX, NOT the s82
+   publication's printed min..median (the s83 correction
+   record's convention); the placements (INSIDE / OUTSIDE-BELOW
+   / OUTSIDE-ABOVE) are DESCRIPTIVE -- never tests, never
+   letters, never nulls.
+
+8. THE BAR / DETERMINISM / ROUTE: DESIGN session -> NO hardware
+   runs -> NO reading -> NO settle-bar-ledger line, NO day-slot
+   consumption (settle-bar-ledger.txt must be byte-identical to
+   HEAD). The ANALYSIS half runs only after the W6 measurement
+   half commits the W6 run logs (the s80 freeze binds; if the
+   runs slip past 2026-10-30 the W6 definition binds and the
+   bar's ledger line takes the actual run day). The analysis
+   generator and its independent derivation census are
+   deterministic apart from the frozen null's 2026102918
+   stream; "run twice, byte-identical (cmp exit 0)" is the
+   claim. The standing gate set runs fresh and byte-compares to
+   the s83 committed pins (gpu_regime_classify.py --self-test;
+   scoped GPU gate twice via the scratch runner, created/run/
+   deleted, never committed; FULL run-tests.cljk run live; the
+   settle-bar evaluator --self-test and ledger eval twice;
+   find docs/evidence/gpu -name '*.sh' -> 0 -- no POSIX shell
+   execution files, ever). Evidence is .txt/.py only (NEVER
+   .sh).
+
+9. NAMED, NOT HIDDEN: (a) NOVELTY -- the campaign's first
+   pre-registered inferential read of the DL ladder at a fresh
+   window on a new UTC day (a FRESH pre-registered prediction:
+   no W6 quantity exists at freeze; the direction set is fixed
+   by the s82 priors only); (b) the demanding DL32 axis (its
+   W5 prior contradicts the direction) and the uninformative
+   DL4 step (s81 4(c)) are named in section 3; (c) STILL LOW
+   POWER (n=2 windows per contrast, 12 blocks each, ONE host,
+   ONE named cell); a (b) is NOT evidence of no per-cell
+   structure; threshold-artifact-vs-representation and
+   physical-vs-estimator-structure STAY UNRESOLVED; (d) tail-
+   side asymmetry stays out of scope (every DL pair is self-
+   mirror; the s81 limitation 4(b) stands); the 18-cell
+   scoreboard is NOT computed here (a future row's choice);
+   (e) the freshness claim is exactly the three pre-freeze
+   greps recorded at the freeze stamp and certifies nothing
+   outside the committed evidence tree.
+
+10. WHAT THIS FREEZE CARRIES FORWARD (named; each item is its
+   own future row): (a) this row's ANALYSIS half (day-slot-
+   gated behind the W6 measurement half -- STARTED, NOT
+   FINISHED); (b) the W6 measurement half (the s80 freeze;
+   first session at/after 2026-10-30T00:00:00Z); (c) the
+   fourth counted-day bar measurement (its own future freeze;
+   its day follows W6's actual run day); (d) the tail-side
+   vocabulary (the s81 named limitation 4(b); not queued).
+   RULE 4 (frozen) unchanged: NOTHING MOVES -- accelerator-
+   targets defaults remain provisional (:measured? false); NO
+   vendor optimization exists for Intel.

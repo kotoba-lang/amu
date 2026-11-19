@@ -1,0 +1,126 @@
+JUN-59 -- session 82 protocol (T17 FREEZE, written once at freeze
+stamp 2026-10-29T05:22:05Z BEFORE any statistic of this row
+exists; never rewritten):
+THE DL LEVEL-AXIS DESCRIPTIVE REFERENCE ROW -- the DOUBLING
+LADDER vocabulary's FIRST STATISTIC over the five committed
+windows. Pairs named ONLY from the s81-frozen DL vocabulary
+(docs/evidence/gpu/anv-b3dladder-20261029/vocabulary.txt,
+selection rule section 3: each row names its pairs in its OWN
+protocol freeze BEFORE any statistic; estimators/nulls/thresholds
+stay per-row). Written before ANY DL statistic exists: the
+pre-freeze freshness check (two greps over docs/evidence/gpu,
+excluding the s81 vocabulary directory and this directory) was
+0/0 hits at 2026-10-29T05:22:05Z. ANALYSIS session: NO hardware
+runs, NO builds, NO compiles, NO GO stamp; per section 6 NO
+reading -> NO settle-bar-ledger line, NO day-slot consumption.
+Chain branch bot/amu-gpu-chain-20261028-4, the ONE open chain PR
+-- commit + push only.
+
+0. ROW QUESTION (ONE row: ONE measurement-analysis slice): what
+   are the DL4/DL8/DL16/DL32 within-block spread LEVELS of the
+   tw arm's (max,128,S=default) cell across the five committed
+   windows (s36/s38/s39/s51/W5), the first statistic computed
+   under the s81-frozen vocabulary? THE ROW IS DESCRIPTIVE ONLY
+   -- NO letter, NO null, NO resampling, NO threshold, NO
+   direction, NO hypothesis test of any kind. WHY DESCRIPTIVE
+   (frozen, named): the DL pairs have NO pre-existing directional
+   hypothesis (the s81 freeze named none; the T15/T16 movements
+   on OTHER pairs point in OPPOSITE directions at narrow vs wide
+   spans), so choosing a direction now would be post-hoc; the
+   scientific deliverable is the REFERENCE VECTORS that a future
+   inferential DL row will quote as priors (the s53/s54
+   quote-only-priors pattern). WHY THIS ROW NOW (named): the W6
+   measurement half is day-slot-gated (first session at/after
+   2026-10-30T00:00:00Z; this tick runs 2026-10-29T05:2xZ, ~18.6h
+   before the slot opens) and the fourth counted-day bar slot is
+   slot-order-dependent (its day follows W6's actual run day) --
+   of the s81 carry-forward items, the DL rank-pair row is the
+   only one a one-tick analysis slice can honestly take today.
+
+1. THE CONSTRUCTION (frozen): named cell (max,128,S=default) (the
+   ok-map cell 5, raw idx 7 -- the T14/T15/T16 named cell, held
+   fixed so the DL vectors are comparable to the published
+   quantile-pair vectors); arm tw (runs 1..36 -> 12 blocks of 3
+   consecutive runs); per block D over the block's pooled 75
+   gpu_ticks samples (25 per run x 3 runs; the frozen estimator
+   unit F3 of settle-bar.txt), D = x_(b) - x_(a) with (a,b) the
+   pair's ranks of the pooled-75 order statistics x_(1) <= ... <=
+   x_(75), EXACT INTEGER:
+     DL4  = (x_(34), x_(42))  D = x_(42)-x_(34)  span 8
+     DL8  = (x_(30), x_(46))  D = x_(46)-x_(30)  span 16
+     DL16 = (x_(22), x_(54))  D = x_(54)-x_(22)  span 32
+     DL32 = (x_( 6), x_(70))  D = x_(70)-x_( 6)  span 64
+   the WHOLE closed vocabulary (four pairs -- no selection among
+   them, no silent extension); per window L_w = median of the 12
+   block D values (2*L = 6th+7th order statistics, INTEGER
+   half-tick); the publication carries per pair the five-window
+   2*L vector, the 12 W5 block D values (for a future census),
+   and the W5-vs-post-shift-band check (L_W5 vs the closed
+   interval spanned by {L_s38, L_s39, L_s51}) -- the s78 D1
+   convention, descriptive.
+
+2. INPUTS (frozen): the COMMITTED run logs of five fixed evidence
+   directories -- anv-b3commonmode-20261028 (s36),
+   anv-b3joint3-20261028 (s38), anv-b3joint4-20261028 (s39),
+   anv-b3levelrep-20261028 (s51), anv-b3w5xdayrep-20261029 (W5,
+   measured by s73 on aiueos-6600hs Intel BMG G31 ANV). NO new
+   run enters; the W5 quantities were MEASURED in session 73.
+
+3. INVALIDATION MACHINERY (frozen, the s78 section-3 set): per
+   window -- runs parsed 78; VERIFY mismatch total 0; 450 SAMPLE
+   + 24 VERIFY per run; knobs == arm tables; S=8 fail-closed;
+   cell map identical across all 390 logs and the named cell
+   present as ok-map cell 5; the four PRIOR windows' block-min
+   vectors reproduce publication-s39.txt/s51.txt section 3
+   EXACTLY; the four prior anchor rows reproduce EXACTLY; C1 at
+   W5 (c2 FLOOR; c8 pooled median within +/-5% of committed
+   32915). Any violation marks the descriptive table NOT
+   EVALUABLE (there is no letter to fail).
+
+4. PARSER VALIDITY PINS (frozen; the row's own honesty anchor):
+   the same parser MUST reproduce the PUBLISHED
+   publication-s78.txt (s78) quantile-pair vectors EXACTLY at the
+   named cell/tw arm -- INNER (28,48) 2*L s36/s38/s39/s51/s73 =
+   118/102/128/113/100 and OUTER (9,67) = 496/429/437/446/502,
+   and the published W5 block D vectors -- INNER
+   42 34 40 48 74 48 60 39 74 56 52 57, OUTER
+   267 189 242 377 340 278 214 181 255 247 268 194. Any
+   mismatch marks the DL table NOT EVALUABLE (the DL statistics
+   would come from a parser that cannot reproduce committed
+   bytes). These pins are QUOTE-ONLY content of the s78
+   publication -- recomputed here only as validity, and the
+   INNER/OUTER vectors are NOT DL content (they are the s53/s54
+   pairs, outside the DL vocabulary).
+
+5. NAMED, NOT HIDDEN: (a) DESCRIPTIVE ONLY -- the four DL level
+   vectors carry NO letter and NO inferential claim; they are
+   reference content for a FUTURE pre-registered DL row (its own
+   freeze: direction/null/threshold/multiplicity, per s81
+   selection rule 3(c)/3(d)); (b) the DL pairs were named
+   data-independently by the s81 rule, but THIS row's cell/arm/
+   window-set choice reuses the T15/T16 convention (named cell,
+   tw arm, five windows) for comparability -- the cell is
+   NAMED-not-selected-among; the 18-cell scoreboard is NOT
+   computed here (a future row's choice); (c) tail-side asymmetry
+   stays out of scope (every DL pair is self-mirror; the s81
+   limitation stands); (d) n = 12 blocks x 5 windows, ONE host;
+   any band placement is descriptive, not a test; (e) the
+   freshness claim is exactly the two pre-freeze greps recorded
+   at 2026-10-29T05:22:05Z (0/0 hits outside the s81 vocabulary
+   directory and this directory) and certifies nothing outside
+   the committed evidence tree.
+
+6. THE BAR / DETERMINISM / ROUTE: analysis session -> NO reading
+   -> NO settle-bar-ledger line, NO day-slot consumption
+   (settle-bar-ledger.txt must be byte-identical to HEAD). The
+   generator (analysis-s82.py) is deterministic (no RNG at all);
+   run twice, byte-identical (cmp exit 0) is the claim. Standing
+   gate set runs fresh and byte-compares to the s81 pins:
+   gpu_regime_classify.py --self-test (== gate-s81-classify.txt);
+   scoped GPU gate twice (== gate-s81-run1.txt / each other);
+   FULL run-tests.cljk live (exit 1 RED AT BASE kotoba.form,
+   ADR-0362, outside this diff -- this diff touches NO .cljk
+   namespace; .err == gate-s81-full.err; NO green full suite
+   claimed); settle-bar evaluator --self-test + ledger eval twice
+   byte-identical (== the s81 bar pins); find docs/evidence/gpu
+   -name '*.sh' -> 0. Evidence is .txt/.py only (NEVER .sh).

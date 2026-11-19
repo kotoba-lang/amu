@@ -1,0 +1,159 @@
+RECORD-VERIFY-S184 BYTE-IDENTITY RECORD (session 184, 2026-11-02)
+================================================================
+Scope: the s183 carry-forward (c), the OPTIONAL POST-HOC RECORD-
+VERIFY over the committed captures of the SEVENTEENTH CUT
+PRE-REGISTRATION (record.txt, sessions 176-183) -- the s168/s175
+record-verify precedent, run TWICE byte-identical. QUOTE-ONLY /
+ARITHMETIC-ONLY: NO seventeenth-cut quantity is computed -- NO
+run log, NO class, NO verdict, NO claim; every 17th-cut quantity
+stays UNMEASURED (the measurement half is NOT queued). This
+verify re-reads committed bytes only: NO hardware, NO builds, NO
+compiles, NO queue, NO day-slot consumption, NO ledger line.
+
+RUN PAIR (this session, in this directory):
+  run 1: python3 record-verify-s184.py -> rc 0, stdout 5,479
+         bytes (record-verify-s184-run1.txt), stderr 0 bytes
+         (record-verify-s184-run1.err).
+  run 2: python3 record-verify-s184.py -> rc 0, stdout 5,479
+         bytes (record-verify-s184-run2.txt), stderr 0 bytes
+         (record-verify-s184-run2.err).
+  BYTE-IDENTITY: cmp run1.txt vs run2.txt -> exit 0;
+                 cmp run1.err vs run2.err -> exit 0.
+  sha256 (both stdout runs, identical):
+    233fc5eb092172f9e8dde2283d7292c377557b33ad73491a98918a5287798880
+    record-verify-s184-run1.txt / record-verify-s184-run2.txt
+    (5,479 bytes both runs; .err 0 bytes both runs)
+  record-verify-s184.py (the script that produced both runs):
+    878c2548e16f54aa24f6dbb9ff2dfe30f8222e3d5fe80c610be6e154673f2ed7
+
+VERDICT (both runs, identical output):
+  RECORD-VERIFY S184 SUMMARY: 95 ok / 0 failed
+
+CHECK SET (95 wants, every one matched):
+  Record pin + structure (10): record.txt 11,924 bytes sha256
+  2e5f18ed... (the s183 landing pin) + the header and the seven
+  section headings + the JUN-55/JUN-59/JUN-499 footer.
+  Census pair + named draft defect (7): knob-search-s177.py
+  sha256 786b3746... == the s178 identity pin; run1 == run2
+  (6,823 bytes, sha256 b3fdb1f2...), .err 0 bytes both; identity
+  quotes both pins + "0 mismatches"; the named draft-1 pair
+  (3,390-byte stdout sha256 f52b6f92..., .err 556 bytes sha256
+  3df11a96..., byte-identical pairs) with the named ValueError
+  ("not enough values to unpack (expected 4, got 3)") in its
+  .err.
+  Census values (17): the committed bracket (254,557, 255,045]
+  width 488 line; the s165 re-derivation rows fm 31 / (345,
+  1,354) / 7 and mid 35 / (248, 973) / 10 both -> MATCH; the C1
+  (b) quotes (c2 m 30 vs floor band 31..32 False; c8 32,820 vs
+  32,915 True (-0.29%); VERDICT branch (b), cause UNMEASURED);
+  the C2 10/3/3 re-count + pooled-48 CAPTURED + block binding
+  min(m-h) 997.0538..1006.7909 pooled 1,002.7437 + VERDICT (c)
+  CLASS-UNRESOLVED L9 at 254,801; CUT VERDICT INVALID; NOTHING
+  MOVES; the disputed record UNCONTESTED line; the wander band
+  981..1,015 / 974..1,023 + the 16/16 in-band computation; the
+  floor-midpoint re-derivation; the q1 row (31 / (313, 1,229) /
+  8, 0 occurrences everywhere) + the q3 row (34 / (246, 965) /
+  10); mid NOT on the quarter grid (q-fraction 0.665984); the
+  VIRGIN/FIRST-content point quote.
+  Design-verify pair (4): design-verify-s179.py sha256
+  e40fdb0c... == the s181 identity pin; run1 == run2 (7,070
+  bytes, sha256 bd469b93...), .err 0 bytes both; "70 ok / 0
+  failed" verdict; identity quotes both pins + the 70-want
+  check set + the 12 arithmetic re-derivations; record section 2
+  quotes the 55 line-pinned + 12 arithmetic MATCH claims.
+  Freeze (7): protocol.txt 19,974 bytes sha256 ad8ace96... ==
+  the s182 freeze pin; freeze-record quotes the full pin + the
+  freeze stamp 2026-11-01T16:20:57Z + "run-log count in this
+  directory at freeze 0" + the arm-(b) hazard edge (i) at
+  254,801 + the frozen h_c formula + R = 6,400 adopted
+  unchanged + the arm table 54 processes (3+48+3); the
+  ROUNDS6400 instrument re-hash c2704aaa... == the adopted
+  source pin.
+  Standing gates vs the s88/s117 pins (15): gate-s183-classify
+  17,925 bytes == s88 pin, .err 0; gate-s183-run1 == run2 ==
+  both s88 pins (919 bytes), .err 0 both, the GREEN line "Ran
+  123 tests containing 12162 assertions. 0 failures, 0
+  errors."; full.out 0 bytes == pin, full.err 879 bytes == pin
+  with "Could not find namespace: kotoba.form" (RED AT BASE
+  kotoba.form ADR-0362 -- NO green full suite claimed);
+  bar-s183-selftest 3,590 bytes == s88 pin, .err 0; bar-s183-
+  eval run1 == run2 == the s117 post-append pin (1,006 bytes),
+  .err 0 both, "VERDICT: SETTLED INTERMEDIATE/MIXED".
+  Environment incident captures (4): the envfail pair .err
+  byte-identical 877 bytes each naming "Could not find
+  namespace: kotoba.hir"; .txt 0 bytes both.
+  Arithmetic re-derivations (12, all recomputed here):
+  (1,000,003*313)//1,229 = 254,679; gcd(313, 1,229) = 1;
+  (254,557+255,045)//2 = 254,801; width 488; q=1 grid
+  254,557+488//4 = 254,679; q=3 grid 254,557+3*(488//4) =
+  254,923; arm table 3+48+3 = 54; bis binding spread
+  1008.7909-1005.8172 = 2.9737; fm binding spread
+  1006.7909-997.0538 = 9.7371; band width 1,015-981 = 34;
+  254,801-254,679 = 122; 255,045-254,923 = 122.
+  Record narrative quotes (8): section 5's "record-verify NOT
+  run at this landing" + "post-hoc record-verify ... standing,
+  not queued"; section 6's every-quantity-UNMEASURED + the
+  ADR-0358 workgroup-rows sentence + RULE 4 NOTHING MOVES;
+  section 7's 3/48/3 = 54 processes + "NO queued row remains;
+  s184 takes a row only per the recorded carry-forward
+  precedent, else stands down."
+  ADR-0355 dated note (2): the sessions 176-183 marker + this
+  evidence directory cite.
+  Evidence hygiene (2): find docs/evidence/gpu -name '*.sh' ->
+  0; scratch/scoped-gpu-gate.cljk absent (created/run/DELETED
+  at s183, never committed).
+  Blocker-first capture (3): prlist-s183-prepush.json 15 open
+  PRs; 0 hermes/ heads; exactly ONE chain PR head
+  bot/amu-gpu-chain-20261028-4 (#1665).
+
+NAMED, NOT HIDDEN -- one draft-run pair, fail-closed at ONE
+quote token BEFORE the verdict (kept visible in this
+directory):
+  draft-1 (record-verify-s184-draft1-run{1,2}.{txt,err}, rc 1
+  both, the pair itself byte-identical -- stdout sha256
+  d713a293..., 5,495 bytes, .err 0 bytes): 94 ok / 1 failed --
+  "record section 6: workgroup rows as ADR-0358 left them" NOT
+  SATISFIED. Cause: the quote pin read "the accelerator-targets
+  workgroup rows" while record.txt wraps the line as
+  "the accelerator- targets workgroup rows" and this script's
+  whitespace normalization preserves the hyphen-space sequence
+  -- a TOKEN-SHAPE defect in the VERIFY's own quote pin, NOT in
+  any verified value (the sentence itself was present). Fix =
+  pin the hyphen-tolerant tail ("workgroup rows stay exactly as
+  ADR-0358 left them") only; no want was weakened to a smaller
+  claim than the record makes and no evidence value changed. The
+  other 94 wants passed fail-closed in the draft run and the
+  draft's byte-identical pair shows the verify is deterministic
+  even in the failing state.
+
+STATE (three-state discipline): this post-hoc record-verify
+confirms the s183 landing record's every byte-level and
+arithmetic claim against committed bytes -- the seventeenth-cut
+pre-registration remains ACCEPTED DESIGN ONLY (frozen protocol
++ record + ADR-0355 note), NOT implemented compiler code, NOT
+a measurement. NO seventeenth-cut quantity exists; every 17th-
+cut quantity -- every unit class, C2, W1, W2, W3, X1 -- is
+UNMEASURED. RULE 4 unchanged: NOTHING MOVES; bracket stays
+EXACTLY (254,557, 255,045]; MID-ONLY NARROWING CLAIM SUSPENDED;
+NO vendor optimization exists for Intel (or for any vendor);
+the accelerator-targets workgroup rows stay exactly as ADR-0358
+left them (provisional :measured? false rows remain NOT
+optimization evidence).
+
+BAR NON-INTERFERENCE held: NO settle-bar-ledger line, NO day-
+slot consumption, NO hardware, NO builds, NO compile, NO GO
+stamp. find docs/evidence/gpu -name '*.sh' -> 0 (verified by
+this run). Diff touches NO committed .cljk namespace (evidence
+.py/.txt only; no scoped-gate re-run needed, the s160/s166
+precedent; full suite RED AT BASE kotoba.form ADR-0362 outside
+this diff -- NO green full suite claimed).
+
+NOT DONE (s185 carries exactly this list): standing, not
+queued: the seventeenth cut MEASUREMENT half ONLY through its
+own session under the frozen anv-b3bisect17prereg-20261101/
+protocol.txt (54 fresh processes c2/q1/c8 = 3/48/3 on
+aiueos-6600hs) -- NOT queued; any further counted-day slot
+(each needs its own freeze) and the cross-day tail-movement row
+(not queued). NO queued row remains; s185 takes a row only per
+the recorded carry-forward precedent, else stands down. RULE 4
+unchanged. (JUN-55, JUN-59; Linear tracking JUN-499)

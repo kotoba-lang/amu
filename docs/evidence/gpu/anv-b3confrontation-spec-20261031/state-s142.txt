@@ -1,0 +1,71 @@
+state-s142 -- the s141 record.txt NOT DONE list, completed (session
+142, 2026-11-01; this tick's row is exactly that list -- one landing
+tail, no new design, no new measurement).
+
+(a) STANDING GATES (a)-(f) RUN LIVE this session, captures carry the
+    s142 number (the s128/s130/s135/s138/s140 completing-session
+    naming precedent -- s141 ran NO gates and left no gate capture to
+    keep a name), all byte-compared to the s88 committed pins in
+    anv-b3w6tailrep-20261030/ and the s117 post-append eval pin in
+    anv-b3w7ledgerappend-20261031/:
+    (a) classify --self-test rc 0 2649/0, 17,925 bytes == pin
+        (cmp exit 0), .err 0 (gate-s142-classify.txt/.err);
+    (b) scoped GPU gate GREEN 'Ran 123 tests containing 12162
+        assertions. 0 failures, 0 errors.' run 1 == run 2 == both
+        s88 pins (gate-s142-run1.txt == gate-s142-run2.txt == 919
+        bytes, cmp exit 0 x3), rc 0 both, .err 0 both (scratch
+        runner scratch/scoped-gpu-gate.cljk created/run twice/
+        DELETED this session, never committed -- final state
+        deleted);
+    (c) FULL run-tests.cljk exit 1 RED AT BASE kotoba.form ('Could
+        not find namespace: kotoba.form', ADR-0362, outside this
+        diff -- this diff touches NO committed .cljk namespace),
+        gate-s142-full.out 0 bytes == pin, gate-s142-full.err 879
+        bytes == pin (cmp exit 0 x2) -- NO green full suite
+        claimed;
+    (d) evaluator --self-test rc 0 38/0, 3,590 bytes == the s88
+        pin (cmp exit 0) + ledger eval pair twice BYTE-IDENTICAL
+        (bar-s142-eval-run1.txt == bar-s142-eval-run2.txt, 1,006
+        bytes, cmp exit 0) == the s117 post-append pin (cmp exit
+        0) -> VERDICT: SETTLED INTERMEDIATE/MIXED (unchanged);
+    (e) find docs/evidence/gpu -name '*.sh' -> 0 (gate-s142-nosh
+        captures 0 bytes);
+    (f) settle-bar-ledger.txt == HEAD (git diff --exit-code rc 0,
+        gate-s142-ledger-head captures 0 bytes -- no append this
+        row).
+
+(b) THE ADR-0355 DATED NOTE is appended (2026-11-01, sessions
+    141-142 -- THE CONFRONTATION SPEC).
+
+S142 BYTE RE-VERIFICATION (real tool output this tick): the s141
+census claim re-verified -- confrontation-census-s141.py run twice
+more at scratch (census-recheck1/2.txt in the session scratch, not
+committed), byte-identical to each other AND to the committed
+confrontation-census-s141.txt (cmp exit 0 x2), .err 0 both.
+
+NAMED, NOT HIDDEN: this tick ran NO hardware, NO builds, NO
+compiles, NO GO stamp, NO day-slot consumption, NO ledger line --
+BAR NON-INTERFERENCE held (gate (f) re-run live; the ledger was not
+touched by anything this session wrote). RULE 4 unchanged: NOTHING
+MOVES -- workgroup rows stay as ADR-0358 left them (:measured? true
+scoped to each row's one named measured device for :nvidia/:apple/
+:intel/:amd; :arm/:unknown provisional :measured? false); NO vendor
+optimization exists for Intel (or for any vendor); this is bisect
+measurement-machinery DESIGN landing on ONE host's instrument
+question, not a workgroup-default measurement. The confrontation
+spec remains ACCEPTED DESIGN ONLY (not implemented compiler code,
+not a measurement).
+
+DONE: (a) gates, (b) ADR note, (c) this landing commit on
+bot/amu-gpu-chain-20261028-4 after the blocker-first check, (d) the
+JUN-499 Linear landing comment.
+
+Carry-forward s143: a fourteenth cut ONLY through a NEW
+pre-registered cut session (its own freeze) whose pre-registration
+must satisfy the confrontation spec (confrontation-spec.txt) and
+confront the s139 16-block content first -- NOT queued; any further
+counted-day slot (the 2026-10-31 slot is consumed at s117; the next
+slot is a NEW UTC day and its own freeze) and the cross-day
+tail-movement row (not queued) -- NO queued row remains; s143 takes
+a row only if one is queued or frozen to run, else stands down.
+(JUN-55, JUN-59; Linear tracking JUN-499)

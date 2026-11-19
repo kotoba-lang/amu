@@ -1,0 +1,28 @@
+== verify-record-s231.py -- POST-HOC RECORD-VERIFY over the ==
+== committed captures (amu-gpu session 231, s230 carry-     ==
+== forward's standing row).  Reads ONLY committed bytes;    ==
+== every record number re-derived from the captures by an   ==
+== independent code path (explicit sort, middle-two even-N  ==
+== median).  Nothing written; fail-closed.                  ==
+
+ok   C1.1 gzip run-log census == the frozen 24-name grid
+ok   C1.2 .stderr.txt sibling census == the frozen 24-name grid
+ok   C1.3 all 24 committed .stderr.txt siblings are 0 bytes
+FAIL C2.1 every run: 115,200 SAMPLE lines, 6,400 at the reading cell
+ok   C2.2 every SAMPLE line: batch per arm, work_mul=1, ndiv=1
+ok   C2.3 pooled N per reading per arm == 3R == 19,200
+ok   C2.4 every run: 24 VERIFY lines
+ok   C3.1 raw-digests-s225.txt rows == the frozen 24-run grid
+ok   C3.2 all 24 gz logs: decompressed raw sha256 + byte count == the committed custody rows
+ok   C4.1 publication-s229.txt: 11026 bytes sha256 040ee2f60b601d9fb77d3ed044856d93549fa4bb0d10d12a8564ec6c9d3eb96d
+ok   C4.2 publication-s229-run1.txt == run2.txt == publication-s229.txt
+ok   C5.0 publication section-2 row count == 8
+ok   C5.r1.c2 re-derived m=30 mad=0 h=0.0000 N=19200 == publication row
+ok   C5.r1.c8 re-derived m=32872 mad=203 h=5.3356 N=19200 == publication row
+ok   C5.r2.c2 re-derived m=30 mad=0 h=0.0000 N=19200 == publication row
+ok   C5.r2.c8 re-derived m=32862 mad=192 h=5.0465 N=19200 == publication row
+ok   C5.r3.c2 re-derived m=30 mad=0 h=0.0000 N=19200 == publication row
+ok   C5.r3.c8 re-derived m=32795 mad=195 h=5.1254 N=19200 == publication row
+ok   C5.r4.c2 re-derived m=30 mad=0 h=0.0000 N=19200 == publication row
+ok   C5.r4.c8 re-derived m=32867 mad=221 h=5.8087 N=19200 == publication row
+ok   C6.0 band/ref parsed from the committed s27 census: floor band 31..32, c8 ref 32915

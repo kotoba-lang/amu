@@ -1,0 +1,56 @@
+== JUN-59 session 119 derivation (the EIGHTH CUT pre-registration: ==
+== cut-point knob search + 255,208 knob-pair citation)             ==
+== every value computed here from arithmetic or committed bytes   ==
+
+re-opened bracket (the settle-bar V3 direction, named in protocol.txt): (253906, 255208] n-units
+bracket midpoint exact: 254557.0 -- exact_is_integer: True
+bisect grid n = (253906+255208)//2 = 254557
+knob arithmetic: n = (1,000,003*WORK_MUL)//NDIV (integer floor)
+search box (sessions 21-27's box): WORK_MUL 1..2,048 x NDIV 1..8,192
+
+SEARCH SELF-VALIDATION against session 27's committed census (253,255):
+  pairs found: 35 (s27 committed: 35) -> MATCH
+  smallest: (214, 845) (s27 committed: (214, 845)) -> MATCH
+  doubles in box: 9 (s27 committed: 9) -> MATCH
+
+pairs mapping to 254557 in-box: 31; smallest: (405, 1591)
+in-box pairs whose same-ratio double is also in-box: 7
+bisect pair chosen: (405, 1591); same-ratio double (810,3182) n=254557 in-box: True
+gcd(254557, 1,000,003) = 1 -- every knob pair is a floor approximation of the grid
+
+UPPER ANCHOR CITATION: pairs mapping to 255208 in-box: 18; smallest: (1213, 4753)
+committed measurement pair (1213, 4753): (1,000,003*1213)//4753 = 255208 (== 255208) in the mapping set: True
+gcd(255208, 1,000,003) = 1
+session-24 C3 (b) twin (2426, 9506): n=255208, in search box: False
+
+nominal work units (definition, L1):
+  c2   B=2 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 2.0000000
+  lo   B=3 WM=1024  NDIV=4033  n=253906   per-dispatch 0.2539052 total 0.7617157
+  mid  B=3 WM=405   NDIV=1591  n=254557   per-dispatch 0.2545562 total 0.7636687
+  eq3  B=3 WM=810   NDIV=3182  n=254557   per-dispatch 0.2545562 total 0.7636687
+  hi   B=3 WM=1213  NDIV=4753  n=255208   per-dispatch 0.2552072 total 0.7656217
+  b2m  B=2 WM=405   NDIV=1591  n=254557   per-dispatch 0.2545562 total 0.5091125
+  c8   B=8 WM=1     NDIV=1     n=1000003  per-dispatch 1.0000000 total 8.0000000
+
+arm n self-checks:
+  lo: n=253906 want=253906 -> ok
+  hi: n=255208 want=255208 -> ok
+  mid: n=254557 want=254557 -> ok
+  eq3: n=254557 want=254557 -> ok
+  b2m: n=254557 want=254557 -> ok
+
+COMMITTED-BYTE CITATIONS (parsed here):
+  s27 census (anv-b3bisect7-20261027/derivation-census-s27.txt) (1213,4753) triple readings: 1,166/1,166/1,156
+  s27 protocol section 3: 1,166 / 1,166 / 1,156 CAPTURED
+  s24 C3 (b) split minima ((1213,4753) vs (2426,9506)): 1,000 vs 994 at n=255,208
+  c2 pin (s27 census anv-bb-c2 expected): e5ed903e5b9dfd64168e2d8ddea9d8efb573273e7594afcaca71f3f70bb9c489
+  c8 pin (s27 census anv-bb-c8 expected): 480925e58d28e7d318456703c6959548e9b9c33e375c3e0fefe688e844d37807
+  (1024,4033) triple pin (s27 census anv-bb-hi expected -- s27's hi IS (1024,4033)): a6c31b6c5c5663084fa4193f0d5c0098f65882b814a92fa9e85cef940cf63b9c
+  (1213,4753) triple pin (s26 census anv-bb-hi expected -- s26's hi IS (1213,4753)): 123e8f739a92b51a45e8e9d8a65f4b67cafd51071f7974d1ea623bdc61db6bec
+  settle-bar-ledger.txt counted rows (first qualifying per UTC day): 4
+    day=2026-10-28 session=s31 class=INTERMEDIATE/MIXED median=1142 min=985
+    day=2026-10-29 session=s73 class=INTERMEDIATE/MIXED median=1131 min=998
+    day=2026-10-30 session=s105 class=INTERMEDIATE/MIXED median=1133 min=993
+    day=2026-10-31 session=s113 class=INTERMEDIATE/MIXED median=1137 min=986
+  frozen evaluator committed pin (bar-s117-eval-post-run1.txt) VERDICT: SETTLED INTERMEDIATE/MIXED
+  s27 census (1024,4033) context lines: 3 parsed

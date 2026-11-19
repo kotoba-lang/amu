@@ -1,0 +1,49 @@
+2026-10-31T05:2xZ (session 122)
+== session 122 state capture -- EIGHTH CUT MEASUREMENT HALF ==
+== LANDED (the s121 landing tail completed; nothing left of the ==
+== state-s121.txt not-done list except Linear, which is posted ==
+== after the push) ==
+
+ROW: the s120 carry-forward (a) -- the eighth cut's MEASUREMENT
+half (21 fresh processes under the frozen protocol,
+anv-b3bisect8prereg-20261031/protocol.txt, freeze stamp
+2026-10-31T03:53:30Z). s121 RAN the half (real tool output, this
+directory, run window 2026-10-31T05:00:35Z..05:00:41Z, host
+aiueos-6600hs) and hit its budget cutoff before the landing tail;
+s122 (this tick) completed EXACTLY that tail with named provenance
+(the s92/s100/s101/s120 precedent). All s121 claims re-verified in
+s122 by real tool output (record.txt section 3).
+
+THE FINDING (publication-s121.txt section 4): C1 (a)=True; C2 (a)=
+True; C3 (a)=True; W1 (b) MID-INTERMEDIATE -- mid at n=254,557
+(405,1591) class INTERMEDIATE/MIXED (pooled median 1,156, 18-cell
+986..1,459): THE B=3 CLASS FLIP SITS IN (254,557, 255,208] n-units
+= (0.2545562, 0.2552072] work-units -- the eighth cut NARROWS the
+flip bracket from (253,906, 255,208] to (254,557, 255,208]; b2m
+FLOOR extends 'B=2 never captures' to n=254,557 (total work
+0.5091125). BAR NON-INTERFERENCE held: no ledger append, no
+day-slot consumption, no bar/Rule-4/:measured? movement.
+
+GATES: (a) classify 17,925 == s88 pin -- RUN s121, byte-verified
+s122; (b) scoped GPU gate GREEN 123/12162/0/0 twice == s88 pins --
+RUN s121, byte-verified s122; (c) FULL run-tests.cljk LIVE s122
+exit 1 RED AT BASE kotoba.form (ADR-0362, outside this diff -- this
+diff touches NO committed .cljk namespace), stdout 0, .err 879 ==
+s88 pin -- NO green full suite claimed; (d) evaluator self-test
+38/0 == pin + eval pair == s117 post-append pin -> SETTLED
+INTERMEDIATE/MIXED (unchanged) -- RUN s121, byte-verified s122;
+(e) find '*.sh' -> 0 (LIVE s122); (f) ledger == HEAD (LIVE s122).
+analysis-s121.py re-run in s122 (third run) byte-identical to
+publication-s121.txt.
+
+RULE 4 unchanged: NOTHING MOVES -- workgroup rows stay as ADR-0358
+left them; NO vendor optimization exists for Intel (or for any
+vendor); this is bisect measurement machinery on ONE host
+(aiueos-6600hs), not a workgroup-default measurement.
+
+Carry-forward to s123: (a) any ninth cut ONLY through a NEW
+pre-registered cut session (its own freeze) -- NOT queued;
+(b) any further counted-day slot (its own pre-registration freeze)
+and the cross-day tail-movement row (not queued) -- NO queued row
+remains. Evidence: docs/evidence/gpu/anv-b3bisect8-20261031/.
+(JUN-55, JUN-59; Linear tracking JUN-499)

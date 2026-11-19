@@ -1,0 +1,132 @@
+amu-gpu s207 (2026-11-02 UTC, cron) -- NINETEENTH CUT
+PRE-REGISTRATION FREEZE: protocol.txt FROZEN + freeze-record (the
+s206 carry-forward exactly, at its own slice; the s182/s195
+precedent). Named freeze-record-s204.txt per the s143/s152
+naming precedent (design artifacts carry the DECISION session's
+number -- the design was decided at s204, corrected at s205;
+this file is written at s207).
+
+FINDING (verified by real tool output, docs/evidence/gpu/
+anv-b3bisect19prereg-20261102/freeze-record-s204.txt): THE
+NINETEENTH CUT PRE-REGISTRATION IS NOW FROZEN -- protocol.txt
+written ONCE at freeze stamp 2026-11-02T04:07:06Z BEFORE any run
+log of this cut exists (run-log count at freeze 0; the measuring
+session has not run), pin 26,405 bytes sha256
+9a6f7b75e932c51d8a45d5586bdfda15a73d350892153f31aec29c70b8ace6f6
+(shasum tool output at freeze); freeze-record-s204.txt enumerates
+the frozen content in the confrontation spec's four arms and pins
+what is not frozen. THE FROZEN ROW: THE FLOOR-MIDPOINT CUT AT q2
+(B=3, WM=307, NDIV=1204) n=254,984 -- q=1 254,953 NOT cut and q=3
+255,014 NOT cut (both dominated on the worst-case clip criterion
+92/91 vs 61), lo 254,923 NOT re-cut (the 18th cut's C2 (a)
+content + the general re-read logic bind there; NAMED per D1
+(iii): NO L9 clause binds at 254,923 from the 18th cut's freeze),
+hi 255,045 NOT re-measured (the 13th/15th cut content; the
+per-point rule); ROW QUESTION: AT FIXED B=3, IS THE CLASS AT
+(307, 1204) n=254,984 SINGLE-CLASS STABLE AT 16-BLOCK GRANULARITY
+UNDER THE PRE-REGISTERED DEEP-POOLING CI CLASS STATISTIC (R =
+6,400) AT ITS NEW FIRST-MEASURED BINARY (THE ROUNDS6400
+INSTRUMENT VARIANT)? ARM TABLE c2/q2/c8 = 54 fresh processes
+(3+48+3 self-check ok); ONE NEW KNOB TRIPLE q2 (307, 1204) (L8
+APPLIES; 6 in-box same-ratio doubles enumerated at the s203
+census, NONE measured); W1 (a) -> bracket narrows to (254,923,
+254,984] / W1 (b) -> (254,984, 255,045] / W1 (c) NOTHING MOVES /
+W1 (d) INVALID; both (a)/(b) narrow with EQUAL clips 61/61
+(tool-derived, the s166 D1 symmetric-narrowing criterion's
+strongest form; the 18th cut's "clips are not equal widths" note
+does NOT recur); the full clip geometry as CORRECTED at s205 (q=1
+W1 (a) 30 / W1 (b) 92; q=2 61/61; q=3 W1 (a) 91 / W1 (b) 31;
+worst cases 92/61/91 -- the original q=1 per-letter sentence
+pinned verbatim as SUPERSEDED in state-s205.txt; clip pairs,
+worst cases, equal clips at q=2 and the point choice UNAFFECTED);
+the MID-ONLY NARROWING CLAIM: its location statement is ALREADY
+confirmed by implication from the 18th cut's W1 (b) and this
+cut's W1 (b) CONFIRMS it again BY IMPLICATION (F > 254,984 >
+254,882 -- tool-checked), W1 (a) neither implies nor refutes, W1
+(c)/(d) SUSPENDED; the C1 CONTROL-STATE CONFRONTATION (current
+control state = the 17th cut's C1 (a), replicated by the 18th;
+this cut's C1 (a) replicates at three consecutive cuts; C1 (b)
+re-opens the control question as a named three-state record on
+the ROUNDS6400 instrument, W1 (d) INVALID, cause UNMEASURED);
+the arm-(b) re-read hazard named on every binding edge (i)
+254,801 literal, (ii) 254,679 second edge CLOSED and binding
+exactly as frozen, (iii) mid on the disputed record, (iv) the lo
+anchor 254,923 -- the 18th cut's second-edge shape did NOT fire,
+the general re-read logic binds instead, (v) 254,984
+second-edge shape named anew; arm-(c) option (i) ADOPTED
+UNCHANGED (h_c = 3.6420*MAD_c/sqrt(N), frozen 1,000-tick
+threshold, R = 6,400 adopted unchanged, NOT re-derived), option
+(ii) CONSIDERED AND NOT CHOSEN (would pre-register a deadlock),
+option (iii) UNAVAILABLE at a virgin point, the NAMED GAP (the
+wander band 981..1,015 bounds the RAW min's within-window wander
+only -- (i)'s binding min(m-h) within-window wander at a byte-
+identical binary is UNMEASURED, NOT claimed).
+
+VERIFIED THIS TICK (real tool output): the c2704aaa... ROUNDS6400
+source pin re-hashed at the freeze, MATCH
+(c2704aaad6bfeeae1f4f9cfa916d0160efb03926892237554c7dffc8386e84e0
+docs/evidence/gpu/anv-b3bisect15prereg-20261031/gpu-subgroup-
+reduce-anv-ndiv-rounds6400.c.txt, shasum tool output); the
+directory enumerated by tool at freeze (29 entries -- the
+s202-s205 state captures, knob-search-s203.py + its run captures
+(+ .err both, + the named draft-1 pair + .err both, + identity),
+design-verify-s204.py + its run captures (+ .err both, + the
+named draft-1 pair + .err both, + identity),
+prlist-s204/206-prepush.json, gate-s204/206-nosh.txt (0 bytes
+each), __pycache__ (Python import cache, not a run log); NO
+measuring-session run log -- run-log count at freeze 0);
+protocol.txt pin (26,405 bytes sha256 9a6f7b75...) from shasum
+tool output at freeze; the frozen knob/clip arithmetic re-derived
+by tool at the freeze ((1,000,003*307)//1204 = 254,984 == n;
+gcd(307, 1204) = 1; floor midpoint (254,923+255,045)//2 =
+254,984 == 254,923+(2*122)//4; worst-case clips 92/61/91; q=1
+letters (a) 30 / (b) 92; q=3 letters (a) 91 / (b) 31; F >
+254,984 > 254,882 True); BAR NON-INTERFERENCE checked LIVE this
+tick: find docs/evidence/gpu -name '*.sh' -> 0;
+settle-bar-ledger.txt == HEAD (git diff --exit-code rc 0).
+
+STATE (three-state discipline): the nineteenth-cut pre-
+registration is now ACCEPTED DESIGN ONLY, FROZEN as pre-
+registration content -- NOT implemented compiler code, NOT a
+measurement. NO nineteenth-cut quantity exists: no run log, NO
+class/verdict/claim; every nineteenth-cut quantity (every unit
+class, C2, W1, W2, W3, X1) is UNMEASURED until a FUTURE
+measuring session runs 54 fresh processes under this frozen
+protocol (NOT queued -- its own act). The quoted 18th/15th/
+13th/17th-cut quantities are those cuts' landed MEASURED
+QUANTITIES or committed quotes thereof (the 18th-cut letters are
+the s197-s199 hardware runs on aiueos-6600hs under the frozen
+anv-b3bisect18prereg-20261101/protocol.txt). RULE 4 unchanged:
+NOTHING MOVES -- the committed bracket stays EXACTLY (254,923,
+255,045]; the MID-ONLY NARROWING CLAIM stays SUSPENDED (the W1
+implication letters are pre-registered letter SHAPES, not
+claims); NO vendor optimization exists for Intel (or for any
+vendor); the accelerator-targets workgroup rows stay as ADR-0358
+left them (:measured? true scoped to each row's one named
+measured device for :nvidia/:apple/:intel/:amd; :arm and
+:unknown remain provisional; :measured? false rows remain
+provisional -- NOT optimization evidence). BAR NON-INTERFERENCE
+held: NO settle-bar-ledger line, NO day-slot consumption, NO
+hardware, NO builds. This diff touches NO committed .cljk
+namespace (evidence .txt only; the s160/s166 precedent: no
+scoped-gate re-run needed; full suite stands RED AT BASE
+kotoba.form ADR-0362 outside this diff per the standing captures
+-- NOT re-run this tick -- NO green full suite claimed).
+Untracked scratch/, deps.edn, .DS_Store NOT staged. Linear
+comment on JUN-499.
+
+Commit + push to the chain branch bot/amu-gpu-chain-20261028-4
+(the ONE open chain PR #1665) after the blocker-first check.
+
+NOT DONE (s208 carries exactly this list): (a) the post-freeze
+landing of the nineteenth-cut pre-registration at its own slice
+(the standing gates (a)-(f) with the running session's captures;
+record.txt for the sessions 202-207 + the ADR-0355 dated note;
+the landing tail: blocker-first re-check + JUN-499 landing
+comment); standing, not queued: the nineteenth cut MEASUREMENT
+half (54 fresh processes under this frozen protocol -- NOT
+queued; every nineteenth-cut quantity UNMEASURED until then),
+any further counted-day slot (each needs its own freeze) and the
+cross-day tail-movement row.
+
+(JUN-55, JUN-59; Linear tracking JUN-499)

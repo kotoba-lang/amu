@@ -1,0 +1,235 @@
+amu-gpu s219 (2026-11-02 UTC, cron) -- THE OPEN CONTROL QUESTION
+PRE-REGISTRATION, FIFTH SLICE: THE INVALIDATION CRITERIA (the
+s218 carry-forward's FIRST remaining design decision) -- the
+s202/s215/s216/s217/s218 shape: ONE finished design slice,
+quote-only from committed bytes at the exact lines (every line
+extracted by tool this tick, never transcribed) plus the design
+decision itself and labelled DERIVED arithmetic on quoted
+values.
+
+ROW (decided, recorded here; ONE row per tick): the invalidation
+criteria -- what an out-of-domain reading or an act defect DOES
+to the resolution act. WHY THIS ROW (named): the s218 carry-
+forward lists exactly two remaining design decisions -- "(the
+invalidation criteria; the 'three-state' semantics)" -- and the
+chain precedent (s215, s216, s217, s218) takes the FIRST listed
+item at each slice. The two other standing rows stay standing:
+(a) any further counted-day slot -- each needs its OWN freeze
+(this row choice does NOT consume or forfeit any slot); (b) the
+cross-day tail-movement row (not queued).
+
+1. THE QUOTED MACHINERY (quote-only, exact committed lines,
+extracted by tool this tick, never transcribed)
+
+(a) THE FROZEN INVALIDATION CRITERION, anv-b3bisect19prereg-
+20261102/protocol.txt L277-280 (quote): "(d) INVALID -- the
+frozen INVALIDATION criterion (the standing cut protocol):
+> 0 VERIFY mismatches in any run makes that run DEFECTIVE and
+the arm INVALID (bit-exact correctness re-check inside every
+run)." The record's own restatement, publication-s209.txt L179
+(quote): "VERIFY mismatch total over all runs: 0 (per-arm: c2=0,
+q2=0, c8=0) -- bit-exact correctness re-check inside every run;
+frozen INVALIDATION criterion (protocol): >0 in any run makes
+that run DEFECTIVE and the arm INVALID (its letters not
+evaluable)".
+
+(b) THE RUN-INTEGRITY CHECK SHAPE as committed on the 19th cut's
+publication (publication-s209.txt L162-165, L177-178, L181,
+quotes): "runs parsed: 54 (c2 x3, q2 x48, c8 x3 -- the frozen
+ARM TABLE's 3 rows govern the count; run-count self-check
+3+48+3 = 54 -> True); cell map identical across runs: True" /
+"all per-log integrity checks pass (cell/verify counts, tail," /
+"tail '# done cells=24' in 54/54 runs: True" / "SAMPLE lines:
+115,200 per run (18 ok cells x 6,400 rounds) in 54/54 runs:
+True" / "S=8 cells fail-closed (pipeline=FAIL, forced=8): 324
+cell-runs (6 per run x 54 runs = 324 expected -- fail-closed,
+never read as data)".
+
+(c) THE LETTER-DOMAIN BOUNDARY this decision serves,
+letters-s218.txt L60-71 (quote): "(b) DOMAIN OF THE ALPHABET
+(named boundary): the letters are defined ONLY on readings where
+c8 lands within +/-5% of 32,915 and the control arms are
+VERIFY-mismatch-free -- exactly the domain of every one of the
+four committed record readings ... A reading where c8 lands out
+of band, or a VERIFY mismatch appears, is OUT of the letter
+domain and is NOT given a letter by this decision. What the act
+does with such a reading (invalidate the act, abort it, re-run
+it) is the INVALIDATION CRITERIA decision, NOT made this tick --
+named open, carried."
+
+(d) THE W1 (d) VERDICT FORMS this decision's act-level label
+adopts in shape: record.txt L148-149 (quote): "W1 (b) ->
+(254,984, 255,045] / W1 (c) NOTHING MOVES / W1 (d) INVALID;
+both (a)/(b) narrow with EQUAL clips 61/61."; protocol.txt
+L113-115 (quote): "instrument (the 16th cut's (b), the 17th
+cut's (a), the 18th cut's (a), this cut's (b)); W1 (d) fires,
+CUT VERDICT INVALID; the discrepancy cause stays UNMEASURED (L2
+binds)."
+
+(e) THE ANALYSIS-DEFECT PRECEDENT (fail-closed), analysis-
+s209-identity.txt L19-23 (quote): "NAMED, NOT HIDDEN -- TWO run
+defects, both fail-closed asserts caught before any publication
+was trusted; both fixed by patch; the draft pairs are kept
+visible: (i) draft1 pair ..." + L35-41 (quote): "(iii) the
+FIRST rc=0 run's stdout/stderr were consumed by a mis-ordered
+comparison step before its publication copy was saved
+(publication byte-count 66,774 observed; the file itself NOT
+kept) -- NOT claimed as a pair leg; the official run-twice pair
+was RE-TAKEN fresh afterwards (the pair above)."
+
+(f) THE PRE-CHOICE PRINCIPLE, protocol.txt L261-263 (quote):
+"The statistic is chosen NOW, before any run of this cut (spec
+L123: 'A statistic chosen after the runs are read is never a
+confrontation.')".
+
+2. THE INVALIDATION CRITERIA DECISION (DESIGN DECISION, this
+slice; ACCEPTED DESIGN ONLY -- IN DRAFT, NOT frozen)
+
+(a) RUN-LEVEL, ADOPTED UNCHANGED: > 0 VERIFY mismatches in any
+run -> that run DEFECTIVE and that arm INVALID, its letters not
+evaluable (bit-exact correctness re-check inside every run).
+Rationale (design reading): the four committed record readings'
+letters were computed under exactly this criterion (every quoted
+C1 block reports the "frozen INVALIDATION criterion" check as
+True); any other run-level criterion would break confrontation
+with the record's own letters.
+
+(b) READING-LEVEL, FAIL-CLOSED (this decision): a reading is
+EVALUABLE only if BOTH its arms are valid under (a) AND the
+reading lands IN the s218 letter domain (c8 within +/-5% of
+32,915 and the control arms VERIFY-mismatch-free). A reading
+that is out of domain (c8 out of band; or any VERIFY-invalid
+arm) or whose run set fails the act's integrity checks (run-
+count self-check; per-log integrity: cell/verify counts, tail,
+SAMPLE lines per run; cell map identical across runs -- the
+record's own check shape, quoted in 1(b), ADOPTED as the act's
+check shape) receives NO letter and FAILS CLOSED: the whole ACT
+is INVALID. NAMED, NOT HIDDEN: NO partial sequence -- an act
+with one non-evaluable reading has NO letters at all (it is NOT
+a three-letter act, NOT a three-reading act); the four-reading
+structure decided at s217 is all-or-nothing.
+
+(c) ACT-LEVEL VERDICT LABEL + WHAT INVALID DOES: the invalid
+act's verdict reads "ACT VERDICT: INVALID" -- the W1 (d)
+analogue at act scale (the cut protocol's form "W1 (d) fires,
+CUT VERDICT INVALID", 1(d) quote, ADOPTED in shape). INVALID is
+NOT a letter and NOT a state reading: it does not confront the
+row question at all (neither prong); NOTHING MOVES -- the
+control question stays EXACTLY as open as before the act (the
+D2 shape: the invalid act's content is committed as record with
+cause UNMEASURED, L2 binds).
+
+(d) NO SELECTIVE RE-RUN (named hazard, confronted): a defective
+run or reading is NEVER re-run alone to complete the sequence --
+post-hoc selection is REJECTED; the act-level analogue of the
+pre-choice principle (1(f) quote). A replacement, if any, is a
+NEW named act (act 2) under the SAME frozen protocol with
+NOTHING re-decided after the runs are read, and act 1's content
+stays visible on the record (the analysis-defect precedent's
+"draft pairs are kept visible" and "the official run-twice pair
+was RE-TAKEN fresh", 1(e) quotes, taken from analysis-script
+scale to act scale). NAMED, NOT HIDDEN: whether a replacement
+act is run at all is a scheduling decision OUTSIDE this
+decision.
+
+(e) ANALYSIS-DEFECT HANDLING, ADOPTED from the s214 precedent
+(1(e) quotes): the act's analysis is fail-closed (asserts), run
+twice byte-identical before any publication is trusted; an
+analysis defect is fixed by patch with the draft pairs kept
+visible and the official pair RE-TAKEN fresh; a publication that
+cannot run twice byte-identically is not trusted -> the act is
+INVALID under (c).
+
+(f) WHAT INVALIDATION DOES NOT DO (boundary): INVALID is not a
+verdict about the instrument's state and never counts toward the
+four-letter sequence (it consumes no letter -- DERIVED below);
+bar non-interference discipline holds (NO settle-bar-ledger
+line, NO day-slot consumption -- this act is control-question
+content, not bar content). NAMED, NOT HIDDEN: the frozen
+criterion is run+arm granularity ("that run DEFECTIVE and the
+arm INVALID"); this decision ADDS the reading/act granularity.
+Design reading, labelled: the record's cuts were single-window
+acts whose W1 (d) already read at CUT VERDICT level, so act-
+level INVALID is the record's own grain, not a new one.
+
+3. DERIVED (tool this tick, labelled; NOT a measurement):
+alphabet size 2 (s218, carried); act sequence space on
+EVALUABLE acts 2^4 = 16; ACT INVALID is a distinct non-letter
+outcome -> act outcome space 16 + 1 = 17; act process count
+4*(3+3) = 24 -> the run-count self-check shape re-checks ok
+(s217 count).
+
+4. NAMED, NOT HIDDEN / WHAT THIS SLICE DOES NOT DECIDE:
+(a) the "three-state" SEMANTICS of the name "a three-state
+    control record" (the second and LAST remaining design
+    decision -- next slice); the design-verify, the protocol
+    freeze, and the landing (later slices).
+(b) The alternative REJECTED here, named not hidden: giving
+    c8-out-of-band its own letter instead of invalidating --
+    REJECTED with rationale: the s218 alphabet is ADOPTED
+    UNCHANGED {a,b} defined on the four record readings' domain;
+    a new symbol would have no counterpart in the committed
+    record and would break the one-for-one confrontation (design
+    reading).
+(c) The record contains NO out-of-domain reading (all four
+    report the c8 check True and the VERIFY check True -- s218
+    section 3), so this decision is UNTESTED against the record:
+    it is DESIGN, not experience. Whether an out-of-domain
+    reading occurs in the resolution act is UNMEASURED (no act
+    run exists).
+(d) The s217 NAMED HAZARD (b) is carried unchanged: the c8
+    +/-5% band is loose relative to the reference's own within-
+    session cross-S spread (-2.09%/-2.18%); no band is widened
+    or narrowed by this slice.
+
+5. STATE (three-state discipline): NO control-question quantity
+exists -- no protocol, NOTHING frozen, NO measurement taken this
+tick (no hardware, no builds, no runs, no GO stamp); the content
+above is QUOTE-ONLY from committed bytes (extracted by tool at
+this cutoff, exact lines pinned) + the design decision itself +
+labelled DERIVED arithmetic on quoted values (2^4 = 16;
+16 + 1 = 17; 4*(3+3) = 24) -- NOT a measurement and NOT a
+class/verdict/claim of any cut or of the control question; the
+quoted values are the named sessions' landed MEASURED QUANTITIES
+on aiueos-6600hs under each session's own instrument and
+protocol. This invalidation-criteria decision is ACCEPTED DESIGN
+ONLY -- pre-registration content IN DRAFT; the control
+question's pre-registration is NOT frozen and no protocol.txt
+for it exists at this cutoff. RULE 4 unchanged: NOTHING MOVES
+-- the committed bracket stays EXACTLY (254,923, 255,045]; L9
+binds at n=254,984 (C2 (c), D3 (v)) -- any future narrowing
+claim at 254,984 must confront the 19th cut's content first;
+the MID-ONLY NARROWING CLAIM stays SUSPENDED; NO vendor
+optimization exists for Intel (or for any vendor); the
+accelerator-targets workgroup rows stay as ADR-0358 left them
+(:measured? false rows remain provisional -- NOT optimization
+evidence). BAR NON-INTERFERENCE held: NO settle-bar-ledger line,
+NO day-slot consumption, NO hardware, NO builds this tick; the
+bar's SETTLED INTERMEDIATE/MIXED verdict unmoved. Standing gates
+this tick, LIVE at this cutoff: (e) find docs/evidence/gpu -name
+'*.sh' -> 0 lines; (f) git diff --exit-code HEAD --
+docs/evidence/gpu/settle-bar-ledger.txt rc 0 (no append this
+row). Gates (a)-(d) NOT run this tick (not a landing slice --
+the s209/s212/s215/s216/s217/s218 precedent). This diff touches
+NO committed .cljk namespace (this .txt only; the s160/s166
+precedent; the full suite stands RED AT BASE kotoba.form
+(ADR-0362) outside this diff per the standing captures -- NOT
+re-run this tick -- NO green full suite claimed). Untracked
+scratch/, deps.edn and .DS_Store files are not this row's, NOT
+staged. BLOCKER-FIRST immediately before this push
+(prlist-s219-prepush.json, committed with this slice): see the
+capture file for the open-PR list and the hermes/-head filter
+result; chain PRs = exactly ONE (#1665
+bot/amu-gpu-chain-20261028-4 -- the one this push advances).
+
+NOT DONE (s220 carries exactly this list): the control-question
+pre-registration's own continuation at its own slice(s) -- the
+LAST remaining design decision (the "three-state" semantics) +
+design-verify + protocol freeze + landing; then the control
+question's RESOLUTION measurement act under that frozen protocol
+(NOT queued -- its own act); standing, not queued: any further
+counted-day slot (each needs its own freeze) and the cross-day
+tail-movement row. If a future slice needs it: the full
+enumeration of every committed session 5..20 c2/c8 reading
+(s216 NAMED (a)).
+(JUN-55, JUN-59; Linear tracking JUN-499)

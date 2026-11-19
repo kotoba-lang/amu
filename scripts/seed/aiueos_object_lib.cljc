@@ -19,8 +19,8 @@
        "(defn st64 [b :i64 n :i64 i :i64 v :i64] :i64 (kernel-store-u64 b n i v))\n"))
 (def source16
   (-> widths-source (.replace "(ns widths" "(ns widths16") (.replace " b n i)" "-16k b n i)") (.replace " b n i v)" "-16k b n i v)")))
-(def access {["load" 1] "0fb60402" ["load" 2] "0fb70402" ["load" 8] "488b0402"
-             ["store" 1] "88043a" ["store" 2] "6689043a" ["store" 8] "4889043a"})
+(def access {["load" 1] "0fb60402" ["load" 2] "0fb70402" ["load" 4] "8b0402" ["load" 8] "488b0402"
+             ["store" 1] "88043a" ["store" 2] "6689043a" ["store" 4] "89043a" ["store" 8] "4889043a"})
 
 (defn hexb [s] (u/hex->bytes s))
 
@@ -41,8 +41,10 @@
 (defn head [bound] (operator/add (hexb "4881f9") (struct/pack "<I" bound)))
 
 (defn decode-window
-  "Decode one window access starting at its `cmp rcx,BOUND`; return [kind width]."
-  [text at bound]
+  "Decode one window access starting at its `cmp rcx,BOUND`; return [kind width]. `widths` are the admitted widths
+  above one byte (2 and 8 for the 512-byte and 16 KiB tiers; 4 as well for the 4 KiB tier)."
+  ([text at bound] (decode-window text at bound #{2 8}))
+  ([text at bound widths]
   (let [pos (atom at)
         jumps (atom [])
         take (fn [want]
@@ -74,7 +76,7 @@
         (take (if store "48f7c7" "48f7c0"))
         (let [mask (first (struct/unpack_from "<i" text @pos))]
           (swap! pos + 4)
-          (when (or (not= mask (dec @width)) (not (contains? #{2 8} @width)))
+          (when (or (not= mask (dec @width)) (not (contains? widths @width)))
             (throw (python/ValueError (str "width " @width " mask " mask)))))
         (jcc "0f87"))
       (let [kind (if store "store" "load")]
@@ -84,15 +86,16 @@
           (take "0f0b")
           (when (some #(not= % trap) @jumps)
             (throw (python/ValueError (str "a branch misses the ud2 at " trap ": " @jumps))))
-          [kind @width])))))
+          [kind @width]))))))
 
 (defn windows
   "[[offset [kind width]] ...] for every window of BOUND in text."
-  [text bound]
-  (loop [i (.find text (head bound)) found []]
-    (if (>= i 0)
-      (recur (.find text (head bound) (inc i)) (conj found [i (decode-window text i bound)]))
-      found)))
+  ([text bound] (windows text bound #{2 8}))
+  ([text bound widths]
+   (loop [i (.find text (head bound)) found []]
+     (if (>= i 0)
+       (recur (.find text (head bound) (inc i)) (conj found [i (decode-window text i bound widths)]))
+       found))))
 
 (defn compile-source
   "Compile output/name.kotoba for the kernel object target. Returns [result object-path]."
@@ -157,3 +160,111 @@
   [args f]
   (f (.resolve (pathlib/Path (or (u/opt args "--compiler") (sys/exit "--compiler is required"))) ** :strict true)
      (.resolve (pathlib/Path (or (u/opt args "--output") (sys/exit "--output is required"))))))
+
+(def pause-source
+  (str "(ns ps (:export [kotoba_aiueos_spin]))\n"
+       "(defn kotoba_aiueos_spin [] :i64 (kernel-pause))\n"))
+
+(def dot-source
+  (str "(ns fdot (:export [kotoba_aiueos_dot_f32]))\n"
+       "(defn kotoba_aiueos_dot_f32 [a :i64 an :i64 b :i64 bn :i64 c :i64] :i64 (kernel-dot-f32 a an b bn c))\n"))
+
+;; Independent ELF64 relocatable reader shared by the object-route gates.
+(defn unpack-from [fmt b off] (vec (struct/unpack_from fmt b off)))
+
+(defn read-elf
+  "Symbols [name info shndx value size], relocations [offset info addend], .text and section indices of an ET_REL object."
+  [path]
+  (let [blob (.read_bytes path)]
+    (when-not (u/deq (u/bslice blob 0 16) (u/hex->bytes "7f454c46020101000000000000000000"))
+      (mac/fail "not ELF64 little-endian System V"))
+    (let [[etype machine] (unpack-from "<HH" blob 16)
+          shoff (first (unpack-from "<Q" blob 40))
+          [shnum shstrndx] (unpack-from "<HH" blob 60)
+          _ (when (not= [etype machine] [1 62]) (mac/fail "not ET_REL / EM_X86_64"))
+          secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+          sstr (nth secs shstrndx)
+          shstr (u/bslice blob (nth sstr 4) (+ (nth sstr 4) (nth sstr 5)))
+          name-at (fn [table offset] (.decode (u/bslice table offset (.index table (u/bytes-of 0) offset))))
+          by-name (into {} (map-indexed (fn [i s] [(name-at shstr (first s)) i]) secs))
+          _ (when (not= (set (keys by-name)) #{"" ".text" ".data" ".rela.text" ".symtab" ".strtab" ".shstrtab"})
+              (mac/fail (str "unexpected sections " (sort (keys by-name)))))
+          body (fn [name] (let [s (nth secs (get by-name name))]
+                            [(u/bslice blob (nth s 4) (+ (nth s 4) (nth s 5))) s]))
+          [strtab _] (body ".strtab")
+          [symdata symsec] (body ".symtab")
+          symbols (vec (for [off (range 0 (python/len symdata) 24)]
+                         (let [[n info other shndx value size] (unpack-from "<IBBHQQ" symdata off)]
+                           [(name-at strtab n) info shndx value size])))
+          [reladata _] (body ".rela.text")
+          relas (vec (for [off (range 0 (python/len reladata) 24)] (unpack-from "<QQq" reladata off)))
+          [text _] (body ".text")]
+      {:symbols symbols :relas relas :text text :sym-info (nth symsec 7)
+       :data-index (get by-name ".data") :text-index (get by-name ".text")})))
+
+
+;; check-aiueos-object-windows4k / -fence shared pins and sources.
+(def widths16-sha256 "63c0486c9378502b71c33ea108949743e9557d5d467509e3949b60e825dcce6c")   ; SOURCE16 under main's root (amu 2d5ff706)
+(def w4k-forms [["load" 1 "u8"] ["store" 1 "u8"] ["load" 2 "u16"] ["store" 2 "u16"]
+                ["load" 4 "u32"] ["store" 4 "u32"] ["load" 8 "u64"] ["store" 8 "u64"]])
+(def w4k-source
+  (str "(ns w4k (:export [ld8 st8 ld16 st16 ld32 st32 ld64 st64]))\n"
+       (apply str (for [[kind _ name] w4k-forms]
+                    (str "(defn " (if (= kind "load") "ld" "st") (subs name 1) " [b :i64 n :i64 i :i64"
+                         (when (= kind "store") " v :i64") "] :i64 (kernel-" kind "-" name "-4k b n i"
+                         (when (= kind "store") " v") "))\n")))))
+;; SOURCE compiled by the windows4k change's root: the fence block (ids 43..45) must leave it as it is
+(def w4k-sha256 "1813e4fe08f8a99a5f06dd91748da6a16e146c6739ffd4477f1a64d2a39aa36f")
+(def outport-source
+  (str "(ns outport (:export [pic pcw pcr]))\n"
+       "(defn pic [m :i64 s :i64] :i64\n"
+       "  (if (and (>= m 32) (>= s 32))\n"
+       "    (let [c1 (kernel-out-u8 32 17) d1 (kernel-out-u8 128 0) c2 (kernel-out-u8 160 17)\n"
+       "          c3 (kernel-out-u8 33 m) c4 (kernel-out-u8 161 s) c9 (kernel-out-u8 33 255) c10 (kernel-out-u8 161 255)]\n"
+       "      1)\n"
+       "    0))\n"
+       "(defn pcw [a :i64 v :i64] :i64\n"
+       "  (let [x (kernel-out-u32 3320 (bit-or 2147483648 (bit-and a 252))) y (kernel-out-u32 3324 v)] 1))\n"
+       "(defn pcr [a :i64] :i64 (let [x (kernel-out-u32 3320 (bit-or 2147483648 a))] (kernel-in-u32 3324)))\n"))
+(def outport-sha256 "6377fce8f681ff0c760798f8fb41281e247f5b8627000ba5348c24464b1fd0d7")
+
+(defn elf-sections
+  "{section-name [name-offset type flags addr offset size link info align entsize]} of an ELF64 object blob."
+  [blob]
+  (let [shoff (first (unpack-from "<Q" blob 40))
+        [shnum shstr] (unpack-from "<HH" blob 60)
+        secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+        table (nth (nth secs shstr) 4)
+        name-of (fn [o] (.decode (u/bslice blob (+ table o) (.index blob (u/bytes-of 0) (+ table o)))))]
+    (into {} (for [s secs] [(name-of (first s)) s]))))
+
+;; The one-export object every gate pins (check-aiueos-object-exports).
+(def one-sha256 "4d68de1d09d2404b9df5bfabed223ae8b084962e26acee44f73a519e78122af7")
+(def one-source "(ns one (:export [f]))\n(defn f [x :i64] :i64 (+ x 1))\n")
+
+(defn read-elf-all
+  "Like read-elf, but for objects with any section set: also {:names :secs :size} (ordered section names, headers,
+  file size); no fixed-section-set check."
+  [path]
+  (let [blob (.read_bytes path)]
+    (when (or (not (u/deq (u/bslice blob 0 16) (u/hex->bytes "7f454c46020101000000000000000000")))
+              (not= (unpack-from "<HH" blob 16) [1 62]))
+      (throw (python/ValueError "not an ELF64 x86-64 ET_REL object")))
+    (let [shoff (first (unpack-from "<Q" blob 40))
+          [shnum shstrndx] (unpack-from "<HH" blob 60)
+          secs (vec (for [i (range shnum)] (unpack-from "<IIQQQQIIQQ" blob (+ shoff (* 64 i)))))
+          sstr (nth secs shstrndx)
+          shstr (u/bslice blob (nth sstr 4) (+ (nth sstr 4) (nth sstr 5)))
+          name-at (fn [table offset] (.decode (u/bslice table offset (.index table (u/bytes-of 0) offset))))
+          names (mapv #(name-at shstr (first %)) secs)
+          body (fn [i] (u/bslice blob (nth (nth secs i) 4) (+ (nth (nth secs i) 4) (nth (nth secs i) 5))))
+          idx (fn [n] (.index (python/list names) n))
+          strtab (body (idx ".strtab"))
+          symdata (body (idx ".symtab"))
+          symbols (vec (for [off (range 0 (python/len symdata) 24)]
+                         (let [[n info _ shndx value size] (unpack-from "<IBBHQQ" symdata off)]
+                           [(name-at strtab n) info shndx value size])))
+          reladata (body (idx ".rela.text"))
+          relas (vec (for [off (range 0 (python/len reladata) 24)] (unpack-from "<QQq" reladata off)))]
+      {:names names :secs secs :symbols symbols :relas relas :text (body (idx ".text"))
+       :sym-info (nth (nth secs (idx ".symtab")) 7) :size (python/len blob)})))

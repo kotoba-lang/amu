@@ -1,0 +1,127 @@
+2026-10-31 (session 133)
+== session 133 state capture -- TWELFTH CUT PRE-REGISTRATION:    ==
+== STARTED, NOT FINISHED (runtime-budget cutoff before the       ==
+== derivation script run, the protocol freeze, the gates and the ==
+== landing) ==
+
+ROW: the s132 carry-forward (a) -- "a twelfth cut at mid ONLY
+through a NEW pre-registered cut session (its own freeze) -- the
+narrowing channel re-opens at mid (W1 (b), C2 (a) PASSES) and
+stays CLOSED at hi". The twelfth cut is the first cut through the
+narrowing channel the eleventh cut's W1 (b) re-opened at mid.
+
+DESIGN DERIVED THIS TICK (from committed bytes read live; NOT yet
+frozen -- protocol.txt does NOT exist at this cutoff):
+
+1. THE MID-ONLY NARROWING CLAIM (the channel's content): mid
+   (248,973) n=254,882 PASSED the multi-block stability
+   requirement in the eleventh cut (C2 (a), publication-s132.txt:
+   all 8 block classes AND the pooled-24 class
+   INTERMEDIATE/MIXED; block medians
+   1,129/1,139/1,121/1,132/1,128/1,148/1,135/1,135; pooled-24
+   1,133). Under the frozen per-point RESUMABILITY RULE the
+   narrowing claim at mid is now pre-registerable: THE B=3 CLASS
+   FLIP LIES ABOVE n=254,882 -- exactly the ninth cut's W1 (b)
+   branch content ("INTERMEDIATE/MIXED -> (254,882, 255,208]",
+   s123's committed letters), which the s125 W1 (d) FLAGGED and
+   could not claim. The claim moves ONLY the bracket's lower
+   endpoint (254,557 -> 254,882); the upper endpoint 255,208 is
+   carried UNCHANGED as the eighth cut's committed content (its
+   class rests on hi's BLOCK-RUN-UNSTABLE committed content --
+   NAMED; NO new claim at hi; any narrowing claim at hi must
+   confront the eleventh cut's 8-block instability content first,
+   named here, not specified here).
+2. THE NEW BISECT POINT: the exact floor midpoint of the
+   mid-anchored interval (254,882, 255,208] = (254,882+255,208)/2
+   = 255,045.0 -- an exact integer (the eighth cut's shape). Not a
+   committed grid point (the committed row's n values parsed from
+   publication-s132.txt's W2 table do not include 255,045).
+3. ARM TABLE (intended; 54 fresh processes, the eleventh cut's
+   shape): c2 (2,1,1) k=3 / mid (3,248,973) k=24 the passed anchor
+   in-window replication / bis (3,WM,NDIV) n=255,045 k=24 the new
+   grid point (NEW knob triple -- L8 named; its (WORK_MUL,NDIV)
+   pair is NOT yet derived -- the knob-search never ran) / c8
+   (8,1,1) k=3. Frozen run order: c2 x3, interleaved mid/bis
+   pairs k=01..24, c8 x3. Block partition: 8 disjoint blocks of 3
+   per B=3 arm + pooled-24 (unchanged frozen method).
+4. LETTERS (intended; RE-DEFINED for this question): C1 controls
+   replication (unchanged); C2 multi-block stability at bis
+   (255,045): (a) STABLE-INTERMEDIATE / (b) STABLE-CAPTURED /
+   (c) BLOCK-UNSTABLE / (d) INVALID -- {(a),(b)} PASSES and
+   re-opens the channel at 255,045 via a LATER pre-registered cut
+   (NOT queued); NAMED: NO narrowing claim at 255,045 may be
+   pre-registered here (frozen per-point rule: it has not passed
+   the requirement in a prior cut); C3 in-window replication at
+   mid: (a) STABLE-INTERMEDIATE / (b) STABLE-CAPTURED (pre-named
+   contradiction) / (c) BLOCK-UNSTABLE / (d) INVALID -- C3 is NOT
+   the pair-representation check (committed C3 scoreboard
+   untouched); W1 THE MID-ONLY NARROWING (cut verdict): (a) C3
+   (a) -> the claim HOLDS, bracket narrows at mid to (254,882,
+   255,208]; (b) C3 (b) -> FLAGGED, no movement; (c) C3 (c) ->
+   SUSPENDED (named, not claimed), no movement; (d) INVALID --
+   under ALL outcomes NO claim at hi, NO claim at 255,045; W2
+   dispersion + boundary-crossing counts (descriptive); W3 history
+   comparisons; X1 host_ns.
+5. BUILD PINS (intended): c2 e5ed903e... / c8 480925e5... (s27
+   census), mid cabff9420aaf6b017c6d9d83b6f7ca39408622dcd626337a72ecbed81400d589
+   (s125 build census anv-bb-mid; cross-checked byte-identical at
+   s129 AND s132 build censuses -- parsed live this tick from
+   build-census-s132.txt); bis: NEW triple, NO pin (L8 named).
+
+DONE this tick (real tool output): canonical sources read (the
+eleventh cut protocol.txt/record.txt/publication-s132.txt, the
+s131 record/state, knob-search-s131.py, the s88/s117 gate pins
+byte-counted 17,925/919/919/0/879/3,590/1,006, the scoped-gate
+pin content read (the eight accelerator_* test namespaces), the
+s132 build census parsed); the twelfth cut's design derived above
+and recorded here. NOTHING ELSE: no knob-search-s133.py, no run
+thereof, no protocol.txt (NO FREEZE -- nothing is frozen this
+tick), no freeze-record, no gates, no record.txt, no ADR note.
+
+NOT DONE (the completing session's exact list):
+(a) write knob-search-s133.py (adapt knob-search-s131.py: target
+    255,045 derivation + pairs_for(255045) smallest/doubles/gcd +
+    committed-pair arithmetic + self-validation vs s123 AND
+    s131's committed runs for 254,882/255,208 + parse
+    publication-s132.txt's C1/C2/C3/W1 letters, block rows, W2
+    trajectories + COMPUTED boundary-crossing counts 2/24 5/24 +
+    the bracket + the committed row (255,045 absence) + the pins
+    (mid 3-way cross-check s125/s129/s132) + ledger rows +
+    evaluator pin VERDICT); run twice byte-identical.
+(b) write protocol.txt ONCE (freeze stamp at the completing
+    session's freeze time; NO run log of this cut may exist at
+    freeze) + freeze-record-s133.txt.
+(c) standing gates (a)-(f) == the s88 pins in
+    anv-b3w6tailrep-20261030/ and the s117 post-append pin (the
+    scoped-gate scratch runner scratch/scoped-gpu-gate.cljk =
+    clojure.test over the eight accelerator-* namespaces, created
+    /run twice/deleted, never committed; FULL run-tests.cljk RED
+    AT BASE kotoba.form -- NO green full suite claimed).
+(d) record.txt + the ADR-0355 dated note.
+(e) blocker-first check immediately before the push, commit to
+    bot/amu-gpu-chain-20261028-4 (chain PR #1665), Linear comment
+    on JUN-499.
+
+NAMED, NOT HIDDEN: the s132 carry-forward's "at mid ONLY" is
+interpreted here as: the cut's NARROWING ACTS at mid only (the
+one point whose channel re-opened); the arm table measures mid
+(the claimed anchor, in-window replication) and the new bisect
+point 255,045 at the stability form; hi is NOT measured (channel
+closed). This tick ran NO hardware, NO builds, NO compiles, NO
+GO stamp, NO day-slot consumption, NO ledger line -- BAR
+NON-INTERFERENCE held; RULE 4 unchanged (NOTHING MOVES; no vendor
+optimization exists for Intel or any vendor). Tick-start
+blocker-first scan (gh pr list, 2026-10-31T~14:50Z): 0 open
+kotoba-lang/amu PRs with a hermes/ head, 13 open PRs total,
+chain PRs = exactly ONE (#1665 bot/amu-gpu-chain-20261028-4).
+Untracked scratch/ and deps.edn are not this row's and are NOT
+staged or committed.
+
+Carry-forward to s134: (a) COMPLETE this pre-registration exactly
+per the NOT DONE list above (the design section is the intended
+content; the knob-search output, not this file, is the authority
+for every derived number); (b) unchanged: any further counted-day
+slot (the 2026-10-31 slot is consumed at s117; next is a NEW UTC
+day and its own freeze) and the cross-day tail-movement row (not
+queued).
+(JUN-55, JUN-59; Linear tracking JUN-499)

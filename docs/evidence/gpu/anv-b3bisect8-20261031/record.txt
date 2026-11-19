@@ -1,0 +1,149 @@
+== JUN-59 session 122 record -- THE EIGHTH CUT MEASUREMENT HALF ==
+== LANDING (completing the interrupted s121 slice; the LANDING     ==
+== tail only -- no new row of measurement beyond s121's 21 runs)   ==
+
+0. PROVENANCE (named, not hidden): session 121 ran the eighth cut's
+   MEASUREMENT HALF -- 21 fresh processes under the frozen protocol
+   (anv-b3bisect8prereg-20261031/protocol.txt, freeze stamp
+   2026-10-31T03:53:30Z) -- and hit its budget cutoff before the
+   landing tail (state-s121.txt, in this directory, names the
+   not-done list verbatim: gates (c)(e)(f), record.txt, state
+   finalization, BLOCKER-FIRST + chain commit/push, the Linear land
+   comment). NOTHING was committed or pushed at the s121 cutoff; the
+   s121 evidence sat uncommitted in the worktree. This tick (s122)
+   completes EXACTLY that tail with named provenance (the
+   s92/s100/s101/s120 precedent for interrupted ticks). All
+   measurement content below is s121's, re-verified in s122 by real
+   tool output (section 3).
+
+1. THE MEASUREMENT HALF (s121, real tool output, captures in this
+   directory): 21 fresh processes (7 arms x 3 runs, the frozen
+   section-0 arm table c2/lo/mid/eq3/hi/b2m/c8) on the measurement
+   host aiueos-6600hs (aiueos-6600hs-1, the ANV host of this bisect
+   series; live ssh capture), run window 2026-10-31T05:00:35Z..
+   05:00:41Z, GO stamp 2026-10-31T04:59:14Z BEFORE the builds
+   (05:00:16Z) and all runs. ZERO derivation: the instrument is
+   session 26's committed NDIV-derived source byte-identical
+   (digest a5e539f0..., derivation-census-s121.txt); the a-set
+   manifest runs the ARCHIVED measured spv (16-digest corpus,
+   expected-corpus.sha256). Builds 7/7 rc=0, stderr 0 bytes;
+   BUILD PINS 4/4 BYTE-IDENTICAL to their committed pins
+   (build-census-s121.txt): c2 e5ed903e5b9dfd64... == s27's pin,
+   c8 480925e58d28e7d3... == s27's pin, lo (3,1024,4033)
+   a6c31b6c5c566308... == the (1024,4033) triple, hi (3,1213,4753)
+   123e8f739a92b51a... == the (1213,4753) triple; mid/eq3/b2m are
+   new knob pairs, first digests recorded there (0ce4616c.../
+   97d38f8f.../95fc34fe...), no pin applies (named, not hidden).
+   Runs: rc=0 21/21, stderr 0 bytes 21/21, 450 SAMPLE + 24 VERIFY +
+   24 CELL each, tail '# done cells=24' 21/21; VERIFY mismatch total
+   0 over all runs (the frozen INVALIDATION criterion did not fire).
+
+2. THE FINDING (publication-s121.txt, produced ONLY by
+   analysis-s121.py over the 21 committed run logs and the named
+   committed want sources parsed from committed bytes):
+   C1 (a)=True (c2 FLOOR 31; c8 32,888 vs committed 32,915, -0.08%);
+   C2 (a)=True (lo 1,142 INTERMEDIATE/MIXED within +/-5% of EACH
+   frozen bar ref 1,129/1,132/1,131 AND class == the bar-SETTLED
+   class; hi 1,160 CAPTURED within +/-5% of the committed 1,166);
+   C3 (a)=True (eq3 1,142 vs mid 1,156, class-identical --
+   representation-equivalent at this grid; carried scoreboard
+   s24 (b) / s25 (a) / s26 (b) / s27 (a) / s121 (a));
+   W1 (b) MID-INTERMEDIATE: mid at the bisect point n=254,557
+   (405,1591) classifies INTERMEDIATE/MIXED (pooled median 1,156,
+   18-cell 986..1,459) -- THE B=3 CLASS FLIP SITS IN (254,557,
+   255,208] n-units = (0.2545562, 0.2552072] work-units among
+   measured grid points: the eighth cut NARROWS the flip bracket
+   from (253,906, 255,208] to (254,557, 255,208]. b2m (B=2 control
+   at the bisect n) FLOOR (32): 'B=2 never captures' extends to
+   n=254,557 at total work 0.5091125. Arm table (pooled medians at
+   (sum,128,S=16)): c2 31 FLOOR / lo 1,142 INTERMEDIATE/MIXED /
+   mid 1,156 INTERMEDIATE/MIXED / eq3 1,142 INTERMEDIATE/MIXED /
+   hi 1,160 CAPTURED / b2m 32 FLOOR / c8 32,888 CAPTURED. host_ns
+   (X1, descriptive): c2 678296, lo 309528, mid 309798, eq3 309898,
+   hi 310288, b2m 232023, c8 2399436. WHY is UNMEASURED; NO causal
+   mechanism is claimed (L2 binds; L5 no interpolation). BAR
+   NON-INTERFERENCE held: these runs are BISECT CONTENT and NOT bar
+   readings -- no ledger append, no day-slot consumption, no bar
+   verdict movement, no Rule 4 row or :measured? flag movement.
+
+3. S122 VERIFICATION (real tool output THIS tick, byte comparisons
+   run in s122): (a) s121's gate captures == the s88 committed pins
+   in anv-b3w6tailrep-20261030/ (cmp exit 0 each): classify
+   17,925 bytes, scoped runs 919 bytes (run1 == run2 == both pins),
+   bar self-test 3,590 bytes; (b) bar-s121-eval-run1.txt ==
+   run2.txt == the s117 post-append pin in anv-b3w7ledgerappend-
+   20261031/ (1,006 bytes, cmp exit 0) -> VERDICT: SETTLED
+   INTERMEDIATE/MIXED (the s117 landing, unchanged); (c)
+   publication-s121-run1.txt == run2.txt == publication-s121.txt
+   (cmp exit 0); (d) analysis-s121.py RE-RUN in s122 (the third
+   run): rc 0, stdout/stderr 0 bytes, publication BYTE-IDENTICAL to
+   the s121 pin (cmp exit 0 -- the two-run determinism reproduces);
+   (e) run-log sanity: 21 logs, tail '# done cells=24' 21/21, 21
+   stderr captures 0 bytes. NAMED, NOT HIDDEN: my first sanity glob
+   (run-*-r*.txt) also matched the 21 empty .stderr.txt captures and
+   printed 21 false BADTAIL lines; the corrected glob (run-*-r[123]
+   .txt) reads 21 logs / 0 bad tails -- my glob defect, no tool
+   defect, no capture touched.
+
+4. GATES (the standing set): (a) classify --self-test 2649/0
+   17,925 bytes == s88 pin -- RUN s121, byte-verified s122;
+   (b) scoped GPU gate GREEN 'Ran 123 tests containing 12162
+   assertions. 0 failures, 0 errors.' run 1 == run 2 == both s88
+   pins (919 bytes) -- RUN s121 (scratch runner
+   scratch/scoped-gpu-gate.cljk created/run twice/deleted, never
+   committed), byte-verified s122; (c) FULL run-tests.cljk LIVE
+   THIS TICK: exit 1 RED AT BASE kotoba.form ('Could not find
+   namespace: kotoba.form', ADR-0362, outside this diff -- this
+   diff touches NO committed .cljk namespace), stdout 0 bytes,
+   .err 879 bytes == the s88 pin (cmp exit 0) -- NO green full
+   suite claimed; (d) evaluator --self-test 38/0 3,590 bytes ==
+   s88 pin + ledger eval pair twice byte-identical == the s117
+   post-append pin -> VERDICT: SETTLED INTERMEDIATE/MIXED (RUN
+   s121, byte-verified s122); (e) find docs/evidence/gpu -name
+   '*.sh' -> 0 (LIVE s122); (f) settle-bar-ledger.txt == HEAD
+   (git diff --exit-code rc 0, LIVE s122 -- no append this cut).
+
+5. RULE 4 unchanged: NOTHING MOVES -- the accelerator-targets
+   workgroup rows stay exactly as ADR-0358 left them (:measured?
+   true scoped to each row's one named measured device for
+   :nvidia/:apple/:intel/:amd; :arm and :unknown remain provisional,
+   :measured? false); NO vendor optimization exists for Intel (or
+   for any vendor). This is bisect measurement machinery on ONE
+   host (aiueos-6600hs), not a workgroup-default measurement; no
+   workgroup-default row is replaced by these numbers.
+
+6. NAMED, NOT HIDDEN: (a) the s121 census scratch generator's first
+   run failed on its own regex bug (an unclosed capture group in the
+   (2048,8066) twin pattern) -- fixed in the scratch generator
+   (never committed), re-run clean; the failed intermediate capture
+   was overwritten in place (s121's own naming, carried here);
+   (b) the kbb engine's standing '2 dep(s) are not :local/root'
+   warning reaches no capture (.err 0 wherever the pins are 0;
+   gate-s122-full.err is 879 bytes == pin); (c) untracked scratch/
+   and deps.edn are not this row's and are not committed.
+
+7. BLOCKER-FIRST: 0 open kotoba-lang/amu PRs with a hermes/ head
+   immediately before this push (2026-10-31T05:27:14Z,
+   prlist-s122-prepush.json, 10 open PRs total); chain PRs = exactly
+   ONE (#1665 bot/amu-gpu-chain-20261028-4 -- the one this commit
+   pushes to).
+
+8. THE BAR STATE (evaluator output only): SETTLED INTERMEDIATE/MIXED
+   (the s117 landing), unchanged by this cut (BAR NON-INTERFERENCE).
+
+9. STATE: the eighth cut's pre-registered letters are now MEASURED
+   (C1 (a) / C2 (a) / C3 (a) / W1 (b)) on the one measurement host
+   of the run window 2026-10-31T05:00:35Z..05:00:41Z -- the flip
+   bracket narrows to (254,557, 255,208]. Carry-forward to s123:
+   (a) any ninth cut ONLY through a NEW pre-registered cut session
+   (its own freeze) -- NOT queued; (b) any further counted-day slot
+   (its own pre-registration freeze) and the cross-day tail-movement
+   row (not queued) -- NO queued row remains. Evidence: this
+   directory (record.txt + state-s121.txt + state-s122.txt + the 21
+   run logs and their stderr captures + build-census-s121.txt +
+   host-verify-s121.txt + derivation-census-s121.txt +
+   cases-s121-a.txt + expected-corpus.sha256 + run-window.txt +
+   analysis-s121.py + publication-s121.txt (run1/run2) + the s121
+   gate/eval captures + gate-s122-full.out/.err + prlist-s122-
+   prepush.json) + the ADR-0355 dated note.
+   (JUN-55, JUN-59; Linear tracking JUN-499)

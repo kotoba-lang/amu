@@ -4,7 +4,7 @@ name: selfhost-native
 # x86_64 compiler and KX64V1 runner it builds are qualified on x86_64 Linux.
 # Python only orchestrates processes and hashes.
 #
-# Tiers (scripts/seed/selfhost-bootstrap.py --tier; every check runs in one):
+# Tiers (scripts/seed/selfhost-bootstrap.cljc --tier; every check runs in one):
 #   pull_request -> pr:   the root F rebuilds itself, F's targets, F's core route
 #                         (the adoption image), boundary corpus, cases,
 #                         hardening, capabilities; x86_64: X2, cases, hardening.
@@ -118,7 +118,7 @@ jobs:
       - name: Observer and admission negative controls
         if: steps.gate.outputs.skip != 'true'
         run: |
-          python3 scripts/seed/test_content_reuse_trust.py -v
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_content_reuse_trust.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_native_iteration.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test --rootdir scripts/seed scripts/seed/test_native_preflight_projects.cljc
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_macos_cli_build.cljc
@@ -261,7 +261,7 @@ jobs:
         with:
           job: bootstrap-arm64-root
           kind: derive
-          roots: selfhost-bootstrap.py,check-tiered-float-fuel.cljc,check-tiered-document-decimal-fuel.cljc,check-tiered-document-decimal-refusals.cljc
+          roots: selfhost-bootstrap.cljc,check-tiered-float-fuel.cljc,check-tiered-document-decimal-fuel.cljc,check-tiered-document-decimal-refusals.cljc
           path: |
             ${{ runner.temp }}/boot/selfhost-bootstrap.json
             ${{ runner.temp }}/boot/root.elf
@@ -277,7 +277,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
-        run: python3 scripts/seed/selfhost-bootstrap.py --output "$RUNNER_TEMP/boot" --tier "$TIER"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/selfhost-bootstrap.cljc -- --output "$RUNNER_TEMP/boot" --tier "$TIER"
       - name: Float result and fuel corpus through the tiered native bootstrap
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-tiered-float-fuel.cljc -- --repo "$GITHUB_WORKSPACE" --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/float-fuel-arm64"
@@ -348,7 +348,7 @@ jobs:
         with:
           job: one-compiler-arm64
           kind: derive
-          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.cljc
+          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc
           path: |
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
@@ -432,7 +432,7 @@ jobs:
         with:
           job: x86-native-qualification
           kind: derive
-          roots: selfhost-bootstrap.py,check-x86_64-native.py,check-aiueos-user-elf-native.py
+          roots: selfhost-bootstrap.cljc,check-x86_64-native.cljc,check-aiueos-user-elf-native.cljc
           path: |
             ${{ runner.temp }}/x86
             ${{ runner.temp }}/aiueos-user-elf-x86
@@ -443,12 +443,12 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: Capability-free AIUEOS user ELF ABI and refusals (x86_64, native)
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/aiueos-user-elf-x86"
       - name: Native x86_64 qualification (no loader, no emulation)
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
         env:
           TIER: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'pr' || github.event_name == 'push' && 'main' || 'full' }}
-        run: python3 scripts/seed/check-x86_64-native.py --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-x86_64-native.cljc -- --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/x86" --tier "$TIER"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -478,7 +478,7 @@ jobs:
         with:
           job: x86-complete
           kind: derive
-          roots: selfhost-bootstrap.py,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.py
+          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.py
           path: |
             ${{ runner.temp }}/complete
             ${{ runner.temp }}/public-product
@@ -562,7 +562,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-arm-transport.cljc -- --bootstrap "$RUNNER_TEMP/boot" --one "$RUNNER_TEMP/one" --output "$RUNNER_TEMP/arm-transport.json"
       - name: Capability-free AIUEOS user ELF ABI and refusals (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-aiueos-user-elf-native.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
         run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
@@ -1135,7 +1135,7 @@ jobs:
           path: ${{ runner.temp }}/boot
       - name: F's wasm32-browser modules of the runtime cases and probes, float refusals (JUN-353)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/selfhost-bootstrap.py --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/selfhost-bootstrap.cljc -- --wasm32-browser --bootstrap "$RUNNER_TEMP/boot" --output "$RUNNER_TEMP/wasm32-target"
       - name: Locked Wasm project discovery and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
@@ -1368,8 +1368,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: steps.gate.outputs.skip != 'true'
         with:
-          repository: kotoba-lang/dom-gpu
-          ref: c0be10ca6b0089e5fbe061eb76a6c23e61f61b22
+          repository: kotoba-lang/kotoba
+          ref: 3dfb77e29a541416bfd6a39aee202ab770ddf952
           path: _shared/dom
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -1409,11 +1409,11 @@ jobs:
       - name: Execute actual shared modules (ARM)
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'arm64')
         run: |
-          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --target arm64 --runner-source "$PWD/seed/x86_64-kx64-runner.kotoba" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/seed/bootstrap/aarch64-linux-static-root.elf" --target arm64 --runner-source "$PWD/seed/x86_64-kx64-runner.kotoba" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom/lib/kotoba.domGpu" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
       - name: Execute actual shared modules (x86)
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: |
-          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu-linux-x86_64" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
+          python3 _shared/browser/scripts/check-shared-native.py --compiler "$PWD/bin/amu-linux-x86_64" --target x86_64 --runner "$RUNNER_TEMP/x86-project/runner.elf" --browser "$PWD/_shared/browser" --dom "$PWD/_shared/dom/lib/kotoba.domGpu" --text "$PWD/_shared/text/lib/kotoba.text" --output "$RUNNER_TEMP/shared-components"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:

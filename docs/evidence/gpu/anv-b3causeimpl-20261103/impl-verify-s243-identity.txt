@@ -1,0 +1,91 @@
+impl-verify-s243-identity.txt -- the s243 implementation slice's dev
+history (JUN-59, the cause-resolution act's instrument probe
+implementation).  House rule: every defective or superseded attempt is
+kept visible here and claims nothing; only the named pair captures
+(impl-verify-s243-run1/run2.txt) are evidence.
+
+1. THE VERIFIER'S EXECUTION HISTORY:
+   - devrun1 (impl-verify-s243-devrun1.txt/.err, 16,569/0 bytes, rc 0):
+     '149 ok / 0 failed' -- the script's FIRST execution was CLEAN.
+   - devrun2 = the clean pre-pair confirmation run (rc 0).
+   - run1/run2 rc 0 both, stdout pair 16,569 bytes cmp exit 0, stderr pair
+     0 bytes cmp exit 0, cmp devrun1 vs run1 exit 0, cmp devrun2 vs run1
+     exit 0 -- ALL FOUR captures BYTE-IDENTICAL.
+   - tail '# impl-verify s243 (impl-verify-s243.py): 149 ok / 0 failed'.
+   There is NO defective dev attempt in this slice's execution history;
+   a clean first run is the whole dev history.  Three verifier-side fixes
+   landed BEFORE the first execution (pre-run edits, no run was taken
+   against the pre-fix bytes; the s235 PRE-RUN COMPLETION precedent
+   shape, named not hidden):
+   (a) the row-census check first read the committed tail row
+       '# done cells=24' as a separate 'tail' bucket while also counting
+       it in the '#'-line census (it would have false-FAILED the census
+       on every log); the check now requires hdr[-1] == the tail row;
+   (b) a redundant src_text.replace('gpu_devname','devname') clause in
+       the CELL-form check (meaningless; removed);
+   (c) the frozen-form check labels duplicated ('round=<r>' for all four
+       forms); labels now name each form.
+   No instrument byte, no committed byte and no parsed value is affected
+   by any of the three.
+
+2. THE IMPLEMENTATION'S NAMED DEVIATIONS FROM THE FAMILY BASE SOURCE
+   (gpu-subgroup-reduce-anv-subgroupsize-batch.c, archived snapshot
+   27,780 bytes sha256 34d56fa11831cbb3ea0ef61a5580f10689ae6af25f15912d7
+   31182e6efd51e06):
+   (i)  the static 'devname' buffer is renamed 'gpu_devname' -- macOS
+        <stdlib.h> declares devname(dev_t, mode_t) and the local syntax
+        gate collided.  Internal identifier only; NO output byte is
+        affected.  (The family base compiled on aiueos-6600hs where no
+        such declaration exists.)
+   (ii) the act's frozen knob set is realized as compile-time constants
+        (protocol section 4 fixes the values); the c2 build's runtime
+        knob surface is reconstructed only to the extent the committed
+        bytes bind it (the n = floor(1000003*work_mul/ndiv) formula, the
+        (BATCH,BARRIER_N) interleave reading) -- at the act's values
+        work_mul=ndiv=1 barrier_n=0 every reconstruction choice is inert.
+
+3. COMPILE/SYNTAX GATE (real run this tick): cc -fsyntax-only
+   -I/opt/homebrew/include gpu-subgroup-reduce-anv-causeprobe.c -> rc 0
+   (Apple clang 21.0.0, macOS 26.4; only -Wall note: the family base's
+   own unused 'device_name' placeholder, kept byte-preserved).  NO
+   binary was built and NO .o was produced -- the s242 frozen protocol
+   section 5 assigns the first-measured binary digests to the measuring
+   session, never to this slice.  The local clangd LSP diagnostics on
+   this .c ('vulkan/vulkan.h not found') are the recorded macOS editor-
+   side header noise (the 2026-10-27 record names the same family); the
+   authoritative verdict is the cc -fsyntax-only rc=0 above.  The known
+   Pyright false-positive family on regex-match accesses (the s199/s209
+   artifact) appears on impl-verify-s243.py (reportOptionalMemberAccess
+   on a .groups() call behind a None-guarded branch); runtime unaffected
+   (the script's four captures are byte-identical and clean).
+
+4. GATES (real runs this tick):
+   - scoped GPU gate (8 GPU-owned namespaces, scratch runner
+     gpu_scoped_gate.cljk from the profile scratch, never committed):
+     GREEN 123 tests / 12162 assertions / 0 failures / 0 errors on run 1
+     AND run 2 (byte-identical gate runs) -- the committed 123/12162 pin
+     holds; the diff touches NO .cljk namespace.  NAMED: kbb prints an
+     engine note on stderr ('2 dep(s) are not :local/root ...') in both
+     runs -- engine dependency warnings, not test failures.
+   - gpu_regime_classify.py --self-test: TOTAL 2649 assertions passed /
+     0 failed (committed pin 2649/0; no classify code touched).
+   - gate (e): find docs/evidence/gpu -name '*.sh' -> 0 files rc 0
+     (gate-s243-nosh.txt 0 bytes, .err 0 bytes) -- NAMED, NOT HIDDEN: a
+     docs-WIDE find returns ONE file
+     docs/evidence/spirv-to-wgsl-20261028/run-mac-native.sh, committed at
+     the chain base by PR #1644 (JUN-377) OUTSIDE this diff, NOT staged,
+     NOT touched (the standing named drift); this slice adds NO POSIX
+     .sh anywhere.
+   - gate (f): the no-ledger-line test passes -- grep for
+     'session=s243'/'day=2026-11-03' in
+     docs/evidence/gpu/settle-bar-ledger.txt returns no match (grep rc 1,
+     gate-s243-ledger.txt 0 bytes); ledger sha256
+     3bb682e4d3a71929968c8bd5ba5a8cb0fea4784583e804aabce3fea103b12364
+     == the s241/s242-recorded value; tail row 'day=2026-10-31
+     session=s113 class=INTERMEDIATE/MIXED median=1137 min=986
+     flag=none' UNMOVED.  NO day-slot consumption.
+   - FULL run-tests.cljk: NOT re-run this tick -- the full suite stands
+     RED AT BASE 'Could not find namespace: kotoba.form' (ADR-0362)
+     outside this diff per the standing captures; the diff touches NO
+     committed .cljk namespace (evidence .c/.c.txt/.py/.txt/.json only);
+     NO green full suite claimed.

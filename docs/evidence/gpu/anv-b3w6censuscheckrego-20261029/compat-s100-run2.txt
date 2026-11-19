@@ -1,0 +1,34 @@
+JUN-59 session 90 -- W6 READING PRE-BUILD (--compat validation
+report; reading-prego.py over the FIVE committed windows; NO W6
+quantity exists or is computed -- the W6 run logs do not exist).
+Two-way rows: want = parsed from the committed publication-s73.txt
+bytes (never transcribed); got = recomputed here from the 390
+committed run logs. Generator: pure stdlib (re + statistics.median).
+
+sec1 s36 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s38 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s39 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s51 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec1 s73 integrity           want: runs 78 vmis 0 counts True knobs True s8 True cmap True got: runs 78 vmis 0 counts True knobs True s8 True cmap True EXACT
+sec2 c2 class                want: FLOOR                                      got: FLOOR                                      EXACT
+sec2 c8 pooled median        want: 32709                                      got: 32709                                      EXACT
+sec2 C1 branch               want: (a) both controls replicate                got: (a) both controls replicate                EXACT
+sec3b s36 anchor             want: 1142 991..1438                             got: 1142 991..1438                             EXACT
+sec3b s38 anchor             want: 1132 992..1443                             got: 1132 992..1443                             EXACT
+sec3b s39 anchor             want: 1146 986..1432                             got: 1146 986..1432                             EXACT
+sec3b s51 anchor             want: 1137 988..1430                             got: 1137 988..1430                             EXACT
+sec3b s73 anchor (fresh)     want: 1131 998..1442 INTERMEDIATE/MIXED          got: 1131 998..1442 INTERMEDIATE/MIXED          EXACT
+sec6-D4 s73 bar reading      want: 1131 998..1442 INTERMEDIATE/MIXED          got: 1131 998..1442 INTERMEDIATE/MIXED          EXACT
+
+TOTAL: 14 rows, 0 failed
+
+BAR-FACING READING (the row this machinery exists for; computed
+content, cross-checked by derivation-census-prego.py):
+  s73 anchor: median 1131 min..max 998..1442; class INTERMEDIATE/MIXED; in-band vs
+  refs 1,129/1,132/1,131 (within +/-5% of EACH): True
+
+UNVALIDATED (named, not hidden): the W6-dependent parts of the
+w6 mode (the W6 anchor row, W6 integrity/C1, the run-window day
+census) cannot run until the W6 logs exist; w6 mode is enforced
+by the frozen filename reading-s<NN>.py and refuses to run under
+this pre-build name.

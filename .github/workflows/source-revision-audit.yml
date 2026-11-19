@@ -8,8 +8,9 @@ on:
       - 'native-product.json'
       - 'seed/FULL-MANIFEST'
       - 'seed/*.kotoba'
-      - 'scripts/seed/audit-descriptor-source-revision.py'
-      - 'scripts/seed/test-audit-descriptor-source-revision.py'
+      - 'scripts/seed/audit_descriptor_source_revision.cljc'
+      - 'scripts/seed/test_audit_descriptor_source_revision.cljc'
+      - 'scripts/seed/gate_util.cljc'
       - '.github/workflows/source-revision-audit.yml'
   workflow_dispatch:
 
@@ -23,9 +24,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+      - name: Install Basilisp (pinned) for the .cljc scripts
+        run: |
+          python3 -m venv "$RUNNER_TEMP/basilisp-venv"
+          "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
+          echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
       - name: Verify audit against isolated Git histories
-        run: python3 scripts/seed/test-audit-descriptor-source-revision.py
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp test -p no:cacheprovider --rootdir scripts/seed scripts/seed/test_audit_descriptor_source_revision.cljc
       - name: Verify the actual declared source revision
         run: >-
-          python3 scripts/seed/audit-descriptor-source-revision.py
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/audit_descriptor_source_revision.cljc --
           --descriptor-revision "$(git rev-parse HEAD)"
