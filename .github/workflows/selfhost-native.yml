@@ -347,7 +347,7 @@ jobs:
         with:
           job: one-compiler-arm64
           kind: derive
-          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc
+          roots: selfhost-bootstrap.cljc,check-one-compiler.cljc,native_build_queue.cljc
           path: |
             ${{ runner.temp }}/one/one-compiler.json
             ${{ runner.temp }}/one/calls.json
@@ -477,7 +477,7 @@ jobs:
         with:
           job: x86-complete
           kind: derive
-          roots: selfhost-bootstrap.cljc,check-one-compiler.py,native_build_queue.cljc,check-complete-x86.py,check-public-native-product.py
+          roots: selfhost-bootstrap.cljc,check-one-compiler.cljc,native_build_queue.cljc,check-complete-x86.cljc,check-public-native-product.cljc
           path: |
             ${{ runner.temp }}/complete
             ${{ runner.temp }}/public-product
@@ -488,10 +488,10 @@ jobs:
           path: ${{ runner.temp }}/one
       - name: Complete native x86 compiler fixed point and CDCI images
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-complete-x86.py --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-complete-x86.cljc -- --compiler "$RUNNER_TEMP/one/F-x86_64.elf" --arm-proof "$RUNNER_TEMP/one/one-compiler.json" --output "$RUNNER_TEMP/complete"
       - name: Public native product and aliases
         if: steps.gate.outputs.skip != 'true' && steps.gate.outputs.hit != 'true'
-        run: python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/public-product"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -564,10 +564,10 @@ jobs:
         run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-elf-native.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/aiueos-user-elf-arm"
       - name: Static runtime stdin, wire 41 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-durable-sleep.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/durable-sleep"
       - name: Wire 35 replace, WRITE and APPEND under injected fsync, rename and write faults (arm64, AWAI-52)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -592,7 +592,7 @@ jobs:
           done
       - name: Wire 35 WRITE/APPEND and private-store frames under a short write (arm64, AWAI-52)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-short-write.py --compiler seed/bootstrap/aarch64-linux-static-root.elf --output "$RUNNER_TEMP/runtime/short-write"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-short-write.cljc -- --compiler seed/bootstrap/aarch64-linux-static-root.elf --output "$RUNNER_TEMP/runtime/short-write"
       - name: Native private store and STOP/CONT sleep resume (arm64)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -600,7 +600,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-sleep-resume.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (arm64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-spawn-runtime.cljc -- --compiler "$RUNNER_TEMP/boot/F1.elf" --output "$RUNNER_TEMP/runtime/spawn"
       - name: Spawn setup refusals under injected seccomp faults (arm64, JUN-292)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -949,7 +949,7 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
-          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Install Basilisp (pinned) for the .cljc gates in the x86 plan
         if: steps.gate.outputs.skip != 'true'
@@ -1083,14 +1083,14 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-native-identities.cljc --
-          python3 scripts/seed/check-public-native-product.py --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-public-native-product.cljc -- --product "$GITHUB_WORKSPACE" --complete "$RUNNER_TEMP/complete" --output "$RUNNER_TEMP/transported-public-product"
           chmod 700 "$RUNNER_TEMP/complete/F1.elf" "$RUNNER_TEMP/complete/F2.elf" "$RUNNER_TEMP/complete/F3.elf"
       - name: Static runtime stdin, wire 41 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-io-read.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-io-read.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/io-read"
       - name: Static runtime durable files and sleep, wires 35 and 7 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-durable-sleep.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-durable-sleep.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/durable-sleep"
       - name: Native private store and STOP/CONT sleep resume (x86_64)
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -1098,7 +1098,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/seed basilisp run scripts/seed/check-sleep-resume.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --output "$RUNNER_TEMP/runtime/sleep-resume/receipt.json"
       - name: Static runtime spawn, wire 20 (x86_64, native)
         if: steps.gate.outputs.skip != 'true'
-        run: python3 scripts/seed/check-spawn-runtime.py --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-spawn-runtime.cljc -- --compiler "$RUNNER_TEMP/complete/F2.elf" --target x86_64-linux --output "$RUNNER_TEMP/runtime/spawn"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -1138,7 +1138,7 @@ jobs:
       - name: Locked Wasm project discovery and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-wasm-project-admission.py
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-wasm-project-admission.cljc --
           --compiler "$RUNNER_TEMP/wasm32-target/F.elf" --output "$RUNNER_TEMP/wasm-project-arm"
       - name: Wasm project interface mapping controls
         if: steps.gate.outputs.skip != 'true'
@@ -1181,7 +1181,7 @@ jobs:
       - name: Locked Wasm project discovery and refusal controls
         if: steps.gate.outputs.skip != 'true'
         run: >-
-          python3 scripts/seed/check-wasm-project-admission.py
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-wasm-project-admission.cljc --
           --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/wasm-project-x86"
       - name: Wasm project interface mapping controls
         if: steps.gate.outputs.skip != 'true'
@@ -1227,7 +1227,7 @@ jobs:
         run: python3 scripts/seed/check-wasm32-browser.py --modules "$RUNNER_TEMP/wasm32-target/wasm32" --output "$RUNNER_TEMP/wasm32-browser" --browser google-chrome
       - name: Local Worker stdio in headless Chrome
         if: steps.gate.outputs.skip != 'true'
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/seed/check-wasm32-local-stdio.py --wasm "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-stdio.wasm" --output-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-output-bound.wasm" --read-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-bound.wasm" --broker-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-broker-isolation.wasm" --all-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-all.wasm" --output "$RUNNER_TEMP/wasm32-local-stdio" --browser google-chrome
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-wasm32-local-stdio.cljc -- --wasm "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-stdio.wasm" --output-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-output-bound.wasm" --read-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-bound.wasm" --broker-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-broker-isolation.wasm" --all-probe "$RUNNER_TEMP/wasm32-target/wasm32/probe-local-read-all.wasm" --output "$RUNNER_TEMP/wasm32-local-stdio" --browser google-chrome
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.gate.outputs.skip != 'true'
         with:
@@ -1399,12 +1399,12 @@ jobs:
           PY
       - name: Locked typed x86 project and refusal controls
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
-        run: python3 scripts/seed/check-x86-project-native.py --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/x86-project"
+        run: PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-x86-project-native.cljc -- --compiler "$PWD/bin/amu-linux-x86_64" --output "$RUNNER_TEMP/x86-project"
       - name: Explicit x86 project effect admission and runtime refusals
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'x86_64')
         run: |
           compiler_sha=$(python3 -c 'import json; print(json.load(open("native-product.json"))["image"]["sha256"])')
-          python3 scripts/seed/check-x86-project-effects-native.py --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
+          PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-x86-project-effects-native.cljc -- --compiler "$PWD/bin/amu-linux-x86_64" --compiler-sha256 "$compiler_sha" --runner "$RUNNER_TEMP/x86-project/runner.elf" --output "$RUNNER_TEMP/x86-project-effects"
       - name: Execute actual shared modules (ARM)
         if: steps.gate.outputs.skip != 'true' && (matrix.target == 'arm64')
         run: |

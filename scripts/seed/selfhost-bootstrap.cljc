@@ -7,7 +7,7 @@
 ;; provenance C0/Kw/Pw from source). --wasm32-browser --bootstrap BOOT compiles the runtime cases and probes as
 ;; wasm32-browser modules with the fixed point F of a passing native bootstrap output (KOTOBA-174).
 ;; Orchestrates processes and hashes only. Ported from selfhost-bootstrap.py (Basilisp, JUN-974); the Python
-;; docstring has the full tier contract. check-runtime-boundary, check-net-runtime, check-spawn-runtime and
+;; docstring has the full tier contract. check-runtime-boundary, check-net-runtime and check-spawn-runtime (all Basilisp now) and
 ;; check-wasm32-browser stay Python and are launched as subprocesses.
 ;; Library: content_reuse.cljc (named here so the CI derivation closure covers it).
 ;; Run (arm64 Linux): basilisp run -p scripts/seed scripts/seed/selfhost-bootstrap.cljc -- --output OUT --tier pr
@@ -168,8 +168,10 @@
                    (str ["named diagnostic" (.-returncode r) (dec- (u/bslice (.-stderr r) (max 0 (- (python/len (.-stderr r)) 300)) (python/len (.-stderr r))))]))
               (let [diagnostic (u/pydict "exit" (.-returncode r) "stderr" (.strip (.decode (.-stderr r))))]
                 ;; JUN-325: the shared call/function-value boundary corpus through F
-                (cr/run run "runtime-boundary" [sys/executable (rp "scripts/seed/check-runtime-boundary.py") "--compiler" F
-                                                "--output" (o "runtime-boundary") "--payload" (o "G1.kseed")] (python/dict))
+                (cr/run run "runtime-boundary" [(str (pathlib/Path (.-parent (pathlib/Path sys/executable)) "basilisp")) "run" "-p" (rp "scripts/seed")
+                                                (rp "scripts/seed/check-runtime-boundary.cljc") "--" "--compiler" F
+                                                "--output" (o "runtime-boundary") "--payload" (o "G1.kseed")]
+                        (pyenv "AMU_ROOT" (str root)))
                 (let [runtime-boundary (read-json (o "runtime-boundary/runtime-boundary.json"))
                       ;; 4. runtime cases as static images against the pinned loader results
                       results (atom [])]
@@ -189,9 +191,13 @@
                         (swap! results conj (let [row (u/pydict "name" n)] (.update row observed) row)))))
                   ;; JUN-292: the native TCP/spawn acceptance corpus on the same bootstrap route
                   (let [io-acceptance (python/dict)]
-                    (doseq [[name script] [["net-runtime" "check-net-runtime.py"] ["spawn-runtime" "check-spawn-runtime.py"]]]
-                      (cr/run run name [sys/executable (rp (str "scripts/seed/" script)) "--compiler" F "--output" (o name)
-                                        "--target" "aarch64-linux" "--seccomp-if-available"] (python/dict))
+                    (doseq [[name script] [["net-runtime" "check-net-runtime.cljc"] ["spawn-runtime" "check-spawn-runtime.cljc"]]]
+                      ;; the Basilisp gates run through the basilisp executable beside this interpreter (the run's PATH is minimal);
+                      ;; AMU_ROOT because the gate resolves the repository from its cwd, which is the output directory here
+                      (cr/run run name [(str (pathlib/Path (.-parent (pathlib/Path sys/executable)) "basilisp")) "run" "-p" (rp "scripts/seed")
+                                        (rp (str "scripts/seed/" script)) "--" "--compiler" F "--output" (o name)
+                                        "--target" "aarch64-linux" "--seccomp-if-available"]
+                              (pyenv "AMU_ROOT" (str root)))
                       (put! io-acceptance name (read-json (o (str name "/" name ".json")))))
                     ;; hardening, natively
                     (doseq [[name body] [["value" "(defn main [] :i64 42)"]

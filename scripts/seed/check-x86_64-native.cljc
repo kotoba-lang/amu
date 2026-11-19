@@ -6,7 +6,7 @@
 ;; point, the runtime cases, hardening (seccomp, cpu/wall/stack), the KX64V1 runner (G1 = G2 = G3), the scalar ELF
 ;; suite and aiueos object checks with X2, the static launcher check (every tier) and, in the full tier, the adopted
 ;; core as an x86_64 static image. Library: content_reuse.cljc (named so the CI closure covers it). The checks it
-;; launches (check-runtime-boundary.py, check-static-launcher.py, check-x86_64-scalar.py,
+;; launches (check-runtime-boundary.cljc, check-static-launcher.py, check-x86_64-scalar.py,
 ;; check-x86_64-aiueos-object.py) stay Python.
 ;; Run (native x86_64 Linux): basilisp run -p scripts/seed scripts/seed/check-x86_64-native.cljc -- --bootstrap DIR
 ;;      --output DIR [--tier pr|main|full]
@@ -126,7 +126,9 @@
       (.chmod packed-output 0755)
       (let [packed-run (run "packed-main-run" [packed-output] (pyenv "KEXE_STRUCTURED_REPORT" "1" "KEXE_ALLOW" "-" "KEXE_FUEL" "1000000"))]
         (chk (and (bhas? ":status :ok" (.-stdout packed-run)) (bhas? ":result 42" (.-stdout packed-run))) (tailb (.-stdout packed-run) 300)))
-      (run "runtime-boundary" [sys/executable (rp "scripts/seed/check-runtime-boundary.py") "--compiler" X "--output" (o "runtime-boundary") "--payload" packed-kseed] (python/dict))
+      (run "runtime-boundary" [(str (pathlib/Path (.-parent (pathlib/Path sys/executable)) "basilisp")) "run" "-p" (rp "scripts/seed")
+                               (rp "scripts/seed/check-runtime-boundary.cljc") "--" "--compiler" X "--output" (o "runtime-boundary") "--payload" packed-kseed]
+            (pyenv "AMU_ROOT" (str root)))
       (let [runtime-boundary (read-json (o "runtime-boundary/runtime-boundary.json"))
             ;; 2. runtime cases
             results (atom [])]
