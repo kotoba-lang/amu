@@ -1,0 +1,29 @@
+(ns repin.inventory (:export [exact-source-paths?]))
+
+;; Compare a trusted, independently derived manifest path list with the reported
+;; source paths. This does not authenticate the manifest or file contents.
+(defn- contains-path? [xs [:list :string] path :string] :bool
+  (loop [i 0]
+    (cond (= i (vector-count xs)) false
+          (= (typed-list-nth [:list :string] xs i) path) true
+          :else (recur (+ i 1)))))
+
+(defn- unique-paths? [xs [:list :string]] :bool
+  (loop [i 0]
+    (if (= i (vector-count xs)) true
+      (let [x (typed-list-nth [:list :string] xs i)
+            duplicate (loop [j (+ i 1)]
+                        (cond (= j (vector-count xs)) false
+                              (= x (typed-list-nth [:list :string] xs j)) true
+                              :else (recur (+ j 1))))]
+        (and (not duplicate) (recur (+ i 1)))))))
+
+(defn exact-source-paths? [expected [:list :string] reported [:list :string]] :bool
+  (and (> (vector-count expected) 0)
+       (= (vector-count expected) (vector-count reported))
+       (unique-paths? expected)
+       (unique-paths? reported)
+       (loop [i 0]
+         (if (= i (vector-count expected)) true
+           (and (contains-path? reported (typed-list-nth [:list :string] expected i))
+                (recur (+ i 1)))))))

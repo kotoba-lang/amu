@@ -1,0 +1,38 @@
+(ns repin-manifest-test (:require [repin.manifest :as manifest] [repin.inventory :as inventory]) (:export [main]))
+
+(defn- prefix [first :string decimal :string] :string
+  (string-concat "# manifest\n" (string-concat first
+    (string-concat "\nseed/01-mem.kotoba\nseed/02-io.kotoba\nseed/03-source-sha256.kotoba\nseed/10-lex.kotoba\nseed/11-read.kotoba\nseed/12-kirread.kotoba\n"
+      (string-concat decimal
+        "\nseed/20-names.kotoba\nseed/21-check.kotoba\nseed/30-lower.kotoba\nseed/40-a64enc.kotoba\nseed/41-a64gen.kotoba\nseed/42-layout.kotoba\nseed/50-out.kotoba\nseed/59-source-lock.kotoba\nseed/60-proj.kotoba\n")))))
+
+(defn- finish [p :string] :string (string-concat p "seed/90-drv.kotoba\n"))
+
+(defn main [] :i64
+  (let [p (prefix "seed/00-ns-static.kotoba" "seed/19-decimal.kotoba")
+        ok (manifest/manifest-cli-paths (string-concat (finish p) "seed/ignored.kotoba\n"))
+        expected (typed-list-new [:list :string]
+                   "seed/00-ns-static.kotoba" "seed/01-mem.kotoba" "seed/02-io.kotoba"
+                   "seed/03-source-sha256.kotoba" "seed/10-lex.kotoba" "seed/11-read.kotoba"
+                   "seed/12-kirread.kotoba" "seed/19-decimal.kotoba" "seed/20-names.kotoba"
+                   "seed/21-check.kotoba" "seed/30-lower.kotoba" "seed/40-a64enc.kotoba"
+                   "seed/41-a64gen.kotoba" "seed/42-layout.kotoba" "seed/50-out.kotoba"
+                   "seed/59-source-lock.kotoba" "seed/60-proj.kotoba" "seed/90-drv.kotoba"
+                   "seed/macos-cli-api.kotoba" "seed/macos-cli.kotoba")
+        no-sentinel (manifest/manifest-cli-paths p)
+        no-final-newline (manifest/manifest-cli-paths (string-concat p "seed/90-drv.kotoba"))
+        duplicate (manifest/manifest-cli-paths (finish (prefix "seed/01-mem.kotoba" "seed/19-decimal.kotoba")))
+        traversal (manifest/manifest-cli-paths (finish (prefix "seed/../evil.kotoba" "seed/19-decimal.kotoba")))
+        generated (manifest/manifest-cli-paths (finish (prefix ".agent-output/repin/macos-cli-pins.kotoba" "seed/19-decimal.kotoba")))
+        missing-required (manifest/manifest-cli-paths (finish (prefix "seed/00-ns-static.kotoba" "seed/19-other.kotoba")))]
+    (cond (not (inventory/exact-source-paths? expected ok)) 1
+          (not= (typed-list-nth [:list :string] ok 17) "seed/90-drv.kotoba") 2
+          (not= (typed-list-nth [:list :string] ok 18) "seed/macos-cli-api.kotoba") 3
+          (not= (typed-list-nth [:list :string] ok 19) "seed/macos-cli.kotoba") 4
+          (not= (vector-count no-sentinel) 0) 5
+          (not= (vector-count no-final-newline) 0) 6
+          (not= (vector-count duplicate) 0) 7
+          (not= (vector-count traversal) 0) 8
+          (not= (vector-count generated) 0) 9
+          (not= (vector-count missing-required) 0) 10
+          :else 0)))

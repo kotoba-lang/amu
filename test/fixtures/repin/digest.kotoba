@@ -1,0 +1,12 @@
+(ns repin-digest-test (:require [repin.digest :as digest]) (:export [main]))
+
+(defn main [] :i64
+  (let [good (string-to-utf8 "abc")
+        tampered (string-to-utf8 "abd")
+        expected "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"]
+    (cond (not (digest/matches? good 3 expected)) 1
+          (digest/matches? tampered 3 expected) 2
+          (digest/matches? good 4 expected) 3
+          (digest/matches? good -1 expected) 4
+          (digest/matches? good 3 "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ae") 5
+          :else 0)))

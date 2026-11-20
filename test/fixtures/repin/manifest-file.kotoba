@@ -1,0 +1,18 @@
+(ns repin-manifest-file-test
+  (:require [repin.manifest :as manifest] [repin.inventory :as inventory])
+  (:export [main]) (:capabilities [:fs/app-data]))
+
+;; Fixed expected paths test the file reader and parser together; callers still
+;; need an authenticated manifest and independent source-byte verification.
+(defn main [] :i64
+  (let [data (typed-cap-call :fs/app-data :string :string "/FULL-MANIFEST")
+        actual (manifest/manifest-cli-paths data)
+        expected (typed-list-new [:list :string]
+                   "seed/00-ns-static.kotoba" "seed/01-mem.kotoba" "seed/02-io.kotoba"
+                   "seed/03-source-sha256.kotoba" "seed/10-lex.kotoba" "seed/11-read.kotoba"
+                   "seed/12-kirread.kotoba" "seed/19-decimal.kotoba" "seed/20-names.kotoba"
+                   "seed/21-check.kotoba" "seed/30-lower.kotoba" "seed/40-a64enc.kotoba"
+                   "seed/41-a64gen.kotoba" "seed/42-layout.kotoba" "seed/50-out.kotoba"
+                   "seed/59-source-lock.kotoba" "seed/60-proj.kotoba" "seed/90-drv.kotoba"
+                   "seed/macos-cli-api.kotoba" "seed/macos-cli.kotoba")]
+    (if (inventory/exact-source-paths? expected actual) 0 9)))

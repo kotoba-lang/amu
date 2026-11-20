@@ -1,0 +1,22 @@
+(ns repin-inventory-test (:require [repin.inventory :as inventory]) (:export [main]))
+
+(defn- paths [a :string b :string] [:list :string]
+  (typed-list-new [:list :string] a b))
+
+(defn main [] :i64
+  (let [expected (paths "seed/90-drv.kotoba" "seed/macos-cli.kotoba")
+        reversed (paths "seed/macos-cli.kotoba" "seed/90-drv.kotoba")
+        extra (typed-list-conj [:list :string] expected ".agent-output/repin/macos-cli-pins.kotoba")
+        missing (typed-list-new [:list :string] "seed/90-drv.kotoba")
+        replaced (paths "seed/90-drv.kotoba" ".agent-output/repin/macos-cli-pins.kotoba")
+        duplicate (paths "seed/90-drv.kotoba" "seed/90-drv.kotoba")
+        empty (typed-list-new [:list :string])]
+    (cond (not (inventory/exact-source-paths? expected expected)) 1
+          (not (inventory/exact-source-paths? expected reversed)) 2
+          (inventory/exact-source-paths? expected extra) 3
+          (inventory/exact-source-paths? expected missing) 4
+          (inventory/exact-source-paths? expected replaced) 5
+          (inventory/exact-source-paths? expected duplicate) 6
+          (inventory/exact-source-paths? duplicate duplicate) 7
+          (inventory/exact-source-paths? empty empty) 8
+          :else 0)))
