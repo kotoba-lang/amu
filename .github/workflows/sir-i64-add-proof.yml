@@ -1,0 +1,46 @@
+name: SIR i64 add proof
+
+on:
+  pull_request:
+    paths:
+      - 'proofs/sir-i64-add/**'
+      - '.github/workflows/sir-i64-add-proof.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'proofs/sir-i64-add/**'
+      - '.github/workflows/sir-i64-add-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lean-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: proofs/sir-i64-add
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Lean
+        run: |
+          toolchain=$(cat lean-toolchain)
+          [[ "$toolchain" == 'leanprover/lean4:v4.21.0' ]]
+          version=${toolchain#leanprover/lean4:v}
+          archive="lean-$version-linux.tar.zst"
+          curl --fail --location --retry 3 --silent --show-error \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/leanprover/lean4/releases/download/v$version/$archive"
+          printf '%s  %s\n' 455c6df09d5bd54d2a51b137939c47e2dda816d512ac789c4b3642c9bf98bde8 \
+            "$RUNNER_TEMP/$archive" | sha256sum --check
+          tar --zstd -xf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          printf '%s\n' "$RUNNER_TEMP/lean-$version-linux/bin" >> "$GITHUB_PATH"
+      - name: Check theorem, axioms, and regression examples
+        run: |
+          lean --version
+          lean -DwarningAsError=true Fold.lean
