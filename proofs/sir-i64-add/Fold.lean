@@ -106,6 +106,7 @@ example : accepts [2, 3] (sum 40 2) [.const 2 2, .const 3 42] = true := by decid
 example : accepts [3] (sum 40 2) [.const 3 43] = false := by decide
 example : accepts [2, 3] (sum 40 2) [.const 3 42] = false := by decide
 example : accepts [3] [.const 1 40, .fuel, .const 2 2, .add 3 1 2] [.const 3 42] = false := by decide
+example : accepts [3] [.const 1 40, .fuel, .const 2 2, .add 3 1 2] [.const 3 42, .fuel] = false := by decide
 example : accepts [3] [.const 1 40, .trap 8, .const 2 2, .add 3 1 2] [.const 3 42] = false := by decide
 
 /-- info: 'SirI64Add.add_mod' depends on axioms: [propext] -/

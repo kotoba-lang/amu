@@ -50,11 +50,13 @@ these observations. T2 counts resolved uses separately from the fold.
   continuation whose observation depends only on those components or the
   trap observation.
 - Region selection assumes checked SIR, valid SSA IDs and a single entry
-  before the first definition. `live` must cover every read of an outgoing
-  value before a later overwrite of its SIR temporary on any continuation
-  path. This includes branch and return uses, PHI inputs and values that
-  can affect later traps or fuel charges. The checker consumes these facts.
-  It does not infer a CFG, dominance or live-out sets from compiler bytes.
+  before the first definition. `live` must cover every outgoing SSA value
+  used on any continuation path, including through local aliases and PHI
+  inputs. Overwriting a SIR temporary ends that temporary's binding. Its
+  previous SSA value may stay live through an alias. Branches, returns,
+  and values that affect later traps or fuel charges are included. The
+  checker consumes these facts as input. CFG, dominance and live-out
+  extraction from compiler bytes are outside the model.
 - A constant or `BOP-ADD` neither charges fuel nor traps. The checker
   rejects windows containing a fuel charge or trap and candidates that
   introduce either. Any fuel charges and traps outside the slice stay at
