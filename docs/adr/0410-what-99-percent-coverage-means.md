@@ -12,7 +12,7 @@ JUN-889 aims for Amu selfhost to run on 99% of the world's devices. That number 
 
 ### Denominator
 
-The denominator is StatCounter's worldwide operating system share across all platforms, pinned to one month in `docs/qualification/target-coverage/table.json`. The current pin is 2026-10:
+The denominator is StatCounter's share of worldwide page views by operating system across all platforms, pinned to one month in `docs/qualification/target-coverage/table.json`. The current pin is 2026-10:
 
 | OS | Share | Targets listed |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ A cell passes only when every receipt it names is in the snapshot, unchanged, sa
 
 ### Unmeasured ISA splits
 
-No public source gives these splits:
+The scoreboard has no measured split for these slices:
 
 - Android's 32-bit and x86 share
 - Windows on Arm's share
@@ -58,7 +58,60 @@ So the report gives two bounds. The **lower** bound credits an OS only when ever
 
 **99% is met only by the lower bound.**
 
-### Current number
+### Android ABI measurement (KOTOBA-238)
+
+The shares for `armv7-android` and `x86_64-android` are unknown. The public StatCounter chart has no ABI dimension.
+On 2026-11-26, the October worldwide all-platform HTML summary showed the pinned 44.56% Android share. The
+single-month CSV returned 44.70% Android and only OS totals. StatCounter allows revisions for 45 days, so record
+the source, retrieval date and bytes for any proposed update. All calculations below use the accepted 44.56% pin.
+[StatCounter chart](https://gs.statcounter.com/os-market-share/all/worldwide/) · [October CSV](https://gs.statcounter.com/chart.php?device_hidden=desktop%2Bmobile%2Btablet%2Bconsole&statType_hidden=os_combined&region_hidden=ww&granularity=monthly&fromInt=202610&toInt=202610&fromMonthYear=2026-10&toMonthYear=2026-10&csv=1) · [StatCounter methodology and revision policy](https://gs.statcounter.com/faq)
+
+The public sources reviewed supplied no comparable October ABI counts. Play Console's device catalog CSV lists
+model specifications and supported ABIs. Reach and devices can break down install-base data by ABI, with
+Google Play-wide active-device data available to select partners. A device can appear under multiple supported
+ABIs. These sources measure models or active devices in Play cohorts. The October StatCounter numerator and
+denominator both count page views. [Play device catalog](https://support.google.com/googleplay/android-developer/answer/9859371) · [Play Reach and devices](https://support.google.com/googleplay/android-developer/answer/10770882) · [Android distribution dashboard](https://developer.android.com/about/dashboards/)
+
+1. Request aggregate counts for October 2026 from StatCounter, if the underlying records support ABI classification.
+   Specify the same worldwide, all-platform OS page-view population and revision as the pin, including the same month
+   boundary, OS classification and filters. Ask for total page views, Android page views, Android page views by mutually
+   exclusive native ABI, unclassified counts and the classification method. Reconcile those totals to the pinned OS
+   series before using them.
+2. Assign each Android page view to one bucket using the widest natively usable Android app ABI on the device and OS.
+   Use `arm64-v8a` for native Arm64 even when `armeabi-v7a` also works, and `armeabi-v7a` for Arm devices whose Android
+   app ABI is limited to Armv7. An Arm64 CPU with a 32-bit Android userspace can belong to the latter bucket. Count
+   `x86_64` only with evidence that Android can run 64-bit x86 code on x86-64 hardware without translation. Track native
+   `x86` (32-bit) and other known unlisted ABIs as uncovered. Keep separately identified ChromeOS in its OS category,
+   including where it runs Android apps through Arm translation. Keep ambiguous Android-attributed views, including
+   possible emulation, translation or ChromeOS misclassification, in the unclassified bucket.
+   [Android NDK ABIs](https://developer.android.com/ndk/guides/abis) · [ChromeOS app compatibility](https://developer.android.com/develop/devices/chromeos/learn/device-support)
+3. If aligned October data is unavailable, run a future full-month page-view cohort and label it with its own month,
+   sites and population. Instrument participating sites to count eligible page views once, including first-page visits
+   and missing hints, across regions, platforms and browser families. Where an opt-in device sample is available,
+   validate the classifier against the hardware ISA, Android userspace and native ABI capability. `Build.SUPPORTED_ABIS`
+   supplies an ordered capability list. Browser architecture and bitness hints can describe the browser environment and
+   can be missing or ambiguous. Record disagreement and non-response. Keep the cohort result as a proxy unless the sampling
+   frame is aligned and validated against the StatCounter population for that month and the owner approves a same-month
+   denominator pin. Use Play or app data, vendor and OS version only to inform the investigation. Derive any proposed
+   scoreboard weights from aligned page views.
+   [Android Build API](https://developer.android.com/reference/android/os/Build#SUPPORTED_ABIS) · [Chrome User-Agent Client Hints](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints) · [Chromium hint implementation](https://chromium.googlesource.com/chromium/src/+/1e8e9dc69d467/components/embedder_support/user_agent_utils.cc)
+4. Preserve source metadata, the classifier version, filters and aggregate counts by geography, platform and browser so
+   the result can be recomputed. Let `N` be all Android page views, `n` the confirmed page views for an ABI or a group of
+   ABIs, and `u` the unclassified Android views. Confirmed share is `n / N`. The classification-only range is `n / N` to
+   `(n + u) / N`, with the unknown pool allocated at most once for the group. Multiply by the pinned Android share to
+   convert to worldwide percentage points. Report sampling and population-coverage uncertainty as well, including
+   unsupported browsers and missing regions or sites. Use a defensible upper bound on the **combined** uncovered share
+   for an omission decision, including unresolved traffic that could be uncovered. If the uncertainty cannot be bounded
+   against the pinned population, the share remains unknown.
+
+The report marks the Android split `isaSplitMeasured: false`. A measured split in the current schema must cover exactly
+the listed targets and total 100% of the Android slice. It takes point weights, so carrying uncovered or unresolved mass
+into a future split requires an explicit way to account for that mass without credit. Review any scoring input update with
+the owner. ABI counts determine market weight. Each Android L1 pass separately requires the physical-device evidence
+above. The Android A1 result remains a device observation outside the scoreboard's receipt set.
+[Android A1 observation](../qualification/android-a1/20261106/README.md)
+
+### Receipt snapshot
 
 From the 2026-11-06 snapshot at commit `f6c6ea215`:
 
@@ -72,7 +125,21 @@ From the 2026-11-06 snapshot at commit `f6c6ea215`:
 
 ## What the numbers imply
 
-The listed total is 99.18%, which leaves a margin of 0.18 points. Any ISA slice above 0.18% of the world must therefore be supported or measured as smaller. Intel Macs would have to be under about 3% of Macs to be dropped, and 32-bit Android under about 0.4% of Android.
+The listed total is 99.18%, leaving **0.18 percentage points** for all uncovered traffic within that total. The joint
+share for `armv7-android` and `x86_64-android` could be anywhere from 0 to 44.56 worldwide percentage points. Both draw
+from the same Android slice, so the 44.56-point limit applies once. If every other listed requirement qualifies, the
+largest possible allowance for omitting both is 0.18 points, about 0.404% of Android page views (`0.18 / 44.56`).
+The same margin, if spent entirely on Intel Macs, would cover about 3.03% of macOS page views. Other uncovered traffic
+within the listed total reduces the allowance. A measured omission is defensible only if the L1 lower bound still
+reaches 99.00% after charging the joint upper bound of all uncovered listed traffic and applying the report's
+basis-point flooring.
+
+Android contributes 0.00 points to both bounds in the stored snapshot because none of its rows passes L1. The snapshot's
+8.09% upper bound comes from Linux and macOS. If `aarch64-android` alone gained L1 while the other rows kept their snapshot
+states, the current unmeasured-split rules would give 2.15% lower and 52.65% upper. If every other listed OS slice also
+earned full L1 credit, the bounds would be **54.62% lower and 99.18% upper**. The 44.56-point gap in the latter scenario
+is the unresolved Android slice. With an accepted split, the loss from the 99.18% ceiling would be the measured uncovered
+worldwide share, with any other gaps and basis-point flooring also charged against the margin.
 
 JUN-889 expected x86_64 and aarch64 to be enough. That is unproven, and 32-bit Android could disprove it.
 
@@ -84,7 +151,7 @@ JUN-889 expected x86_64 and aarch64 to be enough. That is unproven, and 32-bit A
 ## Refused and not decided
 
 - This report is not a gate. `AGENTS.md` keeps verdicts with the native controller, so the report sets `gateVerdict: false`. A digest shows that a receipt has not changed since collection. It does not authenticate the receipt.
-- `armv7-android` and `x86_64-android` stay listed until a share is measured, so they hold the lower bound down. Whether to drop them later is **not decided**: that needs a measured share, and how to measure it is open (JUN-890).
+- `armv7-android` and `x86_64-android` stay listed pending an approved decision based on measured shares. The measured-share acceptance condition in KOTOBA-238 remains open.
 - Refreshing a snapshot is manual (`scoreboard.cljc collect`). Nothing regenerates it after each merge.
 
 ## Consequences
