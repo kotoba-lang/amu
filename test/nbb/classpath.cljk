@@ -87,8 +87,8 @@
     (check "every resolved directory exists"
            (every? #(.existsSync fs %) dirs))
     (check "every dependency checkout is at its pinned commit"
-           (every? (fn [{:keys [coordinate git-sha]}]
-                     (= git-sha (classpath/head-sha (classpath/checkout-dir coordinate git-sha))))
+           (every? (fn [{:keys [coordinate git-repo git-sha]}]
+                     (= git-sha (classpath/head-sha (classpath/checkout-dir (or git-repo coordinate) git-sha))))
                    (:lock/entries (classpath/read-lock repo-root))))))
 
 ;; --- fetch and verification -----------------------------------------------
@@ -140,6 +140,39 @@
                                :paths ["src" "not-there"]}])]
     (check "a locked path that does not exist is refused"
            (= :verify (phase-of #(classpath/resolve-directories root)))))
+
+  ;; Monorepo entries: libraries under lib/<id> of one repository at one
+  ;; commit share a single checkout, and each is verified by its tree id.
+  (let [mono (.join node-path (temp-dir "kotoba-origin-") "mono")
+        _ (do (.mkdirSync fs (.join node-path mono "lib" "a" "src") #js {:recursive true})
+              (.mkdirSync fs (.join node-path mono "lib" "b" "src") #js {:recursive true})
+              (.writeFileSync fs (.join node-path mono "lib" "a" "src" "a.txt") "a\n")
+              (.writeFileSync fs (.join node-path mono "lib" "b" "src" "b.txt") "b\n"))
+        mono-sha (init-repo! mono)
+        tree-of (fn [subdir] (.trim (.-stdout (git! mono ["rev-parse" (str "HEAD:" subdir)]))))
+        entry (fn [lib subdir tree]
+                {:coordinate (str "io.example/" lib)
+                 :git-repo "io.example/mono"
+                 :git-url (str "file://" mono)
+                 :git-sha mono-sha
+                 :git-subdir subdir
+                 :git-tree tree
+                 :paths ["src"]})
+        checkout (classpath/checkout-dir "io.example/mono" mono-sha)
+        root (write-fixture! [(entry "a" "lib/a" (tree-of "lib/a"))
+                              (entry "b" "lib/b" (tree-of "lib/b"))])
+        dirs (classpath/resolve-directories root)]
+    (check "monorepo libraries resolve to their subdirectories of one checkout"
+           (= dirs [(.join node-path checkout "lib" "a" "src")
+                    (.join node-path checkout "lib" "b" "src")]))
+    (check "monorepo libraries do not get a checkout per library"
+           (not (.existsSync fs (classpath/checkout-dir "io.example/a" mono-sha))))
+    (check "a monorepo library at the wrong tree is refused"
+           (= :verify (phase-of #(classpath/resolve-directories
+                                  (write-fixture! [(entry "a" "lib/a" (tree-of "lib/b"))])))))
+    (check "a monorepo library without a tree id is refused"
+           (= :verify (phase-of #(classpath/resolve-directories
+                                  (write-fixture! [(entry "a" "lib/a" nil)]))))))
 
   (if previous
     (set! (.-GITLIBS js/process.env) previous)
