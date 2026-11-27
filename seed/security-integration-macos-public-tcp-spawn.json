@@ -1,0 +1,36 @@
+{
+  "schema": "amu.seed.macos-public-capability-regression.v1",
+  "entry": "bin/amu",
+  "target": "aarch64-macos",
+  "contracts": {
+    "privilegedHostAndGuest": "docs/native-public-entry.md",
+    "darwinTcpProposal": "docs/adr/0408-macos-guests-gain-native-tcp.md",
+    "linuxStaticHistory": "seed/security-integration-tcp-spawn-20261023.json"
+  },
+  "allowedControl": {
+    "case": "run-receipt",
+    "guestResult": 42,
+    "receiptSchema": "amu.run-receipt.v1"
+  },
+  "guestWithoutGrants": {
+    "checkExit": 0,
+    "compileExit": 0,
+    "runExit": 133,
+    "stdout": "",
+    "stderr": "",
+    "cases": [
+      {"name": "process", "capability": ":process/spawn", "request": "/usr/bin/touchARG_SEP{marker}"},
+      {"name": "net-listen", "capability": ":net/listen", "request": "127.0.0.1:0"},
+      {"name": "net-accept", "capability": ":net/accept", "request": "1 100"},
+      {"name": "net-dial", "capability": ":net/dial", "request": "127.0.0.1:{port} 100"},
+      {"name": "net-read", "capability": ":net/read", "request": "1 8 100"},
+      {"name": "net-write", "capability": ":net/write", "request": "1 42"}
+    ]
+  },
+  "unqualified": [
+    "ADR 0408 D5 named compile refusal for unavailable TCP wires",
+    "Darwin TCP provider with a valid grant, content pin, and policy ceiling",
+    "Darwin TCP address, handle, deadline, and cleanup parity with Linux",
+    "Darwin guest wire 20 provider with an explicit process grant"
+  ]
+}

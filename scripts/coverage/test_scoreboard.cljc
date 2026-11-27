@@ -4,11 +4,12 @@
 ;; fall, or the report to refuse. Nothing here touches the committed files.
 ;; Ported from test_scoreboard.py.
 ;; Run from the repo root:
-;;   PYTHONPATH=scripts/coverage basilisp test -p no:cacheprovider --rootdir scripts/coverage scripts/coverage/test_scoreboard.cljc
+;;   PYTHONPATH=scripts/coverage basilisp test -- -p no:cacheprovider --rootdir scripts/coverage scripts/coverage/test_scoreboard.cljc
 (ns test-scoreboard
   (:require [basilisp.test :refer [deftest is]]
             [scoreboard :as sb])
-  (:import hashlib json pathlib shutil tempfile))
+  (:import hashlib json operator pathlib shutil tempfile
+           [receipt_privacy :as privacy]))
 
 (def snapshot-dir (.joinpath sb/coverage "snapshots/20261106"))
 (def table (sb/read-json (.joinpath sb/coverage "table.json")))
@@ -125,3 +126,79 @@
   (is (refused? nil (with-slice "linux" {"shareBasisPoints" 2000})))
   (is (refused? nil (with-slice "linux" {"targets" ["x86_64-linux" "aarch64-macos"]})))
   (is (refused? nil (with-slice "linux" {"targets" ["riscv64-linux"]}))))
+
+(deftest a-matching-digest-does-not-admit-private-receipt-data
+  (doseq [field [{"password" "synthetic-credential-marker"}
+                 {"contact" "synthetic@example.invalid"}
+                 {"phoneNumber" "+1 202 555 0100"}
+                 {"args" ["/Users/synthetic/workspace/compiler"]}]]
+    (let [result (scored (rewrite arm #(assoc % "nested" [field])))]
+      (is (= [0 809] (bounds result)))
+      (is (= [(str arm ": receipt publication check failed")]
+             (get-in result ["targets" "aarch64-linux" "L1" "problems"]))))))
+
+(deftest text-evidence-refuses-private-fields-and-preserves-public-metadata
+  (doseq [[value kind] [["GITHUB_TOKEN='synthetic-credential-marker'" "credential"]
+                        ["Authorization: Bearer synthetic-credential-marker" "credential"]
+                        ["Contact: synthetic@example.invalid" "email"]
+                        ["Phone number: +1 202 555 0100" "personal information"]
+                        ["Mailing address: 123 Example Street" "personal information"]]]
+    (is (= kind (try (privacy/publication_bytes (.encode value) false)
+                    (catch privacy/ReceiptPrivacyError error (str error))))))
+  (let [public (str "platform=Darwin arm64\n/usr/bin/true\nfile:///usr/bin/true\n"
+                    "source=https://github.com/kotoba-lang/amu\nsha256=" zeros "\n")
+        original (str public "argv=/Users/synthetic-user/work/input\n"
+                       "trace=file:///Users/synthetic-user/work/output\n"
+                       "temp=/private/tmp/synthetic-run/result\n")
+        expected (str public "argv=<host-home>/work/input\n"
+                       "trace=file://<host-home>/work/output\n"
+                       "temp=<host-temp>/result\n")
+        control (.read_bytes (.joinpath sb/root "docs/qualification/android-a1/20261106/out/fs-control.txt"))]
+    (is (operator/eq (.encode expected) (privacy/publication_bytes (.encode original) false)))
+    (is (operator/eq control (privacy/publication_bytes control false)))))
+
+(deftest report-output-is-confined-to-the-workspace
+  (with-open [temp (tempfile/TemporaryDirectory)]
+    (let [workspace (pathlib/Path temp "workspace")
+          report-path (.joinpath workspace "score.json")
+          outside (pathlib/Path temp "outside.json")
+          args ["report" "--snapshot" (str snapshot-dir) "--as-of" day "--output"]]
+      (.mkdir workspace)
+      (with-redefs [sb/root workspace]
+        (is (= 1 (apply sb/-main (conj args (str outside)))))
+        (is (not (.exists outside)))
+        (is (= 0 (apply sb/-main (conj args (str report-path)))))
+        (is (= [215 809] (bounds (sb/read-json report-path))))
+        (is (= 1 (sb/-main "collect" "--date" "20260230")))))))
+
+(deftest collect-publishes-sanitized-copies-with-both-digests
+  (with-open [temp (tempfile/TemporaryDirectory)]
+    (let [workspace (pathlib/Path temp "workspace")
+          coverage (.joinpath workspace "coverage")
+          out (.joinpath coverage "snapshots/20261128")
+          blocked (.joinpath coverage "snapshots/20261129")
+          runs {"selfhost" 1 "mac" 2}
+          artifact-names (vec (keys sb/artifacts))
+          receipt (.joinpath out "receipts" arm)
+          incoming (atom nil)
+          download (fn [_ artifact dest]
+                     (shutil/copytree (.joinpath snapshot-dir "receipts" artifact) dest)
+                     (when (= "bootstrap-arm64" artifact)
+                       (.write_text (.joinpath dest "selfhost-bootstrap.json") @incoming)))
+          gh (fn [& args]
+               (if (= "run" (first args))
+                 {"workflowName" (if (= "1" (nth args 2)) "selfhost-native" "mac-selfhost-aiueos")
+                  "conclusion" "success" "headSha" zeros "createdAt" "2026-11-06T00:00:00Z"}
+                 {"artifacts" (mapv (fn [name] {"name" name "id" name "digest" zeros}) artifact-names)}))
+          baseline (sb/read-json (.joinpath snapshot-dir "receipts" arm))]
+      (with-redefs [sb/root workspace sb/coverage coverage sb/gh-json gh sb/download-artifact download]
+        (reset! incoming (sb/dump (assoc baseline "args" ["/Users/synthetic/work/bin/amu"])))
+        (let [provenance (sb/collect table runs out)]
+          (is (= ["<host-home>/work/bin/amu"] (get (sb/read-json receipt) "args")))
+          (is (= (.hexdigest (hashlib/sha256 (.encode @incoming))) (get-in provenance ["receivedReceiptSha256" arm])))
+          (is (= (sb/digest receipt) (get-in provenance ["receipts" arm])))
+          (is (= [215 809] (bounds (sb/report table out day)))))
+        (reset! incoming (sb/dump (assoc baseline "password" "synthetic-credential-marker")))
+        (is (try (sb/collect table runs blocked) false
+                 (catch basilisp.lang.exception/ExceptionInfo e (sb/refused? e))))
+        (is (not (.exists blocked)))))))

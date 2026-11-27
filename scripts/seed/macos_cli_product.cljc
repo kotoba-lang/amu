@@ -4,21 +4,46 @@
   (:require [basilisp.string :as str]
             [gate-util :as u]
             [macos-native-lib :as mac])
-  (:import json operator os pathlib platform shutil subprocess time))
+  (:import json operator os pathlib platform select shutil socket subprocess time))
 
 (defn- b [s] (.encode s))
 (defn- tmp-amu [] (python/set (python/list (.glob (pathlib/Path "/private/tmp") "amu-*"))))
+
+(defn- check-tcp-and-spawn [fixture out run source]
+  (let [without-grants (u/geti fixture "guestWithoutGrants")
+        marker (.joinpath out "guest-child-must-not-exist")]
+    (u/chk (not (.exists marker)))
+    (with-open [peer (socket/socket socket/AF_INET socket/SOCK_STREAM)]
+      (.bind peer (python/tuple ["127.0.0.1" 0]))
+      (.listen peer 1)
+      (let [port (second (.getsockname peer))]
+        (doseq [case (u/geti without-grants "cases")]
+          (let [name (str "guest-grant-denied-" (u/geti case "name"))
+                capability (u/geti case "capability")
+                request (.replace (.replace (u/geti case "request") "{port}" (str port)) "{marker}" (str marker))
+                file (source name (str "(defn main [] :i64 (let [r (typed-cap-call " capability
+                                       " :string :string " (json/dumps request ** :ensure_ascii false) ")] 42))"))]
+            (run (str name "-check") ["check" (.-name file)] :expected (u/geti without-grants "checkExit") :stdout (b "ok\n"))
+            (run (str name "-compile") ["compile" (.-name file) "-o" name] :expected (u/geti without-grants "compileExit"))
+            (run name ["run" name] :expected (u/geti without-grants "runExit")
+                 :stdout (b (u/geti without-grants "stdout")) :stderr (b (u/geti without-grants "stderr")))))
+        (let [[ready] (select/select [peer] [] [] 0)]
+          (u/chk (zero? (python/len ready)) "ungranted guest connected to the loopback peer"))))
+    (u/chk (not (.exists marker)) "ungranted guest launched the marker child")))
 
 (defn check [cli out]
   (u/chk (and (= "Darwin" (platform/system)) (= "arm64" (platform/machine))))
   (let [root u/root
         cli (pathlib/Path cli)
         out (pathlib/Path out)
+        security-fixture (.joinpath root "seed/security-integration-macos-public-tcp-spawn.json")
+        security (u/read-json security-fixture)
+        _ (u/chk (= "amu.seed.macos-public-capability-regression.v1" (u/geti security "schema")))
         _ (mac/verify-macho cli)
         _ (.mkdir out ** :parents true :mode 0700 :exist_ok false)
         before-tmp (tmp-amu)
         calls (python/list)
-        run (fn run [name args & {:keys [expected stdout diagnostic image] :or {expected 0}}]
+        run (fn run [name args & {:keys [expected stdout stderr diagnostic image] :or {expected 0}}]
               (let [start (time/monotonic)
                     r (subprocess/run (python/list (map str (cons (or image cli) args))) ** :cwd out
                                       :env (python/dict {"PATH" "/nonexistent" "LANG" "C" "AMU_TARGET" "bad-target"})
@@ -27,9 +52,10 @@
                   (.write_bytes (.joinpath out (str name "." stream)) (python/getattr r stream)))
                 (u/chk (= expected (.-returncode r)) (str name " " (.-returncode r) " " (.-stdout r) (.-stderr r)))
                 (when-not (nil? stdout) (u/chk (u/deq (.-stdout r) stdout) (str name " " (.-stdout r))))
-                (if-not (nil? diagnostic)
-                  (u/chk (u/has-bytes? diagnostic (.-stderr r)) (str name " " (.-stderr r)))
-                  (when (zero? expected) (u/chk (not (u/nonempty? (.-stderr r))) (str name " " (.-stderr r)))))
+                (cond
+                  (some? stderr) (u/chk (u/deq (.-stderr r) stderr) (str name " " (.-stderr r)))
+                  (some? diagnostic) (u/chk (u/has-bytes? diagnostic (.-stderr r)) (str name " " (.-stderr r)))
+                  (zero? expected) (u/chk (not (u/nonempty? (.-stderr r))) (str name " " (.-stderr r))))
                 (.append calls (u/pydict "name" name "exit" (.-returncode r) "seconds" (python/round (- (time/monotonic) start) 3)
                                          "stdout" (mac/pin (.joinpath out (str name ".stdout")))
                                          "stderr" (mac/pin (.joinpath out (str name ".stderr")))))
@@ -275,11 +301,13 @@
     (run-ok "run-source" ["run" (.-name hello)] (b "42\n"))
     (run-ok "run-artifact" ["run" "./hello"] (b "42\n"))
     ;; JUN-282: an opt-in run receipt binds source, host images, program and stdout
-    (run-ok "run-receipt" ["run" (.-name hello) "--receipt" "run-receipt.json"] (b "42\n"))
-    (let [receipt (u/read-json (.joinpath out "run-receipt.json"))]
-      (u/chk (and (= "amu.run-receipt.v1" (u/geti receipt "schema")) (= 0 (u/geti receipt "exit"))) receipt)
+    (let [control (u/geti security "allowedControl")
+          stdout (b (str (u/geti control "guestResult") "\n"))
+          _ (run-ok (u/geti control "case") ["run" (.-name hello) "--receipt" "run-receipt.json"] stdout)
+          receipt (u/read-json (.joinpath out "run-receipt.json"))]
+      (u/chk (and (= (u/geti control "receiptSchema") (u/geti receipt "schema")) (= 0 (u/geti receipt "exit"))) receipt)
       (u/chk (= (u/sha256-hex (.read_bytes hello)) (u/geti receipt "source")) receipt)
-      (u/chk (= (u/sha256-hex (b "42\n")) (u/geti receipt "stdout")) receipt)
+      (u/chk (= (u/sha256-hex stdout) (u/geti receipt "stdout")) receipt)
       (u/chk (every? #(= 64 (count (u/geti receipt %))) ["compiler" "packager" "program"]) receipt))
     (let [kept (.read_bytes (.joinpath out "run-receipt.json"))]
       (run "run-receipt-exists" ["run" (.-name hello) "--receipt" "run-receipt.json"] :expected 1 :diagnostic (b "ERECEIPT"))
@@ -348,14 +376,14 @@
             (run (str "tampered" i) ["run" (.-name p)] :expected 1 :diagnostic (b "EARTIFACT"))))
         (let [p (source "args" "(defn main [] :i64 (let [w (typed-cap-call :io/write :string :string (typed-cap-call :cli/args :string :string \"0\"))] 42))")]
           (run "guest-argv" ["run" (.-name p) "--" "hello 日本語"] :stdout (b "hello 日本語42\n")))
-        (doseq [[name cap kind payload] [["fs" ":fs/app-data-bytes" ":bytes" "(bytes-from-vector-i64 [0 70 83 50 0 65 120 0])"]
-                                         ["process" ":process/spawn" ":string" "\"anything\""]]]
-          (let [p (source (str "deny-" name) (str "(defn main [] :i64 (let [r (typed-cap-call " cap " " kind " " kind " " payload ")] 42))"))
-                r (subprocess/run (python/list (map str [cli "run" p])) ** :cwd out :capture_output true :timeout 150)]
-            (.write_bytes (.joinpath out (str "denied-" name ".stdout")) (.-stdout r))
-            (.write_bytes (.joinpath out (str "denied-" name ".stderr")) (.-stderr r))
-            (u/chk (and (not (zero? (.-returncode r))) (not (u/deq (.-stdout r) (b "42\n")))) name)
-            (.append calls (u/pydict "name" (str "guest-grant-denied-" name) "exit" (.-returncode r)))))
+        (let [p (source "deny-fs" (str "(defn main [] :i64 (let [r (typed-cap-call :fs/app-data-bytes :bytes :bytes "
+                                       "(bytes-from-vector-i64 [0 70 83 50 0 65 120 0]))] 42))"))
+              r (subprocess/run (python/list (map str [cli "run" p])) ** :cwd out :capture_output true :timeout 150)]
+          (.write_bytes (.joinpath out "denied-fs.stdout") (.-stdout r))
+          (.write_bytes (.joinpath out "denied-fs.stderr") (.-stderr r))
+          (u/chk (and (not (zero? (.-returncode r))) (not (u/deq (.-stdout r) (b "42\n")))) "fs")
+          (.append calls (u/pydict "name" "guest-grant-denied-fs" "exit" (.-returncode r))))
+        (check-tcp-and-spawn security out run source)
         (let [lp (source "loop" "(defn main [] :i64 (loop [i 0] (recur (+ i 1))))")]
           (run "deadline" ["run" (.-name lp)] :expected 124 :diagnostic (b "ETIME")))
         ;; Caller-controlled program bytes are recompiled and compared, never exec'd.
@@ -384,6 +412,7 @@
     (u/chk (u/deq (tmp-amu) before-tmp) "private CLI directories leaked")
     (let [result (u/pydict "schema" "amu.macos-cli-product-observation.v1" "status" "PASS_ORDINARY_MACOS_CLI"
                            "cli" (mac/pin cli) "calls" calls "manualFD3" false "hostedFallback" false
+                           "guestCapabilityFixture" (mac/pin security-fixture)
                            "nativeResults" (python/list [42 43]) "nativeBuildRequired" true "independentUserQualified" false)]
       (.write_text (.joinpath out "cli-product.json") (u/json-dump result))
       (println (u/geti result "status") (python/len calls) "native observations"))))

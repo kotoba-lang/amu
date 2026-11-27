@@ -6,6 +6,18 @@ wires 43–47 to the existing trap path. The two Darwin TCP controls under
 `seed/macos-tcp-*-control-packager.kotoba` are isolated observations, not
 providers. A Mac mini bot or gateway must not use them as a service.
 
+The [public Mac regression fixture](../seed/security-integration-macos-public-tcp-spawn.json)
+records the current behavior separately from the Linux integration receipts.
+The public CLI checks and compiles calls to wires 43–47 and wire 20. Running
+the resulting images with the ordinary guest authority fails with exit 133.
+The fixture checks that the dial request leaves no queued connection on an
+isolated loopback peer and that the spawn request leaves no child marker.
+The ordinary `run --receipt` control executes successfully through the
+privileged CLI host. [ADR 0408 D5](adr/0408-macos-guests-gain-native-tcp.md)
+calls for named compile refusals for unsupported wires. The runtime traps
+observe the current behavior while the named compile refusals and a
+grant-bearing Darwin TCP provider remain open.
+
 A Darwin implementation must preserve the existing wire contract: exact
 address grants for listen and dial, separate listener and connection handles,
 a 16-handle budget, bounded payloads, timeout handling, close and named
