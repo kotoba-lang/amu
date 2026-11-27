@@ -5,7 +5,7 @@
 ;; controller's verdict. A digest here shows that a stored receipt is unchanged
 ;; since collection. It does not authenticate the receipt.
 ;;
-;;   collect  copy the receipts the table names from two successful CI runs
+;;   collect  publish checked copies of the receipts from two successful CI runs
 ;;   report   compute the numbers for a snapshot on a given day
 ;;   verify   recompute a snapshot on its own day and compare with its report.json
 ;;
@@ -15,10 +15,11 @@
 ;; Run from the repo root: basilisp run scripts/coverage/scoreboard.cljc -- verify
 (ns scoreboard
   (:require [basilisp.string :as str])
-  (:import datetime hashlib json os pathlib shutil subprocess sys tempfile))
+  (:import datetime hashlib json operator os pathlib subprocess sys tempfile
+           [receipt_privacy :as privacy]))
 
-(def root (.resolve (pathlib/Path (or (.get os/environ "AMU_ROOT") "."))))
-(def coverage (.joinpath root "docs/qualification/target-coverage"))
+(def ^:redef root (.resolve (pathlib/Path (or (.get os/environ "AMU_ROOT") "."))))
+(def ^:redef coverage (.joinpath root "docs/qualification/target-coverage"))
 (def repo "kotoba-lang/amu")
 (def workflows {"selfhost" "selfhost-native" "mac" "mac-selfhost-aiueos"})
 (def artifacts {"x86_64-native-receipt" "selfhost"
@@ -28,6 +29,27 @@
 
 (defn refuse [message] (throw (ex-info message {:refused true})))
 (defn refused? [e] (boolean (:refused (ex-data e))))
+
+(defn bounded-child [base path]
+  (let [base (.resolve base)
+        path (.resolve path)]
+    (when (or (operator/eq base path) (not (.is_relative_to path base)))
+      (refuse "path is outside the approved directory"))
+    path))
+
+(defn receipt-path [directory name]
+  (let [path (pathlib/PurePosixPath name)]
+    (when (or (empty? (.-parts path)) (.is_absolute path)
+              (some #{".."} (.-parts path))
+              (not= name (.as_posix path)))
+      (refuse "receipt path must be relative and normalized"))
+    (bounded-child directory (.joinpath directory name))))
+
+(defn publication-bytes [data]
+  (try
+    (privacy/publication_bytes data)
+    (catch privacy/ReceiptPrivacyError e
+      (refuse (str "receipt publication refused (" e ")")))))
 
 (defn from-py [x]
   (cond
@@ -73,16 +95,19 @@
   "[problems body]."
   [snapshot provenance spec host]
   (let [path (get spec "path")
-        file (.joinpath (.joinpath snapshot "receipts") path)]
+        file (receipt-path (.joinpath snapshot "receipts") path)]
     (cond
       (not (contains? (get provenance "receipts") path)) [[(str path ": not in provenance")] nil]
       (not (.is_file file)) [[(str path ": missing")] nil]
       (not= (digest file) (get-in provenance ["receipts" path])) [[(str path ": digest differs from provenance")] nil]
       :else
-      (let [body (try (read-json file) (catch python/ValueError _ ::not-json))]
-        (if (= body ::not-json)
-          [[(str path ": not JSON")] nil]
-          (let [seen (get body "host")
+      (let [data (.read_bytes file)
+            clean? (try (operator/eq data (publication-bytes data))
+                        (catch basilisp.lang.exception/ExceptionInfo _ false))]
+        (if (not clean?)
+          [[(str path ": receipt publication check failed")] nil]
+          (let [body (from-py (json/loads data))
+                seen (get body "host")
                 gens (get body "generations" [])
                 problems
                 (cond-> []
@@ -168,12 +193,16 @@
                                        [t (every? #(= "pass" (get-in targets [t % "state"])) levels)]))
      "targets" targets}))
 
-(defn gh-json [& args]
+(defn ^:redef gh-json [& args]
   (from-py (json/loads (.-stdout (subprocess/run (python/list (cons "gh" args)) ** :check true :capture_output true :text true)))))
 
+(defn ^:redef download-artifact [run artifact destination]
+  (subprocess/run ["gh" "run" "download" (str run) "--repo" repo "-n" artifact "-D" (str destination)] ** :check true))
+
 (defn collect [table runs out]
-  (when (.exists out) (refuse (str out " already exists")))
-  (let [views (into {} (for [[role run] runs]
+  (let [out (bounded-child (.joinpath coverage "snapshots") (bounded-child root out))
+        _ (when (.exists out) (refuse "snapshot already exists"))
+        views (into {} (for [[role run] runs]
                          (let [view (gh-json "run" "view" (str run) "--repo" repo "--json"
                                              "headSha,conclusion,workflowName,event,createdAt")]
                            (when (or (not= (get view "workflowName") (get workflows role)) (not= (get view "conclusion") "success"))
@@ -188,16 +217,22 @@
                              listed (get (gh-json "api" (str "repos/" repo "/actions/runs/" run "/artifacts") "--paginate") "artifacts")
                              match (filterv #(and (= (get % "name") artifact) (not (get % "expired"))) listed)]
                          (when (not= 1 (count match)) (refuse (str artifact ": " (count match) " live artifacts in run " run)))
-                         (subprocess/run ["gh" "run" "download" (str run) "--repo" repo "-n" artifact
-                                          "-D" (str (pathlib/Path temp artifact))] ** :check true)
+                         (download-artifact run artifact (pathlib/Path temp artifact))
                          [artifact {"run" run "id" (get (first match) "id") "digest" (get (first match) "digest")}])))
-            receipts (into {} (for [path paths]
-                                (let [target (.joinpath (.joinpath out "receipts") path)]
-                                  (.mkdir (.-parent target) ** :parents true :exist_ok true)
-                                  (shutil/copyfile (pathlib/Path temp path) target)
-                                  [path (digest target)])))
-            provenance {"schema" "amu.target-coverage-provenance.v1" "repository" repo
-                        "runs" views "artifacts" artifact-info "receipts" receipts}]
+            rows (vec (for [path paths
+                            :let [data (.read_bytes (receipt-path (pathlib/Path temp) path))
+                                  published (publication-bytes data)]]
+                        [path data published (receipt-path (.joinpath out "receipts") path)]))
+            receipts (into {} (for [[path _ published] rows] [path (privacy/sha256 published)]))
+            originals (into {} (for [[path data published] rows :when (not (operator/eq data published))]
+                                 [path (privacy/sha256 data)]))
+            provenance (cond-> {"schema" "amu.target-coverage-provenance.v1" "repository" repo
+                               "runs" views "artifacts" artifact-info "receipts" receipts}
+                         (seq originals) (assoc "receivedReceiptSha256" originals))]
+        (.mkdir out ** :parents true)
+        (doseq [[_ _ data target] rows]
+          (.mkdir (.-parent target) ** :parents true :exist_ok true)
+          (.write_bytes target data))
         (.write_text (.joinpath out "provenance.json") (dump provenance))
         provenance))))
 
@@ -237,16 +272,21 @@
       (case cmd
         "collect"
         (let [date (opt args "--date")
-              out (.joinpath (.joinpath coverage "snapshots") date)]
+              as-of (when (and date (re-matches #"[0-9]{8}" date))
+                      (try (.isoformat (.fromisoformat datetime/date date))
+                           (catch python/ValueError _ nil)))
+              _ (when-not as-of (refuse "collect requires a valid YYYYMMDD date"))
+              out (bounded-child (.joinpath coverage "snapshots") (.joinpath coverage "snapshots" date))]
           (check-table table)
           (collect table {"selfhost" (python/int (opt args "--selfhost-run")) "mac" (python/int (opt args "--mac-run"))} out)
-          (let [result (report table out (str (subs date 0 4) "-" (subs date 4 6) "-" (subs date 6)))]
+          (let [result (report table out as-of)]
             (.write_text (.joinpath out "report.json") (dump result))
             (show table result))
           0)
         "report"
-        (let [result (report table (pathlib/Path (opt args "--snapshot")) (or (opt args "--as-of") (today)))]
-          (when-let [o (opt args "--output")] (.write_text (pathlib/Path o) (dump result)))
+        (let [output (when-let [o (opt args "--output")] (bounded-child root (pathlib/Path o)))
+              result (report table (pathlib/Path (opt args "--snapshot")) (or (opt args "--as-of") (today)))]
+          (when output (.write_text output (dump result)))
           (show table result)
           0)
         "verify"

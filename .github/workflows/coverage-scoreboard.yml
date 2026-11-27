@@ -2,7 +2,9 @@ name: coverage-scoreboard
 on:
   pull_request:
     paths:
-      - "docs/qualification/target-coverage/**"
+      - "docs/evidence/**/*.json"
+      - "docs/evidence/**/*.receipt"
+      - "docs/qualification/**"
       - "scripts/coverage/**"
       - ".github/workflows/coverage-scoreboard.yml"
   merge_group:
@@ -21,5 +23,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/basilisp-venv"
           "$RUNNER_TEMP/basilisp-venv/bin/pip" install --quiet basilisp==0.5.1 pytest
           echo "$RUNNER_TEMP/basilisp-venv/bin" >> "$GITHUB_PATH"
-      - run: basilisp run scripts/coverage/scoreboard.cljc -- verify
-      - run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/coverage basilisp test -p no:cacheprovider --rootdir scripts/coverage scripts/coverage/test_scoreboard.cljc
+      - name: Check tracked receipts before publication
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/coverage/receipt_privacy.py
+      - run: PYTHONDONTWRITEBYTECODE=1 basilisp run scripts/coverage/scoreboard.cljc -- verify
+      - run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=scripts/coverage basilisp test -- -p no:cacheprovider --rootdir scripts/coverage scripts/coverage/test_scoreboard.cljc

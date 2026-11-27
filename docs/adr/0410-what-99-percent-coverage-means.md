@@ -39,12 +39,18 @@ This changes one word of JUN-889, which defined L1 as compiled "from another hos
 
 ### What counts as evidence
 
-A cell passes only when every receipt it names is in the snapshot, unchanged, says the required status and fields, and records the native host. A cell without evidence counts as 0.
+A cell passes only when every receipt it names is in the snapshot, matches its published digest, passes the publication check, says the required status and fields, and records the native host. A cell without evidence counts as 0.
 
 - Emulation and simulators never count.
 - Hardware virtualization of the same ISA does count, for Linux, macOS and Windows. GitHub's hosted runners are virtual machines, and `seed/bootstrap/aarch64-macos/root.json` records `physicalHardware: false`. Android and iOS require a physical device.
 - Evidence older than 30 days counts as 0.
 - All receipts in a snapshot must come from successful runs of one commit.
+
+The coverage collector stages the workflow artifacts privately and checks each receipt before creating the snapshot. It replaces recognized host-specific home, temporary, volume and workspace prefixes with placeholders while retaining relative suffixes. Credential markers and contact details detected by the publication rules cause the collection to refuse. The workflow IDs, artifact digests and receipt result fields remain verifiable. When a receipt is redacted, `receivedReceiptSha256` pins the incoming bytes and `receipts` pins the published bytes.
+
+The `coverage-scoreboard` workflow checks tracked `.json` and `.receipt` files in `docs/evidence` and `docs/qualification`. The [November 28 custody manifest](../evidence/receipt-path-redactions-20261128.json) pairs the original and published hashes and byte counts for the historical copies redacted in that round. Raw log sidecars, binary artifacts and archives are outside this structured-receipt check.
+
+`collect --date YYYYMMDD` writes a new directory beneath the coverage snapshots. `report --output FILE` resolves the destination and refuses paths outside the workspace (the repository root or `AMU_ROOT`).
 
 ### Unmeasured ISA splits
 
