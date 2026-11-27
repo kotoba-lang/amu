@@ -147,7 +147,9 @@
         _ (do (.mkdirSync fs (.join node-path mono "lib" "a" "src") #js {:recursive true})
               (.mkdirSync fs (.join node-path mono "lib" "b" "src") #js {:recursive true})
               (.writeFileSync fs (.join node-path mono "lib" "a" "src" "a.txt") "a\n")
-              (.writeFileSync fs (.join node-path mono "lib" "b" "src" "b.txt") "b\n"))
+              (.writeFileSync fs (.join node-path mono "lib" "b" "src" "b.txt") "b\n")
+              (.mkdirSync fs (.join node-path mono "lib" "c" "src") #js {:recursive true})
+              (.writeFileSync fs (.join node-path mono "lib" "c" "src" "c.txt") "c\n"))
         mono-sha (init-repo! mono)
         tree-of (fn [subdir] (.trim (.-stdout (git! mono ["rev-parse" (str "HEAD:" subdir)]))))
         entry (fn [lib subdir tree]
@@ -165,6 +167,8 @@
     (check "monorepo libraries resolve to their subdirectories of one checkout"
            (= dirs [(.join node-path checkout "lib" "a" "src")
                     (.join node-path checkout "lib" "b" "src")]))
+    (check "a monorepo checkout holds only the locked libraries"
+           (not (.existsSync fs (.join node-path checkout "lib" "c"))))
     (check "monorepo libraries do not get a checkout per library"
            (not (.existsSync fs (classpath/checkout-dir "io.example/a" mono-sha))))
     (check "a monorepo library at the wrong tree is refused"

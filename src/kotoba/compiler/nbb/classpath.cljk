@@ -99,7 +99,7 @@
   "Fetch COORDINATE at SHA into its checkout directory. Full history, per the
   workspace's no-shallow rule -- a graft boundary would make the very
   ancestry check below unreliable."
-  [{:keys [coordinate git-url git-sha]}]
+  [{:keys [coordinate git-url git-sha git-subdir]}]
   (let [dir (checkout-dir coordinate git-sha)]
     (when-not (exists? dir)
       (fs-tree/make-directories! dir)
@@ -111,6 +111,13 @@
             (when-not (git-ok? clone)
               (throw (ex-info "git clone failed"
                               {:phase :fetch :coordinate coordinate :url git-url}))))
+          ;; A monorepo checkout is sparse (cone mode): only the lib/<id>
+          ;; directories the lock names are written, which keeps unrelated
+          ;; deep paths elsewhere in the monorepo off disk (Windows MAX_PATH).
+          (when git-subdir
+            (when-not (git-ok? (git! ["-C" dir "sparse-checkout" "set" "--cone"]))
+              (throw (ex-info "git sparse-checkout failed"
+                              {:phase :fetch :coordinate coordinate}))))
           (let [checkout (git! ["-C" dir "checkout" "--quiet" git-sha])]
             (when-not (git-ok? checkout)
               (throw (ex-info "git checkout of the pinned commit failed"
@@ -122,6 +129,12 @@
             ;; created so the launcher's bounded retry can actually retry.
             (when-not @complete?
               (fs-tree/remove-tree! dir))))))
+    ;; Each further library of a sparse monorepo checkout is added on first
+    ;; use. A full checkout (made by another tool) already has it.
+    (when (and git-subdir (not (exists? (posix-path/join dir git-subdir))))
+      (when-not (git-ok? (git! ["-C" dir "sparse-checkout" "add" git-subdir]))
+        (throw (ex-info "git sparse-checkout of the locked subdirectory failed"
+                        {:phase :fetch :coordinate coordinate :subdir git-subdir}))))
     dir))
 
 (defn- checkout-coordinate

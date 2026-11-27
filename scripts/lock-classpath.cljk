@@ -67,7 +67,10 @@
   (let [dir (.join node-path (gitlibs-root) "libs" "io.github.kotoba-lang" "kotoba" sha)]
     (when-not (.existsSync fs dir)
       (.mkdirSync fs dir #js {:recursive true})
+      ;; Sparse, like the resolver's: the closure is read with `git show`,
+      ;; and a full monorepo worktree does not fit Windows MAX_PATH.
       (when-not (and (git-out ["clone" "--quiet" "--no-checkout" monorepo-url dir])
+                     (git-out ["-C" dir "sparse-checkout" "set" "--cone"])
                      (git-out ["-C" dir "checkout" "--quiet" sha]))
         (.rmSync fs dir #js {:recursive true :force true})
         (fail! (str "cannot fetch " monorepo-url " at " sha))))
