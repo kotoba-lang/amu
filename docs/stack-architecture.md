@@ -40,6 +40,7 @@ separate in the [full observation](https://github.com/kotoba-lang/kotoba-lang/bl
 
 ## Shared architecture and refactor rules
 
+- [Compiler architecture & primary measurements (EN)](compiler-architecture.md) / [日本語版 (JA)](compiler-architecture.ja.md)
 - [Whole stack and distributed flow](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-architecture-target-neutral.ja.md)
 - [Machine-readable architecture direction](https://github.com/kotoba-lang/kotoba-lang/blob/main/lang/stack-architecture-target-neutral.edn)
 - [Current measured dependency graph](https://github.com/kotoba-lang/kotoba-lang/blob/main/docs/stack-dependencies-current.md)

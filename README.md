@@ -22,9 +22,11 @@ It has no dylib dependency. On Linux x86_64 the public entry is
 `--target` is omitted (ADR 0396). The engine-neutral Linux compiler
 `bin/amu-linux-x86_64` requires an explicit target.
 
-The complete product is `seed/FULL-MANIFEST`: all18 adopted core modules
-in a 49-module compiler with native Linux emitters, browser Wasm, bounded
-Kototama i64 AOT/receipts/cache, native CDCI/FS2 and the AIUEOS image/EFI route.
+The complete product is `seed/FULL-MANIFEST`: all 18 adopted core modules
+in a 61-module compiler (`sourceModuleCount: 61` in `native-product.json` and
+`docs/qualification/qualifier-native-20261108.json`) with definition identity,
+native Linux emitters, browser Wasm/JS ESM, bounded Kototama i64
+AOT/receipts/cache, native CDCI/FS2 and the AIUEOS image/EFI route.
 The frontend, lowering, optimization and AArch64 backend measured by the
 19-workload Embench corpus remain in this lineage. This migration publishes
 correctness evidence; it publishes no new performance score.
@@ -110,6 +112,7 @@ compiler, and AiueOS is a separate host/OS implementation. Static hosting,
 browser execution, native runtime qualification and live services retain
 their own boundaries.
 
+- [Compiler architecture & primary measurements (EN)](docs/compiler-architecture.md) / [日本語版 (JA)](docs/compiler-architecture.ja.md)
 - [Selfhost priority and current contract](docs/selfhost-priority.md)
 - [Native evidence](docs/evidence/native-cdci-20261023/)
 - [Previous workflow retirement](docs/native-cdci-retirement.md)
