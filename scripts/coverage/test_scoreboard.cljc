@@ -8,7 +8,8 @@
 (ns test-scoreboard
   (:require [basilisp.test :refer [deftest is]]
             [scoreboard :as sb])
-  (:import hashlib json pathlib shutil tempfile))
+  (:import hashlib json operator pathlib shutil tempfile
+           [receipt_privacy :as privacy]))
 
 (def snapshot-dir (.joinpath sb/coverage "snapshots/20261106"))
 (def table (sb/read-json (.joinpath sb/coverage "table.json")))
@@ -135,6 +136,26 @@
       (is (= [0 809] (bounds result)))
       (is (= [(str arm ": receipt publication check failed")]
              (get-in result ["targets" "aarch64-linux" "L1" "problems"]))))))
+
+(deftest text-evidence-refuses-private-fields-and-preserves-public-metadata
+  (doseq [[value kind] [["GITHUB_TOKEN='synthetic-credential-marker'" "credential"]
+                        ["Authorization: Bearer synthetic-credential-marker" "credential"]
+                        ["Contact: synthetic@example.invalid" "email"]
+                        ["Phone number: +1 202 555 0100" "personal information"]
+                        ["Mailing address: 123 Example Street" "personal information"]]]
+    (is (= kind (try (privacy/publication_bytes (.encode value) false)
+                    (catch privacy/ReceiptPrivacyError error (str error))))))
+  (let [public (str "platform=Darwin arm64\n/usr/bin/true\nfile:///usr/bin/true\n"
+                    "source=https://github.com/kotoba-lang/amu\nsha256=" zeros "\n")
+        original (str public "argv=/Users/synthetic-user/work/input\n"
+                       "trace=file:///Users/synthetic-user/work/output\n"
+                       "temp=/private/tmp/synthetic-run/result\n")
+        expected (str public "argv=<host-home>/work/input\n"
+                       "trace=file://<host-home>/work/output\n"
+                       "temp=<host-temp>/result\n")
+        control (.read_bytes (.joinpath sb/root "docs/qualification/android-a1/20261106/out/fs-control.txt"))]
+    (is (operator/eq (.encode expected) (privacy/publication_bytes (.encode original) false)))
+    (is (operator/eq control (privacy/publication_bytes control false)))))
 
 (deftest report-output-is-confined-to-the-workspace
   (with-open [temp (tempfile/TemporaryDirectory)]
