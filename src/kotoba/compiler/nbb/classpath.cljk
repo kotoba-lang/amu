@@ -26,7 +26,7 @@
   Fail-closed throughout: a lock that does not match `deps.edn`, a checkout at
   the wrong commit, or a missing dependency directory is an error, never a
   shorter classpath."
-  {:kotoba/export [-main checkout-dir deps-digest gitlibs-root head-sha lock-file-name lock-version materialize! read-lock resolve-alias-directories resolve-directories sha256-hex]}
+  {:kotoba/export [-main checkout-dir deps-digest gitlibs-root head-sha lock-file-name lock-version materialize! read-lock resolve-alias-directories resolve-directories sha256-hex subdir-tree]}
   (:require [clojure.edn :as edn]
             [kotoba.compiler.nbb.fs-tree :as fs-tree]
             [kotoba.compiler.posix-path :as posix-path]
@@ -42,7 +42,7 @@
             #?(:cljs [kotoba.compiler.nbb.host.process :as process])
             #?(:cljs [kotoba.compiler.nbb.host.sys :as sys])))
 
-(def lock-version 1)
+(def lock-version 2)
 (def lock-file-name "deps-lock.edn")
 
 (defn sha256-hex [buffer]
@@ -99,7 +99,7 @@
   "Fetch COORDINATE at SHA into its checkout directory. Full history, per the
   workspace's no-shallow rule -- a graft boundary would make the very
   ancestry check below unreliable."
-  [{:keys [coordinate git-url git-sha]}]
+  [{:keys [coordinate git-url git-sha git-subdir]}]
   (let [dir (checkout-dir coordinate git-sha)]
     (when-not (exists? dir)
       (fs-tree/make-directories! dir)
@@ -111,6 +111,13 @@
             (when-not (git-ok? clone)
               (throw (ex-info "git clone failed"
                               {:phase :fetch :coordinate coordinate :url git-url}))))
+          ;; A monorepo checkout is sparse (cone mode): only the lib/<id>
+          ;; directories the lock names are written, which keeps unrelated
+          ;; deep paths elsewhere in the monorepo off disk (Windows MAX_PATH).
+          (when git-subdir
+            (when-not (git-ok? (git! ["-C" dir "sparse-checkout" "set" "--cone"]))
+              (throw (ex-info "git sparse-checkout failed"
+                              {:phase :fetch :coordinate coordinate}))))
           (let [checkout (git! ["-C" dir "checkout" "--quiet" git-sha])]
             (when-not (git-ok? checkout)
               (throw (ex-info "git checkout of the pinned commit failed"
@@ -122,16 +129,47 @@
             ;; created so the launcher's bounded retry can actually retry.
             (when-not @complete?
               (fs-tree/remove-tree! dir))))))
+    ;; Each further library of a sparse monorepo checkout is added on first
+    ;; use. A full checkout (made by another tool) already has it.
+    (when (and git-subdir (not (exists? (posix-path/join dir git-subdir))))
+      (when-not (git-ok? (git! ["-C" dir "sparse-checkout" "add" git-subdir]))
+        (throw (ex-info "git sparse-checkout of the locked subdirectory failed"
+                        {:phase :fetch :coordinate coordinate :subdir git-subdir}))))
     dir))
 
-(defn- entry-directories [{:keys [coordinate git-sha paths] :as entry}]
-  (let [dir (materialize! entry)
+(defn- checkout-coordinate
+  "The checkout an entry lives in. A monorepo entry names its library with
+  `:coordinate` and the repository holding it with `:git-repo`, so every
+  library pinned at one monorepo commit shares one checkout instead of
+  cloning the whole repository once per library."
+  [{:keys [coordinate git-repo]}]
+  (or git-repo coordinate))
+
+(defn subdir-tree
+  "The git tree id of SUBDIR at the checkout's HEAD, or nil."
+  [dir subdir]
+  (let [result (git! ["-C" dir "rev-parse" (str "HEAD:" subdir)])]
+    (when (git-ok? result) (str/trim (:out result)))))
+
+(defn- entry-directories [{:keys [coordinate git-sha git-subdir git-tree paths] :as entry}]
+  (let [dir (materialize! (assoc entry :coordinate (checkout-coordinate entry)))
         actual (head-sha dir)]
     (when-not (= git-sha actual)
       (throw (ex-info "dependency checkout is not at its pinned commit"
                       {:phase :verify :coordinate coordinate
                        :expected git-sha :actual actual :dir dir})))
-    (let [resolved (mapv #(posix-path/join dir %) paths)
+    (when git-subdir
+      ;; A monorepo library is the tree at :git-subdir. The commit already
+      ;; content-addresses it; the tree id is checked as well so a lock that
+      ;; names the wrong directory fails here rather than as a missing
+      ;; namespace later.
+      (let [tree (subdir-tree dir git-subdir)]
+        (when-not (and git-tree (= git-tree tree))
+          (throw (ex-info "dependency subdirectory is not at its pinned tree"
+                          {:phase :verify :coordinate coordinate :subdir git-subdir
+                           :expected git-tree :actual tree :dir dir})))))
+    (let [base (if git-subdir (posix-path/join dir git-subdir) dir)
+          resolved (mapv #(posix-path/join base %) paths)
           missing (vec (remove exists? resolved))]
       (when (seq missing)
         (throw (ex-info "dependency path recorded in the lock does not exist"
