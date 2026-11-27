@@ -113,7 +113,7 @@ Directly verified in [`seed/78-full-entry.kotoba`](../seed/78-full-entry.kotoba)
 | `bin/x86_64-linux/amu` | `bin/x86_64-linux/kotoba`, `bin/x86_64-linux/kotoba-compiler` | Loaderless static ELF64 (`10,695,168`) | Rewrites `compile SRC ...` without `--target` to `--target x86_64-linux` (`--format host-entry`; explicit `--target` matches engine-neutral compiler; `nativeQualified: false` in `native-product.json`) |
 | `bin/amu-linux-x86_64` | `bin/kotoba-linux-x86_64`, `bin/kotoba-compiler-linux-x86_64` | Loaderless static ELF64 (`10,691,072`) | Engine-neutral compiler; refuses omitted `--target` with `E2` |
 | `seed/bootstrap/aarch64-macos/amu-full-root.macho` | — | Mach-O ARM64 (`3,925,280`) | Engine-neutral root; refuses omitted `--target` with `E2` |
-| `seed/bootstrap/aarch64-linux-static-root.elf` | — | Loaderless static ELF64 (`4,186,624`) | Engine-neutral root; refuses omitted `--target` with `E2` (no public Linux ARM64 product entry; JUN-899) |
+| `seed/bootstrap/aarch64-linux-static-root.elf` | — | Loaderless static ELF64 (`4,186,624`) | Engine-neutral root; refuses omitted `--target` with `E2` (no public Linux ARM64 product entry) |
 
 Reproducible entrypoint check:
 ```sh
@@ -270,15 +270,15 @@ basilisp run scripts/coverage/scoreboard.cljc -- report \
 | Target | Host | L1 (Target Run) | L2 (Public Host CLI) | L3 (Native Selfhost) | Recorded Caveats / Blocking Notes |
 | --- | --- | --- | --- | --- | --- |
 | `x86_64-linux` | Linux x86_64 | `pass` | `pass` | `pass` | L3 caveat: `complete-x86.json` has `nativeCDCIExecutionQualified: false` |
-| `aarch64-linux` | Linux aarch64 | `pass` | `missing` | `pass` | No public Linux ARM64 entry (JUN-899); therefore `developmentHostsAtL3["aarch64-linux"]` is `false` |
+| `aarch64-linux` | Linux aarch64 | `pass` | `missing` | `pass` | No public Linux ARM64 product entry; therefore `developmentHostsAtL3["aarch64-linux"]` is `false` |
 | `aarch64-macos` | Darwin arm64 | `pass` | `pass` | `pass` | L1 & L2 caveats: `public-macos-product.json` has `fullRuntimeQualified: false` and `independentUserQualified: false`; CI runner is virtualized (`physicalHardware: false`) |
-| `x86_64-macos` | Darwin x86_64 | `missing` | `missing` | `missing` | JUN-900; Rosetta emulation does not count as native evidence |
-| `x86_64-windows` | Windows AMD64 | `missing` | `missing` | `missing` | L1: JUN-901; L2/L3: JUN-906 |
-| `aarch64-windows` | Windows ARM64 | `missing` | `missing` | `missing` | JUN-907 |
-| `aarch64-android` | Android aarch64 | `missing` | `missing` | `missing` | L1: JUN-902, JUN-908 (physical device required); L2/L3: JUN-909 (Android API 29+ forbids `execve` from app home directory) |
-| `armv7-android` | Android armv7l | `missing` | `missing` | `missing` | Not a compiler target; inclusion open (no measured ISA share, ADR 0410) |
-| `x86_64-android` | Android x86_64 | `missing` | `missing` | `missing` | Not a compiler target; inclusion open (no measured ISA share, ADR 0410) |
-| `aarch64-ios` | iOS arm64 | `missing` | `prohibited` | `prohibited` | L1: JUN-903 (physical device required); L2/L3 prohibited for App Store apps by Apple App Review Guideline 2.5.2 (JUN-909) |
+| `x86_64-macos` | Darwin x86_64 | `missing` | `missing` | `missing` | No native x86_64 macOS evidence; Rosetta emulation does not count as native evidence |
+| `x86_64-windows` | Windows AMD64 | `missing` | `missing` | `missing` | No native Windows x86_64 L1/L2/L3 evidence |
+| `aarch64-windows` | Windows ARM64 | `missing` | `missing` | `missing` | No native Windows ARM64 L1/L2/L3 evidence |
+| `aarch64-android` | Android aarch64 | `missing` | `missing` | `missing` | L1 missing (physical device required); L2/L3 open (Android API 29+ forbids `execve` from app home directory) |
+| `armv7-android` | Android armv7l | `missing` | `missing` | `missing` | Not a compiler target; Android ABI pageview share is `unknown` (unmeasured on `origin/main`, inclusion open per ADR 0410) |
+| `x86_64-android` | Android x86_64 | `missing` | `missing` | `missing` | Not a compiler target; Android ABI pageview share is `unknown` (unmeasured on `origin/main`, inclusion open per ADR 0410) |
+| `aarch64-ios` | iOS arm64 | `missing` | `prohibited` | `prohibited` | L1 missing (physical device required); L2/L3 prohibited for App Store apps by Apple App Review Guideline 2.5.2 |
 
 ---
 

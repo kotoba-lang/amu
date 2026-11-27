@@ -113,7 +113,7 @@ flowchart TD
 | `bin/x86_64-linux/amu` | `bin/x86_64-linux/kotoba`、`bin/x86_64-linux/kotoba-compiler` | ローダーレス静的 ELF64 (`10,695,168`) | `--target` 省略の `compile SRC ...` を `--target x86_64-linux` として解釈（`--format host-entry`。明示指定時は中立コンパイラと同一動作。`native-product.json` 上 `nativeQualified: false`） |
 | `bin/amu-linux-x86_64` | `bin/kotoba-linux-x86_64`、`bin/kotoba-compiler-linux-x86_64` | ローダーレス静的 ELF64 (`10,691,072`) | エンジン中立コンパイラ。`--target` 省略は `E2` 拒否 |
 | `seed/bootstrap/aarch64-macos/amu-full-root.macho` | — | Mach-O ARM64 (`3,925,280`) | エンジン中立ルート。`--target` 省略は `E2` 拒否 |
-| `seed/bootstrap/aarch64-linux-static-root.elf` | — | ローダーレス静的 ELF64 (`4,186,624`) | エンジン中立ルート。`--target` 省略は `E2` 拒否（Linux ARM64 の公開製品入口は未整備、JUN-899） |
+| `seed/bootstrap/aarch64-linux-static-root.elf` | — | ローダーレス静的 ELF64 (`4,186,624`) | エンジン中立ルート。`--target` 省略は `E2` 拒否（Linux ARM64 の公開製品入口は未整備） |
 
 再現コマンド:
 ```sh
@@ -268,15 +268,15 @@ basilisp run scripts/coverage/scoreboard.cljc -- report \
 | ターゲット | ホスト | L1 (ターゲット実行) | L2 (公開 CLI) | L3 (セルフホスト) | 記録済み留保・未達理由 |
 | --- | --- | --- | --- | --- | --- |
 | `x86_64-linux` | Linux x86_64 | `pass` | `pass` | `pass` | L3 留保: `complete-x86.json` で `nativeCDCIExecutionQualified: false` |
-| `aarch64-linux` | Linux aarch64 | `pass` | `missing` | `pass` | Linux ARM64 の公開製品入口がない（JUN-899）。そのため `developmentHostsAtL3["aarch64-linux"]` は `false` |
+| `aarch64-linux` | Linux aarch64 | `pass` | `missing` | `pass` | Linux ARM64 の公開製品入口がないため `developmentHostsAtL3["aarch64-linux"]` は `false` |
 | `aarch64-macos` | Darwin arm64 | `pass` | `pass` | `pass` | L1・L2 留保: `public-macos-product.json` で `fullRuntimeQualified: false` かつ `independentUserQualified: false`。CI ランナーは仮想環境（`physicalHardware: false`） |
-| `x86_64-macos` | Darwin x86_64 | `missing` | `missing` | `missing` | JUN-900。Rosetta エミュレーションはネイティブ証拠として認められない |
-| `x86_64-windows` | Windows AMD64 | `missing` | `missing` | `missing` | L1: JUN-901、L2/L3: JUN-906 |
-| `aarch64-windows` | Windows ARM64 | `missing` | `missing` | `missing` | JUN-907 |
-| `aarch64-android` | Android aarch64 | `missing` | `missing` | `missing` | L1: JUN-902, JUN-908（実機必須）。L2/L3: JUN-909（Android API 29+ ではアプリホームディレクトリからの `execve` が禁止） |
-| `armv7-android` | Android armv7l | `missing` | `missing` | `missing` | コンパイラターゲット未設定。包含要否は未決定（ISA 内訳未計測、ADR 0410） |
-| `x86_64-android` | Android x86_64 | `missing` | `missing` | `missing` | コンパイラターゲット未設定。包含要否は未決定（ISA 内訳未計測、ADR 0410） |
-| `aarch64-ios` | iOS arm64 | `missing` | `prohibited` | `prohibited` | L1: JUN-903（実機必須）。L2/L3 は App Store 審査ガイドライン 2.5.2 により禁止（JUN-909） |
+| `x86_64-macos` | Darwin x86_64 | `missing` | `missing` | `missing` | ネイティブ x86_64 macOS 証拠未取得。Rosetta エミュレーションはネイティブ証拠として認められない |
+| `x86_64-windows` | Windows AMD64 | `missing` | `missing` | `missing` | ネイティブ Windows x86_64 の L1/L2/L3 証拠未取得 |
+| `aarch64-windows` | Windows ARM64 | `missing` | `missing` | `missing` | ネイティブ Windows ARM64 の L1/L2/L3 証拠未取得 |
+| `aarch64-android` | Android aarch64 | `missing` | `missing` | `missing` | L1 未達（実機必須）。L2/L3 未決（Android API 29+ ではアプリホームディレクトリからの `execve` が禁止） |
+| `armv7-android` | Android armv7l | `missing` | `missing` | `missing` | コンパイラターゲット未設定。Android ABI ページビューシェアは `unknown`（`origin/main` 時点で未計測、包含要否は ADR 0410 により未決） |
+| `x86_64-android` | Android x86_64 | `missing` | `missing` | `missing` | コンパイラターゲット未設定。Android ABI ページビューシェアは `unknown`（`origin/main` 時点で未計測、包含要否は ADR 0410 により未決） |
+| `aarch64-ios` | iOS arm64 | `missing` | `prohibited` | `prohibited` | L1 未達（実機必須）。L2/L3 は App Store 審査ガイドライン 2.5.2 により禁止 |
 
 ---
 
