@@ -55,7 +55,7 @@
  ["no-structural-identity" "seed/21-check.kotoba" [["  (let [d (ck-kwrec-decl M n)\n" "  (let [d 0\n"]] "E2121"]
  ["no-expected-record" "seed/21-check.kotoba" [["      (ck-kwrec-in M c fx b)\n      (ck-expr M c fx 0))))" "      (ck-expr M c fx 0)\n      (ck-expr M c fx 0))))"]] "E2104"]
  ["no-nil-option" "seed/21-check.kotoba" [["(defn- ck-nil? [M :vector-i64 v :i64] :bool (and (nm-r6b-nil? M v) (neg? (nm-local-slot M (nm-sym-of M v)))))" "(defn- ck-nil? [M :vector-i64 v :i64] :bool false)"]] "E2102 unknown symbol 'nil'"]
- ["no-module-option-key" "seed/21-check.kotoba" [["        M3 (ck-kopt-scan (ck-hints-apply (ck-sigs M2 1)))" "        M3 (ck-hints-apply (ck-sigs M2 1))"]] "E2182"]
+ ["no-module-option-key" "seed/21-check.kotoba" [["        M3 (ck-kopt-scan (ck-hints-apply (ck-sigs (ck-llm-names M2 S) 1)))" "        M3 (ck-hints-apply (ck-sigs (ck-llm-names M2 S) 1))"]] "E2182"]
  ["no-some-lowering" "seed/30-lower.kotoba" [["  (if (or (zero? vty) (= fty vty)) M (-> M" "  (if true M (-> M"]] "run"]
 ])
 (def refusals [

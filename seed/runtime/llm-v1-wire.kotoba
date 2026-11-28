@@ -1,0 +1,230 @@
+(ns amu.runtime.llm-v1-wire
+  (:export [])
+  (:schemas
+   {:kotoba.llm/generate-request
+    [:record :kotoba.llm/generate-request
+     [[:model :keyword] [:system :string] [:prompt :string]
+      [:max-output-tokens :i64] [:temperature-milli :i64]]]
+    :kotoba.llm/usage
+    [:record :kotoba.llm/usage [[:input-tokens :i64] [:output-tokens :i64]]]
+    :kotoba.llm/completion
+    [:record :kotoba.llm/completion
+     [[:text :string] [:finish-reason :keyword] [:usage [:ref :kotoba.llm/usage]]]]
+    :kotoba.llm/error
+    [:record :kotoba.llm/error [[:code :keyword] [:message :string] [:retryable :bool]]]
+    :kotoba.llm/result
+    [:variant :kotoba.llm/result
+     [[:ok [:ref :kotoba.llm/completion]] [:error [:ref :kotoba.llm/error]]]]}))
+
+;; KLM1/KLR1 v1 headers followed by their ordered payload spans. These
+;; routines consume complete byte values. The transport owns framing,
+;; artifact identity and authorization. An empty encoding or none is a
+;; refusal. Decode verifies all bounds and UTF-8 before interning keywords
+;; or constructing a nominal record or variant.
+(def llmw-header-size 64)
+(def llmw-text-limit 65536)
+(def llmw-keyword-limit 512)
+(def llmw-request-magic 827149387)
+(def llmw-result-magic 827477067)
+(def llmw-wire 11)
+(def llmw-version 1)
+
+(defn- llmw-read-le [frame :bytes at :i64 count :i64] :i64
+  (loop [i 0 value 0]
+    (if (= i count) value
+      (recur (+ i 1)
+             (bit-or value (i64-shift-left (bytes-at frame (+ at i)) (* 8 i)))))))
+
+(defn- llmw-u32 [frame :bytes at :i64] :i64 (llmw-read-le frame at 4))
+
+(defn- llmw-write-le [header :vector-i64 at :i64 count :i64 value :i64] :vector-i64
+  (loop [out header i 0]
+    (if (= i count) out
+      (recur (vector-assoc! out (+ at i) (bit-and (u64-shift-right value (* 8 i)) 255))
+             (+ i 1)))))
+
+(defn- llmw-put32 [header :vector-i64 at :i64 value :i64] :vector-i64
+  (llmw-write-le header at 4 value))
+
+(defn- llmw-header [magic :i64] :vector-i64
+  (-> (vector-alloc llmw-header-size) (llmw-put32 0 magic) (llmw-put32 4 llmw-version) (llmw-put32 8 llmw-wire)))
+
+(defn- llmw-header? [frame :bytes magic :i64] :bool
+  (and (>= (bytes-count frame) llmw-header-size)
+       (= (llmw-u32 frame 0) magic) (= (llmw-u32 frame 4) llmw-version) (= (llmw-u32 frame 8) llmw-wire)))
+
+(defn- llmw-zero-tail? [frame :bytes start :i64] :bool
+  (loop [at start]
+    (cond (= at llmw-header-size) true
+          (not= (llmw-u32 frame at) 0) false
+          :else (recur (+ at 4)))))
+
+(defn- llmw-in-range? [value :i64 low :i64 high :i64] :bool
+  (and (>= value low) (<= value high)))
+
+(defn- llmw-continuation? [frame :bytes at :i64] :bool
+  (llmw-in-range? (bytes-at frame at) 128 191))
+
+(defn- llmw-utf8-next [frame :bytes at :i64 end :i64] :i64
+  (let [lead (bytes-at frame at) left (- end at)]
+    (cond
+      (< lead 128) (+ at 1)
+      (and (>= left 2) (llmw-in-range? lead 194 223)
+           (llmw-continuation? frame (+ at 1))) (+ at 2)
+      (and (>= left 3) (llmw-in-range? lead 224 239)
+           (llmw-continuation? frame (+ at 2))
+           (let [second (bytes-at frame (+ at 1))]
+             (cond (= lead 224) (llmw-in-range? second 160 191)
+                   (= lead 237) (llmw-in-range? second 128 159)
+                   :else (llmw-in-range? second 128 191)))) (+ at 3)
+      (and (>= left 4) (llmw-in-range? lead 240 244)
+           (llmw-continuation? frame (+ at 2)) (llmw-continuation? frame (+ at 3))
+           (let [second (bytes-at frame (+ at 1))]
+             (cond (= lead 240) (llmw-in-range? second 144 191)
+                   (= lead 244) (llmw-in-range? second 128 143)
+                   :else (llmw-in-range? second 128 191)))) (+ at 4)
+      :else -1)))
+
+(defn- llmw-utf8? [frame :bytes start :i64 length :i64] :bool
+  (let [end (+ start length)]
+    (loop [at start]
+      (if (= at end) true
+        (let [next (llmw-utf8-next frame at end)]
+          (if (< next 0) false (recur next)))))))
+
+(defn- llmw-keyword-span? [frame :bytes start :i64 length :i64] :bool
+  (and (llmw-in-range? length 2 llmw-keyword-limit)
+       (= (bytes-at frame start) 58) (llmw-utf8? frame start length)))
+
+(defn- llmw-text-at [frame :bytes at :i64 length :i64] :string
+  (string-from-utf8 (bytes-slice frame at (+ at length))))
+
+(defn- llmw-keyword-at [frame :bytes at :i64 length :i64] [:option :keyword]
+  (let [text (llmw-text-at frame at length)
+        value (keyword-from-string (string-substring text 1 length))]
+    ;; The current runtime represents keywords by a bounded intern identity.
+    ;; Require the complete spelling to survive conversion.
+    (if (string=? (__r6-kwtext value) text)
+      (option-some-of [:option :keyword] value)
+      (option-none-of [:option :keyword]))))
+
+(defn- llmw-empty [] :bytes (bytes-from-vector-i64 (vector-alloc 0)))
+
+(defn- llmw-frame [h :vector-i64 a :bytes b :bytes c :bytes] :bytes
+  (bytes-concat (bytes-from-vector-i64 h) (bytes-concat a (bytes-concat b c))))
+
+(defn- llmw-encode-request [request [:ref :kotoba.llm/generate-request] capacity :i64] :bytes
+  (let [model (__r6-kwtext (:model request))
+        system (:system request) prompt (:prompt request)
+        nm (string-byte-length model) ns (string-byte-length system) np (string-byte-length prompt)
+        tokens (:max-output-tokens request) temp (:temperature-milli request)]
+    (if (and (llmw-in-range? nm 2 llmw-keyword-limit) (<= ns llmw-text-limit) (<= np llmw-text-limit)
+             (llmw-in-range? tokens 1 4096) (llmw-in-range? temp 0 2000)
+             (llmw-in-range? capacity 1 llmw-text-limit))
+      (llmw-frame (-> (llmw-header llmw-request-magic)
+                 (llmw-put32 12 nm) (llmw-put32 16 ns) (llmw-put32 20 np)
+                 (llmw-put32 24 tokens) (llmw-put32 28 temp)
+                 (llmw-put32 32 (+ nm ns np)) (llmw-put32 36 capacity))
+             (string-to-utf8 model) (string-to-utf8 system) (string-to-utf8 prompt))
+      (llmw-empty))))
+
+(defn- llmw-decode-completion [input :bytes nt :i64 nf :i64 used-in :i64 used-out :i64]
+  [:option [:ref :kotoba.llm/result]]
+  (option-match [:option :keyword] (llmw-keyword-at input (+ llmw-header-size nt) nf)
+    (option-none-of [:option [:ref :kotoba.llm/result]])
+    finish (option-some-of [:option [:ref :kotoba.llm/result]]
+             (variant-new [:ref :kotoba.llm/result] :ok
+               (record-new [:ref :kotoba.llm/completion] (llmw-text-at input llmw-header-size nt) finish
+                 (record-new [:ref :kotoba.llm/usage] used-in used-out))))))
+
+(defn- llmw-decode-error [input :bytes nc :i64 nm :i64 retry :i64] [:option [:ref :kotoba.llm/result]]
+  (option-match [:option :keyword] (llmw-keyword-at input llmw-header-size nc)
+    (option-none-of [:option [:ref :kotoba.llm/result]])
+    code (option-some-of [:option [:ref :kotoba.llm/result]]
+           (variant-new [:ref :kotoba.llm/result] :error
+             (record-new [:ref :kotoba.llm/error] code (llmw-text-at input (+ llmw-header-size nc) nm) (= retry 1))))))
+
+(defn- llmw-decode-result [input :bytes tokens :i64 capacity :i64] [:option [:ref :kotoba.llm/result]]
+  (if (not (and (llmw-header? input llmw-result-magic)
+                (llmw-in-range? tokens 1 4096) (llmw-in-range? capacity 1 llmw-text-limit)
+                (llmw-zero-tail? input 56))) (option-none-of [:option [:ref :kotoba.llm/result]])
+    (let [tag (llmw-u32 input 12) nt (llmw-u32 input 16) nf (llmw-u32 input 20)
+          nc (llmw-u32 input 24) nm (llmw-u32 input 28) retry (llmw-u32 input 48)
+          used-in (llmw-read-le input 32 8) used-out (llmw-read-le input 40 8)
+          payload (llmw-u32 input 52)]
+      (if (or (not= payload (+ nt nf nc nm)) (not= (bytes-count input) (+ llmw-header-size payload)))
+        (option-none-of [:option [:ref :kotoba.llm/result]])
+        (cond
+          (and (= tag 1) (<= nt capacity) (= nc 0) (= nm 0) (= retry 0)
+               (>= used-in 0) (llmw-in-range? used-out 0 tokens)
+               (llmw-keyword-span? input (+ llmw-header-size nt) nf) (llmw-utf8? input llmw-header-size nt))
+          (llmw-decode-completion input nt nf used-in used-out)
+          (and (= tag 2) (= nt 0) (= nf 0) (= used-in 0) (= used-out 0) (<= retry 1)
+               (<= nm llmw-text-limit) (llmw-keyword-span? input llmw-header-size nc)
+               (llmw-utf8? input (+ llmw-header-size nc) nm))
+          (llmw-decode-error input nc nm retry)
+          :else (option-none-of [:option [:ref :kotoba.llm/result]]))))))
+
+(defn- llmw-guest-encode [request [:ref :kotoba.llm/generate-request]] :bytes
+  (let [input (llmw-encode-request request llmw-text-limit)]
+    (assert (> (bytes-count input) 0))
+    input))
+
+(defn- llmw-guest-decode [tokens :i64 frame :bytes] [:ref :kotoba.llm/result]
+  (let [result (llmw-decode-result frame tokens llmw-text-limit)]
+    (assert (option-some?-of [:option [:ref :kotoba.llm/result]] result))
+    (option-value-of [:option [:ref :kotoba.llm/result]] result
+      (variant-new [:ref :kotoba.llm/result] :error
+        (record-new [:ref :kotoba.llm/error] :malformed-wire-result "" false)))))
+
+;; Host-side codec functions
+(defn- llmw-decode-request [input :bytes] [:option [:ref :kotoba.llm/generate-request]]
+  (if (not (llmw-header? input llmw-request-magic)) (option-none-of [:option [:ref :kotoba.llm/generate-request]])
+    (let [nm (llmw-u32 input 12) ns (llmw-u32 input 16) np (llmw-u32 input 20)
+          tokens (llmw-u32 input 24) temp (llmw-u32 input 28)
+          payload (llmw-u32 input 32) capacity (llmw-u32 input 36)
+          system (+ llmw-header-size nm) prompt (+ system ns)]
+      (if (and (= payload (+ nm ns np)) (= (bytes-count input) (+ llmw-header-size payload))
+               (<= ns llmw-text-limit) (<= np llmw-text-limit)
+               (llmw-in-range? tokens 1 4096) (<= temp 2000)
+               (llmw-in-range? capacity 1 llmw-text-limit) (llmw-zero-tail? input 40)
+               (llmw-keyword-span? input llmw-header-size nm)
+               (llmw-utf8? input system ns) (llmw-utf8? input prompt np))
+        (option-match [:option :keyword] (llmw-keyword-at input llmw-header-size nm)
+          (option-none-of [:option [:ref :kotoba.llm/generate-request]])
+          model (option-some-of [:option [:ref :kotoba.llm/generate-request]]
+                  (record-new [:ref :kotoba.llm/generate-request]
+                    model (llmw-text-at input system ns) (llmw-text-at input prompt np) tokens temp)))
+        (option-none-of [:option [:ref :kotoba.llm/generate-request]])))))
+
+(defn- llmw-encode-completion [value [:ref :kotoba.llm/completion] tokens :i64 capacity :i64] :bytes
+  (let [text (string-to-utf8 (:text value))
+        finish (string-to-utf8 (__r6-kwtext (:finish-reason value)))
+        nt (bytes-count text) nf (bytes-count finish)
+        usage (:usage value) used-in (:input-tokens usage) used-out (:output-tokens usage)]
+    (if (and (<= nt capacity) (llmw-keyword-span? finish 0 nf)
+             (>= used-in 0) (llmw-in-range? used-out 0 tokens))
+      (llmw-frame (-> (llmw-header llmw-result-magic)
+                 (llmw-put32 12 1) (llmw-put32 16 nt) (llmw-put32 20 nf)
+                 (llmw-write-le 32 8 used-in) (llmw-write-le 40 8 used-out)
+                 (llmw-put32 52 (+ nt nf)))
+             text finish (llmw-empty))
+      (llmw-empty))))
+
+(defn- llmw-encode-error [value [:ref :kotoba.llm/error]] :bytes
+  (let [code (string-to-utf8 (__r6-kwtext (:code value)))
+        message (string-to-utf8 (:message value))
+        nc (bytes-count code) nm (bytes-count message)]
+    (if (and (llmw-keyword-span? code 0 nc) (<= nm llmw-text-limit))
+      (llmw-frame (-> (llmw-header llmw-result-magic)
+                 (llmw-put32 12 2) (llmw-put32 24 nc) (llmw-put32 28 nm)
+                 (llmw-put32 48 (if (:retryable value) 1 0)) (llmw-put32 52 (+ nc nm)))
+             code message (llmw-empty))
+      (llmw-empty))))
+
+(defn- llmw-encode-result [result [:ref :kotoba.llm/result] tokens :i64 capacity :i64] :bytes
+  (if (and (llmw-in-range? tokens 1 4096) (llmw-in-range? capacity 1 llmw-text-limit))
+    (match-variant result [:ref :kotoba.llm/result]
+      (:ok value (llmw-encode-completion value tokens capacity))
+      (:error value (llmw-encode-error value)))
+    (llmw-empty)))

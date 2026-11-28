@@ -520,8 +520,8 @@
   [:c WIRE-NET-READ 46] [:c WIRE-NET-WRITE 47]]
  :cap-shapes
  [{:form "(typed-cap-call :llm/generate [:ref :kotoba.llm/generate-request] [:ref :kotoba.llm/result] request)"
-   :wire 11 :status :checker-only
-   :means "Only the exact nominal llm-v1 request, completion, usage, error and result variant schemas are checked; native user ELF and provider dispatch need separate qualification."}
+   :wire 11 :kind 12 :status :darwin-guest-lowering
+   :means "Exact nominal llm-v1 schemas. The Darwin single-source driver lowers the request and result through bounded KLM1/KLR1 frames. The existing runtime refuses kind 12 until the host has a scoped provider grant."}
   {:form "(typed-cap-call :fs/app-data :string :string path)" :wire 35 :kind 1
    :means "read the whole file at absolute path (inside KEXE_CAP_RESOURCES_35); also the \"<path>WRITE_SEP<text>\" write"}
   {:form "(typed-cap-call :fs/app-data :bytes :bytes x)" :wire 35 :kind 8

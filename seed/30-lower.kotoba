@@ -176,6 +176,12 @@
 ;; R4B: the kind of a (request, result) keyword pair: :string :bytes is KEXE_TYPED_STRING_BYTES_V1
 (defn- lw-kind2 [q :i64 r :i64] :i64 (if (and (= q KW-STRING) (= r KW-BYTES)) CK-STRING-BYTES (lw-kind q)))
 
+;; Kind 12 is the internal checked bytes/bytes callback for wire 11. The
+;; nominal values and their arena handles never cross the provider boundary.
+(defn- lw-llm-kind [] :i64 12)
+(defn- lw-llm-encoder-slot [] :i64 39)
+(defn- lw-llm-decoder-slot [] :i64 40)
+
 ;; ------------------------------------------------------------------------------------------------------------
 ;; expressions: [n -> t] under context k
 ;; ------------------------------------------------------------------------------------------------------------
@@ -310,18 +316,28 @@
 (defn- lw-cap [M :vector-i64 w :i64 t :i64] :vector-i64
   (let [req (lw-next M w)
         x (lw-next M (lw-next M req))
-        wire (lw-wire (lw-nf M w NF-TYPE))   ; R4B: 21-check's wire code (a wire keyword or an integer wire id)
-        ;; FS2 ABI kinds: 10 string/list<bytes>, 11 list<bytes>/list<bytes>.
-        ;; 21-check admitted the exact list element type before lowering.
-        kind (cond (= (lw-nf M req NF-KIND) ND-VEC) 11
-                   (= (lw-nf M (lw-next M req) NF-KIND) ND-VEC) 10
-                   :else (lw-kind2 (lw-kwcode M req) (lw-kwcode M (lw-next M req))))]
-    ;; The checker may validate the canonical llm-v1 type, but no native
-    ;; target has a qualified structured wire-11 transport yet. Refuse code
-    ;; generation before an OP-CAP with wire 0 or kind 0 can escape.
-    (if (= (lw-nf M w NF-TYPE) KW-LLM-GENERATE)
-      (lw-fail M E-LOWER-CAP-UNSUPPORTED (lw-pos M w) 11)
-      (-> M (lw-expr x t 0) (lw-emit OP-CAP wire kind t)))))
+        kw (lw-nf M w NF-TYPE)]
+    ;; The checker normalized inline and ref descriptors to the same nominal
+    ;; types. Their syntax must not go through the FS2 vector-kind dispatch.
+    (if (= kw KW-LLM-GENERATE)
+      (let [wire (ck-kw-wire kw)
+            encoder (vector-at M (lw-llm-encoder-slot))
+            decoder (vector-at M (lw-llm-decoder-slot))
+            slot (lw-nf M w NF-RES)]
+        (if (and (> encoder 0) (> decoder 0) (> slot 0))
+          (-> M (lw-expr x t 0) (lw-emit OP-LSET slot t)
+              (lw-seconds t 3) ; retain the checked maximum output tokens
+              (lw-emit OP-LGET (inc t) slot)
+              (lw-emit OP-CALL encoder (inc t) 1)
+              (lw-emit OP-CAP wire (lw-llm-kind) (inc t))
+              (lw-emit OP-CALL decoder t 2))
+          (lw-fail M E-LOWER-CAP-UNSUPPORTED (lw-pos M w) wire)))
+      ;; FS2 ABI kinds: 10 string/list<bytes>, 11 list<bytes>/list<bytes>.
+      (let [result (lw-next M req)
+            kind (cond (= (lw-nf M req NF-KIND) ND-VEC) 11
+                       (= (lw-nf M result NF-KIND) ND-VEC) 10
+                       :else (lw-kind2 (lw-kwcode M req) (lw-kwcode M result)))]
+        (-> M (lw-expr x t 0) (lw-emit OP-CAP (lw-wire kw) kind t))))))
 
 ;; entry points that reserve the exit label first
 (defn- lw-cond0 [M :vector-i64 a :i64 t :i64 k :i64] :vector-i64
