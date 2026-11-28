@@ -43,6 +43,8 @@
           (or (string=? flag "--source-path") (string=? flag "--source-lock") (string=? flag "--source-lock-sha256")
               (string=? flag "--policy")
               (and (string=? command "compile") (or (string=? flag "--target") (string=? flag "--output")
+                   (and (string=? flag "--runtime-profile")
+                        (string=? (drv-arg (drv-flag 1 (io-argc) 4838156518066596434)) "aarch64-macos"))
                    (and module (string=? flag "--object-dir")))))
           (string=? command "extract-native") (or (string=? flag "--symbol") (string=? flag "--output"))
           (string=? command "bench-build") (string=? flag "--runtime-profile")

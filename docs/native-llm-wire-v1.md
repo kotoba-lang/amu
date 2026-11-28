@@ -1,12 +1,13 @@
 # Native LLM wire 11 on Darwin arm64
 
-The single-source Darwin compiler lowers `typed-cap-call :llm/generate` with
-the exact request and result schemas in the LLM v1 kit. It checks names by
+The Darwin compiler lowers `typed-cap-call :llm/generate` with the exact
+request and result schemas in the LLM v1 kit. It checks names by
 interned spelling, evaluates the request once, serializes it, and checks the
 complete result frame before constructing the nominal result. Inline and
 `:ref` declarations use the same path. Linux, browser Wasm, and the existing
-AIUEOS user-v3 ELF continue to refuse this native call. Darwin project
-lowering also requires its own integration. [Capability kit](../resources/kotoba/lang/capability-kits/llm-v1.edn)
+AIUEOS user-v3 ELF continue to refuse this native call. A locked KSL2 Darwin
+project uses the same codec and emits one requirement for the linked image.
+[Capability kit](../resources/kotoba/lang/capability-kits/llm-v1.edn)
 
 The compiler and standalone codec share the guest encoder and result
 decoder. The Mac gate verifies that the source fragment embedded in the
@@ -68,11 +69,12 @@ authority.
 
 ## Scoped Darwin execution
 
-Use the `amu-program-llm-v1` profile for a single-source KSL1 program with
-an exported zero-argument `main`. `amu run-llm PROGRAM --grant FILE` accepts
-a separate grant from the caller. The launcher uses the SHA-256 of the bytes
-read from `PROGRAM`, checks their embedded source with the pinned compiler,
-and rebuilds the signed image in private staging with the pinned packager.
+Use the `amu-program-llm-v1` profile for a single-source KSL1 program or a
+locked KSL2 project with an exported `main [] :i64` and a checked wire-11
+call. `amu run-llm PROGRAM --grant FILE` accepts a separate grant from the
+caller. The launcher uses the SHA-256 of the bytes read from `PROGRAM`,
+checks their embedded sources with the pinned compiler, and rebuilds the
+signed image in private staging with the pinned packager.
 The complete rebuilt image must match the expected SHA-256. Before the
 broker dispatches, it also checks the kernel's signed-process status and
 CDHash for the running child against the SHA-256 CodeDirectory of that
@@ -145,14 +147,26 @@ guest, launcher, compiler and packager digests, both nominal results and
 provider calls for each refusal. The synthetic fixture exercises the native
 broker independently of live model qualification.
 
-For a locked KSL2 project, start with `bin/amu check ENTRY.kotoba
---source-lock FILE.ksl`. The next integration is to carry the checked wire-11
-requirement and canonical codec through `pj-c4` in `seed/60-proj.kotoba`, then
-use the locked bundle reconstruction in `mc-project-compile` and
-`mc-project-run-artifact` for scoped admission. The target verification is
-the same signed-image and broker gate applied to `bin/amu compile
-ENTRY.kotoba --source-lock FILE.ksl --runtime-profile amu-program-llm-v1
--o PROGRAM` and `bin/amu run-llm PROGRAM --grant FILE`. Those scoped project
-commands still require implementation. Itonami's pinned KSL2 lane and the
-approved Murakumo artifact and endpoint remain separate dependencies for a
-live turn. [Amu #1901](https://github.com/kotoba-lang/amu/issues/1901)
+For a locked KSL2 project, use the explicit namespace-to-file map and source
+digests already required by the project entry.
+
+```sh
+bin/amu check ENTRY.kotoba --source-lock FILE.ksl
+bin/amu compile ENTRY.kotoba --source-lock FILE.ksl \
+  --runtime-profile amu-program-llm-v1 -o PROGRAM
+bin/amu run-llm PROGRAM --grant FILE
+```
+
+Set `artifact=` in the KLG1 grant to the SHA-256 of `PROGRAM`. Compile
+checks every source against the lock and packages the canonicalized lock
+and verified source bytes. At run time the launcher reconstructs the
+private compiler input from that embedded bundle, verifies every source
+against the embedded lock, checks the linked `main` ABI and recomputes the
+signed artifact before admitting the broker. An on-disk edit causes a
+stale-lock refusal when compiling again. The signed artifact still uses
+its verified embedded snapshot.
+
+The broker diagnostic exercises both result arms on a locked two-module
+project and records project artifact hashes separately from KSL1. Itonami's
+pinned KSL2 consumer and an approved Murakumo artifact and endpoint still
+need their own live qualification. [Amu #1901](https://github.com/kotoba-lang/amu/issues/1901)

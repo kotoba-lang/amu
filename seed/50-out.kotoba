@@ -248,8 +248,9 @@
 ;; out-blob M -> M : this module's code words + pool alone into OUT (no header), the bytes 1 .. MM-OUT-N-1; MM-R0 = the length
 ;; (= MM-CODE-BYTES). 60-proj copies them into its image buffer.
 (defn- out-blob [M :vector-i64] :vector-i64
-  (let [M1 (out-w M MM-OUT-N 1)]
-    (out-build3 M1)))
+  (let [M1 (out-code-loop (out-set-cs (out-w M MM-OUT-N 1)) 1)]
+    (if (= (out-ok M1) 1)
+      (let [M2 (out-pool M1)] (if (= (out-ok M2) 1) (out-verify M2) M2)) M1)))
 
 ;; LINK (r6h): image bytes [i, n) of a PACKED image (8 bytes per word, little-endian in the word) that starts at word w0 of L,
 ;; appended to OUT (was one byte per item of L)
@@ -261,10 +262,12 @@
 ;; out-image M S L a n -> M : the container of a linked image: the header with this (root) module's exports at
 ;; EF-OFFSET + base (base = the module's image offset, M[MM-STAT-BASE+43], 42-layout's ly-base-slot) and the code length n,
 ;; then the n image bytes of the packed image at word a of L (60-proj pj-img-base). MM-R0 = container bytes.
-(defn- out-image [M :vector-i64 S :string L :vector-i64 a :i64 n :i64] :vector-i64
-  (let [M1 (out-header (out-w M MM-OUT-N 1) S n (vector-at M (+ MM-STAT-BASE 43)))
-        M2 (out-put-vec (out-set-cs M1) L a 0 n)]
-    (if (= (out-ok M2) 1) (out-w M2 MM-R0 (- (vector-at M2 MM-OUT-N) 1)) M2)))
+(defn- out-image [M :vector-i64 S :string L :vector-i64 a :i64 n :i64 llm? :bool] :vector-i64
+  (let [note (if llm? (out-llm-note) "") size (string-byte-length note)
+        M1 (out-header (out-w M MM-OUT-N 1) S (+ n size) (vector-at M (+ MM-STAT-BASE 43)))
+        M2 (out-put-vec (out-set-cs M1) L a 0 n)
+        M3 (out-put-span M2 note 0 size)]
+    (if (= (out-ok M3) 1) (out-w M3 MM-R0 (- (vector-at M3 MM-OUT-N) 1)) M3)))
 
 ;; ---- parser (readers over a byte-per-word buffer at M[base ..]; base and len live in two statistics cells) ---------------
 

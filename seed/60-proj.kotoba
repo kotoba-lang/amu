@@ -96,6 +96,7 @@
 (def pj-k-source-lock 40) ; 1 only after an exact source manifest/entry/root check
 (def pj-k-lock-text 41)   ; P index of immutable manifest bytes (decoded as ASCII)
 (def pj-k-lock-files 42)  ; exact number of distinct source paths in that manifest
+(def pj-k-llm-v1 43)      ; canonical wire bridge is enabled by the locked Darwin driver only
 ;; image byte a, and image byte a := b
 (defn- pj-ib [L :vector-i64 a :i64] :i64
   (bit-and (u64-shift-right (vector-at L (+ pj-img-base (u64-shift-right a 3))) (* 8 (bit-and a 7))) 255))
@@ -958,7 +959,10 @@
               (cond (= d m) false (> (pj-mf L d pj-mf-kwt) 0) true :else (recur (+ k 1)))))))))
 ;; the keyword table text for module m's library: "" (its own) unless m is the entry of a link with a keyword table
 (defn- pj-kw-table [M :vector-i64 L :vector-i64 P :string m :i64 S0 :string] :string
-  (if (and (= (pj-mf L m pj-mf-entry) 1) (pj-kw-any? L m S0)) (pj-kw-union M L P m S0) ""))
+  (if (and (= (pj-mf L m pj-mf-entry) 1) (pj-kw-any? L m S0))
+    (let [table (pj-kw-union M L P m S0)]
+      (if (and (= (pj-l L pj-k-llm-v1) 1) (drv-llm-cap? (pj-l L pj-k-caps)))
+        (ck-r6b-kwmerge table (ck-r6b-kwtab (drv-llm-wire-source))) table)) ""))
 ;; after module m compiled (M holds it, base = its image base): record its __r6-kwtab
 (defn- pj-kw-note [M :vector-i64 L :vector-i64 m :i64] :vector-i64
   (let [f (ck-r6b-fn M (pj-kw-h))
@@ -1064,15 +1068,21 @@
               (> (+ (pj-l L pj-k-base) (- (vector-at M2 MM-OUT-N) 1)) pj-img-cap) (pj-err M2 E-PROJ-IMAGE 0)
               :else (pj-link M2 L)))
       M1)))
-(defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
-  (let [M1 (ck-run-h M S H)]   ; R6C: with the parameter refinements so far
-    (if (pj-ok M1)
-      (let [M2 (lw-run M1)] (if (pj-ok M2) (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))] (if (pj-ok M3) (pj-c5 M3 L) M3)) M2))
-      M1)))
-(defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64] :vector-i64
+(defn- pj-llm-attach? [M :vector-i64 L :vector-i64 bridge? :bool] :bool
+  (and (not bridge?) (= (pj-l L pj-k-llm-v1) 1) (drv-llm-wire? M)))
+
+(defn- pj-c4 [M :vector-i64 L :vector-i64 S :string H :vector-i64 original-size :i64 bridge? :bool] :vector-i64
+  (let [M1 (ck-run-h (if bridge? (mem-set M (ck-llm-bridge-slot) 1) M) S H)]
+    (if (and (pj-ok M1) (not (pj-llm-attach? M1 L bridge?)))
+      (let [M2 (lw-run (if bridge? (drv-llm-lowering M1 S original-size) M1))]
+        (if (pj-ok M2)
+          (let [M3 (gn-run-open M2 (pj-l L pj-k-stub0) (pj-l L pj-k-nstub))]
+            (if (pj-ok M3) (pj-c5 M3 L) M3)) M2)) M1)))
+(defn- pj-c3 [M :vector-i64 L :vector-i64 S :string H :vector-i64 original-size :i64 bridge? :bool] :vector-i64
   (let [M1 (nm-run M S)]
     (if (pj-ok M1)
-      (let [w (pj-ls L pj-k-stub0 (- (vector-at M1 MM-FN-N) (pj-l L pj-k-nstub)))] (pj-c4 M1 L S H))
+      (let [w (pj-ls L pj-k-stub0 (- (vector-at M1 MM-FN-N) (pj-l L pj-k-nstub)))]
+        (pj-c4 M1 L S H original-size bridge?))
       M1)))
 
 ;; R6A: an error inside the trailer's copy of the module's own schema text is moved to the original text
@@ -1089,10 +1099,11 @@
 
 ;; compile module m (its source text read from its path) and link it into the image. Returns P (a library adds its
 ;; interface strings). On return M still holds module m (the entry: its EXP table for the container).
-(defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string (pj-module-h M L P m (ck-hint-new)))
+(defn- pj-module [M :vector-i64 L :vector-i64 P :string m :i64] :string (pj-module-h M L P m (ck-hint-new) false))
 ;; R6C: H = the parameter refinements so far (21-check ck-hint-*); a check that asks for a new one compiles the module again
-(defn- pj-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64] :string
-  (let [S0 (pj-src M L P m)   ; R6D: a template's text with its parameters instantiated
+(defn- pj-module-h [M :vector-i64 L :vector-i64 P :string m :i64 H :vector-i64 bridge? :bool] :string
+  (let [original (pj-src M L P m)   ; R6D: a template's text with its parameters instantiated
+        S0 (if bridge? (string-concat original (drv-llm-wire-source)) original)
         T (pj-trailer L P m)
         ;; R6B: the source library the module spells. R6C: BEFORE the trailer (was after it): the stub clauses of the trailer
         ;; must be the LAST FN records (pj-c3 takes stub0 = FN-N - nstub), else an importer that also gets a library group
@@ -1104,9 +1115,11 @@
         M1 (if (pj-ok M) (pj-read M S) M)
         M2 (if (pj-ok M1) (pj-refcheck (pj-qscan (pj-norm M1 L S) L P S m) L P m) M1)
         M3 (if (pj-ok M2) (pj-splice M2 L) M2)
-        M4 (if (pj-ok M3) (pj-c3 M3 L S H) M3)
-        w9 (if (pj-ok M4) (pj-kw-note M4 L m) L)]   ; R6D
-    (cond (and (pj-ok M4) (ck-hint-again? H M4)) (pj-module-h M4 L P m H)   ; R6C
+        M4 (if (pj-ok M3) (pj-c3 M3 L S H (string-length original) bridge?) M3)
+        attach? (and (pj-ok M4) (pj-llm-attach? M4 L bridge?))
+        w9 (if (and (pj-ok M4) (not attach?)) (pj-kw-note M4 L m) L)]   ; R6D
+    (cond (and (pj-ok M4) (ck-hint-again? H M4)) (pj-module-h M4 L P m H bridge?)   ; R6C
+          attach? (pj-module-h M4 L P m (ck-hint-new) true)
           (not (pj-ok M4)) (let [w2 (pj-err-back M4 L m (string-length S1))] P)   ; R6C: the trailer starts after the library
           (>= (pj-n L) (- pj-s-cap 1)) (let [w2 (pj-err M4 E-PROJ-IMAGE 0)] P)
           (not (pj-ok (pj-r5b-after M4 L P S m))) P   ; R5B: namespace :capabilities, stateful library exports

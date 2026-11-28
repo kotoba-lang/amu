@@ -1,4 +1,4 @@
-;; Darwin single-source wire 11. All grant fields are independent of the
+;; Darwin wire 11. All grant fields are independent of the
 ;; guest source and request. The only installed broker is a local fixture.
 (def ml-profile "amu-program-llm-v1")
 (def ml-model ":synthetic/model")
@@ -140,19 +140,21 @@
               (= exchange 0) (mc-error "ELLMBROKER malformed or unavailable provider response" 69)
               :else done)))))
 
-(defn- ml-ready [source :vector-i64 digest :string grant :vector-i64
-                dir :string compiler :string packager :string] :i64
+(defn- ml-run-image [dir :string digest :string grant :vector-i64] :i64
+  (let [image (mc-join dir "program.macho") read (hc-read image)
+        signed (if (hc-ok? read) (mc-read-data read) [])]
+    (if (or (= (vector-count signed) 0) (not (string=? (sh-bytes signed) digest)))
+      (ml-refuse "EARTIFACT signed guest differs from the granted build" 69)
+      (let [cdhash (ml-cdhash signed)]
+        (if (= (string-length cdhash) 40) (ml-run-child image dir cdhash grant)
+          (ml-refuse "EARTIFACT expected a bounded SHA-256 CodeDirectory" 69))))))
+
+(defn- ml-ready [source :vector-i64 digest :string grant :vector-i64 dir :string compiler :string packager :string] :i64
   (let [lock (mc-stage-single dir source)]
     (if (= (vector-count lock) 0) (ml-refuse "EHOST cannot stage private source snapshot" 70)
       (let [status (mc-compile dir compiler packager (sh-bytes lock) ml-profile)]
         (if (not= status 0) (let [reported (ml-count 0)] status)
-          (let [image (mc-join dir "program.macho") read (hc-read image)
-                signed (if (hc-ok? read) (mc-read-data read) [])]
-            (if (or (= (vector-count signed) 0) (not (string=? (sh-bytes signed) digest)))
-              (ml-refuse "EARTIFACT signed guest differs from the granted build" 69)
-              (let [cdhash (ml-cdhash signed)]
-                (if (= (string-length cdhash) 40) (ml-run-child image dir cdhash grant)
-                  (ml-refuse "EARTIFACT expected a bounded SHA-256 CodeDirectory" 69))))))))))
+          (ml-run-image dir digest grant))))))
 
 (defn- ml-work [program :string grant-path :string info :vector-i64] :i64
   (let [cwd (hc-info-cwd info) root (mc-parent (hc-info-exe info))
@@ -164,18 +166,20 @@
           :else
           (let [input (mc-read-data program-read) digest (sh-bytes input)
                 grant (ml-grant (mc-read-data grant-read) digest)
-                source (mc-source input true)]
+                source (mc-source input true)
+                project? (mc-project-bundle? source)]
             (cond (not= (vector-count grant) 2) (ml-refuse "ELLMGRANT artifact or grant fields refused" 69)
-                  (or (= (vector-count source) 0) (> (vector-count source) 1048576))
-                  (ml-refuse "EARTIFACT expected a single-source program" 69)
-                  (not (llmw-utf8? (bytes-from-vector-i64 source) 0 (vector-count source)))
+                  (or (= (vector-count source) 0) (and (not project?) (> (vector-count source) 1048576)))
+                  (ml-refuse "EARTIFACT expected a bounded program source or project bundle" 69)
+                  (and (not project?) (not (llmw-utf8? (bytes-from-vector-i64 source) 0 (vector-count source))))
                   (ml-refuse "EARTIFACT embedded source is not UTF-8" 69)
                   (not (and (mc-pinned? compiler MC-COMPILER-SHA256) (mc-pinned? packager MC-PACKAGER-SHA256)))
                   (ml-refuse "EPROVENANCE compiler or packager digest mismatch" 70)
-                  (not (mc-main-checked? (hc-text source) true))
+                  (and (not project?) (not (mc-main-checked? (hc-text source) true)))
                   (ml-refuse "EABI expected main [] :i64 with a checked wire11 requirement" 69)
                   :else
                   (let [dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
                     (if (not (hc-ok? (hc-path-call 3 dir))) (ml-refuse "EHOST cannot create private work directory" 70)
-                      (let [result (ml-ready source digest grant dir compiler packager)
+                      (let [result (if project? (mc-project-run-artifact dir compiler packager source input 0 grant)
+                                     (ml-ready source digest grant dir compiler packager))
                             clean (mc-clean dir)] result))))))))

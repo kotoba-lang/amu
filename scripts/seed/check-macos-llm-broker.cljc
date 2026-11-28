@@ -73,6 +73,117 @@
                   (build/cli-pins (digest compiler) (digest packager)))]
       (build/native-image compiler packager dir "amu-cli" "amu-cli-host" stage))))
 
+(defn- project-lock [entry module logical?]
+  (let [path (fn [file] (if logical? (str "/" (.-name file)) (str file)))]
+    (str "KSL2\nentry " (path entry) "\nmodule llm.broker-fixture " (path entry)
+         "\nmodule llm.provider-fixture " (path module)
+         "\nfile " (digest entry) " " (path entry) "\nfile " (digest module) " " (path module) "\n")))
+
+(defn- locked-project [out name entry-source module-source]
+  (let [dir (.joinpath out (str "ksl2-" name))
+        entry (.joinpath dir "entry.kotoba")
+        module (.joinpath dir "provider.kotoba")
+        lock (.joinpath dir "project.ksl")]
+    (.mkdir dir ** :mode 0700)
+    (.write_text entry entry-source)
+    (.write_text module module-source)
+    (.write_text lock (project-lock entry module false))
+    [dir entry module lock]))
+
+(defn- locked-compile [cli [dir entry _module lock] image profile]
+  (apply native dir cli "compile" entry "--source-lock" lock
+    (if (nil? profile) ["-o" image] ["--runtime-profile" profile "-o" image])))
+
+(defn- project-image [cli [_dir entry module _lock :as project] image artifacts name profile]
+  (let [r (locked-compile cli project image profile)]
+    (u/chk (zero? (.-returncode r)) (str name " locked compile: " (.decode (.-stderr r) "utf-8" "replace")))
+    (mac/verify-macho image)
+    (let [note (str "AMU-LLM-REQUIREMENT-V1\nwire 11 :llm/generate\nrequest :kotoba.llm/generate-request\n"
+                    "result :kotoba.llm/result\nschema-sha256 " schema "\n")]
+      (u/chk (= 1 (.count (.read_bytes image) (operator/add (u/bytes-of 0) (.encode note))))
+             "linked image needs exactly one canonical wire-11 requirement"))
+    (.append artifacts (u/pydict "name" name "macho" (mac/pin image) "entry" (mac/pin entry) "module" (mac/pin module)))
+    image))
+
+(defn- project-target-refusals [rows cli [dir entry module _lock]]
+  (let [compiler (.joinpath (.-parent cli) "amu-full-root.macho")
+        lock (.joinpath dir "logical.ksl")
+        out (.joinpath dir "unsupported.out")]
+    (.write_text lock (project-lock entry module true))
+    (doseq [[name target extra code diagnostic]
+            [["ksl2-x86-lowering" "x86_64-linux" ["--format" "kx64-v1"] 1 "E3004"]
+             ["ksl2-x86-scoped-profile" "x86_64-linux" ["--format" "kx64-v1" "--runtime-profile" profile] 2 "E1"]
+             ["ksl2-wasm-scoped-profile" "wasm32-browser" ["--runtime-profile" profile] 2 "E1"]]]
+      (let [args (into ["compile" "/entry.kotoba" "--target" target "--output" (.-name out)
+                        "--source-lock" (.-name lock) "--source-lock-sha256" (digest lock)] extra)]
+        (check-case rows name (mac/native-run compiler dir args :expected code) code "" nil diagnostic)
+        (u/chk (not (.exists out)) "unsupported target produced an artifact")))))
+
+(defn- check-project [rows artifacts out cli src]
+  (let [wrapper (str "(ns llm.broker-fixture (:require [llm.provider-fixture :as provider]) (:export [main]))\n"
+                     "(defn main [] :i64 (provider/main))\n")
+        implementation (replace-once src "ns llm.broker-fixture" "ns llm.provider-fixture")
+        project (locked-project out "completion" wrapper implementation)
+        [dir entry module lock] project
+        artifact (project-image cli project (.joinpath dir "guest.macho") artifacts "ksl2-completion" profile)
+        granted (grant-text artifact 5 42)
+        repeat-project (locked-project out "repeat" wrapper implementation)
+        again (project-image cli repeat-project (.joinpath (first repeat-project) "guest.macho") artifacts "ksl2-repeat" profile)]
+    (u/chk (= (digest artifact) (digest again)) "signed project depends on its source location")
+    (check-case rows "ksl2-check" (native dir cli "check" entry "--source-lock" lock) 0 "ok\n" nil "")
+    (execute rows out cli "ksl2-completion" artifact granted 0 "101\n" 1 "")
+    (execute rows out cli "ksl2-missing-grant" artifact nil 69 "" 0 "ELLMGRANT")
+    (execute rows out cli "ksl2-artifact-mismatch" artifact
+      (replace-once granted (digest artifact) (apply str (repeat 64 "0"))) 69 "" 0 "ELLMGRANT")
+    (execute rows out cli "ksl2-wrong-schema" artifact
+      (replace-once granted schema (apply str (repeat 64 "0"))) 69 "" 0 "ELLMGRANT")
+    (execute rows out cli "ksl2-exhausted-tokens" artifact (grant-text artifact 5 41) 69 "" 0 "ELLMBROKER")
+    (check-case rows "ksl2-ordinary-artifact" (native dir cli "run" artifact) 1 "" nil "EARTIFACT")
+    (check-case rows "ksl2-ordinary-source" (native dir cli "run" entry "--source-lock" lock) 133 "" nil "")
+    (check-case rows "ksl2-no-broker" (native dir artifact) 69 "" nil "")
+    (let [entry-source (replace-once src "(:export [main])" "(:require [llm.provider-fixture :as provider]) (:export [main])")
+          error-source (replace-once entry-source "\"ok\" 42" "\"error\" (provider/budget)")
+          pure-module "(ns llm.provider-fixture (:export [budget]))\n(defn budget [] :i64 42)\n"
+          error-project (locked-project out "error" error-source pure-module)
+          image (project-image cli error-project (.joinpath (first error-project) "guest.macho") artifacts "ksl2-error" profile)]
+      (execute rows out cli "ksl2-retryable-error" image (grant-text image 5 42) 0 "202\n" 1 "")
+      (project-target-refusals rows cli error-project))
+    (doseq [[name anchor replacement calls diagnostic]
+            [["ksl2-wrong-model" ":synthetic/model" ":synthetic/other" 0 "ELLMBROKER"]
+             ["ksl2-invalid-request" "\"ok\" 42" "\"ok\" 0" 0 "ELLMBROKER"]
+             ["ksl2-invalid-response" "\"ok\" 42" "\"malformed-response\" 42" 1 "malformed"]]]
+      (let [project (locked-project out name wrapper (replace-once implementation anchor replacement))
+            image (project-image cli project (.joinpath (first project) "guest.macho") artifacts name profile)]
+        (execute rows out cli name image (grant-text image 5 42) 69 "" calls diagnostic)))
+    (let [bad-abi (replace-once wrapper "main []" "main [x :i64]")
+          project (locked-project out "bad-abi" bad-abi implementation)
+          dst (.joinpath (first project) "scoped.macho")]
+      (check-case rows "ksl2-bad-main-abi" (locked-compile cli project dst profile) 1 "" nil "EABI")
+      (u/chk (not (.exists dst)) "bad main ABI produced a scoped artifact")
+      (let [plain (project-image cli project (.joinpath (first project) "plain.macho") artifacts "ksl2-ordinary-bad-abi" nil)]
+        (execute rows out cli "ksl2-run-bad-main-abi" plain (grant-text plain 5 42) 1 "" 0 "EABI")))
+    (let [bad-shape (replace-once implementation "[:temperature-milli :i64]" "[:temperature :i64]")
+          project (locked-project out "bad-shape" wrapper bad-shape)
+          dst (.joinpath (first project) "scoped.macho")]
+      (check-case rows "ksl2-bad-nominal-shape" (locked-compile cli project dst profile) 1 "" nil "E2115")
+      (u/chk (not (.exists dst)) "wrong nominal request produced an artifact"))
+    (let [bad (.joinpath dir "tampered.macho")
+          bytes (.read_bytes artifact)
+          bundle (.index bytes (.encode "AMU-PROJECT-SOURCE-V1\n"))
+          at (.index bytes (.encode "fixture system") bundle)]
+      (.write_bytes bad (.join (u/bytes-of)
+        (python/list [(operator/getitem bytes (python/slice 0 at)) (.encode "F")
+                      (operator/getitem bytes (python/slice (inc at) nil))])))
+      (execute rows out cli "ksl2-invalid-bundle" bad (grant-text bad 5 42) 69 "" 0 "EARTIFACT embedded project sources")
+      (.write_bytes bad (operator/add bytes (u/bytes-of 0)))
+      (execute rows out cli "ksl2-grant-for-tampered-image" bad (grant-text bad 5 42) 69 "" 0 "EARTIFACT signed guest differs"))
+    (.write_text module (str implementation "\n;; stale lock fixture\n"))
+    (check-case rows "ksl2-check-source-drift" (native dir cli "check" entry "--source-lock" lock) 1 "" nil "EINPUT")
+    (let [dst (.joinpath dir "stale.macho")]
+      (check-case rows "ksl2-compile-source-drift" (locked-compile cli project dst profile) 1 "" nil "EINPUT")
+      (u/chk (not (.exists dst)) "stale lock produced an artifact"))
+    (execute rows out cli "ksl2-signed-snapshot-after-source-drift" artifact granted 0 "101\n" 1 "")))
+
 (defn- main [cli out]
   (u/chk (mac/available?) "Darwin arm64 required")
   (mac/verify-macho cli)
@@ -135,6 +246,7 @@
             image (make mutant (str name "-guest") src)]
         (execute rows out mutant name image (grant-text image 5 42) 69 "" 0 diagnostic)))
     (execute rows out cli "after-timeout" ok granted 0 "101\n" 1 "")
+    (check-project rows artifacts out cli src)
     (.write_text (.joinpath out "receipt.json")
       (u/json-dump (u/pydict "schema" "amu.macos-wire11-broker.v1" "wire" 11
                      "sourceRevision" (.strip (.decode (subprocess/check_output

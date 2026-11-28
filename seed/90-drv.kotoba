@@ -28,6 +28,7 @@
         (string=? s "--source-path") 1
         (string=? s "--source-lock") 1
         (string=? s "--source-lock-sha256") 1
+        (string=? s "--runtime-profile") 1
         (string=? s "--policy") 1
         (string=? s "--object-dir") 1
         (string=? s "--ns") 1   ; EMIT: compile-kir --emit-module --ns NAME
@@ -583,8 +584,16 @@
         (record-new [:ref :kotoba.llm/error] :malformed-wire-result \"\" false)))))
 ")
 ;; END LLM V1 WIRE EMBED
-(defn- drv-llm-wire? [M :vector-i64] :bool
-  (pos? (bit-and (vector-at M MM-CAPS) (ck-wire-bit (ck-kw-wire KW-LLM-GENERATE)))))
+(defn- drv-llm-cap? [caps :i64] :bool
+  (pos? (bit-and caps (ck-wire-bit (ck-kw-wire KW-LLM-GENERATE)))))
+(defn- drv-llm-wire? [M :vector-i64] :bool (drv-llm-cap? (vector-at M MM-CAPS)))
+(defn- drv-i64-main? [M :vector-i64 S :string] :bool
+  (let [f (pj-fn-named M S "main")]
+    (and (> f 0) (= (pj-ff M f FF-KIND) FK-DEFN)
+         (= (pj-ff M f FF-NPARAMS) 0) (= (pj-ff M f FF-RTYPE) TY-I64)
+         (= (pj-ff M f FF-EXPORT) 1) (= (pj-sf M (pj-ff M f FF-SYM) SF-ABORT) 0)
+         (or (>= (+ f 1) (vector-at M MM-FN-N))
+             (not= (pj-ff M (+ f 1) FF-SYM) (pj-ff M f FF-SYM))))))
 (defn- drv-llm-helper [M :vector-i64 S :string name :string original-size :i64] :i64
   (let [f (nm-sf M (ck-llm-id M S name) SF-FN)]
     (if (and (> f 0) (= (nm-ff M f FF-KIND) FK-PRIV)
@@ -651,13 +660,20 @@
         w2 (if (> (vector-at M MM-ERR-POS) flen) (vector-assoc! M MM-ERR-POS -1) M)]
     (drv-fail-in M path (if (> (vector-at L pj-k-errmod) 0) (string-concat " in " path) ""))))
 
+(defn- drv-pj-scoped? [] :bool
+  (let [i (drv-pj-flag 1 (io-argc) "--runtime-profile")]
+    (and (>= i 0) (string=? (io-arg i) "amu-program-llm-v1"))))
+
 (defn- drv-pj-emit [M :vector-i64 L :vector-i64 P :string mode :i64 out :string] :i64
-  (let [S (string-concat (pj-src M L P 0) (pj-trailer L P 0))
-        M1 (if (or (= mode 0) (not (pj-ok M))) M (out-image M S L pj-img-base (vector-at L pj-k-img)))]
-    (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
-          (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-ok M1) g))
-          ;; R5B: --policy against the capabilities of every module of the project
-          :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) (vector-at L pj-k-caps))] (if (< g 0) (drv-emit2 M1 out) g)))))
+  (let [S (string-concat (pj-src M L P 0) (pj-trailer L P 0)) caps (pj-l L pj-k-caps)
+        llm? (and (= (pj-l L pj-k-llm-v1) 1) (drv-llm-cap? caps))]
+    (if (and (drv-pj-scoped?) (not (and llm? (drv-i64-main? M S))))
+      (let [w (io-err "seed: EABI expected exported main [] :i64 and a checked locked wire11 project\n")] 1)
+      (let [M1 (if (or (= mode 0) (not (pj-ok M))) M (out-image M S L pj-img-base (pj-l L pj-k-img) llm?))]
+        (cond (> (vector-at M1 MM-ERR) 0) (drv-fail0 (vector-at M1 MM-ERR))
+              (= mode 0) (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) caps)] (if (< g 0) (drv-ok M1) g))
+              ;; R5B: --policy against the capabilities of every module of the project
+              :else (let [g (drv-r5b-gate M1 (pj-p L P (pj-mf L 0 pj-mf-path)) caps)] (if (< g 0) (drv-emit2 M1 out) g)))))))
 
 ;; A source-lock occurrence is unique and has a value; values of other flags
 ;; are skipped. -1 = absent, -2 = malformed. It never authorizes --unpinned.
@@ -720,6 +736,8 @@
         P0 (drv-pj-roots L (pj-new-p L) 1 n)
         w (vector-assoc! L pj-k-unpinned (drv-pj-has 1 n "--unpinned"))
         P-lock (drv-pj-lock M L P0 path)
+        locked? (and (= (pj-l L pj-k-source-lock) 1) (ksl-mapped? (pj-p L P-lock (pj-l L pj-k-lock-text))))
+        scoped (pj-ls L pj-k-llm-v1 (if locked? 1 0))
         P1 (if (pj-ok M) (pj-project M L (pj-padd L P-lock path) (- (pj-n L) 1)) P-lock)]
     (if (> (vector-at M MM-ERR) 0)
       (if (= (pj-l L pj-k-nmod) 0) (drv-fail-in M path "") (drv-pj-fail M L P1))
@@ -804,7 +822,7 @@
     (if (= (drv-pj-has 1 (io-argc) "--emit-module") 1)
       (if (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (drv-fail0 E-PROJ-UNPINNED) (drv-pj-emitmod M1 path out))
     (if (and (= (vector-at M1 MM-ERR) 0)
-             (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
+             (or (drv-pj-scoped?) (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
       (if (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (not (drv-single-lock? original path)))
         (drv-fail0 E-PROJ-UNPINNED) (drv-c2 M1 S path mode out (string-length original)))))))
@@ -1071,6 +1089,10 @@
              (= (drv-pj-has 1 n "--source-lock") 0)) (drv-fail0 E-PROJ-UNPINNED)
         (and (= (drv-pj-has 1 n "--source-lock") 1)
              (not (or (string=? (io-arg 0) "compile") (string=? (io-arg 0) "check")))) (drv-fail0 E-PROJ-UNPINNED)
+        (and (= (drv-pj-has 1 n "--runtime-profile") 1)
+             (not (and (string=? (io-arg 0) "compile") (drv-pj-scoped?)
+                       (= (drv-pj-has 1 n "--source-lock") 1)
+                       (= (drv-pj-has 1 n "--emit-module") 0)))) (drv-usage)
         (= (drv-is (io-arg 0) 11 1891999495935608509) 1) (drv-kir n)  ; compile-kir (block above)
         (= (drv-is (io-arg 0) 7 1333288279851460382) 1) (drv-compile n)
         (string=? (io-arg 0) "link") (drv-pj-link n)          ; R5A (60-proj separate mode)
