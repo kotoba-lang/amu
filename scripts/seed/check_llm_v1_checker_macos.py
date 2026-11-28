@@ -91,13 +91,14 @@ def package(image, packager, directory, name, source, container):
         raise RuntimeError('wrong main extent in ' + container)
     macho = directory / (name + '.macho')
     run_native(packager, directory, macho.name, raw, 'amu-program', offset[1].decode(), source)
+    unsigned_digest = sha(macho)
     macho.chmod(0o755)
     subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-', '--timestamp=none',
                     '--identifier', 'org.kotoba.amu.wire11-test.v1', str(macho)],
                    check=True, capture_output=True)
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(macho)],
                    check=True, capture_output=True)
-    return directory / raw, macho
+    return directory / raw, macho, unsigned_digest
 
 
 def execute(image, directory, timeout):
@@ -112,13 +113,13 @@ def wire_vectors(image, packager, output, note):
                              '\n' + VECTORS.read_text())
     run_native(image, output, 'compile', vector_source.name, '--target', 'aarch64-macos',
                '--output', 'vectors.kseed')
-    raw, macho = package(image, packager, output, 'vectors', vector_source.name, 'vectors.kseed')
+    raw, macho, unsigned = package(image, packager, output, 'vectors', vector_source.name, 'vectors.kseed')
     result = execute(macho, output, 60)
     if result.returncode or result.stdout != b'0\n' or result.stderr or raw.read_bytes().endswith(note):
         raise RuntimeError(f'native codec vectors failed: exit {result.returncode}, stdout {result.stdout!r}')
     return {'exit': result.returncode, 'result': 0, 'source_sha256': sha(vector_source),
             'container_sha256': sha(output / 'vectors.kseed'), 'raw_sha256': sha(raw),
-            'macho_sha256': sha(macho)}
+            'unsigned_macho_sha256': unsigned, 'macho_sha256': sha(macho)}
 
 
 def ungranted(image, packager, output, note):
@@ -134,7 +135,7 @@ def ungranted(image, packager, output, note):
 ''')
     run_native(image, output, 'compile', source.name, '--target', 'aarch64-macos',
                '--output', 'ungranted.kseed')
-    raw, macho = package(image, packager, output, 'ungranted', source.name, 'ungranted.kseed')
+    raw, macho, unsigned = package(image, packager, output, 'ungranted', source.name, 'ungranted.kseed')
     result = execute(macho, output, 5)
     if result.returncode != -signal.SIGTRAP or result.stdout or not raw.read_bytes().endswith(note):
         raise RuntimeError(f'ordinary wire-11 guest did not refuse: exit {result.returncode}')
@@ -143,7 +144,7 @@ def ungranted(image, packager, output, note):
         raise RuntimeError('Darwin packaging lost the wire-11 requirement')
     return {'signal': 'SIGTRAP', 'source_sha256': sha(source),
             'container_sha256': sha(output / 'ungranted.kseed'), 'raw_sha256': sha(raw),
-            'macho_sha256': sha(macho), 'provider_installed': False}
+            'unsigned_macho_sha256': unsigned, 'macho_sha256': sha(macho), 'provider_installed': False}
 
 
 def main():
