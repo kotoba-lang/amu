@@ -9,7 +9,8 @@
 (ns repin-derived-pins
   (:require [basilisp.string :as str]
             [gate-util :as u]
-            [macos-scope-build :as scope])
+            [macos-scope-build :as scope]
+            [macos-cli-build :as cli-build])
   (:import hashlib json operator pathlib platform shutil subprocess sys tempfile))
 
 (def root u/root)
@@ -66,7 +67,7 @@
                 (if-let [name (first ls)]
                   (if (= name "seed/90-drv.kotoba") (conj acc name) (recur (rest ls) (conj acc name)))
                   acc))
-        names (into names ["seed/macos-cli-api.kotoba" "seed/macos-cli.kotoba"])
+        names (into names cli-build/cli-sources)
         expected (u/pydict-from (for [n names] [n (pin (rp n))]))]
     (when (or (not= (count names) (count (set names))) (not (u/deq (g build "sources") expected)))
       (die "CLI build sources do not match the current manifest and source bytes"))

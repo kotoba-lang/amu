@@ -41,13 +41,23 @@
 (def FS35-BYTES 1768)
 (def METAL-BYTES 152)
 (def METAL-BIND-BYTES 16)
+(def LLM-ADAPTER-BYTES 2048)
+(def LLM-REQUEST-BYTES 131648)
+(def LLM-RESULT-BYTES 66112)
+(def LLM-HOST-FD 16392)  ; open parent socket descriptor plus one
+(def LLM-HOST-PID 16400)
+(def LLM-HOST-PHASE 16408)
+(def LLM-HOST-DEADLINE 16416)  ; parent-only kqueue descriptor plus one
 (def MAC-PACKAGER-RAW-BYTES 49680)
 (def MAC-PACKAGER-ENTRY-OFFSET 44880)
 
 (defn- amu-program-metal? [mode :string] :bool
   (string=? mode "amu-program-metal"))
+(defn- amu-program-llm? [mode :string] :bool
+  (string=? mode "amu-program-llm-v1"))
 (defn- amu-program-mode? [mode :string] :bool
-  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35") (amu-program-metal? mode)))
+  (or (string=? mode "amu-program") (string=? mode "amu-program-fs35")
+      (amu-program-metal? mode) (amu-program-llm? mode)))
 (defn- amu-program-fs35? [mode :string] :bool
   (string=? mode "amu-program-fs35"))
 
@@ -155,7 +165,7 @@
    (adr8 1160 POOL-EQUAL-START) 0xf9003a68
    (adr8 1168 CONCAT-START) 0xf9003e68
    (if (string=? mode "fs2-cli-stdio-read") 0xd2c05d08
-    (if (or (string=? mode "amu-program") (amu-program-metal? mode)) 0xd2c01c08
+    (if (or (string=? mode "amu-program") (amu-program-metal? mode) (amu-program-llm? mode)) 0xd2c01c08
      (if (or (string=? mode "fs2-cli-stdio") general) 0xd2c01d08
      (if (string=? mode "stdout") 0xd2c00408
      (if (string=? mode "stderr") 0xd2c01008
@@ -1122,7 +1132,8 @@
                 (vector-assoc!
                   (vector-assoc! (cli-helper-words CODEPOINT-FAST-START) 6
                     (b-direct (+ CLI-RUNTIME-START 24) VECTOR-RUNTIME-START))
-                  8 (b-direct TYPED-START (cond host (+ extra 64) (string=? mode "fs2-cli-stdio-read") (+ extra FS35-BYTES) fs35 fs35-start metal metal-start
+                  8 (b-direct TYPED-START (cond host (+ extra 64) (string=? mode "fs2-cli-stdio-read") (+ extra FS35-BYTES) fs35 fs35-start
+                                           (or metal (amu-program-llm? mode)) metal-start
                                            :else (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))))
       (words-at (+ at RUNTIME-START)
                 (vector-assoc! (runtime-helper-words) 12
@@ -1185,6 +1196,9 @@
                   (metal-helper-words metal-start
                     (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
                 at total-bytes)
+              (amu-program-llm? mode)
+              (words-at program (+ at metal-start)
+                (mh-llm-guest-words metal-start (+ fs2-start FS2-DA-BYTES FS2-BC-BYTES FS2-KIND9-BYTES)))
               :else program)))
         (if fs35
           (let [with-fs (words-at result (+ at extra)
@@ -1243,7 +1257,8 @@
           (if (amu-program-mode? mode)
             (+ 512 (* 4 (quot (+ (- (vector-count source) 5) 3) 4))
               (if (amu-program-fs35? mode) FS35-BYTES 0)
-              (if (amu-program-metal? mode) METAL-BYTES 0))
+              (if (amu-program-metal? mode) METAL-BYTES 0)
+              (if (amu-program-llm? mode) LLM-ADAPTER-BYTES 0))
             (if (string=? mode "fs2-cli-stdio-general") FS35-BYTES
               (if (or (string=? mode "fs2-cli-stdio-cwd") (string=? mode "fs2-cli-stdio-read")) (+ FS35-BYTES 1024) 0)))))
         text-bytes (* 16384 (quot (+ fs2-end 16383) 16384))
@@ -1258,6 +1273,9 @@
             (and (amu-program-mode? mode)
               (let [words (vector-count (mh-result-words (mh-extra-start raw-bytes)))]
                 (or (= words 0) (> (* words 4) 512))))
+            (and (amu-program-llm? mode)
+              (let [words (vector-count (mh-llm-guest-words 0 0))]
+                (or (= words 0) (> (* words 4) LLM-ADAPTER-BYTES))))
             (and (string=? mode "fs2-cli-stdio-cwd")
               (let [words (vector-count (mh-cwd-scope-words (+ (mh-extra-start raw-bytes) FS35-BYTES) false))]
                 (or (= words 0) (> (* words 4) 1024))))
@@ -1310,11 +1328,11 @@
     (if (>= n 2816) (vector-assoc! s 3 1)
       (-> s (vector-assoc! (+ 256 n) word) (vector-assoc! 0 (+ n 1))))))
 (defn- mh-label [s :vector-i64 label :i64] :vector-i64
-  (if (or (< label 1) (> label 127) (not= (vector-at s (+ 8 label)) 0))
+  (if (or (< label 1) (> label 191) (not= (vector-at s (+ 8 label)) 0))
     (vector-assoc! s 3 1) (vector-assoc! s (+ 8 label) (+ 1 (vector-at s 0)))))
 (defn- mh-b [s :vector-i64 opcode :i64 label :i64] :vector-i64
   (let [n (vector-at s 0) f (vector-at s 1) at (+ 3072 (* f 3))]
-    (if (or (>= f 341) (< label 1) (> label 127)) (vector-assoc! s 3 1)
+    (if (or (>= f 341) (< label 1) (> label 191)) (vector-assoc! s 3 1)
       (-> s (vector-assoc! at n) (vector-assoc! (+ at 1) opcode)
             (vector-assoc! (+ at 2) label) (vector-assoc! 1 (+ f 1))
             (mh-i opcode)))))
@@ -1336,6 +1354,9 @@
 (defn- mh-ar [s :vector-i64 rd :i64 rn :i64 rm :i64 shift :i64] :vector-i64
   (mh-i s (bit-or 0x8b000000 (bit-or rd (bit-or (i64-shift-left rn 5)
          (bit-or (i64-shift-left rm 16) (i64-shift-left shift 10)))))))
+(defn- mh-subr [s :vector-i64 rd :i64 rn :i64 rm :i64] :vector-i64
+  (mh-i s (bit-or 0xcb000000 (bit-or rd
+    (bit-or (i64-shift-left rn 5) (i64-shift-left rm 16))))))
 (defn- mh-ldr [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
   (mh-i s (bit-or 0xf9400000 (bit-or rd (bit-or (i64-shift-left rn 5) (i64-shift-left (quot offset 8) 10))))))
 (defn- mh-str [s :vector-i64 rd :i64 rn :i64 offset :i64] :vector-i64
@@ -1399,6 +1420,132 @@
               bits (bit-and delta mask)
               word (bit-or op (if (= mask 0x03ffffff) bits (i64-shift-left bits 5)))]
           (recur (+ i 1) (vector-assoc! out pc word))))))))
+
+;; Exact bounded stream transfer. x0 is the FD, x1 the owned span,
+;; x2 its length and x3 selects send. The child has an exec-preserved
+;; deadline. sendto(MSG_NOSIGNAL) makes peer teardown an ordinary error.
+(defn- mh-llm-io [s :vector-i64 entry :i64] :vector-i64
+  (-> s
+    (mh-label entry) (mh-sub 31 31 48)
+    (mh-i 0xa9007bfd) (mh-i 0xa90153f3) (mh-i 0xa9025bf5)
+    (mh-mov 19 0) (mh-mov 20 1) (mh-mov 21 2) (mh-mov 22 3)
+    (mh-label (+ entry 1)) (mh-b 0xb4000015 (+ entry 6))
+    (mh-mov 0 19) (mh-mov 1 20) (mh-mov 2 21)
+    (mh-b 0xb4000016 (+ entry 2))
+    (mh-imm 3 524288) (mh-imm 4 0) (mh-imm 5 0) (mh-sys 133)
+    (mh-b 0x14000000 (+ entry 3))
+    (mh-label (+ entry 2)) (mh-sys 3)
+    (mh-label (+ entry 3)) (mh-b 0x54000002 (+ entry 4))
+    (mh-b 0xb4000000 (+ entry 5))
+    (mh-ar 20 20 0 0) (mh-subr 21 21 0) (mh-b 0x14000000 (+ entry 1))
+    (mh-label (+ entry 4)) (mh-cmpi 0 4) (mh-b 0x54000000 (+ entry 1))
+    (mh-b 0x14000000 (+ entry 7))
+    (mh-label (+ entry 5)) (mh-imm 0 32) (mh-b 0x14000000 (+ entry 7))
+    (mh-label (+ entry 6)) (mh-imm 0 0)
+    (mh-label (+ entry 7))
+    (mh-i 0xa9425bf5) (mh-i 0xa94153f3) (mh-i 0xa9407bfd)
+    (mh-add 31 31 48) (mh-i 0xd65f03c0)))
+
+;; Only the explicit LLM Mach-O profile contains this callback. It accepts
+;; the private byte handle ABI and copies into a temporary mapping before I/O.
+;; FD3 carries a four-byte size then a complete KLM1/KLR1 frame. No guest
+;; address goes over the stream. A missing/denied broker exits 69.
+(defn- mh-llm-guest-words [base :i64 fallback :i64] :vector-i64
+  (mh-finish (-> (mh-new base)
+    (mh-cmpi 1 11) (mh-b 0x54000000 1) (mh-jump fallback)
+    (mh-label 1) (mh-cmpi 2 12) (mh-b 0x54000001 9)
+    (mh-cmpi 3 12) (mh-b 0x54000001 9)
+    (mh-sub 31 31 80) (mh-i 0xa9007bfd) (mh-i 0xa90153f3)
+    (mh-i 0xa9025bf5) (mh-i 0xa90363f7) (mh-i 0xa9046bf9)
+    (mh-mov 19 0)
+    (mh-b 0xb4000004 9) (mh-ldr 8 19 16008) (mh-cmp 4 8) (mh-b 0x54000008 9)
+    (mh-ldr 8 19 16000) (mh-sub 9 4 1) (mh-ar 8 8 9 4)
+    (mh-ldr 21 8 0) (mh-ldr 22 8 8)
+    (mh-cmpi 22 64) (mh-b 0x54000003 9)
+    (mh-imm 8 LLM-REQUEST-BYTES) (mh-cmp 22 8) (mh-b 0x54000008 9)
+    (mh-ldr 8 19 16024) (mh-cmp 21 8) (mh-b 0x54000008 9)
+    (mh-subr 8 8 21) (mh-cmp 22 8) (mh-b 0x54000008 9)
+    (mh-ldr 8 19 16016) (mh-ar 21 8 21 3)
+    (mh-imm 0 0) (mh-imm 1 (+ LLM-REQUEST-BYTES 4))
+    (mh-imm 2 3) (mh-imm 3 4098) (mh-i 0x92800004) (mh-imm 5 0)
+    (mh-sys 197) (mh-b 0x54000002 9) (mh-mov 23 0)
+    (mh-sw 22 23 0) (mh-add 24 23 4) (mh-imm 25 0)
+    (mh-label 2) (mh-cmp 25 22) (mh-b 0x54000002 3)
+    (mh-ar 8 21 25 3) (mh-ldr 9 8 0) (mh-cmpi 9 255) (mh-b 0x54000008 9)
+    (mh-ar 8 24 25 0) (mh-sb 9 8 0) (mh-add 25 25 1) (mh-b 0x14000000 2)
+    (mh-label 3) (mh-imm 0 3) (mh-mov 1 23) (mh-add 2 22 4) (mh-imm 3 1)
+    (mh-b 0x94000000 10) (mh-b 0xb5000000 9)
+    (mh-imm 0 3) (mh-mov 1 23) (mh-imm 2 4) (mh-imm 3 0)
+    (mh-b 0x94000000 10) (mh-b 0xb5000000 9)
+    (mh-lw 22 23 0) (mh-cmpi 22 64) (mh-b 0x54000003 9)
+    (mh-imm 8 LLM-RESULT-BYTES) (mh-cmp 22 8) (mh-b 0x54000008 9)
+    (mh-imm 0 3) (mh-mov 1 24) (mh-mov 2 22) (mh-imm 3 0)
+    (mh-b 0x94000000 10) (mh-b 0xb5000000 9)
+    ;; Allocate a fresh vector only after receiving every response byte.
+    (mh-mov 0 19) (mh-mov 1 22) (mh-ldr 16 19 200) (mh-i 0xd63f0200)
+    (mh-b 0xb4000000 9) (mh-mov 25 0)
+    (mh-ldr 8 19 16000) (mh-sub 9 0 1) (mh-ar 8 8 9 4) (mh-ldr 9 8 0)
+    (mh-ldr 8 19 16016) (mh-ar 21 8 9 3) (mh-imm 20 0)
+    (mh-label 4) (mh-cmp 20 22) (mh-b 0x54000002 5)
+    (mh-ar 8 24 20 0) (mh-lb 9 8 0) (mh-ar 8 21 20 3) (mh-str 9 8 0)
+    (mh-add 20 20 1) (mh-b 0x14000000 4)
+    (mh-label 5) (mh-mov 0 23) (mh-imm 1 (+ LLM-REQUEST-BYTES 4)) (mh-sys 73)
+    (mh-imm 0 3) (mh-sys 6) (mh-mov 0 25)
+    (mh-i 0xa9446bf9) (mh-i 0xa94363f7) (mh-i 0xa9425bf5)
+    (mh-i 0xa94153f3) (mh-i 0xa9407bfd) (mh-add 31 31 80) (mh-i 0xd65f03c0)
+    (mh-label 9) (mh-imm 0 69) (mh-sys 1) (mh-i 0xd4200000)
+    (mh-llm-io 10))))
+
+;; AMUH host-only ops. The socket and PID came from the private spawn,
+;; never from an input frame. The peer is an unreaped child throughout the
+;; exchange. Host replies carry a private snapshot and the kernel CDHash.
+(defn- mh-llm-host [s :vector-i64] :vector-i64
+  (-> s
+    (mh-label 140) (mh-cmpi 20 7) (mh-b 0x54000001 90)
+    (mh-ldr 24 19 LLM-HOST-FD) (mh-b 0xb4000018 91)
+    (mh-ldr 8 19 LLM-HOST-PHASE) (mh-b 0xb5000008 91)
+    (mh-imm 8 1) (mh-str 8 19 LLM-HOST-PHASE) (mh-sub 24 24 1)
+    (mh-mov 0 24) (mh-add 1 23 608) (mh-imm 2 4) (mh-imm 3 0)
+    (mh-b 0x94000000 150) (mh-b 0xb5000000 92)
+    (mh-lw 26 23 608) (mh-cmpi 26 64) (mh-b 0x54000003 90)
+    (mh-imm 8 LLM-REQUEST-BYTES) (mh-cmp 26 8) (mh-b 0x54000008 90)
+    (mh-mov 0 24) (mh-add 1 22 21) (mh-mov 2 26) (mh-imm 3 0)
+    (mh-b 0x94000000 150) (mh-b 0xb5000000 92)
+    (mh-ldr 0 19 LLM-HOST-PID) (mh-imm 1 0)
+    (mh-add 2 23 616) (mh-imm 3 4) (mh-sys 169) (mh-b 0x54000002 92)
+    (mh-lw 8 23 616) (mh-imm 9 1) (mh-and 8 8 9) (mh-b 0xb4000008 91)
+    (mh-ldr 0 19 LLM-HOST-PID) (mh-imm 1 5)
+    (mh-add 2 22 1) (mh-imm 3 20) (mh-sys 169) (mh-b 0x54000002 92)
+    (mh-add 25 26 21) (mh-b 0x14000000 95)
+    (mh-label 142) (mh-ldr 24 19 LLM-HOST-FD) (mh-b 0xb4000018 91)
+    (mh-ldr 8 19 LLM-HOST-PHASE) (mh-cmpi 8 2) (mh-b 0x54000001 91)
+    (mh-sub 26 20 7) (mh-imm 8 LLM-RESULT-BYTES) (mh-cmp 26 8) (mh-b 0x54000008 90)
+    (mh-imm 8 3) (mh-str 8 19 LLM-HOST-PHASE) (mh-sub 24 24 1)
+    (mh-sw 26 23 608) (mh-mov 0 24) (mh-add 1 23 608) (mh-imm 2 4) (mh-imm 3 1)
+    (mh-b 0x94000000 150) (mh-b 0xb5000000 92)
+    (mh-mov 0 24) (mh-add 1 21 7) (mh-mov 2 26) (mh-imm 3 1)
+    (mh-b 0x94000000 150) (mh-b 0xb5000000 92) (mh-b 0x14000000 56)
+    (mh-label 144) (mh-cmpi 20 7) (mh-b 0x54000001 90)
+    (mh-ldr 24 19 LLM-HOST-FD) (mh-b 0xb4000018 91)
+    (mh-ldr 26 19 LLM-HOST-PID)
+    (mh-str 31 19 LLM-HOST-FD) (mh-str 31 19 LLM-HOST-PID)
+    (mh-str 31 19 LLM-HOST-PHASE)
+    (mh-ldr 0 19 LLM-HOST-DEADLINE) (mh-str 31 19 LLM-HOST-DEADLINE)
+    (mh-sub 0 0 1) (mh-sys 6)
+    (mh-sub 0 24 1) (mh-sys 6) (mh-b 0x14000000 64)
+    ;; Consume one authorization immediately before provider dispatch.
+    ;; Zero-timeout kevent polls the same monotonic one-shot timer that
+    ;; was started before fork, including the time spent validating bytes.
+    (mh-label 145) (mh-cmpi 20 7) (mh-b 0x54000001 90)
+    (mh-ldr 8 19 LLM-HOST-PHASE) (mh-cmpi 8 1) (mh-b 0x54000001 91)
+    (mh-ldr 0 19 LLM-HOST-DEADLINE) (mh-b 0xb4000000 91)
+    (mh-sub 0 0 1) (mh-imm 1 0) (mh-imm 2 0)
+    (mh-add 3 23 2048) (mh-imm 4 1) (mh-add 5 23 2080)
+    (mh-str 31 5 0) (mh-str 31 5 8) (mh-sys 363) (mh-b 0x54000002 92)
+    (mh-b 0xb5000000 146)
+    (mh-imm 8 2) (mh-str 8 19 LLM-HOST-PHASE) (mh-b 0x14000000 56)
+    (mh-label 146) (mh-imm 0 60) (mh-b 0x14000000 92)
+    (mh-llm-io 150)))
 
 ;; Diagnostic opt-in wire 41 provider for fs2-cli-stdio-read only. Empty
 ;; request reads through EOF, bounded to 1 MiB; decimal requests read at most
@@ -1622,7 +1769,11 @@
     (mh-cmpi 8 6) (mh-b 0x54000000 53)
     (mh-cmpi 8 7) (mh-b 0x54000000 54)
     (mh-cmpi 8 8) (mh-b 0x54000000 55)
-    (mh-cmpi 8 10) (mh-b 0x54000000 57) (mh-b 0x14000000 90)
+    (mh-cmpi 8 10) (mh-b 0x54000000 57)
+    (mh-cmpi 8 11) (mh-b 0x54000000 140)
+    (mh-cmpi 8 12) (mh-b 0x54000000 142)
+    (mh-cmpi 8 13) (mh-b 0x54000000 144)
+    (mh-cmpi 8 14) (mh-b 0x54000000 145) (mh-b 0x14000000 90)
     ;; INFO: actual executable vnode path, cwd and 128 bits of kernel entropy.
     (mh-label 10) (mh-cmpi 20 7) (mh-b 0x54000001 90)
     (mh-sys 20) (mh-mov 1 0) (mh-imm 0 2) (mh-imm 2 11)
@@ -1726,11 +1877,15 @@
     (mh-lb 0 21 7) (mh-lb 8 21 8) (mh-ar 0 0 8 8)
     (mh-imm 1 1) (mh-imm 2 0) (mh-sys 92) (mh-b 0x54000002 92)
     (mh-sb 0 22 1) (mh-imm 25 2) (mh-b 0x14000000 95)
-    ;; EXEC: mode (0 guest, 1 compiler FD3, 2 signing), argc (1..64),
+    ;; EXEC: mode (0 guest, 1 compiler, 2 signing, 3..7 broker guest
+    ;; with a one- to five-second deadline), argc (1..64),
     ;; cwd, capture-output-or-empty, executable, exactly argc argv fields.
     (mh-label 60) (mh-cmpi 20 10) (mh-b 0x54000003 90)
     (mh-imm 8 65536) (mh-cmp 20 8) (mh-b 0x54000008 90)
-    (mh-lb 8 21 7) (mh-cmpi 8 2) (mh-b 0x54000008 91) (mh-str 8 23 512)
+    (mh-lb 8 21 7) (mh-cmpi 8 7) (mh-b 0x54000008 91) (mh-str 8 23 512)
+    (mh-cmpi 8 3) (mh-b 0x54000003 126)
+    (mh-ldr 9 19 LLM-HOST-PID) (mh-b 0xb5000009 91)
+    (mh-label 126)
     (mh-lb 8 21 8) (mh-cmpi 8 1) (mh-b 0x54000003 90)
     (mh-cmpi 8 64) (mh-b 0x54000008 90) (mh-str 8 23 520)
     (mh-add 26 21 9) (mh-b 0x94000000 23)
@@ -1758,12 +1913,36 @@
     (mh-mov 26 0) (mh-mov 0 25) (mh-sys 6) (mh-mov 25 26)
     (mh-mov 0 25) (mh-imm 1 384) (mh-sys 124) (mh-b 0x54000002 68)
     (mh-str 25 23 560)
-    (mh-label 63) (mh-sys 2) (mh-b 0x54000002 68)
+    (mh-label 63) (mh-str 31 23 624)
+    (mh-ldr 8 23 512) (mh-cmpi 8 3) (mh-b 0x54000003 127)
+    (mh-imm 0 1) (mh-imm 1 1) (mh-imm 2 0) (mh-add 3 23 608)
+    (mh-sys 135) (mh-b 0x54000002 68)
+    (mh-lw 8 23 608) (mh-cmpi 8 3) (mh-b 0x54000003 129)
+    (mh-lw 8 23 612) (mh-cmpi 8 3) (mh-b 0x54000003 129)
+    ;; Parent's one-shot deadline starts before the guest can send a frame.
+    ;; Darwin kevent: ident, EVFILT_TIMER / EV_ADD|EV_ONESHOT, NOTE_SECONDS,
+    ;; data (seconds), udata. The kernel closes the descriptor on exec.
+    (mh-sys 362) (mh-b 0x54000002 130)
+    (mh-add 8 0 1) (mh-str 8 23 624)
+    (mh-add 1 23 2048) (mh-imm 8 1) (mh-str 8 1 0)
+    (mh-imm 8 0x0011fff9) (mh-sw 8 1 8)
+    (mh-imm 8 1) (mh-sw 8 1 12)
+    (mh-ldr 8 23 512) (mh-sub 8 8 2) (mh-str 8 1 16) (mh-str 31 1 24)
+    (mh-imm 2 1) (mh-imm 3 0) (mh-imm 4 0) (mh-imm 5 0)
+    (mh-sys 363) (mh-b 0x54000002 130)
+    (mh-label 127) (mh-sys 2) (mh-b 0x54000002 130)
     ;; XNU arm64 returns x1=1 in the child, x1=0 in the parent.
     (mh-b (bit-or 0xb5000000 1) 70) (mh-mov 26 0)
     (mh-mov 0 24) (mh-sys 6)
-    (mh-cmpi 25 0) (mh-b 0x5400000b 64)
+    (mh-cmpi 25 0) (mh-b 0x5400000b 128)
     (mh-mov 0 25) (mh-sys 6)
+    (mh-label 128)
+    (mh-ldr 8 23 512) (mh-cmpi 8 3) (mh-b 0x54000003 64)
+    (mh-str 26 19 LLM-HOST-PID) (mh-str 31 19 LLM-HOST-PHASE)
+    (mh-ldr 8 23 624) (mh-str 8 19 LLM-HOST-DEADLINE)
+    (mh-lw 8 23 608) (mh-add 8 8 1) (mh-str 8 19 LLM-HOST-FD)
+    (mh-lw 0 23 612) (mh-sys 6)
+    (mh-imm 8 0) (mh-imm 9 0) (mh-b 0x14000000 69)
     (mh-label 64) (mh-mov 0 26) (mh-add 1 23 576)
     (mh-imm 2 0) (mh-imm 3 0) (mh-sys 7) (mh-b 0x54000003 65)
     (mh-cmpi 0 4) (mh-b 0x54000000 64) (mh-b 0x14000000 92)
@@ -1774,6 +1953,14 @@
     (mh-label 67) (mh-imm 8 124)
     (mh-label 69) (mh-sb 31 22 0) (mh-sb 8 22 1) (mh-sb 9 22 2)
     (mh-imm 25 3) (mh-b 0x14000000 95)
+    (mh-label 129) (mh-imm 0 22)
+    (mh-label 130)
+    (mh-ldr 8 23 512) (mh-cmpi 8 3) (mh-b 0x54000003 68)
+    (mh-str 0 23 264) (mh-lw 0 23 608) (mh-sys 6)
+    (mh-lw 0 23 612) (mh-sys 6)
+    (mh-ldr 0 23 624) (mh-b 0xb4000000 134)
+    (mh-sub 0 0 1) (mh-sys 6)
+    (mh-label 134) (mh-ldr 0 23 264)
     (mh-label 68) (mh-str 0 23 256)
     (mh-cmpi 25 0) (mh-b 0x5400000b 26) (mh-mov 0 25) (mh-sys 6)
     (mh-label 26) (mh-ldr 0 23 256) (mh-b 0x14000000 93)
@@ -1791,11 +1978,19 @@
     (mh-i 0xb9400108) (mh-cmpi 8 3) (mh-b 0x54000003 73)
     (mh-cmp 8 24) (mh-b 0x54000000 73)
     (mh-cmp 8 25) (mh-b 0x54000000 73)
+    (mh-ldr 9 23 512) (mh-cmpi 9 3) (mh-b 0x54000003 131)
+    (mh-lw 9 23 612) (mh-cmp 8 9) (mh-b 0x54000000 73)
+    (mh-label 131)
     (mh-mov 0 8) (mh-sys 6)
     (mh-label 73) (mh-add 27 27 8) (mh-b 0x14000000 71)
     (mh-label 72) (mh-ldr 8 23 512) (mh-cmpi 8 1) (mh-b 0x54000001 74)
     (mh-mov 0 24) (mh-imm 1 3) (mh-sys 90) (mh-b 0x54000002 89)
     (mh-label 74) (mh-mov 0 24) (mh-sys 6)
+    (mh-ldr 8 23 512) (mh-cmpi 8 3) (mh-b 0x54000003 132)
+    (mh-lw 0 23 612) (mh-cmpi 0 3) (mh-b 0x54000000 132)
+    (mh-imm 1 3) (mh-sys 90) (mh-b 0x54000002 89)
+    (mh-lw 0 23 612) (mh-sys 6)
+    (mh-label 132)
     (mh-cmpi 25 0) (mh-b 0x5400000b 75)
     (mh-mov 0 25) (mh-imm 1 1) (mh-sys 90) (mh-b 0x54000002 89)
     (mh-mov 0 25) (mh-sys 6)
@@ -1817,7 +2012,10 @@
     (mh-imm 0 2) (mh-add 1 23 656) (mh-imm 2 0) (mh-sys 48) (mh-b 0x54000002 89)
     (mh-str 31 23 672) (mh-str 31 23 680) (mh-str 31 23 696)
     (mh-ldr 8 23 512) (mh-b (bit-or 0xb4000000 8) 77)
-    (mh-cmpi 8 1) (mh-b 0x54000000 78) (mh-imm 8 30) (mh-b 0x14000000 79)
+    (mh-cmpi 8 1) (mh-b 0x54000000 78)
+    (mh-cmpi 8 2) (mh-b 0x54000001 133)
+    (mh-imm 8 30) (mh-b 0x14000000 79)
+    (mh-label 133) (mh-sub 8 8 2) (mh-b 0x14000000 79)
     (mh-label 77) (mh-imm 8 5) (mh-b 0x14000000 79)
     (mh-label 78) (mh-imm 8 120)
     (mh-label 79) (mh-str 8 23 688)
@@ -1866,6 +2064,7 @@
     (mh-label 98) (mh-imm 0 2) (mh-b (bit-or 0x10000000 1) 115)
     (mh-imm 2 (string-length "amu: EHOST invalid host ABI or exhausted buffer\n"))
     (mh-sys 4) (mh-imm 0 70) (mh-sys 1) (mh-i 0xd4200000)
+    (mh-llm-host)
     (mh-label 110) (mh-text ".")
     (mh-label 111) (mh-text "PATH=/usr/bin:/bin")
     (mh-label 112) (mh-text "LANG=C")

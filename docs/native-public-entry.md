@@ -45,8 +45,9 @@ flags, incompatible main ABI and existing output paths refuse. Import/project
 CLI parity, full Darwin runtime and independent-user release remain open.
 
 Single-source wire-11 guests can be compiled with the exact LLM v1 schemas.
-The ordinary runtime refuses their provider calls. See the
-[native LLM wire contract](native-llm-wire-v1.md).
+The `amu-program-llm-v1` profile and `run-llm PROGRAM --grant FILE` opt in to
+the scoped synthetic Darwin broker. Ordinary `run` supplies no provider.
+[Native LLM wire contract](native-llm-wire-v1.md)
 
 Native Darwin ABI provenance: Apple's [syscall declarations](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/syscalls.master),
 [process information implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/proc_info.c),

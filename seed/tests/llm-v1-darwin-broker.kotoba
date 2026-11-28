@@ -1,0 +1,30 @@
+(ns llm.broker-fixture
+  (:export [main])
+  (:schemas
+   {:kotoba.llm/generate-request
+    [:record :kotoba.llm/generate-request
+     [[:model :keyword] [:system :string] [:prompt :string]
+      [:max-output-tokens :i64] [:temperature-milli :i64]]]
+    :kotoba.llm/result
+    [:variant :kotoba.llm/result
+     [[:ok [:record :kotoba.llm/completion
+             [[:text :string] [:finish-reason :keyword]
+              [:usage [:record :kotoba.llm/usage
+                       [[:input-tokens :i64] [:output-tokens :i64]]]]]]]
+      [:error [:record :kotoba.llm/error
+                [[:code :keyword] [:message :string] [:retryable :bool]]]]]]}))
+
+(defn main [] :i64
+  (let [request (record-new [:ref :kotoba.llm/generate-request]
+                  :synthetic/model "fixture system" "ok" 42 125)
+        result (typed-cap-call :llm/generate
+                 [:ref :kotoba.llm/generate-request] [:ref :kotoba.llm/result] request)]
+    (match-variant result [:ref :kotoba.llm/result]
+      (:ok completion
+        (if (and (string=? (:text completion) "fixture answer")
+                 (= (:finish-reason completion) :synthetic/stop)
+                 (= (:input-tokens (:usage completion)) 7)
+                 (= (:output-tokens (:usage completion)) 1)) 101 1))
+      (:error failure
+        (if (and (= (:code failure) :synthetic/failure)
+                 (string=? (:message failure) "fixture error") (:retryable failure)) 202 2)))))

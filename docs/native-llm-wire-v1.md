@@ -66,18 +66,64 @@ admission must derive the requirement from the checked source and verify the
 complete artifact. A matching byte sequence in a guest literal conveys no
 authority.
 
-The shipped Darwin callback traps on kind 12. The guest decoder also traps
-when the frame is invalid, before exposing a nominal result. Public
-`amu run` retains its five-second deadline and normal descriptor closure.
-The diagnostic codec harness runs separately under its own timeout.
+## Scoped Darwin execution
 
-The next Darwin integration is a scoped launcher and broker. The launcher
-must match an independent runtime grant to the verified artifact hash,
-schema digest, profile, provider and endpoint. The broker must compare the
-full model spelling, validate complete request bounds, and reserve budget
-before calling the provider. Denial, mismatch, absent provider and exhausted
-budget must yield zero provider calls. Once a provider is installed, test
-both result arms and verify that invalid results publish no guest value.
+Use the `amu-program-llm-v1` profile for a single-source KSL1 program with
+an exported zero-argument `main`. `amu run-llm PROGRAM --grant FILE` accepts
+a separate grant from the caller. The launcher uses the SHA-256 of the bytes
+read from `PROGRAM`, checks their embedded source with the pinned compiler,
+and rebuilds the signed image in private staging with the pinned packager.
+The complete rebuilt image must match the expected SHA-256. Before the
+broker dispatches, it also checks the kernel's signed-process status and
+CDHash for the running child against the SHA-256 CodeDirectory of that
+rebuilt image. The rebuilt image is the one passed to the child process.
+
+KLG1 is a grant file with the following fields in order, one per line,
+terminated by a newline. This example grants the synthetic provider a
+five-second window and at most 42 output tokens for the exact artifact.
+The caller obtains the digest from the signed `.macho` produced by compile.
+
+```sh
+out=$(mktemp -d)
+bin/amu compile seed/tests/llm-v1-darwin-broker.kotoba \
+  --runtime-profile amu-program-llm-v1 -o "$out/guest.macho"
+artifact=$(shasum -a 256 "$out/guest.macho" | cut -d ' ' -f 1)
+cat > "$out/guest.grant" <<EOF
+KLG1
+artifact=$artifact
+wire=11
+schema=768859620bef185169b794b3ca1dbabb0de8e96186c61e698e61418afd27a034
+profile=amu-program-llm-v1
+provider=synthetic-v1
+endpoint=local:wire11-fixture
+model=:synthetic/model
+seconds=5
+tokens=42
+EOF
+bin/amu run-llm "$out/guest.macho" --grant "$out/guest.grant"
+```
+
+The launcher opens a private, synchronous socket pair for this run. The
+guest receives its peer at FD 3 and the broker owns the other peer. Each
+direction carries a four-byte little-endian frame length and that many bytes.
+The broker copies the request into its own bounded storage and validates the
+complete snapshot, exact model spelling and requested output tokens. It
+checks its monotonic deadline and consumes its dispatch slot before calling
+the installed provider. The grant permits one call in a window of one to
+five seconds and a token budget of zero to 4096. A zero budget admits no
+request. There is no environment-based provider selection.
+
+The broker validates the full response, including its output-token count,
+before sending it. The guest reads the complete response, copies it into a
+fresh arena byte value, closes its peer, and decodes the nominal result.
+Malformed frames expose no nominal value. Missing or denied grants and
+unavailable transport refuse with exit 69. A child deadline expires with
+exit 124. The broker closes its descriptors and reaps the child. Ordinary
+`amu run` keeps its five-second deadline and supplies no broker descriptor.
+
+The only installed provider is the deterministic `synthetic-v1` fixture.
+The `local:wire11-fixture` endpoint identifies that fixture in the grant.
+The broker can exercise both result arms without an external service.
 The ELF/CPL3 host binding remains KOTOBA-423.
 
 ## Reproduce the diagnostic
@@ -89,9 +135,24 @@ compiler=seed/bootstrap/aarch64-macos/amu-full-root.macho
 python3 scripts/seed/check_llm_v1_checker_macos.py --wire11 \
   --image "$compiler" --expected-image-sha256 "$(shasum -a 256 "$compiler" | cut -d ' ' -f 1)" \
   --output "$(mktemp -d)/wire11"
+basilisp run -p scripts/seed scripts/seed/check-macos-llm-broker.cljc -- \
+  --output "$(mktemp -d)/broker"
 ```
 
-The receipt reports checker controls, reproducible containers, native codec
-execution, and the packaged guest's ungranted refusal separately. Provider
-execution and a live Itonami turn require the scoped broker and an approved
-Murakumo artifact and endpoint. [Amu #1901](https://github.com/kotoba-lang/amu/issues/1901)
+The wire receipt reports checker controls, reproducible containers, native
+codec execution and ungranted refusal. The broker receipt reports the signed
+guest, launcher, compiler and packager digests, both nominal results and
+provider calls for each refusal. The synthetic fixture exercises the native
+broker independently of live model qualification.
+
+For a locked KSL2 project, start with `bin/amu check ENTRY.kotoba
+--source-lock FILE.ksl`. The next integration is to carry the checked wire-11
+requirement and canonical codec through `pj-c4` in `seed/60-proj.kotoba`, then
+use the locked bundle reconstruction in `mc-project-compile` and
+`mc-project-run-artifact` for scoped admission. The target verification is
+the same signed-image and broker gate applied to `bin/amu compile
+ENTRY.kotoba --source-lock FILE.ksl --runtime-profile amu-program-llm-v1
+-o PROGRAM` and `bin/amu run-llm PROGRAM --grant FILE`. Those scoped project
+commands still require implementation. Itonami's pinned KSL2 lane and the
+approved Murakumo artifact and endpoint remain separate dependencies for a
+live turn. [Amu #1901](https://github.com/kotoba-lang/amu/issues/1901)

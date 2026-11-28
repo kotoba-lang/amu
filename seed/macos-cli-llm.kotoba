@@ -1,0 +1,181 @@
+;; Darwin single-source wire 11. All grant fields are independent of the
+;; guest source and request. The only installed broker is a local fixture.
+(def ml-profile "amu-program-llm-v1")
+(def ml-model ":synthetic/model")
+(def ml-schema "768859620bef185169b794b3ca1dbabb0de8e96186c61e698e61418afd27a034")
+
+(defn- ml-grant-prefix [digest :string] :string
+  (-> "KLG1\nartifact=" (string-concat digest) (string-concat "\nwire=11\nschema=")
+      (string-concat ml-schema) (string-concat "\nprofile=") (string-concat ml-profile)
+      (string-concat "\nprovider=synthetic-v1\nendpoint=local:wire11-fixture\nmodel=")
+      (string-concat ml-model) (string-concat "\nseconds=")))
+
+(defn- ml-grant [file :vector-i64 digest :string] :vector-i64
+  (let [prefix (hc-bytes (ml-grant-prefix digest)) at (vector-count prefix)
+        end (- (vector-count file) 1)
+        token-start (+ at 9) token-label (hc-bytes "\ntokens=")]
+    (if (or (< end (+ token-start 1)) (> end (+ token-start 4))
+            (not= (vector-at file end) 10)
+            (not (loop [i 0]
+                   (cond (= i at) true (not= (vector-at file i) (vector-at prefix i)) false
+                         :else (recur (+ i 1)))))
+            (not (loop [i 0]
+                   (cond (= i 8) true
+                         (not= (vector-at file (+ at 1 i)) (vector-at token-label i)) false
+                         :else (recur (+ i 1))))))
+      []
+      (let [seconds (- (vector-at file at) 48)
+            ;; One second digit, LF, "tokens=", then canonical decimal.
+            tokens (loop [i token-start n 0]
+                     (if (= i end) n
+                       (let [digit (- (vector-at file i) 48)]
+                         (if (or (< digit 0) (> digit 9)) -1
+                           (recur (+ i 1) (+ (* n 10) digit))))))]
+        (if (and (llmw-in-range? seconds 1 5) (llmw-in-range? tokens 0 4096)
+                 (or (= (+ token-start 1) end) (not= (vector-at file token-start) 48)))
+          [seconds tokens] [])))))
+
+(defn- ml-be32 [v :vector-i64 at :i64] :i64
+  (loop [i 0 n 0]
+    (if (= i 4) n (recur (+ i 1) (+ (* n 256) (vector-at v (+ at i)))))))
+
+(defn- ml-cd-slot [v :vector-i64 base :i64 end :i64] :string
+  (let [length (ml-be32 v (+ base 4)) count (ml-be32 v (+ base 8))]
+    (if (or (not= (ml-be32 v base) 0xfade0cc0) (> length (- end base))
+            (> count 16) (< length (+ 12 (* count 8))))
+      ""
+      (loop [i 0]
+        (if (= i count) ""
+          (let [at (+ base 12 (* i 8)) kind (ml-be32 v at)]
+            (if (not= kind 0) (recur (+ i 1))
+              (let [off (ml-be32 v (+ at 4)) cd (+ base off)]
+                (if (or (< off (+ 12 (* count 8))) (> off (- length 44))) ""
+                  (let [size (ml-be32 v (+ cd 4))]
+                    (if (and (= (ml-be32 v cd) 0xfade0c02) (>= size 44)
+                             (<= size (- length off)) (= (ml-be32 v (+ cd 32)) base)
+                             (= (vector-at v (+ cd 36)) 32) (= (vector-at v (+ cd 37)) 2))
+                      (string-substring (sh-bytes (hc-slice v cd size)) 0 40) "")))))))))))
+
+;; Parse the primary SHA-256 CodeDirectory from the same verified signed
+;; snapshot whose full digest the grant pins. The kernel returns its hash
+;; for the running child after it sends the request.
+(defn- ml-cdhash [v :vector-i64] :string
+  (let [n (vector-count v)]
+    (if (or (< n 32) (not= (mc-u64 v 0) 0x0100000cfeedfacf)) ""
+      (let [bytes (bit-and (mc-u64 v 16) 4294967295)
+            end (+ 32 (u64-shift-right (mc-u64 v 16) 32))]
+        (if (or (> bytes 32) (> end n)) ""
+          (loop [i 0 at 32]
+            (if (or (= i bytes) (> (+ at 8) end)) ""
+              (let [word (mc-u64 v at)
+                    command (bit-and word 4294967295) size (u64-shift-right word 32)]
+                (cond (or (< size 8) (not= (bit-and size 7) 0) (> (+ at size) end)) ""
+                      (= command 29)
+                      (if (not= size 16) ""
+                        (let [location (mc-u64 v (+ at 8))
+                              start (bit-and location 4294967295)
+                              length (u64-shift-right location 32)]
+                          (if (and (>= start end) (>= length 12) (<= (+ start length) n))
+                            (ml-cd-slot v start (+ start length)) "")))
+                      :else (recur (+ i 1) (+ at size)))))))))))
+
+(defn- ml-peer-hash [reply :vector-i64] :string
+  (loop [i 1 out ""]
+    (if (= i 21) out
+      (let [b (vector-at reply i)]
+        (recur (+ i 1) (-> out (string-concat (hc-hex-digit (quot b 16)))
+                          (string-concat (hc-hex-digit (rem b 16)))))))))
+
+;; This deterministic fixture is the only provider on this route. It sees
+;; the checked snapshot and has no endpoint, filesystem, or network calls.
+(defn- ml-provider [request [:ref :kotoba.llm/generate-request]] :bytes
+  (let [prompt (:prompt request) tokens (:max-output-tokens request)]
+    (cond (string=? prompt "malformed-response") (string-to-utf8 "invalid KLR1")
+          (string=? prompt "error")
+          (llmw-encode-result
+            (variant-new [:ref :kotoba.llm/result] :error
+              (record-new [:ref :kotoba.llm/error] :synthetic/failure "fixture error" true))
+            tokens llmw-text-limit)
+          :else
+          (llmw-encode-result
+            (variant-new [:ref :kotoba.llm/result] :ok
+              (record-new [:ref :kotoba.llm/completion] "fixture answer" :synthetic/stop
+                (record-new [:ref :kotoba.llm/usage] 7 1)))
+            tokens llmw-text-limit))))
+
+;; -2 expired, -1 refused before dispatch, 0 called but invalid/undelivered,
+;; 1 called and delivered. A single exchange reserves the request's full
+;; output token allowance and consumes the one-use grant before calling.
+(defn- ml-exchange [expected :string budget :i64] :i64
+  (let [reply (hc-call 11 []) n (vector-count reply)]
+    (if (or (< n 85) (not (hc-ok? reply)) (not (string=? (ml-peer-hash reply) expected))) -1
+      (let [frame (bytes-from-vector-i64 (hc-slice reply 21 (- n 21)))]
+        (option-match [:option [:ref :kotoba.llm/generate-request]] (llmw-decode-request frame)
+          -1
+          request (let [tokens (:max-output-tokens request) capacity (llmw-u32 frame 36)
+                        spelling (llmw-text-at frame 64 (llmw-u32 frame 12))]
+                    (if (or (> tokens budget) (not (string=? spelling ml-model))) -1
+                      (let [permit (hc-call 14 [])]
+                        (if (not (hc-ok? permit)) (if (= (hc-errno permit) 60) -2 -1)
+                          (let [response (ml-provider request)]
+                            (if (and (option-some?-of [:option [:ref :kotoba.llm/result]]
+                                       (llmw-decode-result response tokens capacity))
+                                     (hc-ok? (hc-call 12 (vector-i64-from-bytes response))))
+                              1 0)))))))))))
+
+(defn- ml-count [calls :i64] :i64
+  (hc-err (if (= calls 0) "amu: wire11 provider-calls=0\n" "amu: wire11 provider-calls=1\n")))
+
+(defn- ml-refuse [message :string code :i64] :i64
+  (let [reported (ml-count 0)] (mc-error message code)))
+
+(defn- ml-run-child [image :string dir :string expected :string grant :vector-i64] :i64
+  (let [spawn (hc-spawn (+ 2 (vector-at grant 0)) dir "" image 1 (mc-argv "amu-program"))]
+    (if (not= (mc-exit spawn) 0) (ml-refuse "ELLMBROKER cannot start verified guest" 69)
+      (let [exchange (ml-exchange expected (vector-at grant 1))
+            done (mc-exit (hc-call 13 []))
+            reported (ml-count (if (< exchange 0) 0 1))]
+        (cond (or (= done 124) (= exchange -2)) (mc-error "ETIME wire11 guest exceeded the grant deadline" 124)
+              (< exchange 0) (mc-error "ELLMBROKER request or running artifact refused" 69)
+              (= exchange 0) (mc-error "ELLMBROKER malformed or unavailable provider response" 69)
+              :else done)))))
+
+(defn- ml-ready [source :vector-i64 digest :string grant :vector-i64
+                dir :string compiler :string packager :string] :i64
+  (let [lock (mc-stage-single dir source)]
+    (if (= (vector-count lock) 0) (ml-refuse "EHOST cannot stage private source snapshot" 70)
+      (let [status (mc-compile dir compiler packager (sh-bytes lock) ml-profile)]
+        (if (not= status 0) (let [reported (ml-count 0)] status)
+          (let [image (mc-join dir "program.macho") read (hc-read image)
+                signed (if (hc-ok? read) (mc-read-data read) [])]
+            (if (or (= (vector-count signed) 0) (not (string=? (sh-bytes signed) digest)))
+              (ml-refuse "EARTIFACT signed guest differs from the granted build" 69)
+              (let [cdhash (ml-cdhash signed)]
+                (if (= (string-length cdhash) 40) (ml-run-child image dir cdhash grant)
+                  (ml-refuse "EARTIFACT expected a bounded SHA-256 CodeDirectory" 69))))))))))
+
+(defn- ml-work [program :string grant-path :string info :vector-i64] :i64
+  (let [cwd (hc-info-cwd info) root (mc-parent (hc-info-exe info))
+        compiler (mc-join root "amu-full-root.macho") packager (mc-join root "kotoba-packager-root.macho")
+        program-read (hc-read (mc-absolute cwd program))
+        grant-read (hc-read (mc-absolute cwd grant-path))]
+    (cond (not (hc-ok? grant-read)) (ml-refuse "ELLMGRANT expected an independent grant" 69)
+          (not (hc-ok? program-read)) (ml-refuse "EARTIFACT expected a signed wire11 program" 69)
+          :else
+          (let [input (mc-read-data program-read) digest (sh-bytes input)
+                grant (ml-grant (mc-read-data grant-read) digest)
+                source (mc-source input true)]
+            (cond (not= (vector-count grant) 2) (ml-refuse "ELLMGRANT artifact or grant fields refused" 69)
+                  (or (= (vector-count source) 0) (> (vector-count source) 1048576))
+                  (ml-refuse "EARTIFACT expected a single-source program" 69)
+                  (not (llmw-utf8? (bytes-from-vector-i64 source) 0 (vector-count source)))
+                  (ml-refuse "EARTIFACT embedded source is not UTF-8" 69)
+                  (not (and (mc-pinned? compiler MC-COMPILER-SHA256) (mc-pinned? packager MC-PACKAGER-SHA256)))
+                  (ml-refuse "EPROVENANCE compiler or packager digest mismatch" 70)
+                  (not (mc-main-checked? (hc-text source) true))
+                  (ml-refuse "EABI expected main [] :i64 with a checked wire11 requirement" 69)
+                  :else
+                  (let [dir (string-concat "/private/tmp/amu-" (hc-info-random info))]
+                    (if (not (hc-ok? (hc-path-call 3 dir))) (ml-refuse "EHOST cannot create private work directory" 70)
+                      (let [result (ml-ready source digest grant dir compiler packager)
+                            clean (mc-clean dir)] result))))))))

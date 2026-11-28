@@ -4,7 +4,8 @@
 ;;      (SOURCE_CANDIDATE_SHA256 in the environment is the default)
 (ns check-native-identities
   (:require [basilisp.string :as str]
-            [gate-util :as u])
+            [gate-util :as u]
+            [macos-cli-build :as cli-build])
   (:import hashlib operator os pathlib sys))
 
 (defn- identity [data] (u/pydict "bytes" (python/len data) "sha256" (u/sha256-hex data)))
@@ -57,14 +58,12 @@
         (u/chk (u/deq (id-of (r (u/geti (u/geti mac role) "path"))) (subset (u/geti mac role) bytes-sha))))
       (let [core (vec (take (inc (.index (python/list paths) "seed/90-drv.kotoba")) paths))
             _ (u/chk (and (= 18 (count core)) (= 18 (count (set core))) (contains? (set core) "seed/19-decimal.kotoba")))
-            source-names (into core ["seed/macos-cli-api.kotoba" "seed/macos-cli.kotoba"])
+            source-names (into core cli-build/cli-sources)
             _ (u/chk (= (set (python/list (u/geti cli "sources"))) (set source-names)) "public Mac source recipe mismatch")]
         (doseq [name source-names]
           (u/chk (u/deq (id-of (r name)) (u/geti (u/geti cli "sources") name)) (str "public Mac source pin mismatch: " name)))
-        (let [pins (.encode (str "(def MC-COMPILER-SHA256 \"" (u/geti (u/geti mac "compiler") "sha256") "\")\n"
-                                 "(def MC-PACKAGER-SHA256 \"" (u/geti (u/geti mac "packager") "sha256") "\")\n"))
-              cli-unity (cat-bytes (concat (for [name (conj core "seed/macos-cli-api.kotoba")] (operator/add (.read_bytes (r name)) (.encode "\n")))
-                                           [pins (.encode "\n") (.read_bytes (r "seed/macos-cli.kotoba")) (.encode "\n")]))]
+        (let [pins (cli-build/cli-pins (u/geti (u/geti mac "compiler") "sha256") (u/geti (u/geti mac "packager") "sha256"))
+              cli-unity (cli-build/cli-unity-bytes root core pins)]
           (u/chk (u/deq (identity cli-unity) (u/geti cli "unity")) "public Mac unity pin mismatch"))
         (doseq [name ["amu" "kotoba" "kotoba-compiler"]]
           (let [alias (r (str "bin/" name))]
