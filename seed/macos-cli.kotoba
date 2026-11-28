@@ -118,21 +118,26 @@
   (if (> (vector-at M MM-ERR) 0) M
     (let [next (ck-run-h M S H)]
       (if (ck-hint-again? H next) (mc-checked (drv-reread next S) S H) next))))
-(defn- mc-main-abi? [original :string] :bool
+(defn- mc-main-checked? [original :string wire? :bool] :bool
   (let [S (string-concat original (ck-r6b-lib original))
         M0 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S)
         M1 (if (= (vector-at M0 MM-ERR) 0) (rd-run M0 S) M0)]
     (if (or (> (vector-at M1 MM-ERR) 0) (= (pj-needed M1 S) 1)) false
       (let [M (mc-checked (nm-run M1 S) S (ck-hint-new))
             f (if (= (vector-at M MM-ERR) 0) (pj-fn-named M S "main") 0)]
-        (and (> f 0) (= (pj-ff M f FF-KIND) FK-DEFN)
+        (and (> f 0) (or (not wire?) (drv-llm-wire? M)) (= (pj-ff M f FF-KIND) FK-DEFN)
              (= (pj-ff M f FF-NPARAMS) 0) (= (pj-ff M f FF-RTYPE) TY-I64)
              (= (pj-ff M f FF-EXPORT) 1)
              (= (pj-sf M (pj-ff M f FF-SYM) SF-ABORT) 0)
              (or (>= (+ f 1) (vector-at M MM-FN-N))
                  (not= (pj-ff M (+ f 1) FF-SYM) (pj-ff M f FF-SYM))))))))
+(defn- mc-main-abi? [original :string] :bool (mc-main-checked? original false))
 (defn- mc-lock [digest :string] :string
   (string-concat "KSL1\nentry /source.kotoba\nfile " (string-concat digest " /source.kotoba\n")))
+(defn- mc-stage-single [dir :string source :vector-i64] :vector-i64
+  (let [lock (hc-bytes (mc-lock (sh-bytes source)))
+        wrote (hc-write (mc-join dir "source.kotoba") source)]
+    (if (and (hc-ok? wrote) (hc-ok? (hc-write (mc-join dir "source.ksl") lock))) lock [])))
 (defn- mc-packager-profile [profile :string] :string
   (cond (string=? profile "amu-command") "fs2-cli-stdio-general-command"
         (string=? profile "amu-command-fs35") "fs2-cli-stdio-general"
@@ -207,10 +212,8 @@
     (if (hc-ok? (hc-write path (hc-bytes body))) 0
       (mc-error "ERECEIPT cannot create receipt (existing files are preserved)" 1))))
 (defn- mc-operation [command :string source :vector-i64 input :vector-i64 artifact :bool dir :string compiler :string packager :string profile :string output :string guest-start :i64] :i64
-  (let [lock (hc-bytes (mc-lock (sh-bytes source)))
-        wrote (hc-write (mc-join dir "source.kotoba") source)
-        locked (if (hc-ok? wrote) (hc-write (mc-join dir "source.ksl") lock) [1 22 0])]
-    (cond (not (hc-ok? locked)) (mc-error "EHOST cannot stage private source snapshot" 70)
+  (let [lock (mc-stage-single dir source)]
+    (cond (= (vector-count lock) 0) (mc-error "EHOST cannot stage private source snapshot" 70)
       (string=? command "check")
         (let [r (hc-spawn 1 dir (mc-join dir "check.log") compiler 7
           (string-concat (mc-argv "amu-bootstrap") (string-concat (mc-argv "check")
@@ -707,7 +710,7 @@
         simple-profile? (and (string=? command "compile")
           (or (= n 4) (= n 6))
           (string=? (hc-arg 2) "--runtime-profile")
-          (mc-program-profile? (hc-arg 3))
+          (or (mc-program-profile? (hc-arg 3)) (string=? (hc-arg 3) ml-profile))
           (or (= n 4) (and (= n 6)
                            (or (string=? (hc-arg 4) "-o") (string=? (hc-arg 4) "--output")))))
         simple-profile-output? (and simple-profile? (= n 6)
@@ -725,8 +728,15 @@
                      (and simple-profile-output? (= n 6)) (hc-arg 5)
                      output-flag (hc-arg 3) :else (mc-default-output source))
         guest-start (cond receipt-flag (if (= n 4) 4 5) (= n 2) 2 :else 3)]
-    (cond (or (= n 0) (string=? command "--help") (string=? command "help"))
-            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba|FILE.cljk\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n")
+    (cond (string=? command "run-llm")
+            (if (and (= n 4) (string=? (hc-arg 2) "--grant") (mc-path? source)
+                     (mc-path? (hc-arg 3)) (not (mc-ends? source ".kotoba")))
+              (let [info (hc-call 0 [])]
+                (if (hc-ok? info) (ml-work source (hc-arg 3) info)
+                  (ml-refuse "EHOST cannot resolve native host context" 70)))
+              (ml-refuse "usage: amu run-llm PROGRAM --grant FILE" 2))
+      (or (= n 0) (string=? command "--help") (string=? command "help"))
+            (hc-out "Amu native macOS ARM64\n  amu check FILE.kotoba|FILE.cljk\n  amu check ENTRY.kotoba --source-lock FILE.ksl\n  amu check ENTRY.kotoba --source-path DIR [--source-path DIR...]\n  amu compile FILE.kotoba [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-lock FILE.ksl [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu compile ENTRY.kotoba --source-path DIR [--source-path DIR...] [--runtime-profile amu-program|amu-program-fs35|amu-program-metal|amu-command|amu-command-fs35] [-o OUTPUT]\n  amu run ENTRY.kotoba --source-lock FILE.ksl [-- ARG...]\n  amu run FILE.kotoba|PROGRAM [--receipt FILE] [-- ARG...]\n  amu compile FILE.kotoba --runtime-profile amu-program-llm-v1 [-o OUTPUT]\n  amu run-llm PROGRAM --grant FILE\n")
       (and (> (mc-sp-mode command n) 0) (mc-path? source) (mc-ends? source ".kotoba"))
         (let [info (hc-call 0 [])
               mode (mc-sp-mode command n)

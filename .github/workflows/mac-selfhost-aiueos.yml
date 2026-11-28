@@ -43,6 +43,8 @@ on:
       - 'scripts/seed/check-macos-arena-scope.cljc'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check_llm_v1_checker_macos.py'
+      - 'scripts/seed/check-macos-llm-broker.cljc'
+      - 'scripts/seed/macos_cli_build.cljc'
       - 'resources/kotoba/lang/capability-catalog.edn'
       - 'resources/kotoba/lang/capability-kits/llm-v1.edn'
       - 'scripts/seed/check-js-browser.cljc'
@@ -181,6 +183,11 @@ jobs:
           python3 scripts/seed/check_llm_v1_checker_macos.py --wire11 \
             --image "$compiler" --expected-image-sha256 "$(shasum -a 256 "$compiler" | cut -d ' ' -f 1)" \
             --output "$RUNNER_TEMP/mac-llm-wire11"
+      - name: Check signed Darwin LLM guest and scoped synthetic broker
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          basilisp run -p scripts/seed scripts/seed/check-macos-llm-broker.cljc --
+          --output "$RUNNER_TEMP/mac-llm-broker"
       - name: Check candidate user-v5 ELF and slot-v4 boundaries
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -503,6 +510,7 @@ jobs:
             ${{ runner.temp }}/host-default-mac/host-default-target.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-llm-wire11/receipt.json
+            ${{ runner.temp }}/mac-llm-broker/receipt.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json
