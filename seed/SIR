@@ -161,6 +161,7 @@
   "(string-code-point-at s i)" "RT RT-STRING-CODE-POINT-AT t 2"   "(string-length s)" "RT RT-STRING-LENGTH-VIA t 1"
   "(string-concat a b)"   "RT RT-STRING-CONCAT t 2"   "(bytes-from-vector-i64 v)" "RT RT-BYTES-FROM-VECTOR t 1"
   "(typed-cap-call W R R x)" "[x -> t] CAP wire kind t"
+  "(typed-cap-call :llm/generate Request Result x)" "[evaluate x once; save token bound; encode KLM1] CAP 11 12 t+1 [decode KLR1 at t+1 against token bound at t; return exact nominal Result at t]"
   "defn f [p1..pn] body"  "FN f n nslots  [FUEL if FF-FUEL]  LABEL Lentry  [body -> 0]  RET 0  END f"}
 
  ;; R3 (2026-10-03, agent R3): values and abort. No new opcode; every R3 head lowers to CONST LGET LSET BIN CMP UN LABEL BR

@@ -212,9 +212,21 @@
   (let [n (vector-at M MM-OUT-N)]
     (out-w M (out-cs-slot) n)))
 
+;; Trailing requirement in the raw bytes extracted from a wire-11 container.
+;; The complete artifact SHA-256 is external to this note. Neither this note
+;; nor the caller's source grants any authority.
+(defn- out-llm-note [] :string
+  "\u0000AMU-LLM-REQUIREMENT-V1\nwire 11 :llm/generate\nrequest :kotoba.llm/generate-request\nresult :kotoba.llm/result\nschema-sha256 768859620bef185169b794b3ca1dbabb0de8e96186c61e698e61418afd27a034\n")
+
+(defn- out-llm-note? [M :vector-i64] :bool
+  (pos? (vector-at M (lw-llm-encoder-slot))))
+
 (defn- out-build4 [M :vector-i64] :vector-i64
-  (let [M1 (out-pool M)]
-    (if (= (out-ok M1) 1) (out-verify M1) M1)))
+  (let [M1 (out-pool M)
+        M2 (if (out-llm-note? M1)
+             (let [note (out-llm-note)] (out-put-span M1 note 0 (string-byte-length note)))
+             M1)]
+    (if (= (out-ok M2) 1) (out-verify M2) M2)))
 
 (defn- out-build3 [M :vector-i64] :vector-i64
   (let [M1 (out-code-loop (out-set-cs M) 1)]
@@ -226,7 +238,11 @@
 
 (defn- out-build [M :vector-i64 S :string] :vector-i64
   (let [M1 (out-w M MM-OUT-N 1)]
-    (out-build2 M1 S)))
+    (out-build2
+      (if (out-llm-note? M1)
+        (out-w M1 MM-CODE-BYTES (+ (vector-at M1 MM-CODE-BYTES) (string-byte-length (out-llm-note))))
+        M1)
+      S)))
 
 ;; ---- R5A (agent R5A): module blobs and the linked image (60-proj) ------------------------------------------------------
 ;; out-blob M -> M : this module's code words + pool alone into OUT (no header), the bytes 1 .. MM-OUT-N-1; MM-R0 = the length

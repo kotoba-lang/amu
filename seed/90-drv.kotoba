@@ -417,21 +417,207 @@
   (cond (> (vector-at M MM-ERR) 0) (drv-fail M path)
         (= mode 0) (let [g (drv-r5b-gate M path (vector-at M MM-CAPS))] (if (< g 0) (drv-ok M) g))
         :else (drv-c5 (lw-run M) S path out)))
-(defn- drv-c3 [M :vector-i64 S :string path :string mode :i64 out :string] :i64 (drv-c3h M S path mode out (ck-hint-new)))
+;; BEGIN LLM V1 WIRE EMBED (seed/runtime/llm-v1-wire.kotoba)
+(defn- drv-llm-wire-source [] :string
+  "
+
+;; KLM1/KLR1 v1 headers followed by their ordered payload spans. These
+;; routines consume complete byte values. The transport owns framing,
+;; artifact identity and authorization. An empty encoding or none is a
+;; refusal. Decode verifies all bounds and UTF-8 before interning keywords
+;; or constructing a nominal record or variant.
+(def llmw-header-size 64)
+(def llmw-text-limit 65536)
+(def llmw-keyword-limit 512)
+(def llmw-request-magic 827149387)
+(def llmw-result-magic 827477067)
+(def llmw-wire 11)
+(def llmw-version 1)
+
+(defn- llmw-read-le [frame :bytes at :i64 count :i64] :i64
+  (loop [i 0 value 0]
+    (if (= i count) value
+      (recur (+ i 1)
+             (bit-or value (i64-shift-left (bytes-at frame (+ at i)) (* 8 i)))))))
+
+(defn- llmw-u32 [frame :bytes at :i64] :i64 (llmw-read-le frame at 4))
+
+(defn- llmw-write-le [header :vector-i64 at :i64 count :i64 value :i64] :vector-i64
+  (loop [out header i 0]
+    (if (= i count) out
+      (recur (vector-assoc! out (+ at i) (bit-and (u64-shift-right value (* 8 i)) 255))
+             (+ i 1)))))
+
+(defn- llmw-put32 [header :vector-i64 at :i64 value :i64] :vector-i64
+  (llmw-write-le header at 4 value))
+
+(defn- llmw-header [magic :i64] :vector-i64
+  (-> (vector-alloc llmw-header-size) (llmw-put32 0 magic) (llmw-put32 4 llmw-version) (llmw-put32 8 llmw-wire)))
+
+(defn- llmw-header? [frame :bytes magic :i64] :bool
+  (and (>= (bytes-count frame) llmw-header-size)
+       (= (llmw-u32 frame 0) magic) (= (llmw-u32 frame 4) llmw-version) (= (llmw-u32 frame 8) llmw-wire)))
+
+(defn- llmw-zero-tail? [frame :bytes start :i64] :bool
+  (loop [at start]
+    (cond (= at llmw-header-size) true
+          (not= (llmw-u32 frame at) 0) false
+          :else (recur (+ at 4)))))
+
+(defn- llmw-in-range? [value :i64 low :i64 high :i64] :bool
+  (and (>= value low) (<= value high)))
+
+(defn- llmw-continuation? [frame :bytes at :i64] :bool
+  (llmw-in-range? (bytes-at frame at) 128 191))
+
+(defn- llmw-utf8-next [frame :bytes at :i64 end :i64] :i64
+  (let [lead (bytes-at frame at) left (- end at)]
+    (cond
+      (< lead 128) (+ at 1)
+      (and (>= left 2) (llmw-in-range? lead 194 223)
+           (llmw-continuation? frame (+ at 1))) (+ at 2)
+      (and (>= left 3) (llmw-in-range? lead 224 239)
+           (llmw-continuation? frame (+ at 2))
+           (let [second (bytes-at frame (+ at 1))]
+             (cond (= lead 224) (llmw-in-range? second 160 191)
+                   (= lead 237) (llmw-in-range? second 128 159)
+                   :else (llmw-in-range? second 128 191)))) (+ at 3)
+      (and (>= left 4) (llmw-in-range? lead 240 244)
+           (llmw-continuation? frame (+ at 2)) (llmw-continuation? frame (+ at 3))
+           (let [second (bytes-at frame (+ at 1))]
+             (cond (= lead 240) (llmw-in-range? second 144 191)
+                   (= lead 244) (llmw-in-range? second 128 143)
+                   :else (llmw-in-range? second 128 191)))) (+ at 4)
+      :else -1)))
+
+(defn- llmw-utf8? [frame :bytes start :i64 length :i64] :bool
+  (let [end (+ start length)]
+    (loop [at start]
+      (if (= at end) true
+        (let [next (llmw-utf8-next frame at end)]
+          (if (< next 0) false (recur next)))))))
+
+(defn- llmw-keyword-span? [frame :bytes start :i64 length :i64] :bool
+  (and (llmw-in-range? length 2 llmw-keyword-limit)
+       (= (bytes-at frame start) 58) (llmw-utf8? frame start length)))
+
+(defn- llmw-text-at [frame :bytes at :i64 length :i64] :string
+  (string-from-utf8 (bytes-slice frame at (+ at length))))
+
+(defn- llmw-keyword-at [frame :bytes at :i64 length :i64] [:option :keyword]
+  (let [text (llmw-text-at frame at length)
+        value (keyword-from-string (string-substring text 1 length))]
+    ;; The current runtime represents keywords by a bounded intern identity.
+    ;; Require the complete spelling to survive conversion.
+    (if (string=? (__r6-kwtext value) text)
+      (option-some-of [:option :keyword] value)
+      (option-none-of [:option :keyword]))))
+
+(defn- llmw-empty [] :bytes (bytes-from-vector-i64 (vector-alloc 0)))
+
+(defn- llmw-frame [h :vector-i64 a :bytes b :bytes c :bytes] :bytes
+  (bytes-concat (bytes-from-vector-i64 h) (bytes-concat a (bytes-concat b c))))
+
+(defn- llmw-encode-request [request [:ref :kotoba.llm/generate-request] capacity :i64] :bytes
+  (let [model (__r6-kwtext (:model request))
+        system (:system request) prompt (:prompt request)
+        nm (string-byte-length model) ns (string-byte-length system) np (string-byte-length prompt)
+        tokens (:max-output-tokens request) temp (:temperature-milli request)]
+    (if (and (llmw-in-range? nm 2 llmw-keyword-limit) (<= ns llmw-text-limit) (<= np llmw-text-limit)
+             (llmw-in-range? tokens 1 4096) (llmw-in-range? temp 0 2000)
+             (llmw-in-range? capacity 1 llmw-text-limit))
+      (llmw-frame (-> (llmw-header llmw-request-magic)
+                 (llmw-put32 12 nm) (llmw-put32 16 ns) (llmw-put32 20 np)
+                 (llmw-put32 24 tokens) (llmw-put32 28 temp)
+                 (llmw-put32 32 (+ nm ns np)) (llmw-put32 36 capacity))
+             (string-to-utf8 model) (string-to-utf8 system) (string-to-utf8 prompt))
+      (llmw-empty))))
+
+(defn- llmw-decode-completion [input :bytes nt :i64 nf :i64 used-in :i64 used-out :i64]
+  [:option [:ref :kotoba.llm/result]]
+  (option-match [:option :keyword] (llmw-keyword-at input (+ llmw-header-size nt) nf)
+    (option-none-of [:option [:ref :kotoba.llm/result]])
+    finish (option-some-of [:option [:ref :kotoba.llm/result]]
+             (variant-new [:ref :kotoba.llm/result] :ok
+               (record-new [:ref :kotoba.llm/completion] (llmw-text-at input llmw-header-size nt) finish
+                 (record-new [:ref :kotoba.llm/usage] used-in used-out))))))
+
+(defn- llmw-decode-error [input :bytes nc :i64 nm :i64 retry :i64] [:option [:ref :kotoba.llm/result]]
+  (option-match [:option :keyword] (llmw-keyword-at input llmw-header-size nc)
+    (option-none-of [:option [:ref :kotoba.llm/result]])
+    code (option-some-of [:option [:ref :kotoba.llm/result]]
+           (variant-new [:ref :kotoba.llm/result] :error
+             (record-new [:ref :kotoba.llm/error] code (llmw-text-at input (+ llmw-header-size nc) nm) (= retry 1))))))
+
+(defn- llmw-decode-result [input :bytes tokens :i64 capacity :i64] [:option [:ref :kotoba.llm/result]]
+  (if (not (and (llmw-header? input llmw-result-magic)
+                (llmw-in-range? tokens 1 4096) (llmw-in-range? capacity 1 llmw-text-limit)
+                (llmw-zero-tail? input 56))) (option-none-of [:option [:ref :kotoba.llm/result]])
+    (let [tag (llmw-u32 input 12) nt (llmw-u32 input 16) nf (llmw-u32 input 20)
+          nc (llmw-u32 input 24) nm (llmw-u32 input 28) retry (llmw-u32 input 48)
+          used-in (llmw-read-le input 32 8) used-out (llmw-read-le input 40 8)
+          payload (llmw-u32 input 52)]
+      (if (or (not= payload (+ nt nf nc nm)) (not= (bytes-count input) (+ llmw-header-size payload)))
+        (option-none-of [:option [:ref :kotoba.llm/result]])
+        (cond
+          (and (= tag 1) (<= nt capacity) (= nc 0) (= nm 0) (= retry 0)
+               (>= used-in 0) (llmw-in-range? used-out 0 tokens)
+               (llmw-keyword-span? input (+ llmw-header-size nt) nf) (llmw-utf8? input llmw-header-size nt))
+          (llmw-decode-completion input nt nf used-in used-out)
+          (and (= tag 2) (= nt 0) (= nf 0) (= used-in 0) (= used-out 0) (<= retry 1)
+               (<= nm llmw-text-limit) (llmw-keyword-span? input llmw-header-size nc)
+               (llmw-utf8? input (+ llmw-header-size nc) nm))
+          (llmw-decode-error input nc nm retry)
+          :else (option-none-of [:option [:ref :kotoba.llm/result]]))))))
+
+(defn- llmw-guest-encode [request [:ref :kotoba.llm/generate-request]] :bytes
+  (let [input (llmw-encode-request request llmw-text-limit)]
+    (assert (> (bytes-count input) 0))
+    input))
+
+(defn- llmw-guest-decode [tokens :i64 frame :bytes] [:ref :kotoba.llm/result]
+  (let [result (llmw-decode-result frame tokens llmw-text-limit)]
+    (assert (option-some?-of [:option [:ref :kotoba.llm/result]] result))
+    (option-value-of [:option [:ref :kotoba.llm/result]] result
+      (variant-new [:ref :kotoba.llm/result] :error
+        (record-new [:ref :kotoba.llm/error] :malformed-wire-result \"\" false)))))
+")
+;; END LLM V1 WIRE EMBED
+(defn- drv-llm-wire? [M :vector-i64] :bool
+  (pos? (bit-and (vector-at M MM-CAPS) (ck-wire-bit (ck-kw-wire KW-LLM-GENERATE)))))
+(defn- drv-llm-helper [M :vector-i64 S :string name :string original-size :i64] :i64
+  (let [f (nm-sf M (ck-llm-id M S name) SF-FN)]
+    (if (and (> f 0) (= (nm-ff M f FF-KIND) FK-PRIV)
+             (>= (lw-pos M (nm-nth M (nm-ff M f FF-NODE) 1)) original-size))
+      f 0)))
+(defn- drv-llm-lowering [M :vector-i64 S :string original-size :i64] :vector-i64
+  (-> M
+      (mem-set (lw-llm-encoder-slot) (drv-llm-helper M S "llmw-guest-encode" original-size))
+      (mem-set (lw-llm-decoder-slot) (drv-llm-helper M S "llmw-guest-decode" original-size))))
 ;; R6C: a check that asks for a parameter refinement (21-check ck-hint-*) re-runs from the read with it
-(defn- drv-c3h [M :vector-i64 S :string path :string mode :i64 out :string H :vector-i64] :i64
+(defn- drv-c3h [M :vector-i64 S :string path :string mode :i64 out :string H :vector-i64
+               original-size :i64 bridge? :bool] :i64
   (if (= (vector-at M MM-ERR) 0)
-    (let [M1 (ck-run-h M S H)]
-      (if (ck-hint-again? H M1)
-        (drv-c3h (drv-reread M1 S) S path mode out H)
-        (drv-c4 M1 S path mode out)))
+    (let [M1 (ck-run-h (if bridge? (mem-set M (ck-llm-bridge-slot) 1) M) S H)]
+      (cond (ck-hint-again? H M1)
+            (drv-c3h (drv-reread M1 S) S path mode out H original-size bridge?)
+            (or (not= (vector-at M1 MM-ERR) 0) (= mode 0))
+            (drv-c4 M1 S path mode out)
+            bridge? (drv-c4 (drv-llm-lowering M1 S original-size) S path mode out)
+            (drv-llm-wire? M1)
+            (let [base (string-concat (string-substring S 0 original-size) (drv-llm-wire-source))
+                  patched (string-concat base (ck-r6b-lib base))]
+              (drv-c3h (drv-reread M1 patched) patched path mode out H original-size true))
+            :else (drv-c4 M1 S path mode out)))
     (drv-fail M path)))
 (defn- drv-reread [M :vector-i64 S :string] :vector-i64
   (let [M1 (pj-read M S)] (if (= (vector-at M1 MM-ERR) 0) (nm-run M1 S) M1)))
-(defn- drv-c2 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c3 (nm-run M S) S path mode out) (drv-fail M path)))
+(defn- drv-c2 [M :vector-i64 S :string path :string mode :i64 out :string original-size :i64] :i64
+  (if (= (vector-at M MM-ERR) 0)
+    (drv-c3h (nm-run M S) S path mode out (ck-hint-new) original-size false)
+    (drv-fail M path)))
 (defn- drv-c1 [M :vector-i64 S :string path :string mode :i64 out :string] :i64
-  (if (= (vector-at M MM-ERR) 0) (drv-c2 (rd-run M S) S path mode out) (drv-fail M path)))
+  (if (= (vector-at M MM-ERR) 0) (drv-c2 (rd-run M S) S path mode out (string-length S)) (drv-fail M path)))
 (defn- drv-c0 [S :string path :string mode :i64 out :string] :i64
   (drv-c1 (lx-run (mem-set (mem-new) MM-SRC-LEN (string-length S)) S) S path mode out))
 
@@ -621,7 +807,7 @@
              (or (= (drv-pj-has 1 (io-argc) "--source-path") 1) (= (pj-needed M1 S) 1)))
       (drv-pj-compile M1 path mode out)
       (if (and (= (drv-pj-has 1 (io-argc) "--source-lock") 1) (not (drv-single-lock? original path)))
-        (drv-fail0 E-PROJ-UNPINNED) (drv-c2 M1 S path mode out))))))
+        (drv-fail0 E-PROJ-UNPINNED) (drv-c2 M1 S path mode out (string-length original)))))))
 ;; ==== END R5A project route ===========================================================================================
 
 (defn- drv-run [path :string mode :i64 out :string] :i64
@@ -942,12 +1128,12 @@
 
 ;; the catalogue name of capability wire w
 (defn- drv-r5b-wname [w :i64] :string
-  (case w 3 ":hash/sha256" 7 ":clock/now" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
+  (case w 3 ":hash/sha256" 7 ":clock/now" 11 ":llm/generate" 33 ":env/read" 34 ":fs/browse" 35 ":fs/app-data" 37 ":io/write" 38 ":cli/args"
         39 ":io/write-error" 41 ":io/read" 42 ":gpu/compute" 20 ":process/spawn" 23 ":entropy/draw" 40 ":sys/cwd"
         43 ":net/listen" 44 ":net/accept" 45 ":net/dial" 46 ":net/read" 47 ":net/write" (mem-u2dec w)))
 ;; the wire of a capability name (with ':'), -1 when none
 (defn- drv-r5b-wire [s :string] :i64
-  (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
+  (cond (string=? s ":hash/sha256") 3 (string=? s ":clock/now") 7 (string=? s ":llm/generate") 11 (string=? s ":env/read") 33 (string=? s ":fs/browse") 34
         (string=? s ":fs/app-data") 35 (string=? s ":fs/app-data-bytes") 35 (string=? s ":io/write") 37 (string=? s ":cli/args") 38
         (string=? s ":io/write-error") 39 (string=? s ":io/read") 41 (string=? s ":gpu/compute") 42
         (string=? s ":process/spawn") 20 (string=? s ":entropy/draw") 23 (string=? s ":sys/cwd") 40

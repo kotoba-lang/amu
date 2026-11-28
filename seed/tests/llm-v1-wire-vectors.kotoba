@@ -1,0 +1,124 @@
+;; Appended to the wire codec for native execution. All fields are synthetic.
+(defn- request [system :string prompt :string tokens :i64 temp :i64] [:ref :kotoba.llm/generate-request]
+  (record-new [:ref :kotoba.llm/generate-request] :synthetic/model system prompt tokens temp))
+
+(defn- completion [text :string used :i64] [:ref :kotoba.llm/result]
+  (variant-new [:ref :kotoba.llm/result] :ok
+    (record-new [:ref :kotoba.llm/completion] text :synthetic/stop
+      (record-new [:ref :kotoba.llm/usage] 11 used))))
+
+(defn- failure [text :string retryable :bool] [:ref :kotoba.llm/result]
+  (variant-new [:ref :kotoba.llm/result] :error
+    (record-new [:ref :kotoba.llm/error] :synthetic/unavailable text retryable)))
+
+(defn- request-round-trip? [system :string prompt :string tokens :i64 temp :i64] :bool
+  (let [frame (llmw-encode-request (request system prompt tokens temp) 65536)]
+    (and (= (llmw-u32 frame 0) 827149387) (= (llmw-u32 frame 8) 11)
+         (= (llmw-u32 frame 16) (string-byte-length system))
+         (= (llmw-u32 frame 20) (string-byte-length prompt))
+         (option-match [:option [:ref :kotoba.llm/generate-request]] (llmw-decode-request frame)
+           false value (and (= (:model value) :synthetic/model)
+                            (string=? (:system value) system) (string=? (:prompt value) prompt)
+                            (= (:max-output-tokens value) tokens) (= (:temperature-milli value) temp))))))
+
+(defn- completion-round-trip? [text :string] :bool
+  (let [frame (llmw-encode-result (completion text 42) 42 65536)]
+    (and (= (llmw-u32 frame 0) 827477067) (= (llmw-u32 frame 8) 11)
+         (= (llmw-u32 frame 12) 1) (= (llmw-u32 frame 16) (string-byte-length text))
+         (option-match [:option [:ref :kotoba.llm/result]] (llmw-decode-result frame 42 65536)
+           false value (match-variant value [:ref :kotoba.llm/result]
+                         (:ok data (let [usage (:usage data)]
+                                     (and (string=? (:text data) text)
+                                          (= (:finish-reason data) :synthetic/stop)
+                                          (= (:input-tokens usage) 11) (= (:output-tokens usage) 42))))
+                         (:error data false))))))
+
+(defn- error-round-trip? [text :string retryable :bool] :bool
+  (let [frame (llmw-encode-result (failure text retryable) 42 65536)]
+    (and (= (llmw-u32 frame 12) 2) (= (llmw-u32 frame 48) (if retryable 1 0))
+         (option-match [:option [:ref :kotoba.llm/result]] (llmw-decode-result frame 42 65536)
+           false value (match-variant value [:ref :kotoba.llm/result]
+                         (:ok data false)
+                         (:error data (and (= (:code data) :synthetic/unavailable)
+                                           (string=? (:message data) text)
+                                           (= (:retryable data) retryable))))))))
+
+(defn- fill-64k [unit :string] :string
+  (loop [text unit length (string-byte-length unit)]
+    (if (= length 65536) text
+      (recur (string-concat text text) (* length 2)))))
+
+(defn- mutate [frame :bytes at :i64 value :i64] :bytes
+  (let [size (bytes-count frame)]
+    (loop [i 0 copy (vector-alloc size)]
+      (if (= i size) (bytes-from-vector-i64 copy)
+        (recur (+ i 1) (vector-assoc! copy i (if (= i at) value (bytes-at frame i))))))))
+
+(defn- request-refused? [frame :bytes] :bool
+  (not (option-some?-of [:option [:ref :kotoba.llm/generate-request]] (llmw-decode-request frame))))
+
+(defn- response-refused? [frame :bytes] :bool
+  (not (option-some?-of [:option [:ref :kotoba.llm/result]] (llmw-decode-result frame 42 65536))))
+
+(defn- invalid-request? [] :bool
+  (let [frame (llmw-encode-request (request "é" "x" 1 0) 65536)
+        system (+ 64 (llmw-u32 frame 12))
+        prompt (+ system (llmw-u32 frame 16))
+        other (llmw-encode-request (request "雪" "🧪" 1 0) 65536)
+        other-prompt (+ system (llmw-u32 other 16))]
+    (and (request-refused? (mutate frame 0 0))
+         (request-refused? (mutate frame 4 2))
+         (request-refused? (mutate frame 8 12))
+         (request-refused? (mutate frame 12 0))
+         (request-refused? (mutate frame 24 0))
+         (request-refused? (mutate frame 29 8))
+         (request-refused? (mutate frame 40 1))
+         (request-refused? (mutate frame system 192)) ; overlong
+         (request-refused? (mutate frame prompt 194)) ; truncated at the span boundary
+         (request-refused? (mutate (mutate other system 237) (+ system 1) 160)) ; surrogate
+         (request-refused? (mutate (mutate other other-prompt 244) (+ other-prompt 1) 144))
+         (request-refused? (bytes-slice frame 0 (- (bytes-count frame) 1)))
+         (request-refused? (bytes-concat frame (string-to-utf8 "a"))))))
+
+(defn- invalid-result? [] :bool
+  (let [ok (llmw-encode-result (completion "é" 42) 42 65536)
+        error (llmw-encode-result (failure "x" true) 42 65536)]
+    (and (response-refused? (mutate ok 12 3))
+         (response-refused? (mutate ok 20 0))
+         (response-refused? (mutate ok 40 43))
+         (response-refused? (mutate ok 56 1))
+         (response-refused? (mutate ok 64 192))
+         (response-refused? (mutate error 48 2))
+         (response-refused? (mutate error 24 0))
+         (response-refused? (mutate error 16 1))
+         (response-refused? (mutate error (+ 64 (llmw-u32 error 24)) 255))
+         (response-refused? (bytes-slice ok 0 (- (bytes-count ok) 1)))
+         (response-refused? (bytes-concat ok (string-to-utf8 "a"))))))
+
+(defn main [] :i64
+  (let [ascii (fill-64k "x") unicode (fill-64k "é")
+        too-long-ascii (string-concat ascii "x")
+        too-long-unicode (string-concat (string-substring ascii 0 65535) "é")]
+    (cond
+      (not (request-round-trip? "" "" 1 0)) 1
+      (not (request-round-trip? ascii unicode 4096 2000)) 2
+      (not (request-round-trip? unicode ascii 1 2000)) 3
+      (not (completion-round-trip? ascii)) 4
+      (not (completion-round-trip? unicode)) 5
+      (not (error-round-trip? unicode true)) 6
+      (not (error-round-trip? "synthetic error" false)) 7
+      (not= (bytes-count (llmw-encode-request (request too-long-ascii "" 1 0) 65536)) 0) 8
+      (not= (bytes-count (llmw-encode-request (request "" too-long-ascii 1 0) 65536)) 0) 9
+      (not= (bytes-count (llmw-encode-request (request too-long-unicode "" 1 0) 65536)) 0) 10
+      (not= (bytes-count (llmw-encode-request (request "" too-long-unicode 1 0) 65536)) 0) 11
+      (not= (bytes-count (llmw-encode-result (completion too-long-ascii 42) 42 65536)) 0) 12
+      (not= (bytes-count (llmw-encode-result (completion too-long-unicode 42) 42 65536)) 0) 13
+      (not= (bytes-count (llmw-encode-result (failure too-long-unicode true) 42 65536)) 0) 14
+      (not= (bytes-count (llmw-encode-request (request "" "" 0 0) 65536)) 0) 15
+      (not= (bytes-count (llmw-encode-request (request "" "" 4097 0) 65536)) 0) 16
+      (not= (bytes-count (llmw-encode-request (request "" "" 1 -1) 65536)) 0) 17
+      (not= (bytes-count (llmw-encode-request (request "" "" 1 2001) 65536)) 0) 18
+      (not (invalid-request?)) 19
+      (not (invalid-result?)) 20
+      (not (request-round-trip? "雪" "🧪" 1 0)) 21
+      :else 0)))

@@ -49,12 +49,9 @@
  ;; real provider call is nondeterministic and would prove nothing about
  ;; the ABI. The inject asserts all five request fields instead.
  ;;
- ;; :native-aot is :pending because all four native targets REFUSE this ABI
- ;; -- "typed values currently require the kotoba-script web target, typed
- ;; Wasm/CLJS target, or the qualified native one-word
- ;; string/record/variant/option/result slice" at :phase :target with
- ;; :value-profile :kotoba.value/typed-v1 -- not because nobody tried. See
- ;; llm-wasm-aot-test/native-aot-refuses-the-llm-kit-abi.
+ ;; :native-aot stays :pending. Darwin guest lowering and synthetic codec
+ ;; execution do not qualify a scoped runtime provider. The older native
+ ;; ABI refusal controls remain in llm-wasm-aot-test.
  :wasm-aot-surface {:import ["kotoba:typed" "cap-call"]
                     :capability-id 11
                     :grant :llm/generate

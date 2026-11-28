@@ -42,6 +42,9 @@ on:
       - 'scripts/seed/check-aiueos-object-outport.cljc'
       - 'scripts/seed/check-macos-arena-scope.cljc'
       - 'scripts/seed/check-macos-keyword-intern.cljc'
+      - 'scripts/seed/check_llm_v1_checker_macos.py'
+      - 'resources/kotoba/lang/capability-catalog.edn'
+      - 'resources/kotoba/lang/capability-kits/llm-v1.edn'
       - 'scripts/seed/check-js-browser.cljc'
       - 'scripts/seed/wasm32_browser_lib.cljc'
       - 'scripts/seed/check-browser-keyword-intern.cljc'
@@ -171,6 +174,13 @@ jobs:
           PYTHONDONTWRITEBYTECODE=1 basilisp run -p scripts/seed scripts/seed/check-aiueos-user-v3-macos-native.cljc -- \
             --mac-build "$RUNNER_TEMP/mac-root" \
             --output "$RUNNER_TEMP/mac-user-v3"
+      - name: Check native Darwin LLM wire-11 lowering and codec vectors
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          compiler="$RUNNER_TEMP/mac-root/F2-signed.macho"
+          python3 scripts/seed/check_llm_v1_checker_macos.py --wire11 \
+            --image "$compiler" --expected-image-sha256 "$(shasum -a 256 "$compiler" | cut -d ' ' -f 1)" \
+            --output "$RUNNER_TEMP/mac-llm-wire11"
       - name: Check candidate user-v5 ELF and slot-v4 boundaries
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -492,6 +502,7 @@ jobs:
             ${{ runner.temp }}/mac-cli-host/
             ${{ runner.temp }}/host-default-mac/host-default-target.json
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
+            ${{ runner.temp }}/mac-llm-wire11/receipt.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json

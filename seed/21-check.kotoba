@@ -2577,49 +2577,71 @@
 ;; (ND-KW kinds are checked by the caller)
 (defn- ck-cap-chunks? [M :vector-i64 ty :i64] :bool
   (and (= (ck-tcon M ty) TC-LIST) (= (ck-ta M ty) TY-BYTES)))
-;; Wire 11 is admitted only for the kit's exact nominal fields, not just
-;; arbitrary values with record and variant constructors.
-(defn- ck-cap-name [M :vector-i64 symbol :i64] :i64
-  (if (> symbol 0) (nm-sf M symbol SF-HASH) 0))
-(defn- ck-cap-rec? [M :vector-i64 ty :i64 name-hash :i64 fields :i64] :bool
+;; Interned symbols distinguish exact spellings even when their hashes agree.
+;; Cache the kit's identities in the checker header before checking bodies.
+(defn- ck-llm-names-slot [] :i64 38)
+(defn- ck-llm-id [M :vector-i64 S :string name :string] :i64
+  (let [at (string-index-of S name)]
+    (if (< at 0) 0 (nm-lookup M S at (+ at (string-length name))))))
+(defn- ck-llm-spelling [i :i64] :string
+  (case i
+    0 ":kotoba.llm/generate-request" 1 ":model" 2 ":system" 3 ":prompt"
+    4 ":max-output-tokens" 5 ":temperature-milli"
+    6 ":kotoba.llm/result" 7 ":ok" 8 ":error"
+    9 ":kotoba.llm/completion" 10 ":text" 11 ":finish-reason" 12 ":usage"
+    13 ":kotoba.llm/usage" 14 ":input-tokens" 15 ":output-tokens"
+    16 ":kotoba.llm/error" 17 ":code" 18 ":message" 19 ":retryable" ""))
+(defn- ck-llm-names [M :vector-i64 S :string] :vector-i64
+  (let [request (ck-llm-id M S (ck-llm-spelling 0))]
+    (if (= request 0) (nm-put M (ck-llm-names-slot) 0)
+      (let [storage (mem-alloc M 20)
+            base (ck-r storage)]
+        (if (nm-failed storage) storage
+          (loop [V (nm-put (nm-put storage (ck-llm-names-slot) base) base request) i 1]
+            (if (= i 20) V
+              (recur (nm-put V (+ base i) (ck-llm-id V S (ck-llm-spelling i))) (inc i)))))))))
+(defn- ck-cap-name? [M :vector-i64 symbol :i64 index :i64] :bool
+  (let [base (vector-at M (ck-llm-names-slot))]
+    (and (> symbol 0) (> base 0) (= symbol (vector-at M (+ base index))))))
+(defn- ck-cap-rec? [M :vector-i64 ty :i64 name-index :i64 fields :i64] :bool
   (let [b (ck-blk M ty)]
-    (and (> b 0) (= (ck-cap-name M (- ty TY-REC-BASE)) name-hash)
+    (and (> b 0) (ck-cap-name? M (- ty TY-REC-BASE) name-index)
          (= (ck-blk-n M b) fields))))
-(defn- ck-cap-field? [M :vector-i64 b :i64 i :i64 name-hash :i64 ty :i64] :bool
-  (and (= (ck-cap-name M (ck-blk-key M b i)) name-hash)
+(defn- ck-cap-field? [M :vector-i64 b :i64 i :i64 name-index :i64 ty :i64] :bool
+  (and (ck-cap-name? M (ck-blk-key M b i) name-index)
        (= (ck-blk-ty M b i) ty)))
 (defn- ck-cap-llm-request? [M :vector-i64 ty :i64] :bool
   (let [b (ck-blk M ty)]
-    (and (ck-cap-rec? M ty 447538322484631420 5)
-         (ck-cap-field? M b 0 -4216471642750950718 TY-KW)
-         (ck-cap-field? M b 1 6963064803141065796 TY-STR)
-         (ck-cap-field? M b 2 8794527437218635523 TY-STR)
-         (ck-cap-field? M b 3 -1655608618108567266 TY-I64)
-         (ck-cap-field? M b 4 -4772464895520918359 TY-I64))))
+    (and (ck-cap-rec? M ty 0 5)
+         (ck-cap-field? M b 0 1 TY-KW)
+         (ck-cap-field? M b 1 2 TY-STR)
+         (ck-cap-field? M b 2 3 TY-STR)
+         (ck-cap-field? M b 3 4 TY-I64)
+         (ck-cap-field? M b 4 5 TY-I64))))
 (defn- ck-cap-llm-usage? [M :vector-i64 ty :i64] :bool
   (let [b (ck-blk M ty)]
-    (and (ck-cap-rec? M ty -1199056634067394862 2)
-         (ck-cap-field? M b 0 -935755027668008332 TY-I64)
-         (ck-cap-field? M b 1 -3646776778409696375 TY-I64))))
+    (and (ck-cap-rec? M ty 13 2)
+         (ck-cap-field? M b 0 14 TY-I64)
+         (ck-cap-field? M b 1 15 TY-I64))))
 (defn- ck-cap-llm-completion? [M :vector-i64 ty :i64] :bool
   (let [b (ck-blk M ty)]
-    (and (ck-cap-rec? M ty 320800225274603325 3)
-         (ck-cap-field? M b 0 5116013626915490134 TY-STR)
-         (ck-cap-field? M b 1 -7490641412579181975 TY-KW)
-         (= (ck-cap-name M (ck-blk-key M b 2)) -2106737206575650240)
+    (and (ck-cap-rec? M ty 9 3)
+         (ck-cap-field? M b 0 10 TY-STR)
+         (ck-cap-field? M b 1 11 TY-KW)
+         (ck-cap-name? M (ck-blk-key M b 2) 12)
          (ck-cap-llm-usage? M (ck-blk-ty M b 2)))))
 (defn- ck-cap-llm-error? [M :vector-i64 ty :i64] :bool
   (let [b (ck-blk M ty)]
-    (and (ck-cap-rec? M ty -21647350367364453 3)
-         (ck-cap-field? M b 0 5578532699502447468 TY-KW)
-         (ck-cap-field? M b 1 6923805021426042572 TY-STR)
-         (ck-cap-field? M b 2 -1910211600911982559 TY-BOOL))))
+    (and (ck-cap-rec? M ty 16 3)
+         (ck-cap-field? M b 0 17 TY-KW)
+         (ck-cap-field? M b 1 18 TY-STR)
+         (ck-cap-field? M b 2 19 TY-BOOL))))
 (defn- ck-cap-llm-result? [M :vector-i64 ty :i64] :bool
   (let [b (ck-r6m-vblk M ty)]
-    (and (> b 0) (= (ck-cap-name M (ck-ta M ty)) -2278521537401533030)
+    (and (> b 0) (ck-cap-name? M (ck-ta M ty) 6)
          (= (vector-at M b) 2)
-         (= (ck-cap-name M (vector-at M (+ b 1))) -6513413320054399913)
-         (= (ck-cap-name M (vector-at M (+ b 3))) -7901840684610240199)
+         (ck-cap-name? M (vector-at M (+ b 1)) 7)
+         (ck-cap-name? M (vector-at M (+ b 3)) 8)
          (ck-cap-llm-completion? M (ck-r6m-payty M b 0))
          (ck-cap-llm-error? M (ck-r6m-payty M b 1)))))
 ;; Parse the declared types with the same type checker as function signatures.
@@ -2633,6 +2655,14 @@
         (and (= request TY-BYTES) (= result TY-BYTES))
         (and (ck-cap-chunks? M request) (ck-cap-chunks? M result)))
     (and (= request TY-STR) (= result TY-STR)))))
+
+(defn- ck-llm-bridge-slot [] :i64 15)
+(defn- ck-cap-local [M :vector-i64 w :i64 wk :i64 fx :i64] :vector-i64
+  (if (and (= wk KW-LLM-GENERATE) (= (vector-at M (ck-llm-bridge-slot)) 1))
+    (let [s (ck-fx-next fx)]
+      (if (> s (ck-max-slots)) (ck-err M E-CHECK-SLOTS w s)
+        (nm-set-nf (ck-use-slot M (ck-fx-f fx) s) w NF-RES s)))
+    M))
 
 (defn- ck-cap [M :vector-i64 n :i64 fx :i64] :vector-i64
   (let [h (nm-first M n)
@@ -2651,7 +2681,8 @@
                      (ck-expr Mr x fx 0) (ck-err Mr E-CHECK-CAP q 0))
                 tx (ck-ty M1)]
             (if (nm-failed M1) M1 (if (= tx aty)
-              (ck-mark (ck-r5b-cap (ck-fuel (nm-set-nf M1 w NF-TYPE wk) (ck-fx-f fx)) (ck-fx-f fx) (ck-kw-wire wk)) n rty HD-TYPED-CAP-CALL)
+              (let [M2 (ck-cap-local M1 w wk fx)]
+                (ck-mark (ck-r5b-cap (ck-fuel (nm-set-nf M2 w NF-TYPE wk) (ck-fx-f fx)) (ck-fx-f fx) (ck-kw-wire wk)) n rty HD-TYPED-CAP-CALL))
               (ck-err M1 E-CHECK-TYPE h aty)))))))
 
 ;; ---- calls of the file's functions ----
@@ -3274,7 +3305,7 @@
         M1 (ck-recs M0 S (nm-first M0 (vector-at M0 MM-ROOT)))
         M1b (if (nm-failed M1) M1 (ck-refs-check (ck-inline-scan M1)))
         M2 (ck-desugar M1b S)
-        M3 (ck-kopt-scan (ck-hints-apply (ck-sigs M2 1)))   ; R6C; JUN-733: ck-kopt-scan
+        M3 (ck-kopt-scan (ck-hints-apply (ck-sigs (ck-llm-names M2 S) 1)))   ; R6C; JUN-733: ck-kopt-scan
         M4 (ck-last-clear (ck-bodies (ck-probe-first (ck-r5b-pass (ck-ab-pre (ck-r3-init2 M3)) S)) 1))   ; R6C: ck-last-clear, ck-probe-first
         M5 (if (nm-failed M4) M4 (ck-ab-final M4))]
     (ck-run-end (ck-exports M5 1))))
