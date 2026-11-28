@@ -1,39 +1,42 @@
-;; Darwin wire 11. All grant fields are independent of the
-;; guest source and request. The only installed broker is a local fixture.
+;; Darwin wire 11. All grant fields are independent of the guest source and
+;; request. A dedicated provider also requires its independent registration.
 (def ml-profile "amu-program-llm-v1")
 (def ml-model ":synthetic/model")
 (def ml-schema "768859620bef185169b794b3ca1dbabb0de8e96186c61e698e61418afd27a034")
 
-(defn- ml-grant-prefix [digest :string] :string
+(defn- ml-grant-prefix [digest :string port :i64] :string
   (-> "KLG1\nartifact=" (string-concat digest) (string-concat "\nwire=11\nschema=")
       (string-concat ml-schema) (string-concat "\nprofile=") (string-concat ml-profile)
-      (string-concat "\nprovider=synthetic-v1\nendpoint=local:wire11-fixture\nmodel=")
-      (string-concat ml-model) (string-concat "\nseconds=")))
+      (string-concat "\nprovider=") (string-concat (if (> port 0) mm-provider "synthetic-v1"))
+      (string-concat "\nendpoint=") (string-concat (if (> port 0) (mm-origin port) "local:wire11-fixture"))
+      (string-concat "\nmodel=") (string-concat (if (> port 0) mm-model-keyword ml-model))
+      (string-concat "\nseconds=")))
 
-(defn- ml-grant [file :vector-i64 digest :string] :vector-i64
-  (let [prefix (hc-bytes (ml-grant-prefix digest)) at (vector-count prefix)
+(defn- ml-grant-for [file :vector-i64 digest :string port :i64] :vector-i64
+  (let [prefix (hc-bytes (ml-grant-prefix digest port)) at (vector-count prefix)
         end (- (vector-count file) 1)
-        token-start (+ at 9) token-label (hc-bytes "\ntokens=")]
-    (if (or (< end (+ token-start 1)) (> end (+ token-start 4))
-            (not= (vector-at file end) 10)
+        seconds-end (if (= (mm-byte file (+ at 1)) 10) (+ at 1) (+ at 2))
+        token-start (+ seconds-end 8) token-label (hc-bytes "\ntokens=")
+        limit (if (> port 0) mm-max-seconds 5)]
+    (if (or (< end (+ token-start 1)) (> end (+ token-start 4)) (not= (mm-byte file end) 10)
             (not (loop [i 0]
-                   (cond (= i at) true (not= (vector-at file i) (vector-at prefix i)) false
+                   (cond (= i at) true (not= (mm-byte file i) (vector-at prefix i)) false
                          :else (recur (+ i 1)))))
             (not (loop [i 0]
                    (cond (= i 8) true
-                         (not= (vector-at file (+ at 1 i)) (vector-at token-label i)) false
+                         (not= (mm-byte file (+ seconds-end i)) (vector-at token-label i)) false
                          :else (recur (+ i 1))))))
       []
-      (let [seconds (- (vector-at file at) 48)
-            ;; One second digit, LF, "tokens=", then canonical decimal.
-            tokens (loop [i token-start n 0]
-                     (if (= i end) n
-                       (let [digit (- (vector-at file i) 48)]
-                         (if (or (< digit 0) (> digit 9)) -1
-                           (recur (+ i 1) (+ (* n 10) digit))))))]
-        (if (and (llmw-in-range? seconds 1 5) (llmw-in-range? tokens 0 4096)
+      (let [seconds (mm-number file at seconds-end 10 90)
+            tokens (mm-number file token-start end 10 4096)]
+        (if (and (llmw-in-range? seconds 1 limit) (not= (mm-byte file at) 48)
+                 (llmw-in-range? tokens 0 4096)
                  (or (= (+ token-start 1) end) (not= (vector-at file token-start) 48)))
-          [seconds tokens] [])))))
+          [seconds tokens port] [])))))
+(defn- ml-grant [file :vector-i64 digest :string] :vector-i64
+  (let [fixture (ml-grant-for file digest 0) port (mm-port)]
+    (if (and (= (vector-count fixture) 0) (llmw-in-range? port 1 65535))
+      (ml-grant-for file digest port) fixture)))
 
 (defn- ml-be32 [v :vector-i64 at :i64] :i64
   (loop [i 0 n 0]
@@ -86,8 +89,7 @@
         (recur (+ i 1) (-> out (string-concat (hc-hex-digit (quot b 16)))
                           (string-concat (hc-hex-digit (rem b 16)))))))))
 
-;; This deterministic fixture is the only provider on this route. It sees
-;; the checked snapshot and has no endpoint, filesystem, or network calls.
+;; The deterministic in-process fixture needs no credential or network.
 (defn- ml-provider [request [:ref :kotoba.llm/generate-request]] :bytes
   (let [prompt (:prompt request) tokens (:max-output-tokens request)]
     (cond (string=? prompt "malformed-response") (string-to-utf8 "invalid KLR1")
@@ -103,10 +105,23 @@
                 (record-new [:ref :kotoba.llm/usage] 7 1)))
             tokens llmw-text-limit))))
 
-;; -2 expired, -1 refused before dispatch, 0 called but invalid/undelivered,
+;; -3 expired in provider, -2 expired before dispatch, -1 pre-dispatch refusal,
+;; 0 called but invalid/undelivered,
 ;; 1 called and delivered. A single exchange reserves the request's full
 ;; output token allowance and consumes the one-use grant before calling.
-(defn- ml-exchange [expected :string budget :i64] :i64
+(defn- ml-deliver [response :bytes tokens :i64 capacity :i64] :i64
+  (if (not (option-some?-of [:option [:ref :kotoba.llm/result]]
+             (llmw-decode-result response tokens capacity))) 0
+    (let [sent (hc-call 12 (vector-i64-from-bytes response))]
+      (cond (hc-ok? sent) 1 (= (hc-errno sent) 60) -3 :else 0))))
+(defn- ml-dispatch [request [:ref :kotoba.llm/generate-request] capacity :i64 port :i64] :i64
+  (let [tokens (:max-output-tokens request)]
+    (if (= port 0) (ml-deliver (ml-provider request) tokens capacity)
+      (let [token (mm-credential)]
+        (if (not (mm-bearer? token)) -1
+          (let [response (mm-exchange request port token)]
+            (if (= (bytes-count response) 0) -3 (ml-deliver response tokens capacity))))))))
+(defn- ml-exchange [expected :string budget :i64 port :i64] :i64
   (let [reply (hc-call 11 []) n (vector-count reply)]
     (if (or (< n 85) (not (hc-ok? reply)) (not (string=? (ml-peer-hash reply) expected))) -1
       (let [frame (bytes-from-vector-i64 (hc-slice reply 21 (- n 21)))]
@@ -114,14 +129,10 @@
           -1
           request (let [tokens (:max-output-tokens request) capacity (llmw-u32 frame 36)
                         spelling (llmw-text-at frame 64 (llmw-u32 frame 12))]
-                    (if (or (> tokens budget) (not (string=? spelling ml-model))) -1
+                    (if (or (> tokens budget) (not (string=? spelling (if (> port 0) mm-model-keyword ml-model)))) -1
                       (let [permit (hc-call 14 [])]
                         (if (not (hc-ok? permit)) (if (= (hc-errno permit) 60) -2 -1)
-                          (let [response (ml-provider request)]
-                            (if (and (option-some?-of [:option [:ref :kotoba.llm/result]]
-                                       (llmw-decode-result response tokens capacity))
-                                     (hc-ok? (hc-call 12 (vector-i64-from-bytes response))))
-                              1 0)))))))))))
+                          (ml-dispatch request capacity port))))))))))
 
 (defn- ml-count [calls :i64] :i64
   (hc-err (if (= calls 0) "amu: wire11 provider-calls=0\n" "amu: wire11 provider-calls=1\n")))
@@ -130,12 +141,13 @@
   (let [reported (ml-count 0)] (mc-error message code)))
 
 (defn- ml-run-child [image :string dir :string expected :string grant :vector-i64] :i64
-  (let [spawn (hc-spawn (+ 2 (vector-at grant 0)) dir "" image 1 (mc-argv "amu-program"))]
+  (let [port (vector-at grant 2)
+        spawn (hc-spawn (+ (if (> port 0) 7 2) (vector-at grant 0)) dir "" image 1 (mc-argv "amu-program"))]
     (if (not= (mc-exit spawn) 0) (ml-refuse "ELLMBROKER cannot start verified guest" 69)
-      (let [exchange (ml-exchange expected (vector-at grant 1))
+      (let [exchange (ml-exchange expected (vector-at grant 1) port)
             done (mc-exit (hc-call 13 []))
-            reported (ml-count (if (< exchange 0) 0 1))]
-        (cond (or (= done 124) (= exchange -2)) (mc-error "ETIME wire11 guest exceeded the grant deadline" 124)
+            reported (ml-count (if (or (>= exchange 0) (= exchange -3)) 1 0))]
+        (cond (or (= done 124) (<= exchange -2)) (mc-error "ETIME wire11 guest exceeded the grant deadline" 124)
               (< exchange 0) (mc-error "ELLMBROKER request or running artifact refused" 69)
               (= exchange 0) (mc-error "ELLMBROKER malformed or unavailable provider response" 69)
               :else done)))))
@@ -168,7 +180,8 @@
                 grant (ml-grant (mc-read-data grant-read) digest)
                 source (mc-source input true)
                 project? (mc-project-bundle? source)]
-            (cond (not= (vector-count grant) 2) (ml-refuse "ELLMGRANT artifact or grant fields refused" 69)
+            (cond (not= (vector-count grant) 3) (ml-refuse "ELLMGRANT artifact or grant fields refused" 69)
+                  (and (> (vector-at grant 2) 0) (not project?)) (ml-refuse "ELLMGRANT dedicated QA requires a locked project" 69)
                   (or (= (vector-count source) 0) (and (not project?) (> (vector-count source) 1048576)))
                   (ml-refuse "EARTIFACT expected a bounded program source or project bundle" 69)
                   (and (not project?) (not (llmw-utf8? (bytes-from-vector-i64 source) 0 (vector-count source))))

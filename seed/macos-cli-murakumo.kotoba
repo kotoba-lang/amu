@@ -1,0 +1,285 @@
+;; Host-only adapter for the dedicated QA resident. The release source has
+;; no approved registration or issuer. Fixture builds replace these two
+;; definitions, using one anonymous in-memory bearer handoff.
+(defn- mm-port [] :i64 0)
+(defn- mm-credential [] :string "")
+(def mm-provider "murakumo-qa-v1")
+(def mm-model "inkling-2-mini-gyomu-qa")
+(def mm-model-keyword ":inkling-2-mini-gyomu-qa")
+(def mm-max-seconds 90)
+
+(defn- mm-origin [port :i64] :string
+  (string-concat "http://127.0.0.1:" (hc-dec port)))
+(defn- mm-byte [v :vector-i64 i :i64] :i64
+  (if (and (>= i 0) (< i (vector-count v))) (vector-at v i) -1))
+(defn- mm-digit? [b :i64] :bool (and (>= b 48) (<= b 57)))
+(defn- mm-hex [b :i64] :i64
+  (cond (mm-digit? b) (- b 48)
+        (and (>= b 97) (<= b 102)) (- b 87)
+        (and (>= b 65) (<= b 70)) (- b 55)
+        :else -1))
+(defn- mm-bearer? [token :string] :bool
+  (let [b (hc-bytes token)]
+    (and (= (vector-count b) 64)
+         (loop [i 0]
+           (or (= i 64)
+               (and (not (and (>= (vector-at b i) 65) (<= (vector-at b i) 70)))
+                    (>= (mm-hex (vector-at b i)) 0) (recur (+ i 1))))))))
+
+(defn- mm-quote [text :string] :string
+  (let [input (hc-bytes text) n (vector-count input) out (vector-alloc (+ 2 (* 6 n)))
+        quote (vector-assoc! out 0 34)
+        end (loop [i 0 at 1]
+              (if (= i n) at
+                (let [b (vector-at input i)]
+                  (cond (or (= b 34) (= b 92))
+                        (let [w (-> out (vector-assoc! at 92) (vector-assoc! (+ at 1) b))]
+                          (recur (+ i 1) (+ at 2)))
+                        (< b 32)
+                        (let [hi (quot b 16) lo (rem b 16)
+                              w (-> out (vector-assoc! at 92) (vector-assoc! (+ at 1) 117)
+                                    (vector-assoc! (+ at 2) 48) (vector-assoc! (+ at 3) 48)
+                                    (vector-assoc! (+ at 4) (+ hi 48))
+                                    (vector-assoc! (+ at 5) (+ lo (if (< lo 10) 48 87))))]
+                          (recur (+ i 1) (+ at 6)))
+                        :else (let [w (vector-assoc! out at b)] (recur (+ i 1) (+ at 1)))))))
+        close (vector-assoc! out end 34)]
+    (hc-text (hc-slice out 0 (+ end 1)))))
+
+(defn- mm-body [r [:ref :kotoba.llm/generate-request]] :string
+  (let [t (:temperature-milli r)]
+    (-> "{\"model\":\"" (string-concat mm-model)
+        (string-concat "\",\"stream\":false,\"max_tokens\":") (string-concat (hc-dec (:max-output-tokens r)))
+        (string-concat ",\"temperature\":") (string-concat (hc-digit (quot t 1000))) (string-concat ".")
+        (string-concat (hc-digit (rem (quot t 100) 10))) (string-concat (hc-digit (rem (quot t 10) 10)))
+        (string-concat (hc-digit (rem t 10)))
+        (string-concat ",\"messages\":[{\"role\":\"system\",\"content\":") (string-concat (mm-quote (:system r)))
+        (string-concat "},{\"role\":\"user\",\"content\":") (string-concat (mm-quote (:prompt r)))
+        (string-concat "}]}"))))
+
+(defn- mm-request [port :i64 token :string body :string] :vector-i64
+  (hc-cat [(rem port 256) (quot port 256)]
+    (hc-bytes (-> "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:"
+      (string-concat (hc-dec port)) (string-concat "\r\nAuthorization: Bearer ") (string-concat token)
+      (string-concat "\r\nContent-Type: application/json\r\nAccept: application/json\r\nConnection: close\r\nContent-Length: ")
+      (string-concat (hc-dec (string-byte-length body))) (string-concat "\r\n\r\n") (string-concat body)))))
+
+;; Bounded HTTP/1.x framing. The resident rewrites response headers and can
+;; stream a complete JSON reply via chunked transfer encoding.
+(defn- mm-crlf [v :vector-i64 at :i64 end :i64] :i64
+  (loop [i at]
+    (cond (>= (+ i 1) end) -1
+          (and (= (mm-byte v i) 13) (= (mm-byte v (+ i 1)) 10)) i
+          :else (recur (+ i 1)))))
+(defn- mm-number [v :vector-i64 a :i64 b :i64 radix :i64 limit :i64] :i64
+  (if (>= a b) -1
+    (loop [i a n 0]
+      (if (= i b) n
+        (let [d (mm-hex (mm-byte v i))]
+          (if (or (< d 0) (>= d radix) (> n (quot (- limit d) radix))) -1
+            (recur (+ i 1) (+ (* radix n) d))))))))
+(defn- mm-header-name [v :vector-i64 a :i64 b :i64] :string
+  (let [r (vector-alloc (- b a))]
+    (loop [i a]
+      (if (= i b) (hc-text r)
+        (let [c (mm-byte v i)]
+          (if (or (and (>= c 97) (<= c 122)) (and (>= c 65) (<= c 90)) (mm-digit? c) (= c 45))
+            (let [w (vector-assoc! r (- i a) (if (and (>= c 65) (<= c 90)) (+ c 32) c))] (recur (+ i 1)))
+            ""))))))
+(defn- mm-hws? [b :i64] :bool (or (= b 32) (= b 9)))
+(defn- mm-headers [v :vector-i64 at :i64] :vector-i64
+  (let [end (min (vector-count v) 8192)]
+    (loop [i at size -1 chunked? false json? false ct? false]
+      (let [e (mm-crlf v i end)]
+        (cond (< e 0) []
+              (= e i) (if (or (and (>= size 0) chunked?) (and (< size 0) (not chunked?))) []
+                        [(+ i 2) size (if json? 1 0)])
+              :else
+              (let [colon (loop [j i] (if (or (= j e) (= (mm-byte v j) 58)) j (recur (+ j 1))))
+                    name (mm-header-name v i colon)
+                    a (loop [j (+ colon 1)] (if (and (< j e) (mm-hws? (mm-byte v j))) (recur (+ j 1)) j))
+                    b (loop [j e] (if (and (> j a) (mm-hws? (mm-byte v (- j 1)))) (recur (- j 1)) j))]
+                (if (or (= colon e) (= (string-length name) 0)
+                        (not (loop [j a] (or (= j b) (and (or (mm-hws? (mm-byte v j))
+                          (llmw-in-range? (mm-byte v j) 33 126)) (recur (+ j 1))))))) []
+                  (cond (string=? name "content-length")
+                        (let [n (mm-number v a b 10 524288)]
+                          (if (or (>= size 0) (< n 0)) [] (recur (+ e 2) n chunked? json? ct?)))
+                        (string=? name "transfer-encoding")
+                        (if (or chunked? (not (string=? (hc-text (hc-slice v a (- b a))) "chunked"))) []
+                          (recur (+ e 2) size true json? ct?))
+                        (string=? name "content-type")
+                        (if ct? [] (recur (+ e 2) size chunked?
+                          (string=? (hc-text (hc-slice v a (- b a))) "application/json") true))
+                        :else (recur (+ e 2) size chunked? json? ct?)))))))))
+(defn- mm-chunks [v :vector-i64 at :i64] :vector-i64
+  (let [end (vector-count v) out (vector-alloc (- end at))]
+    (loop [i at written 0]
+      (let [line (mm-crlf v i (min end (+ i 10))) n (mm-number v i line 16 524288)
+            from (+ line 2) stop (+ from n)]
+        (cond (or (< line 0) (< n 0) (> (+ stop 2) end)
+                  (not= (mm-byte v stop) 13) (not= (mm-byte v (+ stop 1)) 10)) []
+              (= n 0) (if (= (+ stop 2) end) (hc-slice out 0 written) [])
+              :else
+              (let [w (loop [j 0]
+                        (if (= j n) 0
+                          (let [a (vector-assoc! out (+ written j) (vector-at v (+ from j)))] (recur (+ j 1)))))]
+                (recur (+ stop 2) (+ written n))))))))
+
+;; JSON scanner. Offsets are byte offsets. All numbers and composite values
+;; are checked, selected keys are compared after decoding, and duplicate
+;; selected keys refuse. Parser recursion is capped at 24 nesting levels.
+(defn- mm-space [v :vector-i64 at :i64] :i64
+  (loop [i at]
+    (let [b (mm-byte v i)] (if (or (= b 32) (= b 9) (= b 10) (= b 13)) (recur (+ i 1)) i))))
+(defn- mm-jdigits [v :vector-i64 at :i64] :i64
+  (loop [i at] (if (mm-digit? (mm-byte v i)) (recur (+ i 1)) i)))
+(defn- mm-jnumber [v :vector-i64 at :i64] :i64
+  (let [a (if (= (mm-byte v at) 45) (+ at 1) at) d (mm-byte v a)
+        b (if (= d 48) (+ a 1) (mm-jdigits v a))
+        dot? (= (mm-byte v b) 46) c (if dot? (mm-jdigits v (+ b 1)) b)
+        ex? (or (= (mm-byte v c) 101) (= (mm-byte v c) 69))
+        sign (mm-byte v (+ c 1)) start (if (or (= sign 43) (= sign 45)) (+ c 2) (+ c 1))
+        d-end (if ex? (mm-jdigits v start) c)]
+    (if (or (= a b) (and dot? (= c (+ b 1))) (and ex? (= d-end start))) -1 d-end)))
+(defn- mm-uhex [v :vector-i64 from :i64] :i64 (mm-number v from (+ from 4) 16 65535))
+(defn- mm-hi-surrogate? [cp :i64] :bool (llmw-in-range? cp 55296 56319))
+(defn- mm-lo-surrogate? [cp :i64] :bool (llmw-in-range? cp 56320 57343))
+(defn- mm-jescape [v :vector-i64 slash :i64] :vector-i64
+  (let [b (mm-byte v (+ slash 1))]
+    (cond (or (= b 34) (= b 47) (= b 92)) [(+ slash 2) b]
+          (= b 98) [(+ slash 2) 8] (= b 102) [(+ slash 2) 12]
+          (= b 110) [(+ slash 2) 10] (= b 114) [(+ slash 2) 13] (= b 116) [(+ slash 2) 9]
+          (= b 117)
+          (let [cp (mm-uhex v (+ slash 2)) next (+ slash 6)]
+            (cond (or (< cp 0) (mm-lo-surrogate? cp)) [-1 0]
+                  (mm-hi-surrogate? cp)
+                  (let [tail (mm-uhex v (+ next 2))]
+                    (if (and (= (mm-byte v next) 92) (= (mm-byte v (+ next 1)) 117) (mm-lo-surrogate? tail))
+                      [(+ next 6) (+ 65536 (* 1024 (- cp 55296)) (- tail 56320))] [-1 0]))
+                  :else [next cp]))
+          :else [-1 0])))
+(defn- mm-jstr-end [v :vector-i64 at :i64] :i64
+  (if (not= (mm-byte v at) 34) -1
+    (loop [i (+ at 1)]
+      (let [b (mm-byte v i)]
+        (cond (< b 32) -1 (= b 34) (+ i 1)
+              (= b 92) (let [next (vector-at (mm-jescape v i) 0)] (if (< next 0) -1 (recur next)))
+              :else (recur (+ i 1)))))))
+(defn- mm-jliteral [v :vector-i64 at :i64 word :string] :i64
+  (let [bytes (hc-bytes word) n (vector-count bytes)]
+    (if (loop [i 0] (or (= i n) (and (= (mm-byte v (+ at i)) (vector-at bytes i)) (recur (+ i 1))))) (+ at n) -1)))
+(defn- mm-jobject [v :vector-i64 at :i64 depth :i64] :i64
+  (let [a (mm-space v (+ at 1))]
+    (if (= (mm-byte v a) 125) (+ a 1)
+      (loop [i a]
+        (let [key (mm-jstr-end v i) colon (mm-space v key)]
+          (if (or (< key 0) (not= (mm-byte v colon) 58)) -1
+            (let [value (mm-jvalue v (mm-space v (+ colon 1)) depth) e (mm-space v value)]
+              (cond (< value 0) -1 (= (mm-byte v e) 125) (+ e 1)
+                    (= (mm-byte v e) 44) (recur (mm-space v (+ e 1))) :else -1))))))))
+(defn- mm-jarray [v :vector-i64 at :i64 depth :i64] :i64
+  (let [a (mm-space v (+ at 1))]
+    (if (= (mm-byte v a) 93) (+ a 1)
+      (loop [i a]
+        (let [value (mm-jvalue v i depth) e (mm-space v value)]
+          (cond (< value 0) -1 (= (mm-byte v e) 93) (+ e 1)
+                (= (mm-byte v e) 44) (recur (mm-space v (+ e 1))) :else -1))))))
+(defn- mm-jvalue [v :vector-i64 at :i64 depth :i64] :i64
+  (let [b (mm-byte v at)]
+    (cond (> depth 24) -1 (= b 34) (mm-jstr-end v at)
+          (= b 123) (mm-jobject v at (+ depth 1)) (= b 91) (mm-jarray v at (+ depth 1))
+          (= b 110) (mm-jliteral v at "null") (= b 116) (mm-jliteral v at "true")
+          (= b 102) (mm-jliteral v at "false")
+          (or (= b 45) (mm-digit? b)) (mm-jnumber v at) :else -1)))
+(defn- mm-cp-width [cp :i64] :i64
+  (cond (< cp 128) 1 (< cp 2048) 2 (< cp 65536) 3 :else 4))
+(defn- mm-jtext [v :vector-i64 a :i64 b :i64] :string
+  (let [out (vector-alloc (- b a)) end (- b 1)
+        n (loop [i (+ a 1) at 0]
+            (if (>= i end) at
+              (let [c (vector-at v i)]
+                (if (not= c 92)
+                  (let [w (vector-assoc! out at c)] (recur (+ i 1) (+ at 1)))
+                  (let [esc (mm-jescape v i) cp (vector-at esc 1) width (mm-cp-width cp)
+                        w (loop [j 0]
+                            (if (= j width) 0
+                              (let [w (vector-assoc! out (+ at j) (mem-cp-byte cp j))] (recur (+ j 1)))))]
+                    (recur (vector-at esc 0) (+ at width)))))))]
+    (hc-text (hc-slice out 0 n))))
+(defn- mm-jfield [v :vector-i64 obj :i64 key :string] :i64
+  ;; Input is already validated. -1 absent, -2 duplicate or wrong container.
+  (if (not= (mm-byte v obj) 123) -2
+    (loop [i (mm-space v (+ obj 1)) found -1]
+      (if (= (mm-byte v i) 125) found
+        (let [e (mm-jstr-end v i) from (mm-space v (+ (mm-space v e) 1))
+              end (mm-space v (mm-jvalue v from 0))
+              wanted (string=? (mm-jtext v i e) key)]
+          (cond (and wanted (>= found 0)) -2
+                (= (mm-byte v end) 125) (if wanted from found)
+                :else (recur (mm-space v (+ end 1)) (if wanted from found))))))))
+(defn- mm-jfield-text [v :vector-i64 obj :i64 name :string] :string
+  (let [a (mm-jfield v obj name) b (mm-jstr-end v a)] (if (< b 0) "" (mm-jtext v a b))))
+(defn- mm-jcount [v :vector-i64 obj :i64 name :string] :i64
+  (let [a (mm-jfield v obj name) b (mm-jvalue v a 0)]
+    (mm-number v a b 10 9223372036854775807)))
+
+(defn- mm-failure [code :keyword message :string retry? :bool tokens :i64] :bytes
+  (llmw-encode-result
+    (variant-new [:ref :kotoba.llm/result] :error
+      (record-new [:ref :kotoba.llm/error] code message retry?)) tokens llmw-text-limit))
+(defn- mm-bad-reply [tokens :i64] :bytes
+  (mm-failure :murakumo/invalid-response "invalid dedicated QA response" false tokens))
+(defn- mm-json-result [v :vector-i64 tokens :i64] :bytes
+  (let [a (mm-space v 0) end (mm-jvalue v a 0)]
+    (if (or (< end 0) (not= (mm-space v end) (vector-count v))
+            (not (llmw-utf8? (bytes-from-vector-i64 v) 0 (vector-count v))))
+      (mm-bad-reply tokens)
+      (let [choices (mm-jfield v a "choices") first (mm-space v (+ choices 1))
+            after (mm-space v (mm-jvalue v first 0))
+            message (mm-jfield v first "message") content (mm-jfield v message "content")
+            close (mm-jstr-end v content) reason (mm-jfield-text v first "finish_reason")
+            object (mm-jfield v a "object") usage (mm-jfield v a "usage") in (mm-jcount v usage "prompt_tokens")
+            out (mm-jcount v usage "completion_tokens") total (mm-jfield v usage "total_tokens")]
+        (if (or (not (string=? (mm-jfield-text v a "model") mm-model))
+                (and (not= object -1) (not (string=? (mm-jfield-text v a "object") "chat.completion")))
+                (not= (mm-byte v choices) 91) (not= (mm-byte v after) 93)
+                (not (string=? (mm-jfield-text v message "role") "assistant")) (< close 0)
+                (not= (mm-jfield v first "delta") -1)
+                (not= (mm-jfield v message "tool_calls") -1) (not= (mm-jfield v message "function_call") -1)
+                (not (or (string=? reason "stop") (string=? reason "length")))
+                (< in 0) (not (llmw-in-range? out 0 tokens))
+                (and (not= total -1) (or (> in (- 9223372036854775807 out))
+                                          (not= (mm-jcount v usage "total_tokens") (+ in out)))))
+          (mm-bad-reply tokens)
+          (let [text (mm-jtext v content close)]
+            (if (> (string-byte-length text) llmw-text-limit) (mm-bad-reply tokens)
+              (llmw-encode-result
+                (variant-new [:ref :kotoba.llm/result] :ok
+                  (record-new [:ref :kotoba.llm/completion] text
+                    (if (string=? reason "stop") :stop :length)
+                    (record-new [:ref :kotoba.llm/usage] in out))) tokens llmw-text-limit))))))))
+(defn- mm-http-result [v :vector-i64 tokens :i64] :bytes
+  (let [n (vector-count v) line (mm-crlf v 0 (min n 8192))
+        start (if (>= line 13) (hc-text (hc-slice v 0 9)) "")
+        code (if (>= line 13) (mm-number v 9 12 10 999) -1)
+        headers (if (>= line 13) (mm-headers v (+ line 2)) [])]
+    (cond (or (not (or (string=? start "HTTP/1.1 ") (string=? start "HTTP/1.0 ")))
+              (not= (mm-byte v 12) 32) (not (llmw-in-range? code 200 599))
+              (not= (vector-count headers) 3)) (mm-bad-reply tokens)
+          (not= (vector-at headers 2) 1) (mm-bad-reply tokens)
+          :else (let [a (vector-at headers 0) declared (vector-at headers 1)
+                      body (if (< declared 0) (mm-chunks v a)
+                             (if (= (- n a) declared) (hc-slice v a declared) []))]
+                  (cond (= (vector-count body) 0) (mm-bad-reply tokens)
+                        (= code 200) (mm-json-result body tokens)
+                        :else (mm-failure :murakumo/http-error "dedicated QA request refused"
+                                (or (= code 429) (= code 502) (= code 503) (= code 504)) tokens))))))
+(defn- mm-exchange [r [:ref :kotoba.llm/generate-request] port :i64 token :string] :bytes
+  (let [tokens (:max-output-tokens r)
+        reply (hc-call 15 (mm-request port token (mm-body r)))]
+    (cond (and (hc-ok? reply) (> (vector-count reply) 1))
+          (mm-http-result (hc-slice reply 1 (- (vector-count reply) 1)) tokens)
+          (= (hc-errno reply) 60) (string-to-utf8 "")
+          (= (hc-errno reply) 90) (mm-bad-reply tokens)
+          :else (mm-failure :murakumo/unavailable "dedicated QA endpoint unavailable" true tokens))))

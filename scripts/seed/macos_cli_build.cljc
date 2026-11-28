@@ -8,12 +8,12 @@
 
 (def pin-keys ["bytes" "sha256"])
 (def cli-sources ["seed/macos-cli-api.kotoba" "seed/runtime/llm-v1-wire.kotoba"
-                  "seed/macos-cli-llm.kotoba" "seed/macos-cli.kotoba"])
+                  "seed/macos-cli-murakumo.kotoba" "seed/macos-cli-llm.kotoba" "seed/macos-cli.kotoba"])
 
 (defn pin-of [d key] (u/pydict-from (for [k pin-keys] [k (u/geti (u/geti d key) k)])))
 
 (defn cli-unity-bytes [root names pins]
-  (let [[api codec broker cli] (mapv #(.joinpath root %) cli-sources)
+  (let [[api codec murakumo broker cli] (mapv #(.joinpath root %) cli-sources)
         text (.read_text codec)
         mark (.index text "\n;; KLM1/KLR1")
         ns-head (.rstrip (subs text 0 mark))
@@ -28,6 +28,7 @@
              [(operator/add (.read_bytes api) (.encode "\n"))
               (.encode (str pins "\n"))
               (.encode (str (subs text mark) "\n"))
+              (operator/add (.read_bytes murakumo) (.encode "\n"))
               (operator/add (.read_bytes broker) (.encode "\n"))
               (operator/add (.read_bytes cli) (.encode "\n"))])))))
 

@@ -111,7 +111,7 @@ direction carries a four-byte little-endian frame length and that many bytes.
 The broker copies the request into its own bounded storage and validates the
 complete snapshot, exact model spelling and requested output tokens. It
 checks its monotonic deadline and consumes its dispatch slot before calling
-the installed provider. The grant permits one call in a window of one to
+the installed provider. A synthetic grant permits one call in a window of one to
 five seconds and a token budget of zero to 4096. A zero budget admits no
 request. There is no environment-based provider selection.
 
@@ -123,10 +123,51 @@ unavailable transport refuse with exit 69. A child deadline expires with
 exit 124. The broker closes its descriptors and reaps the child. Ordinary
 `amu run` keeps its five-second deadline and supplies no broker descriptor.
 
-The only installed provider is the deterministic `synthetic-v1` fixture.
-The `local:wire11-fixture` endpoint identifies that fixture in the grant.
-The broker can exercise both result arms without an external service.
+The default registered provider is the deterministic `synthetic-v1` fixture.
+The `local:wire11-fixture` endpoint identifies it in the grant. Its deadline
+remains one to five seconds.
 The ELF/CPL3 host binding remains KOTOBA-423.
+
+## Dedicated QA adapter candidate
+
+The Darwin broker also has a host-side `murakumo-qa-v1` registration boundary
+for locked KSL2. The grant has to match the independent registration's exact
+`http://127.0.0.1:PORT` origin and `:inkling-2-mini-gyomu-qa` model, in addition
+to the signed artifact, wire, schema and profile. A caller cannot set the
+registered port through the grant. The scope accepts a one- to ninety-second
+deadline and the same output-token budget as the synthetic provider. Ordinary
+`run` keeps five seconds. Production source registers no dedicated endpoint
+or issuer and refuses before credential lookup or connection. [Pinned Murakumo contract](https://github.com/kotoba-lang/murakumo/blob/92ebdfd6d5fa090cc907ccc48de61d5995224dc9/docs/dedicated-qa-resident.md)
+
+After validating the guest snapshot and consuming its single dispatch slot,
+the dedicated adapter asks the registered host issuer for one bearer. The
+fixture build supplies it through an anonymous in-memory pipe in the host
+process. It uses a random synthetic bearer. The pipe is outside the guest
+and the native host closes it before connecting. The issuer, TTL and launch
+identity for approved use still need an owner decision.
+
+The native host opens one nonblocking IPv4 loopback socket and sends
+`POST /v1/chat/completions` with `stream: false`, text-only system and user
+messages, and the exact token and temperature values. It uses a kernel
+deadline shared with guest admission and accepts a bounded HTTP JSON reply
+with an exact length or a complete chunked body. The route has no proxy,
+redirect, retry or alternate provider. A completion must have one assistant
+message, a supported finish reason, the exact model, and valid nonnegative
+usage within the requested budget. Invalid or missing usage becomes a typed
+failure. No token counts are synthesized.
+
+Run the local gate with the native compiler and an isolated HTTP fixture.
+
+```sh
+python3 scripts/seed/check_macos_murakumo_adapter.py \
+  --output "$(mktemp -d)/qa-adapter"
+```
+
+The receipt records the signed artifacts and separate credential lookup,
+provider attempt and fixture request counts. It uses no resident or model
+backend. An Itonami integration still needs the approved host issuer and
+listener, an independently issued grant, and a receipt binding the listener
+and backend provenance to the exact consumed compiler and guest digests.
 
 ## Reproduce the diagnostic
 

@@ -44,6 +44,8 @@ on:
       - 'scripts/seed/check-macos-keyword-intern.cljc'
       - 'scripts/seed/check_llm_v1_checker_macos.py'
       - 'scripts/seed/check-macos-llm-broker.cljc'
+      - 'scripts/seed/check_macos_murakumo_adapter.py'
+      - 'scripts/seed/stage-macos-murakumo-fixture.cljc'
       - 'scripts/seed/macos_cli_build.cljc'
       - 'resources/kotoba/lang/capability-catalog.edn'
       - 'resources/kotoba/lang/capability-kits/llm-v1.edn'
@@ -188,6 +190,11 @@ jobs:
         run: >-
           basilisp run -p scripts/seed scripts/seed/check-macos-llm-broker.cljc --
           --output "$RUNNER_TEMP/mac-llm-broker"
+      - name: Check native dedicated QA adapter against the synthetic IPv4 listener
+        if: steps.gate.outputs.skip != 'true'
+        run: >-
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/seed/check_macos_murakumo_adapter.py
+          --output "$RUNNER_TEMP/mac-llm-qa-adapter"
       - name: Check candidate user-v5 ELF and slot-v4 boundaries
         if: steps.gate.outputs.skip != 'true'
         run: |
@@ -511,6 +518,7 @@ jobs:
             ${{ runner.temp }}/mac-root/mac-aiueos-user-target.json
             ${{ runner.temp }}/mac-llm-wire11/receipt.json
             ${{ runner.temp }}/mac-llm-broker/receipt.json
+            ${{ runner.temp }}/mac-llm-qa-adapter/receipt.json
             ${{ runner.temp }}/mac-smoke/native-smoke.json
             ${{ runner.temp }}/mac-smoke/execution/receipt.json
             ${{ runner.temp }}/mac-root-crash-summary.json

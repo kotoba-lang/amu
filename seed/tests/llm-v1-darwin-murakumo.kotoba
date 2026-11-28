@@ -1,0 +1,34 @@
+(ns llm.qa-fixture
+  (:require [llm.qa-budget :as budget])
+  (:export [main])
+  (:schemas
+   {:kotoba.llm/generate-request
+    [:record :kotoba.llm/generate-request
+     [[:model :keyword] [:system :string] [:prompt :string]
+      [:max-output-tokens :i64] [:temperature-milli :i64]]]
+    :kotoba.llm/result
+    [:variant :kotoba.llm/result
+     [[:ok [:record :kotoba.llm/completion
+             [[:text :string] [:finish-reason :keyword]
+              [:usage [:record :kotoba.llm/usage
+                       [[:input-tokens :i64] [:output-tokens :i64]]]]]]]
+      [:error [:record :kotoba.llm/error
+                [[:code :keyword] [:message :string] [:retryable :bool]]]]]]}))
+
+(defn main [] :i64
+  (let [request (record-new [:ref :kotoba.llm/generate-request]
+                  :inkling-2-mini-gyomu-qa "system \"quote\" \\ and\n日本語" "fixture-prompt" (budget/tokens) 125)
+        response (typed-cap-call :llm/generate
+                 [:ref :kotoba.llm/generate-request] [:ref :kotoba.llm/result] request)]
+    (match-variant response [:ref :kotoba.llm/result]
+      (:ok value (if (and (string=? (:text value) "確認 🐙\n") (= (:finish-reason value) :stop)
+                         (= (:input-tokens (:usage value)) 7) (= (:output-tokens (:usage value)) 1)) 101 1))
+      (:error failure
+        (cond (and (= (:code failure) :murakumo/http-error)
+                   (string=? (:message failure) "dedicated QA request refused"))
+              (if (:retryable failure) 202 203)
+              (and (= (:code failure) :murakumo/invalid-response)
+                   (string=? (:message failure) "invalid dedicated QA response") (not (:retryable failure))) 303
+              (and (= (:code failure) :murakumo/unavailable)
+                   (string=? (:message failure) "dedicated QA endpoint unavailable") (:retryable failure)) 404
+              :else 2)))))
